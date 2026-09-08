@@ -5,7 +5,7 @@ import type {
   WorkjetHarnessAvailabilitySnapshot,
 } from "@workjet/contracts";
 import { CheckIcon, PencilIcon, PlusIcon } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
@@ -34,6 +34,34 @@ import { ComputerProvisioningSection } from "./ComputerProvisioningSection";
 import { searchableSetting } from "./settingsSearch";
 
 export { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
+
+interface ComputerHarnessInspection {
+  readonly snapshot: WorkjetHarnessAvailabilitySnapshot | null;
+  readonly error: string | null;
+}
+
+function ComputerHarnessProbe({
+  environmentId,
+  onInspection,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly onInspection: (
+    environmentId: EnvironmentId,
+    inspection: ComputerHarnessInspection | null,
+  ) => void;
+}) {
+  const query = useEnvironmentQuery(
+    serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
+  );
+  useEffect(() => {
+    onInspection(environmentId, {
+      snapshot: query.error === null ? query.data : null,
+      error: query.error,
+    });
+  }, [environmentId, onInspection, query.data, query.error]);
+  useEffect(() => () => onInspection(environmentId, null), [environmentId, onInspection]);
+  return null;
+}
 
 export function toggleCurrentComputer(
   configuration: WorkjetConfiguration,
@@ -71,6 +99,7 @@ export function WorkjetComputersSettingsView({
   environments,
   environmentsReady,
   harnessInspection = null,
+  harnessInspections,
   environmentId = null,
   onChange,
 }: {
@@ -84,6 +113,7 @@ export function WorkjetComputersSettingsView({
    * implying agreement.
    */
   readonly harnessInspection?: WorkjetHarnessAvailabilitySnapshot | null;
+  readonly harnessInspections?: Readonly<Record<string, ComputerHarnessInspection>>;
   readonly environmentId?: EnvironmentId | null;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
@@ -110,11 +140,13 @@ export function WorkjetComputersSettingsView({
         computer={editingComputer}
         environments={environments}
         availability={
-          // The probe describes THIS server only; a computer targeting
-          // another environment must not borrow its answers.
-          editingComputer !== null && environmentId === editingComputer.environmentId
-            ? harnessInspection
-            : null
+          editingComputer === null
+            ? null
+            : harnessInspections !== undefined
+              ? (harnessInspections[editingComputer.environmentId]?.snapshot ?? null)
+              : environmentId === editingComputer.environmentId
+                ? harnessInspection
+                : null
         }
         onCancel={() => {
           setAddingComputer(false);
@@ -186,12 +218,15 @@ export function WorkjetComputersSettingsView({
       ) : null}
       <div role="radiogroup" aria-label="Current computer" className="space-y-1">
         {configuration.computers.map((computer) => {
-          // The Swift page shows, per computer, ONE ROW PER HARNESS with a
-          // live status dot and detail — not a count. The live snapshot
-          // (workjet.harness.inspect) describes THIS server; a computer on
-          // another environment shows its declared availability with an
-          // explicit "not probed from here" instead of borrowing our probe.
-          const probedHere = harnessInspection !== null && environmentId === computer.environmentId;
+          // Each probe belongs to its target environment. Never present this
+          // Mac's tools as the capabilities of an SSH or Tailscale computer.
+          const inspection = harnessInspections?.[computer.environmentId];
+          const computerInspection =
+            harnessInspections !== undefined
+              ? (inspection?.snapshot ?? null)
+              : environmentId === computer.environmentId
+                ? harnessInspection
+                : null;
           // The environment's human label, never its raw id — an operator
           // recognises "gpu3-a4500", not a UUID. When the environment left the
           // catalog, the kind alone is the only truthful thing left to show.
@@ -199,11 +234,12 @@ export function WorkjetComputersSettingsView({
             environments.find((environment) => environment.environmentId === computer.environmentId)
               ?.label ?? null;
           const isCurrent = configuration.selectedComputerId === computer.id;
-          const locationDescription = probedHere
-            ? "This machine"
-            : environmentLabel === null
-              ? workjetComputerKindLabel(computer.presentationKind)
-              : `${workjetComputerKindLabel(computer.presentationKind)} · ${environmentLabel}`;
+          const locationDescription =
+            environmentId === computer.environmentId
+              ? "This machine"
+              : environmentLabel === null
+                ? workjetComputerKindLabel(computer.presentationKind)
+                : `${workjetComputerKindLabel(computer.presentationKind)} · ${environmentLabel}`;
           return (
             <Fragment key={computer.id}>
               <SettingsRow
@@ -249,12 +285,18 @@ export function WorkjetComputersSettingsView({
                 }
               >
                 <div className="mt-1 space-y-1 pb-3">
+                  {harnessInspections !== undefined && computerInspection === null ? (
+                    <p role="status" className="text-xs text-muted-foreground">
+                      {inspection?.error
+                        ? "Could not check coding tools. Check this computer’s connection."
+                        : "Checking coding tools…"}
+                    </p>
+                  ) : null}
                   {computer.harnesses.map((declared) => {
-                    const live = probedHere
-                      ? (harnessInspection?.harnesses.find(
-                          (entry) => entry.harness === declared.harness,
-                        ) ?? null)
-                      : null;
+                    const live =
+                      computerInspection?.harnesses.find(
+                        (entry) => entry.harness === declared.harness,
+                      ) ?? null;
                     const state =
                       live === null
                         ? declared.available
@@ -319,6 +361,20 @@ export function WorkjetComputersSettings() {
   const { environments, isReady: environmentsReady } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const environmentId = primaryEnvironment?.environmentId ?? null;
+  const [harnessInspections, setHarnessInspections] = useState<
+    Readonly<Record<string, ComputerHarnessInspection>>
+  >({});
+  const recordHarnessInspection = useCallback(
+    (target: EnvironmentId, inspection: ComputerHarnessInspection | null) => {
+      setHarnessInspections((current) => {
+        const next = { ...current };
+        if (inspection === null) delete next[target];
+        else next[target] = inspection;
+        return next;
+      });
+    },
+    [],
+  );
   const [connectionRequest, setConnectionRequest] = useState<{
     kind: "ssh" | "tailscale";
     sequence: number;
@@ -369,6 +425,15 @@ export function WorkjetComputersSettings() {
 
   return (
     <SettingsPageContainer className="gap-6">
+      {[...new Set(settings.workjet.computers.map((computer) => computer.environmentId))].map(
+        (target) => (
+          <ComputerHarnessProbe
+            key={target}
+            environmentId={target}
+            onInspection={recordHarnessInspection}
+          />
+        ),
+      )}
       <div className="px-3 sm:px-4">
         <h1 className="text-xl font-semibold tracking-[-0.025em]">Computers</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -431,6 +496,7 @@ export function WorkjetComputersSettings() {
         environments={workjetEnvironmentTargetOptions(environments)}
         environmentsReady={environmentsReady}
         harnessInspection={harnessInspectQuery.data ?? null}
+        harnessInspections={harnessInspections}
         environmentId={environmentId}
         onChange={(workjet) => updateSettings({ workjet })}
       />

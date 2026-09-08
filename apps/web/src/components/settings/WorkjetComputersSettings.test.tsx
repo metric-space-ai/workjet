@@ -130,6 +130,26 @@ describe("current computer settings", () => {
     ).toBeNull();
   });
 
+  it("hides cached remote versions after its connection is removed", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith({
+          ...remoteComputer,
+          harnesses: [{ harness: "codex-cli", available: true }],
+        })}
+        environments={[]}
+        environmentsReady
+        environmentId={localEnvironmentId}
+        harnessInspections={{
+          [remoteEnvironmentId]: { snapshot: inspection("stale-remote"), error: null },
+        }}
+        onChange={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Disconnected. Reconnect this computer");
+    expect(markup).not.toContain("stale-remote");
+  });
+
   it("preserves an existing current-computer selection", () => {
     const selectedRemote = {
       ...configurationWith(remoteComputer, localComputer),

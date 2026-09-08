@@ -221,8 +221,13 @@ export function WorkjetComputersSettingsView({
           // Each probe belongs to its target environment. Never present this
           // Mac's tools as the capabilities of an SSH or Tailscale computer.
           const inspection = harnessInspections?.[computer.environmentId];
-          const computerInspection =
-            harnessInspections !== undefined
+          const disconnected =
+            environmentsReady &&
+            computer.environmentId !== environmentId &&
+            !environments.some((entry) => entry.environmentId === computer.environmentId);
+          const computerInspection = disconnected
+            ? null
+            : harnessInspections !== undefined
               ? (inspection?.snapshot ?? null)
               : environmentId === computer.environmentId
                 ? harnessInspection
@@ -285,11 +290,14 @@ export function WorkjetComputersSettingsView({
                 }
               >
                 <div className="mt-1 space-y-1 pb-3">
-                  {harnessInspections !== undefined && computerInspection === null ? (
+                  {(disconnected || harnessInspections !== undefined) &&
+                  computerInspection === null ? (
                     <p role="status" className="text-xs text-muted-foreground">
-                      {inspection?.error
-                        ? "Could not check coding tools. Check this computer’s connection."
-                        : "Checking coding tools…"}
+                      {disconnected
+                        ? "Disconnected. Reconnect this computer to check its coding tools."
+                        : inspection?.error
+                          ? "Could not check coding tools. Check this computer’s connection."
+                          : "Checking coding tools…"}
                     </p>
                   ) : null}
                   {computer.harnesses.map((declared) => {
@@ -425,15 +433,15 @@ export function WorkjetComputersSettings() {
 
   return (
     <SettingsPageContainer className="gap-6">
-      {[...new Set(settings.workjet.computers.map((computer) => computer.environmentId))].map(
-        (target) => (
+      {[...new Set(settings.workjet.computers.map((computer) => computer.environmentId))]
+        .filter((target) => targetOptions.some((option) => option.environmentId === target))
+        .map((target) => (
           <ComputerHarnessProbe
             key={target}
             environmentId={target}
             onInspection={recordHarnessInspection}
           />
-        ),
-      )}
+        ))}
       <div className="px-3 sm:px-4">
         <h1 className="text-xl font-semibold tracking-[-0.025em]">Computers</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">

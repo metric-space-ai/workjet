@@ -730,6 +730,7 @@ export const ComposerSystemPromptControl = memo(ComposerSystemPromptControlView)
 // ---------------------------------------------------------------------------
 
 export interface ComposerWorkjetCompactMenuContentProps {
+  readonly hideWorkerSelection?: boolean;
   readonly workers: ReadonlyArray<WorkjetWorkerProfile>;
   readonly selectedWorkerId: string | null;
   readonly onSelectWorker: (workerId: string | null) => void;
@@ -767,23 +768,25 @@ export function ComposerWorkjetCompactMenuContent(
   const selectable = new Set(props.selectableEnvironmentIds);
   return (
     <>
-      <MenuGroup>
-        <MenuGroupLabel>Worker</MenuGroupLabel>
-        <MenuRadioGroup
-          value={props.selectedWorkerId ?? MANUAL_WORKER_VALUE}
-          onValueChange={(value) => {
-            if (typeof value !== "string") return;
-            props.onSelectWorker(value === MANUAL_WORKER_VALUE ? null : value);
-          }}
-        >
-          <MenuRadioItem value={MANUAL_WORKER_VALUE}>Manual</MenuRadioItem>
-          {props.workers.map((worker) => (
-            <MenuRadioItem key={worker.id} value={worker.id}>
-              {worker.name}
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
-      </MenuGroup>
+      {props.hideWorkerSelection ? null : (
+        <MenuGroup>
+          <MenuGroupLabel>Worker</MenuGroupLabel>
+          <MenuRadioGroup
+            value={props.selectedWorkerId ?? MANUAL_WORKER_VALUE}
+            onValueChange={(value) => {
+              if (typeof value !== "string") return;
+              props.onSelectWorker(value === MANUAL_WORKER_VALUE ? null : value);
+            }}
+          >
+            <MenuRadioItem value={MANUAL_WORKER_VALUE}>Manual</MenuRadioItem>
+            {props.workers.map((worker) => (
+              <MenuRadioItem key={worker.id} value={worker.id}>
+                {worker.name}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+      )}
       <MenuGroup>
         <MenuGroupLabel>Computer</MenuGroupLabel>
         {props.computerDisabledReason !== null ? (

@@ -1,46 +1,20 @@
-import type { WorkjetHarness, WorkjetWorkerProfile } from "@workjet/contracts";
-import { memo } from "react";
-import { UsersRoundIcon } from "lucide-react";
+import type { EnvironmentId, WorkjetHarness, WorkjetWorkerProfile } from "@workjet/contracts";
+import { memo, useCallback, useRef, useState } from "react";
+import { CheckIcon, ChevronRightIcon, PlusIcon, UsersRoundIcon } from "lucide-react";
 
-import { ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
-import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ComposerControl, ComposerControlChevron, ComposerControlIcon } from "./ComposerControl";
+import { ExpandableSettingsPopup } from "../ui/expandable-settings-popup";
+import { cn } from "~/lib/utils";
 import {
   workjetHarnessDisplayLabel,
   workjetReasoningDisplayLabel,
+  type WorkjetWorkerDraft,
 } from "../settings/WorkjetWorkerEditor";
+import { WorkerProfilePopupEditor } from "./WorkerProfilePopupEditor";
 
-/**
- * Picking a saved Workjet worker for the next turn — the bar's leftmost
- * decision, because everything to its right follows from it.
- *
- * A worker profile already bundles the whole set: harness, provider access,
- * model, reasoning, target computer, skills and its own task text. Choosing
- * "UI/UX reviewer" is therefore one decision that settles six, which is the
- * point of having workers at all. Spelling those six out in the bar one
- * dropdown at a time asks the operator to reassemble a thing that is already
- * assembled.
- *
- * MANUAL is a first-class choice, not an empty state. It is what the bar has
- * always done — pick a model, pick an effort — and it stays available for the
- * one-off turn that matches no saved worker. With no workers saved yet, Manual
- * is simply the only choice, and the menu says where workers come from rather
- * than leaving a dead control.
- */
 export const MANUAL_WORKER_VALUE = "__manual__";
 
-/**
- * Which provider instance a worker's harness runs on.
- *
- * A worker names a HARNESS ("claude-code"); the composer drives a provider
- * INSTANCE ("claudeAgent"). Without this mapping choosing a worker could set a
- * model but not the runtime it belongs to, which would silently run one
- * worker’s model on another’s harness.
- *
- * `null` for a harness this build has no instance for — the caller must then
- * leave the selection alone rather than guess, because guessing here sends the
- * turn somewhere the operator did not choose.
- */
+/** A worker's harness maps to the actual provider instance, never just its label. */
 export function providerInstanceIdForHarness(harness: WorkjetHarness): string | null {
   switch (harness) {
     case "claude-code":
@@ -60,93 +34,193 @@ export function providerInstanceIdForHarness(harness: WorkjetHarness): string | 
 
 export interface ComposerWorkerControlProps {
   readonly workers: ReadonlyArray<WorkjetWorkerProfile>;
-  /** `null` means manual: the individual model and effort controls apply. */
   readonly selectedWorkerId: string | null;
+  readonly environmentId?: EnvironmentId | undefined;
   readonly disabled?: boolean;
   readonly onSelectWorker: (workerId: string | null) => void;
   readonly onOpenWorkjetSettings: () => void;
 }
 
-/** Exported unwrapped so a test can call it; `memo` returns an object. */
+export function WorkerChoiceList({
+  workers,
+  selectedWorkerId,
+  disabled,
+  onSelectWorker,
+  onEditWorker,
+  editingWorkerId,
+}: Pick<
+  ComposerWorkerControlProps,
+  "workers" | "selectedWorkerId" | "disabled" | "onSelectWorker"
+> & {
+  readonly onEditWorker: (workerId: string | null) => void;
+  readonly editingWorkerId?: string | null | undefined;
+}) {
+  const choiceClass =
+    "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50";
+  return (
+    <div className="space-y-0.5">
+      <button
+        type="button"
+        className={choiceClass}
+        disabled={disabled}
+        aria-pressed={selectedWorkerId === null}
+        onClick={() => onSelectWorker(null)}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">Manual</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Choose harness, model, effort and tools in the bar.
+          </p>
+        </div>
+        {selectedWorkerId === null ? (
+          <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+        ) : null}
+      </button>
+      {workers.map((worker) => (
+        <div
+          key={worker.id}
+          className={cn(
+            "flex items-center gap-0.5 rounded-md",
+            editingWorkerId === worker.id && "bg-accent/50",
+          )}
+        >
+          <button
+            type="button"
+            className={choiceClass}
+            disabled={disabled}
+            aria-pressed={selectedWorkerId === worker.id}
+            onClick={() => onSelectWorker(worker.id)}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium">{worker.name}</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {[
+                  workjetHarnessDisplayLabel(worker.harness),
+                  worker.modelId,
+                  workjetReasoningDisplayLabel(worker.reasoning),
+                ].join(" · ")}
+              </p>
+            </div>
+            {selectedWorkerId === worker.id ? (
+              <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+            ) : null}
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={`Edit ${worker.name}`}
+            aria-expanded={editingWorkerId === worker.id}
+            className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+            onClick={() => onEditWorker(worker.id)}
+          >
+            <ChevronRightIcon aria-hidden="true" className="size-4" />
+          </button>
+        </div>
+      ))}
+      {workers.length === 0 ? (
+        <p className="px-2 py-2 text-xs text-muted-foreground">No saved workers</p>
+      ) : null}
+      <button
+        type="button"
+        disabled={disabled}
+        className={cn(choiceClass, "mt-2 border-t border-border/60 text-muted-foreground")}
+        onClick={() => onEditWorker(null)}
+      >
+        <PlusIcon aria-hidden="true" className="size-4" /> Add worker…
+      </button>
+    </div>
+  );
+}
+
 export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<{ workerId: string | null } | null>(null);
+  const [drafts, setDrafts] = useState<Readonly<Record<string, WorkjetWorkerDraft>>>({});
+  const [saving, setSaving] = useState(false);
+  const lastEditButton = useRef<HTMLElement | null>(null);
   const selected = props.workers.find((worker) => worker.id === props.selectedWorkerId) ?? null;
-  const label = selected?.name ?? "Manual";
-  const tooltip =
-    selected === null
-      ? "Manual — choose model, effort and tools yourself"
-      : `Worker: ${selected.name}`;
+  const draftKey = JSON.stringify([props.environmentId, editing?.workerId]);
+  const rememberDraft = useCallback(
+    (draft: WorkjetWorkerDraft) => {
+      setDrafts((current) => ({ ...current, [draftKey]: draft }));
+    },
+    [draftKey],
+  );
+  const finishEditor = () => {
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[draftKey];
+      return next;
+    });
+    setEditing(null);
+  };
+  const goBack = () => {
+    if (saving) return;
+    setEditing(null);
+    requestAnimationFrame(() => lastEditButton.current?.focus());
+  };
 
   return (
-    <Tooltip>
-      <Select
-        value={props.selectedWorkerId ?? MANUAL_WORKER_VALUE}
-        onValueChange={(value) => {
-          if (value === null) return;
-          if (value === MANUAL_WORKER_VALUE) {
-            props.onSelectWorker(null);
-            return;
-          }
-          // The menu's own escape hatch: with nothing saved yet, the control
-          // would otherwise be a dropdown with one entry and no way forward.
-          if (value === "__configure__") {
-            // An empty stash makes the Worker page open its create editor on
-            // arrival — the jump used to land on the bare list (Befund F8).
-            try {
-              window.sessionStorage.setItem("workjet-worker-draft:new", "{}");
-            } catch {
-              // Without storage the navigation still lands on the page.
-            }
-            props.onOpenWorkjetSettings();
-            return;
-          }
-          props.onSelectWorker(value);
-        }}
-      >
-        <TooltipTrigger
-          render={
-            <ComposerSelectControl className="min-w-0 max-w-52 font-medium" aria-label="Worker" />
-          }
+    <ExpandableSettingsPopup
+      open={open}
+      onOpenChange={(next) => {
+        if (!saving) setOpen(next);
+      }}
+      title="Workers"
+      trigger={
+        <ComposerControl
+          type="button"
+          disabled={props.disabled}
+          className="min-w-0 max-w-52 font-medium"
+          aria-label="Worker"
         >
           <ComposerControlIcon icon={UsersRoundIcon} />
-          <SelectValue className="min-w-0">{label}</SelectValue>
-        </TooltipTrigger>
-        <SelectPopup alignItemWithTrigger={false}>
-          <SelectItem value={MANUAL_WORKER_VALUE} hideIndicator className="min-w-64 py-2">
-            <div className="grid min-w-0 gap-0.5">
-              <span className="font-medium text-foreground">Manual</span>
-              <span className="text-xs leading-4 text-muted-foreground">
-                Choose harness, model, effort and tools in the bar.
-              </span>
-            </div>
-          </SelectItem>
-          {props.workers.map((worker) => (
-            <SelectItem key={worker.id} value={worker.id} hideIndicator className="min-w-64 py-2">
-              <div className="grid min-w-0 gap-0.5">
-                <span className="font-medium text-foreground">{worker.name}</span>
-                {/* The bundle the choice settles, so picking is not blind. */}
-                <span className="truncate text-xs leading-4 text-muted-foreground">
-                  {[
-                    workjetHarnessDisplayLabel(worker.harness),
-                    worker.modelId,
-                    workjetReasoningDisplayLabel(worker.reasoning),
-                  ].join(" · ")}
-                </span>
-              </div>
-            </SelectItem>
-          ))}
-          {/* Creating belongs one click away from choosing: the entry jumps
-              to the Worker settings page (operator request). */}
-          <SelectItem value="__configure__" hideIndicator className="min-w-64 py-2">
-            <span className="text-xs text-muted-foreground">
-              {props.workers.length === 0
-                ? "No saved workers — set one up in Workjet settings"
-                : "+ Add worker…"}
-            </span>
-          </SelectItem>
-        </SelectPopup>
-      </Select>
-      <TooltipPopup side="top">{tooltip}</TooltipPopup>
-    </Tooltip>
+          <span className="min-w-0 truncate">{selected?.name ?? "Manual"}</span>
+          <ComposerControlChevron />
+        </ComposerControl>
+      }
+      list={
+        <WorkerChoiceList
+          workers={props.workers}
+          selectedWorkerId={props.selectedWorkerId}
+          disabled={props.disabled || saving}
+          editingWorkerId={editing?.workerId}
+          onSelectWorker={(id) => {
+            props.onSelectWorker(id);
+            setOpen(false);
+          }}
+          onEditWorker={(workerId) => {
+            if (props.environmentId === undefined) {
+              props.onOpenWorkjetSettings();
+              return;
+            }
+            lastEditButton.current =
+              document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            setEditing({ workerId });
+          }}
+        />
+      }
+      detailTitle={
+        editing?.workerId === null
+          ? "New worker"
+          : (props.workers.find((worker) => worker.id === editing?.workerId)?.name ?? "Worker")
+      }
+      onBack={goBack}
+      detail={
+        editing && props.environmentId ? (
+          <WorkerProfilePopupEditor
+            key={draftKey}
+            environmentId={props.environmentId}
+            workerId={editing.workerId}
+            draft={drafts[draftKey]}
+            onDraftChange={rememberDraft}
+            onSavingChange={setSaving}
+            onSaved={finishEditor}
+            onCancel={finishEditor}
+          />
+        ) : undefined
+      }
+    />
   );
 }
 

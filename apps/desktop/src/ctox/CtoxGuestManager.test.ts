@@ -251,8 +251,9 @@ function makeGuestHarness() {
     _tag: "ready",
     instances: [descriptor],
   };
+  const refreshAccount = vi.fn(() => Effect.succeed(discovery));
   const auth = CtoxDevAuth.CtoxDevAuth.of({
-    refresh: Effect.suspend(() => Effect.succeed(discovery)),
+    refresh: Effect.suspend(refreshAccount),
     login: Effect.die("unused"),
     logout: Effect.void,
   });
@@ -398,6 +399,7 @@ function makeGuestHarness() {
     removeChildView,
     sendAll,
     closeForwards,
+    refreshAccount,
     resolveLocalLaunch,
     resolvePairedLaunch,
     resolveSshLaunch,
@@ -1078,6 +1080,28 @@ describe("CtoxGuestManager", () => {
       });
       expect(harness.shellLaunch).toHaveBeenCalledTimes(2);
       expect(harness.beforeRequest).toHaveBeenCalledTimes(2);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("prepares local, paired, and SSH projects without hosted account discovery", () => {
+    const harness = makeGuestHarness();
+    harness.setLocalInstances([localDescriptor]);
+    harness.setPairedInstances([pairedDescriptor]);
+    harness.setSshInstances([sshDescriptor]);
+    harness.refreshAccount.mockImplementation(() => Effect.die("Hosted discovery is unavailable"));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      for (const instance of [localDescriptor, pairedDescriptor, sshDescriptor]) {
+        assert.deepEqual(yield* manager.ensurePooled(instance.id), {
+          _tag: "ready",
+          instanceId: instance.id,
+        });
+      }
+      expect(harness.refreshAccount).not.toHaveBeenCalled();
+      expect(harness.resolveLocalLaunch).toHaveBeenCalledExactlyOnceWith(localDescriptor.id);
+      expect(harness.resolvePairedLaunch).toHaveBeenCalledExactlyOnceWith(pairedDescriptor.id);
+      expect(harness.resolveSshLaunch).toHaveBeenCalledExactlyOnceWith(sshDescriptor.id);
     }).pipe(Effect.provide(harness.layer));
   });
 

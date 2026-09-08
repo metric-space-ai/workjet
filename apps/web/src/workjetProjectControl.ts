@@ -29,7 +29,10 @@ export async function requestWorkjetProjectControl(
   if (first._tag !== "failed" || first.code !== "not_active" || ensurePooled === undefined) {
     return first;
   }
-  await ensurePooled(instanceId);
+  const preparation = await ensurePooled(instanceId);
+  if (preparation._tag === "revoked") return { _tag: "failed", code: "not_active" };
+  if (preparation._tag === "failed") return preparation;
+  if (preparation.instanceId !== instanceId) return { _tag: "failed", code: "not_active" };
   return port(instanceId, request);
 }
 

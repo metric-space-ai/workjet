@@ -35,6 +35,18 @@ const project = {
 };
 
 describe("runWorkjetProjectCreation", () => {
+  it("stops after a failed connection launch instead of starting another attempt", async () => {
+    const port = vi.fn(async () => ({ _tag: "failed" as const, code: "launch_failed" as const }));
+    const phases: string[] = [];
+    await expect(
+      runWorkjetProjectCreation(
+        { presentationInstanceId: instanceId, request },
+        { port, onPhase: (phase) => phases.push(phase) },
+      ),
+    ).resolves.toEqual({ _tag: "failed", code: "launch_failed" });
+    expect(port).toHaveBeenCalledOnce();
+    expect(phases).toEqual(["checking", "failed"]);
+  });
   it("derives a stable instance-bound id for retrying the same folder", async () => {
     const first = await workjetLogicalProjectId(instanceId, "/workspace/greppy/");
     const retry = await workjetLogicalProjectId(instanceId, "/workspace/greppy");

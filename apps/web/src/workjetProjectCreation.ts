@@ -28,6 +28,7 @@ export type WorkjetProjectCreationOutcome =
         | "invalid_input"
         | "invalid_projection"
         | "not_active"
+        | "launch_failed"
         | "guest_failed"
         | "response_too_large";
     };
@@ -95,7 +96,7 @@ export async function runWorkjetProjectCreation(
     () => ({ _tag: "failed", code: "guest_failed" }) as const,
   );
   if (listed._tag === "failed") {
-    if (listed.code === "not_active") {
+    if (listed.code === "not_active" || listed.code === "launch_failed") {
       onPhase("failed");
       return { _tag: "failed", code: listed.code };
     }

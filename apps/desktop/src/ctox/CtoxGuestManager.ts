@@ -904,9 +904,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
       }
 
-      const managed = yield* auth.refresh.pipe(
-        Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
-      );
+      // Local and explicitly paired instances resolve their own authority below.
+      // Their activation must not wait for the unrelated hosted account service.
+      const managed = instanceId.startsWith("managed:")
+        ? yield* auth.refresh.pipe(
+            Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
+          )
+        : ({ _tag: "signed_out" } as const);
       const discovery = yield* registry.merge(managed);
       const descriptor =
         discovery._tag === "ready"

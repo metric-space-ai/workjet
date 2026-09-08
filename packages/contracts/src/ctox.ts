@@ -550,7 +550,13 @@ export type CtoxWorkjetProjectControlResponse = typeof CtoxWorkjetProjectControl
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+    code: Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "launch_failed",
+      "guest_failed",
+      "response_too_large",
+    ]),
   }),
 ]);
 export type CtoxWorkjetProjectControlResult = typeof CtoxWorkjetProjectControlResult.Type;

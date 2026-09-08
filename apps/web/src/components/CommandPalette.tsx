@@ -1474,7 +1474,9 @@ function OpenCommandPaletteDialog(props: {
           const description =
             outcome.code === "not_active"
               ? "The selected CTOX instance is no longer connected."
-              : "CTOX did not confirm the project. You can retry without reopening this dialog.";
+              : outcome.code === "launch_failed"
+                ? "Workjet could not start the connection to the selected CTOX instance. Check its status in Settings, then retry."
+                : "CTOX did not confirm the project. You can retry without reopening this dialog.";
           setLogicalProjectCreationError(description);
           toastManager.add(
             stackedThreadToast({ type: "error", title: "Failed to add project", description }),

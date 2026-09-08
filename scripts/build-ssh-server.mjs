@@ -119,6 +119,14 @@ const program = Effect.gen(function* () {
         ["install", "--omit=dev", "--no-audit", "--no-fund"],
         { cwd: destination, stdio: "inherit" },
       );
+      // node-pty 1.1.0 publishes Darwin's spawn-helper with mode 0644.
+      // Preserve a working terminal in the archive (microsoft/node-pty#850).
+      if (hostPlatform === "darwin") {
+        await NodeFSP.chmod(
+          NodePath.join(destination, "node_modules/node-pty/prebuilds", platform, "spawn-helper"),
+          0o755,
+        );
+      }
       NodeChildProcess.execFileSync(
         process.execPath,
         [NodePath.join(destination, "dist/bin.mjs"), "--help"],

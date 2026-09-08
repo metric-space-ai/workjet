@@ -824,6 +824,10 @@ export function createDesktopExtraResources(
   return [
     DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
     {
+      from: "apps/desktop/prod-resources/ssh-servers",
+      to: "ssh-servers",
+    },
+    {
       from: businessOsShellInstallPath,
       to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
     },
@@ -2804,6 +2808,21 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     { label: "vp install --prod --frozen-lockfile", verbose: options.verbose },
   );
   yield* stageClerkPasskeyNativeBinaries(stageAppDir, options.platform, options.arch);
+  if (options.platform === "mac") {
+    // The stable node-pty archive omits Darwin spawn-helper's executable bit.
+    const architectures = options.arch === "universal" ? ["arm64", "x64"] : [options.arch];
+    for (const architecture of architectures) {
+      yield* fs.chmod(
+        path.join(
+          stageAppDir,
+          "node_modules/node-pty/prebuilds",
+          `darwin-${architecture}`,
+          "spawn-helper",
+        ),
+        0o755,
+      );
+    }
+  }
 
   // WSL is Windows-only, so only the Windows artifact carries the Linux backend
   // binary; other platforms ignore the prebuild input.

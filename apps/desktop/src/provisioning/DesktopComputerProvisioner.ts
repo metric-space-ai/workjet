@@ -35,11 +35,12 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 
 import * as DesktopSshPasswordPrompts from "../ssh/DesktopSshPasswordPrompts.ts";
 import * as CtoxInstanceRegistry from "../ctox/CtoxInstanceRegistry.ts";
+import { reuseHealthyCtox } from "./ctoxBootstrap.ts";
 
 const PREFLIGHT_TTL_MS = 10 * 60 * 1_000;
 const OPERATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
 const CTOX_MANIFEST_URL =
-  "https://github.com/metric-space-ai/ctox/releases/latest/download/ctox-install-manifest-v1.json";
+  "https://github.com/metric-space-ai/ctox/releases/download/ctox-install-bootstrap-v1/ctox-install-manifest-v1.json";
 const WORKJET_MANIFEST_URL =
   "https://github.com/metric-space-ai/workjet/releases/latest/download/workjet-desktop-install-manifest-v1.json";
 
@@ -630,10 +631,12 @@ export const make = Effect.gen(function* () {
         administratorPassword === null
           ? `run_admin() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo -n "$@"; fi; }`
           : `CTOX_SUDO_PASSWORD=${shellSingleQuote(administratorPassword)}; export CTOX_SUDO_PASSWORD\nrun_admin() { if [ "$(id -u)" = 0 ]; then "$@"; else printf '%s\\n' "$CTOX_SUDO_PASSWORD" | sudo -S -p '' "$@"; fi; }`;
-      const ctoxPosix =
+      const ctoxInstallPosix =
         action === "install" || action === "repair"
-          ? `printf '{"phase":"download","status":"started","percent":15,"message":"Downloading verified CTOX bootstrap"}\\n'\ncurl -fsSL '${CTOX_MANIFEST_URL}' -o "$tmp/ctox-manifest.json"\npython3 - "$tmp/ctox-manifest.json" "$tmp/install.sh" <<'PY'\nimport hashlib,json,sys,urllib.request\nm=json.load(open(sys.argv[1],encoding='utf-8')); b=m['bootstrap']['unix']\nif m.get('schema')!='ctox.install-manifest.v1' or m.get('repository')!='metric-space-ai/ctox' or not b['url'].startswith('https://github.com/'): raise SystemExit('invalid CTOX manifest')\ndata=urllib.request.urlopen(b['url'],timeout=30).read()\nif hashlib.sha256(data).hexdigest()!=b['sha256'].lower(): raise SystemExit('CTOX bootstrap checksum mismatch')\nopen(sys.argv[2],'wb').write(data)\nPY\nprintf '{"phase":"verification","status":"completed","percent":30,"message":"CTOX bootstrap checksum verified"}\\n'\nCTOX_SKIP_DESKTOP_HOST_BUILD=1 bash "$tmp/install.sh"\nprintf '{"phase":"health","status":"running","percent":78,"message":"Checking CTOX service"}\\n'\n"$HOME/.local/bin/ctox" status >/dev/null`
+          ? `printf '{"phase":"download","status":"started","percent":15,"message":"Downloading verified CTOX bootstrap"}\\n'\ncurl -fsSL '${CTOX_MANIFEST_URL}' -o "$tmp/ctox-manifest.json"\npython3 - "$tmp/ctox-manifest.json" "$tmp/install.sh" <<'PY'\nimport hashlib,json,sys,urllib.request\nm=json.load(open(sys.argv[1],encoding='utf-8')); b=m['bootstrap']['unix']\nif m.get('schema')!='ctox.install-manifest.v1' or m.get('repository')!='metric-space-ai/ctox' or not b['url'].startswith('https://github.com/'): raise SystemExit('invalid CTOX manifest')\ndata=urllib.request.urlopen(b['url'],timeout=30).read()\nif hashlib.sha256(data).hexdigest()!=b['sha256'].lower(): raise SystemExit('CTOX bootstrap checksum mismatch')\nopen(sys.argv[2],'wb').write(data)\nPY\nprintf '{"phase":"verification","status":"completed","percent":30,"message":"CTOX bootstrap checksum verified"}\\n'\nCTOX_SKIP_DESKTOP_HOST_BUILD=1 bash "$tmp/install.sh"\nprintf '{"phase":"health","status":"running","percent":78,"message":"Checking CTOX service"}\\n'\nctox_bin="$(command -v ctox || printf '%s' "$HOME/.local/bin/ctox")"\n"$ctox_bin" status >/dev/null`
           : `ctox_bin="$(command -v ctox || printf '%s' "$HOME/.local/bin/ctox")"\ncase '${action}' in status) "$ctox_bin" status ;; start) "$ctox_bin" start ;; stop) "$ctox_bin" stop ;; restart) "$ctox_bin" stop; "$ctox_bin" start ;; update) "$ctox_bin" update apply --latest ;; rollback) "$ctox_bin" update rollback ;; *) exit 64 ;; esac`;
+      const ctoxPosix =
+        action === "install" ? reuseHealthyCtox(ctoxInstallPosix) : ctoxInstallPosix;
       const workjetPosix =
         action === "status"
           ? `if [ "$(uname -s)" = Darwin ]; then test -d /Applications/Workjet.app; else test -x /opt/workjet/Workjet.AppImage; fi`

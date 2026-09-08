@@ -38,6 +38,7 @@ apps/mobile/.showcase/
 artifacts/app-store/screenshots/
 native/**/target
 /apps/desktop/prod-resources/resource-monitor/
+/apps/desktop/resources/ssh-servers/
 /output/playwright/
 node_modules/
 .alchemy/

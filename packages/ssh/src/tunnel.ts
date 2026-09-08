@@ -40,6 +40,8 @@ import {
   SshReadinessError,
 } from "./errors.ts";
 import { sshLocalForwardExitFailure, spawnSshLocalForwardProcess } from "./localForward.ts";
+import { buildManagedRemoteNodeScript, SSH_NODE_VERSION } from "./remoteNode.ts";
+import { preparePortableServer } from "./portableServer.ts";
 
 export const DEFAULT_REMOTE_PORT = 3773;
 const REMOTE_PORT_SCAN_WINDOW = 200;
@@ -55,6 +57,7 @@ export interface RemoteWorkjetRunnerOptions {
   readonly packageSpec?: string;
   readonly nodeScriptPath?: string | null;
   readonly nodeEngineRange?: string | null;
+  readonly portableArchivesDirectory?: string;
 }
 
 export interface SshEnvironmentManagerOptions {
@@ -331,6 +334,7 @@ NODE
 }
 
 ensure_remote_node_path() {
+  if use_workjet_node >/dev/null 2>&1; then return 0; fi
   if command -v node >/dev/null 2>&1 && remote_node_satisfies_engine >/dev/null 2>&1; then
     return 0
   fi
@@ -455,7 +459,7 @@ if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
 fi
 mv "$RUNNER_NEXT" "$RUNNER_FILE"
 chmod 700 "$RUNNER_FILE"
-if ! ensure_remote_node_path; then
+if ! ensure_remote_node_path && ! { install_workjet_node && use_workjet_node; }; then
   printf 'Remote host is missing node on PATH. Install Node or configure a supported version manager for non-interactive shells.\\n' >&2
   exit 1
 fi
@@ -638,11 +642,17 @@ export function buildRemoteWorkjetRunnerScript(input?: RemoteWorkjetRunnerOption
 }
 
 export function buildRemoteNodeEnvScript(input?: RemoteWorkjetRunnerOptions): string {
-  return stripTrailingNewlines(
-    applyScriptPlaceholders(REMOTE_NODE_ENV_SCRIPT, {
-      WORKJET_NODE_ENGINE_RANGE: shellSingleQuote(input?.nodeEngineRange?.trim() || ""),
-      WORKJET_NODE_ENGINE_CHECK_SCRIPT: stripTrailingNewlines(buildRemoteNodeEngineCheckScript()),
-    }),
+  return (
+    stripTrailingNewlines(
+      applyScriptPlaceholders(REMOTE_NODE_ENV_SCRIPT, {
+        WORKJET_NODE_ENGINE_RANGE: shellSingleQuote(
+          input?.portableArchivesDirectory
+            ? SSH_NODE_VERSION
+            : input?.nodeEngineRange?.trim() || "",
+        ),
+        WORKJET_NODE_ENGINE_CHECK_SCRIPT: stripTrailingNewlines(buildRemoteNodeEngineCheckScript()),
+      }),
+    ) + buildManagedRemoteNodeScript()
   );
 }
 
@@ -700,6 +710,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     const result = yield* runSshCommand(target, {
       remoteCommandArgs: ["sh", "-s", "--", remoteStateKey(target)],
       stdin: buildRemoteLaunchScript(runner),
+      timeoutMs: 10 * 60 * 1_000,
       ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
       ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
       ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
@@ -1402,7 +1413,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       key,
     });
     const packageSpec = options.resolveCliPackageSpec?.();
-    const runner =
+    let runner =
       options.resolveCliRunner === undefined
         ? packageSpec === undefined
           ? undefined
@@ -1413,6 +1424,15 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       ...sshRunnerLogFields(runner),
       key,
     });
+    if (runner?.portableArchivesDirectory) {
+      const directory = runner.portableArchivesDirectory;
+      const nodeScriptPath = yield* runWithSshAuth({
+        key,
+        target: resolvedTarget,
+        operation: (auth) => preparePortableServer(resolvedTarget, directory, auth),
+      });
+      runner = { ...runner, nodeScriptPath };
+    }
     const entry = yield* ensureTunnelEntry(key, resolvedTarget, runner);
 
     const pairingResult = requestOptions?.issuePairingToken

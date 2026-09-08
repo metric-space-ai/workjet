@@ -1,4 +1,5 @@
 "use client";
+import { ProjectCreationProgress } from "./ProjectCreationProgress";
 
 import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environment";
 import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
@@ -660,6 +661,9 @@ function OpenCommandPaletteDialog(props: {
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [isLogicalProjectPathEntry, setIsLogicalProjectPathEntry] = useState(false);
   const [isLogicalProjectCreating, setIsLogicalProjectCreating] = useState(false);
+  const [projectCreationStage, setProjectCreationStage] = useState<
+    "connecting" | "local" | "syncing"
+  >("connecting");
   const [logicalProjectCreationError, setLogicalProjectCreationError] = useState<string | null>(
     null,
   );
@@ -1392,6 +1396,7 @@ function OpenCommandPaletteDialog(props: {
       projectCreationPendingRef.current = true;
       setLogicalProjectCreationError(null);
       setProjectSignInInstanceId(null);
+      setProjectCreationStage("connecting");
       setIsLogicalProjectCreating(true);
       try {
         const presentationInstanceId = activeCtoxInstanceId;
@@ -1444,6 +1449,7 @@ function OpenCommandPaletteDialog(props: {
         const projectId =
           existingLocalProject?.id ?? (await workjetLogicalProjectId(presentationInstanceId, cwd));
         if (existingLocalProject === undefined) {
+          setProjectCreationStage("local");
           const createResult = await createProject({
             environmentId,
             input: {
@@ -1484,6 +1490,7 @@ function OpenCommandPaletteDialog(props: {
         }
         // A cached logical project does not confirm this computer's folder.
         // The shared creation path verifies the requested working copy too.
+        setProjectCreationStage("syncing");
         const outcome = await runWorkjetProjectCreation({
           presentationInstanceId,
           request: {
@@ -2731,11 +2738,13 @@ function OpenCommandPaletteDialog(props: {
           )}
           role="status"
         >
-          {isPickingProjectFolder
-            ? "Opening folder picker…"
-            : isLogicalProjectCreating
-              ? "Adding the local project and syncing it with CTOX…"
-              : logicalProjectCreationError}
+          {isPickingProjectFolder ? (
+            "Opening folder picker…"
+          ) : isLogicalProjectCreating ? (
+            <ProjectCreationProgress stage={projectCreationStage} />
+          ) : (
+            logicalProjectCreationError
+          )}
           {logicalProjectCreationError && projectSignInInstanceId ? (
             <Button
               className="mt-2 block"

@@ -193,7 +193,13 @@ export function WorkjetComputerEditor({
       onSubmit={(event) => {
         event.preventDefault();
         try {
-          onSave(saveWorkjetComputerDraft(draft));
+          if (!selectedEnvironment) throw new Error("Choose a connected computer.");
+          onSave(
+            saveWorkjetComputerDraft({
+              ...draft,
+              presentationKind: selectedEnvironment.presentationKind,
+            }),
+          );
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : "The computer could not be saved.");
         }
@@ -241,29 +247,12 @@ export function WorkjetComputerEditor({
           />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="workjet-computer-kind">Presentation</Label>
-          <Select
-            value={draft.presentationKind}
-            onValueChange={(value) =>
-              setDraft((current) => ({
-                ...current,
-                presentationKind: value as WorkjetComputerPresentationKind,
-              }))
-            }
-          >
-            <SelectTrigger id="workjet-computer-kind" aria-label="Computer presentation">
-              <SelectValue>
-                {PRESENTATION_OPTIONS.find((option) => option.id === draft.presentationKind)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {PRESENTATION_OPTIONS.map((option) => (
-                <SelectItem key={option.id} value={option.id}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
+          <Label htmlFor="workjet-computer-kind">Connection type</Label>
+          <p id="workjet-computer-kind" className="text-sm text-muted-foreground">
+            {PRESENTATION_OPTIONS.find(
+              (option) => option.id === selectedEnvironment?.presentationKind,
+            )?.label ?? "Unavailable connection"}
+          </p>
         </div>
       </div>
 

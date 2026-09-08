@@ -14,6 +14,8 @@ const { appendSwitchMock, getSwitchValueMock, hasSwitchMock, registerSchemesMock
   }),
 );
 
+vi.mock("../electron/MacKeychainPolicy.ts", () => ({ disableMacKeychainPrompts: vi.fn() }));
+
 vi.mock("electron", () => ({
   app: {
     commandLine: {

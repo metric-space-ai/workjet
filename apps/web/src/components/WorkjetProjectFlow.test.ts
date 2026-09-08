@@ -64,7 +64,7 @@ describe("CTOX-native project story", () => {
     expect(commandPaletteSource).toContain(
       "void createLogicalProjectFromPath(resolvedAddProjectPath)",
     );
-    expect(commandPaletteSource).toContain("Adding the local project and syncing it with CTOX…");
+    expect(commandPaletteSource).toContain("ProjectCreationProgress stage={projectCreationStage}");
     expect(commandPaletteSource).toContain('aria-live="polite"');
   });
 

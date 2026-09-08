@@ -6,7 +6,7 @@ import {
   TerminalIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { type ReactNode, memo, useCallback, useId, useMemo, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -1732,7 +1732,16 @@ function CloudRemoteEnvironmentRows({
  * Tailscale, and authorized clients; this section owns the catalog of OTHER
  * environments this client can reach.
  */
-export function RemoteEnvironmentsSection() {
+export function RemoteEnvironmentsSection({
+  connectionRequest,
+  onConnected,
+}: {
+  readonly connectionRequest?: {
+    readonly kind: "ssh" | "tailscale";
+    readonly sequence: number;
+  } | null;
+  readonly onConnected?: (environmentId: EnvironmentId) => void;
+} = {}) {
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
@@ -1789,6 +1798,12 @@ export function RemoteEnvironmentsSection() {
   const [connectingSshHostAlias, setConnectingSshHostAlias] = useState<string | null>(null);
   const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
+  useEffect(() => {
+    if (connectionRequest) {
+      setSavedBackendMode("ssh");
+      setAddBackendDialogOpen(true);
+    }
+  }, [connectionRequest]);
   const [savedBackendHost, setSavedBackendHost] = useState("");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
@@ -1845,6 +1860,7 @@ export function RemoteEnvironmentsSection() {
         return;
       }
 
+      onConnected?.(result.value);
       setSavedBackendHost("");
       setSavedBackendPairingCode("");
       setSavedBackendSshHost("");
@@ -1900,6 +1916,7 @@ export function RemoteEnvironmentsSection() {
       return;
     }
 
+    onConnected?.(result.value);
     setSavedBackendHost("");
     setSavedBackendPairingCode("");
     setSavedBackendSshHost("");
@@ -1913,6 +1930,7 @@ export function RemoteEnvironmentsSection() {
     });
     setIsAddingSavedBackend(false);
   }, [
+    onConnected,
     connectPairing,
     connectSshEnvironment,
     savedBackendHost,
@@ -1976,6 +1994,7 @@ export function RemoteEnvironmentsSection() {
       });
       setConnectingSshHostAlias(null);
       if (result._tag === "Success") {
+        onConnected?.(result.value);
         setSavedBackendSshHost("");
         setSavedBackendSshUsername("");
         setSavedBackendSshPort("");
@@ -1999,7 +2018,7 @@ export function RemoteEnvironmentsSection() {
         }
       }
     },
-    [connectSshEnvironment, savedBackendMode, savedDesktopSshEnvironmentsByAlias],
+    [connectSshEnvironment, savedBackendMode, savedDesktopSshEnvironmentsByAlias, onConnected],
   );
   const handleSavedBackendHostChange = useCallback((value: string) => {
     const parsedPairingUrl = parsePairingUrlFields(value);
@@ -2135,6 +2154,10 @@ export function RemoteEnvironmentsSection() {
             />
           </label>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Use an IP address, hostname, or saved SSH alias. If a password is required, Workjet asks
+          for it when connecting.
+        </p>
         {savedBackendError || discoveredSshHostsError ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {savedBackendError ?? discoveredSshHostsError}
@@ -2227,8 +2250,14 @@ export function RemoteEnvironmentsSection() {
           </Tooltip>
           <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
             <DialogHeader>
-              <DialogTitle>Add Environment</DialogTitle>
-              <DialogDescription>Pair another environment to this client.</DialogDescription>
+              <DialogTitle>
+                {connectionRequest ? "Connect a computer" : "Add Environment"}
+              </DialogTitle>
+              <DialogDescription>
+                {connectionRequest?.kind === "tailscale"
+                  ? "Enter the computer’s Tailscale IP or hostname. Workjet connects using SSH over your tailnet."
+                  : "Enter the computer’s address. Workjet connects, sets up its worker runtime, and checks availability."}
+              </DialogDescription>
             </DialogHeader>
             <DialogPanel>
               <div className="space-y-4">

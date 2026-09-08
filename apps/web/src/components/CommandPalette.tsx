@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useContext,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -52,7 +53,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
@@ -601,7 +602,7 @@ function OpenCommandPaletteDialog(props: {
     useHandleNewThread();
   const { resolvedComputer } = useAvailableProjectContext();
   const projects = useProjects();
-  const unscopedProjects = useAtomValue(environmentProjects.projectsAtom);
+  const projectRegistry = useContext(RegistryContext);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -1412,8 +1413,13 @@ function OpenCommandPaletteDialog(props: {
 
         const cwd = resolveProjectPathForDispatch(pickedPath, null);
         if (cwd.length === 0) return;
+        // Palette menu actions survive rerenders. Read the current backend
+        // projection when invoked, so a retry sees a local create that already
+        // committed while its CTOX registration failed.
         const existingLocalProject = findProjectByPath(
-          unscopedProjects.filter((project) => project.environmentId === environmentId),
+          projectRegistry
+            .get(environmentProjects.projectsAtom)
+            .filter((project) => project.environmentId === environmentId),
           cwd,
         );
         const projectId =
@@ -1542,7 +1548,7 @@ function OpenCommandPaletteDialog(props: {
       primaryEnvironmentId,
       resolvedComputer,
       setOpen,
-      unscopedProjects,
+      projectRegistry,
       workjetComputers,
     ],
   );

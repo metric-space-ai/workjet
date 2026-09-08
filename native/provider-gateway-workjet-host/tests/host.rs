@@ -773,6 +773,55 @@ async fn boots_with_an_api_key_provider_as_default_and_never_serves_the_key() {
     host.shutdown().await.unwrap();
 }
 
+#[tokio::test]
+async fn api_key_host_exposes_messages_route_and_preserves_account_errors() {
+    let root = tempfile::tempdir().unwrap();
+    fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    write_secret(root.path(), "management", &[7_u8; 32]);
+    write_secret(root.path(), "minimax-1.api-key", API_KEY_VALUE.as_bytes());
+    let mut host = workjet_provider_gateway_host::start(
+        api_key_config(root.path(), "minimax").validate().unwrap(),
+    )
+    .await
+    .unwrap();
+
+    for streaming in [false, true] {
+        // An unconfigured model fails before any outbound HTTP. The selected
+        // API-key provider must nevertheless own the Messages route, rather
+        // than returning 404 or rejecting it as a Claude-only endpoint.
+        let body = serde_json::to_vec(&serde_json::json!({
+            "model":"model-with-no-account", "stream":streaming,
+            "messages":[{"role":"user","content":"hello"}], "max_tokens":32,
+        }))
+        .unwrap();
+        let mut stream = TcpStream::connect(host.provider_address()).await.unwrap();
+        let head = format!(
+            "POST /v1/messages HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nX-CTOX-Provider: minimax\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len(),
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            stream.read_to_end(&mut response),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 503"), "{response}");
+        let payload: serde_json::Value = serde_json::from_str(body_of(&response)).unwrap();
+        assert_eq!(payload["type"], "error");
+        assert_eq!(
+            payload["error"]["message"],
+            "no API-key account is currently available for this model"
+        );
+        assert!(!response.contains(API_KEY_VALUE));
+    }
+    host.shutdown().await.unwrap();
+}
+
 fn xai_subscription_config(root: &std::path::Path) -> HostConfig {
     let mut config = config(root);
     config.default_provider = Some("xai".to_owned());

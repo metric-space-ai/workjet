@@ -10,7 +10,22 @@ Common reasons:
 - run Claude through a router such as Claude Code Router
 - use external providers exposed through a Claude-compatible workflow
 
+## Use Other Models With The Workjet Gateway
+
+When your worker uses Claude Code through the Workjet gateway, choose the model
+and its configured provider independently of the harness. A MiniMax model uses
+your MiniMax account; choosing Claude Code does not redirect it to a Claude account.
+The gateway carries text, tool calls, tool results, and streaming replies between
+the selected provider and Claude Code. Claude and Antigravity subscription models
+keep their native routes.
+
+The selected provider needs an available account on the computer running the worker.
+Workjet reports an unavailable provider instead of silently using another account.
+If a stream ends before the provider confirms completion, the request fails visibly
+instead of appearing to have finished successfully.
+
 ## I Only Use One Claude Account
+
 
 Use the default provider.
 

@@ -138,6 +138,7 @@ import type {
 } from "./sourceControl.ts";
 import type {
   WorkjetProvisioningGetResult,
+  WorkjetProvisioningListResult,
   WorkjetProvisioningPreflightInput,
   WorkjetProvisioningPreflightResult,
   WorkjetProvisioningStartInput,
@@ -1200,6 +1201,7 @@ export interface DesktopBridge {
     input: WorkjetProvisioningStartInput,
   ) => Promise<WorkjetProvisioningStartResult>;
   getProvisioningOperation?: (operationId: string) => Promise<WorkjetProvisioningGetResult>;
+  listProvisioningOperations?: () => Promise<WorkjetProvisioningListResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the

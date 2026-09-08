@@ -26,7 +26,6 @@ instead of appearing to have finished successfully.
 
 ## I Only Use One Claude Account
 
-
 Use the default provider.
 
 Log in with Claude Code normally:

@@ -402,21 +402,27 @@ export const make = Effect.gen(function* () {
       Effect.tapCause((cause) =>
         logWarning("legacy user-data import failed", { legacyPath, cause: String(cause) }),
       ),
-      Effect.orElseSucceed(() => [] as readonly string[]),
+      Effect.option,
     );
-    yield* writeMarker({
-      version: 1,
-      outcome: "migrated",
-      legacyPath,
-      decidedAt: DateTime.formatIso(yield* DateTime.now),
-      copiedEntries: copied,
-    });
-    yield* logInfo("imported legacy user data", {
-      legacyPath,
-      targetPath,
-      copiedEntries: [...copied],
-    });
-    decision = { _tag: "already-migrated", outcome: "migrated" };
+    if (Option.isSome(copied)) {
+      yield* writeMarker({
+        version: 1,
+        outcome: "migrated",
+        legacyPath,
+        decidedAt: DateTime.formatIso(yield* DateTime.now),
+        copiedEntries: copied.value,
+      });
+      yield* logInfo("imported legacy user data", {
+        legacyPath,
+        targetPath,
+        copiedEntries: [...copied.value],
+      });
+      decision = { _tag: "already-migrated", outcome: "migrated" };
+    } else {
+      // Keep the accepted marker retryable. A failed copy must never be
+      // recorded as an empty successful import that permanently hides the offer.
+      decision = { _tag: "migrate-offer", legacyPath };
+    }
   }
 
   const offer: Option.Option<UserDataMigrationOffer> =

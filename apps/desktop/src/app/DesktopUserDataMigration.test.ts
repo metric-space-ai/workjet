@@ -217,6 +217,7 @@ describe("copyAllowlistedUserData", () => {
 interface FakeDisk {
   readonly existing: ReadonlySet<string>;
   readonly files: Map<string, string>;
+  readonly copyFailures?: ReadonlySet<string>;
 }
 
 const makeMigrationLayer = (disk: FakeDisk, recorded: { copied: string[] }) => {
@@ -236,9 +237,19 @@ const makeMigrationLayer = (disk: FakeDisk, recorded: { copied: string[] }) => {
     readDirectory: () => Effect.succeed([]),
     makeDirectory: () => Effect.void,
     copyFile: (from, to) =>
-      Effect.sync(() => {
-        recorded.copied.push(`${from} -> ${to}`);
-      }),
+      disk.copyFailures?.has(from)
+        ? Effect.fail(
+            PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "copyFile",
+              description: "copy denied",
+              pathOrDescriptor: from,
+            }),
+          )
+        : Effect.sync(() => {
+            recorded.copied.push(`${from} -> ${to}`);
+          }),
     readFileString: (path) => {
       const contents = disk.files.get(path);
       return contents === undefined
@@ -349,6 +360,44 @@ describe("DesktopUserDataMigration marker idempotency", () => {
         }).pipe(Effect.provide(makeMigrationLayer(disk, recorded))),
       );
       assert.equal(recorded.copied.length, copiedAfterImport);
+    });
+  });
+
+  it.effect("keeps a failed copy retryable and records success only after recovery", () => {
+    const source = "/support/CTOX Desktop App";
+    const failures = new Set([`${source}/Cookies`]);
+    const accepted = JSON.stringify(marker({ outcome: "accepted-pending", legacyPath: source }));
+    const disk: FakeDisk = {
+      existing: new Set([source]),
+      files: new Map([
+        [markerPath, accepted],
+        [`${source}/Preferences`, "{}"],
+        [`${source}/Cookies`, "cookie-jar"],
+      ]),
+      copyFailures: failures,
+    };
+    const recorded = { copied: [] as string[] };
+    return Effect.gen(function* () {
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const migration = yield* DesktopUserDataMigrationService;
+          assert.deepEqual(migration.decision, { _tag: "migrate-offer", legacyPath: source });
+          assert.isTrue(Option.isSome(migration.offer));
+        }).pipe(Effect.provide(makeMigrationLayer(disk, recorded))),
+      );
+      assert.equal(disk.files.get(markerPath), accepted);
+      assert.equal(disk.files.get(`${source}/Cookies`), "cookie-jar");
+
+      failures.clear();
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const migration = yield* DesktopUserDataMigrationService;
+          assert.deepEqual(migration.decision, { _tag: "already-migrated", outcome: "migrated" });
+          assert.isTrue(Option.isNone(migration.offer));
+        }).pipe(Effect.provide(makeMigrationLayer(disk, recorded))),
+      );
+      assert.include(disk.files.get(markerPath), '"outcome":"migrated"');
+      assert.include(recorded.copied, `${source}/Cookies -> /support/Workjet/Cookies`);
     });
   });
 

@@ -366,9 +366,9 @@ export function ComputerProvisioningSection() {
               </div>
               {operation.state === "completed" ? (
                 <p className="text-xs text-muted-foreground">
-                  CTOX is installed, healthy and paired with this Workjet profile. Select the
-                  backend for a Business OS session below; a remotely installed Workjet app was not
-                  started.
+                  {operation.action === "start"
+                    ? "The backend has started. Select it in Business OS settings to connect."
+                    : "CTOX is installed and paired with this Workjet profile. Select the backend in Business OS settings to connect."}
                 </p>
               ) : null}
               {operation.state === "completed" || operation.state === "failed" ? (

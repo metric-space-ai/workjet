@@ -68,7 +68,7 @@ import {
   usePromptStashStore,
   type PromptStashEntry,
 } from "../../promptStashStore";
-import { providerInstanceIdForHarness } from "./ComposerWorkerControl";
+import { ComposerWorkerControl, providerInstanceIdForHarness } from "./ComposerWorkerControl";
 import { workerReasoningSelections } from "./workerReasoning";
 import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerStashBadge } from "./ComposerStashBadge";
@@ -3798,6 +3798,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
                 {isComposerFooterCompact ? (
                   <>
+                    <ComposerWorkerControl
+                      key={environmentId}
+                      environmentId={environmentId}
+                      workers={workjetWorkers}
+                      selectedWorkerId={selectedWorkjetWorkerId}
+                      disabled={effectiveWorkjetCapabilityDisabled}
+                      onSelectWorker={handleSelectWorkjetWorker}
+                      onOpenWorkjetSettings={onOpenWorkjetSettings}
+                    />
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       showInteractionModeToggle={
@@ -3807,6 +3816,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       workerMenuContent={
                         <ComposerWorkjetCompactMenuContent
+                          hideWorkerSelection
                           workers={workjetWorkers}
                           selectedWorkerId={selectedWorkjetWorkerId}
                           onSelectWorker={handleSelectWorkjetWorker}
@@ -3865,6 +3875,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : (
                   <ComposerFooterControls
                     workerMode={workerModeActive}
+                    workerSettingsEnvironmentId={environmentId}
                     workjetWorkers={workjetWorkers}
                     selectedWorkjetWorkerId={selectedWorkjetWorkerId}
                     onSelectWorkjetWorker={handleSelectWorkjetWorker}

@@ -1,3 +1,4 @@
+import { isValidElement, type ReactNode, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   WorkjetComputerId,
@@ -9,7 +10,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   ComposerWorkerControlView,
-  MANUAL_WORKER_VALUE,
+  WorkerChoiceList,
   providerInstanceIdForHarness,
   type ComposerWorkerControlProps,
 } from "./ComposerWorkerControl";
@@ -23,60 +24,56 @@ function worker(overrides: Partial<WorkjetWorkerProfile> = {}): WorkjetWorkerPro
     llmRouteId: WorkjetLlmRouteId.make("route-openai"),
     modelId: "gpt-5.6-sol",
     reasoning: "high",
+    role: "standard",
     capabilityIds: [],
+    capabilityBindings: [],
     ...overrides,
-  } as WorkjetWorkerProfile;
-}
-
-function element(props: Partial<ComposerWorkerControlProps> = {}) {
-  return ComposerWorkerControlView({
-    workers: [worker()],
-    selectedWorkerId: null,
-    onSelectWorker: vi.fn(),
-    onOpenWorkjetSettings: vi.fn(),
-    ...props,
-  });
+  };
 }
 
 function render(props: Partial<ComposerWorkerControlProps> = {}): string {
-  return renderToStaticMarkup(element(props) as never);
+  return renderToStaticMarkup(
+    <ComposerWorkerControlView
+      workers={[worker()]}
+      selectedWorkerId={null}
+      onSelectWorker={vi.fn()}
+      onOpenWorkjetSettings={vi.fn()}
+      {...props}
+    />,
+  );
 }
 
-/**
- * Every string in the element tree. The popup's items are not in the static
- * markup — a closed Select renders no panel — so the menu's contents can only
- * be asserted on the tree.
- */
-function menuText(props: Partial<ComposerWorkerControlProps> = {}): string {
-  const parts: string[] = [];
-  const walk = (node: unknown): void => {
-    if (typeof node === "string") {
-      parts.push(node);
-      return;
-    }
-    if (Array.isArray(node)) {
-      node.forEach(walk);
-      return;
-    }
-    if (node && typeof node === "object" && "props" in node) {
-      walk((node as { props: { children?: unknown } }).props.children);
-    }
-  };
-  walk(element(props));
-  return parts.join(" | ");
+type ButtonProps = {
+  children?: ReactNode;
+  onClick?: () => void;
+  "aria-label"?: string;
+  "aria-pressed"?: boolean;
+  disabled?: boolean;
+};
+
+function buttons(node: ReactNode): Array<ReactElement<ButtonProps>> {
+  if (Array.isArray(node)) return node.flatMap(buttons);
+  if (!isValidElement<ButtonProps>(node)) return [];
+  return [...(node.type === "button" ? [node] : []), ...buttons(node.props.children)];
+}
+
+function list(overrides: Partial<Parameters<typeof WorkerChoiceList>[0]> = {}) {
+  return WorkerChoiceList({
+    workers: [worker()],
+    selectedWorkerId: null,
+    onSelectWorker: vi.fn(),
+    onEditWorker: vi.fn(),
+    ...overrides,
+  });
 }
 
 describe("the bar's leftmost decision", () => {
   it("reads Manual until a worker is chosen", () => {
-    // Manual is a real choice, not an empty state: it is what the bar has
-    // always done, and it stays for the one-off turn no worker matches.
     expect(render()).toContain("Manual");
   });
 
   it("names the chosen worker instead", () => {
-    const markup = render({ selectedWorkerId: "worker-sol" });
-
-    expect(markup).toContain("Sol · Completion");
+    expect(render({ selectedWorkerId: "worker-sol" })).toContain("Sol · Completion");
   });
 
   it("keeps a long worker label inside the bounded composer trigger", () => {
@@ -84,70 +81,68 @@ describe("the bar's leftmost decision", () => {
       workers: [worker({ name: `Worker ${"x".repeat(180)}` })],
       selectedWorkerId: "worker-sol",
     });
-
     expect(markup).toContain("max-w-52");
     expect(markup).toContain("min-w-0");
   });
 
-  it("shows what each worker settles, so picking is not blind", () => {
-    // One choice settles harness, model and effort; the menu says which.
-    const text = menuText();
-
-    // Display labels, not slugs (K-A11).
-    expect(text).toContain("Claude Code");
-    expect(text).toContain("gpt-5.6-sol");
-    expect(text).toContain("High");
+  it("shows the harness, model and effort before choosing", () => {
+    const markup = renderToStaticMarkup(list());
+    expect(markup).toContain("Claude Code");
+    expect(markup).toContain("gpt-5.6-sol");
+    expect(markup).toContain("High");
   });
 
-  it("points somewhere when nothing is saved yet", () => {
-    // Otherwise the control is a dropdown with one entry and no way forward —
-    // which is exactly the dead end an empty LLM-route select already was.
-    expect(menuText({ workers: [] })).toContain("No saved workers");
+  it("offers setup when no workers are saved", () => {
+    const markup = renderToStaticMarkup(list({ workers: [] }));
+    expect(markup).toContain("No saved workers");
+    expect(markup).toContain("Add worker");
+  });
+
+  it("disables selection and editing together when unavailable", () => {
+    expect(buttons(list({ disabled: true })).every((button) => button.props.disabled)).toBe(true);
   });
 });
 
-describe("selection", () => {
-  it("reports manual as null rather than a sentinel the caller must know", () => {
+describe("selection and editing are separate actions", () => {
+  it("reports Manual as null", () => {
     const onSelectWorker = vi.fn();
-    const element = ComposerWorkerControlView({
-      workers: [worker()],
-      selectedWorkerId: "worker-sol",
-      onSelectWorker,
-      onOpenWorkjetSettings: vi.fn(),
-    }) as unknown as {
-      props: { children: ReadonlyArray<{ props: { onValueChange: (v: string) => void } }> };
-    };
-    const select = element.props.children[0]!;
-
-    select.props.onValueChange(MANUAL_WORKER_VALUE);
-
+    const onEditWorker = vi.fn();
+    const choices = buttons(list({ selectedWorkerId: "worker-sol", onSelectWorker, onEditWorker }));
+    choices[0]!.props.onClick!();
     expect(onSelectWorker).toHaveBeenCalledWith(null);
+    expect(onEditWorker).not.toHaveBeenCalled();
   });
 
-  it("opens settings instead of selecting the placeholder row", () => {
+  it("chooses the stable worker ID", () => {
     const onSelectWorker = vi.fn();
-    const onOpenWorkjetSettings = vi.fn();
-    const element = ComposerWorkerControlView({
-      workers: [],
-      selectedWorkerId: null,
-      onSelectWorker,
-      onOpenWorkjetSettings,
-    }) as unknown as {
-      props: { children: ReadonlyArray<{ props: { onValueChange: (v: string) => void } }> };
-    };
+    const onEditWorker = vi.fn();
+    buttons(list({ onSelectWorker, onEditWorker }))[1]!.props.onClick!();
+    expect(onSelectWorker).toHaveBeenCalledWith("worker-sol");
+    expect(onEditWorker).not.toHaveBeenCalled();
+  });
 
-    element.props.children[0]!.props.onValueChange("__configure__");
+  it("opens a worker editor without changing the active worker", () => {
+    const onSelectWorker = vi.fn();
+    const onEditWorker = vi.fn();
+    const edit = buttons(list({ onSelectWorker, onEditWorker })).find(
+      (button) => button.props["aria-label"] === "Edit Sol · Completion",
+    );
+    edit!.props.onClick!();
+    expect(onEditWorker).toHaveBeenCalledWith("worker-sol");
+    expect(onSelectWorker).not.toHaveBeenCalled();
+  });
 
-    expect(onOpenWorkjetSettings).toHaveBeenCalledTimes(1);
+  it("starts a new profile draft without selecting or dispatching work", () => {
+    const onSelectWorker = vi.fn();
+    const onEditWorker = vi.fn();
+    buttons(list({ workers: [], onSelectWorker, onEditWorker })).at(-1)!.props.onClick!();
+    expect(onEditWorker).toHaveBeenCalledWith(null);
     expect(onSelectWorker).not.toHaveBeenCalled();
   });
 });
 
 describe("a worker's harness decides which runtime the turn uses", () => {
-  it("maps every harness this build ships a runtime for", () => {
-    // A worker names a HARNESS; the composer drives a provider INSTANCE.
-    // Without the mapping, choosing a worker would set its model but leave
-    // the previous runtime — one worker's model on another's harness.
+  it("maps every supported harness to its instance", () => {
     expect(providerInstanceIdForHarness("claude-code")).toBe("claudeAgent");
     expect(providerInstanceIdForHarness("codex-cli")).toBe("codex");
     expect(providerInstanceIdForHarness("opencode")).toBe("opencode");
@@ -156,7 +151,6 @@ describe("a worker's harness decides which runtime the turn uses", () => {
   });
 
   it("refuses to guess for a harness with no runtime here", () => {
-    // Guessing would send the turn to a runtime the operator never chose.
     expect(providerInstanceIdForHarness("pi-code")).toBeNull();
   });
 });

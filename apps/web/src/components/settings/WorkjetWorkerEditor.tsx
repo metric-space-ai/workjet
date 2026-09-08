@@ -265,18 +265,25 @@ export function WorkjetWorkerEditor({
   onSave,
   onCancel,
   onAddRoute,
+  initialDraft,
+  onDraftChange,
+  compact = false,
 }: {
   readonly worker?: WorkjetWorkerProfile | null;
   /** Prevents an unfinished worker from one Business OS leaking into another. */
   readonly draftScopeKey: string;
   readonly computers: ReadonlyArray<WorkjetComputer>;
   readonly routes: ReadonlyArray<WorkjetLlmRoute>;
-  readonly onSave: (worker: WorkjetWorkerProfile) => void;
+  readonly onSave: (worker: WorkjetWorkerProfile) => void | Promise<void>;
   readonly onCancel: () => void;
+  readonly initialDraft?: WorkjetWorkerDraft | undefined;
+  readonly onDraftChange?: ((draft: WorkjetWorkerDraft) => void) | undefined;
+  readonly compact?: boolean;
   /** Opens the place where an access is created. Optional so existing callers keep working. */
   readonly onAddRoute?: (() => void) | undefined;
 }) {
   const [draft, setDraft] = useState(() => {
+    if (initialDraft) return initialDraft;
     // "Add LLM route…" navigates AWAY to the Models page; without this stash
     // every typed field died with the unmount (Befund K-A7). The stash is
     // per-worker-identity, read once, and cleared immediately.
@@ -294,6 +301,7 @@ export function WorkjetWorkerEditor({
     return createWorkjetWorkerDraft({ worker, computers, routes });
   });
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [decisionHubInstances, setDecisionHubInstances] = useState<
     ReadonlyArray<CtoxManagedInstance>
   >([]);
@@ -349,32 +357,59 @@ export function WorkjetWorkerEditor({
       ? "No target computer chosen."
       : (warning ?? `${harnessLabel}: reported available on ${chosenComputer.label}.`);
   const patchDraft = (patch: Partial<WorkjetWorkerDraft>) => {
-    setDraft((current) => updateWorkjetWorkerDraft(current, patch));
+    const next = updateWorkjetWorkerDraft(draft, patch);
+    setDraft(next);
+    onDraftChange?.(next);
+    try {
+      window.sessionStorage.setItem(
+        `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`,
+        JSON.stringify(next),
+      );
+    } catch {
+      // The popup still retains its in-memory draft when storage is blocked.
+    }
     setError(null);
+  };
+  const clearDraftStash = () => {
+    try {
+      window.sessionStorage.removeItem(
+        `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`,
+      );
+    } catch {
+      // Storage may be unavailable.
+    }
   };
 
   return (
     <form
       data-settings-inline-editor=""
-      className="space-y-4 rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4"
+      className={cn(
+        "space-y-4",
+        !compact && "rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4",
+      )}
       aria-label={worker ? `Edit worker ${worker.name}` : "Add worker"}
       onSubmit={(event) => {
         event.preventDefault();
-        try {
-          onSave(saveWorkjetWorkerDraft(draft));
-        } catch (cause) {
-          setError(cause instanceof Error ? cause.message : "The worker could not be saved.");
-        }
+        event.stopPropagation();
+        if (saving) return;
+        setSaving(true);
+        setError(null);
+        void (async () => {
+          try {
+            await onSave(saveWorkjetWorkerDraft(draft));
+            clearDraftStash();
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "The worker could not be saved.");
+          } finally {
+            setSaving(false);
+          }
+        })();
       }}
     >
-      <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(16rem,0.72fr)]">
-        <WorkjetWorkerPersonalizationEditor
-          value={draft.personalization}
-          onChange={(personalization) => patchDraft({ personalization })}
-        />
-        <div className="space-y-4 rounded-xl border border-border/60 bg-background/20 p-3">
+      <fieldset disabled={saving} className="min-w-0 space-y-4">
+        <div className="space-y-4">
           <div className="space-y-1.5">
-            <SectionHeader title="Name / role" />
+            <Label htmlFor="workjet-worker-name">Name</Label>
             <Input
               id="workjet-worker-name"
               nativeInput
@@ -384,7 +419,7 @@ export function WorkjetWorkerEditor({
             />
           </div>
           <div className="space-y-1.5">
-            <SectionHeader title="This worker’s task" />
+            <Label htmlFor="workjet-worker-instructions">Task</Label>
             <Textarea
               id="workjet-worker-instructions"
               value={draft.instructions}
@@ -394,423 +429,451 @@ export function WorkjetWorkerEditor({
             />
           </div>
         </div>
-      </div>
 
-      <div className="space-y-1.5">
-        <SectionHeader title="Harness" />
-        <div className="flex flex-wrap gap-2">
-          {WORKJET_HARNESS_OPTIONS.map((option) => (
-            <ChoiceButton
-              key={option.id}
-              title={option.label}
-              selected={draft.harness === option.id}
-              onClick={() => patchDraft({ harness: option.id })}
+        <details>
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            Personality
+          </summary>
+          <div className="pt-3">
+            <WorkjetWorkerPersonalizationEditor
+              value={draft.personalization}
+              onChange={(personalization) => patchDraft({ personalization })}
             />
-          ))}
+          </div>
+        </details>
+
+        <div className="space-y-1.5">
+          <SectionHeader title="Harness" />
+          <div className="flex flex-wrap gap-2">
+            {WORKJET_HARNESS_OPTIONS.map((option) => (
+              <ChoiceButton
+                key={option.id}
+                title={option.label}
+                selected={draft.harness === option.id}
+                onClick={() => patchDraft({ harness: option.id })}
+              />
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className="space-y-1.5">
-        <SectionHeader title="LLM route" />
-        <div className="flex flex-wrap items-center gap-2">
-          {routes.map((route) => (
-            <ChoiceButton
-              key={route.id}
-              title={route.label}
-              selected={draft.llmRouteId === route.id}
-              onClick={() => patchDraft({ llmRouteId: route.id })}
-            />
-          ))}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 px-2 text-xs"
-            onClick={() => {
-              try {
-                window.sessionStorage.setItem(
-                  `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`,
-                  JSON.stringify(draft),
-                );
-              } catch {
-                // Without storage the navigation still works; only the
-                // stash is lost.
-              }
-              onAddRoute?.();
-            }}
-          >
-            <PlusIcon className="size-3.5" />
-            Add LLM route…
-          </Button>
-        </div>
-        {draft.llmRouteId ? (
-          <p className="text-[11px] text-muted-foreground">
-            Route: {routes.find((route) => route.id === draft.llmRouteId)?.label}
-          </p>
-        ) : (
-          // Amber, not grey, and it names the consequence: a worker without a
-          // route cannot run at all.
-          <p className="text-[11px] text-amber-500">
-            No LLM route chosen yet. Pick one to make this worker usable.
-          </p>
-        )}
-      </div>
-
-      <div className="space-y-1.5">
-        <SectionHeader title="Model" />
-        <Input
-          id="workjet-worker-model"
-          nativeInput
-          value={draft.modelId}
-          onChange={(event) => patchDraft({ modelId: event.target.value })}
-          placeholder="Model ID"
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <SectionHeader title="Reasoning" />
-        <div className="flex flex-wrap gap-2">
-          {REASONING_OPTIONS.map((option) => (
-            <ChoiceButton
-              key={option.id}
-              title={option.label}
-              selected={draft.reasoning === option.id}
-              onClick={() => patchDraft({ reasoning: option.id })}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <SectionHeader title="Root role" />
-        <div className="flex flex-wrap gap-2">
-          <ChoiceButton
-            title="Standard"
-            selected={draft.role === "standard"}
-            onClick={() => patchDraft({ role: "standard" })}
-          />
-          <ChoiceButton
-            title="Orchestrator"
-            selected={draft.role === "orchestrator"}
-            onClick={() => patchDraft({ role: "orchestrator" })}
-          />
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          Orchestrators coordinate child workers. Child workers never inherit Decision Hub.
-        </p>
-      </div>
-
-      <div className="space-y-1.5">
-        <SectionHeader title="Skills" />
-        <div className="space-y-2">
-          {CAPABILITY_OPTIONS.map((capability) => {
-            const checked = draft.capabilityIds.includes(capability.id);
-            return (
-              <div
-                key={capability.id}
-                className="flex items-start justify-between gap-3 rounded-lg bg-muted/25 p-2.5"
+        <div className="space-y-1.5">
+          <SectionHeader title="LLM route" />
+          <div className="flex flex-wrap items-center gap-2">
+            {routes.map((route) => (
+              <ChoiceButton
+                key={route.id}
+                title={route.label}
+                selected={draft.llmRouteId === route.id}
+                onClick={() => patchDraft({ llmRouteId: route.id })}
+              />
+            ))}
+            {onAddRoute ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => {
+                  try {
+                    window.sessionStorage.setItem(
+                      `workjet-worker-draft:${encodeURIComponent(draftScopeKey)}:${worker?.id ?? "new"}`,
+                      JSON.stringify(draft),
+                    );
+                  } catch {
+                    // Without storage the navigation still works; only the
+                    // stash is lost.
+                  }
+                  onAddRoute?.();
+                }}
               >
-                <div className="min-w-0 space-y-0.5">
-                  <p className="text-xs font-medium">{capability.label}</p>
-                  <p className="text-[11px] text-muted-foreground">{capability.description}</p>
-                </div>
-                <Switch
-                  checked={checked}
-                  onCheckedChange={(next) => {
-                    const capabilityIds = next
-                      ? [...draft.capabilityIds.filter((id) => id !== capability.id), capability.id]
-                      : draft.capabilityIds.filter((id) => id !== capability.id);
-                    if (capability.id !== "decision-hub") {
-                      patchDraft({ capabilityIds });
-                      return;
-                    }
-                    const automatic = connections.filter(
-                      (connection) => connection.status === "ready",
-                    )[0];
-                    patchDraft({
-                      capabilityIds,
-                      capabilityBindings: next
-                        ? automatic === undefined
-                          ? []
-                          : [
-                              {
-                                capabilityId: "decision-hub",
-                                target: {
-                                  kind: "ctox-connection",
-                                  connectionId: automatic.connectionId,
-                                },
-                              },
-                            ]
-                        : draft.capabilityBindings.filter(
-                            (binding) => binding.capabilityId !== "decision-hub",
-                          ),
-                    });
-                  }}
-                  aria-label={`Skill ${capability.label}`}
-                />
-              </div>
-            );
-          })}
+                <PlusIcon className="size-3.5" />
+                Add LLM route…
+              </Button>
+            ) : null}
+          </div>
+          {draft.llmRouteId ? (
+            <p className="text-[11px] text-muted-foreground">
+              Route: {routes.find((route) => route.id === draft.llmRouteId)?.label}
+            </p>
+          ) : (
+            // Amber, not grey, and it names the consequence: a worker without a
+            // route cannot run at all.
+            <p className="text-[11px] text-amber-500">
+              No LLM route chosen yet. Pick one to make this worker usable.
+            </p>
+          )}
         </div>
-        {draft.capabilityIds.includes("decision-hub") ? (
-          <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
-            <Label htmlFor="workjet-decision-hub-connection">CTOX connection</Label>
-            <Select
-              value={decisionHubBinding?.target.connectionId ?? ""}
-              onValueChange={(connectionId) => {
-                if (connectionId === null) return;
-                patchDraft({
-                  capabilityBindings: [
-                    {
-                      capabilityId: "decision-hub",
-                      target: {
-                        kind: "ctox-connection",
-                        connectionId: WorkjetConnectionId.make(connectionId),
-                      },
-                    },
-                  ],
-                });
-              }}
-            >
-              <SelectTrigger id="workjet-decision-hub-connection">
-                <SelectValue placeholder="Choose a CTOX instance" />
-              </SelectTrigger>
-              <SelectPopup>
-                {connections.map((connection) => (
-                  <SelectItem key={connection.connectionId} value={connection.connectionId}>
-                    {connection.displayName} · {connection.status}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-            {decisionHubInstances.map((instance) => {
-              const availability = instance.decisionHub;
-              const local = instance.source === "local_daemon";
-              const tenantId = instance.id.startsWith("managed:")
-                ? instance.id.slice("managed:".length)
-                : "";
-              const canProvision =
-                (local
-                  ? instance.status === "available"
-                  : tenantId.length > 0 &&
-                    availability?.eligible === true &&
-                    availability.mcpEnabled &&
-                    availability.instanceId !== null &&
-                    availability.reason === null) &&
-                chosenComputer !== null &&
-                window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
+
+        <div className="space-y-1.5">
+          <Label htmlFor="workjet-worker-model">Model</Label>
+          <Input
+            id="workjet-worker-model"
+            nativeInput
+            value={draft.modelId}
+            onChange={(event) => patchDraft({ modelId: event.target.value })}
+            placeholder="Model ID"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <SectionHeader title="Reasoning" />
+          <div className="flex flex-wrap gap-2">
+            {REASONING_OPTIONS.map((option) => (
+              <ChoiceButton
+                key={option.id}
+                title={option.label}
+                selected={draft.reasoning === option.id}
+                onClick={() => patchDraft({ reasoning: option.id })}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <SectionHeader title="Root role" />
+          <div className="flex flex-wrap gap-2">
+            <ChoiceButton
+              title="Standard"
+              selected={draft.role === "standard"}
+              onClick={() => patchDraft({ role: "standard" })}
+            />
+            <ChoiceButton
+              title="Orchestrator"
+              selected={draft.role === "orchestrator"}
+              onClick={() => patchDraft({ role: "orchestrator" })}
+            />
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Orchestrators coordinate child workers. Child workers never inherit Decision Hub.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <SectionHeader title="Tools" />
+          <div className="space-y-2">
+            {CAPABILITY_OPTIONS.map((capability) => {
+              const checked = draft.capabilityIds.includes(capability.id);
               return (
-                <div key={instance.id} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate text-muted-foreground">
-                    {local ? instance.displayName : availability?.displayName}
-                    {local || availability?.reason === null ? "" : ` · ${availability?.reason}`}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={!canProvision || provisioningTenantId !== null}
-                    onClick={() => {
-                      if (!canProvision || chosenComputer === null) return;
-                      setProvisioningTenantId(instance.id);
-                      void window.desktopBridge!.ctox!.provisionDecisionHub!({
-                        environmentId: chosenComputer.environmentId,
-                        target: local
-                          ? { _tag: "local_ctox", instanceId: instance.id }
-                          : { _tag: "ctox_dev", tenantId },
-                      })
-                        .then(async (result) => {
-                          if (result._tag !== "completed") {
-                            setError(`Decision Hub connection failed: ${result.code}.`);
-                            return;
-                          }
-                          patchDraft({
-                            capabilityBindings: [
-                              {
-                                capabilityId: "decision-hub",
-                                target: {
-                                  kind: "ctox-connection",
-                                  connectionId: result.connection.connectionId,
+                <div
+                  key={capability.id}
+                  className="flex items-start justify-between gap-3 rounded-lg bg-muted/25 p-2.5"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-xs font-medium">{capability.label}</p>
+                    <p className="text-[11px] text-muted-foreground">{capability.description}</p>
+                  </div>
+                  <Switch
+                    checked={checked}
+                    onCheckedChange={(next) => {
+                      const capabilityIds = next
+                        ? [
+                            ...draft.capabilityIds.filter((id) => id !== capability.id),
+                            capability.id,
+                          ]
+                        : draft.capabilityIds.filter((id) => id !== capability.id);
+                      if (capability.id !== "decision-hub") {
+                        patchDraft({ capabilityIds });
+                        return;
+                      }
+                      const automatic = connections.filter(
+                        (connection) => connection.status === "ready",
+                      )[0];
+                      patchDraft({
+                        capabilityIds,
+                        capabilityBindings: next
+                          ? automatic === undefined
+                            ? []
+                            : [
+                                {
+                                  capabilityId: "decision-hub",
+                                  target: {
+                                    kind: "ctox-connection",
+                                    connectionId: automatic.connectionId,
+                                  },
                                 },
-                              },
-                            ],
-                          });
-                          decisionHubConnections.refresh();
-                        })
-                        .catch(() => setError("Decision Hub connection failed."))
-                        .finally(() => setProvisioningTenantId(null));
+                              ]
+                          : draft.capabilityBindings.filter(
+                              (binding) => binding.capabilityId !== "decision-hub",
+                            ),
+                      });
                     }}
-                  >
-                    {provisioningTenantId === instance.id ? "Connecting…" : "Connect"}
-                  </Button>
+                    aria-label={`Tool ${capability.label}`}
+                  />
                 </div>
               );
             })}
-            {connections.length === 0 ? (
-              <p role="alert" className="text-[11px] text-amber-500">
-                No MCP-capable CTOX connection is provisioned on this target computer.
-              </p>
-            ) : selectedDecisionHubConnection === null ? (
-              <p role="alert" className="text-[11px] text-amber-500">
-                Choose a connection before saving.
-              </p>
-            ) : (
-              <div className="flex items-center justify-between gap-2">
-                <p
-                  role="status"
-                  className={cn(
-                    "text-[11px]",
-                    selectedDecisionHubConnection.status === "ready"
-                      ? "text-emerald-500"
-                      : "text-amber-500",
-                  )}
-                >
-                  MCP: {selectedDecisionHubConnection.status}
-                  {selectedDecisionHubConnection.reason
-                    ? ` — ${selectedDecisionHubConnection.reason}`
-                    : ""}
-                </p>
-                {chosenComputer !== null &&
-                window.desktopBridge?.ctox?.disconnectDecisionHub !== undefined ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    disabled={disconnectingConnectionId !== null}
-                    onClick={() => {
-                      const connectionId = selectedDecisionHubConnection.connectionId;
-                      setDisconnectingConnectionId(connectionId);
-                      void window.desktopBridge!.ctox!.disconnectDecisionHub!({
-                        environmentId: chosenComputer.environmentId,
-                        connectionId,
-                      })
-                        .then((result) => {
-                          if (result._tag !== "completed") {
-                            setError(`Decision Hub disconnect failed: ${result.code}.`);
-                            return;
-                          }
-                          patchDraft({
-                            capabilityBindings: draft.capabilityBindings.filter(
-                              (binding) => binding.capabilityId !== "decision-hub",
-                            ),
-                          });
-                          decisionHubConnections.refresh();
-                        })
-                        .catch(() => setError("Decision Hub disconnect failed."))
-                        .finally(() => setDisconnectingConnectionId(null));
-                    }}
-                  >
-                    {disconnectingConnectionId === selectedDecisionHubConnection.connectionId
-                      ? "Disconnecting…"
-                      : "Disconnect"}
-                  </Button>
-                ) : null}
-              </div>
-            )}
           </div>
-        ) : null}
-      </div>
-
-      <div className="space-y-1.5">
-        <SectionHeader title="Target computer" />
-        <div className="flex flex-wrap gap-2">
-          {computers.map((computer) => (
-            <ChoiceButton
-              key={computer.id}
-              title={computer.label}
-              selected={draft.computerId === computer.id}
-              onClick={() =>
-                patchDraft({
-                  computerId: computer.id,
-                  capabilityBindings: draft.capabilityBindings.filter(
-                    (binding) => binding.capabilityId !== "decision-hub",
-                  ),
-                })
-              }
-            />
-          ))}
+          {draft.capabilityIds.includes("decision-hub") ? (
+            <div className="space-y-1.5 rounded-lg border border-border/60 p-2.5">
+              <Label htmlFor="workjet-decision-hub-connection">CTOX connection</Label>
+              <Select
+                value={decisionHubBinding?.target.connectionId ?? ""}
+                onValueChange={(connectionId) => {
+                  if (connectionId === null) return;
+                  patchDraft({
+                    capabilityBindings: [
+                      {
+                        capabilityId: "decision-hub",
+                        target: {
+                          kind: "ctox-connection",
+                          connectionId: WorkjetConnectionId.make(connectionId),
+                        },
+                      },
+                    ],
+                  });
+                }}
+              >
+                <SelectTrigger id="workjet-decision-hub-connection">
+                  <SelectValue placeholder="Choose a CTOX instance" />
+                </SelectTrigger>
+                <SelectPopup>
+                  {connections.map((connection) => (
+                    <SelectItem key={connection.connectionId} value={connection.connectionId}>
+                      {connection.displayName} · {connection.status}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+              {decisionHubInstances.map((instance) => {
+                const availability = instance.decisionHub;
+                const local = instance.source === "local_daemon";
+                const tenantId = instance.id.startsWith("managed:")
+                  ? instance.id.slice("managed:".length)
+                  : "";
+                const canProvision =
+                  (local
+                    ? instance.status === "available"
+                    : tenantId.length > 0 &&
+                      availability?.eligible === true &&
+                      availability.mcpEnabled &&
+                      availability.instanceId !== null &&
+                      availability.reason === null) &&
+                  chosenComputer !== null &&
+                  window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
+                return (
+                  <div
+                    key={instance.id}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="truncate text-muted-foreground">
+                      {local ? instance.displayName : availability?.displayName}
+                      {local || availability?.reason === null ? "" : ` · ${availability?.reason}`}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!canProvision || provisioningTenantId !== null}
+                      onClick={() => {
+                        if (!canProvision || chosenComputer === null) return;
+                        setProvisioningTenantId(instance.id);
+                        void window.desktopBridge!.ctox!.provisionDecisionHub!({
+                          environmentId: chosenComputer.environmentId,
+                          target: local
+                            ? { _tag: "local_ctox", instanceId: instance.id }
+                            : { _tag: "ctox_dev", tenantId },
+                        })
+                          .then(async (result) => {
+                            if (result._tag !== "completed") {
+                              setError(`Decision Hub connection failed: ${result.code}.`);
+                              return;
+                            }
+                            patchDraft({
+                              capabilityBindings: [
+                                {
+                                  capabilityId: "decision-hub",
+                                  target: {
+                                    kind: "ctox-connection",
+                                    connectionId: result.connection.connectionId,
+                                  },
+                                },
+                              ],
+                            });
+                            decisionHubConnections.refresh();
+                          })
+                          .catch(() => setError("Decision Hub connection failed."))
+                          .finally(() => setProvisioningTenantId(null));
+                      }}
+                    >
+                      {provisioningTenantId === instance.id ? "Connecting…" : "Connect"}
+                    </Button>
+                  </div>
+                );
+              })}
+              {connections.length === 0 ? (
+                <p role="alert" className="text-[11px] text-amber-500">
+                  No MCP-capable CTOX connection is provisioned on this target computer.
+                </p>
+              ) : selectedDecisionHubConnection === null ? (
+                <p role="alert" className="text-[11px] text-amber-500">
+                  Choose a connection before saving.
+                </p>
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <p
+                    role="status"
+                    className={cn(
+                      "text-[11px]",
+                      selectedDecisionHubConnection.status === "ready"
+                        ? "text-emerald-500"
+                        : "text-amber-500",
+                    )}
+                  >
+                    MCP: {selectedDecisionHubConnection.status}
+                    {selectedDecisionHubConnection.reason
+                      ? ` — ${selectedDecisionHubConnection.reason}`
+                      : ""}
+                  </p>
+                  {chosenComputer !== null &&
+                  window.desktopBridge?.ctox?.disconnectDecisionHub !== undefined ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={disconnectingConnectionId !== null}
+                      onClick={() => {
+                        const connectionId = selectedDecisionHubConnection.connectionId;
+                        setDisconnectingConnectionId(connectionId);
+                        void window.desktopBridge!.ctox!.disconnectDecisionHub!({
+                          environmentId: chosenComputer.environmentId,
+                          connectionId,
+                        })
+                          .then((result) => {
+                            if (result._tag !== "completed") {
+                              setError(`Decision Hub disconnect failed: ${result.code}.`);
+                              return;
+                            }
+                            patchDraft({
+                              capabilityBindings: draft.capabilityBindings.filter(
+                                (binding) => binding.capabilityId !== "decision-hub",
+                              ),
+                            });
+                            decisionHubConnections.refresh();
+                          })
+                          .catch(() => setError("Decision Hub disconnect failed."))
+                          .finally(() => setDisconnectingConnectionId(null));
+                      }}
+                    >
+                      {disconnectingConnectionId === selectedDecisionHubConnection.connectionId
+                        ? "Disconnecting…"
+                        : "Disconnect"}
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
-        {/* The harness status for the CHOSEN computer, on the same screen as
+
+        <div className="space-y-1.5">
+          <SectionHeader title="Target computer" />
+          <div className="flex flex-wrap gap-2">
+            {computers.map((computer) => (
+              <ChoiceButton
+                key={computer.id}
+                title={computer.label}
+                selected={draft.computerId === computer.id}
+                onClick={() =>
+                  patchDraft({
+                    computerId: computer.id,
+                    capabilityBindings: draft.capabilityBindings.filter(
+                      (binding) => binding.capabilityId !== "decision-hub",
+                    ),
+                  })
+                }
+              />
+            ))}
+          </div>
+          {/* The harness status for the CHOSEN computer, on the same screen as
             the choice. Swift puts it here because the answer to "can this
             worker actually run" belongs beside the machine, not on another
             page. */}
-        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span
-            aria-hidden
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              warning === null ? "bg-emerald-500" : "bg-amber-500",
-            )}
-          />
-          {harnessStatusLine}
-        </p>
-      </div>
-
-      {/* Native <details>: the direct analogue of Swift's DisclosureGroup,
-          keyboard- and screen-reader-correct without a library. */}
-      <details className="group">
-        <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
-          <span aria-hidden className="mr-1 inline-block group-open:rotate-90">
-            &#9656;
-          </span>
-          Technical details
-        </summary>
-        <div>
-          <dl className="mt-2 space-y-1 rounded-lg bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
-            <div className="flex gap-2">
-              <dt className="w-28 shrink-0">Harness</dt>
-              <dd className="font-mono">{draft.harness}</dd>
-            </div>
-            {/* Labels, not raw catalog ids: the operator recognises "gpu3",
-                not a UUID. The id stays reachable as the hover title. */}
-            <div className="flex gap-2">
-              <dt className="w-28 shrink-0">Computer</dt>
-              <dd title={draft.computerId || undefined}>
-                {chosenComputer?.label ?? (draft.computerId ? "Missing computer" : "—")}
-              </dd>
-            </div>
-            <div className="flex gap-2">
-              <dt className="w-28 shrink-0">Access</dt>
-              <dd title={draft.llmRouteId || undefined}>
-                {routes.find((route) => route.id === draft.llmRouteId)?.label ??
-                  (draft.llmRouteId ? "Missing route" : "—")}
-              </dd>
-            </div>
-            <div className="flex gap-2">
-              <dt className="w-28 shrink-0">Model</dt>
-              <dd className="font-mono">{draft.modelId || "—"}</dd>
-            </div>
-          </dl>
+          <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span
+              aria-hidden
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                warning === null ? "bg-emerald-500" : "bg-amber-500",
+              )}
+            />
+            {harnessStatusLine}
+          </p>
         </div>
-      </details>
 
-      {warning ? (
-        <p role="alert" className="text-xs text-warning-foreground">
-          {warning}
+        {/* Native <details>: the direct analogue of Swift's DisclosureGroup,
+          keyboard- and screen-reader-correct without a library. */}
+        <details className="group">
+          <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
+            <span aria-hidden className="mr-1 inline-block group-open:rotate-90">
+              &#9656;
+            </span>
+            Technical details
+          </summary>
+          <div>
+            <dl className="mt-2 space-y-1 rounded-lg bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0">Harness</dt>
+                <dd className="font-mono">{draft.harness}</dd>
+              </div>
+              {/* Labels, not raw catalog ids: the operator recognises "gpu3",
+                not a UUID. The id stays reachable as the hover title. */}
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0">Computer</dt>
+                <dd title={draft.computerId || undefined}>
+                  {chosenComputer?.label ?? (draft.computerId ? "Missing computer" : "—")}
+                </dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0">Access</dt>
+                <dd title={draft.llmRouteId || undefined}>
+                  {routes.find((route) => route.id === draft.llmRouteId)?.label ??
+                    (draft.llmRouteId ? "Missing route" : "—")}
+                </dd>
+              </div>
+              <div className="flex gap-2">
+                <dt className="w-28 shrink-0">Model</dt>
+                <dd className="font-mono">{draft.modelId || "—"}</dd>
+              </div>
+            </dl>
+          </div>
+        </details>
+
+        {warning ? (
+          <p role="alert" className="text-xs text-warning-foreground">
+            {warning}
+          </p>
+        ) : null}
+        {routes.length === 0 ? (
+          <p role="status" className="text-xs text-muted-foreground">
+            Add an LLM route in Settings → Models before saving this worker.
+          </p>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-xs text-destructive">
+            {error}
+          </p>
+        ) : null}
+        <p className="text-xs text-muted-foreground">
+          Computer targets and remote environments are managed in Settings → Computers. This profile
+          stores the selected target and declared harness availability.
         </p>
-      ) : null}
-      {routes.length === 0 ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          Add an LLM route in Settings → Models before saving this worker.
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      ) : null}
-      <p className="text-xs text-muted-foreground">
-        Computer targets and remote environments are managed in Settings → Computers. This profile
-        stores the selected target and declared harness availability.
-      </p>
-      <div className="flex justify-end gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" size="sm" disabled={computers.length === 0 || routes.length === 0}>
-          Save worker
-        </Button>
-      </div>
+        <div className="sticky bottom-0 flex justify-end gap-2 bg-popover py-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              clearDraftStash();
+              onCancel();
+            }}
+          >
+            {compact ? "Discard changes" : "Cancel"}
+          </Button>
+          <Button type="submit" size="sm" disabled={computers.length === 0 || routes.length === 0}>
+            {saving ? "Saving…" : "Save worker"}
+          </Button>
+        </div>
+      </fieldset>
     </form>
   );
 }

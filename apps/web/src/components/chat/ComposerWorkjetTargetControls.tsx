@@ -37,10 +37,10 @@ import {
 } from "lucide-react";
 import { ExpandableSettingsPopup } from "../ui/expandable-settings-popup";
 import { ComputerPopupEditor } from "./ComputerPopupEditor";
+import { ComposerCustomModelEditor } from "./ComposerCustomModelEditor";
 import type { WorkjetComputerDraft } from "../settings/WorkjetComputerEditor";
 
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
 import {
   ComposerControl,
   ComposerControlIcon,
@@ -49,7 +49,6 @@ import {
 } from "./ComposerControl";
 import { MANUAL_WORKER_VALUE, providerInstanceIdForHarness } from "./ComposerWorkerControl";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { MenuGroup, MenuGroupLabel, MenuRadioGroup, MenuRadioItem } from "../ui/menu";
 import {
   AntigravityIcon,
@@ -577,16 +576,26 @@ export interface ComposerManualTargetControlsProps {
   readonly modelsUnavailableReason: string | null;
   readonly selectedModelId: string;
   readonly onSelectModel: (modelId: string) => void;
+  /** Held above responsive layouts so an unfinished model edit survives resizing. */
+  readonly customModelEditor?: {
+    readonly draft: string | null;
+    readonly onDraftChange: (draft: string | null) => void;
+  };
 }
 
 /** Exported unwrapped so a test can call it; `memo` returns an object. */
 export function ComposerManualTargetControlsView(props: ComposerManualTargetControlsProps) {
   // Free-text fallback: the gateway catalog is a discovery aid, not an
   // authority — any model id the gateway accepts may be typed directly.
-  const [customModelDraft, setCustomModelDraft] = useState<string | null>(null);
+  const [localCustomModelDraft, setLocalCustomModelDraft] = useState<string | null>(null);
+  const customModelDraft = props.customModelEditor
+    ? props.customModelEditor.draft
+    : localCustomModelDraft;
+  const setCustomModelDraft = props.customModelEditor?.onDraftChange ?? setLocalCustomModelDraft;
+  const [customModelEditorOpen, setCustomModelEditorOpen] = useState(false);
+  const customModelTrigger = useRef<HTMLButtonElement>(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [modelProviderChoice, setModelProviderChoice] = useState<string | null>(null);
-  const placeModelMenuBesideComposer = useMediaQuery("(max-width: 700px)");
 
   const harnessOptions = composerHarnessOptions(props.configuredInstanceIds);
   const selectedHarnessOption =
@@ -611,15 +620,14 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     props.selectedModelId.length > 0 &&
     (selectedModelProvider ?? activeModelProvider) === activeModelProvider;
 
-  const commitCustomModel = () => {
-    const next = customModelDraft?.trim() ?? "";
-    setCustomModelDraft(null);
-    if (next.length > 0 && next !== props.selectedModelId) props.onSelectModel(next);
+  const backToModels = () => {
+    setCustomModelEditorOpen(false);
+    requestAnimationFrame(() => customModelTrigger.current?.focus());
   };
 
   return (
     <span
-      className="flex min-w-0 max-w-full shrink-0 items-center gap-1"
+      className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
       data-composer-manual-target-controls="true"
     >
       {/* Harness */}
@@ -672,159 +680,144 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         </TooltipPopup>
       </Tooltip>
 
-      {/* Model — the Workjet-style mini menu: a provider rail on the left, the
-          selected provider's models on the right, plus the free-text escape
-          hatch. Data source is the Workjet gateway catalog. */}
-      {customModelDraft === null ? (
-        <Popover open={modelMenuOpen} onOpenChange={setModelMenuOpen}>
-          <Tooltip disabled={modelMenuOpen}>
-            <TooltipTrigger
-              render={
-                <PopoverTrigger
-                  render={
-                    <ComposerControl
-                      className="min-w-0 max-w-56"
-                      aria-label="Model"
-                      type="button"
-                    />
-                  }
-                >
-                  <ComposerControlIcon icon={CpuIcon} />
-                  <span className="min-w-0 truncate">
-                    {selectedModelSummary?.displayName ??
-                      (props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
-                  </span>
-                  <ComposerControlChevron />
-                </PopoverTrigger>
-              }
-            />
-            <TooltipPopup side="top">
-              Model — served by the Workjet gateway; the model decides which provider account
-              answers
-            </TooltipPopup>
-          </Tooltip>
-          <PopoverPopup
-            side={placeModelMenuBesideComposer ? "right" : "top"}
-            align={placeModelMenuBesideComposer ? "center" : "start"}
-            className="w-[19rem] max-w-[calc(100vw-1rem)] overflow-hidden p-0"
-            // Children render inside the popup's inner VIEWPORT, not the popup
-            // itself — flex on the popup silently stacked rail and list
-            // vertically (measured: rail above, models below).
-            viewportClassName="p-0"
+      <ExpandableSettingsPopup
+        open={modelMenuOpen}
+        onOpenChange={setModelMenuOpen}
+        title="Model"
+        trigger={
+          <ComposerControl
+            className="min-w-0 max-w-56"
+            aria-label="Model"
+            type="button"
+            title="Served by the Workjet gateway; choose a catalog model or enter its ID."
           >
-            {/* Own flex wrapper: the popup viewport nests children inside a
-                transition pane, so flex on the viewport never reaches them. */}
-            <div className="flex min-w-0 flex-row" data-composer-model-mini-menu="true">
-              <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
-                {modelGroups.map(([provider]) => {
-                  const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
-                  const active = provider === activeModelProvider;
-                  return (
-                    <button
-                      key={provider}
-                      type="button"
-                      aria-label={GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
-                      className={
-                        "inline-flex size-8 items-center justify-center rounded-md text-foreground/80 transition-colors " +
-                        (active ? "bg-accent text-accent-foreground" : "hover:bg-muted")
-                      }
-                      onClick={() => setModelProviderChoice(provider)}
-                    >
-                      {RailIcon ? (
-                        <RailIcon className="size-4" />
-                      ) : (
-                        <span className="text-[11px] font-semibold uppercase">
-                          {(GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider).slice(0, 1)}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex max-h-80 min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
-                <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                  {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
-                    activeModelProvider ??
-                    "Models"}
-                </div>
-                {activeProviderModels.map((model) => (
+            <ComposerControlIcon icon={CpuIcon} />
+            <span className="min-w-0 truncate">
+              {selectedModelSummary?.displayName ??
+                (props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
+            </span>
+            <ComposerControlChevron />
+          </ComposerControl>
+        }
+        onBack={backToModels}
+        backLabel="Back to models"
+        detailTitle="Custom model"
+        detailDescription="Enter a model ID accepted by your gateway. Choose Use model to apply it to this chat."
+        detail={
+          customModelEditorOpen ? (
+            <ComposerCustomModelEditor
+              value={customModelDraft ?? props.selectedModelId}
+              onChange={setCustomModelDraft}
+              onDiscard={() => {
+                setCustomModelDraft(null);
+                backToModels();
+              }}
+              onApply={(modelId) => {
+                if (modelId !== props.selectedModelId) props.onSelectModel(modelId);
+                setCustomModelDraft(null);
+                setCustomModelEditorOpen(false);
+                setModelMenuOpen(false);
+              }}
+            />
+          ) : undefined
+        }
+        list={
+          <div className="flex min-w-0 flex-row" data-composer-model-mini-menu="true">
+            <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
+              {modelGroups.map(([provider]) => {
+                const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
+                const active = provider === activeModelProvider;
+                return (
                   <button
-                    key={model.id}
+                    key={provider}
                     type="button"
+                    aria-label={GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
+                    aria-pressed={active}
                     className={
-                      "rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted " +
-                      (model.id === props.selectedModelId
-                        ? "bg-accent text-accent-foreground"
-                        : "text-foreground")
+                      "inline-flex size-8 items-center justify-center rounded-md text-foreground/80 transition-colors " +
+                      (active ? "bg-accent text-accent-foreground" : "hover:bg-muted")
                     }
-                    onClick={() => {
-                      setModelMenuOpen(false);
-                      props.onSelectModel(model.id);
-                    }}
+                    onClick={() => setModelProviderChoice(provider)}
                   >
-                    <span className="block truncate font-medium">{model.displayName}</span>
-                    {model.displayName === model.id ? null : (
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {model.id}
+                    {RailIcon ? (
+                      <RailIcon className="size-4" />
+                    ) : (
+                      <span className="text-[11px] font-semibold uppercase">
+                        {(GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider).slice(0, 1)}
                       </span>
                     )}
                   </button>
-                ))}
-                {showCurrentCustomModel ? (
-                  <button
-                    type="button"
-                    className="rounded-md bg-accent px-2 py-1.5 text-left text-[13px] text-accent-foreground"
-                    onClick={() => setModelMenuOpen(false)}
-                  >
-                    <span className="block truncate font-medium">{props.selectedModelId}</span>
-                    <span className="block text-[11px] text-muted-foreground">
-                      Current custom model
-                    </span>
-                  </button>
-                ) : null}
-                {activeProviderModels.length === 0 && !showCurrentCustomModel ? (
-                  <div
-                    className="px-2 py-1.5 text-xs leading-4 text-muted-foreground"
-                    title={props.modelsUnavailableReason ?? undefined}
-                  >
-                    No models reported for this provider.
-                  </div>
-                ) : null}
+                );
+              })}
+            </div>
+            <div className="flex max-h-80 min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
+              <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
+                  activeModelProvider ??
+                  "Models"}
+              </div>
+              {activeProviderModels.map((model) => (
                 <button
+                  key={model.id}
                   type="button"
-                  className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  aria-pressed={model.id === props.selectedModelId}
+                  className={
+                    "rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted " +
+                    (model.id === props.selectedModelId
+                      ? "bg-accent text-accent-foreground"
+                      : "text-foreground")
+                  }
                   onClick={() => {
                     setModelMenuOpen(false);
-                    setCustomModelDraft(props.selectedModelId);
+                    setCustomModelEditorOpen(false);
+                    props.onSelectModel(model.id);
                   }}
                 >
-                  Custom model id…
+                  <span className="block truncate font-medium">{model.displayName}</span>
+                  {model.displayName === model.id ? null : (
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {model.id}
+                    </span>
+                  )}
                 </button>
-              </div>
+              ))}
+              {showCurrentCustomModel ? (
+                <button
+                  type="button"
+                  className="rounded-md bg-accent px-2 py-1.5 text-left text-[13px] text-accent-foreground"
+                  aria-pressed
+                  onClick={() => {
+                    setModelMenuOpen(false);
+                    setCustomModelEditorOpen(false);
+                  }}
+                >
+                  <span className="block truncate font-medium">{props.selectedModelId}</span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    Current custom model
+                  </span>
+                </button>
+              ) : null}
+              {activeProviderModels.length === 0 && !showCurrentCustomModel ? (
+                <div className="px-2 py-1.5 text-xs leading-4 text-muted-foreground">
+                  {props.modelsUnavailableReason ?? "No models reported for this provider."}
+                </div>
+              ) : null}
+              <button
+                ref={customModelTrigger}
+                type="button"
+                className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+                onClick={() => {
+                  setCustomModelDraft(customModelDraft ?? props.selectedModelId);
+                  setCustomModelEditorOpen(true);
+                }}
+                aria-expanded={customModelEditorOpen}
+              >
+                {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
+              </button>
             </div>
-          </PopoverPopup>
-        </Popover>
-      ) : (
-        <Input
-          autoFocus
-          value={customModelDraft}
-          aria-label="Custom model id"
-          placeholder="model id"
-          className="h-7 w-44 text-xs"
-          onChange={(event) => setCustomModelDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commitCustomModel();
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setCustomModelDraft(null);
-            }
-          }}
-          onBlur={commitCustomModel}
-        />
-      )}
+          </div>
+        }
+      />
     </span>
   );
 }

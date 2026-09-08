@@ -168,6 +168,7 @@ export function decideUserDataMigration(input: {
 export interface UserDataMigrationOffer {
   readonly legacyPath: string;
   readonly targetPath: string;
+  readonly previousAttemptFailed?: boolean;
 }
 
 export class DesktopUserDataMigration extends Context.Service<
@@ -387,6 +388,7 @@ export const make = Effect.gen(function* () {
   );
 
   const markerBeforeDecision = yield* readMarker;
+  let previousAttemptFailed = false;
   let decision = decideUserDataMigration({
     marker: markerBeforeDecision,
     legacyCandidates,
@@ -421,13 +423,14 @@ export const make = Effect.gen(function* () {
     } else {
       // Keep the accepted marker retryable. A failed copy must never be
       // recorded as an empty successful import that permanently hides the offer.
+      previousAttemptFailed = true;
       decision = { _tag: "migrate-offer", legacyPath };
     }
   }
 
   const offer: Option.Option<UserDataMigrationOffer> =
     decision._tag === "migrate-offer"
-      ? Option.some({ legacyPath: decision.legacyPath, targetPath })
+      ? Option.some({ legacyPath: decision.legacyPath, targetPath, previousAttemptFailed })
       : Option.none();
 
   const recordDecision = (outcome: UserDataMigrationOutcome) =>

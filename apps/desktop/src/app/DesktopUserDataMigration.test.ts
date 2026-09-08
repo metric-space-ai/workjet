@@ -383,6 +383,7 @@ describe("DesktopUserDataMigration marker idempotency", () => {
           const migration = yield* DesktopUserDataMigrationService;
           assert.deepEqual(migration.decision, { _tag: "migrate-offer", legacyPath: source });
           assert.isTrue(Option.isSome(migration.offer));
+          assert.isTrue(Option.getOrThrow(migration.offer).previousAttemptFailed);
         }).pipe(Effect.provide(makeMigrationLayer(disk, recorded))),
       );
       assert.equal(disk.files.get(markerPath), accepted);

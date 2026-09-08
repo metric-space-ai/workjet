@@ -524,6 +524,8 @@ export interface DesktopUserDataMigrationOffer {
   targetPath: string;
   /** Top-level entries the import would copy. Caches are never copied. */
   entries: readonly string[];
+  /** The previous copy failed and can be retried. */
+  previousAttemptFailed?: boolean;
 }
 
 /**

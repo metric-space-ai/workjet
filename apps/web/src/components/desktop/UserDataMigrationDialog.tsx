@@ -69,7 +69,11 @@ export function UserDataMigrationDialog() {
       <DialogPopup data-user-data-migration-dialog>
         <DialogPanel>
           <DialogHeader>
-            <DialogTitle>Import your existing profile?</DialogTitle>
+            <DialogTitle>
+              {offer.previousAttemptFailed
+                ? "Profile import could not finish"
+                : "Import your existing profile?"}
+            </DialogTitle>
             <DialogDescription>
               A compatible previous profile was found. Importing copies your settings and the
               pairings for connected CTOX instances into Workjet; the app restarts once to apply it.
@@ -77,9 +81,10 @@ export function UserDataMigrationDialog() {
               and this offer will not appear again.
             </DialogDescription>
           </DialogHeader>
-          {responseError ? (
+          {responseError || offer.previousAttemptFailed ? (
             <p className="text-destructive text-sm" role="alert">
-              {responseError}
+              {responseError ??
+                "Your previous profile could not be fully copied. Check available disk space and file access, then retry the import."}
             </p>
           ) : null}
           <DialogFooter>
@@ -92,7 +97,7 @@ export function UserDataMigrationDialog() {
               Start fresh
             </Button>
             <Button type="button" disabled={isResponding} onClick={() => respond(true)}>
-              Import and restart
+              {offer.previousAttemptFailed ? "Retry import and restart" : "Import and restart"}
             </Button>
           </DialogFooter>
         </DialogPanel>

@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- executes the transferred shell in a temporary host fixture.
-import { spawnSync, execFileSync } from "node:child_process";
-import { join } from "node:path";
+import * as NodeChildProcess from "node:child_process";
+import * as NodePath from "node:path";
 import { vi, expect } from "vite-plus/test";
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -15,6 +15,7 @@ vi.mock("./command.ts", () => ({
   runSshCommand: (_target: unknown, input: { stdin: string }) =>
     Effect.try({
       try: () => {
+        if (input.stdin.startsWith("printf")) return { stdout: "Linux:x86_64\n", stderr: "" };
         let script = input.stdin;
         if (script.includes("WORKJET_ARCHIVE")) {
           host.transfers++;
@@ -24,12 +25,13 @@ vi.mock("./command.ts", () => ({
               "$1" + "0".repeat(64),
             );
         }
-        const result = spawnSync("/bin/sh", ["-s"], {
+        const result = NodeChildProcess.spawnSync("/bin/sh", ["-s"], {
           input: script,
           env: { ...process.env, HOME: host.root },
           encoding: "utf8",
-          timeout: 5000,
+          timeout: 30_000,
         });
+        if (result.error) throw result.error;
         if (result.status !== 0) throw new Error(result.stderr);
         return { stdout: result.stdout, stderr: result.stderr };
       },
@@ -48,16 +50,19 @@ const target = { alias: "fixture", hostname: "fixture", username: null, port: nu
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const root = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-portable-server-" });
-  host.root = join(root, "remote");
+  host.root = NodePath.join(root, "remote");
   host.transfers = 0;
   host.corrupt = false;
   yield* fs.makeDirectory(host.root);
-  yield* fs.makeDirectory(join(root, "package/dist"), { recursive: true });
-  yield* fs.writeFileString(join(root, "package/dist/bin.mjs"), "console.log('fixture');\n");
+  yield* fs.makeDirectory(NodePath.join(root, "package/dist"), { recursive: true });
+  yield* fs.writeFileString(
+    NodePath.join(root, "package/dist/bin.mjs"),
+    "console.log('fixture');\n",
+  );
   yield* Effect.sync(() =>
-    execFileSync("tar", [
+    NodeChildProcess.execFileSync("tar", [
       "-czf",
-      join(root, `workjet-server-${process.platform}-${process.arch}.tgz`),
+      NodePath.join(root, "workjet-server-linux-x64.tgz"),
       "-C",
       root,
       "package",
@@ -85,8 +90,11 @@ it.effect("rejects a transfer with a mismatched checksum and leaves no installed
     host.corrupt = true;
     const result = yield* preparePortableServer(target, directory, {}).pipe(Effect.result);
     expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result))
+      expect(result.failure.message).toContain("transfer checksum verification failed");
+
     const fs = yield* FileSystem.FileSystem;
-    expect(yield* fs.readDirectory(join(host.root, ".workjet/ssh-server"))).toEqual([]);
+    expect(yield* fs.readDirectory(NodePath.join(host.root, ".workjet/ssh-server"))).toEqual([]);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 

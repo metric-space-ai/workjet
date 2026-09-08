@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- hashes the app's bundled archive before SSH transfer.
-import { createHash } from "node:crypto";
-import { Buffer } from "node:buffer";
+import * as NodeCrypto from "node:crypto";
+import * as NodeBuffer from "node:buffer";
 import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -48,7 +48,7 @@ export const preparePortableServer = Effect.fn("ssh.preparePortableServer")(func
         }),
     ),
   );
-  const digest = createHash("sha256").update(archive).digest("hex");
+  const digest = NodeCrypto.createHash("sha256").update(archive).digest("hex");
   const destination = `.workjet/ssh-server/${digest}`;
   const probe = yield* runSshCommand(target, {
     ...auth,
@@ -57,7 +57,7 @@ export const preparePortableServer = Effect.fn("ssh.preparePortableServer")(func
   });
   if (probe.stdout.trim()) return probe.stdout.trim();
   const encoded =
-    Buffer.from(archive)
+    NodeBuffer.Buffer.from(archive)
       .toString("base64")
       .match(/.{1,76}/g)
       ?.join("\n") ?? "";
@@ -72,11 +72,11 @@ WORKJET_ARCHIVE
 if [ "$(uname -s)" = Darwin ]; then base64 -D -i "$stage/archive.base64" > "$stage/server.tgz"; else base64 -d "$stage/archive.base64" > "$stage/server.tgz"; fi
 if command -v sha256sum >/dev/null 2>&1; then actual="$(sha256sum "$stage/server.tgz")"; else actual="$(shasum -a 256 "$stage/server.tgz")"; fi
 test "\${actual%% *}" = '${digest}' || { printf 'Workjet server transfer checksum verification failed.\\n' >&2; exit 1; }
-mkdir "$stage/install"
-tar -xzf "$stage/server.tgz" -C "$stage/install"
-test -f "$stage/install/package/dist/bin.mjs"
-touch "$stage/install/.complete"
-if [ ! -e "$HOME/${destination}" ]; then mv "$stage/install" "$HOME/${destination}"; fi
+mkdir "$stage/${digest}"
+tar -xzf "$stage/server.tgz" -C "$stage/${digest}"
+test -f "$stage/${digest}/package/dist/bin.mjs"
+touch "$stage/${digest}/.complete"
+if [ ! -e "$HOME/${destination}" ]; then mv "$stage/${digest}" "$HOME/.workjet/ssh-server/" 2>/dev/null || test -f "$HOME/${destination}/.complete"; fi
 test -f "$HOME/${destination}/.complete"
 printf '%s\\n' "$HOME/${destination}/package/dist/bin.mjs"
 `;

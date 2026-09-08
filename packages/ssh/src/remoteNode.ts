@@ -61,7 +61,10 @@ ${platforms}
     if [ -x "$workjet_node_destination/bin/node" ] && [ "$("$workjet_node_destination/bin/node" --version)" = 'v${SSH_NODE_VERSION}' ]; then exit 0; fi
     printf 'The private Workjet Node runtime is damaged and must be repaired.\\n' >&2; exit 1
   fi
-  mv "$workjet_node_stage/$workjet_node_name" "$workjet_node_destination"
+  if ! mv "$workjet_node_stage/$workjet_node_name" "$workjet_node_base/" 2>/dev/null; then
+    test -x "$workjet_node_destination/bin/node" && test "$("$workjet_node_destination/bin/node" --version)" = 'v${SSH_NODE_VERSION}'
+  fi
+
 )
 
 use_workjet_node() {

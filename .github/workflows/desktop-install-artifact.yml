@@ -44,9 +44,6 @@ jobs:
     env:
       CI: "1"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
-      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
-      T3CODE_RELAY_URL: https://relay.t3.codes
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

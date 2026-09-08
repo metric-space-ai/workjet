@@ -32,6 +32,9 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: stable
       - name: Align release versions
         if: inputs.version != ''
         env:

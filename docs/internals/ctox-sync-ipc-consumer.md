@@ -15,6 +15,7 @@ tests. It does not yet wire Desktop/Mobile onboarding or production executors
 to the native host, and does not retire the existing mailbox.
 
 Validation:
+
 - Focused socket tests cover fragmented replies, membership receipts, invalid
   frames/protocol IDs, cancellation and rejection of network endpoints.
 - CTOX's authority_cluster and webrtc_authority tests load this actual TypeScript

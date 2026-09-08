@@ -48,10 +48,21 @@ async function withSocket(
 }
 describe("native CTOX Sync IPC", () => {
   it("roundtrips admission, replay and revocation as distinct membership receipts", async () => {
-    const worker = { nodeId: 4, identity: "ed25519:test-worker", dataReplica: true, revoked: false };
+    const worker = {
+      nodeId: 4,
+      identity: "ed25519:test-worker",
+      dataReplica: true,
+      revoked: false,
+    };
     for (const [operation, result] of [
-      [{ type: "admitWorker", worker }, { type: "workerApplied", worker }],
-      [{ type: "admitWorker", worker }, { type: "workerReplayed", worker }],
+      [
+        { type: "admitWorker", worker },
+        { type: "workerApplied", worker },
+      ],
+      [
+        { type: "admitWorker", worker },
+        { type: "workerReplayed", worker },
+      ],
       [
         { type: "revokeWorker", nodeId: 4 },
         { type: "workerApplied", worker: { ...worker, revoked: true } },

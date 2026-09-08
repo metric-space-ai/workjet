@@ -1006,7 +1006,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         yield* fs.readFileString(
           path.join(stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY, "LICENSE"),
         ),
-        "Copyright (c) 2026 Workjet Inc.",
+        "Copyright (c) 2026 T3 Tools Inc.",
       );
 
       // A tree without the notices must fail the build instead of shipping a

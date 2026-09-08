@@ -56,7 +56,9 @@ const layer = it.layer(
   OrchestrationProjectionPipelineLive.pipe(
     Layer.provideMerge(OrchestrationEventStoreLive),
     Layer.provideMerge(
-      ServerConfig.layerTest(process.cwd(), { prefix: "workjet-projection-pipeline-workjet-test-" }),
+      ServerConfig.layerTest(process.cwd(), {
+        prefix: "workjet-projection-pipeline-workjet-test-",
+      }),
     ),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),

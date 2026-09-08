@@ -98,7 +98,9 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-pinned-runtime-repair-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "workjet-pinned-runtime-repair-",
+      });
       const finalPaths = pinnedRuntimePaths(path, baseDir, "1.2.3");
       yield* fs.makeDirectory(finalPaths.versionDir, { recursive: true });
       yield* fs.writeFileString(path.join(finalPaths.versionDir, "partial"), "incomplete\n");
@@ -121,7 +123,9 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-pinned-runtime-repair-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "workjet-pinned-runtime-repair-",
+      });
       const finalPaths = pinnedRuntimePaths(path, baseDir, "1.2.3");
       yield* fs.makeDirectory(path.dirname(finalPaths.entryPath), { recursive: true });
       yield* fs.writeFileString(finalPaths.entryPath, "broken\n");
@@ -153,7 +157,9 @@ it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-pinned-runtime-interrupt-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "workjet-pinned-runtime-interrupt-",
+      });
       const started = yield* Deferred.make<void>();
       const runner = ProcessRunner.ProcessRunner.of({
         run: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),

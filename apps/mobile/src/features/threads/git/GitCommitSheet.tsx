@@ -105,7 +105,9 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                   className="bg-subtle rounded-full px-3 py-2"
                   onPress={() => setExcludedFiles(new Set())}
                 >
-                  <Text className="text-foreground text-2xs font-workjet-bold uppercase">Reset</Text>
+                  <Text className="text-foreground text-2xs font-workjet-bold uppercase">
+                    Reset
+                  </Text>
                 </Pressable>
               ) : null}
               <Pressable
@@ -130,7 +132,9 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                   <Text className="text-foreground flex-1 text-sm font-medium" numberOfLines={1}>
                     {file.path}
                   </Text>
-                  <Text className="text-xs font-workjet-bold text-emerald-500">+{file.insertions}</Text>
+                  <Text className="text-xs font-workjet-bold text-emerald-500">
+                    +{file.insertions}
+                  </Text>
                   <Text className="text-xs font-workjet-bold text-rose-500">-{file.deletions}</Text>
                 </View>
               ))}

@@ -11,7 +11,8 @@ import {
 } from "./SupportBundleSection";
 
 const RESULT: DesktopSupportBundleResult = {
-  filePath: "/Users/alice/Library/Application Support/.workjet/userdata/support-bundles/bundle.json",
+  filePath:
+    "/Users/alice/Library/Application Support/.workjet/userdata/support-bundles/bundle.json",
   byteLength: 20_480,
   fieldCount: 142,
   redactedFieldCount: 7,

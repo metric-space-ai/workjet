@@ -1430,7 +1430,10 @@ function ThreadNavigationSidebarPane(
             onPress={props.onOpenEnvironmentSettings}
             size="pageTitle"
             brand={
-              <Text className="flex-1 text-[34px] font-workjet-bold text-foreground" numberOfLines={1}>
+              <Text
+                className="flex-1 text-[34px] font-workjet-bold text-foreground"
+                numberOfLines={1}
+              >
                 Threads
               </Text>
             }

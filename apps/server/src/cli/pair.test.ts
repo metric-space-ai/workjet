@@ -176,7 +176,9 @@ describe("workjet pair", () => {
   it.effect("pairs through the recorded dev web URL for dev servers", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-pair-dev-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "workjet-pair-dev-test-"),
+        );
         const port = Number(new URL(origin).port);
         const statePath = NodePath.join(baseDir, "dev", "server-runtime.json");
         yield* persistServerRuntimeState({
@@ -214,7 +216,9 @@ describe("workjet pair", () => {
   it.effect("ignores runtime state whose recorded pid is no longer alive", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-pair-pid-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "workjet-pair-pid-test-"),
+        );
         const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
         // The origin answers (another server reused the port), but the pid
         // that wrote this state file is dead — pairing must not mint a token
@@ -243,7 +247,9 @@ describe("workjet pair", () => {
 
   it.effect("ignores stale runtime state pointing at a dead server", () =>
     Effect.gen(function* () {
-      const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-pair-stale-test-"));
+      const baseDir = NodeFS.mkdtempSync(
+        NodePath.join(NodeOS.tmpdir(), "workjet-pair-stale-test-"),
+      );
       const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
       // A port from the dynamic range with nothing listening: the probe fails
       // fast with ECONNREFUSED and discovery moves on.

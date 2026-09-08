@@ -54,7 +54,11 @@ export function useCloudLinkController() {
     const message =
       cause instanceof Error ? cause.message : "Could not update Workjet Connect access.";
     const traceId = findErrorTraceId(cause);
-    console.error("[workjet-connect] Could not update Workjet Connect", { message, traceId, cause });
+    console.error("[workjet-connect] Could not update Workjet Connect", {
+      message,
+      traceId,
+      cause,
+    });
     setOperationError(traceId ? `${message} Trace ID: ${traceId}` : message);
     toastManager.add({
       type: "error",

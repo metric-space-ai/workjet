@@ -23,7 +23,10 @@ class WorkjetReviewDiffModule : Module() {
       Prop("selectedRowIdsJson") { view: WorkjetReviewDiffView, selectedRowIdsJson: String ->
         view.setSelectedRowIdsJson(selectedRowIdsJson)
       }
-      Prop("collapsedCommentIdsJson") { view: WorkjetReviewDiffView, collapsedCommentIdsJson: String ->
+      Prop("collapsedCommentIdsJson") {
+          view: WorkjetReviewDiffView,
+          collapsedCommentIdsJson: String
+        ->
         view.setCollapsedCommentIdsJson(collapsedCommentIdsJson)
       }
       Prop("appearanceScheme") { view: WorkjetReviewDiffView, appearanceScheme: String ->
@@ -54,7 +57,11 @@ class WorkjetReviewDiffModule : Module() {
         "onToggleComment",
       )
 
-      AsyncFunction("scrollToFile") { view: WorkjetReviewDiffView, fileId: String, animated: Boolean ->
+      AsyncFunction("scrollToFile") {
+          view: WorkjetReviewDiffView,
+          fileId: String,
+          animated: Boolean
+        ->
         view.scrollToFile(fileId, animated)
       }
       AsyncFunction("scrollToTop") { view: WorkjetReviewDiffView, animated: Boolean ->

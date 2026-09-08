@@ -82,7 +82,8 @@ it.effect("adds safe request context while retaining GitHub CLI causes", () =>
     const error = yield* provider
       .getChangeRequest({
         cwd: "/repo",
-        reference: "https://user:secret@github.com/metric-space-ai/workjet/pull/42?token=secret#diff",
+        reference:
+          "https://user:secret@github.com/metric-space-ai/workjet/pull/42?token=secret#diff",
       })
       .pipe(Effect.flip);
 

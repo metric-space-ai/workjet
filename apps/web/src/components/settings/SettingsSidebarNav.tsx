@@ -37,7 +37,10 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "../ui/sidebar";
-import { WorkjetConnectSidebarAvatar, WorkjetConnectSidebarSignIn } from "../clerk/WorkjetConnectSidebarSignIn";
+import {
+  WorkjetConnectSidebarAvatar,
+  WorkjetConnectSidebarSignIn,
+} from "../clerk/WorkjetConnectSidebarSignIn";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,

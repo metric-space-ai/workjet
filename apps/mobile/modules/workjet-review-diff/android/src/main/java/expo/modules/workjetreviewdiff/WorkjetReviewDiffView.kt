@@ -23,7 +23,10 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
-class WorkjetReviewDiffView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
+class WorkjetReviewDiffView(context: Context, appContext: AppContext) : ExpoView(
+  context,
+  appContext
+) {
   private val canvasView = DiffCanvasView(context)
   private val onDebug by EventDispatcher()
   private val onVisibleFileChange by EventDispatcher()

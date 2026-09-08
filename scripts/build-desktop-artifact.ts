@@ -1450,7 +1450,9 @@ const BuildEnvConfig = Config.all({
   signed: Config.boolean("WORKJET_DESKTOP_SIGNED").pipe(Config.withDefault(false)),
   verbose: Config.boolean("WORKJET_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
   mockUpdates: Config.boolean("WORKJET_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
-  mockUpdateServerPort: Config.string("WORKJET_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
+  mockUpdateServerPort: Config.string("WORKJET_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(
+    Config.option,
+  ),
   // Path to a prebuilt Linux node-pty binary (pty.node) for the target arch,
   // produced by the Linux CI job and handed to the Windows packaging job. Placed
   // into the staged node-pty so the WSL backend ships a ready binary and never
@@ -2947,7 +2949,9 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
   arch: Flag.choice("arch", BuildArch.literals).pipe(
-    Flag.withDescription("Build arch, for example arm64/x64/universal (env: WORKJET_DESKTOP_ARCH)."),
+    Flag.withDescription(
+      "Build arch, for example arm64/x64/universal (env: WORKJET_DESKTOP_ARCH).",
+    ),
     Flag.optional,
   ),
   buildVersion: Flag.string("build-version").pipe(

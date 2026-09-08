@@ -483,7 +483,8 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   // What the "Default" option resolves to while no override is set: the
   // repo's workjet.json value when present, otherwise the global setting.
   const inheritedEnvMode = workjetFile.file?.defaultThreadEnvMode ?? settings.defaultThreadEnvMode;
-  const inheritedEnvModeSource = workjetFile.file?.defaultThreadEnvMode != null ? "workjet.json" : "global";
+  const inheritedEnvModeSource =
+    workjetFile.file?.defaultThreadEnvMode != null ? "workjet.json" : "global";
   const importableScripts = useMemo(
     () =>
       workjetFile.scripts.filter(

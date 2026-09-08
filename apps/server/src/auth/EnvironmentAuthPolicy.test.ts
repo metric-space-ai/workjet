@@ -21,7 +21,9 @@ const makeEnvironmentAuthPolicyLayer = (
           } satisfies ServerConfig.ServerConfig["Service"];
         }),
       ).pipe(
-        Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "workjet-auth-policy-test-" })),
+        Layer.provide(
+          ServerConfig.layerTest(process.cwd(), { prefix: "workjet-auth-policy-test-" }),
+        ),
       ),
     ),
   );

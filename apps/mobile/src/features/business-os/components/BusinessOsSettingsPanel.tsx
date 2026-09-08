@@ -286,7 +286,9 @@ export function BusinessOsSettingsPanel(props: {
                         active ? "border-primary bg-subtle" : "border-border bg-secondary",
                       )}
                     >
-                      <Text className="font-workjet-bold text-foreground">{instance.displayName}</Text>
+                      <Text className="font-workjet-bold text-foreground">
+                        {instance.displayName}
+                      </Text>
                       <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={1}>
                         {codeEnvironmentBound
                           ? active

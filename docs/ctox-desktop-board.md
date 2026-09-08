@@ -265,10 +265,10 @@ für jeden Thread. Sauberer wäre, sie aus der Worker-Definition zu nehmen.
 | Swift-Original (Quellcode)   | `~/Documents/claude-workjet/app/Sources/WorkjetApp/`               |
 | Swift-Worker-Maske           | `.../WorkerEditorView.swift` (811 Zeilen)                          |
 | Swift-Konfiguration          | `~/Library/Application Support/Workjet/config.v1.json`             |
-| App-Zustand (Threads, Turns) | `~/.workjet/userdata/state.sqlite`                                      |
-| Turn-Protokolle je Thread    | `~/.workjet/userdata/logs/provider/events.<threadId>.log`               |
-| Gateway-Konfiguration        | `~/.workjet/userdata/provider-gateway.json` (5 Konten)                  |
-| Gateway-Host                 | `~/.workjet/userdata/provider-gateway-host`, Ports 59770 / 57135        |
+| App-Zustand (Threads, Turns) | `~/.workjet/userdata/state.sqlite`                                 |
+| Turn-Protokolle je Thread    | `~/.workjet/userdata/logs/provider/events.<threadId>.log`          |
+| Gateway-Konfiguration        | `~/.workjet/userdata/provider-gateway.json` (5 Konten)             |
+| Gateway-Host                 | `~/.workjet/userdata/provider-gateway-host`, Ports 59770 / 57135   |
 | Modellkanäle                 | `apps/server/src/providerGateway/ProviderGatewayManagement.ts:120` |
 | Auth-Klassifizierung         | `apps/server/src/provider/Layers/ClaudeAdapter.ts:393,1319`        |
 | Anmelde-Sondierung ohne API  | `.../ClaudeProvider.ts` `probeClaudeCapabilities`                  |

@@ -26,7 +26,10 @@ class WorkjetComposerEditorModule : Module() {
       Prop("lineHeight") { view: WorkjetComposerEditorView, lineHeight: Double ->
         view.setLineHeight(lineHeight.toFloat())
       }
-      Prop("contentInsetVertical") { view: WorkjetComposerEditorView, contentInsetVertical: Double ->
+      Prop("contentInsetVertical") {
+          view: WorkjetComposerEditorView,
+          contentInsetVertical: Double
+        ->
         view.setContentInsetVertical(contentInsetVertical.toInt())
       }
 

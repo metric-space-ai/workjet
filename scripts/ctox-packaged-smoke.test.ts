@@ -138,9 +138,9 @@ describe("recursive packaged child profile checks", () => {
           }
         : record,
     );
-    expect(checkChildProcessProfiles(bad, 10, "/Volumes/tmp/s/app-data/workjet").violations).toEqual(
-      [{ pid: 12, reason: "mismatch" }],
-    );
+    expect(
+      checkChildProcessProfiles(bad, 10, "/Volumes/tmp/s/app-data/workjet").violations,
+    ).toEqual([{ pid: 12, reason: "mismatch" }]);
   });
   it("handles expected profile paths containing spaces", () => {
     const spaced = [

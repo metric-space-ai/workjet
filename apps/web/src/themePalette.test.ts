@@ -995,7 +995,9 @@ describe("stored theme preferences", () => {
     // The dark-variant alias keeps its raw form: it still carries a mode hint.
     expect(canonicalThemePreference("workjet-chat-dark")).toBe("workjet-chat-dark");
     // A stored mix that predates the rename resolves to the new ids.
-    expect(parseThemeHalves(JSON.stringify({ light: "workjet-ocean", dark: "workjet-grove" }))).toEqual({
+    expect(
+      parseThemeHalves(JSON.stringify({ light: "workjet-ocean", dark: "workjet-grove" })),
+    ).toEqual({
       light: OCEAN_THEME.id,
       dark: GROVE_THEME.id,
     });

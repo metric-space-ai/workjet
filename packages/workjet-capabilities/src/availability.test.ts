@@ -86,7 +86,8 @@ describe("capability availability from one catalog", () => {
         ?.target,
     ).toEqual({ kind: "ctox-instance", instanceId });
     expect(
-      resolveCapabilityCatalogForHost({ adapter: "workjet-mcp", enabledCapabilityIds: [] })[0]?.target,
+      resolveCapabilityCatalogForHost({ adapter: "workjet-mcp", enabledCapabilityIds: [] })[0]
+        ?.target,
     ).toBeNull();
   });
 

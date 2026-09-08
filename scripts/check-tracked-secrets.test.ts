@@ -120,12 +120,15 @@ describe("scanTrackedFileText", () => {
       "a documented template holds placeholders, so it is scanned like documentation",
     );
     assert.isTrue(
-      scanTrackedFileText(".env", "WORKJET_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr").length >
-        0,
+      scanTrackedFileText(".env", "WORKJET_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr")
+        .length > 0,
       "the escalation is what catches an opaque pairing token with no recognizable prefix",
     );
     assert.deepStrictEqual(
-      scanTrackedFileText(".env.example", "WORKJET_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr"),
+      scanTrackedFileText(
+        ".env.example",
+        "WORKJET_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr",
+      ),
       [],
     );
   });

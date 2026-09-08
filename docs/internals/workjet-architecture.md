@@ -16,8 +16,8 @@ parity is proven.
 | Capability                                                                     | Canonical owner             | Runtime boundary                                     |
 | ------------------------------------------------------------------------------ | --------------------------- | ---------------------------------------------------- |
 | Desktop window, release, updates, settings, and product-mode navigation        | Workjet                     | Electron main process and Workjet renderer           |
-| Workjet projects, threads, turns, workspaces, and remote environments               | Workjet Workjet server           | Typed Effect RPC                                     |
-| Orchestrator/worker roles and parent-child thread relationships                | Workjet Workjet server           | Event-sourced command/event/projection flow          |
+| Workjet projects, threads, turns, workspaces, and remote environments          | Workjet Workjet server      | Typed Effect RPC                                     |
+| Orchestrator/worker roles and parent-child thread relationships                | Workjet Workjet server      | Event-sourced command/event/projection flow          |
 | Shared skill and tool implementations                                          | Workjet                     | Versioned registry with harness and CTOX adapters    |
 | Provider protocol translation, subscriptions, account pools, and cooldowns     | Shared Workjet Rust package | One isolated gateway runtime per product authority   |
 | CTOX instance discovery, login, pairing, and shell launch                      | Workjet                     | Electron session, keychain, and isolated guest views |

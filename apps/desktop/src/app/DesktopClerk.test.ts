@@ -231,7 +231,10 @@ describe("DesktopClerk", () => {
     storageMock.mockReturnValue(storageAdapter);
     createClerkBridgeMock.mockReturnValue(bridge);
 
-    assert.equal(DesktopClerk.createDesktopClerkBridge("/tmp/workjet-state", isDevelopment), bridge);
+    assert.equal(
+      DesktopClerk.createDesktopClerkBridge("/tmp/workjet-state", isDevelopment),
+      bridge,
+    );
     assert.deepEqual(storageMock.mock.calls, [[{ path: "/tmp/workjet-state" }]]);
     assert.deepEqual(createClerkBridgeMock.mock.calls, [
       [

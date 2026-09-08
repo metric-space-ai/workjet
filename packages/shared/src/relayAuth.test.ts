@@ -21,9 +21,9 @@ const captureError = (run: () => unknown): unknown => {
 
 describe("Clerk relay auth", () => {
   it("derives a custom Frontend API hostname from a Clerk publishable key", () => {
-    expect(clerkFrontendApiHostnameFromPublishableKey(clerkPublishableKey("clerk.workjet.codes"))).toBe(
-      "clerk.workjet.codes",
-    );
+    expect(
+      clerkFrontendApiHostnameFromPublishableKey(clerkPublishableKey("clerk.workjet.codes")),
+    ).toBe("clerk.workjet.codes");
     expect(clerkFrontendApiUrlFromPublishableKey(clerkPublishableKey("clerk.workjet.codes"))).toBe(
       "https://clerk.workjet.codes",
     );
@@ -79,10 +79,14 @@ describe("Clerk relay auth", () => {
   it("allows standard Clerk hosts and an exact configured custom hostname", () => {
     expect(isAllowedClerkFrontendApiHostname("example.clerk.accounts.dev", null)).toBe(true);
     expect(isAllowedClerkFrontendApiHostname("example.clerk.accounts.com", null)).toBe(true);
-    expect(isAllowedClerkFrontendApiHostname("clerk.workjet.codes", "clerk.workjet.codes")).toBe(true);
-    expect(isAllowedClerkFrontendApiHostname("attacker.example", "clerk.workjet.codes")).toBe(false);
-    expect(isAllowedClerkFrontendApiHostname("nested.clerk.workjet.codes", "clerk.workjet.codes")).toBe(
+    expect(isAllowedClerkFrontendApiHostname("clerk.workjet.codes", "clerk.workjet.codes")).toBe(
+      true,
+    );
+    expect(isAllowedClerkFrontendApiHostname("attacker.example", "clerk.workjet.codes")).toBe(
       false,
     );
+    expect(
+      isAllowedClerkFrontendApiHostname("nested.clerk.workjet.codes", "clerk.workjet.codes"),
+    ).toBe(false);
   });
 });

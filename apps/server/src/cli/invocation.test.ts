@@ -3,7 +3,10 @@ import { assert, it } from "@effect/vitest";
 import { detectCliRunner, formatCliCommand, suggestedPackageSpec } from "./invocation.ts";
 
 it("detects package runners from their cache entry paths", () => {
-  assert.equal(detectCliRunner("/home/theo/.npm/_npx/abc123/node_modules/workjet/dist/bin.mjs"), "npx");
+  assert.equal(
+    detectCliRunner("/home/theo/.npm/_npx/abc123/node_modules/workjet/dist/bin.mjs"),
+    "npx",
+  );
   assert.equal(
     detectCliRunner(
       "C:\\Users\\theo\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\workjet\\dist\\bin.mjs",
@@ -24,8 +27,14 @@ it("detects package runners from their cache entry paths", () => {
     ),
     "pnpm dlx",
   );
-  assert.equal(detectCliRunner("/home/theo/.bun/install/cache/workjet@0.0.31/dist/bin.mjs"), "bunx");
-  assert.equal(detectCliRunner("/tmp/bunx-1000-workjet@latest/node_modules/workjet/dist/bin.mjs"), "bunx");
+  assert.equal(
+    detectCliRunner("/home/theo/.bun/install/cache/workjet@0.0.31/dist/bin.mjs"),
+    "bunx",
+  );
+  assert.equal(
+    detectCliRunner("/tmp/bunx-1000-workjet@latest/node_modules/workjet/dist/bin.mjs"),
+    "bunx",
+  );
   assert.equal(
     detectCliRunner(
       "C:\\Users\\theo\\AppData\\Local\\Temp\\bunx-0-workjet@latest\\node_modules\\workjet\\dist\\bin.mjs",
@@ -37,7 +46,9 @@ it("detects package runners from their cache entry paths", () => {
 it("treats stable installs as direct invocations", () => {
   assert.isNull(detectCliRunner("/usr/local/lib/node_modules/workjet/dist/bin.mjs"));
   assert.isNull(detectCliRunner("/home/theo/Code/work/workjet/apps/server/dist/bin.mjs"));
-  assert.isNull(detectCliRunner("/home/theo/.workjet/runtime/0.0.31/node_modules/workjet/dist/bin.mjs"));
+  assert.isNull(
+    detectCliRunner("/home/theo/.workjet/runtime/0.0.31/node_modules/workjet/dist/bin.mjs"),
+  );
   assert.isNull(detectCliRunner(""));
 });
 

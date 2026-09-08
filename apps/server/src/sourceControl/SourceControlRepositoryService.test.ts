@@ -81,7 +81,9 @@ function makeLayer(input: {
     Layer.provide(
       ServerConfig.layerTest(
         process.cwd(),
-        input.fileSystem ? "/tmp/workjet-source-control-repos" : { prefix: "workjet-source-control-repos-" },
+        input.fileSystem
+          ? "/tmp/workjet-source-control-repos"
+          : { prefix: "workjet-source-control-repos-" },
       ),
     ),
   );

@@ -94,7 +94,10 @@ function ToggleRow(props: {
 }) {
   return (
     <View className="min-h-14 flex-row items-center gap-3 bg-card px-4 py-3">
-      <Text className="min-w-0 flex-1 text-base font-workjet-medium text-foreground" numberOfLines={1}>
+      <Text
+        className="min-w-0 flex-1 text-base font-workjet-medium text-foreground"
+        numberOfLines={1}
+      >
         {props.title}
       </Text>
       <Switch

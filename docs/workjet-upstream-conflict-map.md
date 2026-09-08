@@ -245,15 +245,15 @@ files, only 25 conflict against 172 upstream commits — a 12% collision rate.
 
 ### "Avoid changing internal Workjet identifiers that are not user-visible" — **TRUE, held**
 
-| Identifier class                                                  | Baseline             | Tip                  | Removed/renamed   |
-| ----------------------------------------------------------------- | -------------------- | -------------------- | ----------------- |
-| Desktop IPC channel literals (`apps/desktop/src/ipc/channels.ts`) | 78                   | 101                  | **0**             |
-| `Schema.Literal("…")` in `packages/contracts`                     | 228                  | 253                  | **0**             |
-| `Schema.TaggedStruct("…")` in `packages/contracts`                | 13                   | 40                   | **0**             |
-| `_tag: "…"` in `packages/contracts`                               | 11                   | 40                   | **0**             |
-| `CREATE TABLE` names in `apps/server`                             | 18                   | 25                   | **0**             |
-| `localStorage` keys                                               | 2                    | 2                    | **0**             |
-| Workspace package names (`@workjet/*`)                            | 5                    | 5                    | **0** (identical) |
+| Identifier class                                                  | Baseline          | Tip               | Removed/renamed   |
+| ----------------------------------------------------------------- | ----------------- | ----------------- | ----------------- |
+| Desktop IPC channel literals (`apps/desktop/src/ipc/channels.ts`) | 78                | 101               | **0**             |
+| `Schema.Literal("…")` in `packages/contracts`                     | 228               | 253               | **0**             |
+| `Schema.TaggedStruct("…")` in `packages/contracts`                | 13                | 40                | **0**             |
+| `_tag: "…"` in `packages/contracts`                               | 11                | 40                | **0**             |
+| `CREATE TABLE` names in `apps/server`                             | 18                | 25                | **0**             |
+| `localStorage` keys                                               | 2                 | 2                 | **0**             |
+| Workspace package names (`@workjet/*`)                            | 5                 | 5                 | **0** (identical) |
 | macOS bundle id                                                   | `dev.workjet.app` | `dev.workjet.app` | unchanged         |
 
 The copy sweep added identifiers and never renamed one. The CTOX URL schemes are

@@ -97,7 +97,9 @@ const EnvServerConfig = Config.all({
   otlpExportIntervalMs: Config.int("WORKJET_OTLP_EXPORT_INTERVAL_MS").pipe(
     Config.withDefault(10_000),
   ),
-  otlpServiceName: Config.string("WORKJET_OTLP_SERVICE_NAME").pipe(Config.withDefault("workjet-server")),
+  otlpServiceName: Config.string("WORKJET_OTLP_SERVICE_NAME").pipe(
+    Config.withDefault("workjet-server"),
+  ),
   mode: Config.schema(ServerConfig.RuntimeMode, "WORKJET_MODE").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),

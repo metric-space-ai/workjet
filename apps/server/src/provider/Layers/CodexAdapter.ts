@@ -1719,7 +1719,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 compiledManagedPrompt: mcpSession.compiledManagedPrompt,
                 environment: {
                   ...(sessionEnvironment ?? process.env),
-                  WORKJET_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
+                  WORKJET_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(
+                    /^Bearer\s+/,
+                    "",
+                  ),
                 },
                 appServerArgs: [
                   "-c",

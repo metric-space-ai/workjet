@@ -48,7 +48,10 @@ describe("ssh auth", () => {
       assert.equal(env.WORKJET_SSH_AUTH_SECRET, "super-secret");
       assert.equal(env.DISPLAY, "workjet");
       assert.equal(yield* fs.exists(askpassPath), true);
-      assert.include(yield* fs.readFileString(askpassPath), 'printf "%s\\n" "$WORKJET_SSH_AUTH_SECRET"');
+      assert.include(
+        yield* fs.readFileString(askpassPath),
+        'printf "%s\\n" "$WORKJET_SSH_AUTH_SECRET"',
+      );
     }).pipe(
       Effect.provide(Layer.merge(NodeServices.layer, Layer.succeed(HostProcessPlatform, "linux"))),
       Effect.scoped,

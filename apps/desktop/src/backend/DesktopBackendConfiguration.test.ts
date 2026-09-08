@@ -875,7 +875,9 @@ describe("DesktopBackendConfiguration", () => {
             ),
           ),
         ),
-        Layer.provideMerge(makeEnvironmentLayer("/tmp/workjet-wsl-isavailable", { platform: "win32" })),
+        Layer.provideMerge(
+          makeEnvironmentLayer("/tmp/workjet-wsl-isavailable", { platform: "win32" }),
+        ),
         Layer.provide(NodeServices.layer),
       ),
     );

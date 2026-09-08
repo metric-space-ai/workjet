@@ -90,4 +90,6 @@ export interface ProjectionPendingApprovalRepositoryShape {
 export class ProjectionPendingApprovalRepository extends Context.Service<
   ProjectionPendingApprovalRepository,
   ProjectionPendingApprovalRepositoryShape
->()("workjet/persistence/Services/ProjectionPendingApprovals/ProjectionPendingApprovalRepository") {}
+>()(
+  "workjet/persistence/Services/ProjectionPendingApprovals/ProjectionPendingApprovalRepository",
+) {}

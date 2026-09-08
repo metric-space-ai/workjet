@@ -1538,7 +1538,12 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* initRepoWithCommit(cwd);
         const driver = yield* GitVcsDriver.GitVcsDriver;
 
-        yield* git(cwd, ["remote", "add", "origin", "https://github.com/metric-space-ai/workjet.git"]);
+        yield* git(cwd, [
+          "remote",
+          "add",
+          "origin",
+          "https://github.com/metric-space-ai/workjet.git",
+        ]);
 
         const reusedForSsh = yield* driver.ensureRemote({
           cwd,
@@ -1688,7 +1693,10 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
 
         assert.equal(yield* git(worktreePath, ["rev-parse", "HEAD"]), remoteHead);
         assert.equal(
-          yield* driver.readConfigValue(worktreePath, "branch.workjet/fetched-origin.gh-merge-base"),
+          yield* driver.readConfigValue(
+            worktreePath,
+            "branch.workjet/fetched-origin.gh-merge-base",
+          ),
           initialBranch,
         );
         assert.equal(

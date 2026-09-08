@@ -128,7 +128,10 @@ describe("ssh tunnel scripts", () => {
     });
 
     assert.include(script, "exec npx --yes 'workjet@nightly; touch /tmp/workjet-owned' \"$@\"");
-    assert.include(script, "exec npm exec --yes 'workjet@nightly; touch /tmp/workjet-owned' -- \"$@\"");
+    assert.include(
+      script,
+      "exec npm exec --yes 'workjet@nightly; touch /tmp/workjet-owned' -- \"$@\"",
+    );
     assert.notInclude(script, "exec npx --yes workjet@nightly; touch /tmp/workjet-owned");
   });
 
@@ -181,7 +184,10 @@ describe("ssh tunnel scripts", () => {
     );
     assert.include(buildRemotePairingScript(target), 'PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"');
     assert.notInclude(buildRemotePairingScript(target), "server-home");
-    assert.include(buildRemotePairingScript(target, { packageSpec: "workjet@nightly" }), "workjet@nightly");
+    assert.include(
+      buildRemotePairingScript(target, { packageSpec: "workjet@nightly" }),
+      "workjet@nightly",
+    );
     assert.include(
       buildRemoteStopScript(target),
       'if [ "$REMOTE_MANAGED" != "external" ] && [ -n "$REMOTE_PID" ]',

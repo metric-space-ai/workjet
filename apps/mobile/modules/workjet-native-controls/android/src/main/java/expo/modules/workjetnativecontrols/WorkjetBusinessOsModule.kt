@@ -213,7 +213,10 @@ private class WorkjetBusinessOsAssetHandler(
   }
 }
 
-class WorkjetBusinessOsView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
+class WorkjetBusinessOsView(context: Context, appContext: AppContext) : ExpoView(
+  context,
+  appContext
+) {
   private val onError by EventDispatcher()
   private val onNotification by EventDispatcher()
   private val onShellMessage by EventDispatcher()
@@ -411,11 +414,17 @@ class WorkjetBusinessOsModule : Module() {
       Prop("storageIdentity") { view: WorkjetBusinessOsView, value: String ->
         view.setStorageIdentity(value)
       }
-      Prop("shellRootUri") { view: WorkjetBusinessOsView, value: String -> view.setShellRootUri(value) }
-      Prop("sessionJson") { view: WorkjetBusinessOsView, value: String -> view.setSessionJson(value) }
+      Prop("shellRootUri") { view: WorkjetBusinessOsView, value: String ->
+        view.setShellRootUri(value)
+      }
+      Prop("sessionJson") { view: WorkjetBusinessOsView, value: String ->
+        view.setSessionJson(value)
+      }
       Prop("configJson") { view: WorkjetBusinessOsView, value: String -> view.setConfigJson(value) }
       Prop("launchKey") { view: WorkjetBusinessOsView, value: String -> view.setLaunchKey(value) }
-      Prop("commandJson") { view: WorkjetBusinessOsView, value: String -> view.setCommandJson(value) }
+      Prop("commandJson") { view: WorkjetBusinessOsView, value: String ->
+        view.setCommandJson(value)
+      }
       Events("onError", "onNotification", "onShellMessage")
       OnViewDestroys { view: WorkjetBusinessOsView -> view.cleanup() }
     }

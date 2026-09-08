@@ -37,12 +37,12 @@
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@types/bun": "1.3.14",
+    "@types/node": "catalog:",
     "@workjet/contracts": "workspace:*",
     "@workjet/shared": "workspace:*",
     "@workjet/tailscale": "workspace:*",
     "@workjet/web": "workspace:*",
-    "@types/bun": "1.3.14",
-    "@types/node": "catalog:",
     "effect-acp": "workspace:*",
     "effect-codex-app-server": "workspace:*",
     "vite-plus": "catalog:"

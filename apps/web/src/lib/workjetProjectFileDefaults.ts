@@ -1,4 +1,8 @@
-import { WORKJET_PROJECT_FILE_NAME, type EnvironmentId, type ThreadEnvMode } from "@workjet/contracts";
+import {
+  WORKJET_PROJECT_FILE_NAME,
+  type EnvironmentId,
+  type ThreadEnvMode,
+} from "@workjet/contracts";
 import { parseWorkjetProjectFile } from "@workjet/shared/workjetProjectFile";
 import { executeAtomQuery } from "@workjet/client-runtime/state/runtime";
 

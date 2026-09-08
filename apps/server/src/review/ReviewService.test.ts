@@ -40,7 +40,9 @@ describe("ReviewService", () => {
   it.effect("rejects diff preview cwd outside the configured workspace roots", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-workspace-" });
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "workjet-review-workspace-",
+      });
       const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-outside-" });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-base-" });
       const detectCalls: Array<{ readonly cwd: string }> = [];
@@ -63,7 +65,9 @@ describe("ReviewService", () => {
   it.effect("attributes file-content workspace violations to the file-content operation", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-workspace-" });
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "workjet-review-workspace-",
+      });
       const outsideRoot = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-outside-" });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-base-" });
       const detectCalls: Array<{ readonly cwd: string }> = [];
@@ -96,7 +100,9 @@ describe("ReviewService", () => {
   it.effect("allows diff preview cwd inside the configured workspace root", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-workspace-" });
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "workjet-review-workspace-",
+      });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-base-" });
       const detectCalls: Array<{ readonly cwd: string }> = [];
 
@@ -163,7 +169,9 @@ describe("ReviewService", () => {
   it.effect("preserves unexpected path-resolution failures", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-workspace-" });
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({
+        prefix: "workjet-review-workspace-",
+      });
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-review-base-" });
       const invalidCwd = `${workspaceRoot}\0invalid`;
       const detectCalls: Array<{ readonly cwd: string }> = [];

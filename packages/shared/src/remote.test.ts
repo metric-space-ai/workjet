@@ -88,7 +88,8 @@ describe("remote", () => {
   it("normalizes a protocol-relative host from a hosted pairing link", () => {
     expect(
       resolveRemotePairingTarget({
-        pairingUrl: "https://app.workjet.codes/pair?host=%2F%2Fremote.example.com#token=pairing-token",
+        pairingUrl:
+          "https://app.workjet.codes/pair?host=%2F%2Fremote.example.com#token=pairing-token",
       }),
     ).toEqual({
       credential: "pairing-token",

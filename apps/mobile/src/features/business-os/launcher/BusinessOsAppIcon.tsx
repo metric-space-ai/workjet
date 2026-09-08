@@ -123,7 +123,9 @@ function rawAppIcon(props: {
           </View>
           {props.badge && props.badge > 0 ? (
             <View className="absolute -right-0.5 -top-1 min-w-6 items-center rounded-full bg-red-500 px-1.5 py-0.5">
-              <Text className="text-xs font-workjet-bold text-white">{Math.min(props.badge, 99)}</Text>
+              <Text className="text-xs font-workjet-bold text-white">
+                {Math.min(props.badge, 99)}
+              </Text>
             </View>
           ) : null}
           {!props.compact ? (

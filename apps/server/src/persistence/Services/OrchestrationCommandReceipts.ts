@@ -68,4 +68,6 @@ export interface OrchestrationCommandReceiptRepositoryShape {
 export class OrchestrationCommandReceiptRepository extends Context.Service<
   OrchestrationCommandReceiptRepository,
   OrchestrationCommandReceiptRepositoryShape
->()("workjet/persistence/Services/OrchestrationCommandReceipts/OrchestrationCommandReceiptRepository") {}
+>()(
+  "workjet/persistence/Services/OrchestrationCommandReceipts/OrchestrationCommandReceiptRepository",
+) {}

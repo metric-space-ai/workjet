@@ -138,7 +138,7 @@ In **Clerk Dashboard > JWT templates**, create a template with:
 
 | Setting | Value                        |
 | ------- | ---------------------------- |
-| Name    | `workjet-relay`                   |
+| Name    | `workjet-relay`              |
 | Claims  | `{ "aud": "workjet-relay" }` |
 
 Set `WORKJET_CLERK_JWT_TEMPLATE=workjet-relay` in the repository-root `.env`, and set

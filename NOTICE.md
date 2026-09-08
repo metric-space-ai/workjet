@@ -402,7 +402,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `jose@6.2.2` — panva/jose
 - `jose@6.2.3` — panva/jose
 - `js-cookie@3.0.7` — https://github.com/js-cookie/js-cookie
-- `js-yaml@4.3.1` — nodeca/js-yaml
+- `js-yaml@4.3.2` — nodeca/js-yaml
 - `json-schema-to-ts@3.1.1` — https://github.com/ThomasAribart/json-schema-to-ts
 - `json-schema-traverse@1.0.0` — https://github.com/epoberezkin/json-schema-traverse
 - `jsonc-parser@3.3.1` — https://github.com/microsoft/node-jsonc-parser

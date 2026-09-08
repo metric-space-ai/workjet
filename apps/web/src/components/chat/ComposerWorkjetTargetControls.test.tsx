@@ -10,12 +10,15 @@ import {
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Children, isValidElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   COMPOSER_COMPUTER_LOCKED_REASON,
   COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT,
   ComposerComputerControlView,
+  ComposerComputerChoiceList,
+  ComposerComputerDetails,
   ComposerManualTargetControlsView,
   ComposerWorkjetCompactMenuContent,
   ComposerSystemPromptControlView,
@@ -39,6 +42,112 @@ const computer = (id: string, label: string, environmentId: EnvironmentId): Work
   environmentId,
   presentationKind: "local",
   harnesses: [],
+});
+
+function computerButton(
+  node: ReactNode,
+  label: string,
+): {
+  disabled: boolean | undefined;
+  onClick: (event: { currentTarget: HTMLButtonElement }) => void;
+} {
+  for (const child of Children.toArray(node)) {
+    if (
+      !isValidElement<{
+        children?: ReactNode;
+        "aria-label"?: string;
+        disabled?: boolean;
+        onClick?: (event: { currentTarget: HTMLButtonElement }) => void;
+      }>(child)
+    )
+      continue;
+    if (child.type === "button" && child.props["aria-label"] === label && child.props.onClick) {
+      return { disabled: child.props.disabled, onClick: child.props.onClick };
+    }
+    if (child.props.children) {
+      try {
+        return computerButton(child.props.children, label);
+      } catch {
+        /* Search the next sibling. */
+      }
+    }
+  }
+  throw new Error(`Missing computer button: ${label}`);
+}
+
+describe("computer popup selection and details", () => {
+  const base = {
+    computers: [computer("local", "Local", envA), computer("remote", "Remote", envB)],
+    selectedComputerId: "local",
+    activeEnvironmentId: envA,
+    selectableEnvironmentIds: [envA],
+    disabledReason: null,
+    mismatchNote: null,
+    detailComputerId: null,
+  };
+
+  it("opens details for an unavailable target without moving the draft", () => {
+    const select = vi.fn();
+    const inspect = vi.fn();
+    const tree = ComposerComputerChoiceList({
+      ...base,
+      onSelectComputer: select,
+      onOpenDetails: inspect,
+    });
+    const trigger = {} as HTMLButtonElement;
+    const unavailable = computerButton(tree, "Use Remote");
+    expect(unavailable.disabled).toBe(true);
+    unavailable.onClick({ currentTarget: trigger });
+    computerButton(tree, "Remote details").onClick({ currentTarget: trigger });
+    expect(select).not.toHaveBeenCalled();
+    expect(inspect).toHaveBeenCalledExactlyOnceWith("remote", trigger);
+  });
+
+  it("prevents selection of every target during a started session while allowing inspection", () => {
+    const select = vi.fn();
+    const inspect = vi.fn();
+    const tree = ComposerComputerChoiceList({
+      ...base,
+      selectableEnvironmentIds: [envA, envB],
+      disabledReason: COMPOSER_COMPUTER_LOCKED_REASON,
+      onSelectComputer: select,
+      onOpenDetails: inspect,
+    });
+    for (const label of ["Local", "Remote"]) {
+      const choice = computerButton(tree, `Use ${label}`);
+      expect(choice.disabled).toBe(true);
+      choice.onClick({ currentTarget: {} as HTMLButtonElement });
+      expect(computerButton(tree, `${label} details`).disabled).not.toBe(true);
+    }
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("moves an available draft only through the explicit selection action", () => {
+    const select = vi.fn();
+    const inspect = vi.fn();
+    const tree = ComposerComputerChoiceList({
+      ...base,
+      selectableEnvironmentIds: [envA, envB],
+      onSelectComputer: select,
+      onOpenDetails: inspect,
+    });
+    computerButton(tree, "Use Remote").onClick({ currentTarget: {} as HTMLButtonElement });
+    expect(select).toHaveBeenCalledExactlyOnceWith("remote");
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes saved harness configuration from verified host readiness", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerComputerDetails
+        computer={{ ...base.computers[0]!, harnesses: [{ harness: "codex-cli", available: true }] }}
+        projectAvailable={false}
+      />,
+    );
+    expect(markup).toContain("Saved configuration");
+    expect(markup).toContain("Enabled");
+    expect(markup).toContain(COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT);
+    expect(markup).not.toContain("Connected");
+  });
 });
 
 const route = (id: string, label: string, accountId: string): WorkjetLlmRoute => ({
@@ -145,7 +254,7 @@ describe("the Computer control", () => {
     );
   });
 
-  it("is disabled with the stated reason on a started thread", () => {
+  it("keeps computer details reachable with the stated selection lock on a started thread", () => {
     const markup = renderToStaticMarkup(
       <ComposerComputerControlView
         computers={computers}
@@ -159,7 +268,8 @@ describe("the Computer control", () => {
     );
 
     expect(markup).toContain(COMPOSER_COMPUTER_LOCKED_REASON);
-    expect(markup).toContain("data-disabled");
+    expect(markup).toContain('aria-label="Computer"');
+    expect(markup).not.toContain("data-disabled");
   });
 
   it("surfaces a worker's unresolvable computer instead of lying", () => {

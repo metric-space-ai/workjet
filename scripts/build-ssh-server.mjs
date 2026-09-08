@@ -44,7 +44,9 @@ const program = Effect.gen(function* () {
         },
       );
       const monitorTarget = NodePath.join(stage, "resource-monitor-target");
-      await NodeFSP.mkdir(NodePath.join(destination, "legal/provider-gateway"), { recursive: true });
+      await NodeFSP.mkdir(NodePath.join(destination, "legal/provider-gateway"), {
+        recursive: true,
+      });
       for (const name of ["LICENSE", "NOTICE.md", "LICENSE_POLICY.md"]) {
         await NodeFSP.cp(NodePath.join(root, name), NodePath.join(destination, "legal", name));
       }

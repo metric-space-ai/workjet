@@ -3847,26 +3847,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
                       contextWindowMenuContent={composerContextWindowMenuContent}
                       systemPromptMenuContent={composerSystemPromptControl}
-                      workjetMenuContent={
-                        effectiveWorkjetGreppyEnabled === null ? undefined : (
-                          <WorkjetCapabilityMenu
-                            compact
-                            greppyEnabled={effectiveWorkjetGreppyEnabled}
-                            busy={effectiveWorkjetCapabilityBusy}
-                            disabled={effectiveWorkjetCapabilityDisabled}
-                            onGreppyEnabledChange={effectiveGreppyEnabledChange}
-                            onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
-                            enabledCapabilityIds={effectiveEnabledCapabilityIds}
-                            decisionHubConnections={decisionHubConnections}
-                            decisionHubConnectionId={decisionHubConnectionId}
-                            onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
-                            workjetRole={workerModeActive ? null : effectiveWorkjetRole}
-                            onWorkjetRoleChange={effectiveWorkjetRoleChange}
-                          />
-                        )
-                      }
                       onToggleInteractionMode={toggleInteractionMode}
                     />
+                    {effectiveWorkjetGreppyEnabled === null ? null : (
+                      <WorkjetCapabilityMenu
+                        compact
+                        greppyEnabled={effectiveWorkjetGreppyEnabled}
+                        busy={effectiveWorkjetCapabilityBusy}
+                        disabled={effectiveWorkjetCapabilityDisabled}
+                        onGreppyEnabledChange={effectiveGreppyEnabledChange}
+                        onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                        enabledCapabilityIds={effectiveEnabledCapabilityIds}
+                        decisionHubConnections={decisionHubConnections}
+                        decisionHubConnectionId={decisionHubConnectionId}
+                        onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                        workjetRole={workerModeActive ? null : effectiveWorkjetRole}
+                        onWorkjetRoleChange={effectiveWorkjetRoleChange}
+                      />
+                    )}
                     {composerAttachmentControl}
                     {workerModeActive
                       ? null

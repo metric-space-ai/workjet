@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
-import { Children, isValidElement } from "react";
+import { isValidElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { EnvironmentId, ThreadId, type WorkjetThreadConfig } from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
@@ -7,14 +8,13 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import { builtInCapabilityManifests } from "@metric-space-ai/workjet-capabilities";
 
-import { MenuGroup } from "../ui/menu";
-
 import {
   executeWorkjetCapabilityToggle,
   GREPPY_CAPABILITY_ID,
   setWorkjetCapabilityEnabled,
   WorkjetCapabilityMenu,
   WorkjetCapabilityMenuContent,
+  WorkjetCapabilityDetail,
   workjetComposerCapabilities,
   WORKJET_CODE_HOST_ADAPTER,
   WORKJET_GREPPY_DESCRIPTION,
@@ -47,10 +47,6 @@ const baseMenuProps: WorkjetCapabilityMenuProps = {
   onGreppyEnabledChange: () => undefined,
 };
 
-function elementChildren(element: InspectableElement): InspectableElement[] {
-  return Children.toArray(element.props.children).filter(isValidElement) as InspectableElement[];
-}
-
 function textContent(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(textContent).join("");
@@ -58,6 +54,25 @@ function textContent(node: ReactNode): string {
     return textContent((node as InspectableElement).props.children);
   }
   return "";
+}
+
+function findByLabel(node: ReactNode, label: string): InspectableElement {
+  const visit = (current: ReactNode): InspectableElement | undefined => {
+    if (Array.isArray(current)) {
+      for (const child of current) {
+        const found = visit(child);
+        if (found) return found;
+      }
+    } else if (isValidElement(current)) {
+      const element = current as InspectableElement;
+      if (element.props["aria-label"] === label) return element;
+      return visit(element.props.children);
+    }
+    return undefined;
+  };
+  const result = visit(node);
+  if (!result) throw new Error(`Missing labeled control: ${label}`);
+  return result;
 }
 
 describe("setWorkjetCapabilityEnabled", () => {
@@ -126,93 +141,107 @@ describe("WorkjetCapabilityMenu", () => {
     }
   });
 
-  it("exposes enabled and disabled Greppy switch states with catalog and activation copy", () => {
-    const enabledContent = WorkjetCapabilityMenuContent({
-      ...baseMenuProps,
-      greppyEnabled: true,
-    }) as InspectableElement;
-    const enabledChildren = elementChildren(enabledContent);
-    const enabledSwitch = enabledChildren[1];
-    const explanation = enabledChildren[2];
-
-    expect(enabledSwitch?.props.checked).toBe(true);
-    expect(enabledSwitch?.props.disabled).toBe(false);
-    expect(enabledSwitch?.props["aria-label"]).toBe(
-      `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`,
-    );
-    expect(textContent(enabledSwitch)).toContain(WORKJET_GREPPY_DISPLAY_NAME);
-    expect(enabledContent.type).toBe(MenuGroup);
-    expect(textContent(explanation)).toContain(WORKJET_GREPPY_DESCRIPTION);
-    expect(textContent(explanation)).toContain("activated only for this thread");
-    expect(textContent(explanation)).toContain(
-      "runtime and store are shared by all threads on this server",
-    );
-    expect(textContent(explanation)).not.toContain("/greppy");
-
-    const disabledContent = WorkjetCapabilityMenuContent({
-      ...baseMenuProps,
-      disabled: true,
-    }) as InspectableElement;
-    const disabledSwitch = elementChildren(disabledContent)[1];
-    expect(disabledSwitch?.props.checked).toBe(false);
-    expect(disabledSwitch?.props.disabled).toBe(true);
-  });
-
-  it("marks the trigger busy and disables the switch during an in-flight toggle", () => {
-    const menu = WorkjetCapabilityMenu({
-      ...baseMenuProps,
-      busy: true,
-    }) as InspectableElement;
-    const [trigger] = elementChildren(menu);
-    const triggerControl = trigger?.props.render as InspectableElement;
-    const busyContent = WorkjetCapabilityMenuContent({
-      ...baseMenuProps,
-      busy: true,
-    }) as InspectableElement;
-    const busySwitch = elementChildren(busyContent)[1];
-
-    expect(trigger?.props["aria-busy"]).toBe(true);
-    expect(trigger?.props.disabled).toBe(true);
-    expect(triggerControl.props["aria-label"]).toBe("Thread tools");
-    expect(busySwitch?.props.disabled).toBe(true);
-    expect(busySwitch?.props["aria-busy"]).toBe(true);
-  });
-
-  it("uses the same content component in compact layouts", () => {
-    const compact = WorkjetCapabilityMenu({
-      ...baseMenuProps,
-      compact: true,
-      greppyEnabled: true,
-    }) as InspectableElement;
-
-    expect(compact.type).toBe(WorkjetCapabilityMenuContent);
-    expect(compact.props.greppyEnabled).toBe(true);
-    expect(compact.props.onGreppyEnabledChange).toBe(baseMenuProps.onGreppyEnabledChange);
-  });
-
-  it("places Orchestrator beside capabilities instead of in the main composer bar", () => {
-    const onWorkjetRoleChange = vi.fn();
+  it("keeps activation separate from opening settings", () => {
+    const onGreppyEnabledChange = vi.fn();
+    const onOpenSetting = vi.fn();
     const content = WorkjetCapabilityMenuContent({
       ...baseMenuProps,
-      onCapabilityEnabledChange: vi.fn(),
-      workjetRole: "standard",
-      onWorkjetRoleChange,
-    }) as InspectableElement;
-    const text = textContent(content);
+      greppyEnabled: true,
+      onGreppyEnabledChange,
+      onOpenSetting,
+    });
+    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`);
+    const details = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} settings`);
+    expect(toggle.props.checked).toBe(true);
+    expect(toggle.props.disabled).toBeFalsy();
+    const trigger = {} as HTMLButtonElement;
+    (details.props.onClick as (event: { currentTarget: HTMLButtonElement }) => void)({
+      currentTarget: trigger,
+    });
+    expect(onOpenSetting).toHaveBeenCalledWith("greppy", trigger);
+    expect(onGreppyEnabledChange).not.toHaveBeenCalled();
+    (toggle.props.onCheckedChange as (checked: boolean) => void)(false);
+    expect(onGreppyEnabledChange).toHaveBeenCalledWith(false);
+  });
 
-    expect(text).toContain("Thread settings");
-    expect(text).toContain("Orchestrator");
-    expect(text).toContain(WORKJET_GREPPY_DISPLAY_NAME);
-    const roleContainer = elementChildren(content).find(
-      (child) => child.props["data-workjet-role-setting"] === "true",
+  it("shows catalog descriptions in details while keeping the list compact", () => {
+    const detail = renderToStaticMarkup(
+      <WorkjetCapabilityDetail {...baseMenuProps} settingId="greppy" />,
     );
-    const roleSwitch = roleContainer ? elementChildren(roleContainer)[0] : undefined;
-    expect(roleSwitch?.props.checked).toBe(false);
-    const onCheckedChange = roleSwitch?.props.onCheckedChange as
-      | ((checked: boolean) => void)
-      | undefined;
-    onCheckedChange?.(true);
+    expect(detail).toContain(WORKJET_GREPPY_DESCRIPTION);
+    expect(detail).toContain("activated only for this thread");
+    expect(detail).toContain("runtime and store are shared by all threads on this server");
+    const list = textContent(WorkjetCapabilityMenuContent(baseMenuProps));
+    expect(list).toContain(WORKJET_GREPPY_DISPLAY_NAME);
+    expect(list).not.toContain(WORKJET_GREPPY_DESCRIPTION);
+  });
+
+  it("disables activation during an in-flight change and exposes its status", () => {
+    const props = { ...baseMenuProps, busy: true };
+    const content = WorkjetCapabilityMenuContent(props);
+    const toggle = findByLabel(content, `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`);
+    expect(toggle.props.disabled).toBe(true);
+    expect(toggle.props["aria-busy"]).toBe(true);
+    expect(textContent(content)).toContain("Updating…");
+    const trigger = renderToStaticMarkup(<WorkjetCapabilityMenu {...props} />);
+    expect(trigger).toContain('aria-label="Thread tools"');
+    expect(trigger).toContain('aria-busy="true"');
+    expect(trigger).toContain("disabled");
+    expect(
+      findByLabel(
+        WorkjetCapabilityMenuContent({ ...baseMenuProps, disabled: true }),
+        `${WORKJET_GREPPY_DISPLAY_NAME} for this thread`,
+      ).props.disabled,
+    ).toBe(true);
+  });
+
+  it("keeps a direct popup trigger in compact and full layouts", () => {
+    for (const compact of [true, false]) {
+      const markup = renderToStaticMarkup(
+        <WorkjetCapabilityMenu {...baseMenuProps} compact={compact} />,
+      );
+      expect(markup).toContain('aria-label="Thread tools"');
+      expect(markup).toContain("Tools");
+    }
+  });
+
+  it("allows the root Orchestrator switch but keeps a child worker's role managed", () => {
+    const onWorkjetRoleChange = vi.fn();
+    const props = {
+      ...baseMenuProps,
+      onCapabilityEnabledChange: vi.fn(),
+      workjetRole: "standard" as const,
+      onWorkjetRoleChange,
+    };
+    const toggle = findByLabel(WorkjetCapabilityMenuContent(props), "Orchestrator for this thread");
+    expect(toggle.props.checked).toBe(false);
+    (toggle.props.onCheckedChange as (checked: boolean) => void)(true);
     expect(onWorkjetRoleChange).toHaveBeenCalledWith("orchestrator");
+    const managed = findByLabel(
+      WorkjetCapabilityMenuContent({ ...props, workjetRole: "worker" }),
+      "Orchestrator for this thread",
+    );
+    expect(managed.props.disabled).toBe(true);
+  });
+
+  it("offers Decision Hub connection settings only when enabled", () => {
+    const props = {
+      ...baseMenuProps,
+      onCapabilityEnabledChange: vi.fn(),
+      onDecisionHubConnectionChange: vi.fn(),
+      settingId: "decision-hub",
+    };
+    const disabled = renderToStaticMarkup(
+      <WorkjetCapabilityDetail {...props} enabledCapabilityIds={[]} />,
+    );
+    expect(disabled).toContain("Enable Decision Hub");
+    expect(disabled).not.toContain('aria-label="Decision Hub CTOX connection"');
+    const missing = renderToStaticMarkup(
+      <WorkjetCapabilityDetail {...props} enabledCapabilityIds={["decision-hub"]} />,
+    );
+    expect(missing).toContain("No MCP-capable CTOX connection");
+    expect(missing).toContain("disabled");
+    expect(props.onDecisionHubConnectionChange).not.toHaveBeenCalled();
   });
 });
 

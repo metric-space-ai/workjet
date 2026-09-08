@@ -4,6 +4,8 @@ Open **Settings → Computers**. Choose **Use this computer** to use the local m
 
 After connecting, Workjet checks the installed coding tools and adds the computer to the list. Select a computer there to use it for the next session. Its connection type comes from the actual connection. Editing its name does not change how it connects.
 
+The computer list checks coding tools on each connected machine and shows its installed versions or missing tools. While a check runs, the list shows progress. A disconnected computer is marked as disconnected and its previous tool results are hidden; reconnect it to check again.
+
 Existing connections can be added with **Add existing connection**. Backend installation and repair tools are under **Install or repair backend software**.
 
 ## Adding a project

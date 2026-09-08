@@ -3287,7 +3287,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
-  const manualModelDraftKey = JSON.stringify([environmentId, activeThreadId, draftId]);
+  const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
   const composerManualTargetControls =
     workerModeActive || !workjetManualControlsAvailable ? null : (
       <ComposerManualTargetControls

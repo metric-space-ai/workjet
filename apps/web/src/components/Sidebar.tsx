@@ -1910,7 +1910,8 @@ export default function Sidebar() {
     const group = projectGroups.find((candidate) =>
       candidate.memberProjectRefs.some(
         (member) =>
-          member.environmentId === activeProjectEnvironmentId && member.projectId === activeProjectId,
+          member.environmentId === activeProjectEnvironmentId &&
+          member.projectId === activeProjectId,
       ),
     );
     if (group === undefined) return;

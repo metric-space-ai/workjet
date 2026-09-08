@@ -122,6 +122,7 @@ import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
+  activateSidebarProject,
   buildBulkTitleRegenerationContextMenuItem,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
@@ -1898,6 +1899,102 @@ export default function Sidebar() {
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
   const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
+  const projectSwitchPending = useRef(false);
+  const [isSwitchingProject, setIsSwitchingProject] = useState(false);
+  const handleProjectScopeChange = useCallback(
+    async (value: string) => {
+      if (projectSwitchPending.current) return;
+      if (value === "all") {
+        setProjectScopeKey(null);
+        return;
+      }
+      const group = projectGroups.find((project) => project.projectKey === value);
+      if (group === undefined) return;
+      const target = scopeProjectRef(group.environmentId, group.id);
+      const active = newThreadContext.activeDraftThread ?? newThreadContext.activeThread;
+      projectSwitchPending.current = true;
+      setIsSwitchingProject(true);
+      try {
+        await activateSidebarProject({
+          target,
+          active: active ? scopeProjectRef(active.environmentId, active.projectId) : null,
+          open: () =>
+            newThreadContext.handleNewThread(
+              availableProjects.find(
+                (project) =>
+                  project.id === target.projectId && project.environmentId === target.environmentId,
+              ) ?? target,
+            ),
+          select: () => setProjectScopeKey(value),
+        });
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not open project",
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
+      } finally {
+        projectSwitchPending.current = false;
+        setIsSwitchingProject(false);
+      }
+    },
+    [availableProjects, newThreadContext, projectGroups],
+  );
+  const handleWorkjetProjectSelection = useCallback(
+    async (projectId: string) => {
+      if (projectSwitchPending.current) return;
+      const instanceId = workjetProjectRegistry.presentationInstanceId;
+      const project = workjetProjects.find((candidate) => candidate.id === projectId);
+      if (instanceId === null || project === undefined) return;
+      const target = buildAvailableProjects({
+        projects: [],
+        workjetProjects: [project],
+        computer: selectedWorkjetComputer ?? sidebarComputer,
+      })[0];
+      projectSwitchPending.current = true;
+      setIsSwitchingProject(true);
+      try {
+        if (target === undefined) {
+          selectWorkjetProject(instanceId, project.id);
+          setProjectScopeKey(null);
+          await router.navigate({ to: "/" });
+        } else {
+          const opened = await newThreadContext.handleNewThread(target);
+          if (opened === null) return;
+          selectWorkjetProject(instanceId, project.id);
+          const group = projectGroups.find((candidate) =>
+            candidate.memberProjects.some(
+              (member) =>
+                member.environmentId === target.environmentId &&
+                member.workspaceRoot === target.path,
+            ),
+          );
+          setProjectScopeKey(group?.projectKey ?? null);
+        }
+        if (isMobile) setOpenMobile(false);
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not open project",
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
+      } finally {
+        projectSwitchPending.current = false;
+        setIsSwitchingProject(false);
+      }
+    },
+    [
+      isMobile,
+      newThreadContext,
+      projectGroups,
+      router,
+      selectedWorkjetComputer,
+      setOpenMobile,
+      sidebarComputer,
+      workjetProjectRegistry.presentationInstanceId,
+      workjetProjects,
+    ],
+  );
   const scopedProjectGroup = useMemo(
     () =>
       projectScopeKey === null
@@ -3284,6 +3381,13 @@ export default function Sidebar() {
   // for multi-project setups.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
+      if (scopedProjectGroup !== null) {
+        if (isMobile) setOpenMobile(false);
+        void newThreadContext.handleNewThread(
+          scopeProjectRef(scopedProjectGroup.environmentId, scopedProjectGroup.id),
+        );
+        return;
+      }
       if (sidebarFallbackProject !== null) {
         if (isMobile) setOpenMobile(false);
         void newThreadContext.handleNewThread(sidebarFallbackProject);
@@ -3317,6 +3421,7 @@ export default function Sidebar() {
       setOpenMobile,
       sidebarAvailableProjectCount,
       sidebarFallbackProject,
+      scopedProjectGroup,
     ],
   );
 
@@ -3440,7 +3545,9 @@ export default function Sidebar() {
                   <MenuTrigger
                     render={
                       <SidebarMenuButton
-                        aria-label="Filter threads by project"
+                        aria-label="Choose project"
+                        aria-busy={isSwitchingProject}
+                        disabled={isSwitchingProject}
                         className="min-w-0 flex-1 ps-[calc(var(--sidebar-row-content-inset)-1px)] focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
                       />
                     }
@@ -3463,9 +3570,7 @@ export default function Sidebar() {
                   <MenuPopup align="start" className="w-(--anchor-width)">
                     <MenuRadioGroup
                       value={projectScopeKey ?? "all"}
-                      onValueChange={(value) =>
-                        setProjectScopeKey(value === "all" ? null : (value as string))
-                      }
+                      onValueChange={(value) => void handleProjectScopeChange(value as string)}
                     >
                       <MenuRadioItem
                         value="all"
@@ -3546,14 +3651,8 @@ export default function Sidebar() {
                         workjetProjectRegistry.selectedProjectId === project.id ? "page" : undefined
                       }
                       data-workjet-action={`project.select:${project.id}`}
-                      onClick={() => {
-                        if (workjetProjectRegistry.presentationInstanceId !== null) {
-                          selectWorkjetProject(
-                            workjetProjectRegistry.presentationInstanceId,
-                            project.id,
-                          );
-                        }
-                      }}
+                      disabled={isSwitchingProject}
+                      onClick={() => void handleWorkjetProjectSelection(project.id)}
                       className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover aria-[current=page]:bg-sidebar-row-hover"
                     >
                       <FolderIcon

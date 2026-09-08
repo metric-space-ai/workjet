@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
+  activateSidebarProject,
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
@@ -55,6 +56,68 @@ import {
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("activateSidebarProject", () => {
+  const target = { environmentId: localEnvironmentId, projectId: ProjectId.make("greppy") };
+
+  it("opens the selected workspace before updating the picker", async () => {
+    const events: string[] = [];
+    await activateSidebarProject({
+      target,
+      active: { ...target, projectId: ProjectId.make("ctox") },
+      open: async () => {
+        events.push("open greppy");
+        return { draftId: "greppy-draft" };
+      },
+      select: () => {
+        events.push("select greppy");
+      },
+    });
+    expect(events).toEqual(["open greppy", "select greppy"]);
+  });
+
+  it("keeps the existing thread when its project is selected again", async () => {
+    const open = vi.fn();
+    const select = vi.fn();
+    expect(await activateSidebarProject({ target, active: target, open, select })).toBe(true);
+    expect(open).not.toHaveBeenCalled();
+    expect(select).toHaveBeenCalledOnce();
+  });
+
+  it("distinguishes equal project ids on different computers", async () => {
+    const open = vi.fn(async () => ({ draftId: "remote-draft" }));
+    await activateSidebarProject({
+      target,
+      active: { ...target, environmentId: EnvironmentId.make("another-computer") },
+      open,
+      select: vi.fn(),
+    });
+    expect(open).toHaveBeenCalledOnce();
+  });
+
+  it("does not change the selection when workspace creation fails", async () => {
+    const select = vi.fn();
+    expect(
+      await activateSidebarProject({ target, active: null, open: async () => null, select }),
+    ).toBe(false);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("leaves selection intact when opening rejects", async () => {
+    const select = vi.fn();
+    await expect(
+      activateSidebarProject({
+        target,
+        active: null,
+        open: async () => {
+          throw new Error("disconnected");
+        },
+        select,
+      }),
+    ).rejects.toThrow("disconnected");
+    expect(select).not.toHaveBeenCalled();
+  });
+});
 
 describe("shouldNavigateAfterProjectRemoval", () => {
   const projectThreads = [{ environmentId: "environment-local", id: "thread-1" }];

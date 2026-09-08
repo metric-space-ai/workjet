@@ -1,5 +1,5 @@
 import * as React from "react";
-import type { ContextMenuItem } from "@workjet/contracts";
+import type { ContextMenuItem, ScopedProjectRef } from "@workjet/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@workjet/contracts/settings";
 import {
   getThreadSortTimestamp,
@@ -24,6 +24,21 @@ export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
 // so this limit is a direct renderer-heap and server-load multiplier — keep
 // it small; cold opens still render instantly from the cached snapshot.
 export const SIDEBAR_THREAD_PREWARM_LIMIT = 3;
+
+/** Commit the project picker only after the matching workspace has opened. */
+export async function activateSidebarProject(input: {
+  readonly target: ScopedProjectRef;
+  readonly active: ScopedProjectRef | null;
+  readonly open: () => Promise<unknown | null>;
+  readonly select: () => void;
+}): Promise<boolean> {
+  const alreadyOpen =
+    input.active?.environmentId === input.target.environmentId &&
+    input.active.projectId === input.target.projectId;
+  if (!alreadyOpen && (await input.open()) === null) return false;
+  input.select();
+  return true;
+}
 
 type SidebarProject = {
   id: string;

@@ -960,6 +960,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
     assert.deepStrictEqual(createDesktopExtraResources("/verified/ctox-business-os-shell"), [
       DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
+      { from: "apps/desktop/prod-resources/ssh-servers", to: "ssh-servers" },
       {
         from: "/verified/ctox-business-os-shell",
         to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,

@@ -115,7 +115,12 @@ describe("ssh tunnel scripts", () => {
     assert.notInclude(script, "ensure $NVM_DIR/nvm.sh is available");
   });
 
+  it("pins the portable server runtime to its native build ABI", () => {
+    assert.include(buildRemoteLaunchScript({portableArchivesDirectory:"/bundled/servers",nodeEngineRange:TEST_NODE_ENGINE_RANGE}), "T3_NODE_ENGINE_RANGE='24.13.1'");
+  });
+
   it("does not hard-code a remote node engine range", () => {
+
     const script = buildRemoteT3RunnerScript();
 
     assert.include(script, "T3_NODE_ENGINE_RANGE=''");
@@ -158,7 +163,7 @@ describe("ssh tunnel scripts", () => {
     );
     assert.include(buildRemoteLaunchScript(), "RUNNER_CHANGED=1");
     assert.include(buildRemoteLaunchScript(), "ensure_remote_node_path()");
-    assert.include(buildRemoteLaunchScript(), "if ! ensure_remote_node_path; then");
+    assert.include(buildRemoteLaunchScript(), "install_workjet_node && use_workjet_node");
     assert.include(
       buildRemoteLaunchScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE }),
       `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`,

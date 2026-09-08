@@ -824,6 +824,10 @@ export function createDesktopExtraResources(
   return [
     DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
     {
+      from: "apps/desktop/prod-resources/ssh-servers",
+      to: "ssh-servers",
+    },
+    {
       from: businessOsShellInstallPath,
       to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
     },

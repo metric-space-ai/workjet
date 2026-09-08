@@ -122,6 +122,7 @@ const resolveDesktopSshCliRunner = (
       isDevelopment: environment.isDevelopment,
     }),
     nodeEngineRange: serverPackageJson.engines.node,
+    portableArchivesDirectory: environment.path.join(environment.resourcesPath, "ssh-servers"),
   };
 };
 

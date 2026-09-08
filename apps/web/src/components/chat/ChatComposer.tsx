@@ -39,6 +39,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import type { ComputerEditorState } from "./ComposerWorkjetTargetControls";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -539,6 +540,10 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const [computerEditorState, setComputerEditorState] = useState<ComputerEditorState>({
+    drafts: {},
+    saving: false,
+  });
   const {
     composerDraftTarget,
     environmentId,
@@ -3817,6 +3822,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       workerMenuContent={
                         <ComposerWorkjetCompactMenuContent
                           hideWorkerSelection
+                          hideComputerSelection
                           workers={workjetWorkers}
                           selectedWorkerId={selectedWorkjetWorkerId}
                           onSelectWorker={handleSelectWorkjetWorker}
@@ -3849,6 +3855,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       systemPromptMenuContent={composerSystemPromptControl}
                       onToggleInteractionMode={toggleInteractionMode}
                     />
+                    {!workjetManualControlsAvailable && !workerModeActive ? null : (
+                      <ComposerComputerControl
+                        key={environmentId}
+                        editor={{ state: computerEditorState, update: setComputerEditorState }}
+                        computers={workjetComputers}
+                        selectedComputerId={composerSelectedComputerId}
+                        activeEnvironmentId={environmentId}
+                        selectableEnvironmentIds={selectableEnvironmentIds}
+                        disabledReason={composerComputerDisabledReason}
+                        mismatchNote={composerComputerMismatchNote}
+                        onSelectComputer={handleSelectComposerComputer}
+                        onAddComputer={() => {
+                          try {
+                            window.sessionStorage.setItem("workjet-computer-create", "1");
+                          } catch {
+                            // Without storage the existing setup page still opens.
+                          }
+                          window.location.hash = "#/settings/computers";
+                        }}
+                      />
+                    )}
                     {effectiveWorkjetGreppyEnabled === null ? null : (
                       <WorkjetCapabilityMenu
                         compact
@@ -3882,6 +3909,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                          keeps its bar unchanged. */
                       !workjetManualControlsAvailable && !workerModeActive ? null : (
                         <ComposerComputerControl
+                          key={environmentId}
+                          editor={{ state: computerEditorState, update: setComputerEditorState }}
                           computers={workjetComputers}
                           selectedComputerId={composerSelectedComputerId}
                           activeEnvironmentId={environmentId}

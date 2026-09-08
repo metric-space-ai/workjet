@@ -9,8 +9,8 @@
  *
  * The computer ("Rechner") control is SELECTABLE in both modes: on a draft it
  * moves the draft to the chosen computer's environment through the existing
- * draft environment-change path; on a started server thread it is disabled
- * with a stated reason, because mid-session migration is a separate project.
+ * draft environment-change path; on a started server thread selection is locked
+ * with a stated reason. Computer details remain reachable in the same popup.
  * It never silently no-ops — a computer where this logical project is not
  * available renders as a disabled option that says so. This is deliberately
  * not described as device pairing: a Workjet installation can be connected
@@ -25,8 +25,19 @@ import type {
   WorkjetLlmRoute,
   WorkjetWorkerProfile,
 } from "@workjet/contracts";
-import { Fragment, memo, useState, type ReactNode } from "react";
-import { CpuIcon, FileTextIcon, MonitorIcon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
+import { Fragment, memo, useCallback, useRef, useState, type ReactNode } from "react";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  CpuIcon,
+  FileTextIcon,
+  MonitorIcon,
+  TerminalIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
+import { ExpandableSettingsPopup } from "../ui/expandable-settings-popup";
+import { ComputerPopupEditor } from "./ComputerPopupEditor";
+import type { WorkjetComputerDraft } from "../settings/WorkjetComputerEditor";
 
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -65,8 +76,6 @@ export const COMPOSER_COMPUTER_LOCKED_REASON =
 /** The option hint for a connected computer this project has no environment on. */
 export const COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT =
   "This project is not available on this computer.";
-
-const NO_COMPUTER_VALUE = "__no_computer__";
 
 /**
  * Whether the current draft could move to this computer's environment — the
@@ -144,14 +153,24 @@ export function gatewayModelsForRoute(
 // Computer ("Rechner")
 // ---------------------------------------------------------------------------
 
+export interface ComputerEditorState {
+  readonly drafts: Readonly<Record<string, WorkjetComputerDraft>>;
+  readonly saving: boolean;
+}
+
 export interface ComposerComputerControlProps {
+  /** Owned above responsive layouts so pending saves and drafts survive a width change. */
+  readonly editor?: {
+    readonly state: ComputerEditorState;
+    readonly update: (update: (current: ComputerEditorState) => ComputerEditorState) => void;
+  };
   readonly computers: ReadonlyArray<WorkjetComputer>;
   /** The computer whose environment the composer currently targets, if any. */
   readonly selectedComputerId: string | null;
   readonly activeEnvironmentId: EnvironmentId;
   /** Environments the current draft can actually move to (same logical project). */
   readonly selectableEnvironmentIds: ReadonlyArray<EnvironmentId>;
-  /** Non-null disables the whole control and states why (started threads). */
+  /** Non-null prevents selection; details remain available on started threads. */
   readonly disabledReason: string | null;
   /** Worker-mode mismatch, e.g. the worker's computer is not paired here. */
   readonly mismatchNote: string | null;
@@ -160,110 +179,273 @@ export interface ComposerComputerControlProps {
   readonly onAddComputer?: (() => void) | undefined;
 }
 
-/** Exported unwrapped so a test can call it; `memo` returns an object. */
-export function ComposerComputerControlView(props: ComposerComputerControlProps) {
-  const selected = props.computers.find((c) => c.id === props.selectedComputerId) ?? null;
+/** Selection stays independent from inspecting an unavailable or locked target. */
+export function ComposerComputerChoiceList(
+  props: ComposerComputerControlProps & {
+    readonly detailComputerId: string | null;
+    readonly busy?: boolean;
+    readonly onOpenDetails: (computerId: string, trigger: HTMLButtonElement) => void;
+  },
+) {
   const selectable = new Set(props.selectableEnvironmentIds);
-  const disabled = props.disabledReason !== null;
-  const tooltip =
-    props.disabledReason ??
-    props.mismatchNote ??
-    (selected === null
-      ? "Computer — choose where this thread runs"
-      : `Computer: ${selected.label}`);
-
   return (
-    // The wrapping span keeps a NATIVE title on the disabled state: the
-    // disabled trigger swallows pointer events, so the tooltip alone would
-    // leave the refusal reasonless.
-    <span
-      className="inline-flex shrink-0 items-center"
-      {...(disabled ? { title: props.disabledReason ?? undefined } : {})}
-      data-composer-computer-control="true"
-    >
-      <Tooltip>
-        <Select
-          value={props.selectedComputerId ?? NO_COMPUTER_VALUE}
-          disabled={disabled}
-          onValueChange={(value) => {
-            if (typeof value !== "string" || value === NO_COMPUTER_VALUE) return;
-            if (value === "__add_computer__") {
-              props.onAddComputer?.();
-              return;
-            }
-            props.onSelectComputer(value);
-          }}
+    <div className="space-y-1">
+      {props.disabledReason ? (
+        <p className="px-2 py-2 text-xs text-muted-foreground">{props.disabledReason}</p>
+      ) : null}
+      {props.mismatchNote ? (
+        <p role="status" className="px-2 py-2 text-xs text-warning">
+          {props.mismatchNote}
+        </p>
+      ) : null}
+      {props.computers.length === 0 ? (
+        <p className="px-2 py-2 text-xs text-muted-foreground">
+          No computers — add one in Settings → Computers
+        </p>
+      ) : null}
+      {props.computers.map((computer) => {
+        const projectAvailable = isProjectAvailableOnComputer(
+          computer,
+          props.activeEnvironmentId,
+          selectable,
+        );
+        const reason =
+          (props.busy ? "Saving computer settings…" : props.disabledReason) ??
+          (projectAvailable ? null : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT);
+        return (
+          <div key={computer.id} className="flex min-w-0 items-center gap-1 rounded-md">
+            <button
+              type="button"
+              disabled={reason !== null}
+              title={reason ?? undefined}
+              aria-pressed={computer.id === props.selectedComputerId}
+              aria-label={`Use ${computer.label}`}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+              onClick={() => {
+                if (reason === null) props.onSelectComputer(computer.id);
+              }}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{computer.label}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {projectAvailable
+                    ? workjetComputerKindLabel(computer.presentationKind)
+                    : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
+                </span>
+              </span>
+              {computer.id === props.selectedComputerId ? (
+                <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
+              ) : null}
+            </button>
+            <button
+              type="button"
+              aria-label={`${computer.label} details`}
+              disabled={props.busy}
+              aria-expanded={props.detailComputerId === computer.id}
+              className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={(event) => props.onOpenDetails(computer.id, event.currentTarget)}
+            >
+              <ChevronRightIcon aria-hidden="true" className="size-4" />
+            </button>
+          </div>
+        );
+      })}
+      {props.onAddComputer ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={props.busy}
+          onClick={props.onAddComputer}
         >
-          <TooltipTrigger
-            render={
-              <ComposerSelectControl
-                className="min-w-0 max-w-52 font-medium"
-                aria-label="Computer"
-                {...(props.mismatchNote === null ? {} : { "data-computer-mismatch": "true" })}
-              />
-            }
+          + Add computer…
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Declared configuration is not a connectivity or installation probe. */
+export function ComposerComputerDetails({
+  computer,
+  projectAvailable,
+  children,
+}: {
+  readonly computer: WorkjetComputer;
+  readonly projectAvailable: boolean;
+  readonly children?: ReactNode;
+}) {
+  return (
+    <div className="space-y-4 text-sm">
+      <dl className="space-y-3">
+        <div>
+          <dt className="text-xs text-muted-foreground">Connection type</dt>
+          <dd>{workjetComputerKindLabel(computer.presentationKind)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Current project</dt>
+          <dd>
+            {projectAvailable
+              ? "Available on this computer"
+              : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
+          </dd>
+        </div>
+      </dl>
+      {children ?? (
+        <div>
+          <h4 className="font-medium">Configured harnesses</h4>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Saved configuration. Connection and installed tools are checked separately.
+          </p>
+          {computer.harnesses.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">No harnesses configured</p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {computer.harnesses.map((entry) => (
+                <li key={entry.harness} className="flex min-w-0 justify-between gap-3">
+                  <span>
+                    {WORKJET_HARNESS_OPTIONS.find((option) => option.id === entry.harness)?.label ??
+                      entry.harness}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {entry.available ? "Enabled" : "Off"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ComposerComputerControlView(props: ComposerComputerControlProps) {
+  const [open, setOpen] = useState(false);
+  const [detailComputerId, setDetailComputerId] = useState<string | null>(null);
+  const [localEditorState, setLocalEditorState] = useState<ComputerEditorState>({
+    drafts: {},
+    saving: false,
+  });
+  const { drafts, saving } = props.editor?.state ?? localEditorState;
+  const updateEditorState = props.editor?.update ?? setLocalEditorState;
+  const setSaving = (value: boolean) =>
+    updateEditorState((current) => ({ ...current, saving: value }));
+  const draftKey = JSON.stringify([props.activeEnvironmentId, detailComputerId]);
+  const rememberDraft = useCallback(
+    (draft: WorkjetComputerDraft) => {
+      updateEditorState((current) => ({
+        ...current,
+        drafts: { ...current.drafts, [draftKey]: draft },
+      }));
+    },
+    [draftKey, updateEditorState],
+  );
+  const lastDetailTrigger = useRef<HTMLButtonElement | null>(null);
+  const finishEditor = () => {
+    updateEditorState((current) => {
+      const next = { ...current.drafts };
+      delete next[draftKey];
+      return { ...current, drafts: next };
+    });
+    setDetailComputerId(null);
+    requestAnimationFrame(() => lastDetailTrigger.current?.focus());
+  };
+  const selected =
+    props.computers.find((computer) => computer.id === props.selectedComputerId) ?? null;
+  const detailComputer =
+    props.computers.find((computer) => computer.id === detailComputerId) ?? null;
+  return (
+    <span
+      className="inline-flex min-w-0 shrink-0 items-center"
+      data-composer-computer-control="true"
+      title={
+        saving
+          ? "Saving computer settings…"
+          : (props.disabledReason ?? props.mismatchNote ?? undefined)
+      }
+    >
+      <ExpandableSettingsPopup
+        open={open}
+        onOpenChange={(next) => {
+          if (saving) return;
+          setOpen(next);
+          if (!next) setDetailComputerId(null);
+        }}
+        title="Computers"
+        backLabel="Back to computers"
+        detailDescription="Changes stay in this draft until you save or discard them. Saving does not move this chat."
+        trigger={
+          <ComposerControl
+            type="button"
+            className="min-w-0 max-w-52 font-medium"
+            aria-label="Computer"
+            disabled={saving}
+            aria-busy={saving}
+            {...(props.mismatchNote === null ? {} : { "data-computer-mismatch": "true" })}
           >
             <ComposerControlIcon icon={MonitorIcon} />
-            {/* An id whose computer was deleted must not masquerade as the
-                neutral placeholder (Befund K-AH4). */}
-            <SelectValue className="min-w-0">
+            <span className="min-w-0 truncate">
               {selected?.label ??
                 (props.selectedComputerId !== null ? "Missing computer" : "Computer")}
-            </SelectValue>
-            {props.mismatchNote === null &&
-            !(props.selectedComputerId !== null && selected === null) ? null : (
+            </span>
+            {props.mismatchNote !== null ||
+            (props.selectedComputerId !== null && selected === null) ? (
               <TriangleAlertIcon aria-hidden="true" className="size-3.5 shrink-0 text-warning" />
-            )}
-          </TooltipTrigger>
-          <SelectPopup alignItemWithTrigger={false}>
-            {props.selectedComputerId !== null && selected !== null ? null : (
-              <SelectItem
-                value={NO_COMPUTER_VALUE}
-                disabled
-                hideIndicator
-                className="min-w-64 py-2"
-              >
-                <span className="text-xs text-muted-foreground">
-                  {props.computers.length === 0
-                    ? "No computers — add one in Settings → Computers"
-                    : "Not bound to a Workjet computer"}
-                </span>
-              </SelectItem>
-            )}
-            {props.computers.map((computer) => {
-              const projectAvailable = isProjectAvailableOnComputer(
-                computer,
+            ) : null}
+            <ComposerControlChevron />
+          </ComposerControl>
+        }
+        list={
+          <ComposerComputerChoiceList
+            {...props}
+            detailComputerId={detailComputerId}
+            busy={saving}
+            onSelectComputer={(id) => {
+              props.onSelectComputer(id);
+              setOpen(false);
+              setDetailComputerId(null);
+            }}
+            onOpenDetails={(id, trigger) => {
+              lastDetailTrigger.current = trigger;
+              setDetailComputerId(id);
+            }}
+          />
+        }
+        detailTitle={detailComputer?.label ?? "Computer unavailable"}
+        onBack={() => {
+          if (saving) return;
+          setDetailComputerId(null);
+          requestAnimationFrame(() => lastDetailTrigger.current?.focus());
+        }}
+        detail={
+          detailComputerId === null ? undefined : detailComputer === null ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              This computer is no longer available in the selected instance.
+            </p>
+          ) : (
+            <ComposerComputerDetails
+              computer={detailComputer}
+              projectAvailable={isProjectAvailableOnComputer(
+                detailComputer,
                 props.activeEnvironmentId,
-                selectable,
-              );
-              return (
-                <SelectItem
-                  key={computer.id}
-                  value={computer.id}
-                  disabled={!projectAvailable}
-                  hideIndicator
-                  className="min-w-64 py-2"
-                >
-                  <div className="grid min-w-0 gap-0.5">
-                    <span className="font-medium text-foreground">{computer.label}</span>
-                    <span className="truncate text-xs leading-4 text-muted-foreground">
-                      {projectAvailable
-                        ? workjetComputerKindLabel(computer.presentationKind)
-                        : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
-                    </span>
-                  </div>
-                </SelectItem>
-              );
-            })}
-            {props.onAddComputer === undefined ? null : (
-              <SelectItem value="__add_computer__" hideIndicator className="min-w-56 py-2">
-                <span className="text-xs text-muted-foreground">+ Add computer…</span>
-              </SelectItem>
-            )}
-          </SelectPopup>
-        </Select>
-        <TooltipPopup side="top">{tooltip}</TooltipPopup>
-      </Tooltip>
+                new Set(props.selectableEnvironmentIds),
+              )}
+            >
+              <ComputerPopupEditor
+                key={draftKey}
+                environmentId={props.activeEnvironmentId}
+                computerId={detailComputer.id}
+                draft={drafts[draftKey]}
+                onDraftChange={rememberDraft}
+                onSavingChange={setSaving}
+                onSaved={finishEditor}
+                onCancel={finishEditor}
+              />
+            </ComposerComputerDetails>
+          )
+        }
+      />
     </span>
   );
 }
@@ -731,6 +913,7 @@ export const ComposerSystemPromptControl = memo(ComposerSystemPromptControlView)
 
 export interface ComposerWorkjetCompactMenuContentProps {
   readonly hideWorkerSelection?: boolean;
+  readonly hideComputerSelection?: boolean;
   readonly workers: ReadonlyArray<WorkjetWorkerProfile>;
   readonly selectedWorkerId: string | null;
   readonly onSelectWorker: (workerId: string | null) => void;
@@ -787,47 +970,51 @@ export function ComposerWorkjetCompactMenuContent(
           </MenuRadioGroup>
         </MenuGroup>
       )}
-      <MenuGroup>
-        <MenuGroupLabel>Computer</MenuGroupLabel>
-        {props.computerDisabledReason !== null ? (
-          <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
-            {props.computerDisabledReason}
-          </p>
-        ) : props.computers.length === 0 ? (
-          <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
-            No computers — add one in Settings → Computers
-          </p>
-        ) : (
-          <MenuRadioGroup
-            value={props.selectedComputerId ?? ""}
-            onValueChange={(value) => {
-              if (typeof value !== "string" || value.length === 0) return;
-              props.onSelectComputer(value);
-            }}
-          >
-            {props.computers.map((computer) => {
-              const projectAvailable = isProjectAvailableOnComputer(
-                computer,
-                props.activeEnvironmentId,
-                selectable,
-              );
-              return (
-                <MenuRadioItem
-                  key={computer.id}
-                  value={computer.id}
-                  disabled={!projectAvailable}
-                  // Same reason as the wide control's hint, surfaced where a
-                  // short suffix has no room for it (Befund K-B17).
-                  title={projectAvailable ? undefined : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT}
-                >
-                  {computer.label}
-                  {projectAvailable ? "" : " — project unavailable"}
-                </MenuRadioItem>
-              );
-            })}
-          </MenuRadioGroup>
-        )}
-      </MenuGroup>
+      {props.hideComputerSelection ? null : (
+        <MenuGroup>
+          <MenuGroupLabel>Computer</MenuGroupLabel>
+          {props.computerDisabledReason !== null ? (
+            <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
+              {props.computerDisabledReason}
+            </p>
+          ) : props.computers.length === 0 ? (
+            <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
+              No computers — add one in Settings → Computers
+            </p>
+          ) : (
+            <MenuRadioGroup
+              value={props.selectedComputerId ?? ""}
+              onValueChange={(value) => {
+                if (typeof value !== "string" || value.length === 0) return;
+                props.onSelectComputer(value);
+              }}
+            >
+              {props.computers.map((computer) => {
+                const projectAvailable = isProjectAvailableOnComputer(
+                  computer,
+                  props.activeEnvironmentId,
+                  selectable,
+                );
+                return (
+                  <MenuRadioItem
+                    key={computer.id}
+                    value={computer.id}
+                    disabled={!projectAvailable}
+                    // Same reason as the wide control's hint, surfaced where a
+                    // short suffix has no room for it (Befund K-B17).
+                    title={
+                      projectAvailable ? undefined : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT
+                    }
+                  >
+                    {computer.label}
+                    {projectAvailable ? "" : " — project unavailable"}
+                  </MenuRadioItem>
+                );
+              })}
+            </MenuRadioGroup>
+          )}
+        </MenuGroup>
+      )}
       {props.selectedWorkerId === null && props.manualTarget ? (
         <>
           <MenuGroup>

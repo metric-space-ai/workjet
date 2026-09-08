@@ -556,6 +556,7 @@ export const CtoxWorkjetProjectControlResult = Schema.Union([
       "launch_failed",
       "authentication_required",
       "unsupported",
+      "timeout",
       "guest_failed",
       "response_too_large",
     ]),

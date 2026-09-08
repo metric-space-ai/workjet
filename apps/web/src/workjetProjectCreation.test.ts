@@ -35,7 +35,7 @@ const project = {
 };
 
 describe("runWorkjetProjectCreation", () => {
-  it.each(["authentication_required", "unsupported"] as const)(
+  it.each(["authentication_required", "unsupported", "timeout"] as const)(
     "does not send create when the selected shell reports %s",
     async (code) => {
       const port = vi.fn(async () => ({ _tag: "failed" as const, code }));

@@ -10,6 +10,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import type { BrowserWindow, Session, WebContentsView } from "electron";
 import { expect, vi } from "vite-plus/test";
 
@@ -1657,6 +1658,53 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("keeps navigation usable while a project request hangs and returns a timeout", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      harness.views[0]?.executeJavaScript.mockImplementation(() => {
+        entered.resolve();
+        return new Promise<unknown>(() => {});
+      });
+      const request = yield* Effect.forkChild(
+        manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      assert.deepEqual(yield* manager.exitBusinessOsMode, { _tag: "completed" });
+      yield* TestClock.adjust("30 seconds");
+      assert.deepEqual(yield* Fiber.join(request), { _tag: "failed", code: "timeout" });
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
+  });
+
+  it.effect("does not let stalled device or session requests lock the guest pool", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    let started = 0;
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      harness.views[0]?.executeJavaScript.mockImplementation(() => {
+        if (++started === 2) entered.resolve();
+        return new Promise<unknown>(() => {});
+      });
+      const devices = yield* Effect.forkChild(
+        manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+      );
+      const sessions = yield* Effect.forkChild(
+        manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      assert.deepEqual(yield* manager.exitBusinessOsMode, { _tag: "completed" });
+      yield* TestClock.adjust("30 seconds");
+      assert.deepEqual(yield* Fiber.join(devices), { _tag: "failed", code: "guest_failed" });
+      assert.deepEqual(yield* Fiber.join(sessions), { _tag: "failed", code: "guest_failed" });
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
+  });
+
   it.effect("registers transfer sources, forwards valid events, and drops invalid payloads", () => {
     const harness = makeGuestHarness();
     const event = {
@@ -1826,6 +1874,31 @@ describe("CtoxGuestManager", () => {
   });
 
   it("allows shell/control resources but blocks Business OS HTTP data routes", () => {
+    for (const prefix of ["/business-os/_shell/0.1.46-beta.39", "/_shell/0.1.46-beta.39"]) {
+      for (const asset of ["/system-apps.json", "/modules/registry.json", "/shared/runtime.mjs"]) {
+        const url = `https://welsch.ctox.dev${prefix}${asset}?v=release`;
+        expect(
+          CtoxGuestManager.isForbiddenCtoxDataRequest(url, "fetch", "https://welsch.ctox.dev"),
+        ).toBe(false);
+        expect(
+          CtoxGuestManager.isForbiddenCtoxDataRequest(
+            url,
+            "fetch",
+            "https://welsch.ctox.dev",
+            "POST",
+          ),
+        ).toBe(true);
+      }
+      for (const path of ["/api/business-os/records", "/commands", "/files", "/rxdb/private"]) {
+        expect(
+          CtoxGuestManager.isForbiddenCtoxDataRequest(
+            `https://welsch.ctox.dev${prefix}${path}`,
+            "fetch",
+            "https://welsch.ctox.dev",
+          ),
+        ).toBe(true);
+      }
+    }
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/business-os/system-apps.json",

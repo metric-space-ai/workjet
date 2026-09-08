@@ -86,6 +86,19 @@ describe("computer popup selection and details", () => {
     detailComputerId: null,
   };
 
+  it("keeps a save in progress visible and blocks reopening after a responsive remount", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerComputerControlView
+        {...base}
+        editor={{ state: { saving: true, drafts: {} }, update: () => undefined }}
+        onSelectComputer={() => undefined}
+      />,
+    );
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain("Saving computer settings");
+    expect(markup).toContain("disabled");
+  });
+
   it("opens details for an unavailable target without moving the draft", () => {
     const select = vi.fn();
     const inspect = vi.fn();

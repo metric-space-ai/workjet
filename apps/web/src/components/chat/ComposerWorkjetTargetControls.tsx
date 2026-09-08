@@ -25,7 +25,7 @@ import type {
   WorkjetLlmRoute,
   WorkjetWorkerProfile,
 } from "@workjet/contracts";
-import { Fragment, memo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useRef, useState, type ReactNode } from "react";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -36,6 +36,8 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { ExpandableSettingsPopup } from "../ui/expandable-settings-popup";
+import { ComputerPopupEditor } from "./ComputerPopupEditor";
+import type { WorkjetComputerDraft } from "../settings/WorkjetComputerEditor";
 
 import { WORKJET_HARNESS_OPTIONS } from "../settings/WorkjetWorkerEditor";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -151,7 +153,17 @@ export function gatewayModelsForRoute(
 // Computer ("Rechner")
 // ---------------------------------------------------------------------------
 
+export interface ComputerEditorState {
+  readonly drafts: Readonly<Record<string, WorkjetComputerDraft>>;
+  readonly saving: boolean;
+}
+
 export interface ComposerComputerControlProps {
+  /** Owned above responsive layouts so pending saves and drafts survive a width change. */
+  readonly editor?: {
+    readonly state: ComputerEditorState;
+    readonly update: (update: (current: ComputerEditorState) => ComputerEditorState) => void;
+  };
   readonly computers: ReadonlyArray<WorkjetComputer>;
   /** The computer whose environment the composer currently targets, if any. */
   readonly selectedComputerId: string | null;
@@ -171,6 +183,7 @@ export interface ComposerComputerControlProps {
 export function ComposerComputerChoiceList(
   props: ComposerComputerControlProps & {
     readonly detailComputerId: string | null;
+    readonly busy?: boolean;
     readonly onOpenDetails: (computerId: string, trigger: HTMLButtonElement) => void;
   },
 ) {
@@ -197,7 +210,7 @@ export function ComposerComputerChoiceList(
           selectable,
         );
         const reason =
-          props.disabledReason ??
+          (props.busy ? "Saving computer settings…" : props.disabledReason) ??
           (projectAvailable ? null : COMPOSER_COMPUTER_PROJECT_UNAVAILABLE_HINT);
         return (
           <div key={computer.id} className="flex min-w-0 items-center gap-1 rounded-md">
@@ -227,6 +240,7 @@ export function ComposerComputerChoiceList(
             <button
               type="button"
               aria-label={`${computer.label} details`}
+              disabled={props.busy}
               aria-expanded={props.detailComputerId === computer.id}
               className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
               onClick={(event) => props.onOpenDetails(computer.id, event.currentTarget)}
@@ -237,7 +251,13 @@ export function ComposerComputerChoiceList(
         );
       })}
       {props.onAddComputer ? (
-        <Button type="button" variant="ghost" size="sm" onClick={props.onAddComputer}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={props.busy}
+          onClick={props.onAddComputer}
+        >
           + Add computer…
         </Button>
       ) : null}
@@ -249,9 +269,11 @@ export function ComposerComputerChoiceList(
 export function ComposerComputerDetails({
   computer,
   projectAvailable,
+  children,
 }: {
   readonly computer: WorkjetComputer;
   readonly projectAvailable: boolean;
+  readonly children?: ReactNode;
 }) {
   return (
     <div className="space-y-4 text-sm">
@@ -269,29 +291,31 @@ export function ComposerComputerDetails({
           </dd>
         </div>
       </dl>
-      <div>
-        <h4 className="font-medium">Configured harnesses</h4>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Saved configuration. Connection and installed tools are checked separately.
-        </p>
-        {computer.harnesses.length === 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">No harnesses configured</p>
-        ) : (
-          <ul className="mt-2 space-y-2">
-            {computer.harnesses.map((entry) => (
-              <li key={entry.harness} className="flex min-w-0 justify-between gap-3">
-                <span>
-                  {WORKJET_HARNESS_OPTIONS.find((option) => option.id === entry.harness)?.label ??
-                    entry.harness}
-                </span>
-                <span className="shrink-0 text-muted-foreground">
-                  {entry.available ? "Enabled" : "Off"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {children ?? (
+        <div>
+          <h4 className="font-medium">Configured harnesses</h4>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Saved configuration. Connection and installed tools are checked separately.
+          </p>
+          {computer.harnesses.length === 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">No harnesses configured</p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {computer.harnesses.map((entry) => (
+                <li key={entry.harness} className="flex min-w-0 justify-between gap-3">
+                  <span>
+                    {WORKJET_HARNESS_OPTIONS.find((option) => option.id === entry.harness)?.label ??
+                      entry.harness}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {entry.available ? "Enabled" : "Off"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -299,7 +323,34 @@ export function ComposerComputerDetails({
 export function ComposerComputerControlView(props: ComposerComputerControlProps) {
   const [open, setOpen] = useState(false);
   const [detailComputerId, setDetailComputerId] = useState<string | null>(null);
+  const [localEditorState, setLocalEditorState] = useState<ComputerEditorState>({
+    drafts: {},
+    saving: false,
+  });
+  const { drafts, saving } = props.editor?.state ?? localEditorState;
+  const updateEditorState = props.editor?.update ?? setLocalEditorState;
+  const setSaving = (value: boolean) =>
+    updateEditorState((current) => ({ ...current, saving: value }));
+  const draftKey = JSON.stringify([props.activeEnvironmentId, detailComputerId]);
+  const rememberDraft = useCallback(
+    (draft: WorkjetComputerDraft) => {
+      updateEditorState((current) => ({
+        ...current,
+        drafts: { ...current.drafts, [draftKey]: draft },
+      }));
+    },
+    [draftKey, updateEditorState],
+  );
   const lastDetailTrigger = useRef<HTMLButtonElement | null>(null);
+  const finishEditor = () => {
+    updateEditorState((current) => {
+      const next = { ...current.drafts };
+      delete next[draftKey];
+      return { ...current, drafts: next };
+    });
+    setDetailComputerId(null);
+    requestAnimationFrame(() => lastDetailTrigger.current?.focus());
+  };
   const selected =
     props.computers.find((computer) => computer.id === props.selectedComputerId) ?? null;
   const detailComputer =
@@ -308,22 +359,29 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
     <span
       className="inline-flex min-w-0 shrink-0 items-center"
       data-composer-computer-control="true"
-      title={props.disabledReason ?? props.mismatchNote ?? undefined}
+      title={
+        saving
+          ? "Saving computer settings…"
+          : (props.disabledReason ?? props.mismatchNote ?? undefined)
+      }
     >
       <ExpandableSettingsPopup
         open={open}
         onOpenChange={(next) => {
+          if (saving) return;
           setOpen(next);
           if (!next) setDetailComputerId(null);
         }}
         title="Computers"
         backLabel="Back to computers"
-        detailDescription="Inspecting a computer does not change where this chat runs."
+        detailDescription="Changes stay in this draft until you save or discard them. Saving does not move this chat."
         trigger={
           <ComposerControl
             type="button"
             className="min-w-0 max-w-52 font-medium"
             aria-label="Computer"
+            disabled={saving}
+            aria-busy={saving}
             {...(props.mismatchNote === null ? {} : { "data-computer-mismatch": "true" })}
           >
             <ComposerControlIcon icon={MonitorIcon} />
@@ -342,6 +400,7 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
           <ComposerComputerChoiceList
             {...props}
             detailComputerId={detailComputerId}
+            busy={saving}
             onSelectComputer={(id) => {
               props.onSelectComputer(id);
               setOpen(false);
@@ -355,6 +414,7 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
         }
         detailTitle={detailComputer?.label ?? "Computer unavailable"}
         onBack={() => {
+          if (saving) return;
           setDetailComputerId(null);
           requestAnimationFrame(() => lastDetailTrigger.current?.focus());
         }}
@@ -371,7 +431,18 @@ export function ComposerComputerControlView(props: ComposerComputerControlProps)
                 props.activeEnvironmentId,
                 new Set(props.selectableEnvironmentIds),
               )}
-            />
+            >
+              <ComputerPopupEditor
+                key={draftKey}
+                environmentId={props.activeEnvironmentId}
+                computerId={detailComputer.id}
+                draft={drafts[draftKey]}
+                onDraftChange={rememberDraft}
+                onSavingChange={setSaving}
+                onSaved={finishEditor}
+                onCancel={finishEditor}
+              />
+            </ComposerComputerDetails>
           )
         }
       />

@@ -39,6 +39,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import type { ComputerEditorState } from "./ComposerWorkjetTargetControls";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -539,6 +540,10 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const [computerEditorState, setComputerEditorState] = useState<ComputerEditorState>({
+    drafts: {},
+    saving: false,
+  });
   const {
     composerDraftTarget,
     environmentId,
@@ -3853,6 +3858,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     {!workjetManualControlsAvailable && !workerModeActive ? null : (
                       <ComposerComputerControl
                         key={environmentId}
+                        editor={{ state: computerEditorState, update: setComputerEditorState }}
                         computers={workjetComputers}
                         selectedComputerId={composerSelectedComputerId}
                         activeEnvironmentId={environmentId}
@@ -3904,6 +3910,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       !workjetManualControlsAvailable && !workerModeActive ? null : (
                         <ComposerComputerControl
                           key={environmentId}
+                          editor={{ state: computerEditorState, update: setComputerEditorState }}
                           computers={workjetComputers}
                           selectedComputerId={composerSelectedComputerId}
                           activeEnvironmentId={environmentId}

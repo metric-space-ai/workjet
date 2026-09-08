@@ -14,6 +14,8 @@ export function ExpandableSettingsPopup({
   detail,
   detailTitle,
   onBack,
+  backLabel = "Back to workers",
+  detailDescription = "Changes stay in this draft until you save or discard them.",
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -23,6 +25,8 @@ export function ExpandableSettingsPopup({
   readonly detail?: ReactNode;
   readonly detailTitle?: string;
   readonly onBack: () => void;
+  readonly backLabel?: string;
+  readonly detailDescription?: ReactNode;
 }) {
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const expanded = detail !== undefined && detail !== null;
@@ -63,7 +67,7 @@ export function ExpandableSettingsPopup({
                   size="icon-sm"
                   variant="ghost"
                   onClick={onBack}
-                  aria-label="Back to workers"
+                  aria-label={backLabel}
                 >
                   <ArrowLeftIcon aria-hidden="true" className="size-4" />
                 </Button>
@@ -76,9 +80,9 @@ export function ExpandableSettingsPopup({
                 </h3>
               </div>
               <div className="max-h-[min(36rem,calc(var(--available-height)-5rem))] overflow-y-auto overscroll-contain">
-                <p className="mb-3 text-xs text-muted-foreground">
-                  Changes stay in this draft until you save or discard them.
-                </p>
+                {detailDescription ? (
+                  <p className="mb-3 text-xs text-muted-foreground">{detailDescription}</p>
+                ) : null}
                 {detail}
               </div>
             </section>

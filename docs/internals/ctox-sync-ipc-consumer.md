@@ -21,6 +21,9 @@ Validation:
 - CTOX's authority_cluster and webrtc_authority tests load this actual TypeScript
   client and exercise quorum loss, replay and host shutdown. Results must be
   recorded for the pinned consumer commit; presence of these tests is not a pass.
-- Generated files already exist on main with the same fixture hash as CTOX.
-  Strict byte comparison currently reports formatting drift; generated files
-  were not edited by this consumer change.
+- Generated schemas are checked against their generated TypeScript types. The
+  generator now marks optional union fields as optional, matching the existing
+  runtime schema and Rust contract; the wire fixture is unchanged.
+- Generation and strict byte comparison use Workjet's pinned formatter in memory.
+  The five-file cross-repository comparison and contracts typecheck pass locally.
+  CI must confirm the complete consumer against the newly pinned source.

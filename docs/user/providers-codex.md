@@ -1,5 +1,18 @@
 # Codex
 
+## Workjet-managed accounts
+
+For accounts listed under **Settings → Models → Codex (OpenAI)**, Workjet manages
+the sign-in used by its model gateway. If a session says the sign-in has expired
+or is invalid, choose **Re-login** beside that account and finish the browser
+sign-in. Then retry your task. Existing projects and conversations remain intact.
+
+A temporary authentication-service failure asks you to retry when the service is
+available. A local credential-storage error requires checking local file access.
+Neither message means you should repeatedly enter your credentials.
+
+## Separate CLI accounts
+
 This guide is for people who want to use more than one Codex account in Workjet. For Claude, see
 [Claude](./providers-claude.md). For first-time setup, see [Install Workjet](./install.md).
 

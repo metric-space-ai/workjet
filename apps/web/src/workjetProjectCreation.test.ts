@@ -35,6 +35,16 @@ const project = {
 };
 
 describe("runWorkjetProjectCreation", () => {
+  it.each(["authentication_required", "unsupported"] as const)(
+    "does not send create when the selected shell reports %s",
+    async (code) => {
+      const port = vi.fn(async () => ({ _tag: "failed" as const, code }));
+      await expect(
+        runWorkjetProjectCreation({ presentationInstanceId: instanceId, request }, { port }),
+      ).resolves.toEqual({ _tag: "failed", code });
+      expect(port).toHaveBeenCalledExactlyOnceWith(instanceId, { action: "project.list" });
+    },
+  );
   it("stops after a failed connection launch instead of starting another attempt", async () => {
     const port = vi.fn(async () => ({ _tag: "failed" as const, code: "launch_failed" as const }));
     const phases: string[] = [];

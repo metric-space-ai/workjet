@@ -334,7 +334,13 @@ function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1
 function buildGuestProjectControlExpression(request: CtoxWorkjetProjectControlRequest): string {
   return `(async () => {
   const control = globalThis.workjetProjectControl;
-  if (typeof control !== "function") return { status: "unsupported" };
+  if (typeof control !== "function") {
+    const password = document.querySelector('input[type="password"]');
+    if (password && password.getClientRects().length > 0) {
+      return { status: "authentication_required" };
+    }
+    return { status: "unsupported" };
+  }
   const result = await control(${JSON.stringify(request)});
   return { status: "completed", result };
 })()`;
@@ -1569,6 +1575,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               ),
             catch: () => undefined,
           }).pipe(Effect.orElseSucceed(() => undefined));
+          const status =
+            typeof raw === "object" && raw !== null
+              ? (raw as { readonly status?: unknown }).status
+              : undefined;
+          if (status === "authentication_required" || status === "unsupported") {
+            return [{ _tag: "failed", code: status } as const, state] as const;
+          }
           if (
             typeof raw !== "object" ||
             raw === null ||

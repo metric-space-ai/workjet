@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import { runInNewContext } from "node:vm";
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -1626,6 +1627,33 @@ describe("CtoxGuestManager", () => {
         { _tag: "failed", code: "not_active" },
       );
       expect(harness.views).toHaveLength(1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("distinguishes a hidden sign-in page from an unsupported project shell", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.exitBusinessOsMode;
+      for (const signInVisible of [true, false]) {
+        harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+          runInNewContext(expression, {
+            document: {
+              querySelector: () => ({ getClientRects: () => (signInVisible ? [{}] : []) }),
+            },
+          }),
+        );
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          {
+            _tag: "failed",
+            code: signInVisible ? "authentication_required" : "unsupported",
+          },
+        );
+      }
     }).pipe(Effect.provide(harness.layer));
   });
 

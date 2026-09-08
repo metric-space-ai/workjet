@@ -1899,6 +1899,24 @@ export default function Sidebar() {
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
   const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
+  const lastActiveProjectKey = useRef<string | null>(null);
+  const activeProjectThread = newThreadContext.activeDraftThread ?? newThreadContext.activeThread;
+  const activeProjectEnvironmentId = activeProjectThread?.environmentId;
+  const activeProjectId = activeProjectThread?.projectId;
+  useEffect(() => {
+    if (activeProjectEnvironmentId === undefined || activeProjectId === undefined) return;
+    const key = `${activeProjectEnvironmentId}\0${activeProjectId}`;
+    if (lastActiveProjectKey.current === key) return;
+    const group = projectGroups.find((candidate) =>
+      candidate.memberProjectRefs.some(
+        (member) =>
+          member.environmentId === activeProjectEnvironmentId && member.projectId === activeProjectId,
+      ),
+    );
+    if (group === undefined) return;
+    lastActiveProjectKey.current = key;
+    setProjectScopeKey(group.projectKey);
+  }, [activeProjectEnvironmentId, activeProjectId, projectGroups]);
   const projectSwitchPending = useRef(false);
   const [isSwitchingProject, setIsSwitchingProject] = useState(false);
   const handleProjectScopeChange = useCallback(

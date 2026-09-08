@@ -1675,18 +1675,10 @@ function normalizePersistedDraftThreads(
           startFromOrigin: false,
           promotedTo: null,
         };
-      } else if (
-        draftThreadsByThreadKey[threadKey]?.projectId !== projectRef.projectId ||
-        draftThreadsByThreadKey[threadKey]?.environmentId !== projectRef.environmentId
-      ) {
-        draftThreadsByThreadKey[threadKey] = {
-          ...draftThreadsByThreadKey[threadKey]!,
-          threadId: draftThreadsByThreadKey[threadKey]!.threadId,
-          environmentId: projectRef.environmentId,
-          projectId: projectRef.projectId,
-          logicalProjectKey,
-        };
       }
+      // Existing sessions own their physical project ref. A logical grouping
+      // key may look like an environment-scoped ref but contain a folder path
+      // instead of a project ID; it must never replace the saved identity.
     }
   }
 

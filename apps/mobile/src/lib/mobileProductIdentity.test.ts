@@ -55,10 +55,10 @@ describe("Workjet Mobile product identity", () => {
     ].join("\n");
 
     expect(surfaces).not.toMatch(
-      /CTOX Desktop App|CTOX Mobile|CTOX Business OS App|Workjet|Workjet|\bAlpha\b/u,
+      /CTOX Desktop App|CTOX Mobile|CTOX Business OS App|\bAlpha\b/u,
     );
-    expect(surfaces).not.toContain('label="Workjet Account"');
-    expect(surfaces).not.toContain("Workjet Connect");
+    expect(surfaces).toContain('label="Workjet Account"');
+    expect(surfaces).toContain("Workjet Connect");
     expect(surfaces).not.toContain('accessibilityLabel="CTOX"');
     expect(surfaces).not.toContain('stage="Alpha"');
   });
@@ -73,7 +73,7 @@ describe("Workjet Mobile product identity", () => {
       "Workjet Preview",
       "Workjet",
     ]);
-    expect(config).not.toMatch(/appName: "(?:CTOX|Workjet|Workjet|Alpha)"/u);
+    expect(config).not.toMatch(/appName: "(?:CTOX|Alpha)"/u);
     expect(config).toContain("Allow Workjet to connect to CTOX backends");
     expect(config).toContain("updates: { enabled: false }");
     expect(config).not.toContain("expo-widgets");

@@ -172,9 +172,9 @@ describe("DesktopLinuxUrlHandler", () => {
       );
       assert.include(
         recorded.files[0]?.content,
-        "MimeType=x-scheme-handler/workjet;x-scheme-handler/ctox-desktop;x-scheme-handler/workjet;",
+        "MimeType=x-scheme-handler/workjet;x-scheme-handler/ctox-desktop;",
       );
-      // Workjet plus both inbound aliases are claimed by the one entry.
+      // Workjet and its previous CTOX Desktop alias are claimed by the one entry.
       assert.deepEqual(recorded.commands, [
         {
           command: "xdg-mime",
@@ -183,10 +183,6 @@ describe("DesktopLinuxUrlHandler", () => {
         {
           command: "xdg-mime",
           args: ["default", "workjet-url-handler.desktop", "x-scheme-handler/ctox-desktop"],
-        },
-        {
-          command: "xdg-mime",
-          args: ["default", "workjet-url-handler.desktop", "x-scheme-handler/workjet"],
         },
       ]);
     });

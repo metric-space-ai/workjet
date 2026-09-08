@@ -20,9 +20,9 @@ describe("Workjet links", () => {
     ["ctox-mobile://pair?pairingUrl=x", "workjet://pair?pairingUrl=x"],
     ["ctox-mobile-dev://pair?pairingUrl=x", "workjet-dev://pair?pairingUrl=x"],
     ["ctox-mobile-preview://pair?pairingUrl=x", "workjet-preview://pair?pairingUrl=x"],
-    ["t3code://pair?pairingUrl=x", "workjet://pair?pairingUrl=x"],
-    ["t3code-dev://pair?pairingUrl=x", "workjet-dev://pair?pairingUrl=x"],
-    ["t3code-preview://pair?pairingUrl=x", "workjet-preview://pair?pairingUrl=x"],
+    ["workjet://pair?pairingUrl=x", "workjet://pair?pairingUrl=x"],
+    ["workjet-dev://pair?pairingUrl=x", "workjet-dev://pair?pairingUrl=x"],
+    ["workjet-preview://pair?pairingUrl=x", "workjet-preview://pair?pairingUrl=x"],
   ])("normalizes %s", (input, expected) => {
     expect(normalizeIncomingWorkjetUrl(input)).toBe(expected);
   });

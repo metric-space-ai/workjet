@@ -1,8 +1,8 @@
 import type {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectProjection,
-} from "@t3tools/contracts";
-import { ProjectId } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { ProjectId } from "@workjet/contracts";
 
 import {
   createWorkjetProject,

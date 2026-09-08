@@ -6,7 +6,7 @@
  * {@link redactSupportText} (or one of the typed helpers built on it). There
  * is no second path: `DesktopSupportBundle` and `DesktopCrashReporting` build
  * their documents exclusively out of gate results, and the bundle document's
- * schema (`@t3tools/contracts/supportBundle`) accepts only the bounded,
+ * schema (`@workjet/contracts/supportBundle`) accepts only the bounded,
  * control-character-free strings the gate produces.
  *
  * The gate is deny-biased and works in four stages:
@@ -49,7 +49,7 @@ import {
   SUPPORT_BUNDLE_MAX_RAW_LENGTH,
   SUPPORT_BUNDLE_PLACEHOLDERS,
   type SupportBundleRedactionPlaceholder,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   AUTHORIZATION_HEADER,
   containsCredentialRun,
@@ -59,7 +59,7 @@ import {
   PASSWORD_PROMPT,
   PEM_PRIVATE_KEY,
   SECRET_ASSIGNMENT,
-} from "@t3tools/shared/secretShapes";
+} from "@workjet/shared/secretShapes";
 
 /**
  * Most words a single gated value may contain. Diagnostics are short: a
@@ -130,7 +130,7 @@ export interface SupportRedactionOutcome {
 export interface SupportRedactionOptions {
   /**
    * Redacted before the generic path rules run, so a relocated home (an
-   * `XDG_CONFIG_HOME` or `T3_HOME` override) is caught even when it is not
+   * `XDG_CONFIG_HOME` or `WORKJET_HOME` override) is caught even when it is not
    * shaped like a home directory.
    */
   readonly homeDirectory?: string;

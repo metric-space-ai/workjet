@@ -22,10 +22,10 @@ import type {
   WorkjetProvisioningStartResult,
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
-} from "@t3tools/contracts";
-import { isSshAuthFailure } from "@t3tools/ssh/auth";
-import { runSshCommand, targetConnectionKey } from "@t3tools/ssh/command";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@workjet/contracts";
+import { isSshAuthFailure } from "@workjet/ssh/auth";
+import { runSshCommand, targetConnectionKey } from "@workjet/ssh/command";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -156,7 +156,7 @@ TryExec=/opt/workjet/Workjet.AppImage
 Icon=applications-development
 Terminal=false
 Categories=Development;Utility;
-StartupWMClass=t3code
+StartupWMClass=workjet
 MimeType=x-scheme-handler/workjet;x-scheme-handler/workjet-dev;x-scheme-handler/workjet-preview;
 `;
 
@@ -306,7 +306,7 @@ export class DesktopComputerProvisioner extends Context.Service<
     ) => Effect.Effect<WorkjetProvisioningStartResult>;
     readonly get: (operationId: string) => Effect.Effect<WorkjetProvisioningGetResult>;
   }
->()("@t3tools/desktop/provisioning/DesktopComputerProvisioner") {}
+>()("@workjet/desktop/provisioning/DesktopComputerProvisioner") {}
 
 export const make = Effect.gen(function* () {
   const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;

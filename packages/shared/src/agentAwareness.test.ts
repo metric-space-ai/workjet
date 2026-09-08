@@ -6,8 +6,8 @@ import type {
   OrchestrationThreadShell,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { ProviderInstanceId } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { ProviderInstanceId } from "@workjet/contracts";
 
 import {
   buildWorkjetThreadDeepLink,
@@ -38,7 +38,7 @@ describe("Workjet thread references", () => {
 });
 
 const project = {
-  title: "t3code",
+  title: "workjet",
 } satisfies Pick<OrchestrationProjectShell, "title">;
 
 function thread(

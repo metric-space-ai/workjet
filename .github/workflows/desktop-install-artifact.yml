@@ -32,9 +32,7 @@ jobs:
     env:
       CI: "1"
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      T3CODE_CLERK_PUBLISHABLE_KEY: pk_live_Y2xlcmsudDMuY29kZXMk
-      T3CODE_CLERK_JWT_TEMPLATE: t3-relay
-      T3CODE_RELAY_URL: https://relay.t3.codes
+
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -67,7 +65,7 @@ jobs:
           # This workflow publishes an install artifact, not an updater feed.
           # Use the existing unconfigured-build behavior instead of embedding
           # the ambient Actions repository as a nonexistent desktop release feed.
-          unset GITHUB_REPOSITORY T3CODE_DESKTOP_UPDATE_REPOSITORY
+          unset GITHUB_REPOSITORY WORKJET_DESKTOP_UPDATE_REPOSITORY
           node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop"
       - name: Verify the packaged app signature and executable
         run: |

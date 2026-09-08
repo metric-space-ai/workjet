@@ -29,8 +29,8 @@
  * server already owns, so there is nothing to defer and no restart to demand.
  */
 
-import type { WorkjetConfiguration } from "@t3tools/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import type { WorkjetConfiguration } from "@workjet/contracts";
+import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -225,7 +225,7 @@ export class LegacyWorkjetImport extends Context.Service<
     /** Record refusal. Terminal — the offer is never shown again. */
     readonly decline: Effect.Effect<void>;
   }
->()("t3/workjet/legacy/LegacyWorkjetImport") {}
+>()("workjet/workjet/legacy/LegacyWorkjetImport") {}
 
 export type LegacyWorkjetReadAndMap =
   | {

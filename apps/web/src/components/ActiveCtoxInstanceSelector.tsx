@@ -1,4 +1,4 @@
-import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { useCallback, useMemo } from "react";
 
 import { CtoxInstanceSelectOption } from "./ctox/CtoxInstanceSelectOption";

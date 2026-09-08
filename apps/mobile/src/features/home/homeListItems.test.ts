@@ -1,14 +1,14 @@
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
+} from "@workjet/client-runtime/state/shell";
 import {
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
   DEFAULT_WORKJET_THREAD_CONFIG,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

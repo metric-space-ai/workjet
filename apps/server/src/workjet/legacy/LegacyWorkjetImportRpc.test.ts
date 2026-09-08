@@ -7,8 +7,8 @@ import {
   type WorkjetGatewayCatalog,
   type WorkjetLegacyImportBindings,
   type WorkjetLegacyImportInspection,
-} from "@t3tools/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@workjet/contracts";
+import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";

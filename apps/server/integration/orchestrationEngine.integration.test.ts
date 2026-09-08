@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -17,7 +17,7 @@ import {
   ThreadId,
   ModelSelection,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";

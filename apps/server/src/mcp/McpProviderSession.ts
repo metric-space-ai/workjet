@@ -3,7 +3,7 @@ import type {
   ProviderInstanceId,
   ThreadId,
   WorkjetCapabilityId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;

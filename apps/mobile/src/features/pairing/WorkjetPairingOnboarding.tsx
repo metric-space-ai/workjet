@@ -85,7 +85,7 @@ export function WorkjetPairingOnboarding(props: {
             />
           </View>
           <View className="min-w-0 flex-1">
-            <Text className="text-2xl font-t3-bold">Workjet verbinden</Text>
+            <Text className="text-2xl font-workjet-bold">Workjet verbinden</Text>
             <Text className="mt-1 text-sm text-foreground-muted">
               Ein Pairing für Code und Business OS
             </Text>
@@ -93,7 +93,7 @@ export function WorkjetPairingOnboarding(props: {
         </View>
 
         <View className="mt-8 rounded-[24px] bg-card p-5">
-          <Text className="text-lg font-t3-bold">QR-Code in Workjet öffnen</Text>
+          <Text className="text-lg font-workjet-bold">QR-Code in Workjet öffnen</Text>
           <Text className="mt-3 text-base leading-normal text-foreground-muted">
             Öffne auf einem bereits verbundenen Gerät Einstellungen → Business OS. Wähle die
             gewünschte Instanz und dann „Gerät hinzufügen“. Scanne den kurzlebigen QR-Code hier. Ein
@@ -127,7 +127,7 @@ export function WorkjetPairingOnboarding(props: {
                 />
               </View>
             ) : null}
-            <Text className="text-center text-sm font-t3-medium text-foreground-muted">
+            <Text className="text-center text-sm font-workjet-medium text-foreground-muted">
               {scannerState === "starting"
                 ? "Kamera wird gestartet…"
                 : scannerState === "detected"
@@ -155,7 +155,7 @@ export function WorkjetPairingOnboarding(props: {
             disabled={pairing}
             onPress={() => void openScanner()}
           >
-            <Text className="text-base font-t3-bold text-primary-foreground">
+            <Text className="text-base font-workjet-bold text-primary-foreground">
               {pairing ? "Workjet wird verbunden…" : "QR-Code scannen"}
             </Text>
           </Pressable>
@@ -166,7 +166,7 @@ export function WorkjetPairingOnboarding(props: {
             disabled={pairing}
             onPress={props.onContinueWithoutPairing}
           >
-            <Text className="text-sm font-t3-medium text-foreground-muted">
+            <Text className="text-sm font-workjet-medium text-foreground-muted">
               Später – Code lokal verwenden
             </Text>
           </Pressable>

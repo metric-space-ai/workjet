@@ -42,7 +42,7 @@ export class ElectronCrashReporter extends Context.Service<
     readonly getUploadToServer: Effect.Effect<boolean>;
     readonly getCrashesDirectory: Effect.Effect<string>;
   }
->()("@t3tools/desktop/electron/ElectronCrashReporter") {}
+>()("@workjet/desktop/electron/ElectronCrashReporter") {}
 
 export const make = ElectronCrashReporter.of({
   start: (options) =>

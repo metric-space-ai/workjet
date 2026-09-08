@@ -1,4 +1,4 @@
-import type { WorkjetProductMode } from "@t3tools/contracts/settings";
+import type { WorkjetProductMode } from "@workjet/contracts/settings";
 
 /**
  * Re-exported so a consumer needs ONE Workjet import instead of two — the

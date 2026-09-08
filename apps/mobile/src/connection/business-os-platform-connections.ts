@@ -2,8 +2,8 @@ import {
   type PlatformConnectionRegistration,
   RelayConnectionRegistration,
   RelayConnectionTarget,
-} from "@t3tools/client-runtime/connection";
-import { BusinessOsInstanceId, type EnvironmentId } from "@t3tools/contracts";
+} from "@workjet/client-runtime/connection";
+import { BusinessOsInstanceId, type EnvironmentId } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";

@@ -107,12 +107,12 @@ describe("recursive packaged child profile checks", () => {
     {
       pid: 11,
       ppid: 10,
-      command: "helper --type=gpu-process --user-data-dir=/Volumes/tmp/s/app-data/t3code",
+      command: "helper --type=gpu-process --user-data-dir=/Volumes/tmp/s/app-data/workjet",
     },
     {
       pid: 12,
       ppid: 11,
-      command: "helper --type=utility --user-data-dir=/Volumes/tmp/s/app-data/t3code",
+      command: "helper --type=utility --user-data-dir=/Volumes/tmp/s/app-data/workjet",
     },
     { pid: 13, ppid: 10, command: "crashpad --database=/Volumes/tmp/s/crash" },
   ];
@@ -126,7 +126,7 @@ describe("recursive packaged child profile checks", () => {
     expect(recursiveDescendants(records, 10).map(({ pid }) => pid)).toEqual([11, 13, 12]);
   });
   it("requires the exact disposable profile on applicable descendants", () => {
-    expect(checkChildProcessProfiles(records, 10, "/Volumes/tmp/s/app-data/t3code")).toEqual({
+    expect(checkChildProcessProfiles(records, 10, "/Volumes/tmp/s/app-data/workjet")).toEqual({
       applicablePids: [11, 12],
       violations: [],
     });
@@ -134,11 +134,11 @@ describe("recursive packaged child profile checks", () => {
       record.pid === 12
         ? {
             ...record,
-            command: "helper --type=utility --user-data-dir=/Users/operator/.t3/userdata",
+            command: "helper --type=utility --user-data-dir=/Users/operator/.workjet/userdata",
           }
         : record,
     );
-    expect(checkChildProcessProfiles(bad, 10, "/Volumes/tmp/s/app-data/t3code").violations).toEqual(
+    expect(checkChildProcessProfiles(bad, 10, "/Volumes/tmp/s/app-data/workjet").violations).toEqual(
       [{ pid: 12, reason: "mismatch" }],
     );
   });
@@ -147,11 +147,11 @@ describe("recursive packaged child profile checks", () => {
       {
         pid: 2,
         ppid: 1,
-        command: "helper --type=renderer --user-data-dir=/Volumes/tmp/smoke root/t3code --lang=en",
+        command: "helper --type=renderer --user-data-dir=/Volumes/tmp/smoke root/workjet --lang=en",
       },
     ];
     expect(
-      checkChildProcessProfiles(spaced, 1, "/Volumes/tmp/smoke root/t3code").violations,
+      checkChildProcessProfiles(spaced, 1, "/Volumes/tmp/smoke root/workjet").violations,
     ).toEqual([]);
   });
 });

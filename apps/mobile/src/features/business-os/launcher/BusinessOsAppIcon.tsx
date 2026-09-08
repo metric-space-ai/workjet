@@ -117,18 +117,18 @@ function rawAppIcon(props: {
             />
             {props.editing ? (
               <View className="absolute left-1 top-1 size-5 items-center justify-center rounded-full bg-black/55">
-                <Text className="text-xs font-t3-bold text-white">−</Text>
+                <Text className="text-xs font-workjet-bold text-white">−</Text>
               </View>
             ) : null}
           </View>
           {props.badge && props.badge > 0 ? (
             <View className="absolute -right-0.5 -top-1 min-w-6 items-center rounded-full bg-red-500 px-1.5 py-0.5">
-              <Text className="text-xs font-t3-bold text-white">{Math.min(props.badge, 99)}</Text>
+              <Text className="text-xs font-workjet-bold text-white">{Math.min(props.badge, 99)}</Text>
             </View>
           ) : null}
           {!props.compact ? (
             <Text
-              className="mt-1.5 max-w-24 text-center text-xs font-t3-medium text-foreground"
+              className="mt-1.5 max-w-24 text-center text-xs font-workjet-medium text-foreground"
               numberOfLines={2}
             >
               {props.app.title}

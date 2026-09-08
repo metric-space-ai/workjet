@@ -3,8 +3,8 @@ import type {
   WorkjetThreadConfig,
   WorkjetThreadConfigV2,
   WorkjetThreadRole,
-} from "@t3tools/contracts";
-import { normalizeWorkjetThreadConfig } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { normalizeWorkjetThreadConfig } from "@workjet/contracts";
 
 import { defaultCapabilityRegistry, type CapabilityRegistry } from "./registry.ts";
 

@@ -6,7 +6,7 @@ import { assert, describe, it } from "@effect/vitest";
 
 /**
  * THE WORKJET TOOL SCOPE GATE
- * (docs/workjet-plan.md → "Security invariants": "Scope T3 MCP tools to the
+ * (docs/workjet-plan.md → "Security invariants": "Scope Workjet MCP tools to the
  * current session/thread and capability grants").
  *
  * WHAT IS ALREADY PROVED ELSEWHERE, AND WHAT IS NOT.

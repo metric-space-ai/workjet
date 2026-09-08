@@ -6,7 +6,7 @@ import {
   type WorkjetHarness,
   type WorkjetHarnessAvailabilitySnapshot,
   type WorkjetHarnessConfiguration,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { useState } from "react";
 
 import { randomUUID } from "../../lib/utils";
@@ -128,7 +128,7 @@ const PRESENTATION_OPTIONS: ReadonlyArray<{
   readonly label: string;
 }> = [
   { id: "local", label: "Local" },
-  { id: "t3-connect", label: "Relay connection" },
+  { id: "workjet-connect", label: "Relay connection" },
   { id: "ssh", label: "SSH" },
   { id: "tailscale", label: "Tailscale" },
   { id: "remote", label: "Remote" },

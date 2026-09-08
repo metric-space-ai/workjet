@@ -1,4 +1,4 @@
-import { RelayClientPrincipal, RelayDpopClientAuth } from "@t3tools/contracts/relay";
+import { RelayClientPrincipal, RelayDpopClientAuth } from "@workjet/contracts/relay";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

@@ -17,7 +17,7 @@ const emit = (payload) => {
 };
 
 app.whenReady().then(async () => {
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone Electron helper has no Effect runtime; capture the host boundary once.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone Electron helper has no Effect runtime; capture the host boundary once.
   const hostPlatform = process.platform;
   const phase = process.argv[process.argv.length - 2];
   const filePath = process.argv[process.argv.length - 1];

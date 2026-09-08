@@ -1,4 +1,4 @@
-import { WorkjetCrossModeError, type CtoxManagedInstanceId } from "@t3tools/contracts";
+import { WorkjetCrossModeError, type CtoxManagedInstanceId } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -96,7 +96,7 @@ export const CTOX_DELEGATE_TASK_ACTION_ID = "ctox.delegate_task";
 export const CTOX_EXECUTE_ACTION_TOOL = "business_os.execute_action";
 
 /** Audit attribution for every call this bridge makes. */
-export const CTOX_CROSS_MODE_CHANNEL = "t3_cross_mode";
+export const CTOX_CROSS_MODE_CHANNEL = "workjet_cross_mode";
 export const CTOX_CROSS_MODE_SURFACE = "workjet_cross_mode";
 
 // ===============================
@@ -140,7 +140,7 @@ const decodeToolResult = Schema.decodeUnknownEffect(CtoxToolResult);
  * and `confirmation_required` are non-optional in the Rust struct; everything
  * else it returns (the action descriptor, the command id, the client context)
  * is deliberately NOT decoded, because carrying it any further would leak CTOX
- * internals into a T3 result the contract says holds two words.
+ * internals into a Workjet result the contract says holds two words.
  */
 const CtoxActionExecution = Schema.Struct({
   ok: Schema.Boolean,
@@ -349,7 +349,7 @@ export const makeWorkjetCrossModeCtoxPortWithSources = Effect.fn(
     title: `Workjet: ${command.operation}`,
     objective: command.summary,
     payload: {
-      source: "t3_cross_mode",
+      source: "workjet_cross_mode",
       schema_version: 1,
       operation: command.operation,
       link_id: command.linkId,

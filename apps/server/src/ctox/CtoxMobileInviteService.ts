@@ -4,7 +4,7 @@ import {
   CtoxMobileInviteRevokeResult,
   type CtoxMobileInviteCreateResult as CtoxMobileInviteCreateResultType,
   type CtoxMobileInviteRevokeResult as CtoxMobileInviteRevokeResultType,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -44,7 +44,7 @@ export class CtoxMobileInviteService extends Context.Service<
       inviteId: string,
     ) => Effect.Effect<CtoxMobileInviteRevokeResultType, CtoxMobileInviteServiceError>;
   }
->()("t3/ctox/CtoxMobileInviteService") {}
+>()("workjet/ctox/CtoxMobileInviteService") {}
 
 function serviceError(reason: CtoxMobileInviteFailureReason) {
   return new CtoxMobileInviteServiceError({ reason });

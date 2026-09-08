@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxWorkjetSessionTransferEvent } from "@t3tools/contracts";
-import { CtoxWorkjetSessionTransferEvent as SessionTransferEventSchema } from "@t3tools/contracts";
+import type { CtoxWorkjetSessionTransferEvent } from "@workjet/contracts";
+import { CtoxWorkjetSessionTransferEvent as SessionTransferEventSchema } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 export const CTOX_SESSION_TRANSFER_POST_CHANNEL = "ctox-instance:session-transfer-event";

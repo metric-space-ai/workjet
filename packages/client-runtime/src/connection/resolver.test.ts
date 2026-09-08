@@ -5,12 +5,12 @@ import {
   type WorkjetDeviceSessionAccessToken,
   type WorkjetDeviceSessionRefreshGrant,
   type WorkjetManagedIssuerOrigin,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   RelayEnvironmentConnectScope,
   RelayEnvironmentStatusScope,
-} from "@t3tools/contracts/relay";
-import { RelayClientTracer } from "@t3tools/shared/relayTracing";
+} from "@workjet/contracts/relay";
+import { RelayClientTracer } from "@workjet/shared/relayTracing";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

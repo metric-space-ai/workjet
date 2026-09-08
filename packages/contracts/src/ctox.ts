@@ -1013,7 +1013,7 @@ export type CtoxGuestStateEvent = typeof CtoxGuestStateEvent.Type;
 
 /**
  * A Business OS module surfaced in the sidebar as a directly selectable app —
- * the CTOX analog of a T3 chat session under its project. Docked apps are
+ * the CTOX analog of a Workjet chat session under its project. Docked apps are
  * user-pinned to the rail (taskbar model) and stay listed even while closed
  * or disconnected; undocked apps appear only while open in the guest.
  */

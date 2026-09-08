@@ -4,12 +4,12 @@ import type {
   WorkjetConnectionSummary,
   WorkjetThreadRole,
   WorkjetThreadConfig,
-} from "@t3tools/contracts";
-import { normalizeWorkjetThreadConfig } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { normalizeWorkjetThreadConfig } from "@workjet/contracts";
 import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import { resolveCapabilityCatalogForHost } from "@metric-space-ai/workjet-capabilities";
 import { WrenchIcon } from "lucide-react";
 
@@ -41,7 +41,7 @@ const GREPPY_CAPABILITY_ID = "greppy" satisfies WorkjetCapabilityId;
  * Only the activation copy is UI-owned, because per-thread activation is a
  * Code-host policy rather than a property of the capability.
  */
-export const WORKJET_CODE_HOST_ADAPTER = "t3-mcp" as const;
+export const WORKJET_CODE_HOST_ADAPTER = "workjet-mcp" as const;
 
 export const workjetComposerCapabilities = (
   enabledCapabilityIds: ReadonlyArray<string>,

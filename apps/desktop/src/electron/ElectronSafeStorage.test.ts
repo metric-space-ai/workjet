@@ -2,7 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import { beforeEach, vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
 const storage = vi.hoisted(() => ({
   isEncryptionAvailable: vi.fn(() => true),

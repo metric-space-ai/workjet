@@ -33,7 +33,7 @@ const lockfile: ReleaseLockfile = {
     "apps/desktop": {
       dependencies: {
         effect: { specifier: "4.0.0", version: "4.0.0(patch_hash=abc)" },
-        "@t3tools/shared": { specifier: "workspace:*", version: "link:../../packages/shared" },
+        "@workjet/shared": { specifier: "workspace:*", version: "link:../../packages/shared" },
       },
       devDependencies: {
         "electron-builder": { specifier: "26.0.0", version: "26.0.0" },
@@ -184,13 +184,13 @@ describe("release notice model", () => {
 });
 
 describe("release notice repository facts", () => {
-  it("keeps the T3 MIT copyright notice at the repository root", () =>
+  it("keeps the Workjet MIT copyright notice at the repository root", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const license = yield* fs.readFileString(path.join(repoRoot, "LICENSE"));
       assert.include(license, "MIT License");
-      assert.include(license, "Copyright (c) 2026 T3 Tools Inc.");
+      assert.include(license, "Copyright (c) 2026 Workjet Inc.");
       assert.include(
         license,
         "The above copyright notice and this permission notice shall be included",

@@ -3,7 +3,7 @@ import {
   GreppyRuntimeReason as ContractGreppyRuntimeReason,
   GreppyRuntimeSnapshot as ContractGreppyRuntimeSnapshot,
   GreppyRuntimeSource as ContractGreppyRuntimeSource,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 

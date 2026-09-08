@@ -1,7 +1,7 @@
 # CTOX Desktop — Kanban & Recovery-Dokument
 
 **Kopfzeile:** Die App programmiert nachweislich (OpenCode, 2026-08-23 20:51).
-T2, T3, T4, T6 erledigt, T1 im Kern. T5 ist blockiert, weil die laufende
+T2, Workjet, T4, T6 erledigt, T1 im Kern. T5 ist blockiert, weil die laufende
 Host-Binärdatei nicht diesem Quellstand entspricht. Drei Blocker gehören
 dem Betreiber.
 
@@ -43,7 +43,7 @@ Jetzt fünf Prüfungen, die scheitern können (Fenster, Rendering, Backend,
 Composer, Skriptfehler) plus `smoke-test:turn` mit echtem Turn.
 
 ```bash
-pnpm --filter @t3tools/desktop smoke-test:turn
+pnpm --filter @workjet/desktop smoke-test:turn
 ```
 
 ### D4 · Harnesses ≠ Anmeldung — `c85100ac2`
@@ -149,7 +149,7 @@ Danach Vertrag (`WorkjetGatewayOauthProvider` um "xai" erweitern),
 Server-Route und Oberfläche. Umfang: mehrere hundert Zeilen Rust plus
 ein Host-Build, der in den laufenden Stand gebracht werden muss.
 
-### T3 · Workjet-Prompt-Seite — ERLEDIGT `bfbb02db4`
+### Workjet · Workjet-Prompt-Seite — ERLEDIGT `bfbb02db4`
 
 War: TRIGGER nach T1. Heute **ein** rohes Textfeld (`managedSystemPrompt`).
 Swift: strukturierte Abschnitte (Allgemeine Regeln, Progress Board, Worker,
@@ -157,7 +157,7 @@ Modellregeln, Worker-Aufgabe) mit je eigenem „Bearbeiten".
 
 ### T4 · Gateway-Pools — ERLEDIGT `e3a05d6a9`
 
-War: TRIGGER nach T3. Dieselben fünf Anbieter stehen viermal untereinander
+War: TRIGGER nach Workjet. Dieselben fünf Anbieter stehen viermal untereinander
 (Connected, Pools, Health, Models); der identische Absatz fünfmal.
 Soll: eine Zeile pro Anbieter, die alles trägt.
 
@@ -189,7 +189,7 @@ ich nicht an.
 ### OWNER-2 · Legacy-Import — 14 Entscheidungen, EINMALIG
 
 `~/Library/Application Support/Workjet/config.v1.json` (62 KB) →
-`~/.t3/userdata/settings.json`. Enthält **12 Worker, 3 Computer, 7 Anbieter**.
+`~/.workjet/userdata/settings.json`. Enthält **12 Worker, 3 Computer, 7 Anbieter**.
 Die Seite: _„runs exactly once — accepting or declining is recorded and never
 offered again."_
 Mein Vorschlag: `Local → this server`; `gpu3-a4500`/`gpu1-a6000` → **nicht
@@ -265,10 +265,10 @@ für jeden Thread. Sauberer wäre, sie aus der Worker-Definition zu nehmen.
 | Swift-Original (Quellcode)   | `~/Documents/claude-workjet/app/Sources/WorkjetApp/`               |
 | Swift-Worker-Maske           | `.../WorkerEditorView.swift` (811 Zeilen)                          |
 | Swift-Konfiguration          | `~/Library/Application Support/Workjet/config.v1.json`             |
-| App-Zustand (Threads, Turns) | `~/.t3/userdata/state.sqlite`                                      |
-| Turn-Protokolle je Thread    | `~/.t3/userdata/logs/provider/events.<threadId>.log`               |
-| Gateway-Konfiguration        | `~/.t3/userdata/provider-gateway.json` (5 Konten)                  |
-| Gateway-Host                 | `~/.t3/userdata/provider-gateway-host`, Ports 59770 / 57135        |
+| App-Zustand (Threads, Turns) | `~/.workjet/userdata/state.sqlite`                                      |
+| Turn-Protokolle je Thread    | `~/.workjet/userdata/logs/provider/events.<threadId>.log`               |
+| Gateway-Konfiguration        | `~/.workjet/userdata/provider-gateway.json` (5 Konten)                  |
+| Gateway-Host                 | `~/.workjet/userdata/provider-gateway-host`, Ports 59770 / 57135        |
 | Modellkanäle                 | `apps/server/src/providerGateway/ProviderGatewayManagement.ts:120` |
 | Auth-Klassifizierung         | `apps/server/src/provider/Layers/ClaudeAdapter.ts:393,1319`        |
 | Anmelde-Sondierung ohne API  | `.../ClaudeProvider.ts` `probeClaudeCapabilities`                  |

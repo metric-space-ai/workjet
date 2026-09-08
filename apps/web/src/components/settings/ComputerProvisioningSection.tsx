@@ -3,7 +3,7 @@ import type {
   WorkjetProvisioningSnapshot,
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   CheckCircle2Icon,
   LaptopIcon,

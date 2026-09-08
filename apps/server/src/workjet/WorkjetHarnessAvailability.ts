@@ -28,7 +28,7 @@ import type {
   WorkjetHarness,
   WorkjetHarnessAvailability,
   WorkjetHarnessAvailabilitySnapshot,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";

@@ -5,7 +5,7 @@ import type {
   EnvironmentId,
   WorkjetHandoffBranchRef,
   WorkjetWorkerAddress,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   WORKJET_HANDOFF_SNAPSHOT_MAX_BYTES,
   WORKJET_HANDOFF_SNAPSHOT_MAX_MESSAGES,

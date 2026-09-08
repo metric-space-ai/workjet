@@ -344,7 +344,7 @@ it("resolves explicit, environment, and repository-local dependency roots", () =
   assert.equal(
     resolveCtoxBusinessOsShellDependencyRoot({
       repoRoot: "/repo",
-      env: { T3CODE_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT: "ci-deps" },
+      env: { WORKJET_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT: "ci-deps" },
     }),
     NodePath.join("/repo", "ci-deps"),
   );
@@ -352,7 +352,7 @@ it("resolves explicit, environment, and repository-local dependency roots", () =
     resolveCtoxBusinessOsShellDependencyRoot({
       dependencyRoot: "/explicit/.deps",
       repoRoot: "/repo",
-      env: { T3CODE_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT: "ignored" },
+      env: { WORKJET_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT: "ignored" },
     }),
     "/explicit/.deps",
   );

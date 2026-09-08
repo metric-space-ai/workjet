@@ -130,9 +130,9 @@ const withIdentity = <A, E, R>(
         Layer.provideMerge(
           FileSystem.layerNoop({
             exists: (path) =>
-              Effect.succeed(input.legacyPathExists === true && path.includes("t3code")),
+              Effect.succeed(input.legacyPathExists === true && path.includes("workjet")),
             readFileString: () =>
-              Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
+              Effect.succeed(input.packageJson ?? '{"workjetCommitHash":"abcdef1234567890"}'),
           }),
         ),
         Layer.provideMerge(makeAssetsLayer(input.pngIconPath ?? Option.none())),
@@ -185,14 +185,14 @@ describe("DesktopAppIdentity", () => {
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);
-        // Workjet is canonical; older CTOX Desktop and t3code links stay inbound-compatible.
-        assert.deepEqual(calls.setAsDefaultProtocolClient, ["workjet", "ctox-desktop", "t3code"]);
+        // Workjet is canonical; older CTOX Desktop and workjet links stay inbound-compatible.
+        assert.deepEqual(calls.setAsDefaultProtocolClient, ["workjet", "ctox-desktop", "workjet"]);
       }),
       {
         calls,
         environment: {
           env: {
-            T3CODE_COMMIT_HASH: "0123456789abcdef",
+            WORKJET_COMMIT_HASH: "0123456789abcdef",
           },
         },
         pngIconPath: Option.some("/icon.png"),

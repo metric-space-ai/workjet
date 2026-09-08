@@ -3,7 +3,7 @@ import type {
   WorkjetComputer,
   WorkjetConfiguration,
   WorkjetHarnessAvailabilitySnapshot,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { CheckIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 

@@ -2,7 +2,7 @@ import {
   NonNegativeInt,
   WorkjetDecisionHubConnectionError,
   type WorkjetDecisionHubEscalationResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Duration from "effect/Duration";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -97,7 +97,7 @@ export interface DecisionHubMcpClientShape {
 export class DecisionHubMcpClient extends Context.Service<
   DecisionHubMcpClient,
   DecisionHubMcpClientShape
->()("t3/workjet/decisionHub/DecisionHubMcpClient") {}
+>()("workjet/workjet/decisionHub/DecisionHubMcpClient") {}
 
 const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;

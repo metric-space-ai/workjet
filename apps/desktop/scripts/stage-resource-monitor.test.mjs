@@ -12,13 +12,13 @@ import {
 
 describe("desktop resource monitor staging", () => {
   it("uses the platform executable name", () => {
-    assert.equal(resourceMonitorExecutableName("darwin"), "t3-resource-monitor");
-    assert.equal(resourceMonitorExecutableName("linux"), "t3-resource-monitor");
-    assert.equal(resourceMonitorExecutableName("win32"), "t3-resource-monitor.exe");
+    assert.equal(resourceMonitorExecutableName("darwin"), "workjet-resource-monitor");
+    assert.equal(resourceMonitorExecutableName("linux"), "workjet-resource-monitor");
+    assert.equal(resourceMonitorExecutableName("win32"), "workjet-resource-monitor.exe");
   });
 
   it("builds and stages the native monitor for direct desktop packs", () => {
-    const repoRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-monitor-stage-"));
+    const repoRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-monitor-stage-"));
     const paths = resolveResourceMonitorStagePaths({ repoRoot, platform: "darwin" });
     let receivedBuildInput;
 
@@ -46,7 +46,7 @@ describe("desktop resource monitor staging", () => {
   });
 
   it("fails when cargo reports success without producing the binary", () => {
-    const repoRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-monitor-stage-"));
+    const repoRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-monitor-stage-"));
     const paths = resolveResourceMonitorStagePaths({ repoRoot, platform: "darwin" });
 
     try {

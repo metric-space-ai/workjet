@@ -25,7 +25,7 @@ public binary.
 - The same script now also stages the three license notices (`stageLegalNotices`)
   into `Resources/legal/`: `LICENSE`, `LICENSE_POLICY.md`, and `NOTICE.md`. The
   build fails closed if any of the three is missing, so no binary can ship without
-  the T3 MIT notice and the generated release NOTICE.
+  the Workjet MIT notice and the generated release NOTICE.
 
 ## 2. How the guest shell is loaded and what it may reach
 
@@ -51,7 +51,7 @@ public binary.
 
 ## 3. Which obligations attach to the shipped binary
 
-- **T3-derived application code (MIT).** The obligation is notice retention only.
+- **Workjet-derived application code (MIT).** The obligation is notice retention only.
   It is satisfied by the repository-root `LICENSE` plus the packaged
   `Resources/legal/LICENSE`, and it is asserted by
   `scripts/build-desktop-artifact.test.ts` and

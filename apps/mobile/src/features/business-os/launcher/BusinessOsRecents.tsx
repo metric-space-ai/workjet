@@ -37,7 +37,7 @@ export function BusinessOsRecents(props: {
           <SymbolView name="chevron.left" size={21} tintColor={foreground} type="monochrome" />
         </Pressable>
         <View>
-          <Text className="text-2xl font-t3-bold">Recents</Text>
+          <Text className="text-2xl font-workjet-bold">Recents</Text>
           <Text className="text-sm text-foreground-muted">
             Nur sichere App-Metadaten, keine Vorschauen
           </Text>
@@ -63,7 +63,7 @@ export function BusinessOsRecents(props: {
               <SymbolView name={app.icon} size={24} tintColor="#ffffff" type="monochrome" />
             </View>
             <View className="min-w-0 flex-1">
-              <Text className="text-base font-t3-bold" numberOfLines={1}>
+              <Text className="text-base font-workjet-bold" numberOfLines={1}>
                 {app.title}
               </Text>
               <Text className="mt-1 text-sm text-foreground-muted">

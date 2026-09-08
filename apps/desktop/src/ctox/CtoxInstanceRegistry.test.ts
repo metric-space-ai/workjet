@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxManagedInstance } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";

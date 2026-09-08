@@ -14,12 +14,12 @@
  * @module state/meshOverview
  */
 import { useAtomValue } from "@effect/atom-react";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
+import { isAtomCommandInterrupted } from "@workjet/client-runtime/state/runtime";
 import {
   type EnvironmentId,
   type WorkjetMeshOverview,
   type WorkjetMeshWorkspaceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useState } from "react";

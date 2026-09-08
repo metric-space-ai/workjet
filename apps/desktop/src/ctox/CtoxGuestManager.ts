@@ -13,12 +13,12 @@ import type {
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionTransferEvent,
   WorkjetDeviceWebRtcRequestV1,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   CtoxWorkjetProjectControlResponse,
   CtoxWorkjetSessionControlResponse,
   WorkjetDeviceWebRtcResponseV1,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -211,7 +211,7 @@ export class CtoxGuestManager extends Context.Service<
       computerIds: readonly string[],
     ) => Effect.Effect<CtoxManagedActionResult>;
   }
->()("@t3tools/desktop/ctox/CtoxGuestManager") {}
+>()("@workjet/desktop/ctox/CtoxGuestManager") {}
 
 export const CTOX_APPLY_HOST_THEME_CHANNEL = "instance:apply-host-theme";
 

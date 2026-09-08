@@ -1,4 +1,4 @@
-import { WorkjetConnectionId } from "@t3tools/contracts";
+import { WorkjetConnectionId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveDelegatedCapabilities, validateCapabilityActivation } from "./activation.ts";

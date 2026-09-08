@@ -14,8 +14,8 @@ import * as Tracer from "effect/Tracer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import { EnvironmentId } from "@t3tools/contracts";
-import { RelayDpopClientAuth, RelayEnvironmentAuth } from "@t3tools/contracts/relay";
+import { EnvironmentId } from "@workjet/contracts";
+import { RelayDpopClientAuth, RelayEnvironmentAuth } from "@workjet/contracts/relay";
 
 import {
   RELAY_REQUEST_DEADLINE_MS,
@@ -49,12 +49,12 @@ const relaySettings: RelayConfiguration.RelayConfiguration["Service"] = {
     teamId: "apns-team",
     keyId: "apns-key",
     privateKey: Redacted.make("apns-private-key"),
-    bundleId: "com.example.t3",
+    bundleId: "com.example.workjet",
     environment: "sandbox",
   },
   clerkSecretKey: Redacted.make("clerk-secret-key"),
   clerkPublishableKey: "pk_test_test",
-  clerkJwtAudience: "t3-code-relay",
+  clerkJwtAudience: "workjet-relay",
   apnsDeliveryJobSigningSecret: Redacted.make("apns-delivery-secret"),
   cloudMintPrivateKey: Redacted.make("cloud-mint-private-key"),
   cloudMintPublicKey: "cloud-mint-public-key",
@@ -179,7 +179,7 @@ describe("relay Workjet device-session authentication", () => {
           jti: "access-1",
           iat: 100,
           exp: 1_900,
-          client_id: "t3-mobile" as const,
+          client_id: "workjet-mobile" as const,
           scope: ["environment:connect" as const, "environment:status" as const],
           cnf: { jkt: "jkt-1" },
           workjet: {

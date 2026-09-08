@@ -4,7 +4,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   WorkjetThreadConfig,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

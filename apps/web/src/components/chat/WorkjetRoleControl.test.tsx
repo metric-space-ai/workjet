@@ -1,6 +1,6 @@
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EnvironmentId, ThreadId, type WorkjetThreadConfig } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type WorkjetThreadConfig } from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";

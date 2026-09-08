@@ -397,7 +397,7 @@ describe("WebStackSearch", () => {
         "environment-private-012",
         "provider-instance-private-345",
       ];
-      const test = makeService({ stateDir: "/srv/t3/userdata" });
+      const test = makeService({ stateDir: "/srv/workjet/userdata" });
       const webSearch = yield* search(test.service);
       for (const query of identifiers) yield* webSearch.search({ query });
 
@@ -406,11 +406,11 @@ describe("WebStackSearch", () => {
       const roots = test.commands.slice(1).map((command) => command.args[2]);
       assert.deepEqual(
         roots,
-        identifiers.map(() => "/srv/t3/userdata/web-stack"),
+        identifiers.map(() => "/srv/workjet/userdata/web-stack"),
       );
       assert.deepEqual(
         test.directories,
-        identifiers.map(() => "/srv/t3/userdata/web-stack"),
+        identifiers.map(() => "/srv/workjet/userdata/web-stack"),
       );
       for (const root of roots) {
         for (const identifier of identifiers) assert.notInclude(root ?? "", identifier);

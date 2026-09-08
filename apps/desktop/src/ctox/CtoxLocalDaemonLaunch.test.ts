@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { assert, describe, it } from "@effect/vitest";
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxManagedInstance } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";

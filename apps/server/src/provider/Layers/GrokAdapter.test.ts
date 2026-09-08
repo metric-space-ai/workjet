@@ -24,7 +24,7 @@ import {
   ThreadId,
   TurnId,
   type ProviderRuntimeEvent,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
@@ -57,12 +57,12 @@ async function makeFailFirstProcessGrokWrapper(input: {
   const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-acp-mock-retry-"));
   const wrapperPath = NodePath.join(dir, "fake-grok.sh");
   const script = `#!/bin/sh
-export T3_ACP_REQUEST_LOG_PATH=${JSON.stringify(input.requestLogPath)}
+export WORKJET_ACP_REQUEST_LOG_PATH=${JSON.stringify(input.requestLogPath)}
 if [ ! -f ${JSON.stringify(input.invocationMarkerPath)} ]; then
   : > ${JSON.stringify(input.invocationMarkerPath)}
-  export T3_ACP_FAIL_PROMPT=1
+  export WORKJET_ACP_FAIL_PROMPT=1
 else
-  unset T3_ACP_FAIL_PROMPT
+  unset WORKJET_ACP_FAIL_PROMPT
 fi
 exec ${JSON.stringify(mockAgentCommand)} ${JSON.stringify(mockAgentPath)} "$@"
 `;
@@ -141,7 +141,7 @@ function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): vo
 }
 
 const grokAdapterTestLayer = ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3code-grok-adapter-test-",
+  prefix: "workjet-grok-adapter-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 const makeTestAdapter = (binaryPath: string, options?: Parameters<typeof makeGrokAdapter>[1]) =>
@@ -264,8 +264,8 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
         const wrapperPath = yield* Effect.promise(() =>
           makeMockGrokWrapper({
-            T3_ACP_REQUEST_LOG_PATH: requestLogPath,
-            T3_ACP_PROMPT_DELAY_MS: "100",
+            WORKJET_ACP_REQUEST_LOG_PATH: requestLogPath,
+            WORKJET_ACP_PROMPT_DELAY_MS: "100",
           }),
         );
         const adapter = yield* makeTestAdapter(wrapperPath);
@@ -317,7 +317,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       );
       const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+        makeMockGrokWrapper({ WORKJET_ACP_REQUEST_LOG_PATH: requestLogPath }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
 
@@ -379,7 +379,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       );
       const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+        makeMockGrokWrapper({ WORKJET_ACP_REQUEST_LOG_PATH: requestLogPath }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
 
@@ -437,7 +437,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         );
         const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
         const wrapperPath = yield* Effect.promise(() =>
-          makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+          makeMockGrokWrapper({ WORKJET_ACP_REQUEST_LOG_PATH: requestLogPath }),
         );
         const adapter = yield* makeTestAdapter(wrapperPath);
         const legacyCursor = { schemaVersion: 1 as const, sessionId: "mock-session-1" };
@@ -549,7 +549,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
 
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_EXIT_LOG_PATH: exitLogPath,
+          WORKJET_ACP_EXIT_LOG_PATH: exitLogPath,
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -574,7 +574,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-session-ready-after-prompt");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_EMIT_TOOL_CALLS: "1",
+          WORKJET_ACP_EMIT_TOOL_CALLS: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -683,8 +683,8 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-xai-prompt-complete-fallback");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
-          T3_ACP_EMIT_FOREIGN_SESSION_UPDATES: "1",
+          WORKJET_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
+          WORKJET_ACP_EMIT_FOREIGN_SESSION_UPDATES: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -774,7 +774,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-send-turn-interrupt-after-prompt");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
+          WORKJET_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -822,8 +822,8 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-xai-prompt-complete-missing-stop-reason");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
-          T3_ACP_OMIT_XAI_PROMPT_COMPLETE_STOP_REASON: "1",
+          WORKJET_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
+          WORKJET_ACP_OMIT_XAI_PROMPT_COMPLETE_STOP_REASON: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -875,7 +875,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-stop-after-full-silence");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_HANG_FIRST_PROMPT_FOREVER: "1",
+          WORKJET_ACP_HANG_FIRST_PROMPT_FOREVER: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -954,8 +954,8 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_HANG_FIRST_PROMPT_FOREVER: "1",
-          T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+          WORKJET_ACP_HANG_FIRST_PROMPT_FOREVER: "1",
+          WORKJET_ACP_REQUEST_LOG_PATH: requestLogPath,
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -1032,8 +1032,8 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-drop-late-cancelled-notifications");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_HANG_PROMPT_FOREVER: "1",
-          T3_ACP_EMIT_LATE_UPDATE_AFTER_CANCEL: "1",
+          WORKJET_ACP_HANG_PROMPT_FOREVER: "1",
+          WORKJET_ACP_EMIT_LATE_UPDATE_AFTER_CANCEL: "1",
         }),
       );
       const lateNativeUpdate = yield* Deferred.make<void>();
@@ -1115,7 +1115,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-stop-during-completion-drain");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
+          WORKJET_ACP_EMIT_XAI_PROMPT_COMPLETE_THEN_HANG: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -1248,7 +1248,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-prompt-failure-ready");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_FAIL_PROMPT: "1",
+          WORKJET_ACP_FAIL_PROMPT: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -1299,7 +1299,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const threadId = ThreadId.make("grok-load-replay-filter");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_EMIT_LOAD_REPLAY: "1",
+          WORKJET_ACP_EMIT_LOAD_REPLAY: "1",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -1404,9 +1404,9 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
       const wrapperPath = yield* Effect.promise(() =>
         makeMockGrokWrapper({
-          T3_ACP_REQUEST_LOG_PATH: requestLogPath,
-          T3_ACP_EMIT_TOOL_CALLS: "1",
-          T3_ACP_ALLOW_ONCE_OPTION_ID: "agent-defined-approval-id",
+          WORKJET_ACP_REQUEST_LOG_PATH: requestLogPath,
+          WORKJET_ACP_EMIT_TOOL_CALLS: "1",
+          WORKJET_ACP_ALLOW_ONCE_OPTION_ID: "agent-defined-approval-id",
         }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
@@ -1452,7 +1452,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-xai-ask-user-question");
       const wrapperPath = yield* Effect.promise(() =>
-        makeMockGrokWrapper({ T3_ACP_EMIT_XAI_ASK_USER_QUESTION: "1" }),
+        makeMockGrokWrapper({ WORKJET_ACP_EMIT_XAI_ASK_USER_QUESTION: "1" }),
       );
       const adapter = yield* makeTestAdapter(wrapperPath);
       const requested =

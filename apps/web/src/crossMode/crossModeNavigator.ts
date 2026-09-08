@@ -52,7 +52,7 @@
  * and its RPCs are owned elsewhere (see `crossModeTarget.ts`). It receives a
  * bounded, already-validated target and moves the shell.
  */
-import type { WorkjetProductMode } from "@t3tools/contracts/settings";
+import type { WorkjetProductMode } from "@workjet/contracts/settings";
 
 import {
   crossModeSelectionMemory as defaultSelectionMemory,

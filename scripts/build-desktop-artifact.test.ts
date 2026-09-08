@@ -60,7 +60,7 @@ import {
   copyDirectoryPreservingSymlinks,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { HostProcessArchitecture, HostProcessPlatform } from "@workjet/shared/hostProcess";
 
 function mockProcess(exitCode: number) {
   return ChildProcessSpawner.makeHandle({
@@ -235,7 +235,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+                WORKJET_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/workjet",
               },
             }),
           ),
@@ -246,7 +246,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                GITHUB_REPOSITORY: "pingdotgg/t3code",
+                GITHUB_REPOSITORY: "pingdotgg/workjet",
               },
             }),
           ),
@@ -256,13 +256,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(latestConfig, {
         provider: "github",
         owner: "pingdotgg",
-        repo: "t3code",
+        repo: "workjet",
         releaseType: "release",
       });
       assert.deepStrictEqual(nightlyConfig, {
         provider: "github",
         owner: "pingdotgg",
-        repo: "t3code",
+        repo: "workjet",
         releaseType: "prerelease",
         channel: "nightly",
       });
@@ -272,7 +272,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   // The packaged update feed carries the product identity: a CTOX build must
   // resolve to the CTOX repository, never to an inherited Workjet feed. The
   // slug is environment-derived by design, so the release pipeline MUST set
-  // T3CODE_DESKTOP_UPDATE_REPOSITORY to the CTOX `owner/repo` (or run in the
+  // WORKJET_DESKTOP_UPDATE_REPOSITORY to the CTOX `owner/repo` (or run in the
   // CTOX repository, which supplies the same slug through the GitHub Actions
   // GITHUB_REPOSITORY variable). With neither set there is deliberately no
   // publish config at all, so an unconfigured local build ships without an
@@ -283,7 +283,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
 
       const ctoxConfig = yield* resolveGitHubPublishConfig("latest").pipe(
-        withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop" }),
+        withEnv({ WORKJET_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop" }),
       );
       assert.deepStrictEqual(ctoxConfig, {
         provider: "github",
@@ -297,8 +297,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // updates against the CTOX feed.
       const overriddenConfig = yield* resolveGitHubPublishConfig("nightly").pipe(
         withEnv({
-          T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop",
-          GITHUB_REPOSITORY: "pingdotgg/t3code",
+          WORKJET_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop",
+          GITHUB_REPOSITORY: "pingdotgg/workjet",
         }),
       );
       assert.deepStrictEqual(overriddenConfig, {
@@ -314,12 +314,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.isUndefined(yield* resolveGitHubPublishConfig("latest").pipe(withEnv({})));
       assert.isUndefined(
         yield* resolveGitHubPublishConfig("latest").pipe(
-          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "   " }),
+          withEnv({ WORKJET_DESKTOP_UPDATE_REPOSITORY: "   " }),
         ),
       );
       assert.isUndefined(
         yield* resolveGitHubPublishConfig("latest").pipe(
-          withEnv({ T3CODE_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop/extra" }),
+          withEnv({ WORKJET_DESKTOP_UPDATE_REPOSITORY: "metric-space-ai/ctox-desktop/extra" }),
         ),
       );
     }),
@@ -330,10 +330,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       resolveDesktopRuntimeDependencies(
         {
           "@effect/platform-node": "catalog:",
-          "@t3tools/contracts": "workspace:*",
-          "@t3tools/shared": "workspace:*",
-          "@t3tools/ssh": "workspace:*",
-          "@t3tools/tailscale": "workspace:*",
+          "@workjet/contracts": "workspace:*",
+          "@workjet/shared": "workspace:*",
+          "@workjet/ssh": "workspace:*",
+          "@workjet/tailscale": "workspace:*",
           effect: "catalog:",
           electron: "41.5.0",
         },
@@ -680,7 +680,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(linux, "asarUnpack");
       assert.deepStrictEqual(win.asarUnpack, WINDOWS_ASAR_UNPACK);
       // Linux must register the renderer schemes so the generated .desktop
-      // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
+      // entry advertises MimeType=x-scheme-handler/workjet; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
         {
           name: "Workjet",
@@ -690,8 +690,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             "workjet-preview",
             "ctox-desktop",
             "ctox-desktop-dev",
-            "t3code",
-            "t3code-dev",
+            "workjet",
+            "workjet-dev",
           ],
         },
       ]);
@@ -750,24 +750,24 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it("derives macOS passkey signing configuration from the Clerk publishable key", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
-      T3CODE_APPLE_TEAM_ID: "abc1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa("example.clerk.accounts.dev$")}`,
+      WORKJET_APPLE_TEAM_ID: "abc1234567",
+      WORKJET_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
+      WORKJET_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa("example.clerk.accounts.dev$")}`,
     });
 
     assert.deepStrictEqual(configuration, {
-      appId: "com.t3tools.t3code",
+      appId: "dev.workjet.app",
       teamId: "ABC1234567",
       rpDomains: ["example.clerk.accounts.dev"],
-      provisioningProfilePath: "/tmp/t3code.provisionprofile",
+      provisioningProfilePath: "/tmp/workjet.provisionprofile",
     });
   });
 
   it("normalizes explicit macOS passkey RP domains and renders required entitlements", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PASSKEY_RP_DOMAINS:
+      WORKJET_APPLE_TEAM_ID: "ABC1234567",
+      WORKJET_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
+      WORKJET_CLERK_PASSKEY_RP_DOMAINS:
         " Clerk.Example.com,example.clerk.accounts.dev,clerk.example.com ",
     });
     const entitlements = renderMacPasskeyEntitlements(configuration);
@@ -776,7 +776,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "clerk.example.com",
       "example.clerk.accounts.dev",
     ]);
-    assert.include(entitlements, "<string>ABC1234567.com.t3tools.t3code</string>");
+    assert.include(entitlements, "<string>ABC1234567.dev.workjet.app</string>");
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
@@ -793,21 +793,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     };
 
     const missingProfileError = captureError({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev",
+      WORKJET_APPLE_TEAM_ID: "ABC1234567",
+      WORKJET_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev",
     });
     assert.instanceOf(missingProfileError, MissingMacPasskeyProvisioningProfileError);
     assert.equal(
       missingProfileError.message,
-      "T3CODE_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.",
+      "WORKJET_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.",
     );
 
     const unsafeDomain =
       "https://domain-user:domain-secret@example.clerk.accounts.dev/path?token=query-secret";
     const invalidDomainError = captureError({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PASSKEY_RP_DOMAINS: unsafeDomain,
+      WORKJET_APPLE_TEAM_ID: "ABC1234567",
+      WORKJET_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
+      WORKJET_CLERK_PASSKEY_RP_DOMAINS: unsafeDomain,
     });
     assert.instanceOf(invalidDomainError, InvalidMacPasskeyRpDomainError);
     assert.equal(invalidDomainError.reason, "scheme-not-allowed");
@@ -823,20 +823,20 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.throws(
       () =>
         resolveMacPasskeySigningConfiguration({
-          T3CODE_APPLE_TEAM_ID: "ABC1234567",
-          T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-          T3CODE_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev:8443",
+          WORKJET_APPLE_TEAM_ID: "ABC1234567",
+          WORKJET_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
+          WORKJET_CLERK_PASSKEY_RP_DOMAINS: "example.clerk.accounts.dev:8443",
         }),
       /Invalid passkey RP domain/u,
     );
     const invalidPublishableKeyError = captureError({
-      T3CODE_APPLE_TEAM_ID: "ABC1234567",
-      T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_%",
+      WORKJET_APPLE_TEAM_ID: "ABC1234567",
+      WORKJET_MACOS_PROVISIONING_PROFILE: "/tmp/workjet.provisionprofile",
+      WORKJET_CLERK_PUBLISHABLE_KEY: "pk_test_%",
     });
     assert.instanceOf(invalidPublishableKeyError, InvalidMacPasskeyPublishableKeyError);
     assert.ok(invalidPublishableKeyError.cause);
-    assert.equal(invalidPublishableKeyError.message, "T3CODE_CLERK_PUBLISHABLE_KEY is invalid.");
+    assert.equal(invalidPublishableKeyError.message, "WORKJET_CLERK_PUBLISHABLE_KEY is invalid.");
     assert.notProperty(invalidPublishableKeyError, "publishableKey");
     assert.notInclude(invalidPublishableKeyError.message, "pk_test_%");
   });
@@ -874,15 +874,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         {
           entitlementsPath: "/tmp/entitlements.mac.plist",
-          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+          provisioningProfilePath: "/tmp/workjet.provisionprofile",
         },
         "/verified/ctox-business-os-shell",
       );
 
       const mac = config.mac as Record<string, unknown>;
-      assert.equal(config.appId, "com.t3tools.t3code");
+      assert.equal(config.appId, "dev.workjet.app");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
-      assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
+      assert.equal(mac.provisioningProfile, "/tmp/workjet.provisionprofile");
       assert.deepStrictEqual(mac.protocols, [
         {
           name: "Workjet",
@@ -892,8 +892,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
             "workjet-preview",
             "ctox-desktop",
             "ctox-desktop-dev",
-            "t3code",
-            "t3code-dev",
+            "workjet",
+            "workjet-dev",
           ],
         },
       ]);
@@ -977,8 +977,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.deepStrictEqual(resolveResourceMonitorRustTargets("win", "arm64"), [
       "aarch64-pc-windows-msvc",
     ]);
-    assert.equal(resourceMonitorExecutableName("mac"), "t3-resource-monitor");
-    assert.equal(resourceMonitorExecutableName("win"), "t3-resource-monitor.exe");
+    assert.equal(resourceMonitorExecutableName("mac"), "workjet-resource-monitor");
+    assert.equal(resourceMonitorExecutableName("win"), "workjet-resource-monitor.exe");
   });
   it.effect("ships the license notices as a packaged extra resource", () =>
     Effect.gen(function* () {
@@ -1006,7 +1006,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         yield* fs.readFileString(
           path.join(stageAppDir, DESKTOP_LEGAL_RESOURCE_DIRECTORY, "LICENSE"),
         ),
-        "Copyright (c) 2026 T3 Tools Inc.",
+        "Copyright (c) 2026 Workjet Inc.",
       );
 
       // A tree without the notices must fail the build instead of shipping a
@@ -1196,11 +1196,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_SKIP_BUILD: "true",
-                T3CODE_DESKTOP_KEEP_STAGE: "true",
-                T3CODE_DESKTOP_SIGNED: "true",
-                T3CODE_DESKTOP_VERBOSE: "true",
-                T3CODE_DESKTOP_MOCK_UPDATES: "true",
+                WORKJET_DESKTOP_SKIP_BUILD: "true",
+                WORKJET_DESKTOP_KEEP_STAGE: "true",
+                WORKJET_DESKTOP_SIGNED: "true",
+                WORKJET_DESKTOP_VERBOSE: "true",
+                WORKJET_DESKTOP_MOCK_UPDATES: "true",
               },
             }),
           ),
@@ -1250,7 +1250,7 @@ it.effect("rebases packaged links into the isolated tree", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-copy-symlinks-" });
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-copy-symlinks-" });
     const source = path.join(root, "source");
     const destination = path.join(root, "destination");
     const packageDir = path.join(source, "node_modules/.pnpm/example@1/node_modules/example");

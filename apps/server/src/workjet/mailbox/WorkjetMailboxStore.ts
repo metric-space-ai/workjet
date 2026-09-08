@@ -22,7 +22,7 @@ import {
   WORKJET_MESH_ROSTER_MAX_PEERS,
   type WorkjetDelegationRef,
   type WorkjetWorkerAddress,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -44,7 +44,7 @@ import { PersistenceSqlError } from "../../persistence/Errors.ts";
  * Invariants:
  *
  * 1. Every stored value is encoded and decoded through the contract schemas in
- *    `@t3tools/contracts`; no hand-rolled JSON shape exists in this file.
+ *    `@workjet/contracts`; no hand-rolled JSON shape exists in this file.
  * 2. Inbox insertion is idempotent on the stable envelope id, so at-least-once
  *    transport produces exactly-once local effects.
  * 3. A delegation state change validates the transition and writes the new
@@ -992,7 +992,7 @@ export interface WorkjetMailboxStoreShape {
 export class WorkjetMailboxStore extends Context.Service<
   WorkjetMailboxStore,
   WorkjetMailboxStoreShape
->()("t3/workjet/mailbox/WorkjetMailboxStore") {}
+>()("workjet/workjet/mailbox/WorkjetMailboxStore") {}
 
 const sqlFailure = (operation: string) => (cause: unknown) =>
   new PersistenceSqlError({ operation, cause });

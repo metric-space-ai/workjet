@@ -3,7 +3,7 @@ import {
   EnvironmentId,
   WorkjetComputerId,
   type WorkjetComputer,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 

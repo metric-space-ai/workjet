@@ -9,13 +9,13 @@ import {
   ProviderDriverKind,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
-} from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+} from "@workjet/contracts";
+import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
@@ -32,9 +32,9 @@ import {
   MIN_PROMPT_FONT_SIZE,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_TERMINAL_FONT_SIZE,
-} from "@t3tools/contracts/settings";
-import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@workjet/contracts/settings";
+import { resolveServerBackgroundActivitySettings } from "@workjet/shared/backgroundActivitySettings";
+import { createModelSelection } from "@workjet/shared/model";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
@@ -53,7 +53,11 @@ import {
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { isElectron } from "../../env";
-import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
+import {
+  buildHostedChannelSelectionUrl,
+  configuredHostedAppUrl,
+  type HostedAppChannel,
+} from "../../hostedPairing";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import {
   readAppearanceModePreference,
@@ -417,7 +421,7 @@ function AboutVersionSection() {
             </Select>
           }
         />
-      ) : selectedHostedAppChannel ? (
+      ) : selectedHostedAppChannel && configuredHostedAppUrl() ? (
         <SettingsRow
           title="Update track"
           description="Switches the hosted app release channel."
@@ -426,9 +430,10 @@ function AboutVersionSection() {
               value={selectedHostedAppChannel}
               onValueChange={(value) => {
                 if (value === selectedHostedAppChannel) return;
-                window.location.assign(
-                  buildHostedChannelSelectionUrl({ channel: value as HostedAppChannel }),
-                );
+                const channelUrl = buildHostedChannelSelectionUrl({
+                  channel: value as HostedAppChannel,
+                });
+                if (channelUrl) window.location.assign(channelUrl);
               }}
             >
               <SelectTrigger className="w-full sm:w-40" aria-label="Update track">

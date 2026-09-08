@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { CtoxMobileShellPackResolveResult } from "@t3tools/contracts";
+import type { CtoxMobileShellPackResolveResult } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";

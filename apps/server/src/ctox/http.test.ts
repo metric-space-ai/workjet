@@ -8,7 +8,7 @@ import {
   type AuthEnvironmentScope,
   type CtoxMobileInviteCreateResult,
   type CtoxMobileShellPackResolveResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";

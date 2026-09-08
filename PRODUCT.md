@@ -15,7 +15,7 @@ equally direct.
 ## Product Purpose
 
 CTOX Desktop App is one coherent Electron client with two equal modes: Code and
-Business OS. Code is the T3-derived coding workspace with native Workjet
+Business OS. Code is the Workjet-derived coding workspace with native Workjet
 orchestration. Business OS manages and opens authorized CTOX instances. The
 modes share skills, tools, provider infrastructure, and explicit workflows,
 while their runtime authorities and data stores remain separate.
@@ -36,7 +36,7 @@ being empty, and confident without decorative product theater.
 - A broken overlay or two unrelated applications placed inside one window.
 - Generic admin dashboards made from oversized cards, full-width setup buttons,
   repeated helper copy, or modal-first workflows.
-- Renamed T3 screens that expose none of the native Workjet behavior.
+- Renamed Workjet screens that expose none of the native Workjet behavior.
 - Settings that mix Code and Business OS ownership or collapse harness,
   provider route, model, and computer into one coupled selector.
 - Loading states that pop, shift, reflow, or make local and remote resources feel

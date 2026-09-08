@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { DesktopSupportBundleResult } from "@t3tools/contracts";
+import { DesktopSupportBundleResult } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

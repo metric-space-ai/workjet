@@ -7,7 +7,7 @@ import type {
   PullRequestOmittedFileStat,
   PullRequestRef,
   PullRequestReviewThread,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   ChevronDownIcon,
   ChevronRightIcon,

@@ -1,4 +1,4 @@
-import { WorkjetGatewayAccountId, WorkjetGatewayOperationError } from "@t3tools/contracts";
+import { WorkjetGatewayAccountId, WorkjetGatewayOperationError } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

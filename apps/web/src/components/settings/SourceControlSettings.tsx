@@ -10,12 +10,12 @@ import type {
   SourceControlProviderDiscoveryItem,
   VcsDriverKind,
   VcsDiscoveryItem,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   getBackgroundActivityBaseProfile,
   getBackgroundActivityPresetSettings,
   resolveServerBackgroundActivitySettings,
-} from "@t3tools/shared/backgroundActivitySettings";
+} from "@workjet/shared/backgroundActivitySettings";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
@@ -354,7 +354,7 @@ function DiscoveryItemRow({
 function GitFetchIntervalSettings({
   environmentId,
 }: {
-  readonly environmentId: import("@t3tools/contracts").EnvironmentId;
+  readonly environmentId: import("@workjet/contracts").EnvironmentId;
 }) {
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
@@ -541,7 +541,7 @@ export function SourceControlSettingsPanel() {
 function ScopedSourceControlSettingsPanel({
   environmentId,
 }: {
-  readonly environmentId: import("@t3tools/contracts").EnvironmentId;
+  readonly environmentId: import("@workjet/contracts").EnvironmentId;
 }) {
   const discovery = useEnvironmentQuery(
     sourceControlEnvironment.discovery({

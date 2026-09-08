@@ -1,4 +1,4 @@
-import type { WorkjetHarness, WorkjetWorkerProfile } from "@t3tools/contracts";
+import type { WorkjetHarness, WorkjetWorkerProfile } from "@workjet/contracts";
 import { memo } from "react";
 import { UsersRoundIcon } from "lucide-react";
 

@@ -14,8 +14,8 @@ export const CapabilityVersion = TrimmedNonEmptyString.check(
 export type CapabilityVersion = typeof CapabilityVersion.Type;
 
 export const CapabilityAdapter = Schema.Literals([
-  "t3-mcp",
-  "t3-prompt",
+  "workjet-mcp",
+  "workjet-prompt",
   "ctox-business-os-mcp",
   "ctox-business-command",
 ]);

@@ -132,7 +132,7 @@ says is unachievable as written.
 
 ### 6. Contribute fixes upstream, or record that we will not
 
-Plan §14. **Decision:** open upstream pull requests against `pingdotgg/t3code`,
+Plan §14. **Decision:** open upstream pull requests against `pingdotgg/workjet`,
 or record "no" as the answer. **Consequence:** with no ancestry to upstream,
 every contribution must be hand-extracted as a fresh patch rather than
 cherry-picked, so the cost depends entirely on decision 4. "No" is a legitimate
@@ -385,7 +385,7 @@ finishes. Scope estimates are rough and name the files.
      `Check` step cannot go green on this file until that tooling bug is
      fixed; that is a formatter defect, not repo debt.
 
-5. ~~**Clear the 57 pre-existing `t3` server typecheck errors.**~~ **ALREADY
+5. ~~**Clear the 57 pre-existing `workjet` server typecheck errors.**~~ **ALREADY
    DONE — verified 2026-08-20, no change needed.** §15. Measured, not assumed:
    `tsgo --noEmit -p tsconfig.json` in `apps/server` reports 0 errors, and
    repo-wide `vp run -r typecheck` is clean across all five packages. The gate
@@ -752,7 +752,7 @@ finishes. Scope estimates are rough and name the files.
     leg fails closed on `basic_text`/`basic`. The verdict logic is pure and
     unit-tested (7 tests) so CI checks it even where the smoke cannot run.
     Run with `node keychain-smoke.ts` from `scripts/`, or
-    `pnpm --filter @t3tools/scripts smoke:keychain`.
+    `pnpm --filter @workjet/scripts smoke:keychain`.
 24. ~~**Keyboard and zoom targeting of the active CTOX guest.**~~ **ZOOM DONE
     2026-08-20, commit 10bb6a022; the keyboard half remains.** §10. `zoomMain`
     now targets a mounted guest and records the choice on its span. It reads
@@ -774,11 +774,11 @@ finishes. Scope estimates are rough and name the files.
     are meaningless, so the ownership half is skipped rather than faked, and it
     needs an ACL check of its own. Mutation-verified. The rest of that box
     still needs `ctox` CLI verbs.
-26. ~~**Six user-visible `T3 Code` strings.**~~ **DONE 2026-08-20, commit
+26. ~~**Six user-visible `Workjet` strings.**~~ **DONE 2026-08-20, commit
     fc2a807b7.** §9. Measuring the six found FIVE already renamed by earlier
     work and never recorded; only `SshPasswordPromptDialog` remained, and it
     named the product two different ways inside one paragraph. The migration
-    dialog's "previous T3 Code profile" copy and the ~70 non-user-visible
+    dialog's "previous Workjet profile" copy and the ~70 non-user-visible
     occurrences are untouched, as the item requires.
 27. ~~**In-cycle cursor following in the mailbox transport.**~~ **DONE
     2026-08-20, commit 84be2a637.** §8. `pull` follows the cursor within the
@@ -859,7 +859,7 @@ Claims that were found to be _wrong_ rather than merely stale. Each is marked
    running host.
 6. **Three release-gate failures were fixed after the gate was measured, and the
    plan still recorded them as red.** Re-run independently for this audit:
-   `@t3tools/mobile` typecheck → exit 0, zero errors (was 8);
+   `@workjet/mobile` typecheck → exit 0, zero errors (was 8);
    `node scripts/release-smoke.ts` → exit 0, "Release smoke checks passed." (was
    an abort); `cargo fmt --check` and
    `cargo clippy -p workjet-provider-gateway --all-targets -- -D warnings` → both

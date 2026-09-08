@@ -23,7 +23,7 @@
  * bounded id or a closed literal, a would-be payload has no field to travel
  * in: decoding an object that carries one DROPS the excess key.
  */
-import type { WorkjetProductMode } from "@t3tools/contracts/settings";
+import type { WorkjetProductMode } from "@workjet/contracts/settings";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

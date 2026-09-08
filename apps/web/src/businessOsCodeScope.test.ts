@@ -1,4 +1,4 @@
-import { BusinessOsInstanceId, EnvironmentId } from "@t3tools/contracts";
+import { BusinessOsInstanceId, EnvironmentId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -77,7 +77,7 @@ describe("Business OS Code scope", () => {
         computers: [
           { presentationKind: "ssh", environmentId: PRIMARY_ENV },
           { presentationKind: "tailscale", environmentId: PRIMARY_ENV },
-          { presentationKind: "t3-connect", environmentId: PRIMARY_ENV },
+          { presentationKind: "workjet-connect", environmentId: PRIMARY_ENV },
         ],
       }),
     ]).toEqual([]);

@@ -1,4 +1,4 @@
-import type { ThreadId, WorkjetReceivedHandoff } from "@t3tools/contracts";
+import type { ThreadId, WorkjetReceivedHandoff } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 

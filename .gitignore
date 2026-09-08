@@ -19,7 +19,7 @@ build/
 .logs/
 release/
 release-mock/
-.t3
+.workjet
 .idea/
 apps/web/.playwright
 apps/web/playwright-report
@@ -36,7 +36,7 @@ dist-electron/
 .showcase/
 apps/mobile/.showcase/
 artifacts/app-store/screenshots/
-native/**/target/
+native/**/target
 /apps/desktop/prod-resources/resource-monitor/
 /output/playwright/
 node_modules/

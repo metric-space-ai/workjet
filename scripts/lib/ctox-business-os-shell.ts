@@ -15,7 +15,7 @@ export const CTOX_BUSINESS_OS_SHELL_MANIFEST_URL =
 export const CTOX_BUSINESS_OS_SHELL_ARCHIVE_URL =
   "https://github.com/metric-space-ai/ctox/releases/download/business-os-shell-v0.1.9/ctox-business-os-shell-0.1.9.tar.gz";
 export const CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT_ENV =
-  "T3CODE_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT";
+  "WORKJET_CTOX_BUSINESS_OS_SHELL_DEPENDENCY_ROOT";
 export const CTOX_BUSINESS_OS_SHELL_EMBEDDED_MANIFEST = "ctox-shell-manifest.json";
 export const CTOX_BUSINESS_OS_SHELL_COMPLETION_SENTINEL = ".ctox-business-os-shell.complete.json";
 
@@ -455,7 +455,7 @@ async function downloadVerified(
         signal: controller.signal,
         headers: {
           Accept: "application/octet-stream",
-          "User-Agent": "t3code-ctox-business-os-shell-preparer/1",
+          "User-Agent": "workjet-ctox-business-os-shell-preparer/1",
         },
       });
       if (response.status >= 300 && response.status < 400) {

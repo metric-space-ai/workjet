@@ -159,7 +159,7 @@ NodeTest.test("legacy links and bundle identity are scoped metadata contexts", (
   NodeAssert.equal(
     isAllowlistedContext(
       "apps/desktop/.electron-runtime/metadata.json",
-      "appBundleId=com.t3tools.t3code.dev.workjet",
+      "appBundleId=dev.workjet.app.dev.workjet",
     ),
     true,
   );

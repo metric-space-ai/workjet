@@ -12,7 +12,7 @@ import type {
   UsageProviderKind,
   UsageSourceFingerprint,
   UsageSummary,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export interface EnvironmentUsage {
   readonly environmentId: EnvironmentId;

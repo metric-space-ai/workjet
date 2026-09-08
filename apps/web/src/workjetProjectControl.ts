@@ -2,7 +2,7 @@ import type {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
   DesktopCtoxBridge,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export type WorkjetProjectControlPort = NonNullable<DesktopCtoxBridge["requestProjectControl"]>;
 export type WorkjetProjectPoolPort = NonNullable<DesktopCtoxBridge["ensurePooled"]>;

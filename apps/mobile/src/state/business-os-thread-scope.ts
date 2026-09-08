@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@workjet/contracts";
 
 export function isThreadEnvironmentInActiveBusinessOsScope(input: {
   readonly environmentId: EnvironmentId | null;

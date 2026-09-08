@@ -11,8 +11,8 @@ import type {
   CtoxManualPairingImportInput,
   CtoxSshManagedInstanceAddInput,
   DesktopCtoxBridge,
-} from "@t3tools/contracts";
-import { CtoxHostThemeColor } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { CtoxHostThemeColor } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -1012,7 +1012,7 @@ function CtoxShellUpdateButton({
 }
 
 /**
- * The T3 analogy row set: instance = project, app = session. Docked apps are
+ * The Workjet analogy row set: instance = project, app = session. Docked apps are
  * always listed (greyed via the disabled instance state while disconnected);
  * undocked apps appear only while open; the open app carries a dock-style dot.
  */

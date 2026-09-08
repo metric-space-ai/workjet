@@ -19,7 +19,7 @@
  *  3. The second boot runs migrations again and does NOT destroy the row — a
  *     migration that is not idempotent shows up here and nowhere else.
  *  4. The state directory is disposable: nothing is read from or written to
- *     the developer's real T3CODE_HOME. A smoke that quietly used the real one
+ *     the developer's real WORKJET_HOME. A smoke that quietly used the real one
  *     would be both destructive and a false pass.
  *
  * ── NOT YET OBSERVED END TO END, and that is recorded on purpose ───────────
@@ -141,7 +141,7 @@ async function boot(
     ["src/bin.ts", "--port", BOOT_PORT, "--no-browser"],
     {
       cwd: NodePath.join(repoRoot, "apps/server"),
-      env: { ...process.env, T3CODE_HOME: home, T3CODE_NO_BROWSER: "1" },
+      env: { ...process.env, WORKJET_HOME: home, WORKJET_NO_BROWSER: "1" },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -213,7 +213,7 @@ export async function main(): Promise<number> {
   const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-restart-"));
   // The developer's real home must be untouched; a smoke that quietly used it
   // would be destructive AND a false pass.
-  const usedDisposableHome = home !== process.env.T3CODE_HOME && home.startsWith(NodeOS.tmpdir());
+  const usedDisposableHome = home !== process.env.WORKJET_HOME && home.startsWith(NodeOS.tmpdir());
   const sentinel = "restart-smoke-sentinel";
   // Progress is reported AS IT HAPPENS, not at the end. Each boot takes tens
   // of seconds; a harness that stays silent until both finish tells you

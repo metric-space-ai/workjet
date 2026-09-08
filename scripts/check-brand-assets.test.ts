@@ -6,7 +6,7 @@
  * ── Why this guard exists ───────────────────────────────────────────────────
  * Workjet has several independently copied icon surfaces: Electron resources,
  * the browser splash/favicon set, and the public marketing app icon. A stale
- * copy previously brought back T3/CTOX artwork on only some of those surfaces.
+ * copy previously brought back Workjet/CTOX artwork on only some of those surfaces.
  *
  * Comparing CONTENT rather than "does the file exist" is the point: a stale
  * copy is exactly the failure mode here, and only a hash can catch it.

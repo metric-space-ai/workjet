@@ -14,7 +14,7 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection, WorkjetThreadConfig } from "@t3tools/contracts";
+import { ModelSelection, WorkjetThreadConfig } from "@workjet/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({

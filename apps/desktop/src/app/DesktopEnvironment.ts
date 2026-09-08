@@ -3,7 +3,7 @@ import type {
   DesktopAppStageLabel,
   DesktopRuntimeArch,
   DesktopRuntimeInfo,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -57,7 +57,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly preloadPath: string;
     readonly appUpdateYmlPath: string;
     readonly devServerUrl: Option.Option<URL>;
-    readonly devRemoteT3ServerEntryPath: Option.Option<string>;
+    readonly devRemoteWorkjetServerEntryPath: Option.Option<string>;
     readonly configuredBackendPort: Option.Option<number>;
     readonly commitHashOverride: Option.Option<string>;
     readonly otlpTracesUrl: Option.Option<string>;
@@ -81,7 +81,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly resolveResourcePathCandidates: (fileName: string) => readonly string[];
     readonly developmentDockIconPath: string;
   }
->()("@t3tools/desktop/app/DesktopEnvironment") {}
+>()("@workjet/desktop/app/DesktopEnvironment") {}
 
 const APP_BASE_NAME = "Workjet";
 
@@ -158,7 +158,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
-    t3Home: config.t3Home,
+    workjetHome: config.workjetHome,
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
@@ -171,15 +171,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
     baseDir,
     isDevelopment,
     joinPath: path.join,
-    t3Home: config.t3Home,
+    workjetHome: config.workjetHome,
   });
-  // Keep the existing CTOX Desktop profile name as storage identity while the
-  // visible product becomes Workjet. Renaming this directory would silently
-  // fork sessions, settings, and renderer storage for existing installations.
-  const userDataDirName = isDevelopment ? "CTOX Desktop App (Dev)" : "CTOX Desktop App";
+  // Workjet has its own storage identity. Offer migration only from the
+  // previous CTOX Desktop profile that belonged to this application.
+  const userDataDirName = isDevelopment ? "Workjet (Dev)" : "Workjet";
   const legacyUserDataDirNames: readonly string[] = isDevelopment
-    ? ["t3code-dev", "T3 Code (Dev)"]
-    : ["t3code", "T3 Code (Alpha)"];
+    ? ["CTOX Desktop App (Dev)"]
+    : ["CTOX Desktop App"];
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
     "applications",
@@ -215,7 +214,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       ? path.join(resourcesPath, "app-update.yml")
       : path.join(input.appPath, "dev-app-update.yml"),
     devServerUrl,
-    devRemoteT3ServerEntryPath: config.devRemoteT3ServerEntryPath,
+    devRemoteWorkjetServerEntryPath: config.devRemoteWorkjetServerEntryPath,
     configuredBackendPort: config.configuredBackendPort,
     commitHashOverride: config.commitHashOverride,
     otlpTracesUrl: config.otlpTracesUrl,
@@ -223,10 +222,10 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
+      isDevelopment ? "dev.workjet.app.dev" : "dev.workjet.app",
     ),
-    linuxDesktopEntryName: isDevelopment ? "t3code-dev.desktop" : "t3code.desktop",
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    linuxDesktopEntryName: isDevelopment ? "workjet-dev.desktop" : "workjet.desktop",
+    linuxWmClass: isDevelopment ? "workjet-dev" : "workjet",
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,

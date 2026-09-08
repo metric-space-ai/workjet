@@ -84,7 +84,7 @@ export type WorkjetHarness = typeof WorkjetHarness.Type;
 /** Presentation only. The referenced Code environment remains transport authority. */
 export const WorkjetComputerPresentationKind = Schema.Literals([
   "local",
-  "t3-connect",
+  "workjet-connect",
   "ssh",
   "tailscale",
   "remote",

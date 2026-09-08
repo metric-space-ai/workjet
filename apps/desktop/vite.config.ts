@@ -3,14 +3,14 @@ import { defineConfig } from "vite-plus";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 const repoEnv = loadRepoEnv();
-const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
+const shouldLaunchElectronAfterPack = process.env.WORKJET_DESKTOP_DEV === "1";
 const stageResourceMonitorCommand = "node scripts/stage-resource-monitor.mjs";
 const onPackSuccess = shouldLaunchElectronAfterPack
   ? `${stageResourceMonitorCommand} && node scripts/dev-electron.mjs`
   : stageResourceMonitorCommand;
 const publicConfigDefine = {
-  __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
-    repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
+  __WORKJET_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
+    repoEnv.WORKJET_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
 };
 
@@ -19,13 +19,13 @@ export default defineConfig({
     tasks: {
       build: {
         command: "node scripts/build-preview-annotation-css.mjs && vp pack",
-        dependsOn: ["t3#build"],
+        dependsOn: ["workjet#build"],
         cache: false,
       },
       dev: {
         command:
-          "node scripts/build-preview-annotation-css.mjs && cross-env T3CODE_DESKTOP_DEV=1 vp pack --watch",
-        dependsOn: ["t3#build"],
+          "node scripts/build-preview-annotation-css.mjs && cross-env WORKJET_DESKTOP_DEV=1 vp pack --watch",
+        dependsOn: ["workjet#build"],
         cache: false,
       },
       "dev:bundle": {
@@ -34,7 +34,7 @@ export default defineConfig({
       },
       "dev:electron": {
         command: "node scripts/dev-electron.mjs",
-        dependsOn: ["t3#build"],
+        dependsOn: ["workjet#build"],
         cache: false,
       },
     },
@@ -49,7 +49,7 @@ export default defineConfig({
       entry: ["src/main.ts"],
       clean: true,
       deps: {
-        alwaysBundle: (id) => id.startsWith("@t3tools/"),
+        alwaysBundle: (id) => id.startsWith("@workjet/"),
       },
       // The unpackaged CTOX launcher resolves native resources from
       // apps/desktop/prod-resources. Keep direct `vp pack` builds aligned with

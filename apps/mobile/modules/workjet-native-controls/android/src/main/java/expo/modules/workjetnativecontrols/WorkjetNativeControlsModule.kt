@@ -1,0 +1,48 @@
+package expo.modules.workjetnativecontrols
+
+import android.view.WindowManager
+import expo.modules.kotlin.modules.Module
+import expo.modules.kotlin.modules.ModuleDefinition
+
+class WorkjetNativeControlsModule : Module() {
+  override fun definition() = ModuleDefinition {
+    Name("WorkjetNativeControls")
+
+    Function("getShowcasePairingUrl") {
+      appContext.currentActivity?.intent?.getStringExtra("showcasePairingUrl")
+    }
+
+    Function("getShowcaseScene") {
+      val storedScene = appContext.reactContext
+        ?.filesDir
+        ?.resolve("workjet-showcase-scene")
+        ?.takeIf { it.isFile }
+        ?.readText()
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+      storedScene ?: appContext.currentActivity?.intent?.getStringExtra("showcaseScene")
+    }
+
+    Function("prepareShowcaseCapture") {
+      // Android app data is cleared by the host runner before launch.
+    }
+
+    Function("markShowcaseReady") { scene: String ->
+      appContext.reactContext
+        ?.filesDir
+        ?.resolve("workjet-showcase-ready")
+        ?.writeText(scene)
+    }
+
+    Function("setBusinessOsContentProtected") { enabled: Boolean ->
+      appContext.currentActivity?.runOnUiThread {
+        val window = appContext.currentActivity?.window ?: return@runOnUiThread
+        if (enabled) {
+          window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+          window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+      }
+    }
+  }
+}

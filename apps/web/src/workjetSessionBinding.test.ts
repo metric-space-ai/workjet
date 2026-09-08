@@ -1,4 +1,4 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
@@ -7,7 +7,7 @@ import {
   type CtoxWorkjetProjectProjection,
   type CtoxWorkjetSessionControlResult,
   type WorkjetComputer,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { WorkjetProjectRegistrySnapshot } from "./workjetProjectRegistry";

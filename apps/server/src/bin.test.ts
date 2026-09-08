@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
 // @effect-diagnostics nodeBuiltinImport:off - CLI integration exercises Node HTTP and filesystem boundaries.
 import * as NodeHttp from "node:http";
 import * as NodeFS from "node:fs";
@@ -12,8 +12,8 @@ import {
   EnvironmentOrchestrationHttpApi,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import * as NetService from "@t3tools/shared/Net";
+} from "@workjet/contracts";
+import * as NetService from "@workjet/shared/Net";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
@@ -76,7 +76,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       otlpTracesUrl: undefined,
       otlpMetricsUrl: undefined,
       otlpExportIntervalMs: 10_000,
-      otlpServiceName: "t3-server",
+      otlpServiceName: "workjet-server",
       mode: "web",
       port: 0,
       host: "127.0.0.1",
@@ -195,7 +195,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       if (error._tag !== "ShowHelp") {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
-      assert.deepEqual(error.commandPath, ["t3", "connect"]);
+      assert.deepEqual(error.commandPath, ["workjet", "connect"]);
       assert.include(
         error.errors[0]?.message ?? "",
         "missing Workjet Connect public configuration",
@@ -222,7 +222,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("reports fresh headless connect state without requiring local configuration", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-status-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-cloud-status-test-"),
       );
       const { output } = yield* captureStdout(
         runConnectCli(["connect", "status", "--base-dir", baseDir, "--json"]),
@@ -247,7 +247,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("reports actionable human-readable headless connect state", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-status-human-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-cloud-status-human-test-"),
       );
       const { output } = yield* captureStdout(
         runConnectCli(["connect", "status", "--base-dir", baseDir]),
@@ -258,7 +258,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       assert.include(output, "  Environment link: not provisioned");
       assert.include(
         output,
-        "Next: Run `t3 connect link` to authorize and enable Workjet Connect.",
+        "Next: Run `workjet connect link` to authorize and enable Workjet Connect.",
       );
     }),
   );
@@ -266,7 +266,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("accepts the --headless login override without enabling access", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-login-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-cloud-login-test-"),
       );
       const { secretsDir } = yield* ServerConfig.deriveServerPaths(baseDir, undefined);
       NodeFS.mkdirSync(secretsDir, { recursive: true });
@@ -301,7 +301,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("disables headless connect without a running server", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-unlink-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-cloud-unlink-test-"),
       );
       const { output } = yield* captureStdout(
         runConnectCli(["connect", "unlink", "--base-dir", baseDir]),
@@ -314,7 +314,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("logs out of headless connect and removes the stored CLI authorization", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-cloud-logout-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-cloud-logout-test-"),
       );
       const { secretsDir } = yield* ServerConfig.deriveServerPaths(baseDir, undefined);
       const tokenPath = NodePath.join(secretsDir, "cloud-cli-oauth-token.bin");
@@ -327,7 +327,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
 
       assert.equal(
         output,
-        "Signed out of Workjet Connect locally.\nThe background service is managed separately with `t3 service`.",
+        "Signed out of Workjet Connect locally.\nThe background service is managed separately with `workjet service`.",
       );
       assert.isFalse(NodeFS.existsSync(tokenPath));
     }),
@@ -336,7 +336,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("executes auth pairing subcommands and redacts secrets from list output", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-auth-pairing-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-auth-pairing-test-"),
       );
 
       const createdOutput = yield* captureStdout(
@@ -368,7 +368,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("executes auth session subcommands and redacts secrets from list output", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-auth-session-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-auth-session-test-"),
       );
 
       const issuedOutput = yield* captureStdout(
@@ -430,7 +430,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       if (error._tag !== "ShowHelp") {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
-      assert.deepEqual(error.commandPath, ["t3", "auth", "pairing", "create"]);
+      assert.deepEqual(error.commandPath, ["workjet", "auth", "pairing", "create"]);
       const ttlError = error.errors[0] as CliError.CliError | undefined;
       if (!ttlError || ttlError._tag !== "InvalidValue") {
         assert.fail(`Expected InvalidValue, got ${String(ttlError?._tag)}`);
@@ -445,10 +445,10 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("adds, renames, and removes projects offline through the orchestration engine", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-projects-offline-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-projects-offline-test-"),
       );
       const workspaceRoot = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-projects-workspace-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-projects-workspace-"),
       );
 
       yield* runCliWithRuntime([
@@ -493,10 +493,10 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("force removes projects that still contain threads", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-projects-force-remove-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-projects-force-remove-test-"),
       );
       const workspaceRoot = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-projects-force-remove-workspace-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-projects-force-remove-workspace-"),
       );
 
       yield* runCliWithRuntime(["project", "add", workspaceRoot, "--base-dir", baseDir]);
@@ -551,10 +551,10 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("routes project commands through a running server when runtime state is present", () =>
     Effect.gen(function* () {
       const baseDir = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-projects-live-test-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-projects-live-test-"),
       );
       const workspaceRoot = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-projects-live-workspace-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-projects-live-workspace-"),
       );
 
       yield* withLiveProjectCliServer(baseDir, () =>
@@ -583,7 +583,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
   it.effect("rejects dev-url on project commands", () =>
     Effect.gen(function* () {
       const workspaceRoot = NodeFS.mkdtempSync(
-        NodePath.join(NodeOS.tmpdir(), "t3-cli-projects-unknown-option-workspace-"),
+        NodePath.join(NodeOS.tmpdir(), "workjet-cli-projects-unknown-option-workspace-"),
       );
       const error = yield* runCliWithRuntime([
         "project",
@@ -599,7 +599,7 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       if (error._tag !== "ShowHelp") {
         assert.fail(`Expected ShowHelp, got ${error._tag}`);
       }
-      assert.deepEqual(error.commandPath, ["t3", "project", "add"]);
+      assert.deepEqual(error.commandPath, ["workjet", "project", "add"]);
       const optionError = error.errors[0] as CliError.CliError | undefined;
       if (!optionError || optionError._tag !== "UnrecognizedOption") {
         assert.fail(`Expected UnrecognizedOption, got ${String(optionError?._tag)}`);

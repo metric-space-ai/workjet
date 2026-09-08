@@ -64,7 +64,7 @@ function SetupRoute() {
     >
       <View className="w-full max-w-[920px] flex-1 self-center">
         <View className="pb-6 pt-10">
-          <Text className="text-4xl font-t3-bold">Workjet einrichten</Text>
+          <Text className="text-4xl font-workjet-bold">Workjet einrichten</Text>
           <Text className="mt-3 max-w-[620px] text-base leading-normal text-foreground-muted">
             Scanne einen kurzlebigen Workjet QR-Code. Signaling-Server und Zugangsdaten werden
             sicher übernommen; eine manuelle Eingabe ist nicht erforderlich.
@@ -106,8 +106,8 @@ function BusinessOsSidebarButton(props: {
       <Text
         className={
           props.selected
-            ? "text-sm font-t3-bold text-foreground"
-            : "text-sm font-t3-medium text-foreground-muted"
+            ? "text-sm font-workjet-bold text-foreground"
+            : "text-sm font-workjet-medium text-foreground-muted"
         }
       >
         {props.label}
@@ -129,7 +129,7 @@ function BusinessOsNavigationSidebar(props: {
       accessibilityLabel="Business OS Navigation"
       className="w-[252px] border-r border-border bg-sidebar px-3 py-4"
     >
-      <Text className="px-3 text-xs font-t3-bold uppercase tracking-[0.8px] text-foreground-muted">
+      <Text className="px-3 text-xs font-workjet-bold uppercase tracking-[0.8px] text-foreground-muted">
         Business OS
       </Text>
       <ScrollView
@@ -155,8 +155,8 @@ function BusinessOsNavigationSidebar(props: {
               <Text
                 className={
                   selected
-                    ? "text-sm font-t3-bold text-foreground"
-                    : "text-sm font-t3-medium text-foreground-muted"
+                    ? "text-sm font-workjet-bold text-foreground"
+                    : "text-sm font-workjet-medium text-foreground-muted"
                 }
                 numberOfLines={1}
               >
@@ -229,7 +229,7 @@ function AppCanvasHeader(props: {
           <SymbolView name={props.app.icon} size={19} tintColor="#ffffff" type="monochrome" />
         </View>
       ) : null}
-      <Text className="min-w-0 flex-1 text-lg font-t3-bold" numberOfLines={1}>
+      <Text className="min-w-0 flex-1 text-lg font-workjet-bold" numberOfLines={1}>
         {props.app?.title ?? "Business OS"}
       </Text>
       <Pressable
@@ -251,7 +251,7 @@ function UnavailableShell(props: { readonly app: BusinessOsMobileAppDescriptor |
       <View className="size-20 items-center justify-center rounded-[24px] bg-subtle-strong">
         <SymbolView name="arrow.down.circle" size={36} tintColor={foreground} type="monochrome" />
       </View>
-      <Text className="mt-6 text-center text-2xl font-t3-bold">
+      <Text className="mt-6 text-center text-2xl font-workjet-bold">
         {props.app?.title ?? "Business OS"} ist noch nicht bereit
       </Text>
       <Text className="mt-3 max-w-[520px] text-center text-base leading-normal text-foreground-muted">

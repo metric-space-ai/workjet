@@ -3,7 +3,7 @@ import type {
   WorkjetThreadRole,
   WorkjetConnectionSummary,
   WorkjetWorkerProfile,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { memo, type CSSProperties, type ReactNode } from "react";
 import { BotIcon, PencilRulerIcon } from "lucide-react";
 

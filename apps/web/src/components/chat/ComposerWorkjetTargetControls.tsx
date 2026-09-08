@@ -24,7 +24,7 @@ import type {
   WorkjetHarness,
   WorkjetLlmRoute,
   WorkjetWorkerProfile,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { Fragment, memo, useState, type ReactNode } from "react";
 import { CpuIcon, FileTextIcon, MonitorIcon, TerminalIcon, TriangleAlertIcon } from "lucide-react";
 
@@ -367,12 +367,12 @@ export function inferGatewayProviderFromModelId(modelId: string): WorkjetGateway
 }
 
 /**
- * Presentation-kind wording — the raw enum ("t3-connect") leaked into the
+ * Presentation-kind wording — the raw enum ("workjet-connect") leaked into the
  * computer dropdown and the settings rows (K-B5).
  */
 export const WORKJET_COMPUTER_KIND_LABELS: Readonly<Record<string, string>> = {
   local: "This computer",
-  "t3-connect": "Workjet Connect",
+  "workjet-connect": "Workjet Connect",
   ssh: "SSH",
   tailscale: "Tailscale",
   remote: "Remote",
@@ -490,7 +490,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         </TooltipPopup>
       </Tooltip>
 
-      {/* Model — the T3-style mini menu: a provider rail on the left, the
+      {/* Model — the Workjet-style mini menu: a provider rail on the left, the
           selected provider's models on the right, plus the free-text escape
           hatch. Data source is the Workjet gateway catalog. */}
       {customModelDraft === null ? (

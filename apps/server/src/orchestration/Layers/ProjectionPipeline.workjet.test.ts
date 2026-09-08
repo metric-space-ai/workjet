@@ -7,7 +7,7 @@ import {
   ThreadId,
   WorkjetThreadConfig,
   type WorkjetThreadConfig as WorkjetThreadConfigType,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -56,7 +56,7 @@ const layer = it.layer(
   OrchestrationProjectionPipelineLive.pipe(
     Layer.provideMerge(OrchestrationEventStoreLive),
     Layer.provideMerge(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-projection-pipeline-workjet-test-" }),
+      ServerConfig.layerTest(process.cwd(), { prefix: "workjet-projection-pipeline-workjet-test-" }),
     ),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(NodeServices.layer),

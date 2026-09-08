@@ -1,4 +1,4 @@
-import { BusinessOsInstanceId, EnvironmentId } from "@t3tools/contracts";
+import { BusinessOsInstanceId, EnvironmentId } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 const ConnectionTargetBase = {

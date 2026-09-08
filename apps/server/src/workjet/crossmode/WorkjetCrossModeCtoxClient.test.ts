@@ -10,7 +10,7 @@ import {
   type CtoxAppModuleId,
   type CtoxManagedInstanceId,
   type WorkjetCrossModeLinkId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

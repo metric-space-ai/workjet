@@ -1,4 +1,4 @@
-import type { CapabilityManifest } from "@t3tools/contracts";
+import type { CapabilityManifest } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -86,7 +86,7 @@ describe("capability availability from one catalog", () => {
         ?.target,
     ).toEqual({ kind: "ctox-instance", instanceId });
     expect(
-      resolveCapabilityCatalogForHost({ adapter: "t3-mcp", enabledCapabilityIds: [] })[0]?.target,
+      resolveCapabilityCatalogForHost({ adapter: "workjet-mcp", enabledCapabilityIds: [] })[0]?.target,
     ).toBeNull();
   });
 

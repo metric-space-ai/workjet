@@ -3,7 +3,7 @@ import {
   type EnvironmentId,
   ProjectId,
   type WorkjetComputer,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 

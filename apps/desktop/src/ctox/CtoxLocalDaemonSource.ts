@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeCrypto from "node:crypto";
 
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxManagedInstance } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

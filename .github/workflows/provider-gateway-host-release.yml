@@ -109,7 +109,7 @@ jobs:
         run: cargo test --locked --manifest-path "$GATEWAY_HOST_MANIFEST"
 
       - name: Artifact contract tests
-        run: vp run --filter @t3tools/scripts test
+        run: vp run --filter @workjet/scripts test
 
       - name: Release notice is current
         id: notice

@@ -23,16 +23,16 @@ import {
   effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+} from "@workjet/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import {
   scopeProjectRef,
   scopeThreadRef,
   scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { buildWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
-import type { TimestampFormat } from "@t3tools/contracts/settings";
+} from "@workjet/client-runtime/environment";
+import type { ScopedThreadRef, ThreadId } from "@workjet/contracts";
+import { buildWorkjetThreadDeepLink } from "@workjet/shared/agentAwareness";
+import type { TimestampFormat } from "@workjet/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -73,7 +73,7 @@ import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
@@ -191,8 +191,8 @@ import {
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
-const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
-const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
+const SETTLED_SHELF_EXPANDED_KEY = "workjet:sidebar-v2:settled-expanded";
+const SNOOZED_SHELF_EXPANDED_KEY = "workjet:sidebar-v2:snoozed-expanded";
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -1095,7 +1095,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   );
 
   // A real link so cmd/ctrl+click and middle-click open the host in the
-  // browser. A plain click still opens T3's pull request view.
+  // browser. A plain click still opens Workjet's pull request view.
   const prBadge =
     prStatus && pr ? (
       <a

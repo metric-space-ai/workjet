@@ -10,7 +10,7 @@ import {
   type WorkjetBusinessOsComputerCandidate,
   type WorkjetBusinessOsComputerUnassignInput,
   type WorkjetBusinessOsComputerUnassignResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -50,7 +50,7 @@ export class WorkjetBusinessOsComputerAuthorityResolver extends Context.Service<
   WorkjetBusinessOsComputerAuthorityResolver,
   WorkjetBusinessOsComputerAuthorityResolverShape
 >()(
-  "t3/workjet/businessOs/WorkjetBusinessOsComputerOwnershipStore/WorkjetBusinessOsComputerAuthorityResolver",
+  "workjet/workjet/businessOs/WorkjetBusinessOsComputerOwnershipStore/WorkjetBusinessOsComputerAuthorityResolver",
 ) {}
 
 export type WorkjetBusinessOsComputerOwnershipStoreError =
@@ -101,7 +101,7 @@ export interface WorkjetBusinessOsComputerOwnershipStoreShape {
 export class WorkjetBusinessOsComputerOwnershipStore extends Context.Service<
   WorkjetBusinessOsComputerOwnershipStore,
   WorkjetBusinessOsComputerOwnershipStoreShape
->()("t3/workjet/businessOs/WorkjetBusinessOsComputerOwnershipStore") {}
+>()("workjet/workjet/businessOs/WorkjetBusinessOsComputerOwnershipStore") {}
 
 const OwnershipRow = Schema.Struct({
   businessOsInstanceId: BusinessOsInstanceId,

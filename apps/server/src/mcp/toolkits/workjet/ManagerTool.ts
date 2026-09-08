@@ -1,5 +1,5 @@
 // @effect-diagnostics preferSchemaOverJson:off -- MCP text and immutable prompt snapshots mirror bounded validated structures.
-import { parseWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
+import { parseWorkjetThreadDeepLink } from "@workjet/shared/agentAwareness";
 import {
   EnvironmentId,
   ThreadId,
@@ -7,7 +7,7 @@ import {
   WorkjetDelegationState,
   WorkjetEnvelopeId,
   WorkjetRepositoryPath,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

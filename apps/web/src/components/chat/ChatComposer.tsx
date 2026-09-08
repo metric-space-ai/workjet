@@ -10,7 +10,7 @@ import type {
   ServerProvider,
   ThreadId,
   WorkjetThreadRole,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   composeWorkjetWorkerManagedInstructions,
   DEFAULT_WORKJET_THREAD_CONFIG,
@@ -23,10 +23,10 @@ import {
   WorkjetConnectionId,
   type WorkjetCapabilityBinding,
   type WorkjetThreadConfig,
-} from "@t3tools/contracts";
-import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
+} from "@workjet/contracts";
+import type { EnvironmentConnectionPresentation } from "@workjet/client-runtime/connection";
+import { serializeComposerFileLink } from "@workjet/shared/composerTrigger";
+import { createModelSelection, normalizeModelSlug } from "@workjet/shared/model";
 import {
   memo,
   type ReactNode,
@@ -233,7 +233,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
-import type { UnifiedSettings } from "@t3tools/contracts/settings";
+import type { UnifiedSettings } from "@workjet/contracts/settings";
 import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";

@@ -4,7 +4,7 @@ import type {
   DesktopCtoxBridge,
   WorkjetDeviceBindingSummary,
   WorkjetManagedDeviceInviteManualConnectionResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   BriefcaseBusinessIcon,
   CircleAlertIcon,

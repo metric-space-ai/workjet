@@ -13,7 +13,7 @@ import {
   type WorkjetReasoningSelection,
   type WorkjetWorkerProfile,
   type WorkjetWorkerPersonalization,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 

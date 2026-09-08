@@ -364,7 +364,7 @@ Der Release-Build wird statisch und zur Laufzeit geprüft auf:
 
 - keine produktiv erreichbaren ManagedRelay-/EnvironmentHttp-Imports,
 - keine Clerk-/DPoP-Websession als Produktdatenautorität,
-- keine `relay.t3.codes`-, PlanetScale-, Axiom- oder ctox.dev-Control-
+- keine `relay.workjet.codes`-, PlanetScale-, Axiom- oder ctox.dev-Control-
   Abhängigkeit,
 - keine HTTP-/REST-/WebSocket-RPC-Produktdatenroute,
 - keine HTTP-Fallback-Anfrage nach WebRTC-Fehler,

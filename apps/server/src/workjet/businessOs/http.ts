@@ -7,7 +7,7 @@ import {
   WorkjetBusinessOsComputerMembershipInternalError,
   WorkjetBusinessOsComputerMembershipPolicyError,
   WorkjetBusinessOsComputerOwnershipError,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";

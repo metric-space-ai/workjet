@@ -1,4 +1,4 @@
-import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
+import { DEFAULT_HOSTED_APP_URL } from "@workjet/shared/connectAuth";
 
 import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "./pairingUrl";
 
@@ -11,7 +11,23 @@ export interface HostedPairingRequest {
 export type HostedAppChannel = "latest" | "nightly";
 
 export function configuredHostedAppUrl(): string {
-  return import.meta.env.VITE_HOSTED_APP_URL?.trim() || DEFAULT_HOSTED_APP_URL;
+  const configured = import.meta.env.VITE_HOSTED_APP_URL?.trim() || DEFAULT_HOSTED_APP_URL;
+  try {
+    const url = new URL(configured);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (
+      (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) ||
+      url.username ||
+      url.password ||
+      url.pathname !== "/" ||
+      url.search ||
+      url.hash
+    )
+      return "";
+    return url.origin;
+  } catch {
+    return "";
+  }
 }
 
 function configuredBackendUrl(): string {
@@ -36,7 +52,7 @@ export function isHostedStaticApp(url: URL = new URL(window.location.href)): boo
     return false;
   }
 
-  if (configuredHostedAppChannel()) {
+  if (configuredHostedAppChannel() && configuredHostedAppUrl()) {
     return true;
   }
 
@@ -68,8 +84,10 @@ export function buildHostedPairingUrl(input: {
   readonly host: string;
   readonly token: string;
   readonly label?: string | null;
-}): string {
-  const url = new URL("/pair", configuredHostedAppUrl());
+}): string | null {
+  const origin = configuredHostedAppUrl();
+  if (!origin) return null;
+  const url = new URL("/pair", origin);
   url.searchParams.set("host", input.host);
 
   const label = input.label?.trim();
@@ -82,8 +100,10 @@ export function buildHostedPairingUrl(input: {
 
 export function buildHostedChannelSelectionUrl(input: {
   readonly channel: HostedAppChannel;
-}): string {
-  const url = new URL("/__t3code/channel", configuredHostedAppUrl());
+}): string | null {
+  const origin = configuredHostedAppUrl();
+  if (!origin) return null;
+  const url = new URL("/__workjet/channel", origin);
   url.searchParams.set("channel", input.channel);
   return url.toString();
 }

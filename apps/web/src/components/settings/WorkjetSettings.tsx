@@ -8,14 +8,14 @@ import type {
   WorkjetConfiguration,
   WorkjetWorkerProfile,
   WorkjetWorkerProfileId,
-} from "@t3tools/contracts";
-import { compileWorkjetWorkerPersonaPrompt, WS_METHODS } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { compileWorkjetWorkerPersonaPrompt, WS_METHODS } from "@workjet/contracts";
 import {
   createEnvironmentRpcCommand,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2Icon,
@@ -318,7 +318,7 @@ function environmentPresentationKind(
     case "PrimaryConnectionTarget":
       return "local";
     case "RelayConnectionTarget":
-      return "t3-connect";
+      return "workjet-connect";
     case "SshConnectionTarget":
       return "ssh";
     case "BearerConnectionTarget":
@@ -335,7 +335,7 @@ export function workjetEnvironmentTargetOptions(
       const detail =
         presentationKind === "local"
           ? "Local environment"
-          : presentationKind === "t3-connect"
+          : presentationKind === "workjet-connect"
             ? "Relay connection"
             : presentationKind === "ssh"
               ? "SSH environment"

@@ -2,7 +2,7 @@ import type {
   WorkjetWorkerGraph,
   WorkjetWorkerProfile,
   WorkjetWorkerProfileId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   GitBranchPlusIcon,
   LayoutGridIcon,

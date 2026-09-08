@@ -1,6 +1,7 @@
 import {
   WorkjetProvisioningGetInput,
   WorkjetProvisioningGetResult,
+  WorkjetProvisioningListResult,
   WorkjetProvisioningPreflightInput,
   WorkjetProvisioningPreflightResult,
   WorkjetProvisioningStartInput,
@@ -9,6 +10,7 @@ import {
   WorkjetSshHostKeyInspectResult,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 import * as DesktopComputerProvisioner from "../../provisioning/DesktopComputerProvisioner.ts";
 import * as IpcChannels from "../channels.ts";
@@ -54,4 +56,14 @@ export const get = DesktopIpc.makeIpcMethod({
     ),
 });
 
-export const methods = [inspectHostKey, preflight, start, get] as const;
+export const list = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PROVISIONING_LIST_CHANNEL,
+  payload: Schema.Struct({}),
+  result: WorkjetProvisioningListResult,
+  handler: () =>
+    Effect.flatMap(DesktopComputerProvisioner.DesktopComputerProvisioner, (provisioner) =>
+      provisioner.list(),
+    ),
+});
+
+export const methods = [inspectHostKey, preflight, start, get, list] as const;

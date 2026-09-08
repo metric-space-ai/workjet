@@ -16,6 +16,7 @@ export const PROVISIONING_INSPECT_HOST_KEY_CHANNEL = "desktop:provisioning-inspe
 export const PROVISIONING_PREFLIGHT_CHANNEL = "desktop:provisioning-preflight";
 export const PROVISIONING_START_CHANNEL = "desktop:provisioning-start";
 export const PROVISIONING_GET_CHANNEL = "desktop:provisioning-get";
+export const PROVISIONING_LIST_CHANNEL = "desktop:provisioning-list";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
 export const CREATE_SUPPORT_BUNDLE_CHANNEL = "desktop:create-support-bundle";
 export const GET_USER_DATA_MIGRATION_OFFER_CHANNEL = "desktop:get-user-data-migration-offer";

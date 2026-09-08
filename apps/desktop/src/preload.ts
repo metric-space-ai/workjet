@@ -257,6 +257,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.PROVISIONING_START_CHANNEL, input),
   getProvisioningOperation: (operationId) =>
     ipcRenderer.invoke(IpcChannels.PROVISIONING_GET_CHANNEL, { operationId }),
+  listProvisioningOperations: () => ipcRenderer.invoke(IpcChannels.PROVISIONING_LIST_CHANNEL, {}),
   onUpdateState: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
       if (typeof state !== "object" || state === null) return;

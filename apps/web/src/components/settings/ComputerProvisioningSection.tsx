@@ -1,6 +1,7 @@
 import type {
   WorkjetProvisioningPreflight,
   WorkjetProvisioningSnapshot,
+  WorkjetProvisioningListResult,
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
 } from "@t3tools/contracts";
@@ -50,6 +51,31 @@ export function ComputerProvisioningSection() {
   const [installWorkjet, setInstallWorkjet] = useState(false);
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<WorkjetProvisioningSnapshot | null>(null);
+  const [saved, setSaved] = useState<
+    Extract<WorkjetProvisioningListResult, { _tag: "found" }>["operations"]
+  >([]);
+  const [journalError, setJournalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!bridge?.listProvisioningOperations) return;
+    void bridge
+      .listProvisioningOperations()
+      .then((result) => {
+        if (cancelled) return;
+        if (result._tag === "found") setSaved(result.operations);
+        else setJournalError(result.message);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setJournalError(
+            "Saved installations could not be loaded. Check the target before starting again.",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
 
   const target = useMemo<WorkjetProvisioningTarget>(() => {
     if (kind === "local") return { _tag: "local" };
@@ -66,13 +92,36 @@ export function ComputerProvisioningSection() {
   }, [host, kind, port, username]);
 
   useEffect(() => {
-    if (!operation || operation.state === "completed" || operation.state === "failed") return;
+    if (!operation || (operation.state !== "queued" && operation.state !== "running")) return;
     const timer = window.setInterval(() => {
       const currentBridge = window.desktopBridge;
       if (!currentBridge?.getProvisioningOperation) return;
-      void currentBridge.getProvisioningOperation(operation.operationId).then((result) => {
-        if (result._tag === "found") setOperation(result.operation);
-      });
+      void currentBridge
+        .getProvisioningOperation(operation.operationId)
+        .then((result) => {
+          if (result._tag === "found") {
+            setOperation(result.operation);
+            setSaved((entries) =>
+              entries.map((entry) =>
+                entry.operation.operationId === result.operation.operationId
+                  ? { ...entry, operation: result.operation }
+                  : entry,
+              ),
+            );
+            setJournalError(null);
+          } else {
+            setJournalError(
+              result._tag === "failed"
+                ? result.message
+                : "The saved operation is missing. Check the target before starting again.",
+            );
+          }
+        })
+        .catch(() =>
+          setJournalError(
+            "The installation status is unavailable. The operation has not been restarted.",
+          ),
+        );
     }, 500);
     return () => window.clearInterval(timer);
   }, [operation]);
@@ -134,6 +183,14 @@ export function ComputerProvisioningSection() {
       });
       if (result._tag === "failed") throw new Error(result.message);
       setOperation(result.operation);
+      setSaved((entries) =>
+        [
+          { target: preflight.target, operation: result.operation },
+          ...entries.filter(
+            (entry) => entry.operation.operationId !== result.operation.operationId,
+          ),
+        ].slice(0, 50),
+      );
       setStage("operation");
     } catch (error) {
       toastManager.add({
@@ -161,8 +218,35 @@ export function ComputerProvisioningSection() {
         description="Install a CTOX backend on this computer or an SSH target. Workjet can also be installed when a graphical session is available. Downloads happen on the target and are checksum-verified against the official signed release manifest."
       >
         <div className="max-w-2xl space-y-4 pb-4 pt-2">
+          {journalError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {journalError}
+            </p>
+          ) : null}
           {stage === "target" ? (
             <>
+              {saved.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Saved installations</p>
+                  {saved.map((entry) => (
+                    <Button
+                      key={entry.operation.operationId}
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setOperation(entry.operation);
+                        setStage("operation");
+                      }}
+                    >
+                      {entry.target._tag === "local" ? "This computer" : entry.target.ssh.hostname}
+                      {" · "}
+                      {entry.operation.state === "interrupted"
+                        ? "Result unknown — review target"
+                        : entry.operation.state}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
               <div className="grid gap-2 sm:grid-cols-2">
                 <Button
                   type="button"
@@ -323,7 +407,7 @@ export function ComputerProvisioningSection() {
               <div className="flex items-center gap-2 text-sm font-medium">
                 {operation.state === "completed" ? (
                   <CheckCircle2Icon className="size-4 text-emerald-500" />
-                ) : operation.state === "failed" ? (
+                ) : operation.state !== "running" && operation.state !== "queued" ? (
                   <span className="size-2 rounded-full bg-destructive" />
                 ) : (
                   <Spinner className="size-4" />
@@ -354,7 +438,13 @@ export function ComputerProvisioningSection() {
                   started.
                 </p>
               ) : null}
-              {operation.state === "completed" || operation.state === "failed" ? (
+              {operation.state === "interrupted" ? (
+                <p role="alert" className="text-sm text-destructive">
+                  The target may already have changed. Verify its installation and service state
+                  before running a new preflight. This operation will not be repeated automatically.
+                </p>
+              ) : null}
+              {operation.state !== "running" && operation.state !== "queued" ? (
                 <Button type="button" variant="outline" onClick={reset}>
                   <RefreshCwIcon className="size-4" /> Provision another computer
                 </Button>

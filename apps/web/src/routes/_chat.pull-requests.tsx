@@ -1563,6 +1563,7 @@ function PullRequestsRouteView() {
             onAddFiles={() => undefined}
             onAddPullRequest={() => undefined}
             onAddAgents={() => undefined}
+            browserEnabled={false}
             browserAvailable={false}
             terminalAvailable={false}
             diffAvailable={false}

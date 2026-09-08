@@ -64,6 +64,7 @@ interface RightPanelTabsProps {
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
+  browserEnabled: boolean;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -153,6 +154,7 @@ function RightPanelEmptyState(props: {
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
+  browserEnabled: boolean;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
@@ -161,48 +163,50 @@ function RightPanelEmptyState(props: {
   // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
-  const actions = [
-    {
-      label: "Browser",
-      description: "Open a local app or URL.",
-      icon: Globe2,
-      shortcut: "B",
-      available: props.browserAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
-      onClick: props.onAddBrowser,
-      badgeCount: 0,
-    },
-    {
-      label: "Files",
-      description: "Browse and read workspace files.",
-      icon: Files,
-      shortcut: "F",
-      available: props.filesAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
-      onClick: props.onAddFiles,
-      badgeCount: 0,
-    },
-    {
-      label: "Diff",
-      description: "Review changes in this thread.",
-      icon: FileDiff,
-      shortcut: "D",
-      available: props.diffAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
-      onClick: props.onAddDiff,
-      badgeCount: 0,
-    },
-    {
-      label: "Pull request",
-      description: "Open this branch's pull request.",
-      icon: GitPullRequest,
-      shortcut: "P",
-      available: props.pullRequestAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-      onClick: props.onAddPullRequest,
-      badgeCount: 0,
-    },
-  ] as const;
+  const actions = (
+    [
+      {
+        label: "Browser",
+        description: "Open a local app or URL.",
+        icon: Globe2,
+        shortcut: "B",
+        available: props.browserAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.browser,
+        onClick: props.onAddBrowser,
+        badgeCount: 0,
+      },
+      {
+        label: "Files",
+        description: "Browse and read workspace files.",
+        icon: Files,
+        shortcut: "F",
+        available: props.filesAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
+        onClick: props.onAddFiles,
+        badgeCount: 0,
+      },
+      {
+        label: "Diff",
+        description: "Review changes in this thread.",
+        icon: FileDiff,
+        shortcut: "D",
+        available: props.diffAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
+        onClick: props.onAddDiff,
+        badgeCount: 0,
+      },
+      {
+        label: "Pull request",
+        description: "Open this branch's pull request.",
+        icon: GitPullRequest,
+        shortcut: "P",
+        available: props.pullRequestAvailable,
+        disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
+        onClick: props.onAddPullRequest,
+        badgeCount: 0,
+      },
+    ] as const
+  ).filter((action) => action.shortcut !== "B" || props.browserEnabled);
 
   type SurfaceAction = (typeof actions)[number];
 
@@ -657,14 +661,16 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <Plus className="size-3.5" />
                 </MenuTrigger>
                 <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
-                  <SurfaceMenuItem
-                    available={props.browserAvailable}
-                    disabledReason={SURFACE_DISABLED_REASONS.browser}
-                    onClick={props.onAddBrowser}
-                  >
-                    <Globe2 />
-                    Browser
-                  </SurfaceMenuItem>
+                  {props.browserEnabled ? (
+                    <SurfaceMenuItem
+                      available={props.browserAvailable}
+                      disabledReason={SURFACE_DISABLED_REASONS.browser}
+                      onClick={props.onAddBrowser}
+                    >
+                      <Globe2 />
+                      Browser
+                    </SurfaceMenuItem>
+                  ) : null}
                   <SurfaceMenuItem
                     available={props.filesAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.files}
@@ -703,6 +709,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
+            browserEnabled={props.browserEnabled}
             browserAvailable={props.browserAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}

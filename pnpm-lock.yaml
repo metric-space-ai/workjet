@@ -4471,10 +4471,9 @@ packages:
   '@workjet/mobile-terminal-native@file:apps/mobile/modules/workjet-terminal':
     resolution: {directory: apps/mobile/modules/workjet-terminal, type: directory}
 
-  '@xmldom/xmldom@0.8.13':
-    resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
+  '@xmldom/xmldom@0.8.14':
+    resolution: {integrity: sha512-T4EDRUBVZYRldYApjEJiU0e1stYWaRAX7CuSnKzrpwdZKo53zGV8/pqfzV6FfwNl9YThD2OumQYvqtvjvgG7aQ==}
     engines: {node: '>=10.0.0'}
-    deprecated: this version has critical issues, please update to the latest version
 
   '@xmldom/xmldom@0.9.12':
     resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
@@ -10643,7 +10642,7 @@ snapshots:
 
   '@expo/plist@0.7.0':
     dependencies:
-      '@xmldom/xmldom': 0.8.13
+      '@xmldom/xmldom': 0.8.14
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 
@@ -12803,7 +12802,7 @@ snapshots:
 
   '@workjet/mobile-terminal-native@file:apps/mobile/modules/workjet-terminal': {}
 
-  '@xmldom/xmldom@0.8.13': {}
+  '@xmldom/xmldom@0.8.14': {}
 
   '@xmldom/xmldom@0.9.12': {}
 
@@ -16424,7 +16423,7 @@ snapshots:
 
   plist@3.1.0:
     dependencies:
-      '@xmldom/xmldom': 0.8.13
+      '@xmldom/xmldom': 0.8.14
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 

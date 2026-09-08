@@ -140,7 +140,7 @@ const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
 const CONNECTION_LABELS: Record<string, string> = {
   idle: "Nicht verbunden",
   connecting: "Wird verbunden…",
-  ready: "Verbunden",
+  ready: "Geöffnet",
   error: "Verbindungsfehler",
   revoked: "Zugriff entzogen",
 };
@@ -2564,11 +2564,11 @@ export function CtoxMainShell() {
             <span
               className={cn(
                 "size-1.5 rounded-full",
-                connection === "ready" ? "bg-emerald-500" : "bg-muted-foreground/45",
+                connection === "ready" ? "bg-primary" : "bg-muted-foreground/45",
               )}
               aria-hidden
             />
-            {connection === "ready" ? "Verbunden" : "Wird verbunden…"}
+            {connection === "ready" ? "Geöffnet" : "Wird geöffnet…"}
           </span>
         ) : null}
       </header>

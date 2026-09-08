@@ -54,9 +54,7 @@ describe("Workjet Mobile product identity", () => {
       readProductionTree("../features/business-os/"),
     ].join("\n");
 
-    expect(surfaces).not.toMatch(
-      /CTOX Desktop App|CTOX Mobile|CTOX Business OS App|\bAlpha\b/u,
-    );
+    expect(surfaces).not.toMatch(/CTOX Desktop App|CTOX Mobile|CTOX Business OS App|\bAlpha\b/u);
     expect(surfaces).toContain('label="Workjet Account"');
     expect(surfaces).toContain("Workjet Connect");
     expect(surfaces).not.toContain('accessibilityLabel="CTOX"');

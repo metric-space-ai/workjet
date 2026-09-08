@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import * as NodeModule from "node:module";
 
 type NativeBindings = Pick<typeof import("ffi-rs"), "open" | "DataType"> & {
   load: (params: Parameters<typeof import("ffi-rs").load>[0]) => unknown;
@@ -10,7 +10,7 @@ type NativeBindings = Pick<typeof import("ffi-rs"), "open" | "DataType"> & {
  */
 export function disableMacKeychainPrompts(
   platform: NodeJS.Platform,
-  bindings: () => NativeBindings = () => createRequire(__filename)("ffi-rs"),
+  bindings: () => NativeBindings = () => NodeModule.createRequire(__filename)("ffi-rs"),
 ): void {
   if (platform !== "darwin") return;
   const ffi = bindings();

@@ -1548,7 +1548,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         const reusedForSsh = yield* driver.ensureRemote({
           cwd,
           preferredName: "pingdotgg",
-          url: "git@github.com:pingdotgg/workjet.git",
+          url: "git@github.com:metric-space-ai/workjet.git",
         });
         assert.equal(reusedForSsh, "origin");
 
@@ -1569,14 +1569,14 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         const reusedForSshPort = yield* driver.ensureRemote({
           cwd,
           preferredName: "pingdotgg",
-          url: "ssh://git@github.com:22/pingdotgg/workjet",
+          url: "ssh://git@github.com:22/metric-space-ai/workjet",
         });
         assert.equal(reusedForSshPort, "origin");
 
         const reusedForSshWithPort = yield* driver.ensureRemote({
           cwd,
           preferredName: "pingdotgg",
-          url: "ssh://git@github.com:22/pingdotgg/workjet.git",
+          url: "ssh://git@github.com:22/metric-space-ai/workjet.git",
         });
         assert.equal(reusedForSshWithPort, "origin");
 

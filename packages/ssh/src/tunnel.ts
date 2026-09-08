@@ -645,7 +645,11 @@ export function buildRemoteNodeEnvScript(input?: RemoteT3RunnerOptions): string 
   return (
     stripTrailingNewlines(
       applyScriptPlaceholders(REMOTE_NODE_ENV_SCRIPT, {
-        T3_NODE_ENGINE_RANGE: shellSingleQuote(input?.portableArchivesDirectory ? SSH_NODE_VERSION : input?.nodeEngineRange?.trim() || ""),
+        T3_NODE_ENGINE_RANGE: shellSingleQuote(
+          input?.portableArchivesDirectory
+            ? SSH_NODE_VERSION
+            : input?.nodeEngineRange?.trim() || "",
+        ),
         T3_NODE_ENGINE_CHECK_SCRIPT: stripTrailingNewlines(buildRemoteNodeEngineCheckScript()),
       }),
     ) + buildManagedRemoteNodeScript()

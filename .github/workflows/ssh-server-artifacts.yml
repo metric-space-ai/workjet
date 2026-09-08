@@ -1,0 +1,49 @@
+name: Portable Workjet SSH servers
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ""
+      version:
+        type: string
+        default: ""
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Portable SSH server (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, platform: linux-x64 }
+          - { runner: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { runner: macos-15-intel, platform: darwin-x64 }
+          - { runner: macos-latest, platform: darwin-arm64 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Align release versions
+        if: inputs.version != ''
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+      - name: Build and verify the standalone worker
+        run: |
+          export TMPDIR="$RUNNER_TEMP"
+          vp run --filter t3 build
+          node scripts/build-ssh-server.mjs "$RUNNER_TEMP/ssh-servers"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: workjet-ssh-server-${{ matrix.platform }}
+          path: ${{ runner.temp }}/ssh-servers/*
+          if-no-files-found: error

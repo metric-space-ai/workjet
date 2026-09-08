@@ -10,7 +10,7 @@ legal advice and it grants no rights beyond the licenses it names.
 
 ## 1. Workjet application
 
-The Workjet application is derived from T3 Code and remains under the MIT License. The
+The Workjet application remains under the MIT License. The
 original copyright and permission notice is retained verbatim in the repository-root
 [`LICENSE`](LICENSE) file and is packaged with every desktop artifact under
 `Resources/legal/LICENSE`.
@@ -56,7 +56,7 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 
 ### `native/resource-monitor`
 
-- Component: `t3-resource-monitor` 0.1.0
+- Component: `workjet-resource-monitor` 0.1.0
 - License: `MIT`
 - Redistributed in the desktop artifact: yes
 - Retained license texts: `LICENSE`

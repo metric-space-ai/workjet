@@ -42,9 +42,11 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
+import { CtoxThreadBindingSourceLive } from "./workjet/ctox/CtoxThreadBinding.ts";
+import { CtoxNativeRequests } from "./workjet/ctox/CtoxNativeRequests.ts";
+import { WorkjetCrossModeLinkStoreLive } from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
-import { CtoxNativeRequests } from "./workjet/ctox/CtoxNativeRequests.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
@@ -430,6 +432,15 @@ const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
   Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  // The CTOX driver resolves each thread's native scope instead of spawning a
+  // process. It takes these optionally — a build without them reports the
+  // instance unavailable rather than dragging the session-directory chain into
+  // every registry construction site — so production has to supply them here,
+  // where the registry is hydrated.
+  Layer.provideMerge(CtoxThreadBindingSourceLive),
+  Layer.provideMerge(WorkjetCrossModeLinkStoreLive),
+  Layer.provideMerge(CtoxNativeRequests.layer),
+  Layer.provideMerge(ProviderSessionDirectoryLayerLive),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
   // `ProviderService` (canonical stream, written after event normalization).

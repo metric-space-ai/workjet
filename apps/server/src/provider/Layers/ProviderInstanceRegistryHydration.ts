@@ -176,6 +176,7 @@ const readCtoxBindings = SqlClient.SqlClient.pipe(
 const SettingsWatcherLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator;
+    const registry = yield* ProviderInstanceRegistry;
     const serverSettings = yield* ServerSettingsService;
     const connections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
 
@@ -193,13 +194,31 @@ const SettingsWatcherLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const settings = yield* serverSettings.getSettings;
           const configMap = deriveProviderInstanceConfigMap(settings);
-          if (Option.isNone(connections)) return yield* mutator.reconcile(configMap);
+          if (Option.isNone(connections)) {
+            // No connection registry in this build: no CTOX row can exist, so a
+            // plain reconcile is the whole job.
+            return yield* mutator.reconcile(configMap);
+          }
           // A failed read must ABORT the run. Reconciling the settings-only map
           // would present every derived CTOX row as removed, and makeReconcile
           // closes the scopes of removed ids — a transient database error would
           // tear down live provider instances.
           const bindings = yield* readCtoxBindings;
-          return yield* mutator.reconcile(mergeCtoxProviderInstances(configMap, bindings));
+          yield* mutator.reconcile(mergeCtoxProviderInstances(configMap, bindings));
+          // Reconcile alone refreshes nothing. An instance whose config is
+          // unchanged keeps its existing object and scope
+          // (ProviderInstanceRegistryLive:261-265), and CtoxDriver updates its
+          // snapshot only inside `snapshot.refresh` — so a connection going
+          // offline would leave the provider showing its last status forever.
+          // Refreshing through the instance's OWN snapshot service is what makes
+          // a connection change visible, without recreating the provider object
+          // and tearing down the sessions bound to it.
+          const instances = yield* registry.listInstances;
+          yield* Effect.forEach(
+            instances.filter((instance) => instance.driverKind === CTOX_DRIVER_KIND),
+            (instance) => instance.snapshot.refresh.pipe(Effect.ignore),
+            { discard: true },
+          );
         }),
       )
       .pipe(

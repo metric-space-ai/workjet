@@ -102,8 +102,13 @@ export class DecisionHubConnectionRegistry extends Context.Service<
 >()("workjet/workjet/decisionHub/DecisionHubConnectionRegistry") {}
 
 const make = Effect.gen(function* () {
-  // Unbounded so a mutation is never blocked by a slow subscriber; the events
-  // are valueless wake-ups, so a backlog costs nothing but a re-read.
+  // Unbounded so a mutation is never blocked by a slow subscriber. A backlog is
+  // not free — every queued entry holds memory and every delivery triggers a
+  // full re-read of settings and bindings. It is bounded in practice because
+  // these events come from human-paced operations (provision, probe,
+  // disconnect), not from a data stream. If that ever stops holding, the fix is
+  // a coalescing notification that still guarantees one final recomputation,
+  // not a larger buffer.
   const changesPubSub = yield* PubSub.unbounded<void>();
   /**
    * Announce a PERSISTED mutation. Deliberately not wrapped around a whole

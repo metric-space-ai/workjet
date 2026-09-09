@@ -14,12 +14,12 @@
  * the driver's own snapshot.
  */
 import { assert, it } from "@effect/vitest";
-import type { ProviderInstanceConfigMap } from "@workjet/contracts";
+import { ProviderInstanceId, type ProviderInstanceConfigMap } from "@workjet/contracts";
 
 import { mergeCtoxProviderInstances } from "./ProviderInstanceRegistryHydration.ts";
 
-/** The map is keyed by a branded id; index it the way the contract declares. */
-const at = (map: ProviderInstanceConfigMap, key: string) => (map as Record<string, unknown>)[key];
+/** The map is keyed by a branded id, so build the key the contract's own way. */
+const at = (map: ProviderInstanceConfigMap, key: string) => map[ProviderInstanceId.make(key)];
 
 const empty = {} as ProviderInstanceConfigMap;
 const BINDING_A = { connectionId: "connection-a", instanceId: "paired:manual_pairing:office-1" };

@@ -46,3 +46,20 @@ The next connection must expose native session state, complete snapshots,
 revocation and explicit native-chat to Code-thread mapping before enabling
 navigation and sending. UI acceptance, screenshots, VM control and worker
 activity presentation remain separate outstanding work.
+
+## Decoding native records before presentation
+
+The same package entry exports decodeProjectChatRecords. It decodes the existing
+workjet_project_chats and workjet_project_workers source fields before they reach
+the selector. Document-envelope IDs must match source IDs; malformed records,
+duplicate IDs, wrong owner/project, missing timestamps or invalid group/private
+shape reject the entire input. Tombstones undergo the same scope validation.
+Only declared collection fields are projected; unknown fields such as messages
+or private memory never enter these rows.
+
+This is consumer validation, not native authorization or a new collection/wire
+schema. The host must supply authenticated bounded record sets and validate its
+session/generation before calling and again before publishing. The decoder does
+not mark a pair of independently loaded collections as coherent, create a group,
+map native thread IDs to Code threads, or open subscriptions. A valid result still
+requires the existing selector's relationship checks.

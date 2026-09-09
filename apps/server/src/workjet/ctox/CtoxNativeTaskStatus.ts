@@ -55,8 +55,8 @@ function taskState(value: string): CtoxNativeTaskState {
 }
 
 /** Validate the real BusinessOsMcpRecordResponse against the locally pinned
- * native ids. This observation does not copy remote execution state into the
- * request ledger or infer completion from a successful HTTP response.
+ * native ids. An initially absent task id may be learned from its command.
+ * This observation does not copy remote execution state into the request ledger or infer completion from a successful HTTP response.
  */
 export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus")(function* (
   reference: NativeTaskReference,
@@ -92,7 +92,7 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
     !reference.commandId ||
     record.id !== reference.commandId ||
     record.data.command_id !== reference.commandId ||
-    (record.data.task_id ?? null) !== reference.taskId ||
+    (reference.taskId !== null && (record.data.task_id ?? null) !== reference.taskId) ||
     (record.data.module !== undefined && record.data.module !== nativeModule) ||
     (record.data.record_id !== undefined && record.data.record_id !== recordId) ||
     (record.data.command_type !== undefined && record.data.command_type !== commandType) ||
@@ -104,7 +104,10 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
   // the compatibility command record. task_status is authoritative when present.
   const status = record.data.task_status ?? record.data.status;
   return {
-    reference,
+    reference:
+      reference.taskId === null && record.data.task_id
+        ? { ...reference, taskId: record.data.task_id }
+        : reference,
     state: taskState(status),
     status,
     note: record.data.status_note ?? null,

@@ -194,7 +194,28 @@ const make = Effect.gen(function* () {
         received_at_ms = COALESCE(received_at_ms, ${now})
       WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
         AND (command_id IS NULL OR command_id = ${receipt.command_id})
-        AND (task_id IS NULL OR task_id IS ${taskId})
+        AND (${taskId} IS NULL OR task_id IS NULL OR task_id IS ${taskId})
+      RETURNING request_key
+    `.pipe(Effect.mapError(unavailable));
+    if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+  });
+
+  /** Bind a task assigned after command acceptance, without changing an existing binding. */
+  const recordObservedTask = Effect.fn("CtoxNativeRequests.recordObservedTask")(function* (
+    identity: CtoxNativeRequestIdentity,
+    commandId: string,
+    taskId: string,
+  ) {
+    yield* Schema.decodeUnknownEffect(Receipt.fields.command_id)(taskId).pipe(
+      Effect.mapError(() => failure("native-response-invalid")),
+    );
+    const row = yield* load(identity);
+    if (row.commandId !== commandId) return yield* failure("native-task-reference-conflict");
+    const updated = yield* sql`
+      UPDATE workjet_ctox_native_requests SET task_id = ${taskId}
+      WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+        AND connection_id = ${identity.connectionId} AND instance_id = ${identity.instanceId}
+        AND command_id = ${commandId} AND (task_id IS NULL OR task_id = ${taskId})
       RETURNING request_key
     `.pipe(Effect.mapError(unavailable));
     if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
@@ -250,7 +271,15 @@ const make = Effect.gen(function* () {
     if (!row) return null;
     return { ...row, reference: yield* get({ ...scope, requestKey: row.requestKey }) };
   });
-  return { prepare, verifyTarget, recordReceipt, get, registerNativeTurn, latestNativeTurn };
+  return {
+    prepare,
+    verifyTarget,
+    recordReceipt,
+    recordObservedTask,
+    get,
+    registerNativeTurn,
+    latestNativeTurn,
+  };
 });
 
 const encodeIntentTarget = Schema.encodeEffect(

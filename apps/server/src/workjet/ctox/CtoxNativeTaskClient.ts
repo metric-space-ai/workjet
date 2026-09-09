@@ -247,8 +247,9 @@ export function makeCtoxNativeTaskClient(dependencies: {
   });
 
   const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (
-    identity: CtoxNativeRequestIdentity,
+    requestIdentity: CtoxNativeRequestIdentity,
   ) {
+    const identity = { ...requestIdentity };
     const reference = yield* dependencies.requests.get(identity);
     if (!reference.commandId)
       return {
@@ -270,7 +271,16 @@ export function makeCtoxNativeTaskClient(dependencies: {
     });
     if (response.isError || response.structuredContent === undefined)
       return yield* new CtoxNativeRequestError({ reason: "ctox-operation-rejected" });
-    return yield* decodeCtoxNativeTaskStatus(reference, response.structuredContent);
+    const observed = yield* decodeCtoxNativeTaskStatus(reference, response.structuredContent);
+    if (reference.taskId === null && observed.reference.taskId !== null) {
+      yield* dependencies.requests.recordObservedTask(
+        identity,
+        reference.commandId,
+        observed.reference.taskId,
+      );
+      return { ...observed, reference: yield* dependencies.requests.get(identity) };
+    }
+    return observed;
   });
 
   return {

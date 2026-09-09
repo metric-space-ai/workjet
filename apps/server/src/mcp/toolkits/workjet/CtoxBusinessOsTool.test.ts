@@ -9,6 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
@@ -127,6 +128,10 @@ function fixture(retrySupport = false, loseDelegationResponse = false) {
     }),
   );
   const registry = DecisionHubConnectionRegistry.of({
+    // This tool never reacts to connection changes; it resolves one bound
+    // target per call.
+    changes: Stream.empty,
+    subscribeChanges: Effect.die("unused"),
     list: Effect.succeed([]),
     provision: () => Effect.die("unused"),
     probe: () => Effect.die("unused"),

@@ -8,6 +8,7 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -85,6 +86,14 @@ export interface DecisionHubConnectionRegistryShape {
    * the window in which a connection provisioned at startup goes missing.
    */
   readonly changes: Stream.Stream<void>;
+  /**
+   * Synchronous subscribe. A consumer that forks its loop must acquire this in
+   * its OWN fiber first: `Stream.fromPubSub` only registers when the consumer
+   * actually runs, so forking a stream consumer before reading initial state
+   * does NOT guarantee the subscription exists yet. Same contract, and same
+   * race, as `ProviderInstanceRegistry.subscribeChanges`.
+   */
+  readonly subscribeChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>;
 }
 
 export class DecisionHubConnectionRegistry extends Context.Service<
@@ -96,8 +105,14 @@ const make = Effect.gen(function* () {
   // Unbounded so a mutation is never blocked by a slow subscriber; the events
   // are valueless wake-ups, so a backlog costs nothing but a re-read.
   const changesPubSub = yield* PubSub.unbounded<void>();
-  const announceChange = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    effect.pipe(Effect.tap(() => PubSub.publish(changesPubSub, undefined)));
+  /**
+   * Announce a PERSISTED mutation. Deliberately not wrapped around a whole
+   * operation: `probe` writes its status and then reads a summary back, and
+   * that read can fail. Announcing on overall success would swallow a status
+   * change that is already durable — the consumer would keep showing the old
+   * state until some unrelated event arrived.
+   */
+  const announceChange = Effect.suspend(() => PubSub.publish(changesPubSub, undefined));
   const sql = yield* SqlClient.SqlClient;
   const secrets = yield* ServerSecretStore;
   const client = yield* DecisionHubMcpClient;
@@ -213,57 +228,60 @@ const make = Effect.gen(function* () {
   );
 
   const provision: DecisionHubConnectionRegistryShape["provision"] = (input) =>
-    announceChange(provisionRaw(input));
+    provisionRaw(input).pipe(Effect.tap(() => announceChange));
 
   const probe: DecisionHubConnectionRegistryShape["probe"] = (connectionId) =>
-    announceChange(
-      Effect.gen(function* () {
-        const target = yield* readTarget(connectionId);
-        yield* client.probe(target, []).pipe(
-          Effect.matchEffect({
-            onSuccess: () => setStatus(connectionId, "ready", null),
-            onFailure: (error) => {
-              if (
-                error.reason === "remote-identity-mismatch" ||
-                error.reason === "remote-tools-missing"
-              ) {
-                return setStatus(connectionId, "unsupported", error.reason);
-              }
-              if (error.reason === "remote-response-invalid") {
-                return setStatus(connectionId, "error", error.reason);
-              }
-              return setStatus(connectionId, "offline", error.reason);
-            },
-          }),
-        );
-        return yield* getSummary(connectionId);
-      }),
-    );
+    Effect.gen(function* () {
+      const target = yield* readTarget(connectionId);
+      yield* client.probe(target, []).pipe(
+        Effect.matchEffect({
+          onSuccess: () => setStatus(connectionId, "ready", null),
+          onFailure: (error) => {
+            if (
+              error.reason === "remote-identity-mismatch" ||
+              error.reason === "remote-tools-missing"
+            ) {
+              return setStatus(connectionId, "unsupported", error.reason);
+            }
+            if (error.reason === "remote-response-invalid") {
+              return setStatus(connectionId, "error", error.reason);
+            }
+            return setStatus(connectionId, "offline", error.reason);
+          },
+        }),
+      );
+      // The status is persisted at this point. Announcing here rather than
+      // after the read-back means a failing summary read cannot hide a status
+      // change that already happened.
+      yield* announceChange;
+      return yield* getSummary(connectionId);
+    });
 
   const disconnect: DecisionHubConnectionRegistryShape["disconnect"] = (connectionId) =>
-    announceChange(
-      Effect.gen(function* () {
-        const rows = yield* sql`
+    Effect.gen(function* () {
+      const rows = yield* sql`
         SELECT connection_id FROM workjet_decision_hub_connections
         WHERE connection_id = ${connectionId}
       `.pipe(Effect.mapError(() => failure("connection-unavailable")));
-        if (rows.length === 0) return false;
-        const open = yield* sql`
+      if (rows.length === 0) return false;
+      const open = yield* sql`
         SELECT decision_id FROM workjet_decision_hub_escalations
         WHERE connection_id = ${connectionId} AND status = 'open' LIMIT 1
       `.pipe(Effect.mapError(() => failure("connection-unavailable")));
-        if (open.length > 0) return yield* failure("connection-unavailable");
-        // The durable connection/instance binding deliberately survives this
-        // removal. Reusing an id for a different instance would redirect threads.
-        yield* secrets
-          .remove(secretName(connectionId))
-          .pipe(Effect.mapError(() => failure("secret-store-unavailable")));
-        yield* sql`
+      if (open.length > 0) return yield* failure("connection-unavailable");
+      // The durable connection/instance binding deliberately survives this
+      // removal. Reusing an id for a different instance would redirect threads.
+      yield* secrets
+        .remove(secretName(connectionId))
+        .pipe(Effect.mapError(() => failure("secret-store-unavailable")));
+      yield* sql`
         DELETE FROM workjet_decision_hub_connections WHERE connection_id = ${connectionId}
       `.pipe(Effect.mapError(() => failure("connection-unavailable")));
-        return true;
-      }),
-    );
+      // Announced only when a row was really removed. The early `false` return
+      // above changed nothing and must not wake every consumer.
+      yield* announceChange;
+      return true;
+    });
 
   const resolveReadyTarget: DecisionHubConnectionRegistryShape["resolveReadyTarget"] = (
     connectionId,
@@ -280,6 +298,9 @@ const make = Effect.gen(function* () {
 
   return DecisionHubConnectionRegistry.of({
     changes: Stream.fromPubSub(changesPubSub),
+    subscribeChanges: PubSub.subscribe(changesPubSub).pipe(
+      Effect.map((subscription) => Stream.fromSubscription(subscription)),
+    ),
     list,
     provision,
     probe,

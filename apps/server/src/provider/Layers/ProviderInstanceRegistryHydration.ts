@@ -173,91 +173,97 @@ const readCtoxBindings = SqlClient.SqlClient.pipe(
   ),
 );
 
-const SettingsWatcherLive = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const mutator = yield* ProviderInstanceRegistryMutator;
-    const registry = yield* ProviderInstanceRegistry;
-    const serverSettings = yield* ServerSettingsService;
-    const connections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
+/**
+ * Exported so a test can drive the REAL watcher rather than a re-implementation
+ * of it. `SettingsWatcherLive` below is nothing but this effect wrapped in a
+ * layer, so production and test exercise the same code path — a separate
+ * reconciliation simulator would only ever prove that the simulator works.
+ */
+export const runSettingsWatcher = Effect.gen(function* () {
+  const mutator = yield* ProviderInstanceRegistryMutator;
+  const registry = yield* ProviderInstanceRegistry;
+  const serverSettings = yield* ServerSettingsService;
+  const connections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
 
-    /**
-     * Reconciliation is an INVALIDATION, not the delivery of a payload.
-     *
-     * Passing an already-read settings snapshot in would let a run that waited
-     * on the semaphore write back the state it observed before someone else's
-     * change — the newest event would lose. So the permit comes first, and both
-     * sources are read fresh behind it. The event only says "something moved".
-     */
-    const gate = yield* Semaphore.make(1);
-    const reconcileNow = gate
-      .withPermits(1)(
-        Effect.gen(function* () {
-          const settings = yield* serverSettings.getSettings;
-          const configMap = deriveProviderInstanceConfigMap(settings);
-          if (Option.isNone(connections)) {
-            // No connection registry in this build: no CTOX row can exist, so a
-            // plain reconcile is the whole job.
-            return yield* mutator.reconcile(configMap);
-          }
-          // A failed read must ABORT the run. Reconciling the settings-only map
-          // would present every derived CTOX row as removed, and makeReconcile
-          // closes the scopes of removed ids — a transient database error would
-          // tear down live provider instances.
-          const bindings = yield* readCtoxBindings;
-          yield* mutator.reconcile(mergeCtoxProviderInstances(configMap, bindings));
-          // Reconcile alone refreshes nothing. An instance whose config is
-          // unchanged keeps its existing object and scope
-          // (ProviderInstanceRegistryLive:261-265), and CtoxDriver updates its
-          // snapshot only inside `snapshot.refresh` — so a connection going
-          // offline would leave the provider showing its last status forever.
-          // Refreshing through the instance's OWN snapshot service is what makes
-          // a connection change visible, without recreating the provider object
-          // and tearing down the sessions bound to it.
-          const instances = yield* registry.listInstances;
-          yield* Effect.forEach(
-            instances.filter((instance) => instance.driverKind === CTOX_DRIVER_KIND),
-            (instance) => instance.snapshot.refresh.pipe(Effect.ignore),
-            { discard: true },
-          );
-        }),
-      )
-      .pipe(
-        Effect.catchCause((cause) =>
-          Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
-        ),
-      );
-
-    /**
-     * Acquire the subscriptions in THIS fiber before anything reads initial
-     * state. `Stream.fromPubSub` only registers its subscriber once the
-     * consumer runs, so forking a stream consumer first — the previous version
-     * here — guarantees nothing: a connection provisioned in that window stayed
-     * invisible until an unrelated settings write happened to arrive.
-     */
-    const connectionEvents = yield* Option.match(connections, {
-      onNone: () => Effect.succeedNone,
-      onSome: (registry) => registry.subscribeChanges.pipe(Effect.asSome),
-    });
-    const settingsEvents = yield* serverSettings.subscribeChanges;
-
-    yield* Option.match(connectionEvents, {
-      onNone: () => Effect.void,
-      onSome: (events) =>
-        events.pipe(
-          Stream.runForEach(() => reconcileNow),
-          Effect.forkScoped,
-          Effect.asVoid,
-        ),
-    });
-    yield* settingsEvents.pipe(
-      Stream.runForEach(() => reconcileNow),
-      Effect.forkScoped,
+  /**
+   * Reconciliation is an INVALIDATION, not the delivery of a payload.
+   *
+   * Passing an already-read settings snapshot in would let a run that waited
+   * on the semaphore write back the state it observed before someone else's
+   * change — the newest event would lose. So the permit comes first, and both
+   * sources are read fresh behind it. The event only says "something moved".
+   */
+  const gate = yield* Semaphore.make(1);
+  const reconcileNow = gate
+    .withPermits(1)(
+      Effect.gen(function* () {
+        const settings = yield* serverSettings.getSettings;
+        const configMap = deriveProviderInstanceConfigMap(settings);
+        if (Option.isNone(connections)) {
+          // No connection registry in this build: no CTOX row can exist, so a
+          // plain reconcile is the whole job.
+          return yield* mutator.reconcile(configMap);
+        }
+        // A failed read must ABORT the run. Reconciling the settings-only map
+        // would present every derived CTOX row as removed, and makeReconcile
+        // closes the scopes of removed ids — a transient database error would
+        // tear down live provider instances.
+        const bindings = yield* readCtoxBindings;
+        yield* mutator.reconcile(mergeCtoxProviderInstances(configMap, bindings));
+        // Reconcile alone refreshes nothing. An instance whose config is
+        // unchanged keeps its existing object and scope
+        // (ProviderInstanceRegistryLive:261-265), and CtoxDriver updates its
+        // snapshot only inside `snapshot.refresh` — so a connection going
+        // offline would leave the provider showing its last status forever.
+        // Refreshing through the instance's OWN snapshot service is what makes
+        // a connection change visible, without recreating the provider object
+        // and tearing down the sessions bound to it.
+        const instances = yield* registry.listInstances;
+        yield* Effect.forEach(
+          instances.filter((instance) => instance.driverKind === CTOX_DRIVER_KIND),
+          (instance) => instance.snapshot.refresh.pipe(Effect.ignore),
+          { discard: true },
+        );
+      }),
+    )
+    .pipe(
+      Effect.catchCause((cause) =>
+        Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
+      ),
     );
 
-    // Only now: the initial pass runs behind both live subscriptions.
-    yield* reconcileNow;
-  }),
-);
+  /**
+   * Acquire the subscriptions in THIS fiber before anything reads initial
+   * state. `Stream.fromPubSub` only registers its subscriber once the
+   * consumer runs, so forking a stream consumer first — the previous version
+   * here — guarantees nothing: a connection provisioned in that window stayed
+   * invisible until an unrelated settings write happened to arrive.
+   */
+  const connectionEvents = yield* Option.match(connections, {
+    onNone: () => Effect.succeedNone,
+    onSome: (registry) => registry.subscribeChanges.pipe(Effect.asSome),
+  });
+  const settingsEvents = yield* serverSettings.subscribeChanges;
+
+  yield* Option.match(connectionEvents, {
+    onNone: () => Effect.void,
+    onSome: (events) =>
+      events.pipe(
+        Stream.runForEach(() => reconcileNow),
+        Effect.forkScoped,
+        Effect.asVoid,
+      ),
+  });
+  yield* settingsEvents.pipe(
+    Stream.runForEach(() => reconcileNow),
+    Effect.forkScoped,
+  );
+
+  // Only now: the initial pass runs behind both live subscriptions.
+  yield* reconcileNow;
+});
+
+const SettingsWatcherLive = Layer.effectDiscard(runSettingsWatcher);
 
 /**
  * Hydrate `ProviderInstanceRegistry` from `ServerSettings` and keep it in

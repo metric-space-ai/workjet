@@ -103,6 +103,10 @@
       "types": "./src/state/projectGrouping.ts",
       "default": "./src/state/projectGrouping.ts"
     },
+    "./state/project-chats": {
+      "types": "./src/state/projectChats.ts",
+      "default": "./src/state/projectChats.ts"
+    },
     "./state/worker-overview": {
       "types": "./src/state/workerOverview.ts",
       "default": "./src/state/workerOverview.ts"

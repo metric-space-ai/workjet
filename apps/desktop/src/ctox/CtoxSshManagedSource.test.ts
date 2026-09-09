@@ -247,6 +247,7 @@ describe("CtoxSshManagedSource discovery", () => {
       const serialized = encodeUnknownJson(instance);
       assert.notInclude(serialized, "build-box");
       assert.notInclude(serialized, "remote-1");
+      assert.equal(discovered[0]?.daemonInstanceId, "remote-1");
       assert.equal(calls[0]?.host, "build-box");
       assert.deepEqual(calls[0]?.argv, buildCtoxSshDescriptorCommand());
     }),

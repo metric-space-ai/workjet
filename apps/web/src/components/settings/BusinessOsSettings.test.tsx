@@ -83,22 +83,22 @@ describe("Business OS settings scope", () => {
     expect(resolveActiveBusinessOsInstanceId(null)).toBeNull();
   });
 
-  it("lists actual backends but never SSH computers as Business-OS instances", () => {
+  it("lists actual backend instances including a backend hosted on an SSH computer", () => {
     const welsch = instance("business-os-welsch", "WELSCH");
     const gpu3 = instance("ssh:gpu3", "gpu3-a4500", "ssh_managed");
     expect(
       visibleBusinessOsInstances({ _tag: "ready", instances: [gpu3, welsch] }).map(
         (candidate) => candidate.displayName,
       ),
-    ).toEqual(["WELSCH"]);
+    ).toEqual(["gpu3-a4500", "WELSCH"]);
   });
 
   it("fails closed when no active instance exists and keeps the device action visible", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView instances={[]} activeInstanceId={null} />,
     );
-    expect(markup).toContain("Keine Business-OS-Instanz verbunden");
-    expect(markup).toContain("Business OS hinzufügen");
+    expect(markup).toContain("Keine CTOX-Instanz verbunden");
+    expect(markup).toContain("Instanz hinzufügen");
     expect(markup).toContain("Gerät hinzufügen");
     expect(markup).toContain("disabled");
     expect(markup).not.toContain("environment-alpha");
@@ -112,7 +112,7 @@ describe("Business OS settings scope", () => {
         computerCount={3}
       />,
     );
-    expect(markup).toContain('aria-label="Aktive Business-OS-Instanz"');
+    expect(markup).toContain('aria-label="CTOX-Instanz auswählen"');
     expect(markup).toContain("WELSCH");
     expect(markup).toContain("Geräte für WELSCH");
     expect(markup).toContain("Zuweisungen zu WELSCH");

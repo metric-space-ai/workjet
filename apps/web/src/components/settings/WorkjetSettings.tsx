@@ -1,10 +1,10 @@
+import { openInstanceSetup } from "../../instanceSetup";
 import type {
   EnvironmentId,
   GreppyRuntimeReason,
   GreppyRuntimeSnapshot,
   GreppyRuntimeSource,
   WorktreeStorageInspection,
-  WorkjetComputerPresentationKind,
   WorkjetConfiguration,
   WorkjetWorkerProfile,
   WorkjetWorkerProfileId,
@@ -16,7 +16,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@workjet/client-runtime/state/runtime";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2Icon,
   PencilIcon,
@@ -39,7 +39,6 @@ import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
-import type { WorkjetEnvironmentTargetOption } from "./WorkjetComputerEditor";
 import type { WorkjetGatewaySectionState } from "./WorkjetGatewayAccounts";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import { useActiveBusinessOsSettingsEnvironment } from "./businessOsSettingsScope";
@@ -311,49 +310,7 @@ export function GreppyRuntimeSectionView({
   );
 }
 
-function environmentPresentationKind(
-  environment: EnvironmentPresentation,
-): WorkjetComputerPresentationKind {
-  switch (environment.entry.target._tag) {
-    case "PrimaryConnectionTarget":
-      return "local";
-    case "RelayConnectionTarget":
-      return "workjet-connect";
-    case "SshConnectionTarget":
-      return "ssh";
-    case "BearerConnectionTarget":
-      return "remote";
-  }
-}
-
-export function workjetEnvironmentTargetOptions(
-  environments: ReadonlyArray<EnvironmentPresentation>,
-): WorkjetEnvironmentTargetOption[] {
-  return environments
-    .map((environment) => {
-      const presentationKind = environmentPresentationKind(environment);
-      const detail =
-        presentationKind === "local"
-          ? "Local environment"
-          : presentationKind === "workjet-connect"
-            ? "Relay connection"
-            : presentationKind === "ssh"
-              ? "SSH environment"
-              : (environment.displayUrl ?? "Remote environment");
-      return {
-        environmentId: environment.environmentId,
-        label: environment.label,
-        presentationKind,
-        detail,
-      };
-    })
-    .sort((left, right) => {
-      if (left.presentationKind === "local" && right.presentationKind !== "local") return -1;
-      if (right.presentationKind === "local" && left.presentationKind !== "local") return 1;
-      return left.label.localeCompare(right.label);
-    });
-}
-
+export { workjetEnvironmentTargetOptions } from "./workjetEnvironmentTargetOptions";
 function replaceCatalogItem<T extends { readonly id: string }>(
   items: ReadonlyArray<T>,
   item: T,
@@ -1309,9 +1266,9 @@ export function WorkjetSettings({
     const description = resolving
       ? "Die aktive Business-OS-Instanz wird geprüft."
       : target.reason === "no-active-instance"
-        ? "Wähle zuerst eine Business-OS-Instanz aus."
+        ? "Wähle zuerst eine CTOX-Instanz aus."
         : target.reason === "no-code-computer"
-          ? "Dieser Business-OS-Instanz ist noch kein Rechner für Code zugewiesen."
+          ? "Der CTOX-Master ist eingerichtet. Für Coding-Aufgaben muss ein Rechner zugeordnet und ein Harness einsatzbereit sein. Der Zentralrechner kann diese Aufgaben ebenfalls übernehmen."
           : target.reason === "ambiguous-code-computer"
             ? "Worker-Einstellungen sind noch nicht als instanzweite CTOX-Konfiguration verfügbar. Bei mehreren zugewiesenen Rechnern bleibt die Seite deshalb zum Schutz vor Datenvermischung gesperrt."
             : "Die Berechtigung der aktiven Business-OS-Instanz konnte nicht bestätigt werden.";
@@ -1321,6 +1278,13 @@ export function WorkjetSettings({
           <SettingsRow
             title={resolving ? "Instanz wird geladen" : "Worker nicht verfügbar"}
             description={description}
+            control={
+              resolving ? undefined : target.reason === "no-active-instance" ? (
+                <Button onClick={() => openInstanceSetup()}>Instanz auswählen</Button>
+              ) : (
+                <Button render={<Link to="/settings/computers" />}>Computer einrichten</Button>
+              )
+            }
           />
         </SettingsSection>
       </SettingsPageContainer>

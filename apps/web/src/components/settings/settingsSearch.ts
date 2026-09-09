@@ -23,7 +23,7 @@ export interface SettingsSearchItem {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/business-os": "Business OS",
+  "/settings/business-os": "Instanzen",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
@@ -262,13 +262,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "greppy-runtime",
     title: "Greppy Runtime",
     to: "/settings/workjet",
-  },
-  {
-    id: "remote-environments",
-    title: "Remote environments",
-    // Paired and removed on the Computers page, beside the computers that
-    // reference them. There is no second visible Connections category.
-    to: "/settings/computers",
   },
   {
     id: "archive",

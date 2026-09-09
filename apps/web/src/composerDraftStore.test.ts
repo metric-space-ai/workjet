@@ -1163,6 +1163,60 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)).toBeUndefined();
   });
 
+  it("preserves worker choices on the canonical thread without replaying sent content", () => {
+    const store = useComposerDraftStore.getState();
+    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    const manualReturn = { provider: CODEX_INSTANCE, model: "manual-model" };
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "already sent");
+    store.setWorkjetWorkerSelection(draftId, "worker-bulk", manualReturn);
+    store.setModelSelection(draftId, {
+      instanceId: CLAUDE_AGENT_INSTANCE,
+      model: "MiniMax-M3",
+    });
+    markPromotedDraftThreadByRef(threadRef);
+
+    finalizePromotedDraftThreadByRef(threadRef);
+
+    expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      prompt: "",
+      images: [],
+      workjetWorkerId: "worker-bulk",
+      workjetManualReturn: manualReturn,
+      activeProvider: CLAUDE_AGENT_INSTANCE,
+      modelSelectionByProvider: {
+        [CLAUDE_AGENT_INSTANCE]: {
+          instanceId: CLAUDE_AGENT_INSTANCE,
+          model: "MiniMax-M3",
+        },
+      },
+    });
+    expect(draftFor(threadId, OTHER_TEST_ENVIRONMENT_ID)).toBeUndefined();
+    store.clearComposerContent(threadRef);
+    finalizePromotedDraftThreadByRef(threadRef);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.workjetWorkerId).toBe("worker-bulk");
+  });
+
+  it("preserves existing canonical Manual choices and unsent content during promotion", () => {
+    const store = useComposerDraftStore.getState();
+    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    // Create the canonical entry before the draft alias can resolve to it.
+    store.setPrompt(threadRef, "new follow-up");
+    store.setWorkjetWorkerSelection(threadRef, null, null);
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setWorkjetWorkerSelection(draftId, "old-worker", null);
+    store.setPrompt(draftId, "already sent");
+
+    finalizePromotedDraftThreadByRef(threadRef);
+
+    expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      prompt: "new follow-up",
+      workjetWorkerId: null,
+    });
+  });
+
   it("finalizes a matching materialized draft even when promotion was not pre-marked", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });

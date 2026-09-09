@@ -14,6 +14,7 @@ import {
   checkCtoxDescriptorTrust,
   ctoxLocalDaemonInstanceId,
   discoverCtoxLocalDaemonInstances,
+  discoverCtoxLocalDaemonNativeTargets,
   normalizeCtoxLocalDaemonHealthUrl,
   type CtoxLocalDaemonDiscoveryOptions,
   type CtoxLocalDaemonInstance,
@@ -166,7 +167,7 @@ describe("CtoxLocalDaemonSource", () => {
           contents: descriptor("beta", { status: "stopped" }),
         },
       ],
-      ({ discover }) =>
+      ({ discover, stateRoot }) =>
         Effect.gen(function* () {
           const discovered = yield* discover();
           assert.deepEqual(
@@ -198,6 +199,23 @@ describe("CtoxLocalDaemonSource", () => {
 
           // The renderer-safe result never carries the state-root path.
           assert.notInclude(encodeUnknownJson(discovered), ".local/state/ctox");
+          const path = yield* Path.Path;
+          const privateTargets = yield* discoverCtoxLocalDaemonNativeTargets({
+            env: { CTOX_STATE_ROOT: stateRoot },
+            nowEpochMs: () => NOW,
+          });
+          assert.deepEqual(
+            privateTargets.map((entry) => entry.stateRoot),
+            [
+              stateRoot,
+              path.join(stateRoot, "instances", "alpha"),
+              path.join(stateRoot, "instances", "beta"),
+            ],
+          );
+          assert.deepEqual(
+            privateTargets.map((entry) => entry.instance),
+            discovered.map((entry) => entry.instance),
+          );
           // Ids are derived from the descriptor path only, so they are stable.
           assert.deepEqual(
             (yield* discover()).map((entry) => entry.instance.id),

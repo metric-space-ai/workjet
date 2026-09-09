@@ -1120,6 +1120,82 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  for (const exitKind of ["code", "status failure"] as const) {
+    it.effect(`waits for process cleanup before replacing a backend after ${exitKind}`, () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cleanupStarted = yield* Deferred.make<void>();
+          const releaseCleanup = yield* Deferred.make<void>();
+          const failures = yield* Queue.unbounded<string>();
+          const starts = yield* Queue.unbounded<number>();
+          let startCount = 0;
+          let cleanupFinished = false;
+          const exitCause = PlatformError.systemError({
+            _tag: "Unknown",
+            module: "ChildProcess",
+            method: "exitCode",
+            description: "process terminated by signal",
+          });
+          const spawnerLayer = Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.gen(function* () {
+                startCount += 1;
+                const firstRun = startCount === 1;
+                yield* Queue.offer(starts, startCount);
+                if (firstRun) {
+                  yield* Effect.addFinalizer(() =>
+                    Effect.gen(function* () {
+                      yield* Deferred.succeed(cleanupStarted, void 0);
+                      yield* Deferred.await(releaseCleanup);
+                      cleanupFinished = true;
+                    }),
+                  );
+                }
+                return makeProcess({
+                  exitCode: firstRun
+                    ? exitKind === "code"
+                      ? Effect.succeed(ChildProcessSpawner.ExitCode(1))
+                      : Effect.fail(exitCause)
+                    : Effect.never,
+                });
+              }),
+            ),
+          );
+          const instance = yield* makeTestInstance({
+            spawnerLayer,
+            httpClientLayer: httpClientLayer(() => Effect.never),
+            backendOutputLog: {
+              persistFailure: ({ details }) => Queue.offer(failures, details).pipe(Effect.asVoid),
+            },
+          });
+
+          yield* instance.start;
+          assert.equal(yield* Queue.take(starts), 1);
+          yield* Deferred.await(cleanupStarted);
+          yield* Effect.gen(function* () {
+            // Even beyond the restart delay, the old run still owns the slot.
+            yield* TestClock.adjust(Duration.seconds(1));
+            yield* instance.start;
+            const snapshot = yield* instance.snapshot;
+            assert.equal(startCount, 1);
+            assert.isTrue(Option.isSome(snapshot.activePid));
+            assert.isFalse(snapshot.restartScheduled);
+            assert.equal(yield* Queue.size(failures), 0);
+          }).pipe(Effect.ensuring(Deferred.succeed(releaseCleanup, void 0)));
+
+          const reason = yield* Queue.take(failures);
+          assert.isTrue(cleanupFinished);
+          assert.include(reason, exitKind === "code" ? "code=1" : "Failed to read the exit status");
+          yield* TestClock.adjust(Duration.millis(499));
+          assert.equal(startCount, 1);
+          yield* TestClock.adjust(Duration.millis(1));
+          assert.equal(yield* Queue.take(starts), 2);
+        }).pipe(Effect.provide(TestClock.layer())),
+      ),
+    );
+  }
+
   it.effect("restarts an unexpectedly exited backend with the Effect clock", () =>
     Effect.scoped(
       Effect.gen(function* () {

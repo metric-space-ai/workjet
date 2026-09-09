@@ -1,3 +1,8 @@
+import {
+  InstanceNavigationBoundary,
+  InstanceWorkspaceBoundary,
+  InstanceSidebarBoundary,
+} from "./ctox/InstanceOnboarding";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -263,37 +268,51 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
         <WorkjetHeaderFrame mode={productMode} sidebarAvailable={!isCtoxShell}>
           {!isCtoxShell ? <ProjectProjectionRetention /> : null}
+          {/*
+            Ops renders NO instance sidebar. The network map became its own main
+            page, but that does not reinstate the redundant Ops instance column
+            the brief removes — those are different things: a map is navigation
+            between networks, the old column was a second instance picker beside
+            the one in the header. Dropping the business-os branch here is also
+            what removes the last use of CtoxSidebarShell.
+          */}
           {!isCtoxShell ? (
-            <Sidebar
-              side="left"
-              collapsible="offcanvas"
-              data-app-sidebar=""
-              className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
-              resizable={{
-                maxWidth: sidebarMaximumWidth,
-                minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-                shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-                  nextWidth <= currentWidth ||
-                  wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-                storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-                onResize: setSidebarWidth,
-              }}
-            >
-              {sidebarSurface === "settings" ? (
-                <>
-                  <SidebarChromeHeader isElectron={isElectron} />
-                  <SettingsSidebarNav pathname={pathname} />
-                </>
-              ) : legacySidebarEnabled ? (
-                <LegacyThreadSidebar />
-              ) : (
-                <ThreadSidebar />
-              )}
-              <SidebarRail onDoubleClick={resetSidebarWidth} />
-            </Sidebar>
+            <InstanceSidebarBoundary surface={sidebarSurface}>
+              <Sidebar
+                side="left"
+                collapsible="offcanvas"
+                data-app-sidebar=""
+                className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
+                resizable={{
+                  maxWidth: sidebarMaximumWidth,
+                  minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+                  shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+                    nextWidth <= currentWidth ||
+                    wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+                  storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+                  onResize: setSidebarWidth,
+                }}
+              >
+                {sidebarSurface === "settings" ? (
+                  <>
+                    <SidebarChromeHeader isElectron={isElectron} />
+                    <SettingsSidebarNav pathname={pathname} />
+                  </>
+                ) : (
+                  <InstanceNavigationBoundary>
+                    {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
+                  </InstanceNavigationBoundary>
+                )}
+                <SidebarRail onDoubleClick={resetSidebarWidth} />
+              </Sidebar>
+            </InstanceSidebarBoundary>
           ) : null}
-          {isCtoxShell ? <CtoxMainShell /> : children}
-          <SidebarControl disabled={isCtoxShell} />
+          <InstanceWorkspaceBoundary surface={sidebarSurface}>
+            {isCtoxShell ? <CtoxMainShell /> : children}
+          </InstanceWorkspaceBoundary>
+          <InstanceSidebarBoundary surface={sidebarSurface}>
+            <SidebarControl disabled={isCtoxShell} />
+          </InstanceSidebarBoundary>
         </WorkjetHeaderFrame>
       </CtoxModeProvider>
     </SidebarProvider>

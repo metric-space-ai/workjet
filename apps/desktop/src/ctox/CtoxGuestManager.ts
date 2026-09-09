@@ -9,6 +9,8 @@ import type {
   CtoxWorkjetDeviceControlResult,
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
+  CtoxWorkjetComputerControlRequest,
+  CtoxWorkjetComputerControlResult,
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionTransferEvent,
@@ -16,6 +18,7 @@ import type {
 } from "@workjet/contracts";
 import {
   CtoxWorkjetProjectControlResponse,
+  CtoxWorkjetComputerControlResponse,
   CtoxWorkjetSessionControlResponse,
   WorkjetDeviceWebRtcResponseV1,
 } from "@workjet/contracts";
@@ -199,7 +202,11 @@ export class CtoxGuestManager extends Context.Service<
       instanceId: string,
       request: WorkjetDeviceWebRtcRequestV1,
     ) => Effect.Effect<CtoxWorkjetDeviceControlResult>;
-    /** Project control through the exact selected CTOX RxDB/WebRTC guest. */
+    /** Computer and project control through the exact selected CTOX RxDB/WebRTC guest. */
+    readonly requestComputerControl: (
+      instanceId: string,
+      request: CtoxWorkjetComputerControlRequest,
+    ) => Effect.Effect<CtoxWorkjetComputerControlResult>;
     readonly requestProjectControl: (
       instanceId: string,
       request: CtoxWorkjetProjectControlRequest,
@@ -329,6 +336,44 @@ function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1
   if (typeof control !== "function") return { status: "unsupported" };
   const result = await control(${JSON.stringify(request)});
   return { status: "completed", result };
+})()`;
+}
+
+const decodeComputerControlResponse = Schema.decodeUnknownEffect(
+  CtoxWorkjetComputerControlResponse,
+);
+const MAX_COMPUTER_CONTROL_RESPONSE_BYTES = 256 * 1024;
+
+function buildGuestComputerControlExpression(request: CtoxWorkjetComputerControlRequest): string {
+  return `(async () => {
+  const control = globalThis.workjetComputerControl;
+  if (typeof control !== "function") {
+    const password = document.querySelector('input[type="password"]');
+    return { status: password && password.getClientRects().length > 0
+      ? "authentication_required" : "unsupported" };
+  }
+  try {
+    const result = await control(${JSON.stringify(request)});
+    return { status: "completed", result };
+  } catch (error) {
+    // Return only fixed diagnostic codes; exception text can contain credentials.
+    const code = typeof error?.code === "string" ? error.code : "";
+    const message = typeof error?.message === "string" ? error.message
+      : typeof error === "string" ? error : "";
+    if (code === "QUERY_NOT_SUPPORTED" || message.startsWith("QUERY_NOT_SUPPORTED:")) {
+      return { status: "failed", code: "query_unsupported" };
+    }
+    if (code === "peer_connect_timeout" || code === "PEER_UNAVAILABLE"
+      || code === "QUERY_CANCELLED" || error?.name === "InvalidStateError"
+      || message === "PEER_UNAVAILABLE"
+      || message === "Workjet computer control is not ready.") {
+      return { status: "failed", code: "sync_unavailable" };
+    }
+    if (message === "workjet_computers collection is not registered.") {
+      return { status: "failed", code: "unsupported" };
+    }
+    return { status: "failed", code: "command_failed" };
+  }
 })()`;
 }
 
@@ -1570,6 +1615,81 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return { _tag: "completed", response: decoded.value };
       });
 
+    const requestComputerControl = (
+      instanceId: string,
+      request: CtoxWorkjetComputerControlRequest,
+    ): Effect.Effect<CtoxWorkjetComputerControlResult> =>
+      Effect.gen(function* (): Generator<
+        Effect.Effect<unknown>,
+        CtoxWorkjetComputerControlResult,
+        never
+      > {
+        const state = yield* SynchronizedRef.get(stateRef);
+        const guest = state.pool.get(instanceId);
+        if (guest === undefined || guest.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        // Keep navigation available while the native command and projection settle.
+        const pending = yield* Effect.tryPromise({
+          try: () =>
+            guest.view.webContents.executeJavaScript(
+              buildGuestComputerControlExpression(request),
+              true,
+            ),
+          catch: () => undefined,
+        }).pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.timeoutOption("45 seconds"),
+        );
+        if (Option.isNone(pending)) return { _tag: "failed", code: "timeout" };
+        const current = yield* SynchronizedRef.get(stateRef);
+        if (current.pool.get(instanceId) !== guest || guest.view.webContents.isDestroyed()) {
+          return { _tag: "failed", code: "not_active" };
+        }
+        const raw = pending.value;
+        if (typeof raw !== "object" || raw === null)
+          return { _tag: "failed", code: "guest_failed" };
+        const status = (raw as { readonly status?: unknown }).status;
+        if (status === "authentication_required" || status === "unsupported") {
+          return { _tag: "failed", code: status };
+        }
+        if (status === "failed") {
+          const code = (raw as { readonly code?: unknown }).code;
+          if (
+            code === "sync_unavailable" ||
+            code === "query_unsupported" ||
+            code === "command_failed" ||
+            code === "unsupported"
+          ) {
+            return { _tag: "failed", code };
+          }
+        }
+        if (status !== "completed") return { _tag: "failed", code: "guest_failed" };
+        const response = (raw as { readonly result?: unknown }).result;
+        const encodedLength = yield* Effect.try({
+          try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
+          catch: () => MAX_COMPUTER_CONTROL_RESPONSE_BYTES + 1,
+        }).pipe(Effect.orElseSucceed(() => MAX_COMPUTER_CONTROL_RESPONSE_BYTES + 1));
+        if (encodedLength > MAX_COMPUTER_CONTROL_RESPONSE_BYTES)
+          return { _tag: "failed", code: "response_too_large" };
+        const decoded = yield* decodeComputerControlResponse(response, {
+          onExcessProperty: "error",
+        }).pipe(Effect.option);
+        if (Option.isNone(decoded) || decoded.value.action !== request.action) {
+          return { _tag: "failed", code: "response_invalid" };
+        }
+        if (
+          request.action !== "computer.list" &&
+          decoded.value.action !== "computer.list" &&
+          (decoded.value.computer.id !== request.computerId ||
+            decoded.value.computer.status !==
+              (request.action === "computer.assign" ? "assigned" : "unassigned"))
+        ) {
+          return { _tag: "failed", code: "response_invalid" };
+        }
+        return { _tag: "completed", response: decoded.value };
+      });
+
     const requestProjectControl = (
       instanceId: string,
       request: CtoxWorkjetProjectControlRequest,
@@ -1717,6 +1837,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       setHostTheme,
       requestDeviceControl,
       requestProjectControl,
+      requestComputerControl,
       requestSessionControl,
       registerSessionTransferEvents,
     });

@@ -2648,10 +2648,41 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           }
           set((state) => {
             const existing = state.draftThreadsByThreadKey[threadKey];
-            if (!isDraftThreadPromoting(existing)) {
+            if (!isDraftThreadPromoting(existing) || !existing?.promotedTo) {
               return state;
             }
-            return removeDraftThreadReferences(state, threadKey);
+            const source = state.draftsByThreadKey[threadKey];
+            const destinationKey = composerTargetKey(existing.promotedTo);
+            const nextState = removeDraftThreadReferences(state, threadKey);
+            // The canonical route replaces the draft route. Keep its composer
+            // choices, but never replay sent content or overwrite newer choices
+            // already made on the destination thread.
+            if (
+              !source ||
+              (destinationKey !== threadKey && state.draftsByThreadKey[destinationKey])
+            ) {
+              return nextState;
+            }
+            const promotedDraft: ComposerThreadDraftState = {
+              ...createEmptyThreadDraft(),
+              modelSelectionByProvider: source.modelSelectionByProvider,
+              activeProvider: source.activeProvider,
+              runtimeMode: source.runtimeMode,
+              interactionMode: source.interactionMode,
+              workjetWorkerId: source.workjetWorkerId,
+              workjetManualReturn: source.workjetManualReturn,
+              workjetConfig: source.workjetConfig,
+            };
+            if (shouldRemoveDraft(promotedDraft)) {
+              return nextState;
+            }
+            return {
+              ...nextState,
+              draftsByThreadKey: {
+                ...nextState.draftsByThreadKey,
+                [destinationKey]: promotedDraft,
+              },
+            };
           });
         },
         clearDraftThread: (threadRef) => {

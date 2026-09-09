@@ -91,11 +91,11 @@ export function SettingsEnvironmentsRouteScreen() {
           {/* Android renders its own in-screen header instead of the native bar. */}
           <NativeStackScreenOptions options={{ headerShown: false }} />
           <AndroidScreenHeader
-            title="Environments"
+            title="Computers"
             onBack={() => navigation.goBack()}
             actions={[
               {
-                accessibilityLabel: "Add environment",
+                accessibilityLabel: "Add computer",
                 icon: "plus",
                 onPress: () =>
                   navigation.navigate("SettingsSheet", {
@@ -160,7 +160,7 @@ export function SettingsEnvironmentsRouteScreen() {
               />
             </View>
             <Text className="text-center text-sm leading-normal text-foreground-muted">
-              No environments connected yet.{"\n"}Tap{" "}
+              No computers connected yet.{"\n"}Tap{" "}
               <Text className="font-workjet-bold text-foreground">+</Text> to add one.
             </Text>
           </View>

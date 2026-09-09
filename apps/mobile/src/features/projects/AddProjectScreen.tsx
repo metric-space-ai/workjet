@@ -375,7 +375,7 @@ function EmptyEnvironmentState() {
         onPress={() => navigation.dispatch(StackActions.replace("ConnectionsNew"))}
         className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
       >
-        <Text className="text-sm font-workjet-bold text-primary-foreground">Add environment</Text>
+        <Text className="text-sm font-workjet-bold text-primary-foreground">Add computer</Text>
       </Pressable>
     </View>
   );

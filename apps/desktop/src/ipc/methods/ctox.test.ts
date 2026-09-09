@@ -58,6 +58,7 @@ function registryLayer(
   overrides: Partial<CtoxInstanceRegistry.CtoxInstanceRegistry["Service"]> = {},
 ) {
   const service = CtoxInstanceRegistry.CtoxInstanceRegistry.of({
+    deviceProofKey: () => Effect.die("Device key storage is outside this test"),
     merge: (managed) => Effect.succeed(managed),
     importInvite: () => Effect.succeed(pairedInstance),
     importManualPairing: () => Effect.succeed(pairedInstance),

@@ -79,6 +79,7 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
       onAddFiles={() => undefined}
       onAddAgents={() => undefined}
       liveAgentCount={0}
+      browserEnabled
       browserAvailable
       terminalAvailable={false}
       diffAvailable={false}
@@ -91,7 +92,7 @@ function renderTabs(first: DesktopPreviewFavicon | null, second?: DesktopPreview
   );
 }
 
-function renderEmptyLauncher() {
+function renderEmptyLauncher(browserEnabled = true, browserAvailable = true) {
   return renderToStaticMarkup(
     <RightPanelTabs
       mode="inline"
@@ -114,7 +115,8 @@ function renderEmptyLauncher() {
       onAddFiles={() => undefined}
       onAddAgents={() => undefined}
       liveAgentCount={2}
-      browserAvailable
+      browserEnabled={browserEnabled}
+      browserAvailable={browserAvailable}
       terminalAvailable
       diffAvailable
       filesAvailable
@@ -150,6 +152,21 @@ describe("RightPanelTabs preview favicon", () => {
 });
 
 describe("RightPanelTabs surface launcher", () => {
+  it("omits the Browser card and its shortcut when the capability is disabled", () => {
+    const html = renderEmptyLauncher(false);
+    expect(html).not.toContain("Browser");
+    expect(html).not.toContain("Open a local app or URL.");
+    expect(html).toContain("Files");
+    expect(html).toContain("Pull request");
+  });
+
+  it("explains runtime unavailability only after the capability is enabled", () => {
+    const html = renderEmptyLauncher(true, false);
+    expect(html).toContain("Browser");
+    expect(html).toContain("Only available in the desktop app.");
+    expect(renderEmptyLauncher(false, false)).not.toContain("Only available in the desktop app.");
+  });
+
   it("keeps terminal and workers out of the generic right-panel launcher", () => {
     const html = renderEmptyLauncher();
 

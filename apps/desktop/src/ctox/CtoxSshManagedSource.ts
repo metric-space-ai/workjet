@@ -427,6 +427,8 @@ export interface CtoxSshManagedDiscoveryOptions {
 
 export interface CtoxSshManagedInstance {
   readonly instance: CtoxManagedInstance;
+  /** Main-only identity read through the same authenticated SSH discovery. */
+  readonly daemonInstanceId?: string;
   /** The configured destination. It stays in the main process. */
   readonly host: string;
   /** The configured state root, when one was configured. It stays in the main process. */
@@ -546,6 +548,7 @@ const discoverOne = Effect.fn("CtoxSshManagedSource.discoverOne")(function* (
       },
     },
     host: entry.host,
+    ...(descriptor === undefined ? {} : { daemonInstanceId: descriptor.instanceId }),
     ...(entry.stateRoot === undefined ? {} : { stateRoot: entry.stateRoot }),
     ...(entry.username === undefined ? {} : { username: entry.username }),
     ...(entry.port === undefined ? {} : { port: entry.port }),

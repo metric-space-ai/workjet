@@ -274,6 +274,7 @@ function makeGuestHarness() {
       : Effect.succeed({ descriptor: paired, config: pairedConfig });
   });
   const registry = CtoxInstanceRegistry.CtoxInstanceRegistry.of({
+    deviceProofKey: () => Effect.die("Device key storage is outside this test"),
     merge: (managed) =>
       Effect.succeed(
         CtoxInstanceRegistry.mergeCtoxInstanceSources(managed, pairedInstances, [

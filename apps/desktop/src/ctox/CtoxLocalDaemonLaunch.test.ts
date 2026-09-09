@@ -117,6 +117,7 @@ function registryStub(
   return Layer.succeed(
     CtoxInstanceRegistry.CtoxInstanceRegistry,
     CtoxInstanceRegistry.CtoxInstanceRegistry.of({
+      deviceProofKey: () => Effect.die("Device key storage is outside this test"),
       merge: () => Effect.die("unused"),
       importInvite: () => Effect.die("unused"),
       importManualPairing: () => Effect.die("unused"),

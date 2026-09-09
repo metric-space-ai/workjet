@@ -115,6 +115,11 @@ export interface CtoxLocalDaemonInstance {
   readonly lastSeenAt?: number;
 }
 
+/** Main-only target metadata; never pass this wrapper to the renderer. */
+export interface CtoxLocalDaemonNativeTarget extends CtoxLocalDaemonInstance {
+  readonly stateRoot: string;
+}
+
 export interface CtoxLocalDaemonProbeResponse {
   readonly ok: boolean;
 }
@@ -355,17 +360,17 @@ function instanceStatus(
 }
 
 /**
- * Discovers local CTOX daemons. The result is renderer-safe by construction:
- * it contains only an opaque id, a bounded display name, a status, and the
- * fixed health summary — never a path, URL, port, token, or pairing material.
+ * Main-only discovery using the existing descriptor trust and health checks.
+ * The private root follows the descriptor that produced the selected row.
+ * Only the .instance projection may cross the registry's renderer boundary.
  */
-export const discoverCtoxLocalDaemonInstances = Effect.fn(
-  "CtoxLocalDaemonSource.discoverCtoxLocalDaemonInstances",
+export const discoverCtoxLocalDaemonNativeTargets = Effect.fn(
+  "CtoxLocalDaemonSource.discoverCtoxLocalDaemonNativeTargets",
 )(function* (options: CtoxLocalDaemonDiscoveryOptions = {}) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const stateRoot = resolveCtoxLocalDaemonStateRoot(options, path);
-  if (stateRoot === undefined) return [] as readonly CtoxLocalDaemonInstance[];
+  if (stateRoot === undefined) return [] as readonly CtoxLocalDaemonNativeTarget[];
 
   const nowEpochMs =
     options.nowEpochMs === undefined
@@ -378,7 +383,7 @@ export const discoverCtoxLocalDaemonInstances = Effect.fn(
         : Option.none()
       : options.processUid;
   const candidates = yield* descriptorPaths(fileSystem, path, stateRoot);
-  const discovered: CtoxLocalDaemonInstance[] = [];
+  const discovered: CtoxLocalDaemonNativeTarget[] = [];
   const seenInstanceIds = new Set<string>();
 
   for (const descriptorPath of candidates) {
@@ -410,10 +415,24 @@ export const discoverCtoxLocalDaemonInstances = Effect.fn(
         },
       },
       daemonInstanceId: descriptor.instanceId,
+      stateRoot: path.dirname(descriptorPath),
       runtimeStatus,
       ...(descriptor.lastSeenAt === undefined ? {} : { lastSeenAt: descriptor.lastSeenAt }),
     });
   }
 
-  return discovered as readonly CtoxLocalDaemonInstance[];
+  return discovered as readonly CtoxLocalDaemonNativeTarget[];
+});
+
+/** The existing discovery boundary stays free of local filesystem paths. */
+export const discoverCtoxLocalDaemonInstances = Effect.fn(
+  "CtoxLocalDaemonSource.discoverCtoxLocalDaemonInstances",
+)(function* (options: CtoxLocalDaemonDiscoveryOptions = {}) {
+  const targets = yield* discoverCtoxLocalDaemonNativeTargets(options);
+  return targets.map(({ instance, daemonInstanceId, runtimeStatus, lastSeenAt }) => ({
+    instance,
+    daemonInstanceId,
+    runtimeStatus,
+    ...(lastSeenAt === undefined ? {} : { lastSeenAt }),
+  })) as readonly CtoxLocalDaemonInstance[];
 });

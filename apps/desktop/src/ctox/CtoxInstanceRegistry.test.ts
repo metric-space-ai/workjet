@@ -35,6 +35,16 @@ const textEncoder = new TextEncoder();
 const decodeUnknownJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
+const decodeDeviceKeyDocument = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      version: Schema.Literal(1),
+      records: Schema.Array(Schema.Unknown),
+      deviceKeys: Schema.Array(Schema.Struct({ id: Schema.String, ciphertext: Schema.String })),
+    }),
+  ),
+);
+
 const manualPairing = {
   displayName: "Office Business OS",
   instanceId: "office-1",
@@ -231,6 +241,110 @@ function failureCode(
 }
 
 describe("CtoxInstanceRegistry", () => {
+  it.effect("retains the scoped device identity across restart, re-pairing and removal", () => {
+    const { memory, registry } = registryHarness();
+    const scope = { instanceId: "native-one", userId: "user-one" };
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      assert.equal(
+        failureCode(yield* service.deviceProofKey(scope, false).pipe(Effect.result)),
+        "not_found",
+      );
+      assert.equal(memory.files.size, 0);
+      const keys = yield* Effect.all(
+        [service.deviceProofKey(scope, true), service.deviceProofKey(scope, true)],
+        { concurrency: 2 },
+      );
+      assert.equal(keys[0].thumbprint, keys[1].thumbprint);
+      const otherUser = yield* service.deviceProofKey({ ...scope, userId: "user-two" }, true);
+      const otherInstance = yield* service.deviceProofKey(
+        { ...scope, instanceId: "native-two" },
+        true,
+      );
+      assert.notEqual(keys[0].thumbprint, otherUser.thumbprint);
+      assert.notEqual(keys[0].thumbprint, otherInstance.thumbprint);
+      const paired = yield* service.importManualPairing(manualPairing);
+      yield* service.importManualPairing(manualPairing);
+      yield* service.removePairedInstance(paired.id);
+      const restarted = yield* registryHarness({ fileSystem: memory }).registry;
+      const restored = yield* restarted.deviceProofKey(scope, false);
+      assert.equal(restored.thumbprint, keys[0].thumbprint);
+      assert.notInclude(memory.files.get("/state/ctox/instances.json") ?? "", "deviceKeys");
+      assert.notInclude(memory.files.get("/state/ctox/secrets.json") ?? "", "user-one");
+    });
+  });
+
+  it.effect("does not overwrite keys after decryption failure or unsafe storage", () => {
+    const { memory, registry } = registryHarness();
+    const scope = { instanceId: "native-one", userId: "user-one" };
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      yield* service.deviceProofKey(scope, true);
+      const before = memory.files.get("/state/ctox/secrets.json");
+      const broken = yield* registryHarness({
+        fileSystem: memory,
+        storage: safeStorage({ failDecrypt: true }),
+      }).registry;
+      assert.equal(
+        failureCode(yield* broken.deviceProofKey(scope, true).pipe(Effect.result)),
+        "unsafe_secret_storage",
+      );
+      assert.equal(memory.files.get("/state/ctox/secrets.json"), before);
+      const unsafe = yield* registryHarness({
+        fileSystem: memory,
+        storage: safeStorage({ available: false }),
+      }).registry;
+      assert.equal(
+        failureCode(yield* unsafe.deviceProofKey(scope, true).pipe(Effect.result)),
+        "unsafe_secret_storage",
+      );
+      assert.equal(memory.files.get("/state/ctox/secrets.json"), before);
+    });
+  });
+
+  it.effect("rejects a ciphertext moved to another principal without rotating either key", () => {
+    const { memory, registry } = registryHarness();
+    const first = { instanceId: "native-one", userId: "user-one" };
+    const second = { instanceId: "native-one", userId: "user-two" };
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      yield* service.deviceProofKey(first, true);
+      yield* service.deviceProofKey(second, true);
+      const raw = memory.files.get("/state/ctox/secrets.json") ?? "";
+      const document = decodeDeviceKeyDocument(raw);
+      const swapped = encodeUnknownJson({
+        ...document,
+        deviceKeys: document.deviceKeys.map((entry, index) => ({
+          ...entry,
+          ciphertext: document.deviceKeys[1 - index]!.ciphertext,
+        })),
+      });
+      memory.files.set("/state/ctox/secrets.json", swapped);
+      assert.equal(
+        failureCode(yield* service.deviceProofKey(first, true).pipe(Effect.result)),
+        "persistence_failed",
+      );
+      assert.equal(
+        failureCode(yield* service.deviceProofKey(second, true).pipe(Effect.result)),
+        "persistence_failed",
+      );
+      assert.equal(memory.files.get("/state/ctox/secrets.json"), swapped);
+    });
+  });
+
+  it.effect("returns no new key when atomic persistence fails", () => {
+    const { memory, registry } = registryHarness();
+    return Effect.gen(function* () {
+      const service = yield* registry;
+      memory.failRenameTo.add("/state/ctox/secrets.json");
+      const result = yield* service
+        .deviceProofKey({ instanceId: "native-one", userId: "user-one" }, true)
+        .pipe(Effect.result);
+      assert.equal(failureCode(result), "persistence_failed");
+      assert.isFalse(memory.files.has("/state/ctox/secrets.json"));
+    });
+  });
+
   it.effect("imports paired metadata and encrypted secrets into separate documents", () => {
     const { memory, registry } = registryHarness();
     return Effect.gen(function* () {
@@ -904,6 +1018,7 @@ describe("CtoxInstanceRegistry", () => {
 
       const target = yield* service.resolveLocalDaemonTarget(local.id);
       assert.equal(target.daemonInstanceId, "workshop-1");
+      assert.equal(target.stateRoot, "/local-state");
       assert.equal(yield* service.resolveBusinessOsInstanceId(local.id), "workshop-1");
       assert.equal(target.discoveredCount, 1);
       assert.deepEqual(

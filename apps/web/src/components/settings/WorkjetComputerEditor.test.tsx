@@ -1,9 +1,10 @@
 import { EnvironmentId, WorkjetComputerId } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   createWorkjetComputerDraft,
+  persistWorkjetComputerDraft,
   saveWorkjetComputerDraft,
   WorkjetComputerEditor,
   type WorkjetEnvironmentTargetOption,
@@ -17,6 +18,101 @@ const remoteEnvironment: WorkjetEnvironmentTargetOption = {
 };
 
 describe("WorkjetComputerEditor", () => {
+  it("restores the edited label from a popup draft and keeps its compact grid narrow", () => {
+    const draft = {
+      ...createWorkjetComputerDraft({ environments: [remoteEnvironment], id: "retained" }),
+      label: "Unfinished edit",
+    };
+    const markup = renderToStaticMarkup(
+      <WorkjetComputerEditor
+        compact
+        initialDraft={draft}
+        environments={[remoteEnvironment]}
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+    expect(markup).toContain('value="Unfinished edit"');
+    expect(markup).not.toContain("sm:col-span-2");
+    expect(markup).not.toContain("sm:grid-cols-");
+  });
+
+  it("waits for a settings acknowledgement before reporting save completion", async () => {
+    const draft = createWorkjetComputerDraft({ environments: [remoteEnvironment] });
+    let acknowledge!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    });
+    const onSave = vi.fn(() => pending);
+    let completed = false;
+    const saving = persistWorkjetComputerDraft(draft, [remoteEnvironment], onSave).then(() => {
+      completed = true;
+    });
+    await Promise.resolve();
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(completed).toBe(false);
+    acknowledge();
+    await saving;
+    expect(completed).toBe(true);
+  });
+
+  it("propagates an async save failure and leaves the edited draft reusable", async () => {
+    const draft = {
+      ...createWorkjetComputerDraft({ environments: [remoteEnvironment] }),
+      label: "Keep this edit",
+    };
+    await expect(
+      persistWorkjetComputerDraft(draft, [remoteEnvironment], async () => {
+        throw new Error("Connection lost");
+      }),
+    ).rejects.toThrow("Connection lost");
+    const retry = vi.fn();
+    await persistWorkjetComputerDraft(draft, [remoteEnvironment], retry);
+    expect(retry).toHaveBeenCalledWith(expect.objectContaining({ label: "Keep this edit" }));
+  });
+
+  it("refuses a connection removed while the editor was open before sending any settings", async () => {
+    const draft = createWorkjetComputerDraft({ environments: [remoteEnvironment] });
+    const onSave = vi.fn();
+    await expect(persistWorkjetComputerDraft(draft, [], onSave)).rejects.toThrow(
+      "Choose a connected computer",
+    );
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("preserves the saved connection and awaits acknowledgement when editing offline", async () => {
+    const computer = saveWorkjetComputerDraft(
+      createWorkjetComputerDraft({ environments: [remoteEnvironment], id: "saved-computer" }),
+    );
+    const draft = {
+      ...createWorkjetComputerDraft({ computer, environments: [] }),
+      label: "Renamed offline",
+      environmentId: "stale-draft-connection",
+    };
+    let acknowledge!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    });
+    const onSave = vi.fn(() => pending);
+    let completed = false;
+    const saving = persistWorkjetComputerDraft(draft, [], onSave, computer).then(() => {
+      completed = true;
+    });
+    await Promise.resolve();
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: computer.id,
+        label: "Renamed offline",
+        environmentId: computer.environmentId,
+        presentationKind: computer.presentationKind,
+      }),
+    );
+    expect(completed).toBe(false);
+    acknowledge();
+    await saving;
+    expect(completed).toBe(true);
+  });
+
   it("saves a configured remote environment as a computer target", () => {
     const draft = createWorkjetComputerDraft({
       environments: [remoteEnvironment],

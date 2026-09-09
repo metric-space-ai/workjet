@@ -10,6 +10,11 @@ its SHA-256 digest and stores it under `~/.workjet/ssh-server/<digest>`.
 The archive includes the terminal, resource monitor and provider gateway host.
 Repeated connections reuse the verified installation.
 
+Disconnect stops the managed SSH backend and tunnel while retaining the saved
+connection, credentials and cached project data. Connect reopens that saved
+connection without entering the host again. Remove explicitly forgets the
+connection and clears its owned cached data.
+
 When a systemd user manager is available, Workjet starts its managed server
 as a transient user service. This keeps the server alive when the setup SSH
 session ends, including hosts that clean up background processes on logout.

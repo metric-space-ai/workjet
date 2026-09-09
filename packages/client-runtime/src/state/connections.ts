@@ -106,6 +106,15 @@ export function createEnvironmentCatalogAtoms<R, E>(
         Effect.flatMap((registry) => registry.removeRelayEnvironments()),
       ),
   });
+  const disconnect = createRuntimeCommand(runtime, {
+    label: "environment-catalog:disconnect",
+    scheduler: commandScheduler,
+    concurrency: serial,
+    execute: (environmentId: EnvironmentIdType) =>
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.flatMap((registry) => registry.disconnect(environmentId)),
+      ),
+  });
   const retryNow = createRuntimeCommand(runtime, {
     label: "environment-catalog:retry-now",
     scheduler: commandScheduler,
@@ -125,6 +134,7 @@ export function createEnvironmentCatalogAtoms<R, E>(
     register,
     remove,
     removeRelayEnvironments,
+    disconnect,
     retryNow,
   };
 }

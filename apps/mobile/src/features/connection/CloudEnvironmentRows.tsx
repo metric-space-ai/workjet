@@ -93,7 +93,7 @@ function CloudEnvironmentRowsContent(
   );
 
   const handleDisconnectCloudEnvironment = useCallback(
-    (environmentId: EnvironmentId) => controller.removeEnvironment(environmentId),
+    (environmentId: EnvironmentId) => controller.disconnectEnvironment(environmentId),
     [controller],
   );
 

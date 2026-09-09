@@ -76,6 +76,10 @@ const Receipt = Schema.Struct({
   ),
 });
 
+const NativeTurns = Schema.Array(
+  Schema.Struct({ requestId: Schema.String, requestKey: Schema.String }),
+);
+
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const load = (identity: CtoxNativeRequestIdentity) =>
@@ -186,7 +190,37 @@ const make = Effect.gen(function* () {
       receivedAt: row.receivedAt,
     } satisfies NativeTaskReference;
   });
-  return { prepare, recordReceipt, get };
+  const registerNativeTurn = Effect.fn("CtoxNativeRequests.registerNativeTurn")(function* (
+    identity: CtoxNativeRequestIdentity,
+    requestId: string,
+  ) {
+    yield* load(identity);
+    yield* sql`
+      INSERT INTO workjet_ctox_native_turns (thread_id, request_id, request_key)
+      VALUES (${identity.threadId}, ${requestId}, ${identity.requestKey})
+      ON CONFLICT(thread_id, request_id) DO NOTHING
+    `.pipe(Effect.mapError(unavailable));
+    const rows = yield* sql`
+      SELECT request_id AS "requestId", request_key AS "requestKey"
+      FROM workjet_ctox_native_turns
+      WHERE thread_id = ${identity.threadId} AND request_id = ${requestId}
+    `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(NativeTurns)), Effect.mapError(unavailable));
+    if (rows[0]?.requestKey !== identity.requestKey)
+      return yield* failure("native-request-conflict");
+  });
+  const latestNativeTurn = Effect.fn("CtoxNativeRequests.latestNativeTurn")(function* (
+    scope: Omit<CtoxNativeRequestIdentity, "requestKey">,
+  ) {
+    const rows = yield* sql`
+      SELECT request_id AS "requestId", request_key AS "requestKey"
+      FROM workjet_ctox_native_turns WHERE thread_id = ${scope.threadId}
+      ORDER BY sequence DESC LIMIT 1
+    `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(NativeTurns)), Effect.mapError(unavailable));
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, reference: yield* get({ ...scope, requestKey: row.requestKey }) };
+  });
+  return { prepare, recordReceipt, get, registerNativeTurn, latestNativeTurn };
 });
 
 const encodeIntentTarget = Schema.encodeEffect(

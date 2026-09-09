@@ -24,6 +24,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
   const submit = Effect.fn("CtoxNativeTaskClient.submit")(function* (
     identity: CtoxNativeRequestIdentity,
     request: NativeTaskRequest,
+    nativeRequestId?: string,
   ) {
     const target = yield* dependencies.connections.resolveReadyTarget(
       identity.connectionId,
@@ -34,6 +35,8 @@ export function makeCtoxNativeTaskClient(dependencies: {
       operation === "delegate_task" ? "business_os.execute_action" : `business_os.${operation}`;
     yield* dependencies.transport.probe(target, [name], { [name]: ["idempotency_key"] });
     const nativeKey = yield* dependencies.requests.prepare(identity, request, target);
+    if (nativeRequestId !== undefined)
+      yield* dependencies.requests.registerNativeTurn(identity, nativeRequestId);
     const result = yield* dependencies.transport.callTool(target, name, {
       ...arguments_,
       ...(operation === "delegate_task" ? { action_id: "ctox.delegate_task" } : {}),
@@ -70,6 +73,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
         operation: "delegate_task",
         idempotency_key: requestKey,
       },
+      requestId,
     );
   });
 
@@ -99,5 +103,11 @@ export function makeCtoxNativeTaskClient(dependencies: {
     return yield* decodeCtoxNativeTaskStatus(reference, response.structuredContent);
   });
 
-  return { submit, submitTurn, readStatus, recover: dependencies.requests.get };
+  return {
+    submit,
+    submitTurn,
+    readStatus,
+    recover: dependencies.requests.get,
+    latestNativeTurn: dependencies.requests.latestNativeTurn,
+  };
 }

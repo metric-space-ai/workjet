@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
+import migration61 from "../../persistence/Migrations/061_WorkjetCtoxNativeTurns.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
@@ -31,6 +32,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       yield* migration60;
+      yield* migration61;
       const sent: string[] = [];
       const nativeTasks = new Map<
         string,
@@ -42,6 +44,10 @@ it.effect(
           Effect.sync(() => {
             expect(tools).toEqual(["business_os.execute_action"]);
             expect(fields).toEqual({ "business_os.execute_action": ["idempotency_key"] });
+            // The real probe falls off the end of its generator, so the contract's
+            // success type is `undefined`, not `void`. A callback returning `void`
+            // is not assignable to it — return the value the transport really has.
+            return undefined;
           }),
         callTool: (_, name, args) =>
           Effect.gen(function* () {
@@ -118,5 +124,24 @@ it.effect(
         reason: "native-request-conflict",
       });
       expect(sent).toHaveLength(3);
+      const latest = yield* restarted.latestNativeTurn(scope);
+      expect(latest).toMatchObject({
+        requestId: "command:turn-2",
+        reference: { taskId: separate.reference.taskId },
+      });
+      yield* restarted.submit(
+        { ...scope, requestKey: "external-tool" },
+        {
+          ...task,
+          operation: "delegate_task",
+          idempotency_key: "external-tool",
+        },
+      );
+      expect(yield* restarted.latestNativeTurn(scope)).toEqual(latest);
+      yield* restarted.submitTurn(scope, "command:turn-1", task);
+      expect(yield* restarted.latestNativeTurn(scope)).toEqual(latest);
+      expect(
+        yield* Effect.flip(restarted.latestNativeTurn({ ...scope, instanceId: "instance-b" })),
+      ).toMatchObject({ reason: "native-request-conflict" });
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );

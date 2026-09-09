@@ -48,17 +48,43 @@ export function WorkerChoiceList({
   onSelectWorker,
   onEditWorker,
   editingWorkerId,
+  query = "",
+  onQueryChange,
 }: Pick<
   ComposerWorkerControlProps,
   "workers" | "selectedWorkerId" | "disabled" | "onSelectWorker"
 > & {
   readonly onEditWorker: (workerId: string | null) => void;
   readonly editingWorkerId?: string | null | undefined;
+  readonly query?: string | undefined;
+  readonly onQueryChange?: ((query: string) => void) | undefined;
 }) {
+  const terms = query.normalize("NFKC").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = workers.filter((worker) => {
+    const description = [
+      worker.name,
+      workjetHarnessDisplayLabel(worker.harness),
+      worker.modelId,
+      workjetReasoningDisplayLabel(worker.reasoning),
+    ]
+      .join(" ")
+      .normalize("NFKC")
+      .toLowerCase();
+    return terms.every((term) => description.includes(term));
+  });
   const choiceClass =
     "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50";
   return (
     <div className="space-y-0.5">
+      <input
+        type="search"
+        aria-label="Search workers"
+        placeholder="Search workers…"
+        value={query}
+        disabled={disabled}
+        onChange={(event) => onQueryChange?.(event.currentTarget.value)}
+        className="mb-2 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+      />
       <button
         type="button"
         className={choiceClass}
@@ -76,7 +102,7 @@ export function WorkerChoiceList({
           <CheckIcon aria-hidden="true" className="size-4 shrink-0" />
         ) : null}
       </button>
-      {workers.map((worker) => (
+      {matches.map((worker) => (
         <div
           key={worker.id}
           className={cn(
@@ -119,6 +145,10 @@ export function WorkerChoiceList({
       ))}
       {workers.length === 0 ? (
         <p className="px-2 py-2 text-xs text-muted-foreground">No saved workers</p>
+      ) : matches.length === 0 ? (
+        <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
+          No matching workers
+        </p>
       ) : null}
       <button
         type="button"
@@ -134,6 +164,7 @@ export function WorkerChoiceList({
 
 export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<{ workerId: string | null } | null>(null);
   const [drafts, setDrafts] = useState<Readonly<Record<string, WorkjetWorkerDraft>>>({});
   const [saving, setSaving] = useState(false);
@@ -164,7 +195,10 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
     <ExpandableSettingsPopup
       open={open}
       onOpenChange={(next) => {
-        if (!saving) setOpen(next);
+        if (!saving) {
+          if (next) setQuery("");
+          setOpen(next);
+        }
       }}
       title="Workers"
       trigger={
@@ -185,6 +219,8 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
           selectedWorkerId={props.selectedWorkerId}
           disabled={props.disabled || saving}
           editingWorkerId={editing?.workerId}
+          query={query}
+          onQueryChange={setQuery}
           onSelectWorker={(id) => {
             props.onSelectWorker(id);
             setOpen(false);

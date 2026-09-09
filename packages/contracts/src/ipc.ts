@@ -112,6 +112,8 @@ import type {
   CtoxWorkjetDeviceControlResult,
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
+  CtoxWorkjetComputerControlRequest,
+  CtoxWorkjetComputerControlResult,
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionTransferNotification,
@@ -1233,7 +1235,11 @@ export interface DesktopCtoxBridge {
     instanceId: string,
     request: WorkjetDeviceWebRtcRequestV1,
   ) => Promise<CtoxWorkjetDeviceControlResult>;
-  /** Project data/control through the exact selected CTOX RxDB/WebRTC guest. */
+  /** Computer and project control through the exact selected CTOX RxDB/WebRTC guest. */
+  requestComputerControl?: (
+    instanceId: string,
+    request: CtoxWorkjetComputerControlRequest,
+  ) => Promise<CtoxWorkjetComputerControlResult>;
   requestProjectControl?: (
     instanceId: string,
     request: CtoxWorkjetProjectControlRequest,

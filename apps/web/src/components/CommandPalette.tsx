@@ -1,4 +1,6 @@
 "use client";
+import { useInstanceOnboardingState } from "./ctox/InstanceOnboarding";
+import { openInstanceSetup } from "../instanceSetup";
 import { ProjectCreationProgress } from "./ProjectCreationProgress";
 
 import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environment";
@@ -402,6 +404,7 @@ function overlayModeForCommand(command: string | null): SearchOverlayMode | null
 }
 
 export function CommandPalette({ children }: { children: ReactNode }) {
+  const instanceState = useInstanceOnboardingState();
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
     mode: "command",
@@ -475,15 +478,32 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       }
       event.preventDefault();
       event.stopPropagation();
+      if (instanceState !== "ready") {
+        openInstanceSetup();
+        return;
+      }
       toggleMode(mode);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings, previewOpen, resolvedTheme, terminalOpen, theme, themeHalves, toggleMode]);
+  }, [
+    instanceState,
+    keybindings,
+    previewOpen,
+    resolvedTheme,
+    terminalOpen,
+    theme,
+    themeHalves,
+    toggleMode,
+  ]);
 
   useEffect(
     () =>
       onOpenCommandPalette((detail) => {
+        if (instanceState !== "ready") {
+          openInstanceSetup();
+          return;
+        }
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
         } else if (detail.open === "add-project") {
@@ -492,13 +512,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [instanceState, openAddProject, openNewThreadIn, setOpen],
   );
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
       <CommandDialog
-        open={state.open}
+        open={state.open && instanceState === "ready"}
         onOpenChange={(open, eventDetails) => {
           if (!open && eventDetails.reason === "escape-key" && state.mode !== "command") {
             eventDetails.cancel();
@@ -510,7 +530,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       >
         {children}
         <CommandPaletteDialog
-          open={state.open}
+          open={state.open && instanceState === "ready"}
           mode={state.mode}
           openIntent={state.openIntent}
           setOpen={setOpen}

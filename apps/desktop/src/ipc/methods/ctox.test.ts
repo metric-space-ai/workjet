@@ -7,6 +7,8 @@ import { expect, vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({}));
 
+import * as CtoxAccountLifecycle from "../../ctox/CtoxAccountLifecycle.ts";
+import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "../../ctox/CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "../../ctox/CtoxGuestManager.ts";
@@ -21,6 +23,7 @@ import {
   importManualPairing,
   listApps,
   login,
+  logout,
   openApp,
   openSettings,
   requestDeviceControl,
@@ -102,6 +105,7 @@ function authorityLayers(input: {
 
 function removalCleanupLayer(
   input: {
+    readonly deactivate?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivate"];
     readonly deactivateInstance?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivateInstance"];
     readonly clearInstance?: CtoxElectronSessions.CtoxElectronSessions["Service"]["clearInstance"];
   } = {},
@@ -112,7 +116,7 @@ function removalCleanupLayer(
     activate: () => Effect.die("unused"),
     ensurePooled: () => Effect.die("unused"),
     suspend: Effect.succeed({ _tag: "completed" }),
-    deactivate: Effect.succeed({ _tag: "completed" }),
+    deactivate: input.deactivate ?? Effect.succeed({ _tag: "completed" }),
     deactivateInstance: input.deactivateInstance ?? (() => Effect.succeed({ _tag: "completed" })),
     setBounds: () => Effect.die("unused"),
     readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
@@ -121,6 +125,7 @@ function removalCleanupLayer(
     setHostTheme: () => Effect.succeed({ _tag: "completed" }),
     requestDeviceControl: () => Effect.die("unused"),
     requestProjectControl: () => Effect.die("unused"),
+    requestComputerControl: () => Effect.die("unused"),
     requestSessionControl: () => Effect.die("unused"),
     registerSessionTransferEvents: () => Effect.die("unused"),
   });
@@ -132,6 +137,21 @@ function removalCleanupLayer(
   return Layer.merge(
     Layer.succeed(CtoxGuestManager.CtoxGuestManager, guests),
     Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions),
+  );
+}
+
+function accountCleanupLayer(
+  deactivate = Effect.succeed({ _tag: "completed" as const }),
+  revokeAll = Effect.void,
+) {
+  return Layer.mergeAll(
+    CtoxAccountLifecycle.layer,
+    removalCleanupLayer({ deactivate }),
+    Layer.succeed(CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner, {
+      provision: () => Effect.die("unused"),
+      disconnect: () => Effect.die("unused"),
+      revokeAll,
+    }),
   );
 }
 
@@ -228,6 +248,7 @@ describe("CTOX IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestComputerControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
     });
@@ -263,6 +284,7 @@ describe("CTOX IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestComputerControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
     });
@@ -337,7 +359,8 @@ describe("CTOX IPC methods", () => {
       });
     }).pipe(
       Effect.provide(
-        Layer.merge(
+        Layer.mergeAll(
+          accountCleanupLayer(),
           Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
           registryLayer({
             merge: () =>
@@ -347,6 +370,134 @@ describe("CTOX IPC methods", () => {
                 managedState: "failed",
                 managedFailureCode: "network_error",
               }),
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("invalidates consumers and guests before login can change account cookies", () => {
+    const events: string[] = [];
+    const auth = CtoxDevAuth.CtoxDevAuth.of({
+      login: Effect.sync(() => {
+        events.push("login");
+        return { _tag: "completed", via: "url" } as const;
+      }),
+      refresh: Effect.sync(() => {
+        events.push("refresh");
+        return { _tag: "failed", code: "network_error" } as const;
+      }),
+      logout: Effect.void,
+    });
+    return Effect.gen(function* () {
+      const lifecycle = yield* CtoxAccountLifecycle.CtoxAccountLifecycle;
+      lifecycle.confirmSession(0);
+      lifecycle.registerInvalidator(async () => {
+        events.push("native cleanup");
+      });
+      const result = yield* login.handler(undefined);
+      assert.deepEqual(result, {
+        _tag: "completed",
+        discovery: { _tag: "failed", code: "network_error" },
+      });
+      assert.deepEqual(events, ["native cleanup", "guests", "grants", "login", "refresh"]);
+      assert.isFalse(lifecycle.isCurrent(0));
+      assert.isFalse(lifecycle.isCurrent(1));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          accountCleanupLayer(
+            Effect.sync(() => {
+              events.push("guests");
+              return { _tag: "completed" } as const;
+            }),
+            Effect.sync(() => {
+              events.push("grants");
+            }),
+          ),
+          Layer.succeed(CtoxDevAuth.CtoxDevAuth, auth),
+          registryLayer(),
+        ),
+      ),
+    );
+  });
+
+  it.effect("does not open login or refresh when a native consumer cannot close", () =>
+    Effect.gen(function* () {
+      const lifecycle = yield* CtoxAccountLifecycle.CtoxAccountLifecycle;
+      lifecycle.registerInvalidator(async () => {
+        throw new Error("cleanup failed");
+      });
+      assert.deepEqual(yield* login.handler(undefined), {
+        _tag: "failed",
+        code: "authentication_failed",
+      });
+      assert.isFalse(lifecycle.confirmSession(lifecycle.sessionEpoch()));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          accountCleanupLayer(),
+          Layer.succeed(CtoxDevAuth.CtoxDevAuth, {
+            login: Effect.die("login must not open"),
+            refresh: Effect.die("must not refresh"),
+            logout: Effect.void,
+          }),
+          registryLayer(),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("keeps old handles invalid after a cancelled login without refreshing", () =>
+    Effect.gen(function* () {
+      const lifecycle = yield* CtoxAccountLifecycle.CtoxAccountLifecycle;
+      lifecycle.confirmSession(0);
+      assert.deepEqual(yield* login.handler(undefined), { _tag: "cancelled", reason: "closed" });
+      assert.isFalse(lifecycle.isCurrent(0));
+      assert.isFalse(lifecycle.isCurrent(1));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          accountCleanupLayer(),
+          Layer.succeed(CtoxDevAuth.CtoxDevAuth, {
+            login: Effect.succeed({ _tag: "not_completed", reason: "closed" } as const),
+            refresh: Effect.die("cancelled login must not refresh"),
+            logout: Effect.void,
+          }),
+          registryLayer(),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("uses the same invalidation barrier before deleting logout cookies", () => {
+    const events: string[] = [];
+    return Effect.gen(function* () {
+      const lifecycle = yield* CtoxAccountLifecycle.CtoxAccountLifecycle;
+      lifecycle.registerInvalidator(async ({ reason }) => {
+        events.push(reason);
+      });
+      assert.deepEqual(yield* logout.handler(undefined), { _tag: "completed" });
+      assert.deepEqual(events, ["logout", "guests", "grants", "cookies"]);
+      assert.isFalse(lifecycle.isCurrent(lifecycle.sessionEpoch()));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          accountCleanupLayer(
+            Effect.sync(() => {
+              events.push("guests");
+              return { _tag: "completed" } as const;
+            }),
+            Effect.sync(() => {
+              events.push("grants");
+            }),
+          ),
+          Layer.succeed(CtoxDevAuth.CtoxDevAuth, {
+            login: Effect.die("unused"),
+            refresh: Effect.die("unused"),
+            logout: Effect.sync(() => {
+              events.push("cookies");
+            }),
           }),
         ),
       ),
@@ -612,6 +763,7 @@ describe("CTOX app rail IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestComputerControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
       ...overrides,

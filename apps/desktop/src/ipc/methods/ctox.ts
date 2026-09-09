@@ -15,6 +15,8 @@ import {
   CtoxWorkjetDeviceControlResult,
   CtoxWorkjetProjectControlInput,
   CtoxWorkjetProjectControlResult,
+  CtoxWorkjetComputerControlInput,
+  CtoxWorkjetComputerControlResult,
   CtoxWorkjetSessionControlInput,
   CtoxWorkjetSessionControlResult,
   CtoxWorkjetSessionEventsRegistrationInput,
@@ -46,6 +48,7 @@ import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import * as CtoxAccountLifecycle from "../../ctox/CtoxAccountLifecycle.ts";
 import * as CtoxAppRail from "../../ctox/CtoxAppRail.ts";
 import * as CtoxDevAuth from "../../ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "../../ctox/CtoxDecisionHubProvisioner.ts";
@@ -98,56 +101,86 @@ export const refresh: DesktopIpc.DesktopIpcMethod<
     }),
 };
 
+const invalidateAccountGuests = Effect.gen(function* () {
+  const guests = yield* CtoxGuestManager.CtoxGuestManager;
+  const decisionHub = yield* CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner;
+  const result = yield* guests.deactivate;
+  yield* decisionHub.revokeAll;
+  if (result._tag !== "completed") {
+    return yield* new CtoxAccountLifecycle.CtoxAccountInvalidationError();
+  }
+});
+
+type AccountTransitionServices =
+  | CtoxDevAuth.CtoxDevAuth
+  | CtoxAccountLifecycle.CtoxAccountLifecycle
+  | CtoxGuestManager.CtoxGuestManager
+  | CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner;
+
 export const login: DesktopIpc.DesktopIpcMethod<
   never,
-  CtoxDevAuth.CtoxDevAuth | CtoxInstanceRegistry.CtoxInstanceRegistry
+  AccountTransitionServices | CtoxInstanceRegistry.CtoxInstanceRegistry
 > = {
   channel: IpcChannels.CTOX_LOGIN_CHANNEL,
   handler: () =>
     Effect.gen(function* () {
-      const auth = yield* CtoxDevAuth.CtoxDevAuth;
-      const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
-      const loginResult = yield* auth.login.pipe(Effect.option);
-      if (loginResult._tag === "None") {
-        return yield* encodeSafe(CtoxManagedLoginResult, {
-          _tag: "failed",
-          code: "authentication_failed",
-        });
-      }
-      if (loginResult.value._tag === "not_completed") {
-        return yield* encodeSafe(CtoxManagedLoginResult, {
-          _tag: "cancelled",
-          reason: loginResult.value.reason,
-        });
-      }
-      const managed = yield* auth.refresh.pipe(
-        Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
-      );
-      return yield* encodeSafe(CtoxManagedLoginResult, {
-        _tag: "completed",
-        discovery: yield* registry.merge(managed),
-      });
+      const lifecycle = yield* CtoxAccountLifecycle.CtoxAccountLifecycle;
+      return yield* lifecycle
+        .transition(
+          "account-transition",
+          Effect.gen(function* () {
+            yield* invalidateAccountGuests;
+            const auth = yield* CtoxDevAuth.CtoxDevAuth;
+            const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+            const loginResult = yield* auth.login.pipe(Effect.option);
+            if (loginResult._tag === "None") {
+              return yield* encodeSafe(CtoxManagedLoginResult, {
+                _tag: "failed",
+                code: "authentication_failed",
+              });
+            }
+            if (loginResult.value._tag === "not_completed") {
+              return yield* encodeSafe(CtoxManagedLoginResult, {
+                _tag: "cancelled",
+                reason: loginResult.value.reason,
+              });
+            }
+            const managed = yield* auth.refresh.pipe(
+              Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
+            );
+            return yield* encodeSafe(CtoxManagedLoginResult, {
+              _tag: "completed",
+              discovery: yield* registry.merge(managed),
+            });
+          }),
+        )
+        .pipe(
+          Effect.orElseSucceed(() => ({
+            _tag: "failed" as const,
+            code: "authentication_failed" as const,
+          })),
+        );
     }),
 };
 
-export const logout: DesktopIpc.DesktopIpcMethod<
-  never,
-  | CtoxDevAuth.CtoxDevAuth
-  | CtoxGuestManager.CtoxGuestManager
-  | CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner
-> = {
+export const logout: DesktopIpc.DesktopIpcMethod<never, AccountTransitionServices> = {
   channel: IpcChannels.CTOX_LOGOUT_CHANNEL,
   handler: () =>
     Effect.gen(function* () {
-      const auth = yield* CtoxDevAuth.CtoxDevAuth;
-      const guests = yield* CtoxGuestManager.CtoxGuestManager;
-      const decisionHub = yield* CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner;
-      yield* guests.deactivate;
-      yield* decisionHub.revokeAll;
-      const completed = yield* auth.logout.pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
-      );
+      const lifecycle = yield* CtoxAccountLifecycle.CtoxAccountLifecycle;
+      const completed = yield* lifecycle
+        .transition(
+          "logout",
+          Effect.gen(function* () {
+            yield* invalidateAccountGuests;
+            const auth = yield* CtoxDevAuth.CtoxDevAuth;
+            yield* auth.logout;
+          }),
+        )
+        .pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        );
       return yield* encodeSafe(
         CtoxManagedActionResult,
         completed ? { _tag: "completed" } : { _tag: "failed", code: "authentication_failed" },
@@ -619,6 +652,31 @@ export const requestDeviceControl: DesktopIpc.DesktopIpcMethod<
     }),
 };
 
+const decodeComputerControlInput = Schema.decodeUnknownEffect(CtoxWorkjetComputerControlInput);
+
+export const requestComputerControl: DesktopIpc.DesktopIpcMethod<
+  never,
+  CtoxGuestManager.CtoxGuestManager
+> = {
+  channel: IpcChannels.CTOX_WORKJET_COMPUTER_CONTROL_CHANNEL,
+  handler: (raw) =>
+    Effect.gen(function* () {
+      const input = yield* decodeComputerControlInput(raw, {
+        onExcessProperty: "error",
+      }).pipe(Effect.option);
+      if (input._tag === "None") {
+        return yield* encodeSafe(CtoxWorkjetComputerControlResult, {
+          _tag: "failed",
+          code: "invalid_input",
+        });
+      }
+      const guests = yield* CtoxGuestManager.CtoxGuestManager;
+      return yield* guests
+        .requestComputerControl(input.value.instanceId, input.value.request)
+        .pipe(Effect.flatMap((result) => encodeSafe(CtoxWorkjetComputerControlResult, result)));
+    }),
+};
+
 export const requestProjectControl: DesktopIpc.DesktopIpcMethod<
   never,
   CtoxGuestManager.CtoxGuestManager
@@ -906,6 +964,7 @@ export const shellFleetRolloutResume: DesktopIpc.DesktopIpcMethod<
 };
 
 type CtoxIpcServices =
+  | CtoxAccountLifecycle.CtoxAccountLifecycle
   | CtoxAppRail.CtoxAppRail
   | CtoxDevAuth.CtoxDevAuth
   | CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner
@@ -937,6 +996,7 @@ export const methods: readonly DesktopIpc.DesktopIpcMethod<never, CtoxIpcService
   listApps,
   requestDeviceControl,
   requestProjectControl,
+  requestComputerControl,
   requestSessionControl,
   registerSessionTransferEvents,
   openApp,

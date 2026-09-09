@@ -11,6 +11,10 @@ import { environmentCatalog } from "./connection/catalog";
 import { useActiveWorkjetScope } from "./activeWorkjetScope";
 import { usePrimarySettings } from "./hooks/useSettings";
 import { primaryEnvironmentIdAtom } from "./state/primaryEnvironment";
+import {
+  workjetComputerMembership,
+  type ComputerMembershipSnapshot,
+} from "./workjetComputerMembership";
 
 export type BusinessOsCodeScopeBlocker =
   | "no-active-instance"
@@ -111,13 +115,26 @@ export function resolveBusinessOsCodeScopeEnvironmentIds({
   entries,
   primaryEnvironmentId,
   computers,
+  confirmedComputerIds = new Set<string>(),
 }: {
   readonly businessOsInstanceId: BusinessOsInstanceId;
   readonly entries: BusinessOsCodeScopeCatalogEntries;
   readonly primaryEnvironmentId: EnvironmentId | null;
-  readonly computers: ReadonlyArray<Pick<WorkjetComputer, "environmentId" | "presentationKind">>;
+  readonly computers: ReadonlyArray<
+    Pick<WorkjetComputer, "environmentId" | "presentationKind"> & { readonly id?: string }
+  >;
+  readonly confirmedComputerIds?: ReadonlySet<string>;
 }): ReadonlySet<EnvironmentId> {
   const environmentIds = new Set(projectBusinessOsEnvironmentIds(businessOsInstanceId, entries));
+  for (const computer of computers) {
+    if (
+      computer.id !== undefined &&
+      confirmedComputerIds.has(computer.id) &&
+      entries.has(computer.environmentId)
+    ) {
+      environmentIds.add(computer.environmentId);
+    }
+  }
   if (
     primaryEnvironmentId !== null &&
     computers.some(
@@ -134,8 +151,8 @@ export function resolveBusinessOsCodeScopeEnvironmentIds({
  * Resolves the renderer presentation id through Desktop Main, then includes
  * Relay targets carrying the exact server-authoritative instance id. Primary is
  * included only when primary settings register a local computer for that exact
- * environment id, which proves membership in the active Business OS. Bearer,
- * SSH, non-local computer and unscoped Relay targets remain excluded.
+ * environment id. Remote computers additionally require a confirmed assignment
+ * from this exact instance; a connection or editable presentation is insufficient.
  */
 export function BusinessOsCodeScopeSynchronizer({
   bridge = typeof window === "undefined" ? undefined : window.desktopBridge?.ctox,
@@ -146,6 +163,25 @@ export function BusinessOsCodeScopeSynchronizer({
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   const computers = usePrimarySettings((settings) => settings.workjet.computers);
+  const membership: ComputerMembershipSnapshot = useSyncExternalStore(
+    workjetComputerMembership.subscribe,
+    workjetComputerMembership.getSnapshot,
+    workjetComputerMembership.getSnapshot,
+  );
+  useEffect(() => {
+    workjetComputerMembership.select(presentationInstanceId);
+    if (presentationInstanceId === null) return;
+    const refresh = () => {
+      if (workjetComputerMembership.getSnapshot().pendingComputerId === null) {
+        void workjetComputerMembership.refresh(presentationInstanceId, bridge);
+      }
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+    };
+  }, [bridge, presentationInstanceId]);
   const [authority, setAuthority] = useState<
     | { readonly phase: "resolving"; readonly presentationInstanceId: string | null }
     | {
@@ -244,10 +280,17 @@ export function BusinessOsCodeScopeSynchronizer({
         entries: catalog.entries,
         primaryEnvironmentId,
         computers,
+        confirmedComputerIds: new Set(
+          membership.instanceId === presentationInstanceId && membership.phase !== "failed"
+            ? membership.computers
+                .filter((computer) => computer.status === "assigned")
+                .map((computer) => computer.id)
+            : [],
+        ),
       }),
       blocker: null,
     };
-  }, [authority, catalog, computers, presentationInstanceId, primaryEnvironmentId]);
+  }, [authority, catalog, computers, membership, presentationInstanceId, primaryEnvironmentId]);
 
   useEffect(() => {
     publishBusinessOsCodeScope(snapshot);

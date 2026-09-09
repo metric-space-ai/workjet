@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyAutomaticCurrentComputer,
+  includeSavedComputers,
   removeComputer,
   toggleCurrentComputer,
   WorkjetComputersSettingsView,
@@ -214,5 +215,64 @@ describe("current computer settings", () => {
     expect(markup.match(/aria-checked="true"/g)).toHaveLength(1);
     expect(markup).toContain("Current computer");
     expect(markup).toContain("Use as current computer");
+  });
+});
+
+describe("unified computer catalog", () => {
+  const remote = {
+    environmentId: remoteEnvironmentId,
+    label: "Remote Linux",
+    presentationKind: "ssh" as const,
+    detail: "SSH",
+  };
+  it("retains saved connections without creating a second record or changing selection", () => {
+    const original = { ...configurationWith(localComputer), selectedComputerId: localComputer.id };
+    const merged = includeSavedComputers(original, [remote], localEnvironmentId);
+    expect(merged.computers).toHaveLength(2);
+    expect(merged.computers[1]?.environmentId).toBe(remoteEnvironmentId);
+    expect(merged.selectedComputerId).toBe(localComputer.id);
+    expect(includeSavedComputers(merged, [remote], localEnvironmentId)).toBe(merged);
+    expect(includeSavedComputers(original, [remote], localEnvironmentId).computers[1]?.id).toBe(
+      merged.computers[1]?.id,
+    );
+  });
+  it("preserves configured labels, tools and missing connections", () => {
+    const original = configurationWith({
+      ...remoteComputer,
+      label: "GPU worker",
+      harnesses: [{ harness: "codex-cli", available: true }],
+    });
+    expect(includeSavedComputers(original, [remote], localEnvironmentId)).toBe(original);
+    expect(includeSavedComputers(original, [], localEnvironmentId)).toBe(original);
+  });
+  it("places connection actions beside their computer and provides one add entry", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(remoteComputer)}
+        environments={[remote]}
+        environmentsReady
+        environmentId={localEnvironmentId}
+        onChange={() => undefined}
+        onAdd={() => undefined}
+        renderConnection={() => <button>Reconnect Remote Linux</button>}
+      />,
+    );
+    expect(markup).toContain("Reconnect Remote Linux");
+    expect(markup.match(/>Add computer</g)).toHaveLength(1);
+    expect(markup).not.toContain("Add existing connection");
+    expect(markup).not.toContain("Remote environments");
+  });
+  it("recognizes a saved but disconnected computer and discards its stale probe", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(remoteComputer)}
+        environments={[remote]}
+        environmentsReady
+        connectedEnvironmentIds={[]}
+        environmentId={localEnvironmentId}
+        onChange={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Disconnected. Reconnect this computer");
   });
 });

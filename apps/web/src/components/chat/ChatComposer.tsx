@@ -996,7 +996,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .find((entry) => entry.modelId === worker.modelId)
         ?.prompt.trim();
       payload = {
-        capabilityIds: draftWorkerCapabilityIds ?? worker.capabilityIds,
+        capabilityIds:
+          draftWorkerCapabilityIds ??
+          composerDraft.workjetConfig?.enabledCapabilityIds ??
+          worker.capabilityIds,
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,
           workers: workjetWorkers,
@@ -1013,6 +1016,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     appliedWorkerCapabilitiesRef.current = targetKey;
     onWorkjetConfigApply(payload);
   }, [
+    composerDraft.workjetConfig,
     composerDraftTarget,
     composerTargetIsThread,
     draftManagedInstructions,
@@ -1221,7 +1225,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const workerDraftExtrasActive = workerModeActive && !composerTargetIsThread;
   const effectiveEnabledCapabilityIds = workerDraftExtrasActive
-    ? (draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [])
+    ? (draftWorkerCapabilityIds ??
+      composerDraft.workjetConfig?.enabledCapabilityIds ??
+      selectedWorkjetWorker?.capabilityIds ??
+      [])
     : composerTargetIsThread
       ? workjetEnabledCapabilityIds
       : draftWorkjetConfig.enabledCapabilityIds;
@@ -1232,7 +1239,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       : (effectiveEnabledCapabilityIds ?? []).includes(GREPPY_CAPABILITY_ID);
   const handleDraftWorkerCapabilityChange = useCallback(
     (capabilityId: string, enabled: boolean) => {
-      const base = draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [];
+      const base =
+        draftWorkerCapabilityIds ??
+        composerDraft.workjetConfig?.enabledCapabilityIds ??
+        selectedWorkjetWorker?.capabilityIds ??
+        [];
       const without = base.filter((id) => id !== capabilityId);
       const next = enabled ? [...without, capabilityId] : without;
       setDraftWorkerCapabilityIds(next);

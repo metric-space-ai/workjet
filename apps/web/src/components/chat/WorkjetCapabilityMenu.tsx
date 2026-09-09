@@ -448,11 +448,13 @@ export function WorkjetCapabilityDetail(
                 {selectedConnection.reason ? `: ${selectedConnection.reason}` : ""}
               </p>
             ) : null}
-            {capability.id === "ctox-business-os" && enabled.has(capability.id) ? (
+            {capability.id === "ctox-business-os" && enabled ? (
               <div className="px-2 pb-2">
                 <Select
                   value={props.ctoxBusinessOsConnectionId ?? ""}
-                  disabled={disabled || props.ctoxBusinessOsConnectionLocked}
+                  disabled={
+                    props.disabled === true || props.busy || props.ctoxBusinessOsConnectionLocked
+                  }
                   onValueChange={(value) => {
                     if (value !== null) props.onCtoxBusinessOsConnectionChange?.(value);
                   }}

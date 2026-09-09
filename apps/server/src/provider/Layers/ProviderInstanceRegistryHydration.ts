@@ -189,6 +189,13 @@ export const runSettingsWatcher = (options: {
    * the behaviour under test.
    */
   readonly onSettled?: Effect.Effect<void>;
+  /**
+   * Runs after both subscriptions are acquired and BEFORE the initial read.
+   * Production passes nothing. A test uses it to publish an event inside
+   * exactly the window this ordering exists to protect — forking the watcher
+   * and racing it is not a proof, it is a coin toss.
+   */
+  readonly onSubscribed?: Effect.Effect<void>;
 }) =>
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator;
@@ -246,6 +253,9 @@ export const runSettingsWatcher = (options: {
         Effect.catchCause((cause) =>
           Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
         ),
+        // Runs after EVERY attempt, aborted ones included. Production passes
+        // nothing; a test uses it as its completion barrier.
+        Effect.ensuring(options.onSettled ?? Effect.void),
       );
 
     /**

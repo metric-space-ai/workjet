@@ -14,7 +14,11 @@
  * the driver's own snapshot.
  */
 import { assert, it } from "@effect/vitest";
-import { ProviderInstanceId, type ProviderInstanceConfigMap } from "@workjet/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ProviderInstanceConfigMap,
+} from "@workjet/contracts";
 
 import { mergeCtoxProviderInstances } from "./ProviderInstanceRegistryHydration.ts";
 
@@ -34,7 +38,7 @@ it("derives one provider instance per bound connection, not per CTOX instance", 
 
   assert.deepEqual(Object.keys(merged).sort(), ["ctox_connection-a", "ctox_connection-b"]);
   assert.deepEqual(at(merged, "ctox_connection-a"), {
-    driver: "ctox",
+    driver: ProviderDriverKind.make("ctox"),
     config: { ctoxInstanceId: BINDING_A.instanceId, connectionId: BINDING_A.connectionId },
   });
 });
@@ -51,7 +55,7 @@ it("keeps a bound instance regardless of whether its connection is reachable", (
 it("never overwrites an explicitly configured provider instance", () => {
   const explicit = {
     "ctox_connection-a": {
-      driver: "ctox",
+      driver: ProviderDriverKind.make("ctox"),
       config: { ctoxInstanceId: "hand-configured", connectionId: "connection-a" },
     },
   } as unknown as ProviderInstanceConfigMap;

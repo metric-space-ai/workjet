@@ -10,6 +10,15 @@ its SHA-256 digest and stores it under `~/.workjet/ssh-server/<digest>`.
 The archive includes the terminal, resource monitor and provider gateway host.
 Repeated connections reuse the verified installation.
 
+When a systemd user manager is available, Workjet starts its managed server
+as a transient user service. This keeps the server alive when the setup SSH
+session ends, including hosts that clean up background processes on logout.
+The service preserves the prepared executable path and log destination; its
+main process is tracked for the existing disconnect and restart lifecycle.
+Hosts without a user manager retain the portable detached launch path. Workjet
+does not enable lingering, change SSH policy, or require administrator rights.
+A failed service start is reported instead of retrying in the SSH session.
+
 If the required Node runtime is unavailable, Workjet downloads Node 24.13.1
 from nodejs.org and verifies a pinned SHA-256 digest before extraction. The
 private runtime lives under `~/.workjet/runtime/node`. System Node installations

@@ -16,14 +16,14 @@ import {
   RefreshCwIcon,
   SmartphoneIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { CtoxInstanceSelectOption } from "../ctox/CtoxInstanceSelectOption";
-import { useCtoxMode } from "../ctox/CtoxModeShell";
+import { CtoxSidebarShell, useCtoxMode } from "../ctox/CtoxModeShell";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -353,6 +353,7 @@ export function BusinessOsSettingsView({
   onRevokeInvite,
   onLoadManualConnection,
   revokingInvite = false,
+  connectionManagement,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
@@ -378,6 +379,7 @@ export function BusinessOsSettingsView({
   readonly onRevokeInvite?: () => void;
   readonly onLoadManualConnection?: () => Promise<WorkjetManagedDeviceInviteManualConnectionResult>;
   readonly revokingInvite?: boolean;
+  readonly connectionManagement?: ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
   const [invite, setInvite] = useState("");
@@ -638,6 +640,7 @@ export function BusinessOsSettingsView({
         </div>
       </SettingsSection>
 
+      {connectionManagement}
       <DevicePairingDialog
         instanceName={selectedDisplayName}
         invite={activeInvite}
@@ -855,6 +858,14 @@ export function BusinessOsSettings() {
             onLoadManualConnection: async () => activeInvite.manualConnection,
           })}
       revokingInvite={revokingInvite}
+      connectionManagement={
+        <details data-workjet-instance-management="">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+            Instanzverbindungen verwalten
+          </summary>
+          <CtoxSidebarShell showChrome={false} />
+        </details>
+      }
     />
   );
 }

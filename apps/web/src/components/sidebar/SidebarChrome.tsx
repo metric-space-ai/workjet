@@ -5,6 +5,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useCrossModeNavigator } from "../../crossMode/useCrossModeNavigator";
 import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
+import { useSharedWorkjetHeader } from "../WorkjetHeaderSlots";
 import { resolveWorkjetProductMode, type WorkjetProductMode } from "../../workjetProductMode";
 import workjetMarkUrl from "../../../../../assets/workjet/workjet-app-icon.png";
 import {
@@ -28,6 +29,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     isElectron,
   });
   const navigateToCrossMode = useCrossModeNavigator();
+  const sharedHeader = useSharedWorkjetHeader();
   // The header toggle is a cross-mode navigation with no target beyond the
   // mode itself, so it goes through the same navigator as a link: the outgoing
   // mode's heavy surface is torn down before the incoming one mounts, and the
@@ -42,6 +44,8 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
     },
     [navigateToCrossMode, productMode],
   );
+
+  if (sharedHeader) return null;
 
   return (
     <SidebarHeader
@@ -73,8 +77,8 @@ const WORKJET_PRODUCT_MODES: ReadonlyArray<{
   readonly label: string;
   readonly value: WorkjetProductMode;
 }> = [
-  { label: "Code", value: "code" },
-  { label: "Business OS", value: "ctox" },
+  { label: "Dev", value: "code" },
+  { label: "Ops", value: "ctox" },
 ];
 
 export function resolveProductModeKeyboardTarget(key: string): WorkjetProductMode | null {
@@ -107,7 +111,7 @@ export function WorkjetProductModeSwitch({
   return (
     <div
       className={cn(
-        "product-mode-switch sidebar-brand relative z-10 ml-[var(--workspace-titlebar-control-gap)] h-7 w-[7.25rem] min-w-0 shrink-0 items-center rounded-md outline-hidden",
+        "product-mode-switch no-drag relative z-10 flex h-8 min-w-0 shrink-0 items-center rounded-md outline-hidden",
         onBackdrop ? "text-white" : "text-foreground",
       )}
       data-desktop-layout="titlebar"
@@ -116,7 +120,7 @@ export function WorkjetProductModeSwitch({
       <div
         aria-label="Workjet product mode"
         className={cn(
-          "flex h-6 min-w-0 flex-1 items-center whitespace-nowrap rounded-md border p-0.5",
+          "flex h-8 min-w-0 flex-1 items-center whitespace-nowrap rounded-md border p-0.5",
           onBackdrop ? "border-white/20 bg-black/10" : "border-sidebar-border bg-sidebar-accent/35",
         )}
         role="radiogroup"
@@ -139,7 +143,7 @@ export function WorkjetProductModeSwitch({
               <button
                 aria-checked={isSelected}
                 className={cn(
-                  "h-5 shrink-0 whitespace-nowrap rounded-sm px-1 text-[10px] font-medium leading-none outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                  "h-6 shrink-0 whitespace-nowrap rounded-sm px-2 text-xs font-medium leading-none outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                   isSelected
                     ? onBackdrop
                       ? "bg-white/20 text-white"

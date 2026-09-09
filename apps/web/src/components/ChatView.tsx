@@ -176,6 +176,7 @@ import {
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -6965,7 +6966,7 @@ function ChatViewContent(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
-        <header
+        <WorkjetHeaderContent
           data-chat-header
           className={cn(
             "bg-background transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
@@ -6993,7 +6994,7 @@ function ChatViewContent(props: ChatViewProps) {
             rightPanelOpen={rightPanelOpen}
             onNewThreadInProject={handleNewThreadInActiveProject}
           />
-        </header>
+        </WorkjetHeaderContent>
 
         <ThreadErrorBanner
           error={visibleThreadError}

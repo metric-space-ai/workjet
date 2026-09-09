@@ -130,6 +130,27 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(workjet-
   );
 }
 
+/* Dev and Ops share one titlebar. Surface headers portal their controls into it. */
+[data-workjet-frame] [data-slot="sidebar-container"] {
+  top: var(--workspace-topbar-height);
+  height: calc(100dvh - var(--workspace-topbar-height));
+}
+
+[data-workjet-content] [data-slot="sidebar-inset"] {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+[data-workjet-header-content] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: var(--workspace-topbar-height);
+  padding: 0 !important;
+  border: 0 !important;
+}
+
 /* The font tokens are declared outside the inline theme so utilities reference
    the variables and Settings -> Appearance can override them at runtime. The
    default stacks are mirrored in `appearanceFonts.ts`. */

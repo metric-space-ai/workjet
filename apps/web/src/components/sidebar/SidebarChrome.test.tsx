@@ -17,12 +17,12 @@ describe("WorkjetProductModeSwitch", () => {
         `<button[^>]*aria-checked="true"[^>]*data-product-mode="${mode}"[^>]*role="radio"[^>]*tabindex="0"`,
       ),
     );
-    expect(markup).toContain("Code");
-    expect(markup).toContain("Business OS");
+    expect(markup).toContain(">Dev</button>");
+    expect(markup).toContain(">Ops</button>");
     expect(markup).not.toContain("<img");
     expect(markup).toContain('data-desktop-layout="titlebar"');
     expect(markup).toContain('data-product-mode-switch=""');
-    expect(markup).toContain("ml-[var(--workspace-titlebar-control-gap)]");
+    expect(markup).toContain("no-drag");
     expect(markup).toMatch(
       /<button[^>]*class="[^"]*whitespace-nowrap[^"]*"[^>]*data-product-mode="ctox"/,
     );

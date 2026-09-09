@@ -46,9 +46,10 @@ import {
   useSidebarVisibility,
 } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
-import { CtoxMainShell, CtoxModeProvider, CtoxSidebarShell } from "./ctox/CtoxModeShell";
+import { CtoxMainShell, CtoxModeProvider } from "./ctox/CtoxModeShell";
 import { resolveWorkjetProductMode } from "../workjetProductMode";
-import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
+import { WorkjetHeaderFrame } from "./WorkjetHeader";
+import { useSharedWorkjetHeader } from "./WorkjetHeaderSlots";
 import { BusinessOsCodeScopeSynchronizer } from "../businessOsCodeScope";
 import { WorkjetProjectRegistrySynchronizer } from "../workjetProjectRegistry";
 import { synchronizeActiveWorkjetMode } from "../activeWorkjetScope";
@@ -76,7 +77,8 @@ function readInitialThreadSidebarWidth(): number {
   }
 }
 
-function SidebarControl() {
+function SidebarControl({ disabled = false }: { readonly disabled?: boolean }) {
+  const sharedHeader = useSharedWorkjetHeader();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
@@ -87,6 +89,7 @@ function SidebarControl() {
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
 
   useEffect(() => {
+    if (disabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (
@@ -105,9 +108,9 @@ function SidebarControl() {
     // Capture before focused editors consume commands such as Mod+B for rich-text formatting.
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [keybindings, toggleSidebar]);
+  }, [disabled, keybindings, toggleSidebar]);
 
-  if (isElectron && isSidebarVisible) {
+  if (sharedHeader || (isElectron && isSidebarVisible)) {
     return null;
   }
 
@@ -249,7 +252,8 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider
-      className="h-dvh! min-h-0!"
+      className="h-dvh! min-h-0! flex-col"
+      data-workjet-frame=""
       data-product-mode-shell={productMode}
       defaultOpen
       style={sidebarProviderStyle}
@@ -257,39 +261,40 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
       <BusinessOsCodeScopeSynchronizer />
       <WorkjetProjectRegistrySynchronizer />
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
-        {!isCtoxShell ? <ProjectProjectionRetention /> : null}
-        <Sidebar
-          side="left"
-          collapsible="offcanvas"
-          data-app-sidebar=""
-          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
-          resizable={{
-            maxWidth: sidebarMaximumWidth,
-            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-              nextWidth <= currentWidth ||
-              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-            onResize: setSidebarWidth,
-          }}
-        >
-          <ActiveCtoxInstanceSelector />
-          {sidebarSurface === "business-os" ? (
-            <CtoxSidebarShell />
-          ) : sidebarSurface === "settings" ? (
-            <>
-              <SidebarChromeHeader isElectron={isElectron} />
-              <SettingsSidebarNav pathname={pathname} />
-            </>
-          ) : legacySidebarEnabled ? (
-            <LegacyThreadSidebar />
-          ) : (
-            <ThreadSidebar />
-          )}
-          <SidebarRail onDoubleClick={resetSidebarWidth} />
-        </Sidebar>
-        {isCtoxShell ? <CtoxMainShell /> : children}
-        <SidebarControl />
+        <WorkjetHeaderFrame mode={productMode} sidebarAvailable={!isCtoxShell}>
+          {!isCtoxShell ? <ProjectProjectionRetention /> : null}
+          {!isCtoxShell ? (
+            <Sidebar
+              side="left"
+              collapsible="offcanvas"
+              data-app-sidebar=""
+              className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
+              resizable={{
+                maxWidth: sidebarMaximumWidth,
+                minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+                shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+                  nextWidth <= currentWidth ||
+                  wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+                storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+                onResize: setSidebarWidth,
+              }}
+            >
+              {sidebarSurface === "settings" ? (
+                <>
+                  <SidebarChromeHeader isElectron={isElectron} />
+                  <SettingsSidebarNav pathname={pathname} />
+                </>
+              ) : legacySidebarEnabled ? (
+                <LegacyThreadSidebar />
+              ) : (
+                <ThreadSidebar />
+              )}
+              <SidebarRail onDoubleClick={resetSidebarWidth} />
+            </Sidebar>
+          ) : null}
+          {isCtoxShell ? <CtoxMainShell /> : children}
+          <SidebarControl disabled={isCtoxShell} />
+        </WorkjetHeaderFrame>
       </CtoxModeProvider>
     </SidebarProvider>
   );

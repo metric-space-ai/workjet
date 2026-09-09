@@ -28,7 +28,11 @@ export function resolveActiveCtoxInstanceId(
   return null;
 }
 
-export function ActiveCtoxInstanceSelector() {
+export function ActiveCtoxInstanceSelector({
+  placement = "sidebar",
+}: {
+  readonly placement?: "header" | "sidebar";
+}) {
   const { discovery, selectedId, select } = useCtoxMode();
   const { selectionRevision } = useActiveWorkjetScope();
   const instances = useMemo(() => selectableCtoxInstances(discovery), [discovery]);
@@ -47,7 +51,11 @@ export function ActiveCtoxInstanceSelector() {
 
   return (
     <div
-      className="order-[-1] shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
+      className={
+        placement === "header"
+          ? "no-drag min-w-0 w-40 shrink sm:w-48"
+          : "order-[-1] shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
+      }
       data-active-ctox-instance-selector=""
       data-active-ctox-instance-id={activeId ?? ""}
       data-active-workjet-selection-revision={selectionRevision}

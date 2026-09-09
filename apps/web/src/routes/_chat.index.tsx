@@ -8,6 +8,7 @@ import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
+import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import {
   useAllEnvironmentShellsBootstrapped,
@@ -200,7 +201,7 @@ function HostedStaticOnboardingState() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <header
+        <WorkjetHeaderContent
           className={cn(
             "workspace-topbar border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
@@ -211,7 +212,7 @@ function HostedStaticOnboardingState() {
               {APP_DISPLAY_NAME}
             </span>
           </div>
-        </header>
+        </WorkjetHeaderContent>
 
         <Empty className="flex-1">
           <div className="w-full max-w-xl rounded-3xl border border-border/55 bg-card/20 px-8 py-12 shadow-sm/5">

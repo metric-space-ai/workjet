@@ -55,6 +55,7 @@ function registry(
   options: { root?: string | null; nativeInstance?: string | null; windowsSsh?: boolean } = {},
 ) {
   return CtoxInstanceRegistry.of({
+    deviceProofKey: () => Effect.die("Device key storage is outside this test"),
     merge: () => Effect.die("unused"),
     importInvite: () => Effect.die("must not import an invite"),
     importManualPairing: () => Effect.die("unused"),

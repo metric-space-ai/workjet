@@ -1,4 +1,9 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG, type WorkjetThreadConfig } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ThreadId,
+  type WorkjetThreadConfig,
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import type { ThreadRightPanelState } from "./rightPanelStore";
 import {
@@ -75,7 +80,14 @@ describe("Workjet browser capability", () => {
       workjetBrowserSurfaceEnabled({
         isServerThread: false,
         serverConfig: null,
-        draftConfig: { ...enabled, role: "worker" },
+        draftConfig: {
+          ...enabled,
+          role: "worker",
+          parent: {
+            environmentId: EnvironmentId.make("parent-environment"),
+            threadId: ThreadId.make("parent-thread"),
+          },
+        },
       }),
     ).toBe(false);
   });

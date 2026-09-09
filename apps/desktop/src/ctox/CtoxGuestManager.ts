@@ -457,6 +457,13 @@ function isAllowedStaticAssetPath(path: string, method = "GET"): boolean {
   );
 }
 
+function isAllowedControlRequest(path: string, method: string): boolean {
+  return (
+    ALLOWED_CONTROL_PATHS.has(path) ||
+    (path === "/api/business-os/ctox/maintenance" && method.trim().toUpperCase() === "GET")
+  );
+}
+
 export function isSafeCtoxExternalUrl(rawUrl: string): boolean {
   try {
     return SAFE_EXTERNAL_PROTOCOLS.has(new URL(rawUrl).protocol);
@@ -491,7 +498,7 @@ export function isForbiddenCtoxDataRequest(
     const path = normalizePathname(url.pathname);
     const shellPath = stripBusinessOsPathPrefix(path);
     if (shellPath.startsWith("/api/business-os/") || shellPath === "/api/business-os") {
-      if (!ALLOWED_CONTROL_PATHS.has(shellPath)) return true;
+      if (!isAllowedControlRequest(shellPath, method)) return true;
     }
     if (
       shellPath.startsWith("/rxdb/") &&
@@ -513,7 +520,7 @@ export function isForbiddenCtoxDataRequest(
   const path = normalizePathname(url.pathname);
   const shellPath = stripBusinessOsPathPrefix(path);
   if (
-    ALLOWED_CONTROL_PATHS.has(shellPath) ||
+    isAllowedControlRequest(shellPath, method) ||
     shellPath.startsWith("/rxdb/dist/") ||
     isAllowedStaticAssetPath(shellPath, method)
   )

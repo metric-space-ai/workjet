@@ -1944,6 +1944,23 @@ describe("CtoxGuestManager", () => {
         "https://ctox.dev",
       ),
     ).toBe(false);
+    for (const method of ["GET", "POST", "PUT", "DELETE"]) {
+      expect(
+        CtoxGuestManager.isForbiddenCtoxDataRequest(
+          "https://welsch.ctox.dev/api/business-os/ctox/maintenance",
+          "fetch",
+          "https://welsch.ctox.dev",
+          method,
+        ),
+      ).toBe(method !== "GET");
+    }
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://welsch.ctox.dev/api/business-os/ctox/maintenance/records",
+        "fetch",
+        "https://welsch.ctox.dev",
+      ),
+    ).toBe(true);
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/api/business-os/records",

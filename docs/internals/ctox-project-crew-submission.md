@@ -82,3 +82,7 @@ Provider start contract inspection: WorkjetThreadConfig.ctoxSession currently co
 Thread configuration v2 now accepts optional ctoxCrewChat (instanceId, connectionId, chatId). It is a reference to an existing native private Crew chat, not an attempt, a transfer session, a permission grant or a copied Crew identity. Ordinary and migrated v1 configurations do not acquire this property. The existing configuration persistence can carry it; no second identity database is introduced. The native start/claim path must still authorize it before execution. UI selection/provisioning and controller consumption remain to implement.
 
 CrossModeLinkStore is deliberately not reused: its one-backlink-per-Code-thread invariant already links a thread to its app/work object. Using that slot for Crew identity would prevent the same thread from retaining its app link. Tests cover configuration round-trip alongside ctoxSession, unchanged ordinary/legacy configuration and invalid/credential-bearing references. Only formatting/diff checks have run.
+
+## Capability binding consistency
+
+Capability activation preserves ctoxCrewChat while rejecting a Business OS MCP capability bound to a different instance or connection. A Crew reference alone does not enable app-MCP permissions. This uses the existing binding-foreign issue and the existing provider preparation denial path. Tests cover matching routes, separately foreign instance/credentials, reference retention and absence of implicit capability grants. Only formatting and diff validation ran; behavioral execution is pending CI.

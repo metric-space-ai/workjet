@@ -26,11 +26,13 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import migration55 from "../../persistence/Migrations/055_WorkjetDecisionHub.ts";
 import migration59 from "../../persistence/Migrations/059_WorkjetCtoxConnectionBindings.ts";
 import { DecisionHubMcpClient } from "../../workjet/decisionHub/DecisionHubMcpClient.ts";
@@ -115,6 +117,22 @@ const mcpClient = DecisionHubMcpClient.of({
   getDecision: () => Effect.die("unused"),
 });
 
+/**
+ * One token per completed reconciliation ATTEMPT, aborted runs included. The
+ * read-failure case produces no registry change and no refresh, so there is no
+ * other signal to wait on — and `yieldNow` would only prove that the scheduler
+ * ran, not that the reconciliation finished.
+ */
+const makeBarrier = Effect.gen(function* () {
+  const settled = yield* Queue.unbounded<void>();
+  return {
+    onSettled: Queue.offer(settled, undefined).pipe(Effect.asVoid),
+    /** Wait for the next reconciliation to finish, whatever its outcome. */
+    awaitSettled: Queue.take(settled).pipe(Effect.asVoid),
+    drain: Queue.takeAll(settled).pipe(Effect.asVoid),
+  };
+});
+
 const harness = Effect.gen(function* () {
   yield* migration55;
   yield* migration59;
@@ -138,33 +156,93 @@ const baseLayer = Layer.mergeAll(
   Layer.succeed(DecisionHubMcpClient, mcpClient),
 );
 
-it.effect("materializes a bound connection and never tears it down on a later read failure", () =>
+it.effect("keeps a materialized instance alive through a real binding-read failure", () =>
   Effect.gen(function* () {
     const test = yield* harness;
+    const barrier = yield* makeBarrier;
+    const connections = yield* DecisionHubConnectionRegistry;
+    const sql = yield* SqlClient.SqlClient;
+    yield* connections.provision(provisionA);
+
+    yield* Effect.gen(function* () {
+      yield* runSettingsWatcher({ onSettled: barrier.onSettled });
+      const registry = yield* ProviderInstanceRegistry;
+      const before = (yield* registry.listInstances)[0];
+      assert.isDefined(before, "the bound connection materialized before the failure");
+      const createdBefore = yield* Ref.get(test.counters.created);
+      yield* barrier.drain;
+
+      // A REAL read failure, not a stand-in: the table `readCtoxBindings` reads
+      // is gone, so the query fails inside the production path. A successful
+      // probe against a fake peer would have proved nothing here.
+      yield* sql`DROP TABLE workjet_ctox_connection_bindings`;
+      yield* connections.probe(CONNECTION_A);
+      yield* barrier.awaitSettled;
+
+      const after = (yield* registry.listInstances)[0];
+      assert.strictEqual(after, before, "the very same instance object survived the failed read");
+      assert.equal(
+        yield* Ref.get(test.counters.closed),
+        0,
+        "a failed read must never close a live provider scope",
+      );
+      assert.equal(
+        yield* Ref.get(test.counters.created),
+        createdBefore,
+        "and must not recreate the instance either",
+      );
+
+      // Recovery: once the read works again, reconciliation resumes normally.
+      yield* sql`
+        CREATE TABLE workjet_ctox_connection_bindings (
+          connection_id TEXT PRIMARY KEY,
+          instance_id TEXT NOT NULL,
+          created_at_ms INTEGER NOT NULL
+        )
+      `;
+      yield* sql`
+        INSERT INTO workjet_ctox_connection_bindings (connection_id, instance_id, created_at_ms)
+        VALUES (${CONNECTION_A}, ${INSTANCE_A}, 0)
+      `;
+      yield* connections.probe(CONNECTION_A);
+      yield* barrier.awaitSettled;
+      assert.lengthOf(yield* registry.listInstances, 1, "reconciliation recovered after the fault");
+      assert.equal(yield* Ref.get(test.counters.closed), 0);
+    }).pipe(Effect.provide(test.registryLayer));
+  }).pipe(Effect.scoped, Effect.provide(baseLayer)),
+);
+
+it.effect("refreshes the existing snapshot on a connection event instead of rebuilding it", () =>
+  Effect.gen(function* () {
+    const test = yield* harness;
+    const barrier = yield* makeBarrier;
     const connections = yield* DecisionHubConnectionRegistry;
     yield* connections.provision(provisionA);
 
     yield* Effect.gen(function* () {
-      yield* runSettingsWatcher;
+      yield* runSettingsWatcher({ onSettled: barrier.onSettled });
       const registry = yield* ProviderInstanceRegistry;
-      const instances = yield* registry.listInstances;
-      assert.lengthOf(instances, 1, "the bound connection produced exactly one provider instance");
-      assert.equal(yield* Ref.get(test.counters.closed), 0);
+      const before = (yield* registry.listInstances)[0];
+      yield* barrier.drain;
+      // Captured AFTER initialization: initial hydration already refreshes, so a
+      // bare `refreshed > 0` would have been satisfied before the event under
+      // test even happened.
+      const refreshedBefore = yield* Ref.get(test.counters.refreshed);
 
-      // A second pass over the same state must not recreate or close anything:
-      // an unchanged config keeps the existing object and scope.
-      yield* connections.probe(CONNECTION_A).pipe(Effect.ignore);
-      yield* Effect.yieldNow;
-      assert.equal(
-        yield* Ref.get(test.counters.closed),
-        0,
-        "a probe must not close a live provider scope",
-      );
+      yield* connections.probe(CONNECTION_A);
+      yield* barrier.awaitSettled;
+
       assert.isAbove(
         yield* Ref.get(test.counters.refreshed),
-        0,
-        "a connection change refreshes the snapshot instead of recreating the instance",
+        refreshedBefore,
+        "the connection event refreshed the snapshot",
       );
+      assert.strictEqual(
+        (yield* registry.listInstances)[0],
+        before,
+        "through the same instance object — not by recreating it and closing its sessions",
+      );
+      assert.equal(yield* Ref.get(test.counters.closed), 0);
     }).pipe(Effect.provide(test.registryLayer));
   }).pipe(Effect.scoped, Effect.provide(baseLayer)),
 );
@@ -172,75 +250,103 @@ it.effect("materializes a bound connection and never tears it down on a later re
 it.effect("keeps the instance across disconnect, because the binding outlives the connection", () =>
   Effect.gen(function* () {
     const test = yield* harness;
+    const barrier = yield* makeBarrier;
     const connections = yield* DecisionHubConnectionRegistry;
     yield* connections.provision(provisionA);
 
     yield* Effect.gen(function* () {
-      yield* runSettingsWatcher;
+      yield* runSettingsWatcher({ onSettled: barrier.onSettled });
       const registry = yield* ProviderInstanceRegistry;
-      assert.lengthOf(yield* registry.listInstances, 1);
+      const before = (yield* registry.listInstances)[0];
+      assert.isDefined(before);
+      yield* barrier.drain;
 
-      // Disconnect deletes the CONNECTION row. Migration 59's binding survives
-      // by design, and that is what the derivation reads — so the provider must
-      // remain, reporting unavailable through its snapshot rather than being
-      // removed and having its scope closed.
-      yield* connections.disconnect(CONNECTION_A).pipe(Effect.ignore);
-      yield* Effect.yieldNow;
+      // Disconnect deletes the CONNECTION row. Migration 59's binding survives by
+      // design and is what the derivation reads, so the provider must remain and
+      // report unavailable through its snapshot rather than be removed.
+      assert.isTrue(yield* connections.disconnect(CONNECTION_A), "the disconnect really happened");
+      yield* barrier.awaitSettled;
 
+      assert.strictEqual(
+        (yield* registry.listInstances)[0],
+        before,
+        "a disconnect must not remove or replace a previously bound provider instance",
+      );
+      assert.equal(yield* Ref.get(test.counters.closed), 0);
+    }).pipe(Effect.provide(test.registryLayer));
+  }).pipe(Effect.scoped, Effect.provide(baseLayer)),
+);
+
+it.effect("loses no connection event published while the initial read is still running", () =>
+  Effect.gen(function* () {
+    const test = yield* harness;
+    const barrier = yield* makeBarrier;
+    const connections = yield* DecisionHubConnectionRegistry;
+
+    yield* Effect.gen(function* () {
+      // `runSettingsWatcher` only returns AFTER its initial reconciliation, so
+      // provisioning after it would sit outside the window entirely — the
+      // previous version of this test could not fail for the reason it claimed.
+      // Forking it and publishing while the first pass is still in flight is the
+      // actual race: with the subscription acquired inside a forked consumer,
+      // this event was dropped.
+      yield* Effect.forkScoped(runSettingsWatcher({ onSettled: barrier.onSettled }));
+      yield* connections.provision(provisionA);
+
+      // Wait for reconciliations to settle until the event has been absorbed.
+      // Both the initial pass and the event's own pass offer a token; the
+      // instance must exist once they have.
+      yield* barrier.awaitSettled;
+      yield* barrier.awaitSettled;
+
+      const registry = yield* ProviderInstanceRegistry;
       assert.lengthOf(
         yield* registry.listInstances,
         1,
-        "a disconnect must not remove a previously bound provider instance",
+        "an event published during startup must still reach the reconciliation",
+      );
+    }).pipe(Effect.provide(test.registryLayer));
+  }).pipe(Effect.scoped, Effect.provide(baseLayer)),
+);
+
+it.effect("reconstructs the instance in a fresh registry after a restart", () =>
+  Effect.gen(function* () {
+    const test = yield* harness;
+    const connections = yield* DecisionHubConnectionRegistry;
+    yield* connections.provision(provisionA);
+
+    // First registry lifetime, closed deliberately at the end of its scope. That
+    // close is expected and is counted separately from the forbidden closes the
+    // other cases assert on.
+    yield* Effect.scoped(
+      Effect.gen(function* () {
+        const barrier = yield* makeBarrier;
+        yield* runSettingsWatcher({ onSettled: barrier.onSettled });
+        assert.lengthOf(yield* (yield* ProviderInstanceRegistry).listInstances, 1);
+      }).pipe(Effect.provide(test.registryLayer)),
+    );
+    assert.isAbove(
+      yield* Ref.get(test.counters.closed),
+      0,
+      "closing the registry scope really tore the first instance down",
+    );
+
+    // A SECOND registry, built from scratch against the same durable binding
+    // table — the state a restarted server finds.
+    const second = yield* harness;
+    yield* Effect.gen(function* () {
+      const barrier = yield* makeBarrier;
+      yield* runSettingsWatcher({ onSettled: barrier.onSettled });
+      assert.lengthOf(
+        yield* (yield* ProviderInstanceRegistry).listInstances,
+        1,
+        "the binding table alone reconstructs the instance, with no second store",
       );
       assert.equal(
-        yield* Ref.get(test.counters.closed),
+        yield* Ref.get(second.counters.closed),
         0,
-        "a disconnect must not close the provider scope",
+        "and the reconstructed instance is not immediately torn down again",
       );
-    }).pipe(Effect.provide(test.registryLayer));
-  }).pipe(Effect.scoped, Effect.provide(baseLayer)),
-);
-
-it.effect("loses no connection event that lands between watcher start and the initial read", () =>
-  Effect.gen(function* () {
-    const test = yield* harness;
-    const connections = yield* DecisionHubConnectionRegistry;
-
-    yield* Effect.gen(function* () {
-      // Provision AFTER the watcher started. With the subscription acquired only
-      // inside a forked stream consumer, this event was dropped and the instance
-      // stayed invisible until an unrelated settings write arrived.
-      yield* runSettingsWatcher;
-      yield* connections.provision(provisionA);
-      yield* Effect.yieldNow;
-
-      const registry = yield* ProviderInstanceRegistry;
-      assert.lengthOf(
-        yield* registry.listInstances,
-        1,
-        "an event during startup must still reach the reconciliation",
-      );
-    }).pipe(Effect.provide(test.registryLayer));
-  }).pipe(Effect.scoped, Effect.provide(baseLayer)),
-);
-
-it.effect("survives a restart: the binding alone reconstructs the instance", () =>
-  Effect.gen(function* () {
-    const test = yield* harness;
-    const connections = yield* DecisionHubConnectionRegistry;
-    yield* connections.provision(provisionA);
-    // Disconnect first, so only the durable binding remains — the state a
-    // restart would find after someone disconnected.
-    yield* connections.disconnect(CONNECTION_A).pipe(Effect.ignore);
-
-    yield* Effect.gen(function* () {
-      yield* runSettingsWatcher;
-      const registry = yield* ProviderInstanceRegistry;
-      assert.lengthOf(
-        yield* registry.listInstances,
-        1,
-        "a restart reconstructs the instance from the binding table, with no second store",
-      );
-    }).pipe(Effect.provide(test.registryLayer));
+    }).pipe(Effect.provide(second.registryLayer));
   }).pipe(Effect.scoped, Effect.provide(baseLayer)),
 );

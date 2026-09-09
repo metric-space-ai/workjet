@@ -1084,6 +1084,35 @@ describe("EnvironmentRegistry", () => {
     }),
   );
 
+  it.effect("disconnects a relay without removing its cached workspace or calling SSH", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([RELAY_TARGET]);
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          RELAY_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        yield* registry.disconnect(RELAY_TARGET.environmentId);
+        expect((yield* SubscriptionRef.get(registry.entries)).has(RELAY_TARGET.environmentId)).toBe(
+          true,
+        );
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([]);
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([]);
+        yield* registry.retryNow(RELAY_TARGET.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          RELAY_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("removes all owned SSH state only on explicit removal", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness(

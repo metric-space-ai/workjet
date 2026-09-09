@@ -183,7 +183,7 @@ interface CtoxModeContextValue {
     instance: CtoxManagedInstance,
   ) => Promise<CtoxMutationOutcome>;
   readonly select: (instance: CtoxManagedInstance) => void;
-  readonly showNetwork: () => void;
+  readonly showNetwork: () => Promise<boolean>;
   /** Re-check async mutations against the live selected instance ref. */
   readonly isSelected: (instanceId: string) => boolean;
   readonly setConnection: (state: CtoxConnectionState) => void;
@@ -510,10 +510,11 @@ export function CtoxModeProvider({
 
   const clearSelection = useCallback(
     (nextConnection: CtoxConnectionState) => {
-      void requestActiveWorkjetSelection(null).then((accepted) => {
-        if (!accepted || !mountedRef.current) return;
+      return requestActiveWorkjetSelection(null).then((accepted) => {
+        if (!accepted || !mountedRef.current) return false;
         setConnection(nextConnection);
         releaseCtoxGuest(bridge);
+        return true;
       });
     },
     [bridge],

@@ -1692,12 +1692,14 @@ function CloudLinkRow({ canManageRelay }: { readonly canManageRelay: boolean }) 
 export function useComputerConnections({
   onConnected,
   localAvailable,
+  inline = false,
 }: {
   readonly onConnected: (
     environmentId: EnvironmentId,
     kind?: "local" | "ssh" | "tailscale",
   ) => void;
   readonly localAvailable: boolean;
+  readonly inline?: boolean;
 }) {
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
@@ -1782,7 +1784,7 @@ export function useComputerConnections({
     useState<EnvironmentId | null>(null);
   const desktopSshHosts = useEnvironmentQuery(
     desktopBridge &&
-      addBackendDialogOpen &&
+      (inline || addBackendDialogOpen) &&
       (savedBackendMode === "ssh" || savedBackendMode === "tailscale")
       ? desktopSshHostsStateAtom
       : null,

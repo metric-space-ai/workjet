@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { ArrowUpIcon, PlusIcon } from "lucide-react";
 import { openInstanceSetup } from "../instanceSetup";
 import { Button } from "./ui/button";
@@ -30,6 +31,7 @@ export function resolveActiveCtoxInstanceId(
 }
 
 export function ActiveCtoxInstanceSelector() {
+  const navigate = useNavigate();
   const { discovery, selectedId, select, showNetwork } = useCtoxMode();
   const picker = useRef<HTMLSelectElement>(null);
   const { selectionRevision } = useActiveWorkjetScope();
@@ -39,13 +41,15 @@ export function ActiveCtoxInstanceSelector() {
   const selectInstance = useCallback(
     (instanceId: string) => {
       if (instanceId === "") {
-        showNetwork();
+        void showNetwork().then((accepted) => {
+          if (accepted) void navigate({ to: "/" });
+        });
         return;
       }
       const instance = instances.find((candidate) => candidate.id === instanceId);
       if (instance !== undefined) select(instance);
     },
-    [instances, select, showNetwork],
+    [instances, select, showNetwork, navigate],
   );
 
   const loading = discovery === "loading";

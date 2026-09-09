@@ -8,9 +8,9 @@ import sidebarChromeSource from "../sidebar/SidebarChrome.tsx?raw";
 import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
 
 describe("Workjet settings information architecture", () => {
-  it("puts Business OS first, keeps Computers, and hides Connections", () => {
+  it("puts instances first, keeps Computers, and hides Connections", () => {
     expect(SETTINGS_NAV_ITEMS[0]).toMatchObject({
-      label: "Business OS",
+      label: "Instanzen",
       to: "/settings/business-os",
     });
     expect(SETTINGS_NAV_ITEMS).toEqual(

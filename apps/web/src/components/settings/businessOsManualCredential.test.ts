@@ -52,7 +52,10 @@ describe("manual instance connection", () => {
     expect(() =>
       decodeBusinessOsManualCredential({
         ...input(),
-        password: encodeBusinessOsManualCredential({ ...connection, expiresAt: "2026-99-99T99:00:00Z" }),
+        password: encodeBusinessOsManualCredential({
+          ...connection,
+          expiresAt: "2026-99-99T99:00:00Z",
+        }),
       }),
     ).toThrow("abgelaufen");
   });

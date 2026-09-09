@@ -479,6 +479,7 @@ export function WorkjetComputersSettings({
   const targetOptions = workjetEnvironmentTargetOptions(environments);
   const configuration = includeSavedComputers(settings.workjet, targetOptions, environmentId);
   const connections = useComputerConnections({
+    inline: setupOnly,
     localAvailable: environmentsReady && primaryEnvironment?.connection.phase === "connected",
     onConnected: (id, kind) => {
       setPendingKind(kind);

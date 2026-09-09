@@ -6,14 +6,16 @@ import * as Schema from "effect/Schema";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
 import migration61 from "../../persistence/Migrations/061_WorkjetCtoxNativeTurns.ts";
+import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
-import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
+import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 
 it.effect("keeps pending, review and resume separate and claims only one new native offer", () =>
   Effect.gen(function* () {
     yield* migration60;
     yield* migration61;
+    yield* migration62;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const scope = {
       threadId: ThreadId.make("dev"),
@@ -32,6 +34,8 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     let status = "accepted";
     let offers: Array<(typeof WorkjetCtoxCrewOffers.Type)["offers"][number]> = [];
     let memberId = "crew";
+    let attemptId = "attempt";
+    let loseClaimResponse = false;
     let claims = 0;
     const sentKeys: string[] = [];
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
@@ -41,7 +45,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
           if (name === "business_os.start_crew_execution") {
             const input = yield* Schema.decodeUnknownEffect(
               Schema.Struct({ idempotency_key: Schema.String }),
-            )(args);
+            )(args).pipe(Effect.orDie);
             sentKeys.push(input.idempotency_key);
             return {
               structuredContent: {
@@ -88,14 +92,16 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
           expect(args).toEqual({
             command_id: "command",
             executor_id: "computer",
-            attempt_id: "attempt",
+            attempt_id: attemptId,
           });
           claims++;
+          if (loseClaimResponse)
+            return yield* new CtoxMcpTransportError({ reason: "connection-unavailable" });
           return {
             structuredContent: {
               schema: "ctox.external_crew_offer.v1",
               command_id: "command",
-              attempt_id: "attempt",
+              attempt_id: attemptId,
               executor_id: "computer",
               harness: "codex",
               deadline_ms: deadline,
@@ -105,7 +111,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
               crew_context: {
                 schema: "ctox.crew_context.v1",
                 command_id: "command",
-                attempt_id: "attempt",
+                attempt_id: attemptId,
                 task_id: "task",
                 module_id: "ctox",
                 member_id: memberId,
@@ -145,17 +151,74 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(yield* Effect.flip(prepare())).toMatchObject({ reason: "native-response-invalid" });
     expect(claims).toBe(0);
     offers = [offered];
-    const admitted = yield* prepare();
+    const competing = yield* Effect.all([prepare(), prepare()], { concurrency: 2 });
+    expect(competing.map((result) => result.state).sort()).toEqual(["ready", "resume-required"]);
+    const admitted = competing.find((result) => result.state === "ready");
+    if (!admitted) return yield* Effect.die("Expected one native admission");
     expect(admitted.state).toBe("ready");
     if (admitted.state !== "ready") return yield* Effect.die("Expected native admission");
     expect(admitted.claim.context.member_id).toBe("crew");
     expect(admitted.observed.reference.taskId).toBe("task");
     expect(claims).toBe(1);
+    const restoredRequests = yield* CtoxNativeRequests.pipe(
+      Effect.provide(CtoxNativeRequests.layer),
+    );
+    const binding = yield* restoredRequests.readCrewStart(admitted.identity, attemptId);
+    expect(binding).toEqual({
+      attemptId,
+      commandId: "command",
+      taskId: "task",
+      executorId: "computer",
+      memberId: "crew",
+    });
+    if (!binding) return yield* Effect.die("Expected persisted start binding");
+    expect(
+      yield* Effect.flip(
+        restoredRequests.reserveCrewStart(admitted.identity, { ...binding, memberId: "foreign" }),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    expect(
+      yield* Effect.flip(
+        restoredRequests.readCrewStart(
+          { ...admitted.identity, connectionId: WorkjetConnectionId.make("foreign") },
+          attemptId,
+        ),
+      ),
+    ).toMatchObject({ reason: "native-request-conflict" });
+    const restored = makeCtoxNativeTaskClient({
+      requests: restoredRequests,
+      transport,
+      connections: {
+        resolveReadyTarget: () =>
+          Effect.succeed({ endpoint: "https://ctox.example/mcp", token: "token" }),
+      },
+    });
+    expect((yield* restored.prepareProjectExecution(scope, "persisted-event", task)).state).toBe(
+      "resume-required",
+    );
+    expect(claims).toBe(1);
+
+    // A different native attempt may be offered after native review/retry.
+    attemptId = "wrong-member";
+    offers = [{ ...offered, attempt_id: attemptId }];
     memberId = "other-crew";
     expect(yield* Effect.flip(prepare())).toMatchObject({ reason: "native-response-invalid" });
+    expect((yield* prepare()).state).toBe("resume-required");
+    expect(claims).toBe(2);
+
+    attemptId = "ambiguous-claim";
+    offers = [{ ...offered, attempt_id: attemptId }];
+    memberId = "crew";
+    loseClaimResponse = true;
+    expect(yield* Effect.flip(prepare())).toMatchObject({ reason: "connection-unavailable" });
+    loseClaimResponse = false;
+    expect((yield* restored.prepareProjectExecution(scope, "persisted-event", task)).state).toBe(
+      "resume-required",
+    );
+    expect(claims).toBe(3);
     status = "completed";
     expect((yield* prepare()).state).toBe("native-terminal");
-    expect(claims).toBe(2);
+    expect(claims).toBe(3);
     expect(new Set(sentKeys).size).toBe(1);
   }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );

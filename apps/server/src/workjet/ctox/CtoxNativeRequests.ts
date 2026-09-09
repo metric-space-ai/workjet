@@ -88,6 +88,15 @@ const NativeTurns = Schema.Array(
   Schema.Struct({ requestId: Schema.String, requestKey: Schema.String }),
 );
 
+const CrewStartId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
+const CrewStartBinding = Schema.Struct({
+  attemptId: CrewStartId,
+  commandId: CrewStartId,
+  taskId: CrewStartId,
+  executorId: CrewStartId,
+  memberId: CrewStartId,
+});
+
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const load = (identity: CtoxNativeRequestIdentity) =>
@@ -241,6 +250,68 @@ const make = Effect.gen(function* () {
       receivedAt: row.receivedAt,
     } satisfies NativeTaskReference;
   });
+  const readCrewStart = Effect.fn("CtoxNativeRequests.readCrewStart")(function* (
+    requestIdentity: CtoxNativeRequestIdentity,
+    attemptId: string,
+  ) {
+    const identity = { ...requestIdentity };
+    yield* load(identity);
+    const rows = yield* sql`
+      SELECT attempt_id AS "attemptId", command_id AS "commandId", task_id AS "taskId",
+        executor_id AS "executorId", member_id AS "memberId"
+      FROM workjet_ctox_crew_starts
+      WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+        AND attempt_id = ${attemptId}
+    `.pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(CrewStartBinding))),
+      Effect.mapError(unavailable),
+    );
+    return rows[0] ?? null;
+  });
+
+  /** Reserve BEFORE the remote claim. Only the inserting caller may start fresh.
+   * An interrupted/ambiguous claim leaves the reservation intact for explicit
+   * recovery; deleting it could cause two external harnesses for one attempt.
+   */
+  const reserveCrewStart = Effect.fn("CtoxNativeRequests.reserveCrewStart")(function* (
+    requestIdentity: CtoxNativeRequestIdentity,
+    requestedBinding: typeof CrewStartBinding.Type,
+  ) {
+    const identity = { ...requestIdentity };
+    const binding = yield* Schema.decodeUnknownEffect(CrewStartBinding)({
+      ...requestedBinding,
+    }).pipe(Effect.mapError(() => failure("native-response-invalid")));
+    const reference = yield* get(identity);
+    if (
+      reference.request.operation !== "start_crew_execution" ||
+      reference.commandId !== binding.commandId ||
+      reference.taskId !== binding.taskId
+    )
+      return yield* failure("native-task-reference-conflict");
+    const now = yield* Clock.currentTimeMillis;
+    const inserted = yield* sql`
+      INSERT INTO workjet_ctox_crew_starts
+        (thread_id, request_key, attempt_id, command_id, task_id, executor_id, member_id, reserved_at_ms)
+      VALUES (${identity.threadId}, ${identity.requestKey}, ${binding.attemptId},
+        ${binding.commandId}, ${binding.taskId}, ${binding.executorId}, ${binding.memberId}, ${now})
+      ON CONFLICT(thread_id, request_key, attempt_id) DO NOTHING
+      RETURNING attempt_id
+    `.pipe(Effect.mapError(unavailable));
+    const saved = yield* readCrewStart(identity, binding.attemptId);
+    if (
+      !saved ||
+      saved.commandId !== binding.commandId ||
+      saved.taskId !== binding.taskId ||
+      saved.executorId !== binding.executorId ||
+      saved.memberId !== binding.memberId
+    )
+      return yield* failure("native-task-reference-conflict");
+    return {
+      state: inserted.length === 1 ? ("reserved" as const) : ("existing" as const),
+      binding: saved,
+    };
+  });
+
   const registerNativeTurn = Effect.fn("CtoxNativeRequests.registerNativeTurn")(function* (
     identity: CtoxNativeRequestIdentity,
     requestId: string,
@@ -277,6 +348,8 @@ const make = Effect.gen(function* () {
     recordReceipt,
     recordObservedTask,
     get,
+    readCrewStart,
+    reserveCrewStart,
     registerNativeTurn,
     latestNativeTurn,
   };

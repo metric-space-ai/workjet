@@ -339,6 +339,20 @@ export function makeCtoxNativeTaskClient(dependencies: {
           observed,
           attemptId: offer.attempt_id,
         };
+      const reservation = yield* dependencies.requests.reserveCrewStart(identity, {
+        attemptId: offer.attempt_id,
+        commandId: receipt.command_id,
+        taskId: observed.reference.taskId,
+        executorId: receipt.executor_id,
+        memberId: receipt.crew_member_id,
+      });
+      if (reservation.state === "existing")
+        return {
+          state: "resume-required" as const,
+          identity,
+          observed,
+          attemptId: offer.attempt_id,
+        };
       const claim = yield* claimProjectOffer(identity, receipt.executor_id, offer.attempt_id);
       if (claim.context.member_id !== receipt.crew_member_id)
         return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });

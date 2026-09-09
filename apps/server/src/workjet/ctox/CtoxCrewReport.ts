@@ -25,12 +25,20 @@ export const reportCtoxCrewResult = Effect.fn("reportCtoxCrewResult")(function* 
   const reply = candidate.reply;
   const error = candidate.error;
   // Match the native persisted JSON, including the null field and UTF-8 bytes.
+  const encoded = yield* Schema.encodeEffect(
+    Schema.fromJsonString(
+      Schema.Struct({
+        reply: Schema.NullOr(Schema.String),
+        error: Schema.NullOr(Schema.String),
+      }),
+    ),
+  )({ reply: reply ?? null, error: error ?? null }).pipe(
+    Effect.mapError(() => new CtoxNativeRequestError({ reason: "native-request-conflict" })),
+  );
   if (
     (typeof reply === "string" && reply.trim().length > 0 && error === undefined) ===
       (typeof error === "string" && error.trim().length > 0 && reply === undefined) ||
-    new TextEncoder().encode(JSON.stringify({ reply: reply ?? null, error: error ?? null }))
-      .byteLength >
-      256 * 1024
+    new TextEncoder().encode(encoded).byteLength > 256 * 1024
   )
     return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
   const sessionTarget = { endpoint: target.endpoint, token: Redacted.value(claim.commandSession) };

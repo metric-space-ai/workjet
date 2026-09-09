@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
@@ -48,7 +49,9 @@ it.effect("validates native claim binding and keeps its session redacted", () =>
   Effect.gen(function* () {
     const result = yield* decodeCtoxCrewClaim(reference, "computer", "attempt", 100, claim);
     expect(Redacted.value(result.commandSession)).toBe(claim.command_session);
-    expect(JSON.stringify(result)).not.toContain(claim.command_session);
+    expect(Schema.encodeSync(Schema.UnknownFromJsonString)(result)).not.toContain(
+      claim.command_session,
+    );
     expect(result.context.memory_block).toBe("Knowledge");
     const invalid = [
       { ...claim, command_id: "other" },

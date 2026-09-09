@@ -1089,14 +1089,12 @@ routing.layer("ProviderServiceLive routing", (it) => {
           assert.equal(routing.codex.startSession.mock.calls.length, callsBefore);
           assert.equal(mcp.requests.length, 0);
           const foreign = yield* Effect.flip(
-            provider
-              .startSession(threadId, input)
-              .pipe(
-                Effect.provideService(CtoxCrewSessionBootstrap, {
-                  ...bootstrap,
-                  capability: { ...bootstrap.capability, threadId: asThreadId("foreign-thread") },
-                }),
-              ),
+            provider.startSession(threadId, input).pipe(
+              Effect.provideService(CtoxCrewSessionBootstrap, {
+                ...bootstrap,
+                capability: { ...bootstrap.capability, threadId: asThreadId("foreign-thread") },
+              }),
+            ),
           );
           assert.equal(foreign._tag, "ProviderValidationError");
           assert.equal(routing.codex.startSession.mock.calls.length, callsBefore);

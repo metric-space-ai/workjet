@@ -26,9 +26,12 @@ export const decodeCtoxCrewPlanInput = Effect.fn("decodeCtoxCrewPlanInput")(func
   const input = yield* Schema.decodeUnknownEffect(CtoxCrewPlanInput, { onExcessProperty: "error" })(
     value,
   ).pipe(Effect.mapError(() => new CtoxNativeRequestError({ reason: "native-request-conflict" })));
+  const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(CtoxCrewPlanInput))(input).pipe(
+    Effect.mapError(() => new CtoxNativeRequestError({ reason: "native-request-conflict" })),
+  );
   if (
     input.steps.some((step) => !step.label.trim()) ||
-    new TextEncoder().encode(JSON.stringify(input)).byteLength > 64 * 1024
+    new TextEncoder().encode(encoded).byteLength > 64 * 1024
   )
     return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
   return input;

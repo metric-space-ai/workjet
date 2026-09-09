@@ -56,7 +56,9 @@ const failure = (reason: CtoxNativeRequestError["reason"]) =>
   new CtoxNativeRequestError({ reason });
 const unavailable = () => failure("native-request-store-unavailable");
 const IntentCodec = Schema.fromJsonString(
-  Schema.Union([WorkjetCtoxBusinessOsInput, Schema.Struct({ request: WorkjetCtoxCrewRequest })]),
+  Schema.Struct({
+    request: Schema.Union([WorkjetCtoxBusinessOsInput.fields.request, WorkjetCtoxCrewRequest]),
+  }),
 );
 const encodeIntent = Schema.encodeEffect(IntentCodec);
 const decodeIntent = Schema.decodeUnknownEffect(IntentCodec);
@@ -149,8 +151,7 @@ const make = Effect.gen(function* () {
       Effect.mapError(unavailable),
     );
     const digest = NodeCrypto.createHash("sha256").update(encodedTarget).digest("hex");
-    if (row.targetDigest !== digest)
-      return yield* failure("native-request-credentials-changed");
+    if (row.targetDigest !== digest) return yield* failure("native-request-credentials-changed");
   });
 
   const recordReceipt = Effect.fn("CtoxNativeRequests.recordReceipt")(function* (
@@ -159,11 +160,14 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* load(identity);
     const { request } = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
-    const receipt = yield* (
+    const receipt =
       request.operation === "start_crew_execution"
-        ? Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(value)
-        : Schema.decodeUnknownEffect(Receipt)(value)
-    ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+        ? yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(value).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          )
+        : yield* Schema.decodeUnknownEffect(Receipt)(value).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          );
     if (request.operation === "start_crew_execution") {
       if (!("thread_id" in receipt) || receipt.thread_id !== request.thread_id)
         return yield* failure("native-response-invalid");

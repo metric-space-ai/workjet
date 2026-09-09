@@ -81,7 +81,11 @@ it.effect(
         },
       };
       const server = yield* McpServer.McpServer;
-      const call = (invocation: Invocation.McpInvocationScope, name: string, args: unknown) =>
+      const call = (
+        invocation: Invocation.McpInvocationScope,
+        name: string,
+        args: Record<string, unknown>,
+      ) =>
         server
           .callTool({ name, arguments: args })
           .pipe(

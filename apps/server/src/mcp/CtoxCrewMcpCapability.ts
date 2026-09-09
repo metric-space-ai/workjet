@@ -1,25 +1,17 @@
 import type { ProviderInstanceId, ThreadId } from "@workjet/contracts";
 import type * as Effect from "effect/Effect";
-import type { CtoxCrewContext } from "../workjet/ctox/CtoxCrewClaim.ts";
-import type { CtoxCrewResultCandidate } from "../workjet/ctox/CtoxCrewReport.ts";
+import type { makeCtoxNativeTaskClient } from "../workjet/ctox/CtoxNativeTaskClient.ts";
 
-import type { CtoxCrewPlanInput, CtoxCrewPlanReceipt } from "../workjet/ctox/CtoxCrewPlan.ts";
+type NativeCrewClaim = Effect.Success<
+  ReturnType<ReturnType<typeof makeCtoxNativeTaskClient>["claimProjectOffer"]>
+>;
 
 /** Server-only closures from a verified native claim. Never part of provider config. */
 export interface CtoxCrewMcpCapability {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
   readonly attemptId: string;
-  readonly refreshContext: () => Effect.Effect<typeof CtoxCrewContext.Type, unknown>;
-  readonly updatePlan: (
-    input: typeof CtoxCrewPlanInput.Type,
-  ) => Effect.Effect<typeof CtoxCrewPlanReceipt.Type, unknown>;
-  readonly report: (candidate: CtoxCrewResultCandidate) => Effect.Effect<
-    {
-      readonly accepted: true;
-      readonly attempt_id: string;
-      readonly review_status: "pending";
-    },
-    unknown
-  >;
+  readonly refreshContext: NativeCrewClaim["refreshContext"];
+  readonly updatePlan: NativeCrewClaim["updatePlan"];
+  readonly report: NativeCrewClaim["report"];
 }

@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
@@ -257,7 +258,9 @@ it.effect("isolates Crew grants from provider config and revokes them on session
         });
         if (!issued) return yield* Effect.die("missing active registry credential");
         expect(issued.config).not.toHaveProperty("ctoxCrewExecution");
-        expect(JSON.stringify(issued.config)).not.toContain("native-attempt");
+        expect(Schema.encodeSync(Schema.UnknownFromJsonString)(issued.config)).not.toContain(
+          "native-attempt",
+        );
         const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
         grant.attemptId = "caller-mutation";
         const resolved = yield* registry.resolve(token);

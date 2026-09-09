@@ -114,7 +114,12 @@ const register = Effect.fn("mcp.registerCtoxCrew")(function* () {
           return new McpSchema.CallToolResult({
             isError: false,
             structuredContent: result,
-            content: [{ type: "text", text: JSON.stringify(result) }],
+            content: [
+              {
+                type: "text",
+                text: yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(result),
+              },
+            ],
           });
         }).pipe(Effect.catch(() => Effect.succeed(denied()))),
     });

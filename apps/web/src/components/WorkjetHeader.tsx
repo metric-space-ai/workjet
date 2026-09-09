@@ -27,23 +27,28 @@ export function WorkjetHeaderFrame({
     <WorkjetHeaderSlotContext value={slot}>
       <header
         aria-label="Workjet"
-        className="workspace-topbar drag-region relative z-20 gap-2 border-b border-border bg-background pl-[var(--workspace-controls-left)] pr-[var(--workspace-controls-right)]"
+        className="workspace-topbar drag-region relative z-20 gap-2 border-b border-border bg-background"
         data-workjet-header=""
       >
-        {sidebarAvailable ? <SidebarTrigger aria-label="Toggle main sidebar" /> : null}
-        {isElectron ? <ActiveCtoxInstanceSelector placement="header" /> : null}
-        {isElectron ? (
-          <WorkjetProductModeSwitch
-            mode={mode}
-            onBackdrop={false}
-            onModeChange={(nextMode) => {
-              if (nextMode === mode) return;
-              void navigateAcrossModes({ mode: nextMode === "ctox" ? "business-os" : "code" });
-            }}
-          />
-        ) : (
-          <span className="text-sm font-medium">Workjet</span>
-        )}
+        <div
+          className="flex min-w-0 items-center gap-2 pl-[var(--workspace-controls-left)]"
+          data-workjet-header-navigation=""
+        >
+          {sidebarAvailable ? <SidebarTrigger aria-label="Toggle main sidebar" /> : null}
+          {isElectron ? <ActiveCtoxInstanceSelector placement="header" /> : null}
+          {isElectron ? (
+            <WorkjetProductModeSwitch
+              mode={mode}
+              onBackdrop={false}
+              onModeChange={(nextMode) => {
+                if (nextMode === mode) return;
+                void navigateAcrossModes({ mode: nextMode === "ctox" ? "business-os" : "code" });
+              }}
+            />
+          ) : (
+            <span className="text-sm font-medium">Workjet</span>
+          )}
+        </div>
         <div
           ref={setSlot}
           className="relative flex min-w-0 flex-1 items-center"
@@ -53,7 +58,8 @@ export function WorkjetHeaderFrame({
           type="button"
           aria-label="Settings"
           title="Settings"
-          className="no-drag flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          className="no-drag mr-[var(--workspace-controls-right)] flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          data-workjet-header-settings=""
           onClick={() => void navigate({ to: "/settings" })}
         >
           <SettingsIcon className="size-4" aria-hidden />

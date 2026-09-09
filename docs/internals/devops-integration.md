@@ -53,6 +53,26 @@ removal and refresh actions remain reachable in Business OS settings under
 The native guest bounds follow the remaining content rectangle below the
 shared header.
 
+Below 1100 CSS pixels, the frame moves the surface context slot to a 44px
+second row. Instance/mode navigation remains in the native titlebar, including
+the macOS traffic-light inset. The sidebar uses the complete frame-header
+height, while the surface toolbar uses its own context-row height. The native
+guest host's existing ResizeObserver reports the resulting content rectangle.
+Standalone headers retain their original geometry. Real narrow-window, zoom,
+native guest and keyboard acceptance remains required; parsing CSS is not a
+layout pass. Browser Ops transport is still pending and is not enabled merely
+by adding this shared geometry.
+
+On 2026-09-09, CI run 34338491522 passed Check, Test, Release Smoke and Mobile
+Native Static Analysis for head fd9546eb66b0615f285e3192150f72796bcc770a.
+The desktop artifact run 34338491659 also passed. It packaged PR merge commit
+6160a63244efd7d261ee79ec534937e7deb06893; it is not proof of later CSS changes
+or of the full Dev/Ops UI story. Artifact id 10099681125 was available, but
+no preview was installed or launched by this task. The previously reported
+scope-guard/type errors and the closed-session observer race have been fixed
+on this head. Native driver registration, shared Crew and end-to-end UI
+acceptance remain incomplete.
+
 ## Verification and resource status
 
 Initial source base: Workjet `e2d1acd6d` (origin/main fetched 2026-09-09).

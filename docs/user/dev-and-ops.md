@@ -10,6 +10,10 @@ it does not move an existing conversation to another instance.
 Choose another instance from the header dropdown. Project navigation remains
 in the Dev sidebar. Ops gives the available width to the Business OS desktop.
 
+In compact windows, project or app controls move to a second header row.
+The instance selector, Dev/Ops switch and Settings remain in the top row;
+the editor, sidebar and Business OS desktop begin below both rows.
+
 Open **Settings → Business OS → Instanzverbindungen verwalten** to sign in,
 refresh connections, add a connection or remove one. These controls are shared
 by both views. The Settings button stays available in the header when the

@@ -11,6 +11,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./ctoxBusinessData": {
+      "types": "./src/ctoxBusinessData.ts",
+      "import": "./src/ctoxBusinessData.ts"
+    },
     "./ctoxSync": {
       "types": "./src/ctoxSync.ts",
       "import": "./src/ctoxSync.ts"

@@ -91,6 +91,9 @@ export class EnvironmentRegistry extends Context.Service<
       | ConnectionAttemptError
       | PlatformEnvironmentRemovalError
     >;
+    readonly disconnect: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<void, ConnectionAttemptError | EnvironmentNotRegisteredError>;
     readonly retryNow: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly state: (
       environmentId: EnvironmentId,
@@ -247,7 +250,7 @@ export const make = Effect.gen(function* () {
   });
 
   const createServiceScope = Effect.fn("EnvironmentRegistry.createServiceScope")(
-    (entry: ConnectionCatalogEntry) =>
+    (entry: ConnectionCatalogEntry, connect = true) =>
       Effect.uninterruptible(
         Effect.gen(function* () {
           const environmentId = entry.target.environmentId;
@@ -261,7 +264,7 @@ export const make = Effect.gen(function* () {
             Scope.provide(scope),
             Effect.onError(() => Scope.close(scope, Exit.void)),
           );
-          yield* supervisor.connect;
+          if (connect) yield* supervisor.connect;
           yield* SubscriptionRef.update(serviceScopes, (current) => {
             const next = new Map(current);
             next.set(environmentId, { entry, supervisor, scope });
@@ -625,9 +628,34 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const disconnect = Effect.fn("EnvironmentRegistry.disconnect")(function* (
+    environmentId: EnvironmentId,
+  ) {
+    return yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        const entry = yield* getEntry(environmentId);
+        const existing = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+        const supervisor = existing?.supervisor ?? (yield* createServiceScope(entry, false));
+        yield* supervisor.disconnect;
+        yield* SubscriptionRef.changes(supervisor.state).pipe(
+          Stream.filter((state) => state.phase === "available"),
+          Stream.runHead,
+        );
+        if (
+          entry.target._tag === "SshConnectionTarget" &&
+          Option.isSome(entry.profile) &&
+          isSshConnectionProfile(entry.profile.value)
+        ) {
+          yield* ssh.disconnect(entry.profile.value.target);
+        }
+      }),
+    );
+  });
+
   const retryNow = (environmentId: EnvironmentId) =>
     acquireSupervisor(environmentId).pipe(
-      Effect.flatMap((supervisor) => supervisor.retryNow),
+      Effect.flatMap((supervisor) => supervisor.retryNow.pipe(Effect.andThen(supervisor.connect))),
       Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
       Effect.withSpan("EnvironmentRegistry.retryNow"),
     );
@@ -669,6 +697,7 @@ export const make = Effect.gen(function* () {
     reconcilePlatform,
     remove,
     removeRelayEnvironments,
+    disconnect,
     retryNow,
     state,
     stateChanges,

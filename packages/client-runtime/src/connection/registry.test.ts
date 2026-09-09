@@ -1016,6 +1016,103 @@ describe("EnvironmentRegistry", () => {
     }),
   );
 
+  it.effect("disconnects SSH without forgetting the computer and reconnects on request", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [SSH_CONNECTION],
+        [SSH_PROFILE],
+        [
+          [
+            SSH_CONNECTION.connectionId,
+            new BearerConnectionCredential({ token: "temporary-token" }),
+          ],
+        ],
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          SSH_CONNECTION.environmentId,
+          (state) => state.phase === "connected",
+        );
+        yield* registry.disconnect(SSH_CONNECTION.environmentId);
+
+        expect((yield* registry.state(SSH_CONNECTION.environmentId)).phase).toBe("available");
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).has(SSH_CONNECTION.environmentId),
+        ).toBe(true);
+        expect((yield* Ref.get(harness.storedProfiles)).has(SSH_CONNECTION.connectionId)).toBe(
+          true,
+        );
+        expect((yield* Ref.get(harness.storedCredentials)).has(SSH_CONNECTION.connectionId)).toBe(
+          true,
+        );
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([]);
+        expect(yield* Ref.get(harness.releasedSessions)).toBe(1);
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([SSH_TARGET]);
+
+        yield* registry.retryNow(SSH_CONNECTION.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          SSH_CONNECTION.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+        expect((yield* Ref.get(harness.storedProfiles)).has(SSH_CONNECTION.connectionId)).toBe(
+          true,
+        );
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("disconnects an unopened offline computer without starting a connection", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE]);
+      yield* SubscriptionRef.set(harness.networkStatus, "offline");
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.disconnect(SSH_CONNECTION.environmentId);
+        expect((yield* registry.state(SSH_CONNECTION.environmentId)).phase).toBe("available");
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(0);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).has(SSH_CONNECTION.environmentId),
+        ).toBe(true);
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([SSH_TARGET]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("disconnects a relay without removing its cached workspace or calling SSH", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([RELAY_TARGET]);
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          RELAY_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        yield* registry.disconnect(RELAY_TARGET.environmentId);
+        expect((yield* SubscriptionRef.get(registry.entries)).has(RELAY_TARGET.environmentId)).toBe(
+          true,
+        );
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([]);
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([]);
+        yield* registry.retryNow(RELAY_TARGET.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          RELAY_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("removes all owned SSH state only on explicit removal", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness(

@@ -126,11 +126,11 @@ the environment the project lives on. Every saved environment is offered, not on
 
 Use this when you want the desktop app to start or reuse Workjet on another machine over SSH.
 
-1. Open **Settings** → **Connections**.
-2. Under **Remote Environments**, choose **Add environment**.
-3. Select the SSH launch flow.
-4. Enter the SSH target, such as `user@example.com`.
-5. Confirm the launch. The desktop app probes the host, starts or reuses a remote Workjet server, opens a local port forward, and saves the environment.
+1. Open **Settings → Computers → Add computer**.
+2. Choose **SSH**, or **Tailscale** for a computer on your tailnet.
+3. Enter its IP or hostname, username, and port; optionally give it a name.
+4. Choose **Connect computer** and complete any SSH authentication prompt.
+5. Workjet checks the host, starts or reuses its worker runtime, and shows the saved computer in the same list. Reconnect and disconnect from that row.
 
 After setup, the renderer connects to a local forwarded HTTP/WebSocket endpoint. The remote host still owns the actual Workjet server, projects, files, git state, terminals, and provider sessions.
 

@@ -11,7 +11,7 @@ import {
   ServerCogIcon,
   ShieldCheckIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -32,14 +32,24 @@ function stageLabel(snapshot: WorkjetProvisioningSnapshot): string {
   return snapshot.events.at(-1)?.message ?? "Preparing operation";
 }
 
-export function ComputerProvisioningSection() {
+export function ComputerProvisioningSection({
+  initialKind = "local",
+  fixedTargetKind = false,
+  onCompleted,
+  onBusyChange,
+}: {
+  readonly initialKind?: "local" | "ssh";
+  readonly fixedTargetKind?: boolean;
+  readonly onCompleted?: () => void;
+  readonly onBusyChange?: (busy: boolean) => void;
+} = {}) {
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
   const supported =
     bridge?.inspectProvisioningHostKey !== undefined &&
     bridge.preflightProvisioningTarget !== undefined &&
     bridge.startProvisioningOperation !== undefined &&
     bridge.getProvisioningOperation !== undefined;
-  const [kind, setKind] = useState<"local" | "ssh">("local");
+  const [kind, setKind] = useState<"local" | "ssh">(initialKind);
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
   const [port, setPort] = useState("22");
@@ -77,7 +87,26 @@ export function ComputerProvisioningSection() {
     return () => window.clearInterval(timer);
   }, [operation]);
 
-  if (!supported) return null;
+  const completedId = useRef<string | null>(null);
+  const running =
+    busy || (operation !== null && operation.state !== "completed" && operation.state !== "failed");
+  useEffect(() => {
+    onBusyChange?.(running);
+    return () => onBusyChange?.(false);
+  }, [running, onBusyChange]);
+  useEffect(() => {
+    if (operation?.state === "completed" && completedId.current !== operation.operationId) {
+      completedId.current = operation.operationId;
+      onCompleted?.();
+    }
+  }, [operation, onCompleted]);
+
+  if (!supported)
+    return fixedTargetKind ? (
+      <p role="alert" className="text-sm">
+        Zum Einrichten dieser Instanz wird die aktuelle Workjet-Desktop-App benötigt.
+      </p>
+    ) : null;
 
   const inspect = async () => {
     if (kind === "ssh" && host.trim() === "") return;
@@ -164,22 +193,24 @@ export function ComputerProvisioningSection() {
         <div className="max-w-2xl space-y-4 pb-4 pt-2">
           {stage === "target" ? (
             <>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button
-                  type="button"
-                  variant={kind === "local" ? "default" : "outline"}
-                  onClick={() => setKind("local")}
-                >
-                  <LaptopIcon className="size-4" /> This computer
-                </Button>
-                <Button
-                  type="button"
-                  variant={kind === "ssh" ? "default" : "outline"}
-                  onClick={() => setKind("ssh")}
-                >
-                  <ServerCogIcon className="size-4" /> Remote over SSH
-                </Button>
-              </div>
+              {!fixedTargetKind ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    variant={kind === "local" ? "default" : "outline"}
+                    onClick={() => setKind("local")}
+                  >
+                    <LaptopIcon className="size-4" /> This computer
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={kind === "ssh" ? "default" : "outline"}
+                    onClick={() => setKind("ssh")}
+                  >
+                    <ServerCogIcon className="size-4" /> Remote over SSH
+                  </Button>
+                </div>
+              ) : null}
               {kind === "ssh" ? (
                 <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-3">
                   <label className="space-y-1 text-xs font-medium sm:col-span-3">

@@ -1,3 +1,8 @@
+import {
+  InstanceNavigationBoundary,
+  InstanceWorkspaceBoundary,
+  InstanceSidebarBoundary,
+} from "./ctox/InstanceOnboarding";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -258,38 +263,44 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
       <WorkjetProjectRegistrySynchronizer />
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
         {!isCtoxShell ? <ProjectProjectionRetention /> : null}
-        <Sidebar
-          side="left"
-          collapsible="offcanvas"
-          data-app-sidebar=""
-          className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
-          resizable={{
-            maxWidth: sidebarMaximumWidth,
-            minWidth: THREAD_SIDEBAR_MIN_WIDTH,
-            shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
-              nextWidth <= currentWidth ||
-              wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
-            storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-            onResize: setSidebarWidth,
-          }}
-        >
-          <ActiveCtoxInstanceSelector />
-          {sidebarSurface === "business-os" ? (
-            <CtoxSidebarShell />
-          ) : sidebarSurface === "settings" ? (
-            <>
-              <SidebarChromeHeader isElectron={isElectron} />
-              <SettingsSidebarNav pathname={pathname} />
-            </>
-          ) : legacySidebarEnabled ? (
-            <LegacyThreadSidebar />
-          ) : (
-            <ThreadSidebar />
-          )}
-          <SidebarRail onDoubleClick={resetSidebarWidth} />
-        </Sidebar>
-        {isCtoxShell ? <CtoxMainShell /> : children}
-        <SidebarControl />
+        <InstanceSidebarBoundary surface={sidebarSurface}>
+          <Sidebar
+            side="left"
+            collapsible="offcanvas"
+            data-app-sidebar=""
+            className="border-r border-sidebar-border bg-sidebar text-sidebar-foreground [&_[data-slot=sidebar-header]]:order-[-2]"
+            resizable={{
+              maxWidth: sidebarMaximumWidth,
+              minWidth: THREAD_SIDEBAR_MIN_WIDTH,
+              shouldAcceptWidth: ({ currentWidth, nextWidth, wrapper }) =>
+                nextWidth <= currentWidth ||
+                wrapper.clientWidth - nextWidth >= THREAD_MAIN_CONTENT_MIN_WIDTH,
+              storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
+              onResize: setSidebarWidth,
+            }}
+          >
+            <ActiveCtoxInstanceSelector />
+            {sidebarSurface === "business-os" ? (
+              <CtoxSidebarShell />
+            ) : sidebarSurface === "settings" ? (
+              <>
+                <SidebarChromeHeader isElectron={isElectron} />
+                <SettingsSidebarNav pathname={pathname} />
+              </>
+            ) : (
+              <InstanceNavigationBoundary>
+                {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
+              </InstanceNavigationBoundary>
+            )}
+            <SidebarRail onDoubleClick={resetSidebarWidth} />
+          </Sidebar>
+        </InstanceSidebarBoundary>
+        <InstanceWorkspaceBoundary surface={sidebarSurface}>
+          {isCtoxShell ? <CtoxMainShell /> : children}
+        </InstanceWorkspaceBoundary>
+        <InstanceSidebarBoundary surface={sidebarSurface}>
+          <SidebarControl />
+        </InstanceSidebarBoundary>
       </CtoxModeProvider>
     </SidebarProvider>
   );

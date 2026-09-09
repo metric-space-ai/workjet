@@ -105,7 +105,7 @@ export function updateWorkjetComputerHarness(
 export function saveWorkjetComputerDraft(draft: WorkjetComputerDraft): WorkjetComputer {
   const label = draft.label.trim();
   if (!label) throw new Error("Enter a computer label.");
-  if (!draft.environmentId) throw new Error("Choose an existing environment.");
+  if (!draft.environmentId) throw new Error("Choose a computer connection.");
   const harnesses: WorkjetHarnessConfiguration[] = draft.harnesses.map((entry) => {
     const executableOverride = entry.executableOverride.trim();
     return {
@@ -123,16 +123,22 @@ export function saveWorkjetComputerDraft(draft: WorkjetComputerDraft): WorkjetCo
   };
 }
 
-/** Resolve only an existing connection, then await its settings command. */
+/** Preserve saved connection identity, then await the settings acknowledgement. */
 export async function persistWorkjetComputerDraft(
   draft: WorkjetComputerDraft,
   environments: ReadonlyArray<WorkjetEnvironmentTargetOption>,
   onSave: (computer: WorkjetComputer) => void | Promise<void>,
+  computer?: WorkjetComputer | null,
 ): Promise<void> {
   const environment = environments.find((item) => item.environmentId === draft.environmentId);
-  if (!environment) throw new Error("Choose a connected computer.");
+  if (!environment && !computer) throw new Error("Choose a connected computer.");
   await onSave(
-    saveWorkjetComputerDraft({ ...draft, presentationKind: environment.presentationKind }),
+    saveWorkjetComputerDraft({
+      ...draft,
+      id: computer?.id ?? draft.id,
+      environmentId: computer?.environmentId ?? draft.environmentId,
+      presentationKind: computer?.presentationKind ?? environment!.presentationKind,
+    }),
   );
 }
 
@@ -233,7 +239,7 @@ export function WorkjetComputerEditor({
         setSaving(true);
         setError(null);
         try {
-          await persistWorkjetComputerDraft(draft, environments, onSave);
+          await persistWorkjetComputerDraft(draft, environments, onSave, computer);
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : "The computer could not be saved.");
         } finally {
@@ -244,36 +250,35 @@ export function WorkjetComputerEditor({
     >
       <fieldset disabled={saving} className="min-w-0 space-y-4">
         <div className={cn("grid gap-3", !compact && "sm:grid-cols-2")}>
+          {!computer ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="workjet-computer-environment">Connection</Label>
+              <Select
+                value={draft.environmentId || null}
+                onValueChange={(value) => {
+                  const environment = environments.find(
+                    (candidate) => candidate.environmentId === value,
+                  );
+                  if (environment)
+                    setDraft((current) => selectWorkjetComputerEnvironment(current, environment));
+                  setError(null);
+                }}
+              >
+                <SelectTrigger id="workjet-computer-environment" aria-label="Computer connection">
+                  <SelectValue>{selectedEnvironment?.label ?? "Choose computer"}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  {environments.map((environment) => (
+                    <SelectItem key={environment.environmentId} value={environment.environmentId}>
+                      {environment.label} · {environment.detail}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            </div>
+          ) : null}
           <div className="space-y-1.5">
-            {/* Deliberately NOT "Computer": this picker selects the existing
-              connection (environment) the computer runs on — the computer is
-              the thing being edited, the environment is what backs it. */}
-            <Label htmlFor="workjet-computer-environment">Environment (connection)</Label>
-            <Select
-              value={draft.environmentId || null}
-              onValueChange={(value) => {
-                const environment = environments.find(
-                  (candidate) => candidate.environmentId === value,
-                );
-                if (environment)
-                  setDraft((current) => selectWorkjetComputerEnvironment(current, environment));
-                setError(null);
-              }}
-            >
-              <SelectTrigger id="workjet-computer-environment" aria-label="Computer environment">
-                <SelectValue>{selectedEnvironment?.label ?? "Choose environment"}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                {environments.map((environment) => (
-                  <SelectItem key={environment.environmentId} value={environment.environmentId}>
-                    {environment.label} · {environment.detail}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="workjet-computer-label">Label</Label>
+            <Label htmlFor="workjet-computer-label">Name</Label>
             <Input
               id="workjet-computer-label"
               nativeInput
@@ -288,7 +293,9 @@ export function WorkjetComputerEditor({
             <Label htmlFor="workjet-computer-kind">Connection type</Label>
             <p id="workjet-computer-kind" className="text-sm text-muted-foreground">
               {PRESENTATION_OPTIONS.find(
-                (option) => option.id === selectedEnvironment?.presentationKind,
+                (option) =>
+                  option.id ===
+                  (computer?.presentationKind ?? selectedEnvironment?.presentationKind),
               )?.label ?? "Unavailable connection"}
             </p>
           </div>
@@ -296,10 +303,9 @@ export function WorkjetComputerEditor({
 
         <div className="space-y-2">
           <div>
-            <h3 className="text-sm font-medium">Harness availability</h3>
+            <h3 className="text-sm font-medium">Coding tools</h3>
             <p className="text-xs text-muted-foreground">
-              Declare what is available on this existing environment. Workjet does not store SSH
-              credentials or create a second connection profile.
+              Choose which installed tools Workjet may use on this computer.
             </p>
           </div>
           {draft.harnesses.map((configuration) => {

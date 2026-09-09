@@ -1,3 +1,4 @@
+import { openInstanceSetup } from "../../instanceSetup";
 import type {
   EnvironmentId,
   GreppyRuntimeReason,
@@ -15,7 +16,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@workjet/client-runtime/state/runtime";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   CheckCircle2Icon,
   PencilIcon,
@@ -1265,9 +1266,9 @@ export function WorkjetSettings({
     const description = resolving
       ? "Die aktive Business-OS-Instanz wird geprüft."
       : target.reason === "no-active-instance"
-        ? "Wähle zuerst eine Business-OS-Instanz aus."
+        ? "Wähle zuerst eine CTOX-Instanz aus."
         : target.reason === "no-code-computer"
-          ? "Dieser Business-OS-Instanz ist noch kein Rechner für Code zugewiesen."
+          ? "Der CTOX-Master ist eingerichtet. Für Coding-Aufgaben muss ein Rechner zugeordnet und ein Harness einsatzbereit sein. Der Zentralrechner kann diese Aufgaben ebenfalls übernehmen."
           : target.reason === "ambiguous-code-computer"
             ? "Worker-Einstellungen sind noch nicht als instanzweite CTOX-Konfiguration verfügbar. Bei mehreren zugewiesenen Rechnern bleibt die Seite deshalb zum Schutz vor Datenvermischung gesperrt."
             : "Die Berechtigung der aktiven Business-OS-Instanz konnte nicht bestätigt werden.";
@@ -1277,6 +1278,13 @@ export function WorkjetSettings({
           <SettingsRow
             title={resolving ? "Instanz wird geladen" : "Worker nicht verfügbar"}
             description={description}
+            control={
+              resolving ? undefined : target.reason === "no-active-instance" ? (
+                <Button onClick={() => openInstanceSetup()}>Instanz auswählen</Button>
+              ) : (
+                <Button render={<Link to="/settings/computers" />}>Computer einrichten</Button>
+              )
+            }
           />
         </SettingsSection>
       </SettingsPageContainer>

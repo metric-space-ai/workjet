@@ -174,12 +174,12 @@ export function ConnectionsNewRouteScreen({
         options={{
           // Android renders its own in-screen header below instead of the native bar.
           ...(Platform.OS === "android" ? { headerShown: false } : null),
-          title: showScanner ? "Scan QR Code" : "Add Environment",
+          title: showScanner ? "Scan QR Code" : "Add computer",
         }}
       />
       {Platform.OS === "android" ? (
         <AndroidScreenHeader
-          title={showScanner ? "Scan QR Code" : "Add Environment"}
+          title={showScanner ? "Scan QR Code" : "Add computer"}
           onBack={() => navigation.goBack()}
           actions={[
             {
@@ -283,7 +283,7 @@ export function ConnectionsNewRouteScreen({
 
               <ConnectionSheetButton
                 icon="plus"
-                label={isSubmitting ? "Pairing..." : "Add environment"}
+                label={isSubmitting ? "Pairing..." : "Add computer"}
                 disabled={connectDisabled}
                 tone="primary"
                 onPress={() => {

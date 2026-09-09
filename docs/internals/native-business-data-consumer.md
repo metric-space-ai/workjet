@@ -10,16 +10,16 @@ BusinessDataSubscription.open accepts the real native ready state, the watch req
 
 Fresh subscriptions start at sequence 1. Every event must advance by exactly one, including reset and command events. Another session or subscription is ignored. Malformed current input, a gap, duplicate position, invalid transition or budget breach clears data/cursor and becomes terminal error. A new watch is then required; this class never starts one automatically.
 
-| Native sequence | Visible records |
-|---|---|
-| subscribed → snapshotStart → snapshotPage* | Hidden |
-| snapshotEnd | Hidden; initial data is complete but not caught up |
-| caughtUp | Visible |
-| recovery=true upsert/remove before caughtUp | Hidden; no live-change notification |
-| recovery=false upsert/remove after caughtUp | Updated; emits a live-change result |
-| reset → new snapshot on the same subscription | Cleared until the new caughtUp |
-| revoked / error / close | Cleared; later events cannot revive the view |
-| disconnect | Hidden immediately; only a previously live in-memory baseline can be resumed |
+| Native sequence                               | Visible records                                                              |
+| --------------------------------------------- | ---------------------------------------------------------------------------- |
+| subscribed → snapshotStart → snapshotPage\*   | Hidden                                                                       |
+| snapshotEnd                                   | Hidden; initial data is complete but not caught up                           |
+| caughtUp                                      | Visible                                                                      |
+| recovery=true upsert/remove before caughtUp   | Hidden; no live-change notification                                          |
+| recovery=false upsert/remove after caughtUp   | Updated; emits a live-change result                                          |
+| reset → new snapshot on the same subscription | Cleared until the new caughtUp                                               |
+| revoked / error / close                       | Cleared; later events cannot revive the view                                 |
+| disconnect                                    | Hidden immediately; only a previously live in-memory baseline can be resumed |
 
 Resume requires a matching retained cursor, target, instance, user and complete query. The new native ready/acknowledged subscription may have a new generation but cannot reuse the exact previous session/subscription identity. A changed query or identity requires a fresh watch. The host still owns unwatch, cancellation, reauthentication and event routing; it must retire old consumers when changing context.
 

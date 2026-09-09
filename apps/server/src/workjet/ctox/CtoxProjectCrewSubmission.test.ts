@@ -31,6 +31,8 @@ it.effect("recovers project submission after a lost receipt and rejects another 
     let offerIdentity = { command: "command", executor: "computer", harness: "codex" };
     let contextReads = 0;
     let contextMember = "crew";
+    let planCommand = "command";
+    let planWrites = 0;
     let reports = 0;
     let expectedCandidate: { reply: string } | { error: string } = { reply: "Candidate" };
     let receiptAttempt = "attempt";
@@ -39,7 +41,8 @@ it.effect("recovers project submission after a lost receipt and rejects another 
         Effect.sync(() => {
           if (
             names[0] === "business_os.report_crew_execution" ||
-            names[0] === "business_os.get_crew_context"
+            names[0] === "business_os.get_crew_context" ||
+            names[0] === "business_os.update_crew_plan"
           ) {
             expect(destination).toEqual({
               endpoint: "https://ctox.example/mcp",
@@ -58,6 +61,25 @@ it.effect("recovers project submission after a lost receipt and rejects another 
         }),
       callTool: (destination, name, args) =>
         Effect.gen(function* () {
+          if (name === "business_os.update_crew_plan") {
+            planWrites++;
+            expect(destination).toEqual({
+              endpoint: "https://ctox.example/mcp",
+              token: "signed-session",
+            });
+            expect(args).toEqual({ steps: [{ label: "Work", status: "completed" }] });
+            return {
+              structuredContent: {
+                version: 1,
+                revision: 1,
+                command_id: planCommand,
+                task_id: "task",
+                percent: 90,
+                phase: "review",
+                review: { status: "pending" },
+              },
+            };
+          }
           if (name === "business_os.get_crew_context") {
             contextReads++;
             expect(destination).toEqual({
@@ -225,6 +247,16 @@ it.effect("recovers project submission after a lost receipt and rejects another 
     }
     const claimed = yield* restarted.claimProjectOffer(identity, "computer", "attempt");
     expect(JSON.stringify(claimed)).not.toContain("signed-session");
+    const plan = { steps: [{ label: "Work", status: "completed" as const }] };
+    expect(yield* claimed.updatePlan(plan)).toMatchObject({
+      percent: 90,
+      review: { status: "pending" },
+    });
+    planCommand = "other";
+    expect(yield* Effect.flip(claimed.updatePlan(plan))).toMatchObject({
+      reason: "native-response-invalid",
+    });
+    expect(planWrites).toBe(2);
     expect(yield* claimed.refreshContext()).toMatchObject({
       member_id: "crew",
       memory_block: "Updated knowledge",

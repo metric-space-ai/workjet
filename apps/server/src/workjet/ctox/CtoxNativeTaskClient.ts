@@ -6,6 +6,7 @@ import * as Redacted from "effect/Redacted";
 import { decodeCtoxCrewClaim, decodeCtoxCrewContext } from "./CtoxCrewClaim.ts";
 import { reportCtoxCrewResult, type CtoxCrewResultCandidate } from "./CtoxCrewReport.ts";
 import * as Schema from "effect/Schema";
+import { CtoxCrewPlanInput, CtoxCrewPlanReceipt, decodeCtoxCrewPlanInput } from "./CtoxCrewPlan.ts";
 import { WorkjetCtoxCrewOffers } from "@workjet/contracts";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -211,6 +212,29 @@ export function makeCtoxNativeTaskClient(dependencies: {
         return yield* decodeCtoxCrewContext(boundContext, response.structuredContent);
       },
     );
+    const updatePlan = Effect.fn("CtoxNativeTaskClient.updateProjectCrewPlan")(function* (
+      candidate: typeof CtoxCrewPlanInput.Type,
+    ) {
+      const input = yield* decodeCtoxCrewPlanInput(candidate);
+      const currentTarget = yield* resolveClaimTarget();
+      const sessionTarget = {
+        endpoint: currentTarget.endpoint,
+        token: Redacted.value(claim.commandSession),
+      };
+      const name = "business_os.update_crew_plan";
+      yield* dependencies.transport.probe(sessionTarget, [name]);
+      const response = yield* dependencies.transport.callTool(sessionTarget, name, input);
+      if (response.isError || response.structuredContent === undefined)
+        return yield* new CtoxNativeRequestError({ reason: "ctox-operation-rejected" });
+      const receipt = yield* Schema.decodeUnknownEffect(CtoxCrewPlanReceipt)(
+        response.structuredContent,
+      ).pipe(
+        Effect.mapError(() => new CtoxNativeRequestError({ reason: "native-response-invalid" })),
+      );
+      if (receipt.command_id !== claim.commandId || receipt.task_id !== boundTaskId)
+        return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
+      return receipt;
+    });
     const report = Effect.fn("CtoxNativeTaskClient.reportProjectOffer")(function* (
       candidate: CtoxCrewResultCandidate,
     ) {
@@ -219,7 +243,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
       // Do not reject locally just because an accepted report's deadline passed.
       return yield* reportCtoxCrewResult(dependencies.transport, currentTarget, claim, candidate);
     });
-    return { ...claim, refreshContext, report };
+    return { ...claim, refreshContext, updatePlan, report };
   });
 
   const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (

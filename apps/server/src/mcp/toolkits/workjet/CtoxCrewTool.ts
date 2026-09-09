@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
+import { CtoxCrewPlanInput, decodeCtoxCrewPlanInput } from "../../../workjet/ctox/CtoxCrewPlan.ts";
 import * as Invocation from "../../McpInvocationContext.ts";
 
 const GetContext = Schema.Struct({
@@ -35,6 +36,11 @@ const reportTool = Tool.make("business_os.report_crew_execution", {
     "Report one result or error candidate for this execution. CTOX owns review and completion.",
   parameters: Report,
 }).annotate(McpSchema.EnabledWhen, enabledWhen);
+const planTool = Tool.make("business_os.update_crew_plan", {
+  description:
+    "Update the native execution plan for this bound Crew attempt. Completed steps do not complete or approve the task.",
+  parameters: CtoxCrewPlanInput,
+}).annotate(McpSchema.EnabledWhen, enabledWhen);
 const denied = () =>
   new McpSchema.CallToolResult({
     isError: true,
@@ -49,6 +55,7 @@ const register = Effect.fn("mcp.registerCtoxCrew")(function* () {
       inputSchema: Tool.getJsonSchema(contextTool),
       annotations: contextTool.annotations,
       read: true,
+      plan: false,
     },
     {
       name: reportTool.name,
@@ -56,6 +63,15 @@ const register = Effect.fn("mcp.registerCtoxCrew")(function* () {
       inputSchema: Tool.getJsonSchema(reportTool),
       annotations: reportTool.annotations,
       read: false,
+      plan: false,
+    },
+    {
+      name: planTool.name,
+      description: Tool.getDescription(planTool),
+      inputSchema: Tool.getJsonSchema(planTool),
+      annotations: planTool.annotations,
+      read: false,
+      plan: true,
     },
   ]) {
     yield* server.addTool({
@@ -87,6 +103,8 @@ const register = Effect.fn("mcp.registerCtoxCrew")(function* () {
             })(payload);
             if (input.attempt_id !== capability.attemptId) return denied();
             result = yield* capability.refreshContext();
+          } else if (definition.plan) {
+            result = yield* capability.updatePlan(yield* decodeCtoxCrewPlanInput(payload));
           } else {
             const input = yield* Schema.decodeUnknownEffect(Report, { onExcessProperty: "error" })(
               payload,

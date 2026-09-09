@@ -3,12 +3,17 @@ import type * as Effect from "effect/Effect";
 import type { CtoxCrewContext } from "../workjet/ctox/CtoxCrewClaim.ts";
 import type { CtoxCrewResultCandidate } from "../workjet/ctox/CtoxCrewReport.ts";
 
+import type { CtoxCrewPlanInput, CtoxCrewPlanReceipt } from "../workjet/ctox/CtoxCrewPlan.ts";
+
 /** Server-only closures from a verified native claim. Never part of provider config. */
 export interface CtoxCrewMcpCapability {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
   readonly attemptId: string;
   readonly refreshContext: () => Effect.Effect<typeof CtoxCrewContext.Type, unknown>;
+  readonly updatePlan: (
+    input: typeof CtoxCrewPlanInput.Type,
+  ) => Effect.Effect<typeof CtoxCrewPlanReceipt.Type, unknown>;
   readonly report: (candidate: CtoxCrewResultCandidate) => Effect.Effect<
     {
       readonly accepted: true;

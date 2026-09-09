@@ -29,6 +29,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       let reads = 0;
+      let plans = 0;
       let reports = 0;
       const scope: Invocation.McpInvocationScope = {
         ...base,
@@ -51,6 +52,20 @@ it.effect(
                 memory_block: "Knowledge",
                 execution_plan: null,
                 context_version: "v1",
+              };
+            }),
+          updatePlan: (input) =>
+            Effect.sync(() => {
+              plans++;
+              expect(input.steps).toEqual([{ label: "Work", status: "completed" }]);
+              return {
+                version: 1 as const,
+                revision: 1,
+                task_id: "task",
+                command_id: "command",
+                phase: "review",
+                percent: 90,
+                review: { status: "pending" },
               };
             }),
           report: (candidate) =>
@@ -107,6 +122,19 @@ it.effect(
         expect((yield* call(scope, "business_os.report_crew_execution", args)).isError).toBe(true);
       }
       expect(reports).toBe(1);
+      expect(
+        (yield* call(scope, "business_os.update_crew_plan", {
+          steps: [{ label: "Work", status: "completed" }],
+        })).structuredContent,
+      ).toMatchObject({ percent: 90, review: { status: "pending" } });
+      for (const args of [
+        { steps: [] },
+        { steps: [{ label: "Work", status: "approved" }] },
+        { steps: [{ label: "Work", status: "completed" }], work_key: "other" },
+      ]) {
+        expect((yield* call(scope, "business_os.update_crew_plan", args)).isError).toBe(true);
+      }
+      expect(plans).toBe(1);
     }).pipe(
       Effect.provide(
         CtoxCrewToolkitRegistrationLive.pipe(Layer.provideMerge(McpServer.McpServer.layer)),

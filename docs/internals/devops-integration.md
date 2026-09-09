@@ -90,3 +90,21 @@ harness by this change.
 Transport tests cover managed routing, peer/tool discovery, bounded responses,
 no write retry, tool denials and Decision Hub compatibility. Local execution
 was rejected by the shared resource gate before the runner started.
+
+## Durable connection identity
+
+Migration 59 pins every existing connection id to its stored CTOX instance.
+New registrations claim that binding before writing credentials; simultaneous
+claims for different instances cannot both succeed. Disconnect removes the
+credential and visible connection while retaining its identity binding, so
+reconnecting cannot redirect existing thread references to a different instance.
+Credential rotation for the same instance remains supported.
+
+Target resolution checks the durable binding and accepts an expected instance
+from a run. Managed endpoint paths are checked against the instance both during
+provisioning and when resolving stored credentials. This pins configured
+routing; it is not cryptographic attestation of a self-hosted daemon. Native
+authority verification and the external run contract remain required.
+
+Focused tests cover migration, credential preservation on rejection, reconnect,
+registry reconstruction, explicit target mismatch and competing registrations.

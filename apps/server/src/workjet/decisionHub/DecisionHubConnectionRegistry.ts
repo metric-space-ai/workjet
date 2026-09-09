@@ -14,6 +14,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import { normalizeCtoxMcpEndpoint } from "../ctox/CtoxMcpTransport.ts";
+import {
+  bindCtoxConnectionInstance,
+  requireCtoxConnectionInstance,
+  requireCtoxManagedInstanceRoute,
+} from "../ctox/CtoxConnectionBinding.ts";
 import { DecisionHubMcpClient, type DecisionHubMcpTarget } from "./DecisionHubMcpClient.ts";
 
 const ConnectionRow = Schema.Struct({
@@ -63,6 +68,7 @@ export interface DecisionHubConnectionRegistryShape {
   ) => Effect.Effect<boolean, WorkjetDecisionHubConnectionError>;
   readonly resolveReadyTarget: (
     connectionId: WorkjetConnectionId,
+    expectedInstanceId?: string,
   ) => Effect.Effect<DecisionHubMcpTarget, WorkjetDecisionHubConnectionError>;
 }
 
@@ -91,6 +97,10 @@ const make = Effect.gen(function* () {
       );
       const row = decoded[0];
       if (row === undefined) return yield* failure("unknown-connection");
+      yield* requireCtoxConnectionInstance(connectionId, row.instanceId).pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.mapError((error) => failure(error.reason)),
+      );
       return row;
     });
 
@@ -98,14 +108,18 @@ const make = Effect.gen(function* () {
     connectionId: WorkjetConnectionId,
   ): Effect.Effect<DecisionHubMcpTarget, WorkjetDecisionHubConnectionError> =>
     Effect.gen(function* () {
-      yield* getSummary(connectionId);
+      const summary = yield* getSummary(connectionId);
       const bytes = yield* secrets
         .get(secretName(connectionId))
         .pipe(Effect.mapError(() => failure("secret-store-unavailable")));
       if (Option.isNone(bytes)) return yield* failure("secret-store-unavailable");
-      return yield* decodeSecret(textDecoder.decode(bytes.value)).pipe(
+      const target = yield* decodeSecret(textDecoder.decode(bytes.value)).pipe(
         Effect.mapError(() => failure("secret-store-unavailable")),
       );
+      yield* requireCtoxManagedInstanceRoute(target.endpoint, summary.instanceId).pipe(
+        Effect.mapError((error) => failure(error.reason)),
+      );
+      return target;
     });
 
   const setStatus = (
@@ -128,8 +142,17 @@ const make = Effect.gen(function* () {
   const provisionRaw = (input: WorkjetDecisionHubProvisionInput) =>
     Effect.gen(function* () {
       const endpoint = yield* normalizeDecisionHubEndpoint(input.endpoint);
+      yield* requireCtoxManagedInstanceRoute(endpoint, input.instanceId).pipe(
+        Effect.mapError((error) => failure(error.reason)),
+      );
       const target = { endpoint, token: input.token };
       yield* client.probe(target);
+      // Claim before writing credentials. A conflicting provision must not
+      // replace the secret of a connection referenced by existing threads.
+      yield* bindCtoxConnectionInstance(input.connectionId, input.instanceId).pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.mapError((error) => failure(error.reason)),
+      );
       const encoded = yield* encodeSecret({ schemaVersion: 1, ...target }).pipe(
         Effect.mapError(() => failure("secret-store-unavailable")),
       );
@@ -148,7 +171,6 @@ const make = Effect.gen(function* () {
           'ready', NULL, ${now}, ${now}
         )
         ON CONFLICT(connection_id) DO UPDATE SET
-          instance_id = excluded.instance_id,
           display_name = excluded.display_name,
           source = excluded.source,
           status = 'ready',
@@ -206,6 +228,8 @@ const make = Effect.gen(function* () {
         WHERE connection_id = ${connectionId} AND status = 'open' LIMIT 1
       `.pipe(Effect.mapError(() => failure("connection-unavailable")));
       if (open.length > 0) return yield* failure("connection-unavailable");
+      // The durable connection/instance binding deliberately survives this
+      // removal. Reusing an id for a different instance would redirect threads.
       yield* secrets
         .remove(secretName(connectionId))
         .pipe(Effect.mapError(() => failure("secret-store-unavailable")));
@@ -217,10 +241,14 @@ const make = Effect.gen(function* () {
 
   const resolveReadyTarget: DecisionHubConnectionRegistryShape["resolveReadyTarget"] = (
     connectionId,
+    expectedInstanceId,
   ) =>
     Effect.gen(function* () {
       const summary = yield* getSummary(connectionId);
       if (summary.status !== "ready") return yield* failure("connection-unavailable");
+      if (expectedInstanceId !== undefined && summary.instanceId !== expectedInstanceId) {
+        return yield* failure("connection-instance-mismatch");
+      }
       return yield* readTarget(connectionId);
     });
 

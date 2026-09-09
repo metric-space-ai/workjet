@@ -50,6 +50,7 @@ export const WorkjetDecisionHubDisconnectResult = Schema.Struct({
 
 export const WorkjetDecisionHubConnectionErrorReason = Schema.Literals([
   "unknown-connection",
+  "connection-instance-mismatch",
   "invalid-endpoint",
   "foreign-environment",
   "secret-store-unavailable",

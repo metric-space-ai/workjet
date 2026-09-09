@@ -1,8 +1,16 @@
 # Native BusinessData subscription consumer
 
-This is the shared, ephemeral projection core for the Workjet host/client integration. It consumes the generated native BusinessData contract from CTOX commit 19a790b906de97c3e7d6c2a9bd65da78dcc2cd98 (fixture SHA-256 1d9a7f2531cc70d942a9c3763f0d47076a9c732ff2712f84bdcfcf94d429e249). It adds no transport, listener, credentials, business persistence, command retry or native authentication.
+This is the shared, ephemeral projection core for the Workjet host/client integration. It consumes the generated native BusinessData contract from CTOX commit 369a20f1acaf9cd2efbe9783f5cf598e4b1642e7 (fixture SHA-256 7ba81d4d067c3d68c0952badca2486318a3e1276bd24fb5d41f40c822fbc98b2). It adds no transport, listener, credentials, business persistence, command retry or native authentication.
 
 The public package entry is @workjet/client-runtime/state/business-data-subscription. Generated wire types and Effect schemas are exported by @workjet/contracts/ctoxBusinessData. Regenerate them through the canonical CTOX generator with --business-data --workjet-root; never edit either generated side.
+
+## Native target proof
+
+The additive generated identity types describe the native challenge, signed peer identity, current principal/authorization epoch and optional device binding. Existing ready/watch/event shapes are unchanged. The shared native proof reader checks a fresh challenge against an independently trusted instance/key pin and the current locally derived DTLS channel binding; Workjet does not add another signature or transport implementation.
+
+Decoding NativeBusinessDataPeerIdentitySchema establishes shape only. Its publicIdentity field is not a trusted pin, an absent principal is not a logged-in user, and a signed response alone must not create ready state. The native owner must establish target trust before releasing capability material and revalidate the principal against the current account before exposing data.
+
+The existing host target/launch paths provide logical instance IDs, signaling commitments and account-backed launch material. They do not yet supply the required independent native-key pin or equivalent invalidation for account replacement without logout. Enrollment/provisioning and account lifecycle must extend those existing paths; the separate maintenance capability is not a BusinessData credential. Old native handles and projections must be retired when the account changes.
 
 ## Native binding and lifecycle
 

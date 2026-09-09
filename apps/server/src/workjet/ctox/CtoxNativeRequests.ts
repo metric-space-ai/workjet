@@ -2,6 +2,8 @@
 import * as NodeCrypto from "node:crypto";
 import {
   WorkjetCtoxBusinessOsInput,
+  WorkjetCtoxCrewRequest,
+  WorkjetCtoxCrewReceipt,
   type ThreadId,
   type WorkjetConnectionId,
 } from "@workjet/contracts";
@@ -13,10 +15,12 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type { CtoxMcpTarget } from "./CtoxMcpTransport.ts";
 
-export type NativeTaskRequest = Extract<
-  WorkjetCtoxBusinessOsInput["request"],
-  { readonly operation: "create_app" | "modify_app" | "delegate_task" }
-> & { readonly idempotency_key: string };
+export type NativeTaskRequest =
+  | WorkjetCtoxCrewRequest
+  | (Extract<
+      WorkjetCtoxBusinessOsInput["request"],
+      { readonly operation: "create_app" | "modify_app" | "delegate_task" }
+    > & { readonly idempotency_key: string });
 
 export interface CtoxNativeRequestIdentity {
   readonly threadId: ThreadId;
@@ -51,7 +55,9 @@ export class CtoxNativeRequestError extends Schema.TaggedErrorClass<CtoxNativeRe
 const failure = (reason: CtoxNativeRequestError["reason"]) =>
   new CtoxNativeRequestError({ reason });
 const unavailable = () => failure("native-request-store-unavailable");
-const IntentCodec = Schema.fromJsonString(WorkjetCtoxBusinessOsInput);
+const IntentCodec = Schema.fromJsonString(
+  Schema.Union([WorkjetCtoxBusinessOsInput, Schema.Struct({ request: WorkjetCtoxCrewRequest })]),
+);
 const encodeIntent = Schema.encodeEffect(IntentCodec);
 const decodeIntent = Schema.decodeUnknownEffect(IntentCodec);
 const Rows = Schema.Array(
@@ -140,10 +146,16 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* load(identity);
     const { request } = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
-    const receipt = yield* Schema.decodeUnknownEffect(Receipt)(value).pipe(
-      Effect.mapError(() => failure("native-response-invalid")),
-    );
-    if (
+    const receipt = yield* (
+      request.operation === "start_crew_execution"
+        ? Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(value)
+        : Schema.decodeUnknownEffect(Receipt)(value)
+    ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+    if (request.operation === "start_crew_execution") {
+      if (!("thread_id" in receipt) || receipt.thread_id !== request.thread_id)
+        return yield* failure("native-response-invalid");
+    } else if (
+      !("module_id" in receipt) ||
       (request.operation !== "create_app" &&
         request.operation !== "modify_app" &&
         request.operation !== "delegate_task") ||
@@ -177,7 +189,8 @@ const make = Effect.gen(function* () {
     if (
       (request.operation !== "create_app" &&
         request.operation !== "modify_app" &&
-        request.operation !== "delegate_task") ||
+        request.operation !== "delegate_task" &&
+        request.operation !== "start_crew_execution") ||
       !request.idempotency_key
     )
       return yield* unavailable();

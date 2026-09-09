@@ -68,15 +68,26 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
   // App development commands belong to the native Creator module; their
   // record_id identifies the app. General delegation belongs to its own module.
   const request = reference.request;
-  const nativeModule = request.operation === "delegate_task" ? request.module_id : "creator";
+  const nativeModule =
+    request.operation === "start_crew_execution"
+      ? "ctox"
+      : request.operation === "delegate_task"
+        ? request.module_id
+        : "creator";
   const commandType =
-    request.operation === "delegate_task"
-      ? "ctox.delegate_task"
-      : request.operation === "create_app"
-        ? "ctox.business_os.app.create"
-        : "ctox.business_os.app.modify";
+    request.operation === "start_crew_execution"
+      ? "business_os.chat.task"
+      : request.operation === "delegate_task"
+        ? "ctox.delegate_task"
+        : request.operation === "create_app"
+          ? "ctox.business_os.app.create"
+          : "ctox.business_os.app.modify";
   const recordId =
-    request.operation === "delegate_task" ? (request.record_id ?? null) : request.module_id;
+    request.operation === "start_crew_execution"
+      ? null
+      : request.operation === "delegate_task"
+        ? (request.record_id ?? null)
+        : request.module_id;
   if (
     !reference.commandId ||
     record.id !== reference.commandId ||

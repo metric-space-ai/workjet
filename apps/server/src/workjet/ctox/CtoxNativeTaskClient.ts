@@ -77,6 +77,26 @@ export function makeCtoxNativeTaskClient(dependencies: {
     );
   });
 
+  const submitProjectTurn = Effect.fn("CtoxNativeTaskClient.submitProjectTurn")(function* (
+    scope: Omit<CtoxNativeRequestIdentity, "requestKey">,
+    requestId: string,
+    task: Omit<
+      Extract<NativeTaskRequest, { readonly operation: "start_crew_execution" }>,
+      "operation" | "idempotency_key"
+    >,
+  ) {
+    if (!requestId.trim() || requestId.length > 512)
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const requestKey = `turn_${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
+    // This uses the same durable turn/intent ledger as native delegation. A
+    // request id cannot silently switch from a native to an external execution.
+    return yield* submit(
+      { ...scope, requestKey },
+      { ...task, operation: "start_crew_execution", idempotency_key: requestKey },
+      requestId,
+    );
+  });
+
   const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (
     identity: CtoxNativeRequestIdentity,
   ) {
@@ -106,6 +126,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
   return {
     submit,
     submitTurn,
+    submitProjectTurn,
     readStatus,
     recover: dependencies.requests.get,
     latestNativeTurn: dependencies.requests.latestNativeTurn,

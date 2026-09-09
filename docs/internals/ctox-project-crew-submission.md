@@ -70,3 +70,9 @@ A registered-server test covers successful context/report calls, missing and for
 The bound claim and MCP bridge now support business_os.update_crew_plan. Workjet validates the native 1–100 step contract, allowed statuses, excess fields and 64-KiB serialized UTF-8 bound. The native response must match the original command and task. Native phase, percentage and review status are returned without treating completed steps as approved task completion. The current native implementation was inspected at e7e785113 in mcp_crew_plan.rs and record_task_execution_plan_guarded/task_execution_progress in context/lcm/mod.rs.
 
 Tests cover limits and identity overrides, registered MCP dispatch and signed-session transport, plus a response for a foreign command. Formatting and diff checks pass; all new tests/typecheck still await CI. Controller claim admission and MCP credential issuance are not yet wired to ProviderService.
+
+## Credential replacement coverage
+
+The real MCP registry test now exercises active issuance, native Crew grant lookup, isolation from an unrelated thread, immutable captured attempt metadata, replacement by an ordinary session and explicit revocation. It asserts that the provider config carries neither the grant nor its attempt identity, and that the original token stops resolving after replacement. This tests the existing credential lifecycle rather than a standalone map double. Execution remains pending; only exact-file formatting and diff validation have run.
+
+Provider start contract inspection: WorkjetThreadConfig.ctoxSession currently contains instanceId/sessionId/fenceEpoch, and has no server-side use in this checkout. It must not be repurposed as a Crew attempt. ProviderSessionStartInput has no explicit Crew claim. The admission/controller connection must be introduced deliberately at the persisted turn orchestration boundary, preserving normal Dev starts and using the native claim before MCP/session preparation.

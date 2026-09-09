@@ -385,13 +385,8 @@ it.effect("does not contact CTOX after a revoked grant or an instance mismatch",
  * What must hold for an ungranted caller: no target resolution, no request to the
  * instance, and no success.
  */
-const withoutScopeKey = (
-  key: keyof Invocation.McpInvocationScope,
-): Invocation.McpInvocationScope => {
-  const next: Record<string, unknown> = { ...scope };
-  delete next[key];
-  return next as Invocation.McpInvocationScope;
-};
+const { workjetRole: _role, ...scopeWithoutRole } = scope;
+const { ctoxBusinessOsBinding: _binding, ...scopeWithoutBinding } = scope;
 
 const ungrantedScopes: ReadonlyArray<{
   readonly name: string;
@@ -401,11 +396,8 @@ const ungrantedScopes: ReadonlyArray<{
     name: "the ctox-business-os capability is not active on the thread",
     scope: { ...scope, activeWorkjetMcpCapabilityIds: new Set() },
   },
-  { name: "the caller holds no Workjet role", scope: withoutScopeKey("workjetRole") },
-  {
-    name: "the thread has no bound instance",
-    scope: withoutScopeKey("ctoxBusinessOsBinding"),
-  },
+  { name: "the caller holds no Workjet role", scope: scopeWithoutRole },
+  { name: "the thread has no bound instance", scope: scopeWithoutBinding },
 ];
 
 it.effect("refuses an ungranted invocation scope without reaching the instance", () =>

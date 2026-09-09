@@ -11,7 +11,7 @@ import {
   type ThreadId,
   type WorkjetConnectionId,
 } from "@workjet/contracts";
-import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as PubSub from "effect/PubSub";
@@ -107,7 +107,7 @@ export const makeCtoxAdapter = (options: {
           provider,
           providerInstanceId: options.instanceId,
           threadId,
-          createdAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
+          createdAt: DateTime.formatIso(yield* DateTime.now),
         } as ProviderRuntimeEvent);
       });
     const requireEntry = (threadId: ThreadId) => {
@@ -224,7 +224,7 @@ export const makeCtoxAdapter = (options: {
               entry.session = {
                 ...session,
                 status: "ready",
-                updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
+                updatedAt: DateTime.formatIso(yield* DateTime.now),
               };
               yield* emit(threadId, { type: "session.state.changed", payload: { state: "ready" } });
               return;
@@ -309,7 +309,7 @@ export const makeCtoxAdapter = (options: {
               );
             return existing.session;
           }
-          const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+          const now = DateTime.formatIso(yield* DateTime.now);
           const entry: Entry = {
             taskScope,
             submitting: false,

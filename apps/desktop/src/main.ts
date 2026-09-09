@@ -25,6 +25,7 @@ import serverPackageJson from "../../server/package.json" with { type: "json" };
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as CtoxAppRail from "./ctox/CtoxAppRail.ts";
 import * as CtoxBusinessOsShell from "./ctox/CtoxBusinessOsShell.ts";
+import * as CtoxAccountLifecycle from "./ctox/CtoxAccountLifecycle.ts";
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
@@ -214,6 +215,7 @@ const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
 // registry instance, so the registry is provided to (and re-exported by) the
 // merged control layer rather than merged beside it.
 const desktopCtoxControlLayer = Layer.mergeAll(
+  CtoxAccountLifecycle.layer,
   CtoxBusinessOsShell.layer,
   CtoxDevAuth.layer(),
   CtoxAppRail.layer(),

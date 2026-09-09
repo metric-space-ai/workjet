@@ -5,7 +5,10 @@ import * as Redacted from "effect/Redacted";
 import { expect } from "vite-plus/test";
 import * as Account from "./CtoxAccountLifecycle.ts";
 import { createCtoxDeviceProofKey } from "./CtoxDeviceProofKey.ts";
-import { createCtoxNativeCredentialLease } from "./CtoxNativeSessionCredentials.ts";
+import {
+  createCtoxNativeCredentialLease,
+  bindCtoxNativeCredentialCallback,
+} from "./CtoxNativeSessionCredentials.ts";
 
 const nonce = "a".repeat(43);
 const fixture = Effect.gen(function* () {
@@ -46,6 +49,46 @@ const fixture = Effect.gen(function* () {
 });
 
 describe("native credential lifetime", () => {
+  it.effect("binds private IPC challenges to the captured target, connection and epoch", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const reply = bindCtoxNativeCredentialCallback(f.lease, {
+        targetId: "saved-target",
+        connectionId: "connection",
+        sessionEpoch: f.account.sessionEpoch(),
+      });
+      const request = {
+        version: 1,
+        requestId: "request",
+        targetId: "saved-target",
+        connectionId: "connection",
+        sessionEpoch: f.account.sessionEpoch(),
+        nonce,
+      };
+      yield* Effect.promise(async () => {
+        try {
+          for (const changed of [
+            { targetId: "other" },
+            { connectionId: "other" },
+            { sessionEpoch: 99 },
+            { version: 2 },
+            { extra: "ignored?" },
+          ]) {
+            await expect(reply({ ...request, ...changed })).rejects.toThrow("no longer available");
+          }
+          expect(f.reads()).toBe(0);
+          const answer = await reply(request);
+          expect(answer.requestId).toBe("request");
+          expect(answer.connectionId).toBe("connection");
+          expect(answer.capabilityToken).toBe("test-capability");
+          expect(answer.deviceProof?.publicX).toBe(f.key.publicJwk.x);
+        } finally {
+          await f.lease.close();
+        }
+      });
+    }),
+  );
+
   it.effect("allows initial credentials after proof without confirming the account", () =>
     Effect.gen(function* () {
       const f = yield* fixture;

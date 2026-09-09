@@ -7,7 +7,7 @@ import { decodeCtoxCrewClaim, decodeCtoxCrewContext } from "./CtoxCrewClaim.ts";
 import { reportCtoxCrewResult, type CtoxCrewResultCandidate } from "./CtoxCrewReport.ts";
 import * as Schema from "effect/Schema";
 import { CtoxCrewPlanInput, CtoxCrewPlanReceipt, decodeCtoxCrewPlanInput } from "./CtoxCrewPlan.ts";
-import { WorkjetCtoxCrewOffers } from "@workjet/contracts";
+import { WorkjetCtoxCrewOffers, WorkjetCtoxCrewReceipt } from "@workjet/contracts";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { decodeCtoxNativeTaskStatus } from "./CtoxNativeTaskStatus.ts";
@@ -283,7 +283,71 @@ export function makeCtoxNativeTaskClient(dependencies: {
     return observed;
   });
 
+  /** One bounded admission observation. Waiting is data, never an implicit local fallback. */
+  const prepareProjectExecution = Effect.fn("CtoxNativeTaskClient.prepareProjectExecution")(
+    function* (
+      requestScope: Omit<CtoxNativeRequestIdentity, "requestKey">,
+      requestId: string,
+      task: Omit<
+        Extract<NativeTaskRequest, { readonly operation: "start_crew_execution" }>,
+        "operation" | "idempotency_key"
+      >,
+    ) {
+      const scope = { ...requestScope };
+      const submitted = yield* submitProjectTurn(scope, requestId, { ...task });
+      const receipt = yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(
+        submitted.result,
+      ).pipe(
+        Effect.mapError(() => new CtoxNativeRequestError({ reason: "native-response-invalid" })),
+      );
+      const identity = { ...scope, requestKey: submitted.reference.request.idempotency_key };
+      const observed = yield* readStatus(identity);
+      if (
+        observed.state === "completed" ||
+        observed.state === "failed" ||
+        observed.state === "cancelled"
+      )
+        return { state: "native-terminal" as const, identity, observed };
+      if (
+        !observed.reference.taskId ||
+        observed.state === "unknown" ||
+        observed.state === "unresolved"
+      )
+        return { state: "awaiting-native-task" as const, identity, observed };
+      const discovered = yield* discoverProjectOffers(identity, receipt.executor_id);
+      const now = yield* Clock.currentTimeMillis;
+      const active = discovered.offers.filter(
+        (offer) => offer.state !== "reported" && offer.deadline_ms > now,
+      );
+      if (active.length > 1)
+        return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
+      const offer = active[0];
+      if (!offer)
+        return {
+          state: discovered.offers.some((offer) => offer.state === "reported")
+            ? ("awaiting-native-review" as const)
+            : ("awaiting-native-offer" as const),
+          identity,
+          observed,
+        };
+      // Reclaiming an existing attempt requires a controller's durable resume binding.
+      // A fresh start must not run a second local harness for an already claimed offer.
+      if (offer.state === "claimed")
+        return {
+          state: "resume-required" as const,
+          identity,
+          observed,
+          attemptId: offer.attempt_id,
+        };
+      const claim = yield* claimProjectOffer(identity, receipt.executor_id, offer.attempt_id);
+      if (claim.context.member_id !== receipt.crew_member_id)
+        return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
+      return { state: "ready" as const, identity, observed, claim };
+    },
+  );
+
   return {
+    prepareProjectExecution,
     submit,
     submitTurn,
     submitProjectTurn,

@@ -52,7 +52,7 @@ const Request = Schema.Struct({
 });
 const decode = Schema.decodeUnknownSync(Schema.fromJsonString(Request));
 
-function fixture() {
+function fixture(retrySupport = false) {
   const calls: Array<{ url: string; body: typeof Request.Type }> = [];
   const resolutions: Array<{ id: string; instanceId: string | undefined }> = [];
   const http = HttpClient.make((request) =>
@@ -68,6 +68,13 @@ function fixture() {
                 tools: [
                   { name: "business_os.write_app_file" },
                   { name: "business_os.get_command_status" },
+                  {
+                    name: "business_os.modify_app",
+                    inputSchema: {
+                      type: "object",
+                      properties: retrySupport ? { idempotency_key: { type: "string" } } : {},
+                    },
+                  },
                 ],
               }
             : { structuredContent: { ok: true, module_id: "app-a" } };
@@ -130,9 +137,56 @@ it.effect("writes through the registered MCP tool using only the session's pinne
       name: "business_os.write_app_file",
       arguments: { module_id: "app-a", path: "index.js", content: "export {};" },
     });
-    expect(JSON.stringify(result)).not.toContain("server-only-test-token");
+    expect(Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(result)).not.toContain(
+      "server-only-test-token",
+    );
   }).pipe(Effect.provide(test.layer));
 });
+
+it.effect("dispatches a retry key only when the native operation advertises support", () =>
+  Effect.gen(function* () {
+    for (const supported of [false, true]) {
+      const test = fixture(supported);
+      yield* Effect.gen(function* () {
+        const server = yield* McpServer.McpServer;
+        const result = yield* server
+          .callTool({
+            name: CTOX_BUSINESS_OS_TOOL_NAME,
+            arguments: {
+              request: {
+                operation: "modify_app",
+                module_id: "app-a",
+                instruction: "Add an inventory review action",
+                idempotency_key: "workjet-turn-1",
+              },
+            },
+          })
+          .pipe(
+            Effect.provideService(Invocation.McpInvocationContext, scope),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+        const writes = test.calls.filter(({ body }) => body.method === "tools/call");
+        expect(result.isError).toBe(!supported);
+        if (supported) {
+          expect(writes).toHaveLength(1);
+          expect(writes[0]?.body.params).toEqual({
+            name: "business_os.modify_app",
+            arguments: {
+              module_id: "app-a",
+              instruction: "Add an inventory review action",
+              idempotency_key: "workjet-turn-1",
+            },
+          });
+        } else {
+          expect(writes).toEqual([]);
+          expect(result.structuredContent).toMatchObject({
+            error: { reason: "remote-tools-missing" },
+          });
+        }
+      }).pipe(Effect.provide(test.layer));
+    }
+  }),
+);
 
 it.effect("does not contact CTOX after a revoked grant or an instance mismatch", () => {
   const test = fixture();

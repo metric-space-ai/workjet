@@ -72,8 +72,11 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
     annotations: tool.annotations,
     handle: (payload) =>
       Effect.gen(function* () {
-        const scope =
-          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("ctox-business-os");
+        // addTool handlers receive their invocation context dynamically from
+        // the HTTP session scope. Missing scope must deny before any network I/O.
+        const invocation = yield* Effect.serviceOption(McpInvocationContext.McpInvocationContext);
+        if (Option.isNone(invocation)) return failureResult("capability-not-granted");
+        const scope = invocation.value;
         const binding = scope.ctoxBusinessOsBinding;
         if (!binding || !isCtoxBusinessOsToolVisible(scope))
           return failureResult("capability-not-granted");
@@ -89,7 +92,14 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
         );
         const { operation, ...arguments_ } = input.request;
         const name = `business_os.${operation}`;
-        yield* transport.probe(target, [name]);
+        const requiresRetryContract =
+          (input.request.operation === "create_app" || input.request.operation === "modify_app") &&
+          input.request.idempotency_key !== undefined;
+        yield* transport.probe(
+          target,
+          [name],
+          requiresRetryContract ? { [name]: ["idempotency_key"] } : {},
+        );
         const timeout =
           operation === "validate_app" || operation === "smoke_app" || operation === "e2e_app"
             ? Duration.seconds(310)
@@ -106,8 +116,6 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
         });
       }).pipe(
         Effect.catchTags({
-          WorkjetMcpCapabilityUnavailableError: () =>
-            Effect.succeed(failureResult("capability-not-granted")),
           WorkjetDecisionHubConnectionError: (error) => Effect.succeed(failureResult(error.reason)),
           CtoxMcpTransportError: (error) => Effect.succeed(failureResult(error.reason)),
         }),

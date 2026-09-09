@@ -59,6 +59,32 @@ describe("CTOX thread identity and typed app access", () => {
     expect(retainWorkjetCtoxBinding(DEFAULT_WORKJET_THREAD_CONFIG, session).error).not.toBeNull();
   });
 
+  it("accepts bounded portable retry keys only on native app delegation", () => {
+    const decode = Schema.decodeUnknownSync(WorkjetCtoxBusinessOsInput, {
+      onExcessProperty: "error",
+    });
+    for (const operation of ["create_app", "modify_app"]) {
+      const request = { operation, module_id: "app-a", instruction: "Update the app" };
+      expect(
+        decode({ request: { ...request, idempotency_key: "workjet:thread-1.turn-2" } }).request,
+      ).toMatchObject({ idempotency_key: "workjet:thread-1.turn-2" });
+      for (const idempotency_key of ["", "a b", "a\nb", "é", "a".repeat(257)]) {
+        expect(() => decode({ request: { ...request, idempotency_key } })).toThrow();
+      }
+    }
+    expect(() =>
+      decode({
+        request: {
+          operation: "write_app_file",
+          module_id: "app-a",
+          path: "index.js",
+          content: "",
+          idempotency_key: "key",
+        },
+      }),
+    ).toThrow();
+  });
+
   it("allows typed source editing and skill retrieval while rejecting routing and identity overrides", () => {
     const decode = Schema.decodeUnknownSync(WorkjetCtoxBusinessOsInput, {
       onExcessProperty: "error",

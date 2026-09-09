@@ -135,6 +135,11 @@ const EXPECTED = [
     version: "1.0.0",
     permissions: ["network.read"],
   },
+  {
+    id: "ctox-business-os",
+    version: "1.0.0",
+    permissions: ["network.read"],
+  },
 ] as const satisfies ReadonlyArray<{
   readonly id: string;
   readonly version: string;
@@ -226,7 +231,9 @@ describe("built-in capability manifests", () => {
     for (const [index, manifest] of builtInCapabilityManifests.entries()) {
       expect(manifest.permissionRequirements).toEqual(EXPECTED[index]?.permissions);
       expect(manifest.supportedAdapters).toEqual(
-        manifest.id === "decision-hub" ? ["workjet-mcp", "workjet-prompt"] : ALL_ADAPTERS,
+        manifest.id === "decision-hub" || manifest.id === "ctox-business-os"
+          ? ["workjet-mcp", "workjet-prompt"]
+          : ALL_ADAPTERS,
       );
       expect(manifest.secretRequirements).toEqual([]);
     }
@@ -267,7 +274,9 @@ describe("built-in capability manifests", () => {
                 ? "query"
                 : manifest.id === "web-stack-browser"
                   ? "actions"
-                  : "task",
+                  : manifest.id === "ctox-business-os"
+                    ? "request"
+                    : "task",
             ],
       );
       expect(manifest.outputSchema.type).toBe("object");

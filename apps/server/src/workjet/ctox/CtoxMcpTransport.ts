@@ -56,7 +56,16 @@ const JsonRpcEnvelope = Schema.Struct({
 });
 const decodeEnvelope = Schema.decodeUnknownEffect(Schema.fromJsonString(JsonRpcEnvelope));
 const ServerInfo = Schema.Struct({ serverInfo: Schema.Struct({ name: Schema.String }) });
-const ToolList = Schema.Struct({ tools: Schema.Array(Schema.Struct({ name: Schema.String })) });
+const ToolList = Schema.Struct({
+  tools: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      inputSchema: Schema.optional(Schema.Unknown),
+    }),
+  ),
+});
+const ToolInputSchema = Schema.Struct({ properties: Schema.Record(Schema.String, Schema.Unknown) });
+const StringArgumentSchema = Schema.Struct({ type: Schema.Literal("string") });
 export const CtoxMcpToolResult = Schema.Struct({
   isError: Schema.optional(Schema.Boolean),
   structuredContent: Schema.optional(Schema.Unknown),
@@ -110,6 +119,7 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
   const probe = Effect.fn("CtoxMcpTransport.probe")(function* (
     target: CtoxMcpTarget,
     requiredTools: ReadonlyArray<string>,
+    requiredStringArguments: Readonly<Record<string, ReadonlyArray<string>>> = {},
   ) {
     const initialized = yield* call(target, "initialize");
     const info = yield* Schema.decodeUnknownEffect(ServerInfo)(initialized).pipe(Effect.option);
@@ -122,6 +132,19 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
     const names = new Set(tools.value.tools.map(({ name }) => name));
     if (requiredTools.some((tool) => !names.has(tool))) {
       return yield* failure("remote-tools-missing");
+    }
+    // Legacy daemons can ignore unknown fields. A retry key is only meaningful
+    // when the selected operation advertises the corresponding contract.
+    for (const [name, argumentNames] of Object.entries(requiredStringArguments)) {
+      const inputSchema = tools.value.tools.find((tool) => tool.name === name)?.inputSchema;
+      if (!Schema.is(ToolInputSchema)(inputSchema)) return yield* failure("remote-tools-missing");
+      if (
+        argumentNames.some(
+          (argument) => !Schema.is(StringArgumentSchema)(inputSchema.properties[argument]),
+        )
+      ) {
+        return yield* failure("remote-tools-missing");
+      }
     }
   });
 

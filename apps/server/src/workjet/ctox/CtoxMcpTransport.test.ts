@@ -93,6 +93,33 @@ describe("shared CTOX MCP transport", () => {
     }),
   );
 
+  it.effect("requires the retry argument contract, not only the tool name", () =>
+    Effect.gen(function* () {
+      for (const inputSchema of [
+        undefined,
+        {},
+        { properties: {} },
+        { properties: { idempotency_key: { type: "number" } } },
+      ]) {
+        const remote = fakeDaemon((body) =>
+          rpcResult(
+            body.method === "initialize"
+              ? { serverInfo: { name: CTOX_MCP_SERVER_NAME } }
+              : { tools: [{ name: "business_os.modify_app", inputSchema }] },
+          ),
+        );
+        expect(
+          yield* Effect.flip(
+            remote.transport.probe(target, ["business_os.modify_app"], {
+              "business_os.modify_app": ["idempotency_key"],
+            }),
+          ),
+        ).toMatchObject({ reason: "remote-tools-missing" });
+        expect(remote.calls.map(({ body }) => body.method)).toEqual(["initialize", "tools/list"]);
+      }
+    }),
+  );
+
   it.effect("does not retry writes or expose peer error messages", () =>
     Effect.gen(function* () {
       const remote = fakeDaemon(() =>
@@ -107,7 +134,9 @@ describe("shared CTOX MCP transport", () => {
         }),
       );
       expect(error).toMatchObject({ reason: "remote-response-invalid" });
-      expect(JSON.stringify(error)).not.toContain("private");
+      expect(Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(error)).not.toContain(
+        "private",
+      );
       expect(remote.calls).toHaveLength(1);
     }),
   );

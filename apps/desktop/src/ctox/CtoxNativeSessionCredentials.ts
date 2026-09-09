@@ -20,9 +20,13 @@ export class CtoxNativeCredentialsError extends Schema.TaggedErrorClass<CtoxNati
   "CtoxNativeCredentialsError",
   { message: Schema.String },
 ) {
-  constructor() {
-    super({ message: "Your session is no longer available." });
-  }
+  /**
+   * The only way this error is raised. A constructor override would break the
+   * Schema class's own decoding of its shape, so the fixed message lives in a
+   * static factory instead.
+   */
+  static readonly sessionUnavailable = (): CtoxNativeCredentialsError =>
+    new CtoxNativeCredentialsError({ message: "Your session is no longer available." });
 }
 
 /**
@@ -63,14 +67,15 @@ export function createCtoxNativeCredentialLease(input: {
       now() >= input.expiresAtMs ||
       !input.targetIsCurrent()
     )
-      throw new CtoxNativeCredentialsError();
+      throw CtoxNativeCredentialsError.sessionUnavailable();
   };
   // Register synchronously so an in-progress account transition cannot be missed.
   unregister = input.account.registerInvalidator(close);
   return {
     close,
     assertCurrent: (sessionEpoch: number) => {
-      if (sessionEpoch !== input.sessionEpoch) throw new CtoxNativeCredentialsError();
+      if (sessionEpoch !== input.sessionEpoch)
+        throw CtoxNativeCredentialsError.sessionUnavailable();
       check();
     },
     provide: (nonce: string | undefined): Promise<CtoxNativeCredentials> => {
@@ -78,12 +83,12 @@ export function createCtoxNativeCredentialLease(input: {
         pending.size >= 2 ||
         (nonce !== undefined && (nonce.length !== 43 || !/^[A-Za-z0-9_-]+$/.test(nonce)))
       ) {
-        return Promise.reject(new CtoxNativeCredentialsError());
+        return Promise.reject(CtoxNativeCredentialsError.sessionUnavailable());
       }
       const operation = Effect.gen(function* () {
         yield* Effect.sync(check);
         if (!Redacted.value(input.capabilityToken).trim()) {
-          return yield* Effect.fail(new CtoxNativeCredentialsError());
+          return yield* Effect.fail(CtoxNativeCredentialsError.sessionUnavailable());
         }
         if (nonce === undefined) {
           return { capabilityToken: input.capabilityToken, deviceProof: undefined };
@@ -94,7 +99,7 @@ export function createCtoxNativeCredentialLease(input: {
         );
         yield* Effect.sync(check);
         if (input.expectedThumbprint !== undefined && key.thumbprint !== input.expectedThumbprint) {
-          return yield* Effect.fail(new CtoxNativeCredentialsError());
+          return yield* Effect.fail(CtoxNativeCredentialsError.sessionUnavailable());
         }
         const deviceProof = key.signNonce(nonce);
         yield* Effect.sync(check);
@@ -108,7 +113,7 @@ export function createCtoxNativeCredentialLease(input: {
           return credentials;
         })
         .catch(() => {
-          throw new CtoxNativeCredentialsError();
+          throw CtoxNativeCredentialsError.sessionUnavailable();
         });
       pending.add(result);
       void result.then(
@@ -149,7 +154,7 @@ export function bindCtoxNativeCredentialCallback(
     !Number.isSafeInteger(bound.sessionEpoch) ||
     bound.sessionEpoch < 0
   )
-    throw new CtoxNativeCredentialsError();
+    throw CtoxNativeCredentialsError.sessionUnavailable();
   return async (input: unknown): Promise<NativeBusinessDataCredentialReply> => {
     try {
       const request = decodeCredentialChallenge(input);
@@ -160,7 +165,7 @@ export function bindCtoxNativeCredentialCallback(
         request.targetId !== bound.targetId ||
         request.sessionEpoch !== bound.sessionEpoch
       )
-        throw new CtoxNativeCredentialsError();
+        throw CtoxNativeCredentialsError.sessionUnavailable();
       lease.assertCurrent(bound.sessionEpoch);
       const credentials = await lease.provide(request.nonce ?? undefined);
       // Await introduces another turn: recheck immediately before exposing the token.
@@ -174,7 +179,7 @@ export function bindCtoxNativeCredentialCallback(
         ...(credentials.deviceProof === undefined ? {} : { deviceProof: credentials.deviceProof }),
       };
     } catch {
-      throw new CtoxNativeCredentialsError();
+      throw CtoxNativeCredentialsError.sessionUnavailable();
     }
   };
 }

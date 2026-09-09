@@ -371,3 +371,77 @@ it.effect("does not contact CTOX after a revoked grant or an instance mismatch",
     expect(test.calls).toEqual([]);
   }).pipe(Effect.provide(test.layer));
 });
+
+/**
+ * THE DENIAL PATH.
+ *
+ * WorkjetToolScopeGate proves this handler CALLS a scope enforcer. It cannot
+ * prove the refusal reaches the caller, and it cannot prove the refusal happens
+ * before the tool touches the bound instance. Every case above runs with a fully
+ * granted scope, so until now the denial branch had no coverage at all — it could
+ * have resolved the thread's target first, or returned a success shape, and the
+ * whole suite would still be green.
+ *
+ * What must hold for an ungranted caller: no target resolution, no request to the
+ * instance, and no success.
+ */
+const withoutScopeKey = (
+  key: keyof Invocation.McpInvocationScope,
+): Invocation.McpInvocationScope => {
+  const next: Record<string, unknown> = { ...scope };
+  delete next[key];
+  return next as Invocation.McpInvocationScope;
+};
+
+const ungrantedScopes: ReadonlyArray<{
+  readonly name: string;
+  readonly scope: Invocation.McpInvocationScope;
+}> = [
+  {
+    name: "the ctox-business-os capability is not active on the thread",
+    scope: { ...scope, activeWorkjetMcpCapabilityIds: new Set() },
+  },
+  { name: "the caller holds no Workjet role", scope: withoutScopeKey("workjetRole") },
+  {
+    name: "the thread has no bound instance",
+    scope: withoutScopeKey("ctoxBusinessOsBinding"),
+  },
+];
+
+it.effect("refuses an ungranted invocation scope without reaching the instance", () =>
+  Effect.gen(function* () {
+    for (const ungranted of ungrantedScopes) {
+      const test = fixture();
+      yield* Effect.gen(function* () {
+        const server = yield* McpServer.McpServer;
+        const outcome = yield* server
+          .callTool({
+            name: CTOX_BUSINESS_OS_TOOL_NAME,
+            arguments: {
+              request: {
+                operation: "write_app_file",
+                module_id: "app-a",
+                path: "index.js",
+                content: "export {};",
+              },
+            },
+          })
+          .pipe(
+            Effect.provideService(Invocation.McpInvocationContext, ungranted.scope),
+            Effect.provideService(McpSchema.McpServerClient, client),
+            Effect.result,
+          );
+        // Failing the call (the tool is not enabled for this scope) and returning
+        // the structured denial are both refusals. A plain success is not.
+        if (outcome._tag === "Success") {
+          expect(outcome.success.isError, ungranted.name).toBe(true);
+          expect(outcome.success.structuredContent, ungranted.name).toEqual({
+            error: { _tag: "CtoxBusinessOsError", reason: "capability-not-granted" },
+          });
+        }
+        expect(test.resolutions, ungranted.name).toEqual([]);
+        expect(test.calls, ungranted.name).toEqual([]);
+      }).pipe(Effect.provide(test.layer));
+    }
+  }),
+);

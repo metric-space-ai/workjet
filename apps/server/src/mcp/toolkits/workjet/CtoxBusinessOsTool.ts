@@ -81,8 +81,20 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
         if (Option.isNone(invocation)) return failureResult("capability-not-granted");
         const scope = invocation.value;
         const binding = scope.ctoxBusinessOsBinding;
-        if (!binding || !isCtoxBusinessOsToolVisible(scope))
-          return failureResult("capability-not-granted");
+        // Enforce through the helpers that actually REFUSE, not the predicates that
+        // merely read the scope: `hasActiveWorkjetMcpCapability` and `isWorkjetMember`
+        // return booleans a handler can ignore, and WorkjetToolScopeGate cannot see
+        // that this one honours them. `require*` fail the effect, so the denial here
+        // is the same one every other Workjet tool applies. Their failures become the
+        // tool's structured denial rather than a transport-level error.
+        const granted = yield* Effect.gen(function* () {
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("ctox-business-os");
+          yield* McpInvocationContext.requireWorkjetMember();
+        }).pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          Effect.option,
+        );
+        if (Option.isNone(granted) || !binding) return failureResult("capability-not-granted");
         const input = yield* decodeInput(payload).pipe(
           Effect.mapError(
             () => new McpSchema.InvalidParams({ message: "Invalid CTOX Business OS operation." }),

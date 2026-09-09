@@ -11,6 +11,7 @@ export class CtoxCrewSessionBootstrap extends Context.Service<
   {
     readonly binding: WorkjetThreadCtoxCrewChat;
     readonly capability: CtoxCrewMcpCapability;
-    readonly compiledManagedPrompt: string;
+    /** Instructions supplied by the native claim, never a precompiled worker persona. */
+    readonly nativeInstructions: string;
   }
 >()("workjet/mcp/CtoxCrewSessionBootstrap") {}

@@ -59,6 +59,7 @@ import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { compileCtoxCrewPrompt } from "../../workjet/ctox/CtoxCrewPrompt.ts";
 import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -258,7 +259,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           crewBootstrap.value.binding.chatId !== crewBinding.chatId ||
           crewBootstrap.value.capability.threadId !== threadId ||
           crewBootstrap.value.capability.providerInstanceId !== providerInstanceId ||
-          !crewBootstrap.value.compiledManagedPrompt.trim()
+          !crewBootstrap.value.nativeInstructions.trim()
         )
           return yield* toValidationError(
             "ProviderService.prepareMcpSession",
@@ -288,8 +289,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             Effect.orElseSucceed(() => ""),
           ),
       });
-      const threadCapabilityContext = resolveThreadCapabilityContext(
-        workjetConfig,
+      let threadCapabilityContext = resolveThreadCapabilityContext(
+        crewBinding ? { ...workjetConfig, managedInstructions: "" } : workjetConfig,
         undefined,
         requiresCtoxConnection
           ? {
@@ -304,7 +305,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               ),
             }
           : undefined,
-        globalManagedInstructions,
+        crewBinding ? "" : globalManagedInstructions,
       );
       if (
         workjetConfig.enabledCapabilityIds.includes("ctox-business-os") &&
@@ -315,15 +316,41 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "CTOX Business OS requires a ready connection matching this thread's bound instance.",
         );
       }
+      if (Option.isSome(crewBootstrap)) {
+        const bootstrap = crewBootstrap.value;
+        const context = yield* bootstrap.capability
+          .refreshContext()
+          .pipe(
+            Effect.mapError(() =>
+              toValidationError(
+                "ProviderService.prepareMcpSession",
+                "The native Crew context is unavailable for this execution.",
+              ),
+            ),
+          );
+        if (context.attempt_id !== bootstrap.capability.attemptId)
+          return yield* toValidationError(
+            "ProviderService.prepareMcpSession",
+            "The native Crew context belongs to another execution.",
+          );
+        const compiledManagedPrompt = yield* compileCtoxCrewPrompt(
+          threadCapabilityContext.compiledManagedPrompt,
+          bootstrap.nativeInstructions,
+          context,
+        ).pipe(
+          Effect.mapError(() =>
+            toValidationError(
+              "ProviderService.prepareMcpSession",
+              "The native Crew context cannot be prepared for this execution.",
+            ),
+          ),
+        );
+        threadCapabilityContext = { ...threadCapabilityContext, compiledManagedPrompt };
+      }
       const credential = yield* McpSessionRegistry.issueActiveMcpCredential({
         threadId,
         providerInstanceId,
-        threadCapabilityContext: Option.isSome(crewBootstrap)
-          ? {
-              ...threadCapabilityContext,
-              compiledManagedPrompt: crewBootstrap.value.compiledManagedPrompt,
-            }
-          : threadCapabilityContext,
+        threadCapabilityContext,
         ...(Option.isSome(crewBootstrap)
           ? { ctoxCrewExecution: crewBootstrap.value.capability }
           : {}),

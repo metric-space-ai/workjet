@@ -1874,8 +1874,18 @@ describe("CtoxGuestManager", () => {
   });
 
   it("allows shell/control resources but blocks Business OS HTTP data routes", () => {
-    for (const prefix of ["/business-os/_shell/0.1.46-beta.39", "/_shell/0.1.46-beta.39"]) {
-      for (const asset of ["/system-apps.json", "/modules/registry.json", "/shared/runtime.mjs"]) {
+    for (const prefix of [
+      "",
+      "/business-os",
+      "/business-os/_shell/0.1.46-beta.42",
+      "/_shell/0.1.46-beta.42",
+    ]) {
+      for (const asset of [
+        "/app.js",
+        "/system-apps.json",
+        "/modules/registry.json",
+        "/shared/runtime.mjs",
+      ]) {
         const url = `https://welsch.ctox.dev${prefix}${asset}?v=release`;
         expect(
           CtoxGuestManager.isForbiddenCtoxDataRequest(url, "fetch", "https://welsch.ctox.dev"),
@@ -1889,7 +1899,14 @@ describe("CtoxGuestManager", () => {
           ),
         ).toBe(true);
       }
-      for (const path of ["/api/business-os/records", "/commands", "/files", "/rxdb/private"]) {
+      for (const path of [
+        "/api/business-os/records",
+        "/commands",
+        "/files",
+        "/rxdb/private",
+        "/app.js/records",
+        "/private.js",
+      ]) {
         expect(
           CtoxGuestManager.isForbiddenCtoxDataRequest(
             `https://welsch.ctox.dev${prefix}${path}`,
@@ -1927,6 +1944,23 @@ describe("CtoxGuestManager", () => {
         "https://ctox.dev",
       ),
     ).toBe(false);
+    for (const method of ["GET", "POST", "PUT", "DELETE"]) {
+      expect(
+        CtoxGuestManager.isForbiddenCtoxDataRequest(
+          "https://welsch.ctox.dev/api/business-os/ctox/maintenance",
+          "fetch",
+          "https://welsch.ctox.dev",
+          method,
+        ),
+      ).toBe(method !== "GET");
+    }
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://welsch.ctox.dev/api/business-os/ctox/maintenance/records",
+        "fetch",
+        "https://welsch.ctox.dev",
+      ),
+    ).toBe(true);
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/api/business-os/records",

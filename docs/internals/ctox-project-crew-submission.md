@@ -46,3 +46,9 @@ This is not yet a configured harness transport. The controller must consume the
 grant only for this attempt, enforce the deadline through execution and report
 its result. The decoder regression covers invalid bindings, expired grants and
 JSON redaction. Tests remain pending CI.
+
+## Claimed-result reporting
+
+A successful claim now returns a server-side `report` capability bound to its original request identity. Before each report it reloads the durable command/task/harness binding and verifies the original connection credentials. The MCP call uses the claimed signed command session at that same endpoint; no caller-selected token or endpoint is accepted. Exactly one non-empty reply or error candidate is sent, bounded against the native persisted JSON UTF-8 size (256 KiB, including its null companion field). The native receipt must identify the claimed attempt and say review is pending. No local completion is inferred and transport writes are not automatically retried. Native lease checks and identical-result retry handling remain authoritative, including retries after an accepted result's deadline.
+
+The transport-double test now covers actual claim/report dispatch through the client and real request ledger, signed-session use, reply/error candidates, wrong-attempt receipts, blank/oversize candidates and changed credentials. These additions have only been formatted and checked with git diff --check; first execution and typecheck are pending CI. Local heavy verification is denied by shared admission (tmp capacity and load). The actual provider controller and secure harness MCP setup still need to invoke this path; this is not an end-to-end execution claim.

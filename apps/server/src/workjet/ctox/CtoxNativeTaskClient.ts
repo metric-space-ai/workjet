@@ -3,6 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Clock from "effect/Clock";
 import { decodeCtoxCrewClaim } from "./CtoxCrewClaim.ts";
+import { reportCtoxCrewResult, type CtoxCrewResultCandidate } from "./CtoxCrewReport.ts";
 import * as Schema from "effect/Schema";
 import { WorkjetCtoxCrewOffers } from "@workjet/contracts";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
@@ -138,10 +139,11 @@ export function makeCtoxNativeTaskClient(dependencies: {
   });
 
   const claimProjectOffer = Effect.fn("CtoxNativeTaskClient.claimProjectOffer")(function* (
-    identity: CtoxNativeRequestIdentity,
+    requestIdentity: CtoxNativeRequestIdentity,
     executorId: string,
     attemptId: string,
   ) {
+    const identity = { ...requestIdentity };
     const reference = yield* dependencies.requests.get(identity);
     if (
       reference.request.operation !== "start_crew_execution" ||
@@ -163,13 +165,38 @@ export function makeCtoxNativeTaskClient(dependencies: {
     });
     if (response.isError || response.structuredContent === undefined)
       return yield* new CtoxNativeRequestError({ reason: "ctox-operation-rejected" });
-    return yield* decodeCtoxCrewClaim(
+    const claim = yield* decodeCtoxCrewClaim(
       reference,
       executorId,
       attemptId,
       yield* Clock.currentTimeMillis,
       response.structuredContent,
     );
+    const boundIdentity = { ...identity };
+    const boundTaskId = claim.context.task_id;
+    // Keep the report capability bound to this successful claim. Callers cannot
+    // substitute a command session, endpoint, attempt or request identity.
+    const report = Effect.fn("CtoxNativeTaskClient.reportProjectOffer")(function* (
+      candidate: CtoxCrewResultCandidate,
+    ) {
+      const current = yield* dependencies.requests.get(boundIdentity);
+      if (
+        current.commandId !== claim.commandId ||
+        current.taskId !== boundTaskId ||
+        current.request.operation !== "start_crew_execution" ||
+        current.request.harness !== claim.harness
+      )
+        return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+      const currentTarget = yield* dependencies.connections.resolveReadyTarget(
+        boundIdentity.connectionId,
+        boundIdentity.instanceId,
+      );
+      yield* dependencies.requests.verifyTarget(boundIdentity, currentTarget);
+      // Native verifies the current lease and supports identical report retries.
+      // Do not reject locally just because an accepted report's deadline passed.
+      return yield* reportCtoxCrewResult(dependencies.transport, currentTarget, claim, candidate);
+    });
+    return { ...claim, report };
   });
 
   const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (

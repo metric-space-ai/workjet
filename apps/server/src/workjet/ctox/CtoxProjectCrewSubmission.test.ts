@@ -29,9 +29,20 @@ it.effect("recovers project submission after a lost receipt and rejects another 
     let lose = true;
     let wrongChat = false;
     let offerIdentity = { command: "command", executor: "computer", harness: "codex" };
+    let reports = 0;
+    let expectedCandidate: { reply: string } | { error: string } = { reply: "Candidate" };
+    let receiptAttempt = "attempt";
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
-      probe: (_, names, fields) =>
+      probe: (destination, names, fields) =>
         Effect.sync(() => {
+          if (names[0] === "business_os.report_crew_execution") {
+            expect(destination).toEqual({
+              endpoint: "https://ctox.example/mcp",
+              token: "signed-session",
+            });
+            return undefined;
+          }
+          if (names[0] === "business_os.claim_crew_execution") return undefined;
           if (names[0] === "business_os.list_crew_executions") {
             expect(names).toEqual(["business_os.list_crew_executions"]);
             return undefined;
@@ -40,8 +51,56 @@ it.effect("recovers project submission after a lost receipt and rejects another 
           expect(fields).toEqual({ "business_os.start_crew_execution": ["idempotency_key"] });
           return undefined;
         }),
-      callTool: (_, name, args) =>
+      callTool: (destination, name, args) =>
         Effect.gen(function* () {
+          if (name === "business_os.report_crew_execution") {
+            reports++;
+            expect(destination).toEqual({
+              endpoint: "https://ctox.example/mcp",
+              token: "signed-session",
+            });
+            expect(args).toEqual(expectedCandidate);
+            return {
+              structuredContent: {
+                accepted: true,
+                attempt_id: receiptAttempt,
+                review_status: "pending",
+              },
+            };
+          }
+          if (name === "business_os.claim_crew_execution") {
+            expect(args).toEqual({
+              command_id: "command",
+              executor_id: "computer",
+              attempt_id: "attempt",
+            });
+            return {
+              structuredContent: {
+                schema: "ctox.external_crew_offer.v1",
+                command_id: "command",
+                executor_id: "computer",
+                attempt_id: "attempt",
+                harness: "codex",
+                deadline_ms: 1_000_000_000_000_000,
+                command_session: "signed-session",
+                prompt: "Task",
+                instructions: "Report candidate",
+                crew_context: {
+                  schema: "ctox.crew_context.v1",
+                  command_id: "command",
+                  attempt_id: "attempt",
+                  task_id: "task",
+                  module_id: "ctox",
+                  member_id: "crew",
+                  member_name: "Crew",
+                  persona: "Persona",
+                  memory_block: null,
+                  execution_plan: null,
+                  context_version: "v1",
+                },
+              },
+            };
+          }
           if (name === "business_os.list_crew_executions") {
             expect(args).toEqual({ command_id: "command", executor_id: "computer" });
             return {
@@ -136,6 +195,34 @@ it.effect("recovers project submission after a lost receipt and rejects another 
         reason: "native-response-invalid",
       });
     }
+    const claimed = yield* restarted.claimProjectOffer(identity, "computer", "attempt");
+    expect(JSON.stringify(claimed)).not.toContain("signed-session");
+    expect(yield* claimed.report({ reply: "Candidate" })).toEqual({
+      accepted: true,
+      attempt_id: "attempt",
+      review_status: "pending",
+    });
+    receiptAttempt = "foreign-attempt";
+    expect(yield* Effect.flip(claimed.report({ reply: "Candidate" }))).toMatchObject({
+      reason: "native-response-invalid",
+    });
+    expect(reports).toBe(2);
+    for (const candidate of [{ reply: " " }, { error: "" }, { reply: "😀".repeat(65_536) }]) {
+      expect(yield* Effect.flip(claimed.report(candidate))).toMatchObject({
+        reason: "native-request-conflict",
+      });
+    }
+    expect(reports).toBe(2);
+    target = { ...target, token: "rotated" };
+    expect(yield* Effect.flip(claimed.report({ reply: "Candidate" }))).toMatchObject({
+      reason: "native-request-credentials-changed",
+    });
+    expect(reports).toBe(2);
+    target = { endpoint: "https://ctox.example/mcp", token: "fixture" };
+    expectedCandidate = { error: "Harness failed" };
+    receiptAttempt = "attempt";
+    expect(yield* claimed.report(expectedCandidate)).toMatchObject({ review_status: "pending" });
+    expect(reports).toBe(3);
     wrongChat = true;
     expect(yield* Effect.flip(restarted.submitProjectTurn(scope, "event-2", task))).toMatchObject({
       reason: "native-response-invalid",

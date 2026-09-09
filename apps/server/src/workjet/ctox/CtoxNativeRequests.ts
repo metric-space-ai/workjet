@@ -140,6 +140,19 @@ const make = Effect.gen(function* () {
     return row.remoteRequestKey;
   });
 
+  const verifyTarget = Effect.fn("CtoxNativeRequests.verifyTarget")(function* (
+    identity: CtoxNativeRequestIdentity,
+    target: CtoxMcpTarget,
+  ) {
+    const row = yield* load(identity);
+    const encodedTarget = yield* encodeIntentTarget([target.endpoint, target.token]).pipe(
+      Effect.mapError(unavailable),
+    );
+    const digest = NodeCrypto.createHash("sha256").update(encodedTarget).digest("hex");
+    if (row.targetDigest !== digest)
+      return yield* failure("native-request-credentials-changed");
+  });
+
   const recordReceipt = Effect.fn("CtoxNativeRequests.recordReceipt")(function* (
     identity: CtoxNativeRequestIdentity,
     value: unknown,
@@ -233,7 +246,7 @@ const make = Effect.gen(function* () {
     if (!row) return null;
     return { ...row, reference: yield* get({ ...scope, requestKey: row.requestKey }) };
   });
-  return { prepare, recordReceipt, get, registerNativeTurn, latestNativeTurn };
+  return { prepare, verifyTarget, recordReceipt, get, registerNativeTurn, latestNativeTurn };
 });
 
 const encodeIntentTarget = Schema.encodeEffect(

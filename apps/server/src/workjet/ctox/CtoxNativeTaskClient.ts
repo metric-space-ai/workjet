@@ -113,6 +113,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
       identity.connectionId,
       identity.instanceId,
     );
+    yield* dependencies.requests.verifyTarget(identity, target);
     const name = "business_os.get_command_status";
     yield* dependencies.transport.probe(target, [name]);
     const response = yield* dependencies.transport.callTool(target, name, {

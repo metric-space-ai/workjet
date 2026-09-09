@@ -63,10 +63,8 @@ it.effect("recovers project submission after a lost receipt and rejects another 
           };
         }),
     };
-    const connections = {
-      resolveReadyTarget: () =>
-        Effect.succeed({ endpoint: "https://ctox.example/mcp", token: "fixture" }),
-    };
+    let target = { endpoint: "https://ctox.example/mcp", token: "fixture" };
+    const connections = { resolveReadyTarget: () => Effect.succeed(target) };
     const open = CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const first = makeCtoxNativeTaskClient({ requests: yield* open, connections, transport });
     expect(yield* Effect.flip(first.submitProjectTurn(scope, "event-1", task))).toMatchObject({
@@ -89,6 +87,18 @@ it.effect("recovers project submission after a lost receipt and rejects another 
       ),
     ).toMatchObject({ reason: "native-request-conflict" });
     expect(sent).toHaveLength(2);
+    const identity = { ...scope, requestKey: result.reference.request.idempotency_key };
+    for (const changed of [
+      { endpoint: target.endpoint, token: "another-principal" },
+      { endpoint: "https://other.example/mcp", token: "fixture" },
+    ]) {
+      target = changed;
+      expect(yield* Effect.flip(restarted.readStatus(identity))).toMatchObject({
+        reason: "native-request-credentials-changed",
+      });
+      expect(sent).toHaveLength(2);
+    }
+    target = { endpoint: "https://ctox.example/mcp", token: "fixture" };
     wrongChat = true;
     expect(yield* Effect.flip(restarted.submitProjectTurn(scope, "event-2", task))).toMatchObject({
       reason: "native-response-invalid",

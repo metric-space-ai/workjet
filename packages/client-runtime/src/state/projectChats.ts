@@ -1,3 +1,5 @@
+export { decodeProjectChatRecords, type ProjectChatRecords } from "./projectChatRecords.ts";
+
 /**
  * Read-only inputs from validated native projections, not a wire contract or
  * permission model. The host consumer owns decoding, coherent snapshots and

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -27,7 +28,7 @@ export class CtoxNativeIdentityError extends Schema.TaggedErrorClass<CtoxNativeI
   {},
 ) {
   override get message(): string {
-    return "The selected CTOX instance has no verified native identity.";
+    return "The selected instance could not be verified.";
   }
 }
 
@@ -118,7 +119,7 @@ export const make = Effect.fn("CtoxNativeIdentityResolver.make")(function* (
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const env = options.env ?? process.env;
-  const platform = options.platform ?? process.platform;
+  const platform = options.platform ?? (yield* HostProcessPlatform);
   // Reuse the existing pinned OpenSSH execution path and its secret owner.
   const sshExec = options.sshExec ?? makeCtoxSshInviteExec({ spawner, fileSystem, path });
 

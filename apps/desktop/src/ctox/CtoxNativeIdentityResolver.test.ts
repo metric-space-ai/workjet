@@ -165,7 +165,7 @@ describe("native identity resolution through existing trusted host paths", () =>
           ChildProcessSpawner.make(() => Effect.succeed(handle(output))),
         );
         const error = yield* resolver.resolve(LOCAL).pipe(Effect.flip);
-        expect(error.message).toBe("The selected CTOX instance has no verified native identity.");
+        expect(error.message).toBe("The selected instance could not be verified.");
         expect(JSON.stringify(error)).not.toContain("must-not-leak");
       }
       const failed = yield* makeResolver(

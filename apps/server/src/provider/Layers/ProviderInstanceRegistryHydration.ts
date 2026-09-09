@@ -285,6 +285,11 @@ export const runSettingsWatcher = (options: {
       Effect.forkScoped,
     );
 
+    // Both subscriptions now exist and their consumers are running, so anything
+    // published from here on is delivered rather than dropped. Production passes
+    // nothing; a test publishes exactly here.
+    yield* options.onSubscribed ?? Effect.void;
+
     // Only now: the initial pass runs behind both live subscriptions.
     yield* reconcileNow;
   });

@@ -347,7 +347,7 @@ it.effect("keeps the instance across disconnect, because the binding outlives th
  * binding-read failure, a disconnect and a restart all leave the instance and
  * its scope intact.
  */
-it.effect.skip("loses no connection event published while the initial read is still running", () =>
+it.effect("loses no connection event published while the initial read is still running", () =>
   Effect.gen(function* () {
     yield* migrate;
     const test = yield* harness;
@@ -368,6 +368,20 @@ it.effect.skip("loses no connection event published while the initial read is st
         onSettled: barrier.onSettled,
         onSubscribed: connections.provision(provisionA).pipe(Effect.orDie, Effect.asVoid),
       });
+
+      // TWO reconciliations, and the count is the whole assertion.
+      //
+      // The instance count alone cannot decide this case, and a green test that
+      // could not fail is worse than no test: `provision` writes its row before
+      // it announces, so the initial read sees that row whether or not the
+      // event was ever delivered. Measured, not assumed — with the connection
+      // consumer stubbed out to ignore its events, three other cases in this
+      // file died and this one still passed.
+      //
+      // The number of settled reconciliations does distinguish them. Delivered:
+      // the event triggers one pass and the initial read is a second. Dropped:
+      // exactly one, and this second wait times out.
+      yield* barrier.awaitSettled;
       yield* barrier.awaitSettled;
 
       const registry = yield* ProviderInstanceRegistry;

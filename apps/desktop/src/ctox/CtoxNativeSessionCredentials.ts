@@ -16,10 +16,12 @@ export interface CtoxNativeCredentials {
   readonly deviceProof: ReturnType<CtoxDeviceProofKey["signNonce"]> | undefined;
 }
 
-export class CtoxNativeCredentialsError extends Error {
+export class CtoxNativeCredentialsError extends Schema.TaggedErrorClass<CtoxNativeCredentialsError>()(
+  "CtoxNativeCredentialsError",
+  { message: Schema.String },
+) {
   constructor() {
-    super("The native session credentials are no longer available.");
-    this.name = "CtoxNativeCredentialsError";
+    super({ message: "Your session is no longer available." });
   }
 }
 

@@ -235,6 +235,10 @@ export interface WorkjetCapabilityMenuProps {
   readonly decisionHubConnections?: ReadonlyArray<WorkjetConnectionSummary> | undefined;
   readonly decisionHubConnectionId?: string | null | undefined;
   readonly onDecisionHubConnectionChange?: ((connectionId: string) => void) | undefined;
+  readonly ctoxBusinessOsConnections?: ReadonlyArray<WorkjetConnectionSummary> | undefined;
+  readonly ctoxBusinessOsConnectionId?: string | null | undefined;
+  readonly ctoxBusinessOsConnectionLocked?: boolean | undefined;
+  readonly onCtoxBusinessOsConnectionChange?: ((connectionId: string) => void) | undefined;
   /** Thread role belongs in this settings menu, never in the main composer bar. */
   readonly workjetRole?: WorkjetThreadRole | null | undefined;
   readonly onWorkjetRoleChange?: ((role: WorkjetSelectableRole) => void) | undefined;
@@ -443,6 +447,44 @@ export function WorkjetCapabilityDetail(
                 {selectedConnection.displayName} · {selectedConnection.status}
                 {selectedConnection.reason ? `: ${selectedConnection.reason}` : ""}
               </p>
+            ) : null}
+            {capability.id === "ctox-business-os" && enabled ? (
+              <div className="px-2 pb-2">
+                <Select
+                  value={props.ctoxBusinessOsConnectionId ?? ""}
+                  disabled={
+                    props.disabled === true || props.busy || props.ctoxBusinessOsConnectionLocked
+                  }
+                  onValueChange={(value) => {
+                    if (value !== null) props.onCtoxBusinessOsConnectionChange?.(value);
+                  }}
+                >
+                  <SelectTrigger aria-label="CTOX Business OS connection">
+                    <SelectValue placeholder="Connect selected instance" />
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {(props.ctoxBusinessOsConnections ?? []).map((connection) => (
+                      <SelectItem
+                        key={connection.connectionId}
+                        value={connection.connectionId}
+                        disabled={connection.status !== "ready"}
+                      >
+                        {connection.displayName} · {connection.status}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+                {props.ctoxBusinessOsConnectionLocked ? (
+                  <p className="pt-1 text-xs text-muted-foreground">
+                    This thread keeps its original instance.
+                  </p>
+                ) : null}
+                {(props.ctoxBusinessOsConnections ?? []).length === 0 ? (
+                  <p role="alert" className="pt-1 text-xs text-amber-500">
+                    No MCP connection for the selected instance is available on this computer.
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         )

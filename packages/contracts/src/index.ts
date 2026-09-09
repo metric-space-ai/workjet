@@ -31,6 +31,8 @@ export * from "./workjetMailbox.ts";
 export * from "./workjetMailboxAudit.ts";
 export * from "./workjetCrossMode.ts";
 export * from "./workjetDecisionHub.ts";
+export * from "./workjetCtoxBusinessOs.ts";
+export * from "./workjetCtoxBinding.ts";
 export * from "./capability.ts";
 export * from "./ctox.ts";
 export * from "./businessOsShell.ts";

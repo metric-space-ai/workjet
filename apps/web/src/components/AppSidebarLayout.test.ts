@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import appSidebarLayoutSource from "./AppSidebarLayout.tsx?raw";
+import workjetHeaderSource from "./WorkjetHeader.tsx?raw";
 import { resolveAppSidebarSurface } from "./AppSidebarLayout";
 
 describe("AppSidebarLayout mode ownership", () => {
@@ -32,12 +33,12 @@ describe("AppSidebarLayout mode ownership", () => {
     expect(appSidebarLayoutSource).toContain("<SettingsSidebarNav pathname={pathname} />");
   });
 
-  it("mounts one shared active-instance selector above every mode-specific sidebar", () => {
-    expect(appSidebarLayoutSource.split("<ActiveCtoxInstanceSelector").length - 1).toBe(1);
-    expect(appSidebarLayoutSource).toContain("<ActiveCtoxInstanceSelector />");
-    expect(appSidebarLayoutSource.indexOf("<ActiveCtoxInstanceSelector />")).toBeLessThan(
-      appSidebarLayoutSource.indexOf('sidebarSurface === "business-os" ?'),
-    );
-    expect(appSidebarLayoutSource).toContain("[&_[data-slot=sidebar-header]]:order-[-2]");
+  it("keeps one instance selector in the shared header and releases the Ops sidebar", () => {
+    expect(appSidebarLayoutSource).not.toContain("<ActiveCtoxInstanceSelector");
+    expect(workjetHeaderSource.split("<ActiveCtoxInstanceSelector").length - 1).toBe(1);
+    expect(workjetHeaderSource).toContain('<ActiveCtoxInstanceSelector placement="header" />');
+    expect(appSidebarLayoutSource).toContain("sidebarAvailable={!isCtoxShell}");
+    expect(appSidebarLayoutSource).not.toContain("<CtoxSidebarShell");
+    expect(appSidebarLayoutSource).toContain('data-workjet-frame=""');
   });
 });

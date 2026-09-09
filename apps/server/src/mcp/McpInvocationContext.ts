@@ -22,6 +22,10 @@ export interface McpInvocationScope {
   readonly activeWorkjetMcpCapabilityIds?: ReadonlySet<WorkjetCapabilityId>;
   readonly workjetRole?: WorkjetThreadRole;
   readonly decisionHubConnectionId?: WorkjetConnectionId;
+  readonly ctoxBusinessOsBinding?: {
+    readonly connectionId: WorkjetConnectionId;
+    readonly instanceId: string;
+  };
   readonly cwd?: string;
   readonly issuedAt: number;
 }

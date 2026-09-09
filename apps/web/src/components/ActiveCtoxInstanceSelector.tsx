@@ -62,7 +62,12 @@ export function ctoxInstancePickerStatus(instance: CtoxManagedInstance): string 
   return instance.healthSummary.dataPlaneReady ? "Verbunden" : "Verbindung nicht bestätigt";
 }
 
-export function ActiveCtoxInstanceSelector() {
+export function ActiveCtoxInstanceSelector({
+  placement = "sidebar",
+}: {
+  /** The shared header renders this compactly; the sidebar keeps its own band. */
+  readonly placement?: "header" | "sidebar";
+} = {}) {
   const navigate = useNavigate();
   const { discovery, selectedId, select, showNetwork, refresh } = useCtoxMode();
   const { selectionRevision } = useActiveWorkjetScope();
@@ -109,7 +114,11 @@ export function ActiveCtoxInstanceSelector() {
   };
   return (
     <div
-      className="relative order-[-1] min-w-0 shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
+      className={
+        placement === "header"
+          ? "no-drag relative min-w-0 w-40 shrink sm:w-48"
+          : "relative order-[-1] min-w-0 shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
+      }
       data-active-ctox-instance-selector=""
       data-active-ctox-instance-id={activeId ?? ""}
       data-active-workjet-selection-revision={selectionRevision}

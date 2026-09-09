@@ -130,6 +130,75 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(workjet-
   );
 }
 
+/* Dev and Ops share one titlebar. Surface headers portal their controls into it. */
+[data-workjet-frame] {
+  --workjet-frame-header-height: var(--workspace-topbar-height);
+  --workjet-header-context-height: var(--workspace-topbar-height);
+}
+
+[data-workjet-header] {
+  height: var(--workjet-frame-header-height);
+  min-height: var(--workjet-frame-header-height);
+}
+
+[data-workjet-header-navigation] {
+  flex-shrink: 0;
+  height: var(--workspace-topbar-height);
+}
+
+[data-workjet-frame] [data-slot="sidebar-container"] {
+  top: var(--workjet-frame-header-height);
+  height: calc(100dvh - var(--workjet-frame-header-height));
+}
+
+[data-workjet-content] [data-slot="sidebar-inset"] {
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+}
+
+[data-workjet-header-content] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: var(--workjet-header-context-height);
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+/* Keep instance and mode in the native titlebar; give surface actions their
+   own row before the desktop or editor. Guest bounds follow the host rect. */
+@media (max-width: 1099px) {
+  [data-workjet-frame] {
+    --workjet-header-context-height: 44px;
+    --workjet-frame-header-height: calc(
+      var(--workspace-topbar-height) + var(--workjet-header-context-height)
+    );
+  }
+
+  [data-workjet-header] {
+    flex-wrap: wrap;
+    align-content: start;
+    row-gap: 0;
+  }
+
+  [data-workjet-header-navigation] {
+    flex: 1 1 0%;
+  }
+
+  [data-workjet-header-settings] {
+    order: 1;
+  }
+
+  [data-workjet-header-slot] {
+    order: 2;
+    flex: 0 0 100%;
+    height: var(--workjet-header-context-height);
+    padding-inline: calc(env(safe-area-inset-left) + 0.75rem)
+      calc(env(safe-area-inset-right) + 0.75rem);
+  }
+}
+
 /* The font tokens are declared outside the inline theme so utilities reference
    the variables and Settings -> Appearance can override them at runtime. The
    default stacks are mirrored in `appearanceFonts.ts`. */

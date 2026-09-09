@@ -1,0 +1,235 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Server-only SHA-256 pins opaque credentials without storing the bearer token.
+import * as NodeCrypto from "node:crypto";
+import {
+  WorkjetCtoxBusinessOsInput,
+  type ThreadId,
+  type WorkjetConnectionId,
+} from "@workjet/contracts";
+import * as Clock from "effect/Clock";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import type { CtoxMcpTarget } from "./CtoxMcpTransport.ts";
+
+export type NativeTaskRequest = Extract<
+  WorkjetCtoxBusinessOsInput["request"],
+  { readonly operation: "create_app" | "modify_app" | "delegate_task" }
+> & { readonly idempotency_key: string };
+
+export interface CtoxNativeRequestIdentity {
+  readonly threadId: ThreadId;
+  readonly connectionId: WorkjetConnectionId;
+  readonly instanceId: string;
+  readonly requestKey: string;
+}
+
+export interface NativeTaskReference {
+  readonly request: NativeTaskRequest;
+  readonly instanceId: string;
+  readonly commandId: string | null;
+  readonly taskId: string | null;
+  readonly preparedAt: number;
+  readonly receivedAt: number | null;
+}
+
+export class CtoxNativeRequestError extends Schema.TaggedErrorClass<CtoxNativeRequestError>()(
+  "CtoxNativeRequestError",
+  {
+    reason: Schema.Literals([
+      "native-request-conflict",
+      "native-request-credentials-changed",
+      "native-request-not-found",
+      "native-request-store-unavailable",
+      "native-task-reference-conflict",
+      "native-response-invalid",
+      "ctox-operation-rejected",
+    ]),
+  },
+) {}
+const failure = (reason: CtoxNativeRequestError["reason"]) =>
+  new CtoxNativeRequestError({ reason });
+const unavailable = () => failure("native-request-store-unavailable");
+const IntentCodec = Schema.fromJsonString(WorkjetCtoxBusinessOsInput);
+const encodeIntent = Schema.encodeEffect(IntentCodec);
+const decodeIntent = Schema.decodeUnknownEffect(IntentCodec);
+const Rows = Schema.Array(
+  Schema.Struct({
+    connectionId: Schema.String,
+    instanceId: Schema.String,
+    intentJson: Schema.String,
+    targetDigest: Schema.String,
+    remoteRequestKey: Schema.String,
+    preparedAt: Schema.Number,
+    commandId: Schema.NullOr(Schema.String),
+    taskId: Schema.NullOr(Schema.String),
+    receivedAt: Schema.NullOr(Schema.Number),
+  }),
+);
+const Receipt = Schema.Struct({
+  module_id: Schema.String,
+  command_type: Schema.String,
+  command_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  task_id: Schema.optionalKey(
+    Schema.NullOr(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
+  ),
+});
+
+const NativeTurns = Schema.Array(
+  Schema.Struct({ requestId: Schema.String, requestKey: Schema.String }),
+);
+
+const make = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const load = (identity: CtoxNativeRequestIdentity) =>
+    sql`
+    SELECT connection_id AS "connectionId", instance_id AS "instanceId",
+      intent_json AS "intentJson", target_digest AS "targetDigest", remote_request_key AS "remoteRequestKey",
+      prepared_at_ms AS "preparedAt", command_id AS "commandId",
+      task_id AS "taskId", received_at_ms AS "receivedAt"
+    FROM workjet_ctox_native_requests
+    WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+  `.pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Rows)),
+      Effect.mapError(unavailable),
+      Effect.flatMap((rows) => {
+        const row = rows[0];
+        if (!row) return Effect.fail(failure("native-request-not-found"));
+        if (row.connectionId !== identity.connectionId || row.instanceId !== identity.instanceId)
+          return Effect.fail(failure("native-request-conflict"));
+        return Effect.succeed(row);
+      }),
+    );
+
+  const prepare = Effect.fn("CtoxNativeRequests.prepare")(function* (
+    identity: CtoxNativeRequestIdentity,
+    request: NativeTaskRequest,
+    target: CtoxMcpTarget,
+  ) {
+    if (request.idempotency_key !== identity.requestKey)
+      return yield* failure("native-request-conflict");
+    const intentJson = yield* encodeIntent({ request }).pipe(Effect.mapError(unavailable));
+    // Until CTOX exposes a durable authenticated-principal identity, a changed
+    // credential may denote another actor (and thus another remote retry scope).
+    // Keep retries pinned rather than accidentally creating a task.
+    const encodedTarget = yield* encodeIntentTarget([target.endpoint, target.token]).pipe(
+      Effect.mapError(unavailable),
+    );
+    const targetDigest = NodeCrypto.createHash("sha256").update(encodedTarget).digest("hex");
+    const now = yield* Clock.currentTimeMillis;
+    // A client may use "request-1" in more than one thread. Allocate a native
+    // key once per durable claim so those independent requests never coalesce.
+    const remoteRequestKey = `workjet_${NodeCrypto.randomUUID()}`;
+    yield* sql`
+      INSERT INTO workjet_ctox_native_requests
+        (thread_id, request_key, remote_request_key, connection_id, instance_id, intent_json, target_digest, prepared_at_ms)
+      VALUES (${identity.threadId}, ${identity.requestKey}, ${remoteRequestKey}, ${identity.connectionId}, ${identity.instanceId}, ${intentJson}, ${targetDigest}, ${now})
+      ON CONFLICT(thread_id, request_key) DO NOTHING
+    `.pipe(Effect.mapError(unavailable));
+    const row = yield* load(identity);
+    if (row.intentJson !== intentJson) return yield* failure("native-request-conflict");
+    if (row.targetDigest !== targetDigest)
+      return yield* failure("native-request-credentials-changed");
+    return row.remoteRequestKey;
+  });
+
+  const recordReceipt = Effect.fn("CtoxNativeRequests.recordReceipt")(function* (
+    identity: CtoxNativeRequestIdentity,
+    value: unknown,
+  ) {
+    const row = yield* load(identity);
+    const { request } = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
+    const receipt = yield* Schema.decodeUnknownEffect(Receipt)(value).pipe(
+      Effect.mapError(() => failure("native-response-invalid")),
+    );
+    if (
+      (request.operation !== "create_app" &&
+        request.operation !== "modify_app" &&
+        request.operation !== "delegate_task") ||
+      receipt.module_id !== request.module_id ||
+      receipt.command_type !==
+        (request.operation === "create_app"
+          ? "ctox.business_os.app.create"
+          : request.operation === "modify_app"
+            ? "ctox.business_os.app.modify"
+            : "ctox.delegate_task")
+    ) {
+      return yield* failure("native-response-invalid");
+    }
+    const now = yield* Clock.currentTimeMillis;
+    const taskId = receipt.task_id ?? null;
+    const updated = yield* sql`
+      UPDATE workjet_ctox_native_requests
+      SET command_id = ${receipt.command_id}, task_id = COALESCE(task_id, ${taskId}),
+        received_at_ms = COALESCE(received_at_ms, ${now})
+      WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+        AND (command_id IS NULL OR command_id = ${receipt.command_id})
+        AND (task_id IS NULL OR task_id IS ${taskId})
+      RETURNING request_key
+    `.pipe(Effect.mapError(unavailable));
+    if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+  });
+
+  const get = Effect.fn("CtoxNativeRequests.get")(function* (identity: CtoxNativeRequestIdentity) {
+    const row = yield* load(identity);
+    const { request } = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
+    if (
+      (request.operation !== "create_app" &&
+        request.operation !== "modify_app" &&
+        request.operation !== "delegate_task") ||
+      !request.idempotency_key
+    )
+      return yield* unavailable();
+    return {
+      request: { ...request, idempotency_key: request.idempotency_key },
+      instanceId: row.instanceId,
+      commandId: row.commandId,
+      taskId: row.taskId,
+      preparedAt: row.preparedAt,
+      receivedAt: row.receivedAt,
+    } satisfies NativeTaskReference;
+  });
+  const registerNativeTurn = Effect.fn("CtoxNativeRequests.registerNativeTurn")(function* (
+    identity: CtoxNativeRequestIdentity,
+    requestId: string,
+  ) {
+    yield* load(identity);
+    yield* sql`
+      INSERT INTO workjet_ctox_native_turns (thread_id, request_id, request_key)
+      VALUES (${identity.threadId}, ${requestId}, ${identity.requestKey})
+      ON CONFLICT(thread_id, request_id) DO NOTHING
+    `.pipe(Effect.mapError(unavailable));
+    const rows = yield* sql`
+      SELECT request_id AS "requestId", request_key AS "requestKey"
+      FROM workjet_ctox_native_turns
+      WHERE thread_id = ${identity.threadId} AND request_id = ${requestId}
+    `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(NativeTurns)), Effect.mapError(unavailable));
+    if (rows[0]?.requestKey !== identity.requestKey)
+      return yield* failure("native-request-conflict");
+  });
+  const latestNativeTurn = Effect.fn("CtoxNativeRequests.latestNativeTurn")(function* (
+    scope: Omit<CtoxNativeRequestIdentity, "requestKey">,
+  ) {
+    const rows = yield* sql`
+      SELECT request_id AS "requestId", request_key AS "requestKey"
+      FROM workjet_ctox_native_turns WHERE thread_id = ${scope.threadId}
+      ORDER BY sequence DESC LIMIT 1
+    `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(NativeTurns)), Effect.mapError(unavailable));
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, reference: yield* get({ ...scope, requestKey: row.requestKey }) };
+  });
+  return { prepare, recordReceipt, get, registerNativeTurn, latestNativeTurn };
+});
+
+const encodeIntentTarget = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String])),
+);
+
+export class CtoxNativeRequests extends Context.Service<
+  CtoxNativeRequests,
+  Effect.Success<typeof make>
+>()("workjet/workjet/ctox/CtoxNativeRequests") {
+  static readonly layer = Layer.effect(this, make);
+}

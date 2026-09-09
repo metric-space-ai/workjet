@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
+import { CommandId } from "@workjet/contracts";
 import * as NodeVM from "node:vm";
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
@@ -1588,6 +1589,82 @@ describe("CtoxGuestManager", () => {
         { _tag: "failed", code: "unsupported" },
       );
     }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect(
+    "routes computer membership only through the exact warm guest and rejects mismatched replies",
+    () => {
+      const harness = makeGuestHarness();
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+          { _tag: "failed", code: "not_active" },
+        );
+        expect(harness.views).toHaveLength(0);
+        yield* manager.enterBusinessOsMode;
+        yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+        yield* manager.exitBusinessOsMode;
+        const control = vi.fn().mockResolvedValue({ action: "computer.list", computers: [] });
+        harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) => {
+          expect(expression).not.toContain("fetch(");
+          return NodeVM.runInNewContext(expression, { workjetComputerControl: control });
+        });
+        assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+          { _tag: "completed", response: { action: "computer.list", computers: [] } },
+        );
+        expect(control).toHaveBeenCalledExactlyOnceWith({ action: "computer.list" });
+        assert.deepEqual(
+          yield* manager.requestComputerControl("managed:other", { action: "computer.list" }),
+          { _tag: "failed", code: "not_active" },
+        );
+        control.mockResolvedValueOnce({
+          action: "computer.assign",
+          computer: {
+            id: "other-computer",
+            displayName: "Other",
+            hostingMode: "workstation",
+            status: "assigned",
+            capabilities: [],
+            selfHostedColocation: false,
+          },
+        });
+        assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, {
+            action: "computer.assign",
+            commandId: CommandId.make("assign-command"),
+            computerId: "expected-computer",
+            displayName: "GPU",
+            hostingMode: "workstation",
+            capabilities: [],
+            selfHostedColocation: false,
+          }),
+          { _tag: "failed", code: "guest_failed" },
+        );
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect("bounds stalled computer commands without locking navigation", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      harness.views[0]?.executeJavaScript.mockImplementation(() => {
+        entered.resolve();
+        return new Promise<unknown>(() => {});
+      });
+      const request = yield* Effect.forkChild(
+        manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      assert.deepEqual(yield* manager.exitBusinessOsMode, { _tag: "completed" });
+      yield* TestClock.adjust("45 seconds");
+      assert.deepEqual(yield* Fiber.join(request), { _tag: "failed", code: "timeout" });
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
   });
 
   it.effect("uses only an existing warm guest for project control", () => {

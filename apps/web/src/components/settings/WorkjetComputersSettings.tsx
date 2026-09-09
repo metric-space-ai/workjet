@@ -5,7 +5,12 @@ import type {
   WorkjetHarnessAvailabilitySnapshot,
 } from "@workjet/contracts";
 import { CheckIcon, PencilIcon, PlusIcon } from "lucide-react";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useActiveWorkjetScope } from "../../activeWorkjetScope";
+import {
+  workjetComputerMembership,
+  type ComputerMembershipSnapshot,
+} from "../../workjetComputerMembership";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
@@ -102,6 +107,8 @@ export function WorkjetComputersSettingsView({
   harnessInspections,
   environmentId = null,
   onChange,
+  membership,
+  onAssign,
 }: {
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
@@ -116,6 +123,8 @@ export function WorkjetComputersSettingsView({
   readonly harnessInspections?: Readonly<Record<string, ComputerHarnessInspection>>;
   readonly environmentId?: EnvironmentId | null;
   readonly onChange: (configuration: WorkjetConfiguration) => void;
+  readonly membership?: ComputerMembershipSnapshot | undefined;
+  readonly onAssign?: ((computer: WorkjetComputer, assigned: boolean) => void) | undefined;
 }) {
   const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
   const [addingComputer, setAddingComputer] = useState(() => {
@@ -290,6 +299,39 @@ export function WorkjetComputersSettingsView({
                 }
               >
                 <div className="mt-1 space-y-1 pb-3">
+                  {onAssign && membership ? (
+                    <div className="flex flex-wrap items-center gap-2 pb-2">
+                      <span className="text-xs text-muted-foreground">
+                        {membership.phase === "loading"
+                          ? "Checking Business OS assignment…"
+                          : membership.phase === "failed"
+                            ? "Business OS assignment could not be checked"
+                            : membership.computers.some((entry) => entry.id === computer.id)
+                              ? "Available in the selected Business OS"
+                              : "Not added to the selected Business OS"}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          membership.phase !== "ready" || membership.pendingComputerId !== null
+                        }
+                        aria-label={`${membership.computers.some((entry) => entry.id === computer.id) ? "Remove" : "Add"} ${computer.label} ${membership.computers.some((entry) => entry.id === computer.id) ? "from" : "to"} selected Business OS`}
+                        onClick={() =>
+                          onAssign(
+                            computer,
+                            !membership.computers.some((entry) => entry.id === computer.id),
+                          )
+                        }
+                      >
+                        {membership.pendingComputerId === computer.id
+                          ? "Waiting for confirmation…"
+                          : membership.computers.some((entry) => entry.id === computer.id)
+                            ? "Remove from Business OS"
+                            : "Add to Business OS"}
+                      </Button>
+                    </div>
+                  ) : null}
                   {(disconnected || harnessInspections !== undefined) &&
                   computerInspection === null ? (
                     <p role="status" className="text-xs text-muted-foreground">
@@ -364,6 +406,13 @@ export function WorkjetComputersSettingsView({
 }
 
 export function WorkjetComputersSettings() {
+  const { selectedInstanceId } = useActiveWorkjetScope();
+  const membership = useSyncExternalStore(
+    workjetComputerMembership.subscribe,
+    workjetComputerMembership.getSnapshot,
+    workjetComputerMembership.getSnapshot,
+  );
+  const activeMembership = membership.instanceId === selectedInstanceId ? membership : undefined;
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const { environments, isReady: environmentsReady } = useEnvironments();
@@ -499,6 +548,40 @@ export function WorkjetComputersSettings() {
           ) : null}
         </div>
       </SettingsSection>
+      {selectedInstanceId ? (
+        <div className="space-y-2 px-3 sm:px-4">
+          <p className="text-sm">
+            Add a computer to the selected Business OS to make it available for coding tasks there.
+          </p>
+          {activeMembership?.phase === "loading" ? (
+            <p role="status" className="text-sm">
+              Checking assigned computers…
+            </p>
+          ) : null}
+          {activeMembership?.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {activeMembership.error}
+            </p>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={
+              activeMembership?.phase === "loading" || activeMembership?.pendingComputerId != null
+            }
+            onClick={() => {
+              void workjetComputerMembership.refresh(
+                selectedInstanceId,
+                window.desktopBridge?.ctox,
+              );
+            }}
+          >
+            Refresh assignments
+          </Button>
+        </div>
+      ) : (
+        <p className="px-3 text-sm sm:px-4">Select a Business OS to add computers to it.</p>
+      )}
       <WorkjetComputersSettingsView
         configuration={settings.workjet}
         environments={workjetEnvironmentTargetOptions(environments)}
@@ -507,6 +590,19 @@ export function WorkjetComputersSettings() {
         harnessInspections={harnessInspections}
         environmentId={environmentId}
         onChange={(workjet) => updateSettings({ workjet })}
+        membership={activeMembership}
+        onAssign={
+          selectedInstanceId
+            ? (computer, assigned) => {
+                void workjetComputerMembership.setAssigned(
+                  selectedInstanceId,
+                  computer,
+                  assigned,
+                  window.desktopBridge?.ctox,
+                );
+              }
+            : undefined
+        }
       />
       <RemoteEnvironmentsSection
         connectionRequest={connectionRequest}

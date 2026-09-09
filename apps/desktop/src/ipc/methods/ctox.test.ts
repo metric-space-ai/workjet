@@ -121,6 +121,7 @@ function removalCleanupLayer(
     setHostTheme: () => Effect.succeed({ _tag: "completed" }),
     requestDeviceControl: () => Effect.die("unused"),
     requestProjectControl: () => Effect.die("unused"),
+    requestComputerControl: () => Effect.die("unused"),
     requestSessionControl: () => Effect.die("unused"),
     registerSessionTransferEvents: () => Effect.die("unused"),
   });
@@ -228,6 +229,7 @@ describe("CTOX IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestComputerControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
     });
@@ -263,6 +265,7 @@ describe("CTOX IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestComputerControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
     });
@@ -612,6 +615,7 @@ describe("CTOX app rail IPC methods", () => {
       setHostTheme: () => Effect.succeed({ _tag: "completed" }),
       requestDeviceControl: () => Effect.die("unused"),
       requestProjectControl: () => Effect.die("unused"),
+      requestComputerControl: () => Effect.die("unused"),
       requestSessionControl: () => Effect.die("unused"),
       registerSessionTransferEvents: () => Effect.die("unused"),
       ...overrides,

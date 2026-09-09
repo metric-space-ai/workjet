@@ -195,6 +195,6 @@ const encodeIntentTarget = Schema.encodeEffect(
 export class CtoxNativeRequests extends Context.Service<
   CtoxNativeRequests,
   Effect.Success<typeof make>
->()("workjet/ctox/CtoxNativeRequests") {
+>()("workjet/workjet/ctox/CtoxNativeRequests") {
   static readonly layer = Layer.effect(this, make);
 }

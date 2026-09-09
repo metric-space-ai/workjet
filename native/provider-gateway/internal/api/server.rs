@@ -609,9 +609,9 @@ fn prepare_messages_response_writer(
         ClaudeMessagesRouteResponse::Buffered(response) => {
             (response.status(), response.content_type())
         }
-        ClaudeMessagesRouteResponse::Stream(_) | ClaudeMessagesRouteResponse::ClaudeStream(_) => {
-            (200, "text/event-stream")
-        }
+        ClaudeMessagesRouteResponse::Stream(_)
+        | ClaudeMessagesRouteResponse::ClaudeStream(_)
+        | ClaudeMessagesRouteResponse::ResponsesStream(_) => (200, "text/event-stream"),
     };
     writer.write_header(
         status,
@@ -819,6 +819,18 @@ where
                     b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
                 )
                 .await?;
+            while let Some(chunk) = stream_response.next_chunk().await {
+                let chunk_result = stream.write_all(&chunk).await;
+                if let Some(capture) = capture.as_deref_mut() {
+                    capture.write(&chunk);
+                }
+                chunk_result?;
+            }
+        }
+        ClaudeMessagesRouteResponse::ResponsesStream(stream_response) => {
+            stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+            ).await?;
             while let Some(chunk) = stream_response.next_chunk().await {
                 let chunk_result = stream.write_all(&chunk).await;
                 if let Some(capture) = capture.as_deref_mut() {

@@ -108,6 +108,13 @@ jobs:
       - name: Test
         run: cargo test --locked --manifest-path "$GATEWAY_HOST_MANIFEST"
 
+      - name: Messages provider routing tests
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/native/provider-gateway-workjet-host/target
+        run: >-
+          cargo test --locked --manifest-path native/provider-gateway/Cargo.toml
+          --lib sdk::api::handlers::claude
+
       - name: Artifact contract tests
         run: vp run --filter @workjet/scripts test
 

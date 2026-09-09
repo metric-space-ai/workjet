@@ -156,7 +156,7 @@ export function InstanceNavigationBoundary({ children }: { readonly children: Re
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
-      <SidebarContent className="px-4 pt-24 text-sm text-muted-foreground">
+      <SidebarContent className="px-4 pt-6 text-sm text-muted-foreground">
         <p>Wähle auf der Netzwerkübersicht eine Instanz. Danach erscheinen ihre Projekte hier.</p>
       </SidebarContent>
       <SidebarFooter>

@@ -129,7 +129,7 @@ function InstanceSetupContent({
       {step === "choose" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <Button
-            className="h-auto flex-col items-start gap-2 p-4 text-left"
+            className="h-auto min-h-24 flex-col items-start justify-start gap-2 whitespace-normal p-4 text-left sm:h-auto"
             onClick={() => setStep("create")}
           >
             <span>Neue Instanz erstellen</span>
@@ -139,7 +139,7 @@ function InstanceSetupContent({
           </Button>
           <Button
             variant="outline"
-            className="h-auto flex-col items-start gap-2 p-4 text-left"
+            className="h-auto min-h-24 flex-col items-start justify-start gap-2 whitespace-normal p-4 text-left sm:h-auto"
             onClick={() => setStep("connect")}
           >
             <span>Vorhandene Instanz verbinden</span>

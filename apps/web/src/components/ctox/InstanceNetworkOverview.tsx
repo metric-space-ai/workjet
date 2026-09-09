@@ -219,7 +219,7 @@ function InstanceNode({
             })}
           <Button
             variant="outline"
-            className="h-auto w-full whitespace-normal border-dashed py-3"
+            className="h-auto w-full whitespace-normal border-dashed py-3 sm:h-auto"
             disabled={!available}
             onClick={() => setConfigure(true)}
           >

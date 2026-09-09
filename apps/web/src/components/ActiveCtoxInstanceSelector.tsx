@@ -95,7 +95,7 @@ export function ActiveCtoxInstanceSelector() {
         <div
           id="workjet-instance-selection-hint"
           role="status"
-          className="absolute left-2 top-full z-30 mt-1 w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-primary/40 bg-popover p-3 text-sm shadow-lg"
+          className="mt-2 rounded-lg border border-primary/40 bg-popover p-3 text-sm"
         >
           <ArrowUpIcon aria-hidden className="mb-1 size-5 text-primary" />
           <button

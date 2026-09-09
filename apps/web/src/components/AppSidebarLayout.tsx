@@ -1,3 +1,4 @@
+import { InstanceNavigationBoundary, InstanceWorkspaceBoundary } from "./ctox/InstanceOnboarding";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -281,14 +282,16 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
               <SidebarChromeHeader isElectron={isElectron} />
               <SettingsSidebarNav pathname={pathname} />
             </>
-          ) : legacySidebarEnabled ? (
-            <LegacyThreadSidebar />
           ) : (
-            <ThreadSidebar />
+            <InstanceNavigationBoundary>
+              {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
+            </InstanceNavigationBoundary>
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
-        {isCtoxShell ? <CtoxMainShell /> : children}
+        <InstanceWorkspaceBoundary surface={sidebarSurface}>
+          {isCtoxShell ? <CtoxMainShell /> : children}
+        </InstanceWorkspaceBoundary>
         <SidebarControl />
       </CtoxModeProvider>
     </SidebarProvider>

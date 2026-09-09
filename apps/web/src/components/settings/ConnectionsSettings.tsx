@@ -2249,6 +2249,87 @@ export function useComputerConnections({
       </div>
     </div>
   );
+  const form = (
+    <div className="space-y-4">
+      <div className="grid gap-2 sm:grid-cols-3">
+        {renderConnectionModeCard({
+          mode: "local",
+          title: "Local",
+          description: "Use this computer.",
+        })}
+        {renderConnectionModeCard({
+          mode: "ssh",
+          title: "SSH",
+          description: "Connect by IP or hostname.",
+        })}
+        {renderConnectionModeCard({
+          mode: "tailscale",
+          title: "Tailscale",
+          description: "Connect a computer on your tailnet.",
+        })}
+      </div>
+      <AnimatedHeight>
+        {savedBackendMode === "local" ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {localAvailable
+                ? "Workjet will check the coding tools installed on this computer."
+                : "Waiting for this computer to connect to Workjet…"}
+            </p>
+            <Button
+              disabled={!localAvailable || primaryEnvironmentId === null}
+              onClick={() => {
+                if (primaryEnvironmentId === null) return;
+                onConnected(primaryEnvironmentId, "local");
+                setAddBackendDialogOpen(false);
+              }}
+            >
+              Add this computer
+            </Button>
+          </div>
+        ) : savedBackendMode === "remote" ? (
+          renderRemoteModeBody()
+        ) : desktopBridge ? (
+          <>
+            {savedBackendMode === "tailscale" ? (
+              <p className="mb-3 text-sm text-muted-foreground">
+                Connect both computers to Tailscale first. Workjet uses SSH over your tailnet.
+              </p>
+            ) : null}
+            {renderSshFields()}
+          </>
+        ) : (
+          <p role="status" className="text-sm">
+            Open Workjet on your desktop to connect with SSH, or use a pairing link below.
+          </p>
+        )}
+      </AnimatedHeight>
+      <details>
+        <summary className="cursor-pointer text-sm text-muted-foreground">
+          Already running Workjet?
+        </summary>
+        <div className="mt-3 space-y-3">
+          <Button
+            variant="outline"
+            disabled={isAddingSavedBackend || connectingSshHostAlias !== null}
+            onClick={() => {
+              setSavedBackendMode("remote");
+              setSavedBackendError(null);
+            }}
+          >
+            Use a pairing link
+          </Button>
+          {hasCloudPublicConfig() ? (
+            <CloudEnvironmentConnectRows
+              primaryEnvironmentId={primaryEnvironmentId}
+              savedEnvironments={savedEnvironments}
+              empty={null}
+            />
+          ) : null}
+        </div>
+      </details>
+    </div>
+  );
   const dialog = (
     <Dialog
       open={addBackendDialogOpen}
@@ -2266,92 +2347,14 @@ export function useComputerConnections({
           <DialogTitle>Add computer</DialogTitle>
           <DialogDescription>Choose where you want your coding tasks to run.</DialogDescription>
         </DialogHeader>
-        <DialogPanel>
-          <div className="space-y-4">
-            <div className="grid gap-2 sm:grid-cols-3">
-              {renderConnectionModeCard({
-                mode: "local",
-                title: "Local",
-                description: "Use this computer.",
-              })}
-              {renderConnectionModeCard({
-                mode: "ssh",
-                title: "SSH",
-                description: "Connect by IP or hostname.",
-              })}
-              {renderConnectionModeCard({
-                mode: "tailscale",
-                title: "Tailscale",
-                description: "Connect a computer on your tailnet.",
-              })}
-            </div>
-            <AnimatedHeight>
-              {savedBackendMode === "local" ? (
-                <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    {localAvailable
-                      ? "Workjet will check the coding tools installed on this computer."
-                      : "Waiting for this computer to connect to Workjet…"}
-                  </p>
-                  <Button
-                    disabled={!localAvailable || primaryEnvironmentId === null}
-                    onClick={() => {
-                      if (primaryEnvironmentId === null) return;
-                      onConnected(primaryEnvironmentId, "local");
-                      setAddBackendDialogOpen(false);
-                    }}
-                  >
-                    Add this computer
-                  </Button>
-                </div>
-              ) : savedBackendMode === "remote" ? (
-                renderRemoteModeBody()
-              ) : desktopBridge ? (
-                <>
-                  {savedBackendMode === "tailscale" ? (
-                    <p className="mb-3 text-sm text-muted-foreground">
-                      Connect both computers to Tailscale first. Workjet uses SSH over your tailnet.
-                    </p>
-                  ) : null}
-                  {renderSshFields()}
-                </>
-              ) : (
-                <p role="status" className="text-sm">
-                  Open Workjet on your desktop to connect with SSH, or use a pairing link below.
-                </p>
-              )}
-            </AnimatedHeight>
-            <details>
-              <summary className="cursor-pointer text-sm text-muted-foreground">
-                Already running Workjet?
-              </summary>
-              <div className="mt-3 space-y-3">
-                <Button
-                  variant="outline"
-                  disabled={isAddingSavedBackend || connectingSshHostAlias !== null}
-                  onClick={() => {
-                    setSavedBackendMode("remote");
-                    setSavedBackendError(null);
-                  }}
-                >
-                  Use a pairing link
-                </Button>
-                {hasCloudPublicConfig() ? (
-                  <CloudEnvironmentConnectRows
-                    primaryEnvironmentId={primaryEnvironmentId}
-                    savedEnvironments={savedEnvironments}
-                    empty={null}
-                  />
-                ) : null}
-              </div>
-            </details>
-          </div>
-        </DialogPanel>
+        <DialogPanel>{form}</DialogPanel>
       </DialogPopup>
     </Dialog>
   );
   return {
     dialog,
+    form,
+    busy: isAddingSavedBackend || connectingSshHostAlias !== null,
     openAddComputer: () => setAddBackendDialogOpen(true),
     savedEnvironments,
     removeConnection: handleRemoveSavedBackend,

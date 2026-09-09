@@ -22,14 +22,18 @@ describe("ActiveCtoxInstanceSelector", () => {
   it("rejects a stale id without silently selecting the first discovered instance", () => {
     const alpha = instance("instance-alpha", "Alpha");
     const beta = instance("instance-beta", "Beta");
-    const sshComputer = instance("ssh:gpu-1", "gpu1", "ssh_managed");
+    const sshInstance = instance("ssh:gpu-1", "gpu1", "ssh_managed");
     const instances = selectableCtoxInstances({
       _tag: "ready",
       managedState: "ready",
-      instances: [beta, sshComputer, alpha],
+      instances: [beta, sshInstance, alpha],
     });
 
-    expect(instances.map((entry) => entry.id)).toEqual(["instance-alpha", "instance-beta"]);
+    expect(instances.map((entry) => entry.id)).toEqual([
+      "instance-alpha",
+      "instance-beta",
+      "ssh:gpu-1",
+    ]);
     expect(resolveActiveCtoxInstanceId(instances, "stale-instance")).toBeNull();
     expect(resolveActiveCtoxInstanceId(instances, "instance-beta")).toBe("instance-beta");
   });

@@ -1,3 +1,6 @@
+import { openInstanceSetup } from "../../instanceSetup";
+import { InstanceSetupDialog } from "./InstanceSetupDialog";
+import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import type {
   CtoxDiscoveryResult,
   CtoxGuestBounds,
@@ -180,6 +183,7 @@ interface CtoxModeContextValue {
     instance: CtoxManagedInstance,
   ) => Promise<CtoxMutationOutcome>;
   readonly select: (instance: CtoxManagedInstance) => void;
+  readonly showNetwork: () => void;
   /** Re-check async mutations against the live selected instance ref. */
   readonly isSelected: (instanceId: string) => boolean;
   readonly setConnection: (state: CtoxConnectionState) => void;
@@ -881,6 +885,7 @@ export function CtoxModeProvider({
       addSshManagedInstance,
       removeSshManagedInstance,
       select,
+      showNetwork: () => clearSelection("idle"),
       isSelected,
       setConnection,
       openApp,
@@ -895,6 +900,7 @@ export function CtoxModeProvider({
       addSshManagedInstance,
       appRailVersion,
       bridge,
+      clearSelection,
       connection,
       discovery,
       guestStates,
@@ -918,7 +924,12 @@ export function CtoxModeProvider({
     ],
   );
 
-  return <CtoxModeContext value={value}>{children}</CtoxModeContext>;
+  return (
+    <CtoxModeContext value={value}>
+      {children}
+      <InstanceSetupDialog />
+    </CtoxModeContext>
+  );
 }
 
 export function ctoxInstanceStatusLabel(instance: CtoxManagedInstance, connected = false): string {
@@ -1649,43 +1660,42 @@ const fieldClassName =
 export function PairingAddSurface({
   onClose,
   onImported,
+  initialInvite = "",
+  initialChoice = "invite",
+  existingOnly = false,
+  onBusyChange,
 }: {
   readonly onClose: () => void;
   readonly onImported: (outcome: CtoxMutationOutcome) => void;
+  readonly initialInvite?: string;
+  readonly initialChoice?: "invite" | "manual";
+  readonly existingOnly?: boolean;
+  readonly onBusyChange?: (busy: boolean) => void;
 }) {
   const { importInvite, importManualPairing, addSshManagedInstance } = useCtoxMode();
-  const [choice, setChoice] = useState<"invite" | "manual" | "ssh">("invite");
-  const [invite, setInvite] = useState("");
+  const [choice, setChoice] = useState<"invite" | "manual" | "ssh">(initialChoice);
+  const [invite, setInvite] = useState(initialInvite);
   const [sshHost, setSshHost] = useState("");
   const [sshDisplayName, setSshDisplayName] = useState("");
   const [sshStateRoot, setSshStateRoot] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [instanceId, setInstanceId] = useState("");
   const [syncRoom, setSyncRoom] = useState("");
   const [signalingUrls, setSignalingUrls] = useState("");
   const [browserToken, setBrowserToken] = useState("");
-  const [browserTokenHash, setBrowserTokenHash] = useState("");
-  const [nativeTokenHash, setNativeTokenHash] = useState("");
-  const [capabilityToken, setCapabilityToken] = useState("");
-  const [capabilityExpiresAtMs, setCapabilityExpiresAtMs] = useState("");
-  const [role, setRole] = useState("");
-  const [userId, setUserId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<CtoxMutationOutcome | null>(null);
+
+  useEffect(() => {
+    onBusyChange?.(submitting);
+    return () => onBusyChange?.(false);
+  }, [submitting, onBusyChange]);
 
   const clearPairingState = useCallback(() => {
     setInvite("");
     setDisplayName("");
-    setInstanceId("");
     setSyncRoom("");
     setSignalingUrls("");
     setBrowserToken("");
-    setBrowserTokenHash("");
-    setNativeTokenHash("");
-    setCapabilityToken("");
-    setCapabilityExpiresAtMs("");
-    setRole("");
-    setUserId("");
     setSshHost("");
     setSshDisplayName("");
     setSshStateRoot("");
@@ -1693,6 +1703,7 @@ export function PairingAddSurface({
   }, []);
 
   const close = () => {
+    if (submitting) return;
     clearPairingState();
     onClose();
   };
@@ -1702,7 +1713,7 @@ export function PairingAddSurface({
     if (!outcome.ok) return;
     clearPairingState();
     onImported(outcome);
-    onClose();
+    if (!existingOnly) onClose();
   };
 
   const submitInvite = (event: FormEvent<HTMLFormElement>) => {
@@ -1718,19 +1729,23 @@ export function PairingAddSurface({
     event.preventDefault();
     setSubmitting(true);
     setFeedback(null);
-    const input = buildCtoxManualPairingInput({
-      displayName,
-      instanceId,
-      syncRoom,
-      signalingUrls,
-      browserToken,
-      browserTokenHash,
-      nativeTokenHash,
-      capabilityToken,
-      capabilityExpiresAtMs,
-      role,
-      userId,
-    });
+    let input: CtoxManualPairingImportInput;
+    try {
+      input = decodeBusinessOsManualCredential({
+        displayName,
+        room: syncRoom,
+        signalingUrls,
+        password: browserToken,
+      });
+    } catch (cause) {
+      setFeedback({
+        ok: false,
+        message:
+          cause instanceof Error ? cause.message : "Verbindung konnte nicht vorbereitet werden.",
+      });
+      setSubmitting(false);
+      return;
+    }
     void importManualPairing(input)
       .then(finish)
       .finally(() => setSubmitting(false));
@@ -1759,56 +1774,59 @@ export function PairingAddSurface({
   return (
     <div className="mt-3 rounded-lg border border-sidebar-border/70 bg-sidebar-accent/10 p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-sidebar-foreground">CTOX Backend hinzufügen</p>
+        <p className="text-sm font-medium text-sidebar-foreground">Vorhandene Instanz verbinden</p>
         <button
           type="button"
           className="text-xs text-sidebar-muted-foreground hover:text-sidebar-foreground"
           onClick={close}
+          disabled={submitting}
         >
           Abbrechen
         </button>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-1 rounded-md bg-sidebar-accent/30 p-1">
-        <button
-          type="button"
-          className={cn(
-            "rounded px-2 py-1 text-xs",
-            choice === "invite"
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-muted-foreground",
-          )}
-          aria-pressed={choice === "invite"}
-          onClick={() => choose("invite")}
-        >
-          Einladung
-        </button>
-        <button
-          type="button"
-          className={cn(
-            "rounded px-2 py-1 text-xs",
-            choice === "manual"
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-muted-foreground",
-          )}
-          aria-pressed={choice === "manual"}
-          onClick={() => choose("manual")}
-        >
-          Manuell
-        </button>
-        <button
-          type="button"
-          className={cn(
-            "rounded px-2 py-1 text-xs",
-            choice === "ssh"
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-muted-foreground",
-          )}
-          aria-pressed={choice === "ssh"}
-          onClick={() => choose("ssh")}
-        >
-          SSH
-        </button>
-      </div>
+      {!existingOnly ? (
+        <div className="mt-2 grid grid-cols-3 gap-1 rounded-md bg-sidebar-accent/30 p-1">
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-1 text-xs",
+              choice === "invite"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-muted-foreground",
+            )}
+            aria-pressed={choice === "invite"}
+            onClick={() => choose("invite")}
+          >
+            Einladung
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-1 text-xs",
+              choice === "manual"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-muted-foreground",
+            )}
+            aria-pressed={choice === "manual"}
+            onClick={() => choose("manual")}
+          >
+            Manuell
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-1 text-xs",
+              choice === "ssh"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-muted-foreground",
+            )}
+            aria-pressed={choice === "ssh"}
+            onClick={() => choose("ssh")}
+          >
+            SSH
+          </button>
+        </div>
+      ) : null}
 
       {choice === "ssh" ? (
         <form className="mt-3 space-y-2" onSubmit={submitSsh}>
@@ -1863,7 +1881,7 @@ export function PairingAddSurface({
       ) : choice === "invite" ? (
         <form className="mt-3" onSubmit={submitInvite}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Einladungs-JSON oder CTOX-Desktop-Einladungslink
+            Einladungslink
             <textarea
               className={cn(fieldClassName, "min-h-20 resize-y")}
               value={invite}
@@ -1885,28 +1903,17 @@ export function PairingAddSurface({
       ) : (
         <form className="mt-3 space-y-2" onSubmit={submitManual}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Anzeigename
+            Name (optional)
             <input
               className={fieldClassName}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               autoComplete="off"
-              required
               maxLength={256}
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Instanz-ID (optional)
-            <input
-              className={fieldClassName}
-              value={instanceId}
-              onChange={(event) => setInstanceId(event.target.value)}
-              autoComplete="off"
-              maxLength={256}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Synchronisierungskennung
+            Raum
             <input
               className={fieldClassName}
               value={syncRoom}
@@ -1917,7 +1924,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Verbindungsadressen (eine pro Zeile oder durch Komma getrennt)
+            Signaling-Server
             <textarea
               className={cn(fieldClassName, "min-h-16 resize-y")}
               value={signalingUrls}
@@ -1928,7 +1935,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Browser-Signaling-Token
+            Verbindungspasswort
             <input
               type="password"
               className={fieldClassName}
@@ -1936,76 +1943,7 @@ export function PairingAddSurface({
               onChange={(event) => setBrowserToken(event.target.value)}
               autoComplete="off"
               required
-              maxLength={4_096}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Browser-Token-SHA-256
-            <input
-              className={fieldClassName}
-              value={browserTokenHash}
-              onChange={(event) => setBrowserTokenHash(event.target.value)}
-              autoComplete="off"
-              required
-              minLength={64}
-              maxLength={64}
-              pattern="[a-f0-9]{64}"
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Native-Token-SHA-256
-            <input
-              className={fieldClassName}
-              value={nativeTokenHash}
-              onChange={(event) => setNativeTokenHash(event.target.value)}
-              autoComplete="off"
-              required
-              minLength={64}
-              maxLength={64}
-              pattern="[a-f0-9]{64}"
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Berechtigungstoken (optional)
-            <input
-              type="password"
-              className={fieldClassName}
-              value={capabilityToken}
-              onChange={(event) => setCapabilityToken(event.target.value)}
-              autoComplete="off"
-              maxLength={16_384}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Token-Ablauf (optional)
-            {/* A raw Unix-milliseconds number field was operator-hostile and
-                let typos become near-NaN payloads (Befund K-B15); the picker
-                converts to epoch ms in the build step. */}
-            <input
-              type="datetime-local"
-              className={fieldClassName}
-              value={capabilityExpiresAtMs}
-              onChange={(event) => setCapabilityExpiresAtMs(event.target.value)}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Rolle (optional)
-            <input
-              className={fieldClassName}
-              value={role}
-              onChange={(event) => setRole(event.target.value)}
-              autoComplete="off"
-              maxLength={128}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Benutzer-ID (optional)
-            <input
-              className={fieldClassName}
-              value={userId}
-              onChange={(event) => setUserId(event.target.value)}
-              autoComplete="off"
-              maxLength={256}
+              maxLength={131_072}
             />
           </label>
           <button
@@ -2107,7 +2045,6 @@ export function CtoxSidebarFooter() {
 
 export function CtoxSidebarShell() {
   const { discovery, bridge, removePairedInstance, removeSshManagedInstance } = useCtoxMode();
-  const [addOpen, setAddOpen] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [mutationFeedback, setMutationFeedback] = useState<CtoxMutationOutcome | null>(null);
   const managedState = getCtoxManagedState(discovery);
@@ -2135,7 +2072,7 @@ export function CtoxSidebarShell() {
       <SidebarContent className="gap-0" data-ctox-sidebar-shell="">
         <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-4">
           <div className="mb-4 flex items-center justify-between gap-2 px-1">
-            <p className="text-sm font-semibold text-sidebar-foreground">CTOX Backends</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">CTOX-Instanzen</p>
             <div className="flex items-center gap-1">
               {/* Refresh lives ONCE, in the footer strip — the second copy
                   fifteen lines away confused more than it helped (K-B10). */}
@@ -2144,12 +2081,11 @@ export function CtoxSidebarShell() {
                 className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"
                 onClick={() => {
                   setMutationFeedback(null);
-                  setAddOpen((open) => !open);
+                  openInstanceSetup();
                 }}
                 disabled={bridge === undefined}
-                aria-label="CTOX Backend hinzufügen"
-                aria-expanded={addOpen}
-                title="CTOX Backend hinzufügen"
+                aria-label="Instanz hinzufügen"
+                title="Instanz hinzufügen"
               >
                 <Plus className="size-3.5" aria-hidden />
               </button>
@@ -2268,10 +2204,6 @@ export function CtoxSidebarShell() {
               ))}
             </div>
           )}
-
-          {addOpen ? (
-            <PairingAddSurface onClose={() => setAddOpen(false)} onImported={setMutationFeedback} />
-          ) : null}
         </SidebarGroup>
       </SidebarContent>
       <CtoxSidebarFooter />

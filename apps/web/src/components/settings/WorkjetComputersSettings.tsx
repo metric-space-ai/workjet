@@ -15,6 +15,7 @@ import {
 } from "react";
 import { useActiveWorkjetScope } from "../../activeWorkjetScope";
 import {
+  createComputerMembershipStore,
   workjetComputerMembership,
   type ComputerMembershipSnapshot,
 } from "../../workjetComputerMembership";
@@ -427,12 +428,30 @@ export function WorkjetComputersSettingsView({
   );
 }
 
-export function WorkjetComputersSettings() {
-  const { selectedInstanceId } = useActiveWorkjetScope();
+export function WorkjetComputersSettings({
+  instanceId,
+  setupOnly = false,
+  onCompleted,
+  onBusyChange,
+}: {
+  readonly instanceId?: string;
+  readonly setupOnly?: boolean;
+  readonly onCompleted?: () => void;
+  readonly onBusyChange?: (busy: boolean) => void;
+} = {}) {
+  const { selectedInstanceId: activeInstanceId } = useActiveWorkjetScope();
+  const selectedInstanceId = instanceId ?? activeInstanceId;
+  const [mapMembership] = useState(createComputerMembershipStore);
+  const membershipStore = instanceId === undefined ? workjetComputerMembership : mapMembership;
+  useEffect(() => {
+    if (instanceId === undefined) return;
+    void mapMembership.refresh(instanceId, window.desktopBridge?.ctox);
+    return () => mapMembership.select(null);
+  }, [instanceId, mapMembership]);
   const membership = useSyncExternalStore(
-    workjetComputerMembership.subscribe,
-    workjetComputerMembership.getSnapshot,
-    workjetComputerMembership.getSnapshot,
+    membershipStore.subscribe,
+    membershipStore.getSnapshot,
+    membershipStore.getSnapshot,
   );
   const activeMembership = membership.instanceId === selectedInstanceId ? membership : undefined;
   const settings = usePrimarySettings();
@@ -454,6 +473,7 @@ export function WorkjetComputersSettings() {
     },
     [],
   );
+  const [setupComputer, setSetupComputer] = useState<WorkjetComputer | null>(null);
   const [pendingComputerId, setPendingComputerId] = useState<EnvironmentId | null>(null);
   const [pendingKind, setPendingKind] = useState<"local" | "ssh" | "tailscale" | undefined>();
   const targetOptions = workjetEnvironmentTargetOptions(environments);
@@ -498,8 +518,14 @@ export function WorkjetComputersSettings() {
         selectedComputerId: computer.id,
       },
     });
+    setSetupComputer(computer);
     setPendingComputerId(null);
   }, [pendingTarget, pendingKind, pendingInspection.data, settings.workjet, updateSettings]);
+  const setupBusy = connections.busy || membership.pendingComputerId !== null;
+  useEffect(() => {
+    onBusyChange?.(setupBusy);
+    return () => onBusyChange?.(false);
+  }, [setupBusy, onBusyChange]);
   // Live harness probe of this server, for the per-computer rows. Same
   // environment-query mechanics as every other read on this page.
   const harnessInspectQuery = useEnvironmentQuery(
@@ -507,6 +533,85 @@ export function WorkjetComputersSettings() {
       ? null
       : serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
+
+  if (setupOnly)
+    return (
+      <div className="space-y-4">
+        {setupComputer === null && pendingComputerId === null ? connections.form : null}
+        {pendingComputerId !== null ? (
+          <p role="status">Verbindung hergestellt. Coding-Harnesses werden geprüft…</p>
+        ) : null}
+        {pendingInspection.error ? (
+          <div role="alert">
+            <p>Die Harnesses konnten noch nicht geprüft werden.</p>
+            <Button variant="outline" onClick={() => setPendingComputerId(null)}>
+              Erneut verbinden
+            </Button>
+          </div>
+        ) : null}
+        {setupComputer !== null ? (
+          <>
+            <p className="font-medium">{setupComputer.label}</p>
+            <p className="text-sm text-muted-foreground">
+              Der Computer ist mit dieser App verbunden. Füge ihn jetzt dem ausgewählten
+              CTOX-Netzwerk hinzu.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {setupComputer.harnesses
+                .filter((harness) => harness.available)
+                .map((harness) => (
+                  <span key={harness.harness} className="rounded-md bg-muted px-2 py-1 text-xs">
+                    {workjetHarnessDisplayLabel(harness.harness)}
+                  </span>
+                ))}
+            </div>
+            {activeMembership?.phase === "loading" ? (
+              <p role="status">Die Instanzzuordnung wird geprüft…</p>
+            ) : null}
+            {activeMembership?.error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {activeMembership.error}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={
+                  !selectedInstanceId ||
+                  activeMembership?.phase !== "ready" ||
+                  activeMembership.pendingComputerId !== null
+                }
+                onClick={() => {
+                  if (!selectedInstanceId) return;
+                  void membershipStore
+                    .setAssigned(
+                      selectedInstanceId,
+                      setupComputer,
+                      true,
+                      window.desktopBridge?.ctox,
+                    )
+                    .then((confirmed) => {
+                      if (confirmed) onCompleted?.();
+                    });
+                }}
+              >
+                Dem Netzwerk hinzufügen
+              </Button>
+              {activeMembership?.phase === "failed" ? (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (selectedInstanceId)
+                      void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
+                  }}
+                >
+                  Zuordnung erneut prüfen
+                </Button>
+              ) : null}
+            </div>
+          </>
+        ) : null}
+      </div>
+    );
 
   return (
     <SettingsPageContainer className="gap-6">
@@ -582,7 +687,7 @@ export function WorkjetComputersSettings() {
         onAssign={
           selectedInstanceId
             ? (computer, assigned) => {
-                void workjetComputerMembership.setAssigned(
+                void membershipStore.setAssigned(
                   selectedInstanceId,
                   computer,
                   assigned,
@@ -614,10 +719,7 @@ export function WorkjetComputersSettings() {
               activeMembership?.phase === "loading" || activeMembership?.pendingComputerId != null
             }
             onClick={() => {
-              void workjetComputerMembership.refresh(
-                selectedInstanceId,
-                window.desktopBridge?.ctox,
-              );
+              void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
             }}
           >
             Refresh assignments

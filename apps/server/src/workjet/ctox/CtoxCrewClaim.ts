@@ -5,6 +5,20 @@ import { CtoxNativeRequestError, type NativeTaskReference } from "./CtoxNativeRe
 
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 const Text = Schema.String.check(Schema.isMaxLength(65_536));
+export const CtoxCrewContext = Schema.Struct({
+  schema: Schema.Literal("ctox.crew_context.v1"),
+  command_id: Id,
+  attempt_id: Id,
+  task_id: Id,
+  module_id: Id,
+  member_id: Id,
+  member_name: Id,
+  persona: Text,
+  memory_block: Schema.NullOr(Text),
+  execution_plan: Schema.Unknown,
+  context_version: Id,
+});
+
 const Claim = Schema.Struct({
   schema: Schema.Literal("ctox.external_crew_offer.v1"),
   attempt_id: Id,
@@ -15,19 +29,7 @@ const Claim = Schema.Struct({
   command_session: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(65_536)),
   prompt: Text,
   instructions: Text,
-  crew_context: Schema.Struct({
-    schema: Schema.Literal("ctox.crew_context.v1"),
-    command_id: Id,
-    attempt_id: Id,
-    task_id: Id,
-    module_id: Id,
-    member_id: Id,
-    member_name: Id,
-    persona: Text,
-    memory_block: Schema.NullOr(Text),
-    execution_plan: Schema.Unknown,
-    context_version: Id,
-  }),
+  crew_context: CtoxCrewContext,
 });
 
 /** Server-only claim: never serialize it into provider events or model tool results. */
@@ -68,4 +70,26 @@ export const decodeCtoxCrewClaim = Effect.fn("decodeCtoxCrewClaim")(function* (
     instructions: claim.instructions,
     context,
   };
+});
+
+/** Refresh may change knowledge and plan, but never the admitted identity. */
+export const decodeCtoxCrewContext = Effect.fn("decodeCtoxCrewContext")(function* (
+  expected: Pick<
+    typeof CtoxCrewContext.Type,
+    "command_id" | "attempt_id" | "task_id" | "module_id" | "member_id"
+  >,
+  value: unknown,
+) {
+  const context = yield* Schema.decodeUnknownEffect(CtoxCrewContext)(value).pipe(
+    Effect.mapError(() => new CtoxNativeRequestError({ reason: "native-response-invalid" })),
+  );
+  if (
+    context.command_id !== expected.command_id ||
+    context.attempt_id !== expected.attempt_id ||
+    context.task_id !== expected.task_id ||
+    context.module_id !== expected.module_id ||
+    context.member_id !== expected.member_id
+  )
+    return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
+  return context;
 });

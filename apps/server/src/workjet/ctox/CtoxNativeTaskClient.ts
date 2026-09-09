@@ -2,7 +2,8 @@
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Clock from "effect/Clock";
-import { decodeCtoxCrewClaim } from "./CtoxCrewClaim.ts";
+import * as Redacted from "effect/Redacted";
+import { decodeCtoxCrewClaim, decodeCtoxCrewContext } from "./CtoxCrewClaim.ts";
 import { reportCtoxCrewResult, type CtoxCrewResultCandidate } from "./CtoxCrewReport.ts";
 import * as Schema from "effect/Schema";
 import { WorkjetCtoxCrewOffers } from "@workjet/contracts";
@@ -173,12 +174,11 @@ export function makeCtoxNativeTaskClient(dependencies: {
       response.structuredContent,
     );
     const boundIdentity = { ...identity };
-    const boundTaskId = claim.context.task_id;
+    const boundContext = { ...claim.context };
+    const boundTaskId = boundContext.task_id;
     // Keep the report capability bound to this successful claim. Callers cannot
     // substitute a command session, endpoint, attempt or request identity.
-    const report = Effect.fn("CtoxNativeTaskClient.reportProjectOffer")(function* (
-      candidate: CtoxCrewResultCandidate,
-    ) {
+    const resolveClaimTarget = Effect.fn("CtoxNativeTaskClient.resolveClaimTarget")(function* () {
       const current = yield* dependencies.requests.get(boundIdentity);
       if (
         current.commandId !== claim.commandId ||
@@ -192,11 +192,34 @@ export function makeCtoxNativeTaskClient(dependencies: {
         boundIdentity.instanceId,
       );
       yield* dependencies.requests.verifyTarget(boundIdentity, currentTarget);
+      return currentTarget;
+    });
+    const refreshContext = Effect.fn("CtoxNativeTaskClient.refreshProjectCrewContext")(
+      function* () {
+        const currentTarget = yield* resolveClaimTarget();
+        const sessionTarget = {
+          endpoint: currentTarget.endpoint,
+          token: Redacted.value(claim.commandSession),
+        };
+        const name = "business_os.get_crew_context";
+        yield* dependencies.transport.probe(sessionTarget, [name]);
+        const response = yield* dependencies.transport.callTool(sessionTarget, name, {
+          attempt_id: claim.attemptId,
+        });
+        if (response.isError || response.structuredContent === undefined)
+          return yield* new CtoxNativeRequestError({ reason: "ctox-operation-rejected" });
+        return yield* decodeCtoxCrewContext(boundContext, response.structuredContent);
+      },
+    );
+    const report = Effect.fn("CtoxNativeTaskClient.reportProjectOffer")(function* (
+      candidate: CtoxCrewResultCandidate,
+    ) {
+      const currentTarget = yield* resolveClaimTarget();
       // Native verifies the current lease and supports identical report retries.
       // Do not reject locally just because an accepted report's deadline passed.
       return yield* reportCtoxCrewResult(dependencies.transport, currentTarget, claim, candidate);
     });
-    return { ...claim, report };
+    return { ...claim, refreshContext, report };
   });
 
   const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (

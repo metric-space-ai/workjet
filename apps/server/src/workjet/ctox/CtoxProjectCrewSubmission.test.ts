@@ -29,13 +29,18 @@ it.effect("recovers project submission after a lost receipt and rejects another 
     let lose = true;
     let wrongChat = false;
     let offerIdentity = { command: "command", executor: "computer", harness: "codex" };
+    let contextReads = 0;
+    let contextMember = "crew";
     let reports = 0;
     let expectedCandidate: { reply: string } | { error: string } = { reply: "Candidate" };
     let receiptAttempt = "attempt";
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
       probe: (destination, names, fields) =>
         Effect.sync(() => {
-          if (names[0] === "business_os.report_crew_execution") {
+          if (
+            names[0] === "business_os.report_crew_execution" ||
+            names[0] === "business_os.get_crew_context"
+          ) {
             expect(destination).toEqual({
               endpoint: "https://ctox.example/mcp",
               token: "signed-session",
@@ -53,6 +58,29 @@ it.effect("recovers project submission after a lost receipt and rejects another 
         }),
       callTool: (destination, name, args) =>
         Effect.gen(function* () {
+          if (name === "business_os.get_crew_context") {
+            contextReads++;
+            expect(destination).toEqual({
+              endpoint: "https://ctox.example/mcp",
+              token: "signed-session",
+            });
+            expect(args).toEqual({ attempt_id: "attempt" });
+            return {
+              structuredContent: {
+                schema: "ctox.crew_context.v1",
+                command_id: "command",
+                attempt_id: "attempt",
+                task_id: "task",
+                module_id: "ctox",
+                member_id: contextMember,
+                member_name: "Crew",
+                persona: "Native persona",
+                memory_block: "Updated knowledge",
+                execution_plan: { steps: [] },
+                context_version: "v2",
+              },
+            };
+          }
           if (name === "business_os.report_crew_execution") {
             reports++;
             expect(destination).toEqual({
@@ -197,6 +225,17 @@ it.effect("recovers project submission after a lost receipt and rejects another 
     }
     const claimed = yield* restarted.claimProjectOffer(identity, "computer", "attempt");
     expect(JSON.stringify(claimed)).not.toContain("signed-session");
+    expect(yield* claimed.refreshContext()).toMatchObject({
+      member_id: "crew",
+      memory_block: "Updated knowledge",
+      context_version: "v2",
+    });
+    contextMember = "foreign-crew";
+    expect(yield* Effect.flip(claimed.refreshContext())).toMatchObject({
+      reason: "native-response-invalid",
+    });
+    expect(contextReads).toBe(2);
+
     expect(yield* claimed.report({ reply: "Candidate" })).toEqual({
       accepted: true,
       attempt_id: "attempt",
@@ -214,6 +253,10 @@ it.effect("recovers project submission after a lost receipt and rejects another 
     }
     expect(reports).toBe(2);
     target = { ...target, token: "rotated" };
+    expect(yield* Effect.flip(claimed.refreshContext())).toMatchObject({
+      reason: "native-request-credentials-changed",
+    });
+    expect(contextReads).toBe(2);
     expect(yield* Effect.flip(claimed.report({ reply: "Candidate" }))).toMatchObject({
       reason: "native-request-credentials-changed",
     });

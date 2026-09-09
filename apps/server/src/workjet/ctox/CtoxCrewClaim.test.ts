@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import { decodeCtoxCrewClaim } from "./CtoxCrewClaim.ts";
+import { decodeCtoxCrewClaim, decodeCtoxCrewContext } from "./CtoxCrewClaim.ts";
 import type { NativeTaskReference } from "./CtoxNativeRequests.ts";
 
 const reference: NativeTaskReference = {
@@ -65,6 +65,25 @@ it.effect("validates native claim binding and keeps its session redacted", () =>
     for (const response of invalid) {
       expect(
         yield* Effect.flip(decodeCtoxCrewClaim(reference, "computer", "attempt", 100, response)),
+      ).toMatchObject({ reason: "native-response-invalid" });
+    }
+  }),
+);
+
+it.effect("refreshes knowledge and rejects every changed native binding", () =>
+  Effect.gen(function* () {
+    const expected = claim.crew_context;
+    const refreshed = { ...expected, memory_block: "New knowledge", context_version: "v2" };
+    expect(yield* decodeCtoxCrewContext(expected, refreshed)).toMatchObject(refreshed);
+    for (const field of [
+      "command_id",
+      "attempt_id",
+      "task_id",
+      "module_id",
+      "member_id",
+    ] as const) {
+      expect(
+        yield* Effect.flip(decodeCtoxCrewContext(expected, { ...refreshed, [field]: "other" })),
       ).toMatchObject({ reason: "native-response-invalid" });
     }
   }),

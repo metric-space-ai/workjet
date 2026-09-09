@@ -41,6 +41,7 @@ import {
 } from "./errors.ts";
 import { sshLocalForwardExitFailure, spawnSshLocalForwardProcess } from "./localForward.ts";
 import { buildManagedRemoteNodeScript, SSH_NODE_VERSION } from "./remoteNode.ts";
+import { REMOTE_PROCESS_START_SCRIPT } from "./remoteProcess.ts";
 import { preparePortableServer } from "./portableServer.ts";
 
 export const DEFAULT_REMOTE_PORT = 3773;
@@ -435,6 +436,7 @@ exit 1
 
 export const REMOTE_LAUNCH_SCRIPT = `set -eu
 @@WORKJET_NODE_ENV_SCRIPT@@
+${REMOTE_PROCESS_START_SCRIPT}
 STATE_KEY="$1"
 STATE_DIR="$HOME/.workjet/ssh-launch/$STATE_KEY"
 DEFAULT_SERVER_HOME="$HOME/.workjet"
@@ -572,8 +574,7 @@ if [ -z "$REMOTE_PORT" ]; then
     exit 1
   fi
   if [ -f "$LOG_FILE" ]; then mv -f "$LOG_FILE" "$LOG_FILE.previous"; fi
-  nohup env WORKJET_NO_BROWSER=1 "$RUNNER_FILE" serve --host 127.0.0.1 --port "$REMOTE_PORT" --base-dir "$DEFAULT_SERVER_HOME" >>"$LOG_FILE" 2>&1 < /dev/null &
-  REMOTE_PID="$!"
+  start_remote_process env WORKJET_NO_BROWSER=1 "$RUNNER_FILE" serve --host 127.0.0.1 --port "$REMOTE_PORT" --base-dir "$DEFAULT_SERVER_HOME"
   printf '%s\\n' "$REMOTE_PID" >"$PID_FILE"
   printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
   printf 'managed\\n' >"$MANAGED_FILE"

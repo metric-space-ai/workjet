@@ -132,12 +132,35 @@ pub fn run_via_runtime_target(
     company: &str,
     country: Country,
     owner_user_id: Option<&str>,
+    candidate_email: Option<&str>,
 ) -> ScrapeBridgeResult {
-    let input = json!({
+    let mut input = json!({
         "company": company,
         "country": country.as_iso(),
         "source_id": source_id,
     });
+    // A validation target answers a question about ONE address. experte.de and
+    // mailtester.com stop with `CTOX_SCRAPE_INPUT_JSON.email missing` when it
+    // is absent, the run ends as portal_drift, and the research reads that as
+    // proof the address cannot be checked.
+    //
+    // Measured on the THESEN tenant 09.09.2026: of 25 leads, eleven carried a
+    // contact address and not one carried a validated one, so no lead could
+    // ever be released. Driven by hand with the address, the same target
+    // answers immediately:
+    //
+    //   ctox scrape execute --target-key experte-de --trigger-kind manual \
+    //     --input-json '{"email":"info@weicon.de"}'
+    //   -> person_email_validation = "valid" (verified, http_status 200)
+    //
+    // The research worker cannot make the call itself; its sandbox denies the
+    // ctox CLI. So the address has to travel with the request the daemon makes.
+    if let Some(email) = candidate_email
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        input["email"] = json!(email);
+    }
     let mut command = Command::new(ctox_bin);
     command
         .arg("scrape")

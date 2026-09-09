@@ -36,3 +36,13 @@ claim failure or completion. Discovery returns no grant and starts no executor.
 Offer claiming, deadline enforcement at execution, secure grant transport and
 harness dispatch remain unimplemented. The focused test rejects other command,
 executor and harness identities in discovery responses.
+
+`claimProjectOffer` claims an explicitly selected attempt under the original
+connection/credential binding. It validates outer command, attempt, executor,
+harness and deadline, and inner Crew command/task/attempt/module identity before
+returning context. The session is returned as an Effect `Redacted` value in this
+server-only API; no raw claim is emitted as a provider event or model result.
+This is not yet a configured harness transport. The controller must consume the
+grant only for this attempt, enforce the deadline through execution and report
+its result. The decoder regression covers invalid bindings, expired grants and
+JSON redaction. Tests remain pending CI.

@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Deterministic server-side turn identity, not a new request per retry.
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
+import { decodeCtoxCrewClaim } from "./CtoxCrewClaim.ts";
 import * as Schema from "effect/Schema";
 import { WorkjetCtoxCrewOffers } from "@workjet/contracts";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
@@ -135,6 +137,41 @@ export function makeCtoxNativeTaskClient(dependencies: {
     return { reference, state: "observed" as const, offers: result.offers };
   });
 
+  const claimProjectOffer = Effect.fn("CtoxNativeTaskClient.claimProjectOffer")(function* (
+    identity: CtoxNativeRequestIdentity,
+    executorId: string,
+    attemptId: string,
+  ) {
+    const reference = yield* dependencies.requests.get(identity);
+    if (
+      reference.request.operation !== "start_crew_execution" ||
+      !reference.commandId ||
+      !reference.taskId
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const target = yield* dependencies.connections.resolveReadyTarget(
+      identity.connectionId,
+      identity.instanceId,
+    );
+    yield* dependencies.requests.verifyTarget(identity, target);
+    const name = "business_os.claim_crew_execution";
+    yield* dependencies.transport.probe(target, [name]);
+    const response = yield* dependencies.transport.callTool(target, name, {
+      command_id: reference.commandId,
+      executor_id: executorId,
+      attempt_id: attemptId,
+    });
+    if (response.isError || response.structuredContent === undefined)
+      return yield* new CtoxNativeRequestError({ reason: "ctox-operation-rejected" });
+    return yield* decodeCtoxCrewClaim(
+      reference,
+      executorId,
+      attemptId,
+      yield* Clock.currentTimeMillis,
+      response.structuredContent,
+    );
+  });
+
   const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (
     identity: CtoxNativeRequestIdentity,
   ) {
@@ -167,6 +204,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
     submitTurn,
     submitProjectTurn,
     discoverProjectOffers,
+    claimProjectOffer,
     readStatus,
     recover: dependencies.requests.get,
     latestNativeTurn: dependencies.requests.latestNativeTurn,

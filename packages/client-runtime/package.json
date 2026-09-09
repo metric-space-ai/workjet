@@ -103,6 +103,14 @@
       "types": "./src/state/projectGrouping.ts",
       "default": "./src/state/projectGrouping.ts"
     },
+    "./state/business-data-subscription": {
+      "types": "./src/state/businessDataSubscription.ts",
+      "default": "./src/state/businessDataSubscription.ts"
+    },
+    "./state/project-chats": {
+      "types": "./src/state/projectChats.ts",
+      "default": "./src/state/projectChats.ts"
+    },
     "./state/worker-overview": {
       "types": "./src/state/workerOverview.ts",
       "default": "./src/state/workerOverview.ts"

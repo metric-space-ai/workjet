@@ -308,6 +308,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         instanceId,
         request,
       }),
+    requestComputerControl: (instanceId, request) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_COMPUTER_CONTROL_CHANNEL, {
+        instanceId,
+        request,
+      }),
     requestProjectControl: (instanceId, request) =>
       ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_PROJECT_CONTROL_CHANNEL, {
         instanceId,

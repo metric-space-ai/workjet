@@ -962,11 +962,13 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Scope.provide(runScope),
+          // Keep this run active until its process resources have finished
+          // closing; a restart must not overlap the previous run's cleanup.
+          Effect.ensuring(Scope.close(runScope, Exit.void).pipe(Effect.ignore)),
           Effect.matchEffect({
             onFailure: (error) => finalizeRun(error.message),
             onSuccess: (exit) => finalizeRun(exit.reason),
           }),
-          Effect.ensuring(Scope.close(runScope, Exit.void).pipe(Effect.ignore)),
         );
 
         const fiber = yield* Effect.forkIn(program, parentScope);

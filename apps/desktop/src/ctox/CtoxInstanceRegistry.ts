@@ -26,6 +26,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Predicate from "effect/Predicate";
+import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -34,9 +35,14 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
+import {
+  createCtoxDeviceProofKey,
+  restoreCtoxDeviceProofKey,
+  type CtoxDeviceProofKey,
+} from "./CtoxDeviceProofKey.ts";
 import { buildCtoxBusinessOsLaunchConfig } from "./CtoxLaunchConfig.ts";
 import {
-  discoverCtoxLocalDaemonInstances,
+  discoverCtoxLocalDaemonNativeTargets,
   isLaunchableCtoxLocalDaemon,
   type CtoxLocalDaemonDiscoveryOptions,
 } from "./CtoxLocalDaemonSource.ts";
@@ -174,8 +180,28 @@ const SecretRegistryRecord = Schema.Struct({
 const SecretRegistryDocument = Schema.Struct({
   version: Schema.Literal(REGISTRY_VERSION),
   records: Schema.Array(SecretRegistryRecord).check(Schema.isMaxLength(1_000)),
+  deviceKeys: Schema.optionalKey(
+    Schema.Array(SecretRegistryRecord).check(Schema.isMaxLength(1_000)),
+  ),
 });
 type SecretRegistryDocument = typeof SecretRegistryDocument.Type;
+const DeviceKeyScope = Schema.Struct({
+  instanceId: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(512)),
+  userId: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(512)),
+});
+export type CtoxDeviceKeyScope = typeof DeviceKeyScope.Type;
+const DeviceKeyScopeJson = Schema.fromJsonString(DeviceKeyScope);
+const DeviceKeyPayloadJson = Schema.fromJsonString(
+  Schema.Struct({
+    scope: DeviceKeyScope,
+    pkcs8: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(4096)),
+  }),
+);
+
+const decodeDeviceKeyScope = Schema.decodeUnknownEffect(DeviceKeyScope);
+const encodeDeviceKeyScope = Schema.encodeEffect(DeviceKeyScopeJson);
+const decodeDeviceKeyPayload = Schema.decodeUnknownEffect(DeviceKeyPayloadJson);
+const encodeDeviceKeyPayload = Schema.encodeEffect(DeviceKeyPayloadJson);
 
 const LegacyPairingSecretPayload = Schema.Struct({
   version: Schema.Literal(1),
@@ -294,6 +320,8 @@ export interface CtoxPairedLaunchDescriptor {
 export interface CtoxLocalDaemonTarget {
   readonly descriptor: CtoxManagedInstance;
   readonly daemonInstanceId: string;
+  /** Main-only root from the trusted descriptor; older targets may lack it. */
+  readonly stateRoot?: string;
   readonly discoveredCount: number;
 }
 
@@ -305,6 +333,7 @@ export interface CtoxLocalDaemonTarget {
 export interface CtoxSshManagedTarget {
   readonly descriptor: CtoxManagedInstance;
   readonly host: string;
+  readonly daemonInstanceId?: string;
   readonly stateRoot?: string;
   readonly username?: string;
   readonly port?: number;
@@ -322,6 +351,12 @@ export interface CtoxPairedInstanceRemoval {
 export class CtoxInstanceRegistry extends Context.Service<
   CtoxInstanceRegistry,
   {
+    /** Main-only storage, not authorization. Caller must validate native target/principal.
+     * Creation is explicit enrollment only; reconnect must use createIfMissing=false. */
+    readonly deviceProofKey: (
+      scope: CtoxDeviceKeyScope,
+      createIfMissing: boolean,
+    ) => Effect.Effect<CtoxDeviceProofKey, CtoxInstanceRegistryError>;
     readonly merge: (managed: CtoxManagedDiscoveryResult) => Effect.Effect<CtoxDiscoveryResult>;
     readonly importInvite: (
       invite: string,
@@ -943,7 +978,8 @@ function readSecretDocument(
             Effect.filterOrFail(
               (document) => {
                 const ids = document.records.map((record) => record.id);
-                return new Set(ids).size === ids.length;
+                const keyIds = (document.deviceKeys ?? []).map((record) => record.id);
+                return new Set(ids).size === ids.length && new Set(keyIds).size === keyIds.length;
               },
               () => registryError("persistence_failed"),
             ),
@@ -1014,7 +1050,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     ...options.localDaemon,
   };
   // Discovery runs with the services acquired here, never with the caller's.
-  const discoverLocalInstances = discoverCtoxLocalDaemonInstances(localDaemonOptions).pipe(
+  const discoverLocalInstances = discoverCtoxLocalDaemonNativeTargets(localDaemonOptions).pipe(
     Effect.provideService(FileSystem.FileSystem, fileSystem),
     Effect.provideService(Path.Path, path),
   );
@@ -1118,6 +1154,58 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     if (!available || unsafeBackend) {
       return yield* registryError("unsafe_secret_storage");
     }
+  });
+
+  const deviceProofKey = Effect.fn("CtoxInstanceRegistry.deviceProofKey")(function* (
+    input: CtoxDeviceKeyScope,
+    createIfMissing: boolean,
+  ) {
+    const scope = yield* decodeDeviceKeyScope(input, {
+      onExcessProperty: "error",
+    }).pipe(Effect.mapError(() => registryError("persistence_failed")));
+    yield* assertSafeStorage();
+    const scopeJson = yield* encodeDeviceKeyScope(scope).pipe(
+      Effect.mapError(() => registryError("persistence_failed")),
+    );
+    const id = NodeCrypto.createHash("sha256").update(scopeJson).digest("base64url");
+    const document = yield* readSecretDocument(fileSystem, secretRegistryPath);
+    const record = document.deviceKeys?.find((entry) => entry.id === id);
+    if (record !== undefined) {
+      const bytes = Result.getOrUndefined(Encoding.decodeBase64(record.ciphertext));
+      if (bytes === undefined) return yield* registryError("persistence_failed");
+      const plaintext = yield* safeStorage
+        .decryptString(bytes)
+        .pipe(Effect.mapError(() => registryError("unsafe_secret_storage")));
+      const payload = yield* decodeDeviceKeyPayload(plaintext, {
+        onExcessProperty: "error",
+      }).pipe(Effect.mapError(() => registryError("persistence_failed")));
+      if (payload.scope.instanceId !== scope.instanceId || payload.scope.userId !== scope.userId) {
+        return yield* registryError("persistence_failed");
+      }
+      return yield* Effect.try({
+        try: () => restoreCtoxDeviceProofKey(Redacted.make(payload.pkcs8)),
+        catch: () => registryError("persistence_failed"),
+      });
+    }
+    if (!createIfMissing) return yield* registryError("not_found");
+    const key = yield* Effect.try({
+      try: createCtoxDeviceProofKey,
+      catch: () => registryError("persistence_failed"),
+    });
+    const plaintext = yield* encodeDeviceKeyPayload({
+      scope,
+      pkcs8: Redacted.value(key.exportForStorage()),
+    }).pipe(Effect.mapError(() => registryError("persistence_failed")));
+    const ciphertext = Encoding.encodeBase64(
+      yield* safeStorage
+        .encryptString(plaintext)
+        .pipe(Effect.mapError(() => registryError("unsafe_secret_storage"))),
+    );
+    yield* writeSecrets({
+      ...document,
+      deviceKeys: [...(document.deviceKeys ?? []), { id, ciphertext }],
+    });
+    return key;
   });
 
   const stableId = Effect.fn("CtoxInstanceRegistry.stableId")(function* (
@@ -1299,6 +1387,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
         descriptor:
           withShellStatus.find((instance) => instance.id === target.instance.id) ?? target.instance,
         daemonInstanceId: target.daemonInstanceId,
+        stateRoot: target.stateRoot,
         discoveredCount: discovered.length,
       };
     },
@@ -1319,6 +1408,9 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
         descriptor:
           withShellStatus.find((instance) => instance.id === target.instance.id) ?? target.instance,
         host: target.host,
+        ...(target.daemonInstanceId === undefined
+          ? {}
+          : { daemonInstanceId: target.daemonInstanceId }),
         ...(target.stateRoot === undefined ? {} : { stateRoot: target.stateRoot }),
         ...(target.username === undefined ? {} : { username: target.username }),
         ...(target.port === undefined ? {} : { port: target.port }),
@@ -1462,7 +1554,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
       ].sort(compareInstances),
     };
     const nextSecrets: SecretRegistryDocument = {
-      version: REGISTRY_VERSION,
+      ...secretDocument,
       records: [
         ...secretDocument.records.filter((record) => record.id !== id),
         { id, ciphertext },
@@ -1481,6 +1573,8 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   });
 
   return CtoxInstanceRegistry.of({
+    deviceProofKey: (scope, createIfMissing) =>
+      registryLock.withPermit(deviceProofKey(scope, createIfMissing)),
     resolvePairedLaunch: (instanceId) => registryLock.withPermit(resolvePairedLaunch(instanceId)),
     resolveLocalDaemonTarget: (instanceId) =>
       registryLock.withPermit(resolveLocalDaemonTarget(instanceId)),
@@ -1584,7 +1678,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             instances: publicDocument.instances.filter((instance) => instance.id !== instanceId),
           });
           const secretRecordRemoved = yield* writeSecrets({
-            version: REGISTRY_VERSION,
+            ...secretDocument,
             records: secretDocument.records.filter((record) => record.id !== instanceId),
           }).pipe(
             Effect.as(true),

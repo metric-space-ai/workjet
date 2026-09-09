@@ -132,7 +132,6 @@ import { buildTemporaryWorktreeBranchName } from "@workjet/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
-  selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
   type RightPanelSurface,
@@ -258,6 +257,10 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  visibleWorkjetRightPanelState,
+  workjetBrowserSurfaceEnabled,
+} from "../workjetSurfaceVisibility";
 import {
   executeWorkjetCapabilitySet,
   executeWorkjetCapabilityToggle,
@@ -1363,6 +1366,9 @@ function ChatViewContent(props: ChatViewProps) {
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
+  const composerWorkjetConfig = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.workjetConfig ?? null,
+  );
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const setComposerDraftTerminalContexts = useComposerDraftStore(
@@ -1652,6 +1658,11 @@ function ChatViewContent(props: ChatViewProps) {
       ? (activeWorkjetConfigOverride?.config ?? activeServerThread.workjetConfig)
       : null;
   const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
+  const browserSurfaceEnabled = workjetBrowserSurfaceEnabled({
+    isServerThread,
+    serverConfig: visibleWorkjetConfig,
+    draftConfig: composerWorkjetConfig,
+  });
   // "Send to worker" exists only on an ORCHESTRATOR thread. That is the same
   // boundary the server enforces on the RPC, restated in the UI so a worker or
   // standard thread is never offered an action it would be refused.
@@ -2077,16 +2088,19 @@ function ChatViewContent(props: ChatViewProps) {
     setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
   }
   const timelineAnchorMessageId = timelineAnchor.messageId;
-  const activeRightPanelKind = useRightPanelStore((state) =>
-    selectActiveRightPanel(state.byThreadKey, activeThreadRef),
-  );
-  const diffOpen = activeRightPanelKind === "diff";
-  const rightPanelState = useRightPanelStore((state) =>
+  const storedRightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
-  const activeRightPanelSurface = useRightPanelStore((state) =>
-    selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
+  const rightPanelState = useMemo(
+    () => visibleWorkjetRightPanelState(storedRightPanelState, browserSurfaceEnabled),
+    [storedRightPanelState, browserSurfaceEnabled],
   );
+  const activeRightPanelSurface = rightPanelState.isOpen
+    ? (rightPanelState.surfaces.find((surface) => surface.id === rightPanelState.activeSurfaceId) ??
+      null)
+    : null;
+  const activeRightPanelKind = activeRightPanelSurface?.kind ?? null;
+  const diffOpen = activeRightPanelKind === "diff";
   const [pullRequestTabStatuses, setPullRequestTabStatuses] = useState<
     Record<string, PullRequestTabStatus>
   >({});
@@ -2142,7 +2156,7 @@ function ChatViewContent(props: ChatViewProps) {
       previewPanelOpen &&
       activeRightPanelSurface?.kind === "preview" &&
       activeRightPanelSurface.resourceId === activePreviewMiniPlayer.tabId;
-    if (!miniTabStillExists || sameTabOpenInPanel) {
+    if (!browserSurfaceEnabled || !miniTabStillExists || sameTabOpenInPanel) {
       usePreviewMiniPlayerStore.getState().close(activeThreadRef);
     }
   }, [
@@ -2151,6 +2165,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeRightPanelSurface,
     activeThreadRef,
     previewPanelOpen,
+    browserSurfaceEnabled,
   ]);
 
   const existingOpenTerminalThreadKeys = useMemo(() => {
@@ -3926,9 +3941,9 @@ function ChatViewContent(props: ChatViewProps) {
     void navigate({ to: WORKJET_SETTINGS_ROUTE });
   }, [navigate]);
   const createBrowserSurface = useCallback(() => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || !browserSurfaceEnabled || !isPreviewSupportedInRuntime()) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
-  }, [activeThreadRef, openPreview]);
+  }, [activeThreadRef, browserSurfaceEnabled, openPreview]);
   const addDiffSurface = useCallback(() => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
     useRightPanelStore.getState().open(activeThreadRef, "diff");
@@ -4016,7 +4031,7 @@ function ChatViewContent(props: ChatViewProps) {
     [activeProject, activeThreadRef, supportsPullRequests, threadRepository],
   );
   const togglePreviewPanel = useCallback(() => {
-    if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
+    if (!activeThreadRef || !browserSurfaceEnabled || !isPreviewSupportedInRuntime()) return;
     if (previewPanelOpen) {
       useRightPanelStore.getState().close(activeThreadRef);
       return;
@@ -4027,7 +4042,13 @@ function ChatViewContent(props: ChatViewProps) {
     } else {
       createBrowserSurface();
     }
-  }, [activePreviewState.activeTabId, activeThreadRef, createBrowserSurface, previewPanelOpen]);
+  }, [
+    activePreviewState.activeTabId,
+    activeThreadRef,
+    browserSurfaceEnabled,
+    createBrowserSurface,
+    previewPanelOpen,
+  ]);
   const closePreviewPanel = useCallback(() => {
     if (activeThreadRef) {
       setMaximizedRightPanelThreadKey(null);
@@ -4134,7 +4155,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
-      if (!activeThreadRef) return;
+      if (!activeThreadRef || (surface.kind === "preview" && !browserSurfaceEnabled)) return;
       useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
       if (surface.kind === "preview" && surface.resourceId) {
         setActivePreviewTab(activeThreadRef, surface.resourceId);
@@ -4146,7 +4167,7 @@ function ChatViewContent(props: ChatViewProps) {
         onDiffPanelOpen?.();
       }
     },
-    [activeThreadRef, diffOpen, onDiffPanelOpen],
+    [activeThreadRef, browserSurfaceEnabled, diffOpen, onDiffPanelOpen],
   );
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
@@ -4194,7 +4215,7 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
   const syncActivePreviewSurface = useCallback(() => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || !browserSurfaceEnabled) return;
     const nextActiveSurface = selectActiveRightPanelSurface(
       useRightPanelStore.getState().byThreadKey,
       activeThreadRef,
@@ -4202,7 +4223,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (nextActiveSurface?.kind === "preview" && nextActiveSurface.resourceId) {
       setActivePreviewTab(activeThreadRef, nextActiveSurface.resourceId);
     }
-  }, [activeThreadRef]);
+  }, [activeThreadRef, browserSurfaceEnabled]);
   const closeRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
@@ -4217,7 +4238,10 @@ function ChatViewContent(props: ChatViewProps) {
       if (!activeThreadRef) return;
       const surfaces = rightPanelState.surfaces.filter((entry) => entry.id !== surface.id);
       cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeOtherSurfaces(activeThreadRef, surface.id);
+      for (const entry of surfaces) {
+        useRightPanelStore.getState().closeSurface(activeThreadRef, entry.id);
+      }
+      useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
       syncActivePreviewSurface();
     },
     [
@@ -4234,7 +4258,9 @@ function ChatViewContent(props: ChatViewProps) {
       if (surfaceIndex < 0) return;
       const surfaces = rightPanelState.surfaces.slice(surfaceIndex + 1);
       cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeSurfacesToRight(activeThreadRef, surface.id);
+      for (const entry of surfaces) {
+        useRightPanelStore.getState().closeSurface(activeThreadRef, entry.id);
+      }
       syncActivePreviewSurface();
     },
     [
@@ -4247,7 +4273,9 @@ function ChatViewContent(props: ChatViewProps) {
   const closeAllRightPanelSurfaces = useCallback(() => {
     if (!activeThreadRef) return;
     cleanupRightPanelSurfaces(rightPanelState.surfaces);
-    useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
+    for (const surface of rightPanelState.surfaces) {
+      useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
+    }
   }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
   const copyRightPanelFilePath = useCallback((relativePath: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
@@ -7331,7 +7359,7 @@ function ChatViewContent(props: ChatViewProps) {
               </div>
             </div>
 
-            {activeThreadRef && activePreviewMiniPlayer ? (
+            {browserSurfaceEnabled && activeThreadRef && activePreviewMiniPlayer ? (
               <ThreadPreviewMiniPlayer
                 key={`${activeThreadKey}:${activePreviewMiniPlayer.tabId}`}
                 threadRef={activeThreadRef}
@@ -7433,6 +7461,7 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
+          browserEnabled={browserSurfaceEnabled}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
@@ -7468,6 +7497,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
+            browserEnabled={browserSurfaceEnabled}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}

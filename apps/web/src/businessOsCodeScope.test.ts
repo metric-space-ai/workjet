@@ -29,6 +29,37 @@ describe("Business OS Code scope", () => {
     expect([...projectBusinessOsEnvironmentIds(WELSCH, entries)]).toEqual([WELSCH_ENV]);
   });
 
+  it("includes an SSH environment only when its exact computer id has a confirmed assignment", () => {
+    const input = {
+      businessOsInstanceId: WELSCH,
+      entries: new Map([[SSH_ENV, { target: { _tag: "SshConnectionTarget" } }]]),
+      primaryEnvironmentId: null,
+      computers: [
+        { id: "computer-gpu", environmentId: SSH_ENV, presentationKind: "tailscale" as const },
+      ],
+    };
+    expect([...resolveBusinessOsCodeScopeEnvironmentIds(input)]).toEqual([]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        confirmedComputerIds: new Set(["other-computer"]),
+      }),
+    ]).toEqual([]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        confirmedComputerIds: new Set(["computer-gpu"]),
+      }),
+    ]).toEqual([SSH_ENV]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        entries: new Map(),
+        confirmedComputerIds: new Set(["computer-gpu"]),
+      }),
+    ]).toEqual([]);
+  });
+
   it("includes the Primary environment when the registered local computer identifies it", () => {
     const entries = new Map([
       [WELSCH_ENV, { target: { _tag: "RelayConnectionTarget", businessOsInstanceId: WELSCH } }],

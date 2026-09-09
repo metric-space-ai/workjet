@@ -53,6 +53,116 @@ const withSocket = Effect.fn("withSocket")(function* (
   });
 });
 describe("native CTOX Sync IPC", () => {
+  it.effect("preserves checkpoint protection and takeover receipts, including replay", () =>
+    Effect.gen(function* () {
+      const spec = {
+        jobId: "job",
+        sessionId: "session",
+        scopeId: "scope",
+        harness: "test",
+        harnessVersion: "1",
+        modelRouteId: "route",
+        gatewayAccountId: "account",
+        modelId: "model",
+        requiredCapabilities: [],
+      };
+      const ownership = { nodeId: 1, generation: 3 };
+      const digest = "a".repeat(64);
+      const receipt = {
+        version: 1,
+        nodeId: 1,
+        spec,
+        ownership,
+        checkpointDigest: digest,
+        sequence: 7,
+        signature: "test-signature",
+      };
+      for (const operation of [
+        { type: "protectCheckpoint", jobId: "job", ownership, receipts: [receipt] },
+        { type: "takeOver", jobId: "job", expected: ownership, checkpointDigest: digest },
+      ] as const) {
+        for (const type of ["applied", "replayed"] as const) {
+          // Cryptographic receipt/quorum validation belongs to native Authority.
+          // This test covers the actual local Workjet consumer and generated schema.
+          const result = { type, spec, ownership: { nodeId: 2, generation: 4 } };
+          const expected = { version: 1, requestId: "checkpoint", result };
+          let requests = 0;
+          yield* withSocket(
+            (socket) => {
+              requests += 1;
+              socket.end(frame(expected));
+            },
+            async (endpoint) => {
+              await expect(
+                requestSyncAuthority(endpoint, {
+                  version: 1,
+                  requestId: "checkpoint",
+                  operation,
+                }),
+              ).resolves.toEqual(expected);
+              expect(requests).toBe(1);
+            },
+          );
+        }
+      }
+    }),
+  );
+  it.effect("rejects caller-selected takeover actors before contacting Authority", () =>
+    Effect.gen(function* () {
+      for (const extra of [{ actor: 99 }, { owner: { nodeId: 99, generation: 99 } }]) {
+        let requests = 0;
+        yield* withSocket(
+          (socket) => {
+            requests += 1;
+            socket.end(frame(response));
+          },
+          async (endpoint) => {
+            await expect(
+              requestSyncAuthority(endpoint, {
+                version: 1,
+                requestId: "request",
+                operation: {
+                  type: "takeOver",
+                  jobId: "job",
+                  expected: { nodeId: 1, generation: 3 },
+                  checkpointDigest: "a".repeat(64),
+                  ...extra,
+                },
+              }),
+            ).rejects.toThrow();
+            expect(requests).toBe(0);
+          },
+        );
+      }
+    }),
+  );
+  it.effect("does not retry takeover after disconnect before confirmation", () =>
+    Effect.gen(function* () {
+      let requests = 0;
+      yield* withSocket(
+        (socket) => {
+          requests += 1;
+          socket.destroy();
+        },
+        async (endpoint) => {
+          await expect(
+            requestSyncAuthority(endpoint, {
+              version: 1,
+              requestId: "uncertain-takeover",
+              operation: {
+                type: "takeOver",
+                jobId: "job",
+                expected: { nodeId: 1, generation: 3 },
+                checkpointDigest: "a".repeat(64),
+              },
+            }),
+          ).rejects.toThrow("disconnected before confirming");
+          expect(requests).toBe(1);
+        },
+      );
+    }),
+  );
+
   it.effect("roundtrips admission, replay and revocation as distinct membership receipts", () =>
     Effect.gen(function* () {
       const worker = {

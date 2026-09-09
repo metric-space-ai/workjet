@@ -1,4 +1,5 @@
 import type {
+  EnvironmentId,
   ProviderInteractionMode,
   WorkjetThreadRole,
   WorkjetConnectionSummary,
@@ -112,6 +113,7 @@ export interface ComposerFooterControlsProps {
   readonly workjetWorkers?: ReadonlyArray<WorkjetWorkerProfile> | undefined;
   /** `null` is manual — the individual controls apply, as they always have. */
   readonly selectedWorkjetWorkerId?: string | null | undefined;
+  readonly workerSettingsEnvironmentId?: EnvironmentId | undefined;
   readonly onSelectWorkjetWorker?: ((workerId: string | null) => void) | undefined;
   /**
    * The Computer ("Rechner") select — after the Worker control in worker
@@ -204,6 +206,8 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
   const workerControl =
     props.workjetWorkers === undefined || props.onSelectWorkjetWorker === undefined ? null : (
       <ComposerWorkerControl
+        key={props.workerSettingsEnvironmentId}
+        environmentId={props.workerSettingsEnvironmentId}
         workers={props.workjetWorkers}
         selectedWorkerId={props.selectedWorkjetWorkerId ?? null}
         disabled={props.workjetDisabled}

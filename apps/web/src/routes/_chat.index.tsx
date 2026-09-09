@@ -1,3 +1,8 @@
+import {
+  InstanceOnboarding,
+  resolveInstanceOnboardingState,
+} from "../components/ctox/InstanceOnboarding";
+import { useCtoxMode } from "../components/ctox/CtoxModeShell";
 import { scopeProjectRef } from "@workjet/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { FolderPlusIcon, LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
@@ -26,6 +31,14 @@ import { useActiveWorkjetScope } from "../activeWorkjetScope";
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const { environments } = useBusinessOsScopedEnvironments();
+  const mode = useCtoxMode();
+  const onboarding = resolveInstanceOnboardingState(
+    mode.discovery,
+    mode.selectedId,
+    mode.connection,
+  );
+  if (mode.bridge !== undefined && onboarding !== "ready")
+    return <InstanceOnboarding state={onboarding} />;
 
   if (authGateState.status === "hosted-static" && environments.length === 0) {
     return <HostedStaticOnboardingState />;
@@ -171,11 +184,10 @@ function NoProjectsHero() {
                 Workjet Collective
               </p>
               <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                Your workers start here.
+                Deine Instanz ist bereit.
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Add a project to create threads, connect harnesses, and share durable handoffs
-                across computers.
+                Füge dein erstes Projekt hinzu. Danach kannst du eine Coding-Aufgabe starten.
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
                 <Button size="sm" data-workjet-action="project.add.hero" onClick={openAddProject}>

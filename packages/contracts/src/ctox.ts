@@ -564,6 +564,88 @@ export const CtoxWorkjetProjectControlResult = Schema.Union([
 ]);
 export type CtoxWorkjetProjectControlResult = typeof CtoxWorkjetProjectControlResult.Type;
 
+const CtoxComputerId = CtoxProjectText(160);
+const CtoxComputerCapabilities = Schema.Array(CtoxProjectText(80)).check(Schema.isMaxLength(32));
+const CtoxComputerHostingMode = Schema.Literals(["workstation", "self_hosted"]);
+
+/** Computer membership is confirmed by the selected instance over RxDB/WebRTC. */
+export const CtoxWorkjetComputerControlRequest = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("computer.list") }),
+  Schema.Struct({
+    action: Schema.Literal("computer.assign"),
+    commandId: CommandId,
+    computerId: CtoxComputerId,
+    displayName: CtoxProjectText(256),
+    hostingMode: CtoxComputerHostingMode,
+    capabilities: CtoxComputerCapabilities,
+    selfHostedColocation: Schema.Literal(false),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.unassign"),
+    commandId: CommandId,
+    computerId: CtoxComputerId,
+  }),
+]);
+export type CtoxWorkjetComputerControlRequest = typeof CtoxWorkjetComputerControlRequest.Type;
+
+export const CtoxWorkjetComputerControlInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  request: CtoxWorkjetComputerControlRequest,
+});
+
+export const CtoxWorkjetComputerProjection = Schema.Struct({
+  id: CtoxComputerId,
+  displayName: CtoxProjectText(256),
+  hostingMode: CtoxComputerHostingMode,
+  status: Schema.Literals(["assigned", "unassigned"]),
+  capabilities: CtoxComputerCapabilities,
+  selfHostedColocation: Schema.Boolean,
+});
+export type CtoxWorkjetComputerProjection = typeof CtoxWorkjetComputerProjection.Type;
+
+export const CtoxWorkjetComputerControlResponse = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("computer.list"),
+    computers: Schema.Array(CtoxWorkjetComputerProjection).check(
+      Schema.isMaxLength(100),
+      Schema.makeFilter(
+        (computers) =>
+          computers.every((computer) => computer.status === "assigned") &&
+          new Set(computers.map((computer) => computer.id)).size === computers.length,
+      ),
+    ),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.assign"),
+    computer: CtoxWorkjetComputerProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.unassign"),
+    computer: CtoxWorkjetComputerProjection,
+  }),
+]);
+export type CtoxWorkjetComputerControlResponse = typeof CtoxWorkjetComputerControlResponse.Type;
+
+export const CtoxWorkjetComputerControlResult = Schema.Union([
+  Schema.TaggedStruct("completed", { response: CtoxWorkjetComputerControlResponse }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "authentication_required",
+      "unsupported",
+      "timeout",
+      "sync_unavailable",
+      "query_unsupported",
+      "command_failed",
+      "response_invalid",
+      "guest_failed",
+      "response_too_large",
+    ]),
+  }),
+]);
+export type CtoxWorkjetComputerControlResult = typeof CtoxWorkjetComputerControlResult.Type;
+
 const CtoxSessionId = CtoxProjectText(160);
 const CtoxSessionComputerId = CtoxProjectText(256);
 const CtoxSessionTransferText = CtoxProjectText(256);

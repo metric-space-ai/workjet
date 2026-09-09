@@ -11,17 +11,12 @@ import {
   type AtomCommandResult,
 } from "@workjet/client-runtime/state/runtime";
 import { resolveCapabilityCatalogForHost } from "@metric-space-ai/workjet-capabilities";
-import { WrenchIcon } from "lucide-react";
+import { ChevronRightIcon, WrenchIcon } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
-import {
-  Menu,
-  MenuCheckboxItem,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuPopup,
-  MenuTrigger,
-} from "../ui/menu";
+import { ExpandableSettingsPopup } from "../ui/expandable-settings-popup";
+import { Switch } from "../ui/switch";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import {
   type WorkjetSelectableRole,
@@ -249,93 +244,209 @@ export interface WorkjetCapabilityMenuProps {
   readonly onWorkjetRoleChange?: ((role: WorkjetSelectableRole) => void) | undefined;
 }
 
-export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) {
+export function WorkjetCapabilityMenuContent(
+  props: WorkjetCapabilityMenuProps & {
+    readonly selectedSettingId?: string | null;
+    readonly onOpenSetting?: (id: string, trigger: HTMLButtonElement) => void;
+  },
+) {
   const disabled = props.disabled === true || props.busy;
-  const onCapabilityEnabledChange = props.onCapabilityEnabledChange;
-  const roleIsWorker = props.workjetRole === "worker";
-  const roleSetting =
-    props.workjetRole === undefined ||
-    props.workjetRole === null ||
-    props.onWorkjetRoleChange === undefined ? null : (
-      <div data-workjet-role-setting="true">
-        <MenuCheckboxItem
-          variant="switch"
-          checked={props.workjetRole === "orchestrator"}
-          disabled={disabled || roleIsWorker}
-          aria-label="Orchestrator for this thread"
-          aria-busy={props.busy || undefined}
-          onCheckedChange={(checked) =>
-            props.onWorkjetRoleChange?.(checked === true ? "orchestrator" : "standard")
-          }
-        >
-          Orchestrator
-        </MenuCheckboxItem>
-        <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
-          {roleIsWorker
+  const capabilities = props.onCapabilityEnabledChange
+    ? workjetComposerCapabilityList()
+    : [
+        {
+          id: GREPPY_CAPABILITY_ID,
+          displayName: WORKJET_GREPPY_DISPLAY_NAME,
+          description: WORKJET_GREPPY_DESCRIPTION,
+        },
+      ];
+  const enabled = new Set(props.enabledCapabilityIds ?? []);
+  const showRole = props.workjetRole != null && props.onWorkjetRoleChange !== undefined;
+
+  const row = (setting: {
+    id: string;
+    label: string;
+    checked: boolean;
+    locked?: boolean;
+    summary?: string | undefined;
+    onChange: (checked: boolean) => void;
+  }) => (
+    <div
+      key={setting.id}
+      data-workjet-setting={setting.id}
+      data-workjet-role-setting={setting.id === "orchestrator" ? "true" : undefined}
+      className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 hover:bg-accent/40"
+    >
+      <Switch
+        checked={setting.checked}
+        disabled={disabled || setting.locked}
+        aria-label={`${setting.label} for this thread`}
+        aria-busy={props.busy || undefined}
+        onCheckedChange={setting.onChange}
+      />
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`${setting.label} settings`}
+        aria-expanded={props.selectedSettingId === setting.id}
+        disabled={props.onOpenSetting === undefined}
+        onClick={(event) => props.onOpenSetting?.(setting.id, event.currentTarget)}
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm">{setting.label}</span>
+          <span className="block truncate text-xs text-muted-foreground">
+            {setting.summary ?? (setting.checked ? "On" : "Off")}
+          </span>
+        </span>
+        <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+      </button>
+    </div>
+  );
+
+  return (
+    <div aria-label="Thread settings" aria-busy={props.busy || undefined}>
+      <p className="px-2 pb-2 text-xs text-muted-foreground">
+        Tools for this chat. Open a row for details.
+      </p>
+      {showRole
+        ? row({
+            id: "orchestrator",
+            label: "Orchestrator",
+            checked: props.workjetRole === "orchestrator",
+            locked: props.workjetRole === "worker",
+            summary: props.workjetRole === "worker" ? "Managed by parent" : undefined,
+            onChange: (checked) =>
+              props.onWorkjetRoleChange?.(checked ? "orchestrator" : "standard"),
+          })
+        : null}
+      {capabilities.map((capability) =>
+        row({
+          id: capability.id,
+          label: capability.displayName,
+          checked: props.onCapabilityEnabledChange
+            ? enabled.has(capability.id)
+            : props.greppyEnabled,
+          onChange: (checked) =>
+            props.onCapabilityEnabledChange
+              ? props.onCapabilityEnabledChange(capability.id, checked)
+              : props.onGreppyEnabledChange(checked),
+        }),
+      )}
+      {props.busy ? (
+        <p role="status" className="px-2 pt-2 text-xs text-muted-foreground">
+          Updating…
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function WorkjetCapabilityDetail(
+  props: WorkjetCapabilityMenuProps & { readonly settingId: string },
+) {
+  if (props.settingId === "orchestrator") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3 @min-[36rem]/settings:hidden">
+          <span className="text-sm">Orchestrator</span>
+          <Switch
+            checked={props.workjetRole === "orchestrator"}
+            disabled={
+              props.disabled === true ||
+              props.busy ||
+              props.workjetRole === "worker" ||
+              !props.onWorkjetRoleChange
+            }
+            aria-label="Orchestrator for this thread"
+            onCheckedChange={(checked) =>
+              props.onWorkjetRoleChange?.(checked ? "orchestrator" : "standard")
+            }
+          />
+        </div>
+        <p className="text-sm leading-6 text-muted-foreground">
+          {props.workjetRole === "worker"
             ? WORKJET_WORKER_ROLE_REASON
-            : `Allow this thread to delegate to workers. ${WORKJET_ROLE_NEXT_SESSION_HINT}`}
+            : `Allow this chat to delegate to workers. ${WORKJET_ROLE_NEXT_SESSION_HINT}`}
         </p>
       </div>
     );
-
-  // Whole catalog when the caller can toggle any of it; otherwise the Greppy
-  // row alone, so a caller that only wired Greppy cannot render switches that
-  // silently do nothing.
-  if (onCapabilityEnabledChange !== undefined) {
-    const enabled = new Set(props.enabledCapabilityIds ?? []);
-    return (
-      <MenuGroup>
-        <MenuGroupLabel>Thread settings</MenuGroupLabel>
-        {roleSetting}
-        {workjetComposerCapabilityList().map((capability) => (
-          <div key={capability.id}>
-            <MenuCheckboxItem
-              variant="switch"
-              checked={enabled.has(capability.id)}
-              disabled={disabled}
-              aria-label={`${capability.displayName} for this thread`}
-              aria-busy={props.busy || undefined}
-              onCheckedChange={(checked) =>
-                onCapabilityEnabledChange(capability.id, checked === true)
+  }
+  const capability = workjetComposerCapabilityList().find(({ id }) => id === props.settingId);
+  if (!capability) return null;
+  const enabled = props.onCapabilityEnabledChange
+    ? (props.enabledCapabilityIds ?? []).includes(props.settingId)
+    : props.settingId === GREPPY_CAPABILITY_ID && props.greppyEnabled;
+  const connections = props.decisionHubConnections ?? [];
+  const selectedConnection = connections.find(
+    ({ connectionId }) => connectionId === props.decisionHubConnectionId,
+  );
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 @min-[36rem]/settings:hidden">
+        <span className="text-sm">Enabled for this chat</span>
+        <Switch
+          checked={enabled}
+          disabled={
+            props.disabled === true ||
+            props.busy ||
+            (!props.onCapabilityEnabledChange && props.settingId !== GREPPY_CAPABILITY_ID)
+          }
+          aria-label={`${capability.displayName} for this thread`}
+          onCheckedChange={(checked) =>
+            props.onCapabilityEnabledChange
+              ? props.onCapabilityEnabledChange(props.settingId, checked)
+              : props.onGreppyEnabledChange(checked)
+          }
+        />
+      </div>
+      <p className="text-sm leading-6 text-muted-foreground">{capability.description}</p>
+      {props.settingId === GREPPY_CAPABILITY_ID ? (
+        <p className="text-xs leading-5 text-muted-foreground">{WORKJET_GREPPY_ACTIVATION_NOTE}</p>
+      ) : null}
+      {props.settingId === "decision-hub" ? (
+        !enabled ? (
+          <p className="text-sm text-muted-foreground">
+            Enable Decision Hub to choose a CTOX instance.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">CTOX instance</p>
+            <Select
+              value={props.decisionHubConnectionId ?? ""}
+              disabled={
+                props.disabled === true ||
+                props.busy ||
+                props.onDecisionHubConnectionChange === undefined ||
+                connections.length === 0
               }
+              onValueChange={(value) => {
+                if (value !== null) props.onDecisionHubConnectionChange?.(value);
+              }}
             >
-              <span className="inline-flex items-center gap-2">
-                <span>{capability.displayName}</span>
-                {props.busy ? (
-                  <span className="text-muted-foreground text-xs" aria-hidden="true">
-                    Updating…
-                  </span>
-                ) : null}
-              </span>
-            </MenuCheckboxItem>
-            <p className="max-w-72 px-2 pt-1 pb-1.5 text-xs leading-4 text-muted-foreground">
-              {capability.description}
-            </p>
-            {capability.id === "decision-hub" && enabled.has("decision-hub") ? (
-              <div className="px-2 pb-2">
-                <Select
-                  value={props.decisionHubConnectionId ?? ""}
-                  onValueChange={(value) => {
-                    if (value !== null) props.onDecisionHubConnectionChange?.(value);
-                  }}
-                >
-                  <SelectTrigger aria-label="Decision Hub CTOX connection">
-                    <SelectValue placeholder="Choose CTOX instance" />
-                  </SelectTrigger>
-                  <SelectPopup>
-                    {(props.decisionHubConnections ?? []).map((connection) => (
-                      <SelectItem key={connection.connectionId} value={connection.connectionId}>
-                        {connection.displayName} · {connection.status}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-                {(props.decisionHubConnections ?? []).length === 0 ? (
-                  <p role="alert" className="pt-1 text-xs text-amber-500">
-                    No MCP-capable CTOX connection is available on this computer.
-                  </p>
-                ) : null}
-              </div>
+              <SelectTrigger aria-label="Decision Hub CTOX connection">
+                <SelectValue placeholder="Choose CTOX instance" />
+              </SelectTrigger>
+              <SelectPopup>
+                {connections.map((connection) => (
+                  <SelectItem key={connection.connectionId} value={connection.connectionId}>
+                    {connection.displayName} · {connection.status}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            {connections.length === 0 ? (
+              <p role="status" className="text-xs text-amber-500">
+                No MCP-capable CTOX connection is available on this computer.
+              </p>
+            ) : props.decisionHubConnectionId && !selectedConnection ? (
+              <p role="status" className="text-xs text-amber-500">
+                The selected CTOX connection is no longer available. Choose another instance.
+              </p>
+            ) : selectedConnection ? (
+              <p role="status" className="text-xs text-muted-foreground">
+                {selectedConnection.displayName} · {selectedConnection.status}
+                {selectedConnection.reason ? `: ${selectedConnection.reason}` : ""}
+              </p>
             ) : null}
             {capability.id === "ctox-business-os" && enabled.has(capability.id) ? (
               <div className="px-2 pb-2">
@@ -374,64 +485,63 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
               </div>
             ) : null}
           </div>
-        ))}
-      </MenuGroup>
-    );
-  }
-
-  return (
-    <MenuGroup>
-      <MenuGroupLabel>Thread settings</MenuGroupLabel>
-      {roleSetting}
-      <MenuCheckboxItem
-        variant="switch"
-        checked={props.greppyEnabled}
-        disabled={disabled}
-        aria-label={`${WORKJET_GREPPY_DISPLAY_NAME} for this thread`}
-        aria-busy={props.busy || undefined}
-        onCheckedChange={(checked) => props.onGreppyEnabledChange(checked === true)}
-      >
-        <span className="inline-flex items-center gap-2">
-          <span>{WORKJET_GREPPY_DISPLAY_NAME}</span>
-          {props.busy ? (
-            <span className="text-muted-foreground text-xs" aria-hidden="true">
-              Updating…
-            </span>
-          ) : null}
-        </span>
-      </MenuCheckboxItem>
-      <p className="max-w-72 px-2 pb-1.5 pt-1 text-muted-foreground text-xs leading-4">
-        {WORKJET_GREPPY_DESCRIPTION} {WORKJET_GREPPY_ACTIVATION_NOTE}
-      </p>
-    </MenuGroup>
+        )
+      ) : null}
+    </div>
   );
 }
 
 export function WorkjetCapabilityMenu(props: WorkjetCapabilityMenuProps) {
-  if (props.compact) {
-    return <WorkjetCapabilityMenuContent {...props} />;
-  }
-
+  const [open, setOpen] = useState(false);
+  const [selectedSettingId, setSelectedSettingId] = useState<string | null>(null);
+  const lastDetailTrigger = useRef<HTMLButtonElement | null>(null);
+  const detailTitle =
+    selectedSettingId === "orchestrator"
+      ? "Orchestrator"
+      : workjetComposerCapabilityList().find(({ id }) => id === selectedSettingId)?.displayName;
   return (
-    <Menu>
-      <MenuTrigger
-        disabled={props.disabled || props.busy}
-        aria-busy={props.busy || undefined}
-        render={
-          <ComposerControl
-            type="button"
-            className="shrink-0 whitespace-nowrap"
-            aria-label="Thread tools"
-          />
-        }
-      >
-        <ComposerControlIcon icon={WrenchIcon} />
-        <span className="sr-only sm:not-sr-only">Tools</span>
-      </MenuTrigger>
-      <MenuPopup align="start" className="w-80">
-        <WorkjetCapabilityMenuContent {...props} />
-      </MenuPopup>
-    </Menu>
+    <ExpandableSettingsPopup
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setSelectedSettingId(null);
+      }}
+      title="Tools for this chat"
+      backLabel="Back to tools"
+      detailDescription="Changes apply to this chat. Worker profile defaults are edited in the Worker menu."
+      trigger={
+        <ComposerControl
+          type="button"
+          className="shrink-0 whitespace-nowrap"
+          aria-label="Thread tools"
+          disabled={props.disabled || props.busy}
+          aria-busy={props.busy || undefined}
+        >
+          <ComposerControlIcon icon={WrenchIcon} />
+          <span>Tools</span>
+        </ComposerControl>
+      }
+      list={
+        <WorkjetCapabilityMenuContent
+          {...props}
+          selectedSettingId={selectedSettingId}
+          onOpenSetting={(id, trigger) => {
+            lastDetailTrigger.current = trigger;
+            setSelectedSettingId(id);
+          }}
+        />
+      }
+      detailTitle={detailTitle ?? "Tool settings"}
+      detail={
+        selectedSettingId && detailTitle ? (
+          <WorkjetCapabilityDetail {...props} settingId={selectedSettingId} />
+        ) : null
+      }
+      onBack={() => {
+        setSelectedSettingId(null);
+        requestAnimationFrame(() => lastDetailTrigger.current?.focus());
+      }}
+    />
   );
 }
 

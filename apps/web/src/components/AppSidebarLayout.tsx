@@ -1,3 +1,8 @@
+import {
+  InstanceNavigationBoundary,
+  InstanceWorkspaceBoundary,
+  InstanceSidebarBoundary,
+} from "./ctox/InstanceOnboarding";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -263,7 +268,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
         <WorkjetHeaderFrame mode={productMode} sidebarAvailable={!isCtoxShell}>
           {!isCtoxShell ? <ProjectProjectionRetention /> : null}
-          {!isCtoxShell ? (
+          <InstanceSidebarBoundary surface={sidebarSurface}>
             <Sidebar
               side="left"
               collapsible="offcanvas"
@@ -279,21 +284,32 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
                 onResize: setSidebarWidth,
               }}
             >
-              {sidebarSurface === "settings" ? (
+              {/*
+                The instance selector deliberately does NOT appear here any more:
+                it lives in the shared header, which is the point of this branch.
+                Leaving main's copy in place would render it twice.
+              */}
+              {sidebarSurface === "business-os" ? (
+                <CtoxSidebarShell />
+              ) : sidebarSurface === "settings" ? (
                 <>
                   <SidebarChromeHeader isElectron={isElectron} />
                   <SettingsSidebarNav pathname={pathname} />
                 </>
-              ) : legacySidebarEnabled ? (
-                <LegacyThreadSidebar />
               ) : (
-                <ThreadSidebar />
+                <InstanceNavigationBoundary>
+                  {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
+                </InstanceNavigationBoundary>
               )}
               <SidebarRail onDoubleClick={resetSidebarWidth} />
             </Sidebar>
-          ) : null}
-          {isCtoxShell ? <CtoxMainShell /> : children}
-          <SidebarControl disabled={isCtoxShell} />
+          </InstanceSidebarBoundary>
+          <InstanceWorkspaceBoundary surface={sidebarSurface}>
+            {isCtoxShell ? <CtoxMainShell /> : children}
+          </InstanceWorkspaceBoundary>
+          <InstanceSidebarBoundary surface={sidebarSurface}>
+            <SidebarControl disabled={isCtoxShell} />
+          </InstanceSidebarBoundary>
         </WorkjetHeaderFrame>
       </CtoxModeProvider>
     </SidebarProvider>

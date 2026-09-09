@@ -40,6 +40,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import type { ComputerEditorState } from "./ComposerWorkjetTargetControls";
 import {
   clampCollapsedComposerCursor,
   type ComposerTrigger,
@@ -69,7 +70,7 @@ import {
   usePromptStashStore,
   type PromptStashEntry,
 } from "../../promptStashStore";
-import { providerInstanceIdForHarness } from "./ComposerWorkerControl";
+import { ComposerWorkerControl, providerInstanceIdForHarness } from "./ComposerWorkerControl";
 import { workerReasoningSelections } from "./workerReasoning";
 import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerStashBadge } from "./ComposerStashBadge";
@@ -106,7 +107,6 @@ import {
   ComposerComputerControl,
   ComposerManualTargetControls,
   ComposerSystemPromptControl,
-  ComposerWorkjetCompactMenuContent,
   GREPPY_CAPABILITY_ID,
   harnessForProviderInstanceId,
   WorkjetCapabilityMenu,
@@ -540,6 +540,11 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const [customModelDrafts, setCustomModelDrafts] = useState<Readonly<Record<string, string>>>({});
+  const [computerEditorState, setComputerEditorState] = useState<ComputerEditorState>({
+    drafts: {},
+    saving: false,
+  });
   const {
     composerDraftTarget,
     environmentId,
@@ -992,7 +997,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .find((entry) => entry.modelId === worker.modelId)
         ?.prompt.trim();
       payload = {
-        capabilityIds: draftWorkerCapabilityIds ?? worker.capabilityIds,
+        capabilityIds:
+          draftWorkerCapabilityIds ??
+          composerDraft.workjetConfig?.enabledCapabilityIds ??
+          worker.capabilityIds,
         managedInstructions: composeWorkjetWorkerManagedInstructions(worker, modelRules, {
           currentWorkerId: worker.id,
           workers: workjetWorkers,
@@ -1009,6 +1017,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     appliedWorkerCapabilitiesRef.current = targetKey;
     onWorkjetConfigApply(payload);
   }, [
+    composerDraft.workjetConfig,
     composerDraftTarget,
     composerTargetIsThread,
     draftManagedInstructions,
@@ -1217,7 +1226,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    */
   const workerDraftExtrasActive = workerModeActive && !composerTargetIsThread;
   const effectiveEnabledCapabilityIds = workerDraftExtrasActive
-    ? (draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [])
+    ? (draftWorkerCapabilityIds ??
+      composerDraft.workjetConfig?.enabledCapabilityIds ??
+      selectedWorkjetWorker?.capabilityIds ??
+      [])
     : composerTargetIsThread
       ? workjetEnabledCapabilityIds
       : draftWorkjetConfig.enabledCapabilityIds;
@@ -1228,7 +1240,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       : (effectiveEnabledCapabilityIds ?? []).includes(GREPPY_CAPABILITY_ID);
   const handleDraftWorkerCapabilityChange = useCallback(
     (capabilityId: string, enabled: boolean) => {
-      const base = draftWorkerCapabilityIds ?? selectedWorkjetWorker?.capabilityIds ?? [];
+      const base =
+        draftWorkerCapabilityIds ??
+        composerDraft.workjetConfig?.enabledCapabilityIds ??
+        selectedWorkjetWorker?.capabilityIds ??
+        [];
       const without = base.filter((id) => id !== capabilityId);
       const next = enabled ? [...without, capabilityId] : without;
       setDraftWorkerCapabilityIds(next);
@@ -3336,6 +3352,39 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
+  const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
+  const composerManualTargetControls =
+    workerModeActive || !workjetManualControlsAvailable ? null : (
+      <ComposerManualTargetControls
+        key={manualModelDraftKey}
+        customModelEditor={{
+          draft: customModelDrafts[manualModelDraftKey] ?? null,
+          onDraftChange: (draft) => {
+            setCustomModelDrafts((previous) => {
+              const next = { ...previous };
+              if (draft === null) delete next[manualModelDraftKey];
+              else next[manualModelDraftKey] = draft;
+              return next;
+            });
+          },
+        }}
+        configuredInstanceIds={configuredProviderInstanceIds}
+        unavailableHint={
+          lockedProvider === null
+            ? undefined
+            : "Locked — this thread continues on its current provider"
+        }
+        selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
+        onSelectHarness={handleSelectManualHarness}
+        models={manualGatewayModels}
+        modelsUnavailableReason={
+          manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
+        }
+        selectedModelId={selectedModelForPickerWithCustomFallback}
+        onSelectModel={handleSelectManualModel}
+      />
+    );
+
   const composerSystemPromptControl =
     workerModeActive || !workjetManualControlsAvailable ? null : (
       <ComposerSystemPromptControl
@@ -3852,41 +3901,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
                 {isComposerFooterCompact ? (
                   <>
+                    <ComposerWorkerControl
+                      key={environmentId}
+                      environmentId={environmentId}
+                      workers={workjetWorkers}
+                      selectedWorkerId={selectedWorkjetWorkerId}
+                      disabled={effectiveWorkjetCapabilityDisabled}
+                      onSelectWorker={handleSelectWorkjetWorker}
+                      onOpenWorkjetSettings={onOpenWorkjetSettings}
+                    />
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       showInteractionModeToggle={
                         workerModeActive
                           ? false
                           : composerProviderControls.showInteractionModeToggle
-                      }
-                      workerMenuContent={
-                        <ComposerWorkjetCompactMenuContent
-                          workers={workjetWorkers}
-                          selectedWorkerId={selectedWorkjetWorkerId}
-                          onSelectWorker={handleSelectWorkjetWorker}
-                          computers={workjetComputers}
-                          selectedComputerId={composerSelectedComputerId}
-                          activeEnvironmentId={environmentId}
-                          selectableEnvironmentIds={selectableEnvironmentIds}
-                          computerDisabledReason={composerComputerDisabledReason}
-                          onSelectComputer={handleSelectComposerComputer}
-                          manualTarget={
-                            workerModeActive || !workjetManualControlsAvailable
-                              ? null
-                              : {
-                                  configuredInstanceIds: configuredProviderInstanceIds,
-                                  selectedHarness: harnessForProviderInstanceId(selectedInstanceId),
-                                  onSelectHarness: handleSelectManualHarness,
-                                  models: manualGatewayModels,
-                                  modelsUnavailableReason:
-                                    manualGatewayModels.length === 0
-                                      ? manualModelsUnavailableReason
-                                      : null,
-                                  selectedModelId: selectedModelForPickerWithCustomFallback,
-                                  onSelectModel: handleSelectManualModel,
-                                }
-                          }
-                        />
                       }
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
                       contextWindowMenuContent={composerContextWindowMenuContent}
@@ -3915,6 +3944,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       }
                       onToggleInteractionMode={toggleInteractionMode}
                     />
+                    {!workjetManualControlsAvailable && !workerModeActive ? null : (
+                      <ComposerComputerControl
+                        key={environmentId}
+                        editor={{ state: computerEditorState, update: setComputerEditorState }}
+                        computers={workjetComputers}
+                        selectedComputerId={composerSelectedComputerId}
+                        activeEnvironmentId={environmentId}
+                        selectableEnvironmentIds={selectableEnvironmentIds}
+                        disabledReason={composerComputerDisabledReason}
+                        mismatchNote={composerComputerMismatchNote}
+                        onSelectComputer={handleSelectComposerComputer}
+                        onAddComputer={() => {
+                          try {
+                            window.sessionStorage.setItem("workjet-computer-create", "1");
+                          } catch {
+                            // Without storage the existing setup page still opens.
+                          }
+                          window.location.hash = "#/settings/computers";
+                        }}
+                      />
+                    )}
+                    {composerManualTargetControls}
+                    {effectiveWorkjetGreppyEnabled === null ? null : (
+                      <WorkjetCapabilityMenu
+                        compact
+                        greppyEnabled={effectiveWorkjetGreppyEnabled}
+                        busy={effectiveWorkjetCapabilityBusy}
+                        disabled={effectiveWorkjetCapabilityDisabled}
+                        onGreppyEnabledChange={effectiveGreppyEnabledChange}
+                        onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                        enabledCapabilityIds={effectiveEnabledCapabilityIds}
+                        decisionHubConnections={decisionHubConnections}
+                        decisionHubConnectionId={decisionHubConnectionId}
+                        onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                        workjetRole={workerModeActive ? null : effectiveWorkjetRole}
+                        onWorkjetRoleChange={effectiveWorkjetRoleChange}
+                      />
+                    )}
                     {composerAttachmentControl}
                     {workerModeActive
                       ? null
@@ -3923,6 +3990,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ) : (
                   <ComposerFooterControls
                     workerMode={workerModeActive}
+                    workerSettingsEnvironmentId={environmentId}
                     workjetWorkers={workjetWorkers}
                     selectedWorkjetWorkerId={selectedWorkjetWorkerId}
                     onSelectWorkjetWorker={handleSelectWorkjetWorker}
@@ -3931,6 +3999,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                          keeps its bar unchanged. */
                       !workjetManualControlsAvailable && !workerModeActive ? null : (
                         <ComposerComputerControl
+                          key={environmentId}
+                          editor={{ state: computerEditorState, update: setComputerEditorState }}
                           computers={workjetComputers}
                           selectedComputerId={composerSelectedComputerId}
                           activeEnvironmentId={environmentId}
@@ -3950,26 +4020,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       )
                     }
                     providerTargetControl={renderLegacyProviderTargetControl(false)}
-                    manualTargetControls={
-                      workerModeActive || !workjetManualControlsAvailable ? null : (
-                        <ComposerManualTargetControls
-                          configuredInstanceIds={configuredProviderInstanceIds}
-                          unavailableHint={
-                            lockedProvider === null
-                              ? undefined
-                              : "Locked — this thread continues on its current provider"
-                          }
-                          selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
-                          onSelectHarness={handleSelectManualHarness}
-                          models={manualGatewayModels}
-                          modelsUnavailableReason={
-                            manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
-                          }
-                          selectedModelId={selectedModelForPickerWithCustomFallback}
-                          onSelectModel={handleSelectManualModel}
-                        />
-                      )
-                    }
+                    manualTargetControls={composerManualTargetControls}
                     contextWindowControl={composerContextWindowControl}
                     systemPromptControl={composerSystemPromptControl}
                     attachmentControl={composerAttachmentControl}

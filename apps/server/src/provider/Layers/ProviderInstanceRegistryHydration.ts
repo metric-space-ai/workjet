@@ -44,15 +44,20 @@
 import {
   defaultInstanceIdForDriver,
   type ProviderInstanceConfig,
+  type WorkjetConnectionSummary,
   type ProviderInstanceConfigMap,
   ServerSettings,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { BUILT_IN_DRIVERS, type BuiltInDriversEnv } from "../builtInDrivers.ts";
+import { CTOX_DRIVER_KIND } from "../Drivers/CtoxDriver.ts";
+import { DecisionHubConnectionRegistry } from "../../workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderInstanceRegistryMutator } from "../Services/ProviderInstanceRegistryMutator.ts";
 import { ProviderInstanceRegistryMutableLayer } from "./ProviderInstanceRegistryLive.ts";
@@ -114,22 +119,99 @@ export const deriveProviderInstanceConfigMap = (
  * configs, so the only way the watcher could fail is a settings stream
  * tear-down, which logs and exits cleanly.
  */
+/**
+ * The CTOX half of the config map, derived from the connections that exist RIGHT
+ * NOW. Kept out of `deriveProviderInstanceConfigMap` on purpose: that helper is
+ * pure over settings, and giving it a database read would make every caller —
+ * including the initial boot path — depend on the connection registry.
+ *
+ * One provider instance per bound connection, never one per instance: two
+ * connections to the same CTOX instance are two different credentials, and the
+ * driver refuses a thread whose binding names the other one.
+ *
+ * An explicit `providerInstances` entry always wins, exactly as it does for the
+ * legacy mirror, so a hand-configured CTOX row is never overwritten by a
+ * derived one.
+ */
+export const mergeCtoxProviderInstances = (
+  configMap: ProviderInstanceConfigMap,
+  summaries: ReadonlyArray<WorkjetConnectionSummary>,
+): ProviderInstanceConfigMap => {
+  const merged: Record<string, ProviderInstanceConfig> = { ...configMap };
+  for (const summary of summaries) {
+    // A connection that never reached "ready" has no usable target; a row for it
+    // would be the instance-less, never-connectable entry we refuse to create.
+    if (summary.status !== "ready") continue;
+    const instanceId = `ctox_${summary.connectionId}`;
+    if (instanceId in merged) continue;
+    merged[instanceId] = {
+      driver: CTOX_DRIVER_KIND,
+      config: { ctoxInstanceId: summary.instanceId, connectionId: summary.connectionId },
+    };
+  }
+  return merged as ProviderInstanceConfigMap;
+};
+
 const SettingsWatcherLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const mutator = yield* ProviderInstanceRegistryMutator;
     const serverSettings = yield* ServerSettingsService;
-    yield* serverSettings.streamChanges.pipe(
-      Stream.runForEach((next) =>
-        mutator
-          .reconcile(deriveProviderInstanceConfigMap(next))
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
-            ),
+    const connections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
+
+    /**
+     * Reconciliation is serialized. Two sources now feed it — settings and
+     * connections — and each recomputes the WHOLE map from a fresh read. Run
+     * concurrently, a slower read can finish last and reinstate the state it
+     * observed before the other source's change, silently undoing it.
+     */
+    const gate = yield* Semaphore.make(1);
+    const reconcileNow = (settings: ServerSettings) =>
+      gate
+        .withPermits(1)(
+          Effect.gen(function* () {
+            const configMap = deriveProviderInstanceConfigMap(settings);
+            const withCtox = yield* Option.match(connections, {
+              onNone: () => Effect.succeed(configMap),
+              onSome: (registry) =>
+                registry.list.pipe(
+                  Effect.map((summaries) => mergeCtoxProviderInstances(configMap, summaries)),
+                  // A registry that cannot be read must not erase the CTOX rows a
+                  // previous successful read produced; leaving the map untouched
+                  // keeps existing instances alive until the next event.
+                  Effect.orElseSucceed(() => configMap),
+                ),
+            });
+            return yield* mutator.reconcile(withCtox);
+          }),
+        )
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("ProviderInstanceRegistry reconcile failed", cause),
           ),
+        );
+
+    // SUBSCRIBE FIRST, then read the initial state. The other order drops every
+    // change that lands in between — precisely the window in which a connection
+    // provisioned during startup would go missing until the next unrelated
+    // settings write.
+    const connectionChanges = Option.match(connections, {
+      onNone: () => Stream.empty as Stream.Stream<void>,
+      onSome: (registry) => registry.changes,
+    });
+    yield* connectionChanges.pipe(
+      Stream.runForEach(() =>
+        serverSettings.getSettings.pipe(
+          Effect.flatMap(reconcileNow),
+          Effect.catchCause((cause) =>
+            Effect.logError("ProviderInstanceRegistry connection reconcile failed", cause),
+          ),
+        ),
       ),
       Effect.forkScoped,
     );
+    yield* serverSettings.streamChanges.pipe(Stream.runForEach(reconcileNow), Effect.forkScoped);
+    // The initial pass now runs behind both subscriptions.
+    yield* serverSettings.getSettings.pipe(Effect.flatMap(reconcileNow), Effect.ignore);
   }),
 );
 

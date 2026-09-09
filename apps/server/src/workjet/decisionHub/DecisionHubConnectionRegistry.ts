@@ -7,6 +7,8 @@ import {
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as PubSub from "effect/PubSub";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -70,6 +72,19 @@ export interface DecisionHubConnectionRegistryShape {
     connectionId: WorkjetConnectionId,
     expectedInstanceId?: string,
   ) => Effect.Effect<DecisionHubMcpTarget, WorkjetDecisionHubConnectionError>;
+  /**
+   * Emits after a mutation completes — provision, probe, disconnect — so a
+   * consumer can re-read `list` instead of polling it. A no-op disconnect emits
+   * too: an extra re-read is cheap, a missed change is not.
+   *
+   * The event carries no payload on purpose. The list is the truth, and a
+   * payload would invite acting on a snapshot that is already one mutation old.
+   *
+   * Subscribe BEFORE reading the initial list. The other order drops every
+   * change that lands between the read and the subscription, which is exactly
+   * the window in which a connection provisioned at startup goes missing.
+   */
+  readonly changes: Stream.Stream<void>;
 }
 
 export class DecisionHubConnectionRegistry extends Context.Service<
@@ -78,6 +93,11 @@ export class DecisionHubConnectionRegistry extends Context.Service<
 >()("workjet/workjet/decisionHub/DecisionHubConnectionRegistry") {}
 
 const make = Effect.gen(function* () {
+  // Unbounded so a mutation is never blocked by a slow subscriber; the events
+  // are valueless wake-ups, so a backlog costs nothing but a re-read.
+  const changesPubSub = yield* PubSub.unbounded<void>();
+  const announceChange = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    effect.pipe(Effect.tap(() => PubSub.publish(changesPubSub, undefined)));
   const sql = yield* SqlClient.SqlClient;
   const secrets = yield* ServerSecretStore;
   const client = yield* DecisionHubMcpClient;
@@ -192,53 +212,58 @@ const make = Effect.gen(function* () {
     Effect.mapError(() => failure("connection-unavailable")),
   );
 
-  const provision: DecisionHubConnectionRegistryShape["provision"] = provisionRaw;
+  const provision: DecisionHubConnectionRegistryShape["provision"] = (input) =>
+    announceChange(provisionRaw(input));
 
   const probe: DecisionHubConnectionRegistryShape["probe"] = (connectionId) =>
-    Effect.gen(function* () {
-      const target = yield* readTarget(connectionId);
-      yield* client.probe(target, []).pipe(
-        Effect.matchEffect({
-          onSuccess: () => setStatus(connectionId, "ready", null),
-          onFailure: (error) => {
-            if (
-              error.reason === "remote-identity-mismatch" ||
-              error.reason === "remote-tools-missing"
-            ) {
-              return setStatus(connectionId, "unsupported", error.reason);
-            }
-            if (error.reason === "remote-response-invalid") {
-              return setStatus(connectionId, "error", error.reason);
-            }
-            return setStatus(connectionId, "offline", error.reason);
-          },
-        }),
-      );
-      return yield* getSummary(connectionId);
-    });
+    announceChange(
+      Effect.gen(function* () {
+        const target = yield* readTarget(connectionId);
+        yield* client.probe(target, []).pipe(
+          Effect.matchEffect({
+            onSuccess: () => setStatus(connectionId, "ready", null),
+            onFailure: (error) => {
+              if (
+                error.reason === "remote-identity-mismatch" ||
+                error.reason === "remote-tools-missing"
+              ) {
+                return setStatus(connectionId, "unsupported", error.reason);
+              }
+              if (error.reason === "remote-response-invalid") {
+                return setStatus(connectionId, "error", error.reason);
+              }
+              return setStatus(connectionId, "offline", error.reason);
+            },
+          }),
+        );
+        return yield* getSummary(connectionId);
+      }),
+    );
 
   const disconnect: DecisionHubConnectionRegistryShape["disconnect"] = (connectionId) =>
-    Effect.gen(function* () {
-      const rows = yield* sql`
+    announceChange(
+      Effect.gen(function* () {
+        const rows = yield* sql`
         SELECT connection_id FROM workjet_decision_hub_connections
         WHERE connection_id = ${connectionId}
       `.pipe(Effect.mapError(() => failure("connection-unavailable")));
-      if (rows.length === 0) return false;
-      const open = yield* sql`
+        if (rows.length === 0) return false;
+        const open = yield* sql`
         SELECT decision_id FROM workjet_decision_hub_escalations
         WHERE connection_id = ${connectionId} AND status = 'open' LIMIT 1
       `.pipe(Effect.mapError(() => failure("connection-unavailable")));
-      if (open.length > 0) return yield* failure("connection-unavailable");
-      // The durable connection/instance binding deliberately survives this
-      // removal. Reusing an id for a different instance would redirect threads.
-      yield* secrets
-        .remove(secretName(connectionId))
-        .pipe(Effect.mapError(() => failure("secret-store-unavailable")));
-      yield* sql`
+        if (open.length > 0) return yield* failure("connection-unavailable");
+        // The durable connection/instance binding deliberately survives this
+        // removal. Reusing an id for a different instance would redirect threads.
+        yield* secrets
+          .remove(secretName(connectionId))
+          .pipe(Effect.mapError(() => failure("secret-store-unavailable")));
+        yield* sql`
         DELETE FROM workjet_decision_hub_connections WHERE connection_id = ${connectionId}
       `.pipe(Effect.mapError(() => failure("connection-unavailable")));
-      return true;
-    });
+        return true;
+      }),
+    );
 
   const resolveReadyTarget: DecisionHubConnectionRegistryShape["resolveReadyTarget"] = (
     connectionId,
@@ -254,6 +279,7 @@ const make = Effect.gen(function* () {
     });
 
   return DecisionHubConnectionRegistry.of({
+    changes: Stream.fromPubSub(changesPubSub),
     list,
     provision,
     probe,

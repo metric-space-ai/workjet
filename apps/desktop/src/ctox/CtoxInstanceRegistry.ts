@@ -36,7 +36,7 @@ import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import type { CtoxBusinessOsLaunchConfig } from "./CtoxBusinessOsShell.ts";
 import { buildCtoxBusinessOsLaunchConfig } from "./CtoxLaunchConfig.ts";
 import {
-  discoverCtoxLocalDaemonInstances,
+  discoverCtoxLocalDaemonNativeTargets,
   isLaunchableCtoxLocalDaemon,
   type CtoxLocalDaemonDiscoveryOptions,
 } from "./CtoxLocalDaemonSource.ts";
@@ -294,6 +294,8 @@ export interface CtoxPairedLaunchDescriptor {
 export interface CtoxLocalDaemonTarget {
   readonly descriptor: CtoxManagedInstance;
   readonly daemonInstanceId: string;
+  /** Main-only root from the trusted descriptor; older targets may lack it. */
+  readonly stateRoot?: string;
   readonly discoveredCount: number;
 }
 
@@ -305,6 +307,7 @@ export interface CtoxLocalDaemonTarget {
 export interface CtoxSshManagedTarget {
   readonly descriptor: CtoxManagedInstance;
   readonly host: string;
+  readonly daemonInstanceId?: string;
   readonly stateRoot?: string;
   readonly username?: string;
   readonly port?: number;
@@ -1014,7 +1017,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     ...options.localDaemon,
   };
   // Discovery runs with the services acquired here, never with the caller's.
-  const discoverLocalInstances = discoverCtoxLocalDaemonInstances(localDaemonOptions).pipe(
+  const discoverLocalInstances = discoverCtoxLocalDaemonNativeTargets(localDaemonOptions).pipe(
     Effect.provideService(FileSystem.FileSystem, fileSystem),
     Effect.provideService(Path.Path, path),
   );
@@ -1299,6 +1302,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
         descriptor:
           withShellStatus.find((instance) => instance.id === target.instance.id) ?? target.instance,
         daemonInstanceId: target.daemonInstanceId,
+        stateRoot: target.stateRoot,
         discoveredCount: discovered.length,
       };
     },
@@ -1319,6 +1323,9 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
         descriptor:
           withShellStatus.find((instance) => instance.id === target.instance.id) ?? target.instance,
         host: target.host,
+        ...(target.daemonInstanceId === undefined
+          ? {}
+          : { daemonInstanceId: target.daemonInstanceId }),
         ...(target.stateRoot === undefined ? {} : { stateRoot: target.stateRoot }),
         ...(target.username === undefined ? {} : { username: target.username }),
         ...(target.port === undefined ? {} : { port: target.port }),

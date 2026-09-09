@@ -904,6 +904,7 @@ describe("CtoxInstanceRegistry", () => {
 
       const target = yield* service.resolveLocalDaemonTarget(local.id);
       assert.equal(target.daemonInstanceId, "workshop-1");
+      assert.equal(target.stateRoot, "/local-state");
       assert.equal(yield* service.resolveBusinessOsInstanceId(local.id), "workshop-1");
       assert.equal(target.discoveredCount, 1);
       assert.deepEqual(

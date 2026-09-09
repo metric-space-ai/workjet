@@ -182,7 +182,7 @@ interface CtoxModeContextValue {
   readonly removeSshManagedInstance: (
     instance: CtoxManagedInstance,
   ) => Promise<CtoxMutationOutcome>;
-  readonly select: (instance: CtoxManagedInstance) => void;
+  readonly select: (instance: CtoxManagedInstance) => Promise<boolean>;
   readonly showNetwork: () => Promise<boolean>;
   /** Re-check async mutations against the live selected instance ref. */
   readonly isSelected: (instanceId: string) => boolean;
@@ -639,16 +639,20 @@ export function CtoxModeProvider({
     [bridge, clearSelection, refresh],
   );
 
-  const select = useCallback((instance: CtoxManagedInstance) => {
-    if (!canActivateCtoxInstance(instance)) return;
+  const select = useCallback(async (instance: CtoxManagedInstance) => {
+    if (!canActivateCtoxInstance(instance)) return false;
     // Re-selecting the already-connected instance must not tear the guest
     // down; the row click then only surfaces the instance and its apps.
-    if (selectedIdRef.current === instance.id) return;
-    void requestActiveWorkjetSelection(instance.id).then((accepted) => {
-      if (!accepted || !mountedRef.current) return;
+    if (selectedIdRef.current === instance.id) return true;
+    try {
+      const accepted = await requestActiveWorkjetSelection(instance.id);
+      if (!accepted || !mountedRef.current) return false;
       setActivationKey((current) => current + 1);
       setConnection("connecting");
-    });
+      return true;
+    } catch {
+      return false;
+    }
   }, []);
   const isSelected = useCallback((instanceId: string) => selectedIdRef.current === instanceId, []);
 

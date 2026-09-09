@@ -72,6 +72,7 @@ function InstanceSetupContent({
     initialIntent === "qr" || initialIntent === "manual" ? initialIntent : "link",
   );
   const [scannedInvite, setScannedInvite] = useState("");
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const [scanRevision, setScanRevision] = useState(0);
   const instances =
     mode.discovery !== "loading" && mode.discovery._tag === "ready" ? mode.discovery.instances : [];
@@ -96,17 +97,30 @@ function InstanceSetupContent({
             key={instance.id}
             variant="outline"
             className="w-full justify-start"
-            disabled={!canActivateCtoxInstance(instance)}
-            onClick={() => {
-              mode.select(instance);
-              closeInstanceSetup();
+            disabled={busy || !canActivateCtoxInstance(instance)}
+            onClick={async () => {
+              onBusyChange(true);
+              setSelectionError(null);
+              try {
+                if (await mode.select(instance)) closeInstanceSetup();
+                else setSelectionError("Instanzwechsel nicht bestätigt. Bitte erneut versuchen.");
+              } catch {
+                setSelectionError("Die Instanz konnte nicht ausgewählt werden.");
+              } finally {
+                onBusyChange(false);
+              }
             }}
           >
             {ctoxInstanceDisplayTitle(instance)}
             {!canActivateCtoxInstance(instance) ? " · Nicht erreichbar" : ""}
           </Button>
         ))}
-      <Button variant="outline" disabled={mode.refreshing} onClick={mode.refresh}>
+      {selectionError && (
+        <p role="alert" className="text-sm text-destructive">
+          {selectionError}
+        </p>
+      )}
+      <Button variant="outline" disabled={busy || mode.refreshing} onClick={mode.refresh}>
         {mode.refreshing ? "Wird geprüft…" : "Instanzen aktualisieren"}
       </Button>
     </div>

@@ -95,6 +95,18 @@ export function ActiveCtoxInstanceSelector() {
       setReturning(false);
     }
   };
+  const chooseInstance = async (instance: CtoxManagedInstance) => {
+    setReturning(true);
+    setError(null);
+    try {
+      if (await select(instance)) close();
+      else setError("Instanzwechsel nicht bestätigt. Bitte erneut versuchen.");
+    } catch {
+      setError("Die Instanz konnte nicht ausgewählt werden.");
+    } finally {
+      setReturning(false);
+    }
+  };
   return (
     <div
       className="relative order-[-1] min-w-0 shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
@@ -186,10 +198,7 @@ export function ActiveCtoxInstanceSelector() {
                   disabled={!canActivateCtoxInstance(instance) || returning}
                   aria-current={activeId === instance.id ? "page" : undefined}
                   className="flex min-h-14 w-full items-center gap-3 rounded-md px-2 py-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
-                  onClick={() => {
-                    select(instance);
-                    close();
-                  }}
+                  onClick={() => void chooseInstance(instance)}
                 >
                   <span
                     aria-hidden

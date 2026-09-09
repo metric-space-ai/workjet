@@ -3,6 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
+import { decodeCtoxNativeTaskStatus } from "./CtoxNativeTaskStatus.ts";
 import {
   CtoxNativeRequestError,
   type CtoxNativeRequestIdentity,
@@ -72,5 +73,31 @@ export function makeCtoxNativeTaskClient(dependencies: {
     );
   });
 
-  return { submit, submitTurn, recover: dependencies.requests.get };
+  const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (
+    identity: CtoxNativeRequestIdentity,
+  ) {
+    const reference = yield* dependencies.requests.get(identity);
+    if (!reference.commandId)
+      return {
+        reference,
+        state: "unresolved" as const,
+        status: null,
+        note: null,
+        result: null,
+      };
+    const target = yield* dependencies.connections.resolveReadyTarget(
+      identity.connectionId,
+      identity.instanceId,
+    );
+    const name = "business_os.get_command_status";
+    yield* dependencies.transport.probe(target, [name]);
+    const response = yield* dependencies.transport.callTool(target, name, {
+      command_id: reference.commandId,
+    });
+    if (response.isError || response.structuredContent === undefined)
+      return yield* new CtoxNativeRequestError({ reason: "ctox-operation-rejected" });
+    return yield* decodeCtoxNativeTaskStatus(reference, response.structuredContent);
+  });
+
+  return { submit, submitTurn, readStatus, recover: dependencies.requests.get };
 }

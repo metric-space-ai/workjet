@@ -123,7 +123,15 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
         }
         if (Option.isNone(registry)) return failureResult("connection-unavailable");
         let result: unknown;
-        if (
+        if (input.request.operation === "get_delegation_status") {
+          if (Option.isNone(nativeRequests))
+            return failureResult("native-request-store-unavailable");
+          result = yield* makeCtoxNativeTaskClient({
+            connections: registry.value,
+            requests: nativeRequests.value,
+            transport,
+          }).readStatus(identity(input.request.idempotency_key));
+        } else if (
           input.request.operation === "create_app" ||
           input.request.operation === "modify_app" ||
           input.request.operation === "delegate_task"

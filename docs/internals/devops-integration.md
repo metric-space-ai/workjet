@@ -174,6 +174,18 @@ with a fake native peer that accepts a request before losing its response.
 Existing registered-tool tests exercise the shared dispatch path. These tests
 remain subject to CI; syntax/formatting alone is not behavioral verification.
 
+`get_delegation_status` observes the native command belonging to a stored
+request key. It reads the real `BusinessOsMcpRecordResponse` shape and validates
+its collection, command id, task id and any module identity before exposing a
+normalized status. The remote queue's task_status takes precedence over a
+compatibility command status. Blocked/dependency/retry waits stay waiting;
+unknown future states never imply completion. An unresolved local request with
+no command receipt returns `unresolved` without contacting or resubmitting to
+CTOX. Remote progress is not written into the local identity ledger. The native
+adapter can use the same client method for observation without creating a
+second status source. Tests exercise this through the registered MCP tool and
+reject mismatched or incomplete identifiers.
+
 Workjet negotiates the selected native tool's retry-key schema before dispatch.
 CTOX PR #84 supplies the corresponding actor/workspace-scoped atomic claim.
 Local claims cannot change intent or instance, and stored native task references

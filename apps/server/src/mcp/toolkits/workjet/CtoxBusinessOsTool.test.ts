@@ -105,7 +105,23 @@ function fixture(retrySupport = false, loseDelegationResponse = false) {
                         task_id: "task-native-a",
                         status: "accepted",
                       }
-                    : { ok: true, module_id: "app-a" },
+                    : body.params?.name === "business_os.get_command_status"
+                      ? {
+                          ok: true,
+                          record: {
+                            id: "cmd-native-a",
+                            collection: "business_commands",
+                            status: "failed",
+                            data: {
+                              command_id: "cmd-native-a",
+                              task_id: "task-native-a",
+                              module: "app-a",
+                              status: "failed",
+                              status_note: "Native validation failed",
+                            },
+                          },
+                        }
+                      : { ok: true, module_id: "app-a" },
               };
       return HttpClientResponse.fromWeb(request, Response.json({ jsonrpc: "2.0", result }));
     }),
@@ -266,6 +282,16 @@ it.effect(
         instanceId: "instance-a",
         result: { request, commandId: null, taskId: null, receivedAt: null },
       });
+      const status = yield* server.callTool({
+        name: CTOX_BUSINESS_OS_TOOL_NAME,
+        arguments: {
+          request: { operation: "get_delegation_status", idempotency_key: request.idempotency_key },
+        },
+      });
+      expect(status.isError).toBe(false);
+      expect(status.structuredContent).toMatchObject({
+        result: { state: "unresolved", status: null, reference: { commandId: null, taskId: null } },
+      });
       expect(test.calls).toHaveLength(callsBeforeRead);
     }).pipe(
       Effect.provideService(Invocation.McpInvocationContext, scope),
@@ -274,6 +300,52 @@ it.effect(
     );
   },
 );
+
+it.effect("observes the bound native command without resubmitting work", () => {
+  const test = fixture(true);
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const created = yield* server.callTool({
+      name: CTOX_BUSINESS_OS_TOOL_NAME,
+      arguments: {
+        request: {
+          operation: "delegate_task",
+          module_id: "app-a",
+          title: "Review",
+          objective: "Review inventory",
+          idempotency_key: "observe-request",
+        },
+      },
+    });
+    expect(created.isError).toBe(false);
+    const observed = yield* server.callTool({
+      name: CTOX_BUSINESS_OS_TOOL_NAME,
+      arguments: {
+        request: { operation: "get_delegation_status", idempotency_key: "observe-request" },
+      },
+    });
+    expect(observed.isError).toBe(false);
+    expect(observed.structuredContent).toMatchObject({
+      instanceId: "instance-a",
+      result: {
+        state: "failed",
+        status: "failed",
+        note: "Native validation failed",
+        reference: { commandId: "cmd-native-a", taskId: "task-native-a" },
+      },
+    });
+    expect(
+      test.calls
+        .filter(({ body }) => body.method === "tools/call")
+        .map(({ body }) => body.params?.name),
+    ).toEqual(["business_os.execute_action", "business_os.get_command_status"]);
+    expect(test.calls.at(-1)?.body.params?.arguments).toEqual({ command_id: "cmd-native-a" });
+  }).pipe(
+    Effect.provideService(Invocation.McpInvocationContext, scope),
+    Effect.provideService(McpSchema.McpServerClient, client),
+    Effect.provide(test.layer),
+  );
+});
 
 it.effect("does not contact CTOX after a revoked grant or an instance mismatch", () => {
   const test = fixture();

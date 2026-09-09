@@ -1335,6 +1335,7 @@ type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
   removingEnvironmentId: EnvironmentId | null;
   onConnect: (environmentId: EnvironmentId) => void;
+  onDisconnect: (environmentId: EnvironmentId) => void;
   onRemove: (environmentId: EnvironmentId) => void;
 };
 
@@ -1342,6 +1343,7 @@ function SavedBackendListRow({
   environment,
   removingEnvironmentId,
   onConnect,
+  onDisconnect,
   onRemove,
 }: SavedBackendListRowProps) {
   const environmentId = environment.environmentId;
@@ -1501,7 +1503,7 @@ function SavedBackendListRow({
                 variant="outline"
                 disabled={isConnecting || removingEnvironmentId === environmentId}
                 onClick={() =>
-                  void (isConnected ? onRemove(environmentId) : onConnect(environmentId))
+                  void (isConnected ? onDisconnect(environmentId) : onConnect(environmentId))
                 }
               >
                 {isConnected
@@ -1751,6 +1753,9 @@ export function RemoteEnvironmentsSection({
     reportFailure: false,
   });
   const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
+  const disconnectEnvironment = useAtomCommand(environmentCatalog.disconnect, {
+    reportFailure: false,
+  });
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const savedEnvironments = useMemo(
     () =>
@@ -1979,6 +1984,27 @@ export function RemoteEnvironmentsSection({
       }
     },
     [removeEnvironment],
+  );
+  const handleDisconnectSavedBackend = useCallback(
+    async (environmentId: EnvironmentId) => {
+      setRemovingSavedEnvironmentId(environmentId);
+      setSavedBackendError(null);
+      const result = await disconnectEnvironment(environmentId);
+      setRemovingSavedEnvironmentId(null);
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        const message = error instanceof Error ? error.message : "Failed to disconnect backend.";
+        setSavedBackendError(message);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not disconnect backend",
+            description: message,
+          }),
+        );
+      }
+    },
+    [disconnectEnvironment],
   );
   const handleConnectSshHost = useCallback(
     async (target: DesktopSshEnvironmentTarget, label?: string) => {
@@ -2292,6 +2318,7 @@ export function RemoteEnvironmentsSection({
           environment={environment}
           removingEnvironmentId={removingSavedEnvironmentId}
           onConnect={handleConnectSavedBackend}
+          onDisconnect={handleDisconnectSavedBackend}
           onRemove={handleRemoveSavedBackend}
         />
       ))}

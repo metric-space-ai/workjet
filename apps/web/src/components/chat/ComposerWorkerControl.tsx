@@ -139,7 +139,10 @@ export function WorkerChoiceList({
             className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
             onClick={() => onEditWorker(worker.id)}
           >
-            <ChevronRightIcon aria-hidden="true" className="size-4" />
+            <ChevronRightIcon
+              aria-hidden="true"
+              className={cn("size-4", editingWorkerId === worker.id && "rotate-180")}
+            />
           </button>
         </div>
       ))}
@@ -228,6 +231,10 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
           onEditWorker={(workerId) => {
             if (props.environmentId === undefined) {
               props.onOpenWorkjetSettings();
+              return;
+            }
+            if (workerId !== null && editing?.workerId === workerId) {
+              goBack();
               return;
             }
             lastEditButton.current =

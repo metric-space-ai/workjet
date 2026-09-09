@@ -2,7 +2,7 @@
 
 Open the Worker control in the composer to choose a saved worker or Manual. Each worker shows its harness, model and reasoning level before you choose it.
 
-Use the arrow beside a worker to edit its profile. The editor opens beside the list when there is enough room; in a narrow window it replaces the list temporarily. Back returns to the choices. Editing a profile does not select that worker or send a message.
+Use the arrow beside a worker to edit its profile. The editor opens beside the list when there is enough room; in a narrow window it replaces the list temporarily. Click the same worker's arrow again to collapse its editor, or use Back to return to the choices. Collapsing keeps your unfinished draft; reopen the arrow to continue editing. Editing a profile does not select that worker or send a message.
 
 Name and task come first. Personality settings are available in a separate disclosure. The profile still contains its computer, harness, model, reasoning and tools.
 

@@ -550,6 +550,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     ),
   ),
   McpHttpServer.layer.pipe(
+    Layer.provide(DecisionHubConnectionRegistryLive),
     Layer.provide(DecisionHubEscalationServiceLive),
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(WorkerDispatch.layer),

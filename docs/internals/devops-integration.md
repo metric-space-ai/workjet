@@ -80,11 +80,10 @@ probe their own required tools without falsely requiring Decision Hub support.
 Managed `/mcp/<instance-id>` endpoints are preserved instead of appending a
 second `/mcp`. Calls are never automatically retried.
 
-This is transport consolidation, not the completed CTOX capability. The
-connection registry, immutable thread/instance binding, typed app tools, menu
-activation and Crew context still need integration. The existing cross-mode
-client also has an outbound transport; its authority checks and typed rejection
-semantics must survive consolidation. No raw RPC entry point is exposed to a
+The typed Business OS capability uses this transport and the existing connection
+registry. Crew context is still pending. The existing cross-mode client also
+has an outbound transport; its authority checks and typed rejection semantics
+must survive consolidation. No raw RPC entry point is exposed to a
 harness by this change.
 
 Transport tests cover managed routing, peer/tool discovery, bounded responses,
@@ -108,3 +107,26 @@ authority verification and the external run contract remain required.
 
 Focused tests cover migration, credential preservation on rejection, reconnect,
 registry reconstruction, explicit target mismatch and competing registrations.
+
+## Business OS capability for external harnesses
+
+The shared catalog exposes `ctox-business-os` alongside the existing tools.
+Its typed `ctox_business_os` operation supports app/skill discovery, source
+reading/writing, validation and smoke/E2E checks, delegated app work, command/run
+status and deep links. Endpoint, token and actor overrides are not input fields.
+The existing connection RPC/store is reused; connection readiness checks the
+CTOX MCP surface while tool discovery checks each requested operation.
+
+The composer binds the connection and instance together. New selections follow
+the header instance; existing bindings remain visible when the global selection
+changes. The command decider retains the original binding even when tools are
+disabled and rejects retargeting. The provider start/recovery path validates
+reachability and instance identity, compiles the shared app instructions and
+issues the binding inside the server-side MCP credential scope. Each call
+rechecks its grant and resolves the pinned target without passing the CTOX token
+to the external harness. The production MCP layer explicitly receives the same
+connection registry as the provider and connection-management RPC surfaces.
+
+This source integration is not yet runtime-verified. Native harness dispatch,
+Crew/memory/learning, adapter lifecycle conformance and desktop/web acceptance
+remain open. Added tests drive the registered MCP tool through a fake daemon.

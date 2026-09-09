@@ -38,12 +38,10 @@ export const normalizeCtoxMcpEndpoint = (value: string) =>
         url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
       if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new Error();
       url.search = "";
-      url.pathname = url.pathname.replace(/\/+$/, "");
+      const pathname = url.pathname.replace(/\/+$/, "");
       // Managed routing is /mcp/<instance-id>. Appending /mcp would select a
       // different resource instead of the instance the user configured.
-      if (!/\/mcp(?:\/[^/]+)?$/.test(url.pathname)) {
-        url.pathname = `${url.pathname}/mcp`;
-      }
+      url.pathname = /\/mcp(?:\/[^/]+)?$/.test(pathname) ? pathname : `${pathname}/mcp`;
       return url.toString();
     },
     catch: () => failure("invalid-endpoint"),
@@ -72,6 +70,7 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
     target: CtoxMcpTarget,
     method: "initialize" | "tools/list" | "tools/call",
     params?: unknown,
+    timeout = REQUEST_TIMEOUT,
   ): Effect.Effect<unknown, CtoxMcpTransportError> =>
     Effect.gen(function* () {
       const request = HttpClientRequest.post(target.endpoint).pipe(
@@ -101,7 +100,7 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
       return envelope.value.result;
     }).pipe(
       Effect.scoped,
-      Effect.timeout(REQUEST_TIMEOUT),
+      Effect.timeout(timeout),
       Effect.catchTags({
         TimeoutError: () => Effect.fail(failure("connection-unavailable")),
         HttpClientError: () => Effect.fail(failure("connection-unavailable")),
@@ -130,8 +129,9 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
     target: CtoxMcpTarget,
     name: string,
     arguments_: Readonly<Record<string, unknown>>,
+    timeout = REQUEST_TIMEOUT,
   ) =>
-    call(target, "tools/call", { name, arguments: arguments_ }).pipe(
+    call(target, "tools/call", { name, arguments: arguments_ }, timeout).pipe(
       Effect.flatMap((result) =>
         Schema.decodeUnknownEffect(CtoxMcpToolResult)(result).pipe(
           Effect.mapError(() => failure("remote-response-invalid")),

@@ -146,7 +146,8 @@ const make = Effect.gen(function* () {
         Effect.mapError((error) => failure(error.reason)),
       );
       const target = { endpoint, token: input.token };
-      yield* client.probe(target);
+      // Connection readiness is shared; individual capabilities probe their required tools.
+      yield* client.probe(target, []);
       // Claim before writing credentials. A conflicting provision must not
       // replace the secret of a connection referenced by existing threads.
       yield* bindCtoxConnectionInstance(input.connectionId, input.instanceId).pipe(
@@ -196,7 +197,7 @@ const make = Effect.gen(function* () {
   const probe: DecisionHubConnectionRegistryShape["probe"] = (connectionId) =>
     Effect.gen(function* () {
       const target = yield* readTarget(connectionId);
-      yield* client.probe(target).pipe(
+      yield* client.probe(target, []).pipe(
         Effect.matchEffect({
           onSuccess: () => setStatus(connectionId, "ready", null),
           onFailure: (error) => {

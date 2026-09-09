@@ -14,3 +14,16 @@ Open **Settings → Business OS → Instanzverbindungen verwalten** to sign in,
 refresh connections, add a connection or remove one. These controls are shared
 by both views. The Settings button stays available in the header when the
 sidebar is hidden.
+
+To work on Business OS apps with an external coding harness, enable **CTOX
+Business OS** in the conversation's **Tools** menu and choose its MCP
+connection. Available connections must belong to the computer running that
+harness. With an instance selected in the header, new selections are limited
+to that instance.
+
+The conversation keeps its chosen connection. Turning the tool off removes
+access without changing that identity; use a new conversation for another
+instance. The coding agent can inspect and edit app sources, read the instance's
+development rules, validate changes or delegate app work to CTOX. Delegated
+work has its own command/run status and is not complete merely because the
+request was accepted.

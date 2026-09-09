@@ -141,6 +141,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         ...(request.threadCapabilityContext.decisionHubConnectionId !== undefined
           ? { decisionHubConnectionId: request.threadCapabilityContext.decisionHubConnectionId }
           : {}),
+        ...(request.threadCapabilityContext.ctoxBusinessOsBinding !== undefined
+          ? { ctoxBusinessOsBinding: request.threadCapabilityContext.ctoxBusinessOsBinding }
+          : {}),
         ...(cwd ? { cwd } : {}),
         issuedAt,
       };

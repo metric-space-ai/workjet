@@ -123,7 +123,7 @@ describe("capability availability from one catalog", () => {
           registry,
         }),
       ),
-    ).toEqual(["greppy", "web-search", "web-stack-browser", "decision-hub"]);
+    ).toEqual(["greppy", "web-search", "web-stack-browser", "decision-hub", "ctox-business-os"]);
   });
 
   it("reports an incompatible pin instead of silently resolving another version", () => {

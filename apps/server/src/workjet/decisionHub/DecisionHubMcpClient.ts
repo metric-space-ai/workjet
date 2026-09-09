@@ -62,6 +62,7 @@ export type DecisionHubMcpTarget = CtoxMcpTarget;
 export interface DecisionHubMcpClientShape {
   readonly probe: (
     target: DecisionHubMcpTarget,
+    requiredTools?: ReadonlyArray<string>,
   ) => Effect.Effect<void, WorkjetDecisionHubConnectionError>;
   readonly requestDecision: (
     target: DecisionHubMcpTarget,
@@ -80,10 +81,11 @@ export class DecisionHubMcpClient extends Context.Service<
 
 const make = Effect.gen(function* () {
   const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
-  const probe: DecisionHubMcpClientShape["probe"] = (target) =>
-    transport
-      .probe(target, DECISION_HUB_REMOTE_TOOLS)
-      .pipe(Effect.mapError((error) => failure(error.reason)));
+  const probe: DecisionHubMcpClientShape["probe"] = (
+    target,
+    requiredTools = DECISION_HUB_REMOTE_TOOLS,
+  ) =>
+    transport.probe(target, requiredTools).pipe(Effect.mapError((error) => failure(error.reason)));
 
   const callTool = (
     target: DecisionHubMcpTarget,

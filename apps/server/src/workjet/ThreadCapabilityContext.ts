@@ -18,6 +18,10 @@ export interface ThreadCapabilityContext {
   readonly promptCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
   readonly compiledManagedPrompt: string;
   readonly decisionHubConnectionId?: WorkjetConnectionId;
+  readonly ctoxBusinessOsBinding?: {
+    readonly connectionId: WorkjetConnectionId;
+    readonly instanceId: string;
+  };
 }
 
 export function resolveThreadCapabilityContext(
@@ -26,6 +30,7 @@ export function resolveThreadCapabilityContext(
   connections?: {
     readonly knownConnectionIds: ReadonlySet<string>;
     readonly reachableConnectionIds: ReadonlySet<string>;
+    readonly connectionInstances?: ReadonlyMap<string, string>;
   },
   globalManagedInstructions = "",
 ): ThreadCapabilityContext {
@@ -45,6 +50,10 @@ export function resolveThreadCapabilityContext(
     "decision-hub",
   );
 
+  const ctoxBinding = bindingForCapability(
+    activation.config.capabilityBindings,
+    "ctox-business-os",
+  );
   return Object.freeze({
     workjetRole: workjetConfig.role,
     mcpCapabilityIds: Object.freeze(mcpManifests.map((manifest) => manifest.id)),
@@ -61,6 +70,14 @@ export function resolveThreadCapabilityContext(
     }),
     ...(enabled.includes("decision-hub") && decisionHubBinding !== undefined
       ? { decisionHubConnectionId: decisionHubBinding.target.connectionId }
+      : {}),
+    ...(enabled.includes("ctox-business-os") && ctoxBinding?.target.instanceId
+      ? {
+          ctoxBusinessOsBinding: Object.freeze({
+            connectionId: ctoxBinding.target.connectionId,
+            instanceId: ctoxBinding.target.instanceId,
+          }),
+        }
       : {}),
   });
 }

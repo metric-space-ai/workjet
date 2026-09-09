@@ -1,0 +1,118 @@
+import { WorkjetCtoxBusinessOsInput, WorkjetCtoxBusinessOsResult } from "@workjet/contracts";
+import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { McpSchema, McpServer, Tool } from "effect/unstable/ai";
+import { HttpClient } from "effect/unstable/http";
+
+import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import { DecisionHubConnectionRegistry } from "../../../workjet/decisionHub/DecisionHubConnectionRegistry.ts";
+import { makeCtoxMcpTransport } from "../../../workjet/ctox/CtoxMcpTransport.ts";
+
+export const CTOX_BUSINESS_OS_TOOL_NAME = "ctox_business_os";
+export const isCtoxBusinessOsToolVisible = (scope: McpInvocationContext.McpInvocationScope) =>
+  McpInvocationContext.hasActiveWorkjetMcpCapability(scope, "ctox-business-os") &&
+  McpInvocationContext.isWorkjetMember(scope) &&
+  scope.ctoxBusinessOsBinding !== undefined;
+
+const enabledWhen = () => {
+  const fiber = Fiber.getCurrent();
+  if (!fiber) return false;
+  const scope = Context.getOption(fiber.context, McpInvocationContext.McpInvocationContext);
+  return Option.isSome(scope) && isCtoxBusinessOsToolVisible(scope.value);
+};
+
+export const CtoxBusinessOsTool = Tool.make(CTOX_BUSINESS_OS_TOOL_NAME, {
+  description:
+    "Use the Business OS instance bound to this thread. Supply request.operation and its typed fields to inspect/edit app source, read required development rules, validate apps, delegate native CTOX app work or follow its result. No endpoint, credentials or actor override is accepted.",
+  parameters: WorkjetCtoxBusinessOsInput,
+  success: WorkjetCtoxBusinessOsResult,
+  dependencies: [McpInvocationContext.McpInvocationContext],
+})
+  .annotate(Tool.Title, "CTOX Business OS")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, enabledWhen);
+
+const failureResult = (reason: string) =>
+  new McpSchema.CallToolResult({
+    isError: true,
+    structuredContent: { error: { _tag: "CtoxBusinessOsError", reason } },
+    content: [{ type: "text", text: `CTOX Business OS: ${reason}` }],
+  });
+const decodeInput = Schema.decodeUnknownEffect(WorkjetCtoxBusinessOsInput, {
+  onExcessProperty: "error",
+});
+
+const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
+  const server = yield* McpServer.McpServer;
+  const registry = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
+  const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
+  const tool = CtoxBusinessOsTool;
+  yield* server.addTool({
+    tool: new McpSchema.Tool({
+      name: tool.name,
+      description: Tool.getDescription(tool),
+      inputSchema: Tool.getJsonSchema(tool),
+      outputSchema: Tool.getJsonSchemaFromSchema(WorkjetCtoxBusinessOsResult),
+      annotations: {
+        title: "CTOX Business OS",
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    }),
+    annotations: tool.annotations,
+    handle: (payload) =>
+      Effect.gen(function* () {
+        const scope =
+          yield* McpInvocationContext.requireActiveWorkjetMcpCapability("ctox-business-os");
+        const binding = scope.ctoxBusinessOsBinding;
+        if (!binding || !isCtoxBusinessOsToolVisible(scope))
+          return failureResult("capability-not-granted");
+        if (Option.isNone(registry)) return failureResult("connection-unavailable");
+        const input = yield* decodeInput(payload).pipe(
+          Effect.mapError(
+            () => new McpSchema.InvalidParams({ message: "Invalid CTOX Business OS operation." }),
+          ),
+        );
+        const target = yield* registry.value.resolveReadyTarget(
+          binding.connectionId,
+          binding.instanceId,
+        );
+        const { operation, ...arguments_ } = input.request;
+        const name = `business_os.${operation}`;
+        yield* transport.probe(target, [name]);
+        const timeout =
+          operation === "validate_app" || operation === "smoke_app" || operation === "e2e_app"
+            ? Duration.seconds(310)
+            : Duration.seconds(10);
+        const result = yield* transport.callTool(target, name, arguments_, timeout);
+        if (result.isError || result.structuredContent === undefined)
+          return failureResult("ctox-operation-rejected");
+        const output = { instanceId: binding.instanceId, result: result.structuredContent };
+        return new McpSchema.CallToolResult({
+          isError: false,
+          structuredContent: output,
+          // @effect-diagnostics-next-line preferSchemaOverJson:off -- MCP text mirrors structured content.
+          content: [{ type: "text", text: JSON.stringify(output) }],
+        });
+      }).pipe(
+        Effect.catchTags({
+          WorkjetMcpCapabilityUnavailableError: () =>
+            Effect.succeed(failureResult("capability-not-granted")),
+          WorkjetDecisionHubConnectionError: (error) => Effect.succeed(failureResult(error.reason)),
+          CtoxMcpTransportError: (error) => Effect.succeed(failureResult(error.reason)),
+        }),
+      ),
+  });
+});
+
+export const CtoxBusinessOsToolkitRegistrationLive = Layer.effectDiscard(register());

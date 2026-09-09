@@ -25,6 +25,7 @@ import {
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import type { EnvironmentConnectionPresentation } from "@workjet/client-runtime/connection";
+import { useActiveWorkjetScope } from "../../activeWorkjetScope";
 import { serializeComposerFileLink } from "@workjet/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@workjet/shared/model";
 import {
@@ -1346,6 +1347,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     serverEnvironment.workjetDecisionHubConnections({ environmentId, input: {} }),
   );
   const decisionHubConnections = decisionHubConnectionsQuery.data?.connections ?? [];
+  const activeWorkjetScope = useActiveWorkjetScope();
   const effectiveCapabilityBindings = composerTargetIsThread
     ? (workjetCapabilityBindings ?? [])
     : draftWorkjetConfig.capabilityBindings;
@@ -1383,6 +1385,57 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setComposerDraftWorkjetConfig,
     ],
   );
+  const ctoxBinding = effectiveCapabilityBindings.find(
+    (binding) => binding.capabilityId === "ctox-business-os",
+  );
+  const ctoxBusinessOsConnections = decisionHubConnections.filter(
+    (connection) =>
+      connection.connectionId === ctoxBinding?.target.connectionId ||
+      activeWorkjetScope.selectedInstanceId === null ||
+      connection.instanceId === activeWorkjetScope.selectedInstanceId,
+  );
+  const ctoxBusinessOsConnectionLocked = composerTargetIsThread && ctoxBinding !== undefined;
+  const handleCtoxBusinessOsConnectionChange = (connectionId: string) => {
+    if (ctoxBusinessOsConnectionLocked) return;
+    const connection = ctoxBusinessOsConnections.find(
+      (candidate) => candidate.connectionId === connectionId && candidate.status === "ready",
+    );
+    if (!connection) return;
+    const capabilityBindings: WorkjetCapabilityBinding[] = [
+      ...effectiveCapabilityBindings.filter(
+        (binding) => binding.capabilityId !== "ctox-business-os",
+      ),
+      {
+        capabilityId: "ctox-business-os",
+        target: {
+          kind: "ctox-connection",
+          connectionId: connection.connectionId,
+          instanceId: connection.instanceId,
+        },
+      },
+    ];
+    if (composerTargetIsThread) onWorkjetConfigApply?.({ capabilityBindings });
+    else
+      setComposerDraftWorkjetConfig(composerDraftTarget, {
+        ...draftWorkjetConfig,
+        schemaVersion: 2,
+        capabilityBindings,
+      });
+  };
+  const selectedCtoxConnection = decisionHubConnections.find(
+    (connection) =>
+      connection.connectionId === ctoxBinding?.target.connectionId &&
+      connection.instanceId === ctoxBinding.target.instanceId,
+  );
+  const ctoxSendDisabledReason = !effectiveEnabledCapabilityIds?.includes("ctox-business-os")
+    ? null
+    : !ctoxBinding?.target.instanceId
+      ? "Choose a CTOX Business OS connection before sending"
+      : !selectedCtoxConnection
+        ? "The bound CTOX instance is not available on this computer"
+        : selectedCtoxConnection.status !== "ready"
+          ? `CTOX Business OS is ${selectedCtoxConnection.status}`
+          : null;
   const selectedDecisionHubConnection = decisionHubConnections.find(
     (connection) => connection.connectionId === decisionHubConnectionId,
   );
@@ -1395,7 +1448,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         : selectedDecisionHubConnection.status !== "ready"
           ? `Decision Hub is ${selectedDecisionHubConnection.status}${selectedDecisionHubConnection.reason ? `: ${selectedDecisionHubConnection.reason}` : ""}`
           : null;
-  const effectiveSendDisabledReason = sendDisabledReason ?? decisionHubSendDisabledReason;
+  const effectiveSendDisabledReason =
+    sendDisabledReason ?? decisionHubSendDisabledReason ?? ctoxSendDisabledReason;
   const isSendDisabled = effectiveSendDisabledReason !== null;
   // Live per-provider model discovery — the same source the settings pools
   // use. The catalog alone lists the accounts' route PATTERNS (grok-*), which
@@ -3850,6 +3904,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             decisionHubConnections={decisionHubConnections}
                             decisionHubConnectionId={decisionHubConnectionId}
                             onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                            ctoxBusinessOsConnections={ctoxBusinessOsConnections}
+                            ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
+                            ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
+                            onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                             workjetRole={workerModeActive ? null : effectiveWorkjetRole}
                             onWorkjetRoleChange={effectiveWorkjetRoleChange}
                           />
@@ -3936,6 +3994,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     decisionHubConnections={decisionHubConnections}
                     decisionHubConnectionId={decisionHubConnectionId}
                     onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                    ctoxBusinessOsConnections={ctoxBusinessOsConnections}
+                    ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
+                    ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
+                    onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                     onOpenWorkjetSettings={onOpenWorkjetSettings}
                   />
                 )}

@@ -36,6 +36,8 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as PubSub from "effect/PubSub";
+import * as Ref from "effect/Ref";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -106,6 +108,25 @@ const unsupportedTextGeneration = (operation: string) =>
         "CTOX uses the model configuration of its own instance and exposes no text-generation route to Workjet.",
     }),
   );
+
+/**
+ * Why this is exported: the rule "a thread may only run on the exact instance
+ * AND connection this provider instance is pinned to" is the one that keeps a
+ * global selection switch from retargeting live work. It is worth asserting
+ * directly rather than only through a fully assembled driver.
+ */
+export const nativeBindingMismatchDetail = (
+  scope: { readonly ctoxInstanceId: string; readonly connectionId: string },
+  pinned: { readonly ctoxInstanceId: string; readonly connectionId: string },
+): string | null => {
+  if (scope.ctoxInstanceId !== pinned.ctoxInstanceId) {
+    return `This thread belongs to CTOX instance ${scope.ctoxInstanceId}, not ${pinned.ctoxInstanceId}.`;
+  }
+  if (scope.connectionId !== pinned.connectionId) {
+    return `This thread is bound to connection ${scope.connectionId}; this provider instance sends over ${pinned.connectionId}.`;
+  }
+  return null;
+};
 
 export const CtoxDriver: ProviderDriver<CtoxProviderConfig, CtoxDriverEnv> = {
   driverKind: CTOX_DRIVER_KIND,
@@ -181,15 +202,20 @@ export const CtoxDriver: ProviderDriver<CtoxProviderConfig, CtoxDriverEnv> = {
             binding: facts.binding,
             nowMillis: yield* Clock.currentTimeMillis,
           });
-          // This provider instance is pinned to one CTOX instance. A thread
-          // bound to another one must not be executed here even though its own
-          // scope resolved: that is the "old thread bound to A, header shows B"
-          // case, and running it would silently retarget live work.
-          if (scope.ctoxInstanceId !== ctoxInstanceId) {
+          // BOTH ids have to match, not just the instance. The adapter submits
+          // over the connection this provider instance was built with, so
+          // checking only the instance would let a thread bound to connection A
+          // be acted on through connection B — and two connections to the same
+          // CTOX instance can carry different agent tokens and scopes. Checking
+          // the instance alone also misses nothing else: it is the connection
+          // that carries the credential.
+          if (scope.ctoxInstanceId !== ctoxInstanceId || scope.connectionId !== connectionId) {
             return yield* new ProviderAdapterRequestError({
               provider: CTOX_DRIVER_KIND,
               method: "resolveTaskScope",
-              detail: `This thread belongs to CTOX instance ${scope.ctoxInstanceId}, not ${ctoxInstanceId}.`,
+              detail:
+                nativeBindingMismatchDetail(scope, { ctoxInstanceId, connectionId }) ??
+                "This thread is not bound to this provider instance.",
             });
           }
           return scope.task;
@@ -217,10 +243,12 @@ export const CtoxDriver: ProviderDriver<CtoxProviderConfig, CtoxDriverEnv> = {
       const presentationName = displayName?.trim() || `CTOX · ${ctoxInstanceId}`;
       const buildSnapshot = Effect.gen(function* () {
         const checkedAt = DateTime.formatIso(yield* DateTime.now);
-        // Readiness is the connection registry's answer, never a restatement of
-        // stored config: a configured instance that is not reachable right now
-        // must not advertise itself as ready.
-        const ready = yield* connections.resolveReadyTarget(connectionId, ctoxInstanceId).pipe(
+        // `resolveReadyTarget` proves the STORED connection status is ready and
+        // that a usable target exists — it runs no network probe. Reporting that
+        // as confirmed live reachability would be exactly the fake-ready row
+        // this driver exists to avoid, so the message says what was actually
+        // checked; the native submission carries its own transport probe.
+        const bound = yield* connections.resolveReadyTarget(connectionId, ctoxInstanceId).pipe(
           Effect.as(true),
           Effect.orElseSucceed(() => false),
         );
@@ -235,11 +263,11 @@ export const CtoxDriver: ProviderDriver<CtoxProviderConfig, CtoxDriverEnv> = {
           probe: {
             installed: true,
             version: null,
-            status: ready ? "ready" : "error",
-            auth: { status: ready ? "authenticated" : "unknown" },
-            message: ready
-              ? `Managed by CTOX instance ${ctoxInstanceId}.`
-              : `CTOX instance ${ctoxInstanceId} is not reachable over its bound connection.`,
+            status: bound ? "ready" : "error",
+            auth: { status: bound ? "authenticated" : "unknown" },
+            message: bound
+              ? `Managed by CTOX instance ${ctoxInstanceId}; its connection is recorded as ready.`
+              : `The connection bound to CTOX instance ${ctoxInstanceId} is not recorded as ready.`,
           },
         });
         return {
@@ -248,7 +276,7 @@ export const CtoxDriver: ProviderDriver<CtoxProviderConfig, CtoxDriverEnv> = {
           driver: CTOX_DRIVER_KIND,
           ...(accentColor ? { accentColor } : {}),
           continuation: { groupKey: continuationIdentity.continuationKey },
-          ...(ready ? {} : { availability: "unavailable" as const }),
+          ...(bound ? {} : { availability: "unavailable" as const }),
         } satisfies ServerProvider;
       });
 
@@ -257,12 +285,20 @@ export const CtoxDriver: ProviderDriver<CtoxProviderConfig, CtoxDriverEnv> = {
         instanceId,
       });
 
-      const initial = yield* buildSnapshot;
+      // `Effect.succeed(initial)` froze the first reading forever: refresh
+      // produced a fresh object nothing could observe, and streamChanges never
+      // emitted. The Ref IS the current snapshot; the PubSub is how a consumer
+      // learns it changed.
+      const current = yield* Ref.make(yield* buildSnapshot);
+      const changes = yield* PubSub.unbounded<ServerProvider>();
       const snapshot = {
         maintenanceCapabilities: MAINTENANCE,
-        getSnapshot: Effect.succeed(initial),
-        refresh: buildSnapshot,
-        streamChanges: Stream.empty as Stream.Stream<ServerProvider>,
+        getSnapshot: Ref.get(current),
+        refresh: buildSnapshot.pipe(
+          Effect.tap((next) => Ref.set(current, next)),
+          Effect.tap((next) => PubSub.publish(changes, next)),
+        ),
+        streamChanges: Stream.fromPubSub(changes),
       };
 
       return {

@@ -1,4 +1,4 @@
-import { createContext, useContext, type ComponentProps } from "react";
+import { createContext, useContext, type ComponentPropsWithoutRef } from "react";
 import { createPortal } from "react-dom";
 
 // undefined means a standalone surface; null means the shared header is mounting.
@@ -9,7 +9,7 @@ export function useSharedWorkjetHeader(): boolean {
 }
 
 /** Keep surface-owned actions and state in their original React tree. */
-export function WorkjetHeaderContent({ children, ...props }: ComponentProps<"header">) {
+export function WorkjetHeaderContent({ children, ...props }: ComponentPropsWithoutRef<"header">) {
   const slot = useContext(WorkjetHeaderSlotContext);
   if (slot === undefined) return <header {...props}>{children}</header>;
   if (slot === null) return null;

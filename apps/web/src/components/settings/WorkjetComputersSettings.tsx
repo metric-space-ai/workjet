@@ -314,8 +314,12 @@ export function WorkjetComputersSettingsView({
                         size="sm"
                         variant="outline"
                         disabled={
-                          membership.phase !== "ready" || membership.pendingComputerId !== null
+                          membership.phase !== "ready" ||
+                          membership.pendingComputerId !== null ||
+                          (disconnected &&
+                            !membership.computers.some((entry) => entry.id === computer.id))
                         }
+                        data-workjet-action={`computer-${computer.id}-${membership.computers.some((entry) => entry.id === computer.id) ? "unassign" : "assign"}`}
                         aria-label={`${membership.computers.some((entry) => entry.id === computer.id) ? "Remove" : "Add"} ${computer.label} ${membership.computers.some((entry) => entry.id === computer.id) ? "from" : "to"} selected Business OS`}
                         onClick={() =>
                           onAssign(

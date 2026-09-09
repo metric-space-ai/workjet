@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
-import { CtoxWorkjetComputerControlInput, CtoxWorkjetComputerControlResponse } from "./ctox";
+import { CtoxWorkjetComputerControlInput, CtoxWorkjetComputerControlResponse } from "./ctox.ts";
 
 const decodeInput = Schema.decodeUnknownSync(CtoxWorkjetComputerControlInput, {
   onExcessProperty: "error",

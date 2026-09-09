@@ -18,6 +18,9 @@ import type { ProviderInstanceConfigMap } from "@workjet/contracts";
 
 import { mergeCtoxProviderInstances } from "./ProviderInstanceRegistryHydration.ts";
 
+/** The map is keyed by a branded id; index it the way the contract declares. */
+const at = (map: ProviderInstanceConfigMap, key: string) => (map as Record<string, unknown>)[key];
+
 const empty = {} as ProviderInstanceConfigMap;
 const BINDING_A = { connectionId: "connection-a", instanceId: "paired:manual_pairing:office-1" };
 const BINDING_B = { connectionId: "connection-b", instanceId: "paired:manual_pairing:office-1" };
@@ -30,7 +33,7 @@ it("derives one provider instance per bound connection, not per CTOX instance", 
   const merged = mergeCtoxProviderInstances(empty, [BINDING_A, BINDING_B]);
 
   assert.deepEqual(Object.keys(merged).sort(), ["ctox_connection-a", "ctox_connection-b"]);
-  assert.deepEqual(merged["ctox_connection-a"], {
+  assert.deepEqual(at(merged, "ctox_connection-a"), {
     driver: "ctox",
     config: { ctoxInstanceId: BINDING_A.instanceId, connectionId: BINDING_A.connectionId },
   });
@@ -42,7 +45,7 @@ it("keeps a bound instance regardless of whether its connection is reachable", (
   // closes removed scopes — so "offline" has to be a snapshot state, never a
   // missing key.
   const offlineAndOnlineAlike = mergeCtoxProviderInstances(empty, [BINDING_A]);
-  assert.property(offlineAndOnlineAlike, "ctox_connection-a");
+  assert.isDefined(at(offlineAndOnlineAlike, "ctox_connection-a"));
 });
 
 it("never overwrites an explicitly configured provider instance", () => {
@@ -57,7 +60,7 @@ it("never overwrites an explicitly configured provider instance", () => {
 
   // Same precedence the legacy `settings.providers` mirror already has: a
   // user-authored entry wins over a derived one.
-  assert.deepEqual(merged["ctox_connection-a"], explicit["ctox_connection-a"]);
+  assert.deepEqual(at(merged, "ctox_connection-a"), at(explicit, "ctox_connection-a"));
 });
 
 it("adds nothing when no connection was ever bound", () => {

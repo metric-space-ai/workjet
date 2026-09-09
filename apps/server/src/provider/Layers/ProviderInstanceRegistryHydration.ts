@@ -219,7 +219,15 @@ export const runSettingsWatcher = (options: {
           // would present every derived CTOX row as removed, and makeReconcile
           // closes the scopes of removed ids — a transient database error would
           // tear down live provider instances.
-          const bindings = yield* readCtoxBindings;
+          // Resolved optionally so this layer's requirement stays what it was.
+          // A build without SQL has no binding table and therefore no CTOX rows
+          // to derive; requiring it here would force the service into every site
+          // that constructs the registry, foreign tests included.
+          const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
+          if (Option.isNone(sql)) return yield* mutator.reconcile(configMap);
+          const bindings = yield* readCtoxBindings.pipe(
+            Effect.provideService(SqlClient.SqlClient, sql.value),
+          );
           yield* mutator.reconcile(mergeCtoxProviderInstances(configMap, bindings));
           // Reconcile alone refreshes nothing. An instance whose config is
           // unchanged keeps its existing object and scope
@@ -295,7 +303,7 @@ const SettingsWatcherLive = Layer.effectDiscard(runSettingsWatcher({}));
 export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
   ProviderInstanceRegistry,
   never,
-  BuiltInDriversEnv | ServerSettingsService | SqlClient.SqlClient
+  BuiltInDriversEnv | ServerSettingsService
 > = Layer.unwrap(
   Effect.gen(function* () {
     const serverSettings = yield* ServerSettingsService;
@@ -314,8 +322,4 @@ export const ProviderInstanceRegistryHydrationLive: Layer.Layer<
 
     return SettingsWatcherLive.pipe(Layer.provideMerge(mutableLayer));
   }),
-) as Layer.Layer<
-  ProviderInstanceRegistry,
-  never,
-  BuiltInDriversEnv | ServerSettingsService | SqlClient.SqlClient
->;
+) as Layer.Layer<ProviderInstanceRegistry, never, BuiltInDriversEnv | ServerSettingsService>;

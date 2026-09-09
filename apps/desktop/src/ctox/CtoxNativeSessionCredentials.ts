@@ -67,6 +67,10 @@ export function createCtoxNativeCredentialLease(input: {
   unregister = input.account.registerInvalidator(close);
   return {
     close,
+    assertCurrent: (sessionEpoch: number) => {
+      if (sessionEpoch !== input.sessionEpoch) throw new CtoxNativeCredentialsError();
+      check();
+    },
     provide: (nonce: string | undefined): Promise<CtoxNativeCredentials> => {
       if (
         pending.size >= 2 ||
@@ -155,7 +159,10 @@ export function bindCtoxNativeCredentialCallback(
         request.sessionEpoch !== bound.sessionEpoch
       )
         throw new CtoxNativeCredentialsError();
+      lease.assertCurrent(bound.sessionEpoch);
       const credentials = await lease.provide(request.nonce ?? undefined);
+      // Await introduces another turn: recheck immediately before exposing the token.
+      lease.assertCurrent(bound.sessionEpoch);
       return {
         version: 1,
         requestId: request.requestId,

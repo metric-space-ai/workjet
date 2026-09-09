@@ -49,6 +49,70 @@ const fixture = Effect.gen(function* () {
 });
 
 describe("native credential lifetime", () => {
+  it.effect("does not expose a token retired between key completion and IPC reply", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const guarded = {
+        ...f.lease,
+        provide: (challenge: string | undefined) =>
+          f.lease.provide(challenge).then((credentials) => {
+            f.retire();
+            return credentials;
+          }),
+      };
+      const reply = bindCtoxNativeCredentialCallback(guarded, {
+        targetId: "saved-target",
+        connectionId: "connection",
+        sessionEpoch: f.account.sessionEpoch(),
+      });
+      yield* Effect.promise(async () => {
+        try {
+          await expect(
+            reply({
+              version: 1,
+              requestId: "request",
+              targetId: "saved-target",
+              connectionId: "connection",
+              sessionEpoch: f.account.sessionEpoch(),
+              nonce,
+            }),
+          ).rejects.toThrow("no longer available");
+          expect(f.reads()).toBe(1);
+        } finally {
+          await f.lease.close();
+        }
+      });
+    }),
+  );
+
+  it.effect("rejects a binding whose epoch differs from its credential lease", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const reply = bindCtoxNativeCredentialCallback(f.lease, {
+        targetId: "saved-target",
+        connectionId: "connection",
+        sessionEpoch: 99,
+      });
+      yield* Effect.promise(async () => {
+        try {
+          await expect(
+            reply({
+              version: 1,
+              requestId: "request",
+              targetId: "saved-target",
+              connectionId: "connection",
+              sessionEpoch: 99,
+              nonce,
+            }),
+          ).rejects.toThrow("no longer available");
+          expect(f.reads()).toBe(0);
+        } finally {
+          await f.lease.close();
+        }
+      });
+    }),
+  );
+
   it.effect("binds private IPC challenges to the captured target, connection and epoch", () =>
     Effect.gen(function* () {
       const f = yield* fixture;

@@ -5,7 +5,14 @@ import type {
   WorkjetHarnessAvailabilitySnapshot,
 } from "@workjet/contracts";
 import { CheckIcon, PencilIcon, PlusIcon } from "lucide-react";
-import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useActiveWorkjetScope } from "../../activeWorkjetScope";
 import {
   workjetComputerMembership,
@@ -19,7 +26,7 @@ import { serverEnvironment } from "../../state/server";
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
-import { RemoteEnvironmentsSection } from "./ConnectionsSettings";
+import { useComputerConnections } from "./ConnectionsSettings";
 import {
   type WorkjetEnvironmentTargetOption,
   WorkjetComputerEditor,
@@ -90,15 +97,34 @@ export function removeComputer(
   };
 }
 
-/**
- * Computers as a TOP-LEVEL settings page, as the operator specified twice:
- * machines are not a detail of worker configuration — a worker references a
- * computer, so the computer has to exist first and deserves its own place
- * beside Models and Harnesses. The page owns the whole subject: the Workjet
- * computer catalog on top, and the remote environments those computers
- * reference right below it. The legacy Connections route redirects here; its
- * implementation remains an internal source for environment controls.
- */
+/** Saved connections and configured computers share one catalog in the UI. */
+export function includeSavedComputers(
+  configuration: WorkjetConfiguration,
+  targets: ReadonlyArray<WorkjetEnvironmentTargetOption>,
+  primaryEnvironmentId: EnvironmentId | null,
+): WorkjetConfiguration {
+  const missing = targets.filter(
+    (target) =>
+      target.environmentId !== primaryEnvironmentId &&
+      !configuration.computers.some((computer) => computer.environmentId === target.environmentId),
+  );
+  if (missing.length === 0) return configuration;
+  return {
+    ...configuration,
+    computers: [
+      ...configuration.computers,
+      ...missing.map((target) =>
+        saveWorkjetComputerDraft(
+          createWorkjetComputerDraft({
+            environments: [target],
+            id: `connection-${target.environmentId}`,
+          }),
+        ),
+      ),
+    ],
+  };
+}
+
 export function WorkjetComputersSettingsView({
   configuration,
   environments,
@@ -109,6 +135,10 @@ export function WorkjetComputersSettingsView({
   onChange,
   membership,
   onAssign,
+  onAdd,
+  onRemove,
+  renderConnection,
+  connectedEnvironmentIds,
 }: {
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
@@ -125,21 +155,12 @@ export function WorkjetComputersSettingsView({
   readonly onChange: (configuration: WorkjetConfiguration) => void;
   readonly membership?: ComputerMembershipSnapshot | undefined;
   readonly onAssign?: ((computer: WorkjetComputer, assigned: boolean) => void) | undefined;
+  readonly onAdd?: () => void;
+  readonly onRemove?: (computer: WorkjetComputer) => void;
+  readonly renderConnection?: (environmentId: EnvironmentId) => ReactNode;
+  readonly connectedEnvironmentIds?: ReadonlyArray<EnvironmentId>;
 }) {
   const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
-  const [addingComputer, setAddingComputer] = useState(() => {
-    // Set by the composer's "+ Add computer…" entry: arriving here should
-    // open the create editor, not just the list (Befund F8).
-    try {
-      if (window.sessionStorage.getItem("workjet-computer-create") !== null) {
-        window.sessionStorage.removeItem("workjet-computer-create");
-        return true;
-      }
-    } catch {
-      // Blocked storage: plain list.
-    }
-    return false;
-  });
   const editingComputer =
     configuration.computers.find((computer) => computer.id === editingComputerId) ?? null;
   const computerEditor = (
@@ -158,7 +179,6 @@ export function WorkjetComputersSettingsView({
                 : null
         }
         onCancel={() => {
-          setAddingComputer(false);
           setEditingComputerId(null);
         }}
         onSave={(computer: WorkjetComputer) => {
@@ -171,7 +191,6 @@ export function WorkjetComputersSettingsView({
               environmentId,
             ),
           );
-          setAddingComputer(false);
           setEditingComputerId(null);
           toastManager.add({
             type: "success",
@@ -199,30 +218,22 @@ export function WorkjetComputersSettingsView({
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => {
-            setEditingComputerId(null);
-            setAddingComputer(true);
-          }}
-          disabled={!environmentsReady || environments.length === 0}
+          onClick={onAdd}
+          disabled={onAdd === undefined}
         >
           <PlusIcon className="size-3.5" />
-          Add existing connection
+          Add computer
         </Button>
       }
     >
       <SettingsRow
-        title={environmentsReady ? "Computer targets" : "Loading computer targets"}
+        title={environmentsReady ? "Your computers" : "Loading computers…"}
         description="Select the computer for your next session, or edit its name and coding tools."
       />
-      {/* The editor renders where the user is looking: adding — right here
-          under the header button; editing — directly below the edited row
-          (mounted at the page bottom it sat below the fold and the pencil
-          looked dead). */}
-      {addingComputer ? computerEditor : null}
       {configuration.computers.length === 0 ? (
         <SettingsRow
           title="No computers yet"
-          description="Use this computer or connect another one with the setup buttons above."
+          description="Add this computer, an SSH host, or a computer on your Tailscale network."
         />
       ) : null}
       <div role="radiogroup" aria-label="Current computer" className="space-y-1">
@@ -233,7 +244,9 @@ export function WorkjetComputersSettingsView({
           const disconnected =
             environmentsReady &&
             computer.environmentId !== environmentId &&
-            !environments.some((entry) => entry.environmentId === computer.environmentId);
+            !(connectedEnvironmentIds ?? environments.map((entry) => entry.environmentId)).includes(
+              computer.environmentId,
+            );
           const computerInspection = disconnected
             ? null
             : harnessInspections !== undefined
@@ -285,7 +298,6 @@ export function WorkjetComputersSettingsView({
                       variant="ghost"
                       aria-label={`Edit computer ${computer.label}`}
                       onClick={() => {
-                        setAddingComputer(false);
                         setEditingComputerId(computer.id);
                       }}
                     >
@@ -293,11 +305,16 @@ export function WorkjetComputersSettingsView({
                     </Button>
                     <ConfirmingDeleteButton
                       label={`computer ${computer.label}`}
-                      onDelete={() => onChange(removeComputer(configuration, computer.id))}
+                      onDelete={() =>
+                        onRemove
+                          ? onRemove(computer)
+                          : onChange(removeComputer(configuration, computer.id))
+                      }
                     />
                   </div>
                 }
               >
+                {renderConnection?.(computer.environmentId)}
                 <div className="mt-1 space-y-1 pb-3">
                   {onAssign && membership ? (
                     <div className="flex flex-wrap items-center gap-2 pb-2">
@@ -346,54 +363,59 @@ export function WorkjetComputersSettingsView({
                           : "Checking coding tools…"}
                     </p>
                   ) : null}
-                  {computer.harnesses.map((declared) => {
-                    const live =
-                      computerInspection?.harnesses.find(
-                        (entry) => entry.harness === declared.harness,
-                      ) ?? null;
-                    const state =
-                      live === null
-                        ? declared.available
-                          ? "declared"
-                          : "off"
-                        : live.availability === "available"
-                          ? "ok"
-                          : "missing";
-                    const detail =
-                      live === null
-                        ? declared.available
-                          ? "declared available · not probed from here"
-                          : "not offered"
-                        : live.availability === "available"
-                          ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
-                          : humanizeHarnessProbeReason(live.reason);
-                    return (
-                      <p
-                        key={declared.harness}
-                        className="flex items-center gap-2 pl-1 text-xs text-muted-foreground"
-                      >
-                        <span
-                          aria-hidden
-                          className={
-                            state === "ok"
-                              ? "size-1.5 shrink-0 rounded-full bg-emerald-500"
-                              : state === "missing"
-                                ? "size-1.5 shrink-0 rounded-full bg-amber-500"
-                                : "size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
-                          }
-                        />
-                        <span className="w-28 shrink-0 font-medium text-foreground">
-                          {workjetHarnessDisplayLabel(declared.harness)}
-                        </span>
-                        <span className="min-w-0 truncate">{detail}</span>
+                  <details>
+                    <summary className="cursor-pointer text-xs text-muted-foreground">
+                      Coding tools
+                    </summary>
+                    {computer.harnesses.map((declared) => {
+                      const live =
+                        computerInspection?.harnesses.find(
+                          (entry) => entry.harness === declared.harness,
+                        ) ?? null;
+                      const state =
+                        live === null
+                          ? declared.available
+                            ? "declared"
+                            : "off"
+                          : live.availability === "available"
+                            ? "ok"
+                            : "missing";
+                      const detail =
+                        live === null
+                          ? declared.available
+                            ? "declared available · not probed from here"
+                            : "not offered"
+                          : live.availability === "available"
+                            ? `${live.version ? `v${live.version} · ` : ""}${live.executablePath}`
+                            : humanizeHarnessProbeReason(live.reason);
+                      return (
+                        <p
+                          key={declared.harness}
+                          className="flex items-center gap-2 pl-1 text-xs text-muted-foreground"
+                        >
+                          <span
+                            aria-hidden
+                            className={
+                              state === "ok"
+                                ? "size-1.5 shrink-0 rounded-full bg-emerald-500"
+                                : state === "missing"
+                                  ? "size-1.5 shrink-0 rounded-full bg-amber-500"
+                                  : "size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+                            }
+                          />
+                          <span className="w-28 shrink-0 font-medium text-foreground">
+                            {workjetHarnessDisplayLabel(declared.harness)}
+                          </span>
+                          <span className="min-w-0 truncate">{detail}</span>
+                        </p>
+                      );
+                    })}
+                    {computer.harnesses.length === 0 ? (
+                      <p className="pl-1 text-xs text-muted-foreground">
+                        No coding tools enabled. Edit this computer to choose them.
                       </p>
-                    );
-                  })}
-                  {computer.harnesses.length === 0 ? (
-                    <p className="pl-1 text-xs text-muted-foreground">
-                      No harnesses declared — edit the computer to declare them.
-                    </p>
-                  ) : null}
+                    ) : null}
+                  </details>
                 </div>
               </SettingsRow>
               {editingComputer?.id === computer.id ? computerEditor : null}
@@ -401,10 +423,6 @@ export function WorkjetComputersSettingsView({
           );
         })}
       </div>
-      <SettingsRow
-        title="Connection security"
-        description="Remote environments are paired and removed below, then become selectable computer targets. Authentication material remains with its owning environment and is never copied into a computer entry."
-      />
     </SettingsSection>
   );
 }
@@ -436,12 +454,17 @@ export function WorkjetComputersSettings() {
     },
     [],
   );
-  const [connectionRequest, setConnectionRequest] = useState<{
-    kind: "ssh" | "tailscale";
-    sequence: number;
-  } | null>(null);
   const [pendingComputerId, setPendingComputerId] = useState<EnvironmentId | null>(null);
+  const [pendingKind, setPendingKind] = useState<"local" | "ssh" | "tailscale" | undefined>();
   const targetOptions = workjetEnvironmentTargetOptions(environments);
+  const configuration = includeSavedComputers(settings.workjet, targetOptions, environmentId);
+  const connections = useComputerConnections({
+    localAvailable: environmentsReady && primaryEnvironment?.connection.phase === "connected",
+    onConnected: (id, kind) => {
+      setPendingKind(kind);
+      setPendingComputerId(id);
+    },
+  });
   const pendingTarget = targetOptions.find((target) => target.environmentId === pendingComputerId);
   const pendingInspection = useEnvironmentQuery(
     pendingComputerId === null
@@ -458,6 +481,7 @@ export function WorkjetComputersSettings() {
       existing ??
       saveWorkjetComputerDraft({
         ...draft,
+        presentationKind: pendingKind ?? draft.presentationKind,
         harnesses: draft.harnesses.map((entry) => ({
           ...entry,
           available: pendingInspection.data!.harnesses.some(
@@ -475,7 +499,7 @@ export function WorkjetComputersSettings() {
       },
     });
     setPendingComputerId(null);
-  }, [pendingTarget, pendingInspection.data, settings.workjet, updateSettings]);
+  }, [pendingTarget, pendingKind, pendingInspection.data, settings.workjet, updateSettings]);
   // Live harness probe of this server, for the per-computer rows. Same
   // environment-query mechanics as every other read on this page.
   const harnessInspectQuery = useEnvironmentQuery(
@@ -486,8 +510,12 @@ export function WorkjetComputersSettings() {
 
   return (
     <SettingsPageContainer className="gap-6">
-      {[...new Set(settings.workjet.computers.map((computer) => computer.environmentId))]
-        .filter((target) => targetOptions.some((option) => option.environmentId === target))
+      {[...new Set(configuration.computers.map((computer) => computer.environmentId))]
+        .filter((target) =>
+          environments.some(
+            (entry) => entry.environmentId === target && entry.connection.phase === "connected",
+          ),
+        )
         .map((target) => (
           <ComputerHarnessProbe
             key={target}
@@ -495,63 +523,75 @@ export function WorkjetComputersSettings() {
             onInspection={recordHarnessInspection}
           />
         ))}
+      {connections.dialog}
       <div className="px-3 sm:px-4">
-        <h1 className="text-xl font-semibold tracking-[-0.025em]">Computers</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Connect a computer, check its coding tools, and choose where your next task runs.
-        </p>
-      </div>
-      <SettingsSection title="Set up a computer">
-        <div className="space-y-3 px-3 sm:px-4">
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={!environmentsReady || environmentId === null || pendingComputerId !== null}
-              onClick={() => setPendingComputerId(environmentId)}
-            >
-              Use this computer
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() =>
-                setConnectionRequest((current) => ({
-                  kind: "ssh",
-                  sequence: (current?.sequence ?? 0) + 1,
-                }))
-              }
-            >
-              Connect over SSH
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() =>
-                setConnectionRequest((current) => ({
-                  kind: "tailscale",
-                  sequence: (current?.sequence ?? 0) + 1,
-                }))
-              }
-            >
-              Connect over Tailscale
+        {pendingComputerId ? (
+          <p role="status" className="text-sm">
+            Checking {pendingTarget?.label ?? "the connected computer"} and its coding tools…
+          </p>
+        ) : null}
+        {pendingComputerId && pendingInspection.error ? (
+          <div role="alert" className="text-sm text-destructive">
+            The computer did not report its coding tools. Check its connection and try again.
+            <Button variant="outline" onClick={() => setPendingComputerId(null)}>
+              Dismiss
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Workjet checks the connection and installed coding tools, then adds the computer to your
-            list.
-          </p>
-          {pendingComputerId ? (
-            <p role="status" className="text-sm">
-              Checking {pendingTarget?.label ?? "the connected computer"} and its coding tools…
-            </p>
-          ) : null}
-          {pendingComputerId && pendingInspection.error ? (
-            <div role="alert" className="text-sm text-destructive">
-              The computer did not report its coding tools. Check its connection and try again.
-              <Button variant="outline" onClick={() => setPendingComputerId(null)}>
-                Dismiss
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      </SettingsSection>
+        ) : null}
+      </div>
+      <WorkjetComputersSettingsView
+        configuration={configuration}
+        environments={workjetEnvironmentTargetOptions(environments)}
+        environmentsReady={environmentsReady}
+        harnessInspection={harnessInspectQuery.data ?? null}
+        harnessInspections={harnessInspections}
+        environmentId={environmentId}
+        onChange={(workjet) => updateSettings({ workjet })}
+        onAdd={connections.openAddComputer}
+        renderConnection={connections.renderConnection}
+        connectedEnvironmentIds={environments
+          .filter((entry) => entry.connection.phase === "connected")
+          .map((entry) => entry.environmentId)}
+        onRemove={(computer) => {
+          void (async () => {
+            if (
+              selectedInstanceId &&
+              (activeMembership?.phase !== "ready" ||
+                activeMembership.computers.some((entry) => entry.id === computer.id))
+            ) {
+              toastManager.add({
+                type: "error",
+                title: "Computer still assigned",
+                description:
+                  "Remove this computer from the selected Business OS before removing its connection.",
+              });
+              return;
+            }
+            const shared = configuration.computers.some(
+              (entry) => entry.id !== computer.id && entry.environmentId === computer.environmentId,
+            );
+            const saved = connections.savedEnvironments.some(
+              (entry) => entry.environmentId === computer.environmentId,
+            );
+            if (!shared && saved && !(await connections.removeConnection(computer.environmentId)))
+              return;
+            updateSettings({ workjet: removeComputer(configuration, computer.id) });
+          })();
+        }}
+        membership={activeMembership}
+        onAssign={
+          selectedInstanceId
+            ? (computer, assigned) => {
+                void workjetComputerMembership.setAssigned(
+                  selectedInstanceId,
+                  computer,
+                  assigned,
+                  window.desktopBridge?.ctox,
+                );
+              }
+            : undefined
+        }
+      />
       {selectedInstanceId ? (
         <div className="space-y-2 px-3 sm:px-4">
           <p className="text-sm">
@@ -586,36 +626,8 @@ export function WorkjetComputersSettings() {
       ) : (
         <p className="px-3 text-sm sm:px-4">Select a Business OS to add computers to it.</p>
       )}
-      <WorkjetComputersSettingsView
-        configuration={settings.workjet}
-        environments={workjetEnvironmentTargetOptions(environments)}
-        environmentsReady={environmentsReady}
-        harnessInspection={harnessInspectQuery.data ?? null}
-        harnessInspections={harnessInspections}
-        environmentId={environmentId}
-        onChange={(workjet) => updateSettings({ workjet })}
-        membership={activeMembership}
-        onAssign={
-          selectedInstanceId
-            ? (computer, assigned) => {
-                void workjetComputerMembership.setAssigned(
-                  selectedInstanceId,
-                  computer,
-                  assigned,
-                  window.desktopBridge?.ctox,
-                );
-              }
-            : undefined
-        }
-      />
-      <RemoteEnvironmentsSection
-        connectionRequest={connectionRequest}
-        onConnected={setPendingComputerId}
-      />
       <details className="mx-3 rounded-lg border border-border p-3 sm:mx-4">
-        <summary className="cursor-pointer text-sm font-medium">
-          Install or repair backend software
-        </summary>
+        <summary className="cursor-pointer text-sm font-medium">Advanced setup and repair</summary>
         <ComputerProvisioningSection />
       </details>
     </SettingsPageContainer>

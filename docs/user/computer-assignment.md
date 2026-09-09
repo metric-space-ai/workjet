@@ -2,7 +2,7 @@
 
 Select the Business OS you want to work in, then open **Settings → Computers**.
 
-1. Use **Connect over SSH** or **Connect over Tailscale** to connect a remote computer. Existing saved computers remain in the list.
+1. Choose **Add computer → SSH** or **Add computer → Tailscale** to connect a remote computer. Existing saved computers remain in the list.
 2. On that computer's row, choose **Add to Business OS**. Workjet waits for the selected Business OS to confirm the assignment.
 3. When the row shows **Available in the selected Business OS**, the computer is included in that instance's coding targets. It still needs a working connection and an available coding tool to run tasks.
 

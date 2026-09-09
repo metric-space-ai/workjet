@@ -47,7 +47,7 @@ describe("WorkjetComputerEditor", () => {
     expect(saved).not.toHaveProperty("credentials");
   });
 
-  it("renders all supported harnesses and explains connection authority", () => {
+  it("renders supported coding tools with computer-oriented labels", () => {
     const markup = renderToStaticMarkup(
       <WorkjetComputerEditor
         environments={[remoteEnvironment]}
@@ -66,8 +66,25 @@ describe("WorkjetComputerEditor", () => {
     ]) {
       expect(markup).toContain(label);
     }
-    expect(markup).toContain("existing environment");
-    expect(markup).toContain("does not store SSH");
+    expect(markup).toContain("Coding tools");
+    expect(markup).toContain("Name");
+  });
+  it("keeps the connection fixed while editing an offline computer", () => {
+    const configured = saveWorkjetComputerDraft(
+      createWorkjetComputerDraft({ environments: [remoteEnvironment] }),
+    );
+    const markup = renderToStaticMarkup(
+      <WorkjetComputerEditor
+        computer={configured}
+        environments={[]}
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain('role="combobox"');
+    expect(markup).toContain("Tailscale");
+    expect(markup).toContain("Remote devbox");
+    expect(markup).toContain("Save computer");
   });
 });
 

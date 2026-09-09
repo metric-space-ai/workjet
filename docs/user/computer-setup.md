@@ -1,12 +1,14 @@
 # Set up computers
 
-Open **Settings → Computers**. Choose **Use this computer** to use the local machine, or **Connect over SSH** to enter another computer's address, username, and port. Workjet requests a password when the SSH connection requires one. **Connect over Tailscale** accepts a tailnet IP or hostname and uses SSH over that connection; the remote computer must be online and accept SSH.
+Open **Settings → Computers → Add computer**. In this one dialog, choose **Local**, **SSH**, or **Tailscale**. Local uses this machine. SSH takes an IP or hostname, optional name, username, and port. Workjet asks for a password if SSH requires one. Tailscale takes a tailnet IP or hostname and uses SSH; both computers must be on your tailnet and the remote computer must accept SSH.
 
 After connecting, Workjet checks the installed coding tools and adds the computer to the list. Select a computer there to use it for the next session. Its connection type comes from the actual connection. Editing its name does not change how it connects.
 
 The computer list checks coding tools on each connected machine and shows its installed versions or missing tools. While a check runs, the list shows progress. A disconnected computer is marked as disconnected and its previous tool results are hidden; reconnect it to check again.
 
-Existing connections can be added with **Add existing connection**. Backend installation and repair tools are under **Install or repair backend software**.
+Previously saved connections appear in the same computer list automatically. Connect and disconnect from the computer’s row. Expand **Coding tools** to inspect availability; use Edit to change the name or enabled tools. Editing a computer keeps its connection fixed. Remove its Business OS assignment before removing the computer.
+
+For an already running Workjet host, use **Already running Workjet? → Use a pairing link** in the same add dialog. Installation and repair tools remain under **Advanced setup and repair**.
 
 ## Adding a project
 

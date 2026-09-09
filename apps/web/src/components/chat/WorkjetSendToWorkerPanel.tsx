@@ -581,7 +581,7 @@ export function WorkjetSendToWorkerPanelContent(props: WorkjetSendToWorkerPanelP
                 }
               >
                 <option value="">Another environment id…</option>
-                <optgroup label="Remote environments">
+                <optgroup label="Other computers">
                   {peers.map((peer) => (
                     <option key={peer.environmentId} value={peer.environmentId}>
                       {`${peer.environmentId} · ${peer.workspaceId} · first contact ${formatWorkjetFirstContact(peer.firstSeenAt)}`}

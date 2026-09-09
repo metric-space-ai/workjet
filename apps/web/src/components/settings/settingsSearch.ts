@@ -264,13 +264,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/workjet",
   },
   {
-    id: "remote-environments",
-    title: "Remote environments",
-    // Paired and removed on the Computers page, beside the computers that
-    // reference them. There is no second visible Connections category.
-    to: "/settings/computers",
-  },
-  {
     id: "archive",
     title: "Archived threads",
     to: "/settings/archived",

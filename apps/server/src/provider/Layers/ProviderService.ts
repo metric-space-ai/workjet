@@ -59,6 +59,7 @@ import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { resolveThreadCapabilityContext } from "../../workjet/ThreadCapabilityContext.ts";
@@ -245,6 +246,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     cwd?: string,
   ) =>
     Effect.gen(function* () {
+      const crewBootstrap = yield* Effect.serviceOption(CtoxCrewSessionBootstrap);
+      const crewBinding =
+        workjetConfig.schemaVersion === 2 ? workjetConfig.ctoxCrewChat : undefined;
+      if (crewBinding || Option.isSome(crewBootstrap)) {
+        if (
+          !crewBinding ||
+          Option.isNone(crewBootstrap) ||
+          crewBootstrap.value.binding.instanceId !== crewBinding.instanceId ||
+          crewBootstrap.value.binding.connectionId !== crewBinding.connectionId ||
+          crewBootstrap.value.binding.chatId !== crewBinding.chatId ||
+          crewBootstrap.value.capability.threadId !== threadId ||
+          crewBootstrap.value.capability.providerInstanceId !== providerInstanceId ||
+          !crewBootstrap.value.compiledManagedPrompt.trim()
+        )
+          return yield* toValidationError(
+            "ProviderService.prepareMcpSession",
+            "Crew execution requires a fresh authorized claim matching this thread, provider and native chat.",
+          );
+      }
       const requiresCtoxConnection = workjetConfig.enabledCapabilityIds.some(
         (id) => id === "decision-hub" || id === "ctox-business-os",
       );
@@ -298,9 +318,22 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const credential = yield* McpSessionRegistry.issueActiveMcpCredential({
         threadId,
         providerInstanceId,
-        threadCapabilityContext,
+        threadCapabilityContext: Option.isSome(crewBootstrap)
+          ? {
+              ...threadCapabilityContext,
+              compiledManagedPrompt: crewBootstrap.value.compiledManagedPrompt,
+            }
+          : threadCapabilityContext,
+        ...(Option.isSome(crewBootstrap)
+          ? { ctoxCrewExecution: crewBootstrap.value.capability }
+          : {}),
         ...(cwd ? { cwd } : {}),
       });
+      if (!credential && crewBinding)
+        return yield* toValidationError(
+          "ProviderService.prepareMcpSession",
+          "Crew execution requires the active Workjet MCP registry.",
+        );
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
       }

@@ -21,6 +21,7 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
+  WorkjetConnectionId,
 } from "@workjet/contracts";
 import { createModelSelection } from "@workjet/shared/model";
 import { it, assert, vi } from "@effect/vitest";
@@ -56,6 +57,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import {
   makeSqlitePersistenceLive,
@@ -1047,6 +1049,74 @@ routing.layer("ProviderServiceLive routing", (it) => {
           assert.equal(payload.lastRuntimeEvent, "provider.sendTurn");
         }
       }),
+  );
+
+  it.effect("requires an authorized Crew bootstrap before starting the real provider path", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const mcp = makeCapturingMcpRegistry();
+      const threadId = asThreadId("thread-crew-bootstrap");
+      const binding = {
+        instanceId: "instance",
+        connectionId: WorkjetConnectionId.make("connection"),
+        chatId: "workjet_private_chat",
+      };
+      const input = {
+        threadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        runtimeMode: "full-access" as const,
+        workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      };
+      const bootstrap = CtoxCrewSessionBootstrap.of({
+        binding,
+        compiledManagedPrompt: "Canonical native Crew instructions",
+        capability: {
+          threadId,
+          providerInstanceId: codexInstanceId,
+          attemptId: "attempt",
+          refreshContext: () => Effect.die("unused"),
+          updatePlan: () => Effect.die("unused"),
+          report: () => Effect.die("unused"),
+        },
+      });
+      const callsBefore = routing.codex.startSession.mock.calls.length;
+      yield* McpSessionRegistry.__testing.withActive(
+        mcp.registry,
+        Effect.gen(function* () {
+          const rejected = yield* Effect.flip(provider.startSession(threadId, input));
+          assert.equal(rejected._tag, "ProviderValidationError");
+          assert.equal(routing.codex.startSession.mock.calls.length, callsBefore);
+          assert.equal(mcp.requests.length, 0);
+          const foreign = yield* Effect.flip(
+            provider
+              .startSession(threadId, input)
+              .pipe(
+                Effect.provideService(CtoxCrewSessionBootstrap, {
+                  ...bootstrap,
+                  capability: { ...bootstrap.capability, threadId: asThreadId("foreign-thread") },
+                }),
+              ),
+          );
+          assert.equal(foreign._tag, "ProviderValidationError");
+          assert.equal(routing.codex.startSession.mock.calls.length, callsBefore);
+          yield* provider
+            .startSession(threadId, input)
+            .pipe(Effect.provideService(CtoxCrewSessionBootstrap, bootstrap));
+          assert.equal(routing.codex.startSession.mock.calls.length, callsBefore + 1);
+          assert.equal(mcp.requests.length, 1);
+          assert.equal(mcp.requests[0]?.ctoxCrewExecution, bootstrap.capability);
+          assert.equal(
+            mcp.requests[0]?.threadCapabilityContext.compiledManagedPrompt,
+            bootstrap.compiledManagedPrompt,
+          );
+          assert.equal(
+            "ctoxCrewExecution" in (routing.codex.startSession.mock.calls.at(-1)?.[0] ?? {}),
+            false,
+          );
+        }),
+      );
+    }),
   );
 
   it.effect("propagates effective cwd into fresh, resumed, and adopted MCP credentials", () =>

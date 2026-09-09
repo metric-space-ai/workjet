@@ -86,3 +86,9 @@ CrossModeLinkStore is deliberately not reused: its one-backlink-per-Code-thread 
 ## Capability binding consistency
 
 Capability activation preserves ctoxCrewChat while rejecting a Business OS MCP capability bound to a different instance or connection. A Crew reference alone does not enable app-MCP permissions. This uses the existing binding-foreign issue and the existing provider preparation denial path. Tests cover matching routes, separately foreign instance/credentials, reference retention and absence of implicit capability grants. Only formatting and diff validation ran; behavioral execution is pending CI.
+
+## Provider session bootstrap
+
+ProviderService.prepareMcpSession now consumes a per-effect CtoxCrewSessionBootstrap from server admission. An explicit ctoxCrewChat without this bootstrap is rejected before adapter start; foreign thread/provider/chat/connection/instance or blank managed context also fail. A matching bootstrap passes only its server capability closures to the active MCP registry and its prepared native managed prompt to provider configuration. Missing active MCP registry is a start error for Crew execution. No native token or capability closure enters adapter input or persisted runtime payload. Normal threads retain their existing path.
+
+A ProviderService test covers denied missing/foreign bootstrap and successful passage into the actual adapter/MCP preparation path. It remains unexecuted, as does typecheck; formatting/diff checks pass. The upstream admission controller still needs to submit/claim and provide this internal service. Resume/compaction must reestablish authorized context; this commit does not implement that lifecycle or the persona compiler/migration.

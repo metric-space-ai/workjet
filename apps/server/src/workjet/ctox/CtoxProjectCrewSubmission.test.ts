@@ -28,15 +28,38 @@ it.effect("recovers project submission after a lost receipt and rejects another 
     const sent: string[] = [];
     let lose = true;
     let wrongChat = false;
+    let offerIdentity = { command: "command", executor: "computer", harness: "codex" };
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
       probe: (_, names, fields) =>
         Effect.sync(() => {
+          if (names[0] === "business_os.list_crew_executions") {
+            expect(names).toEqual(["business_os.list_crew_executions"]);
+            return undefined;
+          }
           expect(names).toEqual(["business_os.start_crew_execution"]);
           expect(fields).toEqual({ "business_os.start_crew_execution": ["idempotency_key"] });
           return undefined;
         }),
       callTool: (_, name, args) =>
         Effect.gen(function* () {
+          if (name === "business_os.list_crew_executions") {
+            expect(args).toEqual({ command_id: "command", executor_id: "computer" });
+            return {
+              structuredContent: {
+                schema: "ctox.external_crew_executions.v1",
+                command_id: offerIdentity.command,
+                executor_id: offerIdentity.executor,
+                offers: [
+                  {
+                    attempt_id: "attempt",
+                    harness: offerIdentity.harness,
+                    deadline_ms: 10_000,
+                    state: "offered",
+                  },
+                ],
+              },
+            };
+          }
           expect(name).toBe("business_os.start_crew_execution");
           const request = yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewRequest)({
             ...args,
@@ -99,6 +122,20 @@ it.effect("recovers project submission after a lost receipt and rejects another 
       expect(sent).toHaveLength(2);
     }
     target = { endpoint: "https://ctox.example/mcp", token: "fixture" };
+    const discovered = yield* restarted.discoverProjectOffers(identity, "computer");
+    expect(discovered).toMatchObject({ state: "observed", offers: [{ attempt_id: "attempt" }] });
+    for (const invalid of [
+      { command: "other-command", executor: "computer", harness: "codex" },
+      { command: "command", executor: "other-computer", harness: "codex" },
+      { command: "command", executor: "computer", harness: "claude" },
+    ]) {
+      offerIdentity = invalid;
+      expect(
+        yield* Effect.flip(restarted.discoverProjectOffers(identity, "computer")),
+      ).toMatchObject({
+        reason: "native-response-invalid",
+      });
+    }
     wrongChat = true;
     expect(yield* Effect.flip(restarted.submitProjectTurn(scope, "event-2", task))).toMatchObject({
       reason: "native-response-invalid",

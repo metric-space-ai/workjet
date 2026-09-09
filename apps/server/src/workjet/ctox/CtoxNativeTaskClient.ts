@@ -1,6 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Deterministic server-side turn identity, not a new request per retry.
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { WorkjetCtoxCrewOffers } from "@workjet/contracts";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { decodeCtoxNativeTaskStatus } from "./CtoxNativeTaskStatus.ts";
@@ -97,6 +99,42 @@ export function makeCtoxNativeTaskClient(dependencies: {
     );
   });
 
+  const discoverProjectOffers = Effect.fn("CtoxNativeTaskClient.discoverProjectOffers")(function* (
+    identity: CtoxNativeRequestIdentity,
+    executorId: string,
+  ) {
+    const reference = yield* dependencies.requests.get(identity);
+    const request = reference.request;
+    if (request.operation !== "start_crew_execution")
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    if (!reference.commandId) return { reference, state: "awaiting-command" as const, offers: [] };
+    const target = yield* dependencies.connections.resolveReadyTarget(
+      identity.connectionId,
+      identity.instanceId,
+    );
+    yield* dependencies.requests.verifyTarget(identity, target);
+    const name = "business_os.list_crew_executions";
+    yield* dependencies.transport.probe(target, [name]);
+    const response = yield* dependencies.transport.callTool(target, name, {
+      command_id: reference.commandId,
+      executor_id: executorId,
+    });
+    if (response.isError || response.structuredContent === undefined)
+      return yield* new CtoxNativeRequestError({ reason: "ctox-operation-rejected" });
+    const result = yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewOffers)(
+      response.structuredContent,
+    ).pipe(
+      Effect.mapError(() => new CtoxNativeRequestError({ reason: "native-response-invalid" })),
+    );
+    if (
+      result.command_id !== reference.commandId ||
+      result.executor_id !== executorId ||
+      result.offers.some((offer) => offer.harness !== request.harness)
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
+    return { reference, state: "observed" as const, offers: result.offers };
+  });
+
   const readStatus = Effect.fn("CtoxNativeTaskClient.readStatus")(function* (
     identity: CtoxNativeRequestIdentity,
   ) {
@@ -128,6 +166,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
     submit,
     submitTurn,
     submitProjectTurn,
+    discoverProjectOffers,
     readStatus,
     recover: dependencies.requests.get,
     latestNativeTurn: dependencies.requests.latestNativeTurn,

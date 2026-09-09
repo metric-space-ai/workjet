@@ -26,3 +26,13 @@ after a lost response; its remote transport is a double. It checks stable retrie
 changed-intent rejection and foreign-chat receipt rejection. It is not native
 CTOX interoperability or UI evidence. Local tests/typecheck have not run while
 the shared host gate is closed; CI must validate the stacked PR before merging.
+
+`discoverProjectOffers` reads the durable command reference, verifies the original
+connection credentials and queries bounded native offer metadata for the supplied
+executor computer. The caller must obtain that computer from its authorized
+project context. Responses must match command, computer and requested harness.
+An unresolved submission returns `awaiting-command`; an empty offer list does not
+claim failure or completion. Discovery returns no grant and starts no executor.
+Offer claiming, deadline enforcement at execution, secure grant transport and
+harness dispatch remain unimplemented. The focused test rejects other command,
+executor and harness identities in discovery responses.

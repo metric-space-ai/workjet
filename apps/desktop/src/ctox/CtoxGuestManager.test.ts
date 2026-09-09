@@ -1640,11 +1640,62 @@ describe("CtoxGuestManager", () => {
             capabilities: [],
             selfHostedColocation: false,
           }),
-          { _tag: "failed", code: "guest_failed" },
+          { _tag: "failed", code: "response_invalid" },
         );
       }).pipe(Effect.provide(harness.layer));
     },
   );
+
+  it.effect("preserves safe computer failure reasons without exposing guest exceptions", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      const control = vi.fn();
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+        NodeVM.runInNewContext(expression, { workjetComputerControl: control }),
+      );
+      const failures = [
+        {
+          error: { code: "QUERY_NOT_SUPPORTED", message: "private credential" },
+          code: "query_unsupported",
+        },
+        { error: "QUERY_NOT_SUPPORTED: collection is not V1.5-enabled", code: "query_unsupported" },
+        { error: { code: "peer_connect_timeout" }, code: "sync_unavailable" },
+        { error: new Error("PEER_UNAVAILABLE"), code: "sync_unavailable" },
+        { error: { code: "QUERY_CANCELLED" }, code: "sync_unavailable" },
+        {
+          error: { name: "InvalidStateError", message: "private credential" },
+          code: "sync_unavailable",
+        },
+        { error: new Error("Workjet computer control is not ready."), code: "sync_unavailable" },
+        {
+          error: new Error("workjet_computers collection is not registered."),
+          code: "unsupported",
+        },
+        { error: new Error("native command failed: private credential"), code: "command_failed" },
+      ] as const;
+      for (const failure of failures) {
+        control.mockRejectedValueOnce(failure.error);
+        const result = yield* manager.requestComputerControl(descriptor.id, {
+          action: "computer.list",
+        });
+        assert.deepEqual(result, { _tag: "failed", code: failure.code });
+        expect(encodeUnknownJson(result)).not.toContain("private credential");
+      }
+      control.mockResolvedValueOnce({ action: "computer.list", computers: "invalid" });
+      assert.deepEqual(
+        yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+        { _tag: "failed", code: "response_invalid" },
+      );
+      harness.views[0]?.executeJavaScript.mockRejectedValueOnce(new Error("renderer unavailable"));
+      assert.deepEqual(
+        yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+        { _tag: "failed", code: "guest_failed" },
+      );
+    }).pipe(Effect.provide(harness.layer));
+  });
 
   it.effect("bounds stalled computer commands without locking navigation", () => {
     const harness = makeGuestHarness();

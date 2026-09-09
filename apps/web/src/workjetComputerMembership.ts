@@ -22,6 +22,14 @@ function membershipError(code: string): string {
       return "This Business OS needs an update before it can add computers.";
     case "timeout":
       return "The Business OS has not confirmed the computer yet. Refresh to check its status.";
+    case "sync_unavailable":
+      return "Business OS synchronization was interrupted. Wait for the connection to recover, then retry.";
+    case "query_unsupported":
+      return "This Business OS backend does not support loading the computer list yet. Update the backend, then retry.";
+    case "command_failed":
+      return "Business OS could not complete the computer request. Open Business OS to check its status, then retry.";
+    case "response_invalid":
+      return "Business OS returned an incompatible computer result. Update Workjet and the backend, then retry.";
     case "not_active":
       return "Open the selected Business OS and retry.";
     default:

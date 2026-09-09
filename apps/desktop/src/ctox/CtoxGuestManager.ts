@@ -352,8 +352,28 @@ function buildGuestComputerControlExpression(request: CtoxWorkjetComputerControl
     return { status: password && password.getClientRects().length > 0
       ? "authentication_required" : "unsupported" };
   }
-  const result = await control(${JSON.stringify(request)});
-  return { status: "completed", result };
+  try {
+    const result = await control(${JSON.stringify(request)});
+    return { status: "completed", result };
+  } catch (error) {
+    // Return only fixed diagnostic codes; exception text can contain credentials.
+    const code = typeof error?.code === "string" ? error.code : "";
+    const message = typeof error?.message === "string" ? error.message
+      : typeof error === "string" ? error : "";
+    if (code === "QUERY_NOT_SUPPORTED" || message.startsWith("QUERY_NOT_SUPPORTED:")) {
+      return { status: "failed", code: "query_unsupported" };
+    }
+    if (code === "peer_connect_timeout" || code === "PEER_UNAVAILABLE"
+      || code === "QUERY_CANCELLED" || error?.name === "InvalidStateError"
+      || message === "PEER_UNAVAILABLE"
+      || message === "Workjet computer control is not ready.") {
+      return { status: "failed", code: "sync_unavailable" };
+    }
+    if (message === "workjet_computers collection is not registered.") {
+      return { status: "failed", code: "unsupported" };
+    }
+    return { status: "failed", code: "command_failed" };
+  }
 })()`;
 }
 
@@ -1633,6 +1653,17 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (status === "authentication_required" || status === "unsupported") {
           return { _tag: "failed", code: status };
         }
+        if (status === "failed") {
+          const code = (raw as { readonly code?: unknown }).code;
+          if (
+            code === "sync_unavailable" ||
+            code === "query_unsupported" ||
+            code === "command_failed" ||
+            code === "unsupported"
+          ) {
+            return { _tag: "failed", code };
+          }
+        }
         if (status !== "completed") return { _tag: "failed", code: "guest_failed" };
         const response = (raw as { readonly result?: unknown }).result;
         const encodedLength = yield* Effect.try({
@@ -1645,7 +1676,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           onExcessProperty: "error",
         }).pipe(Effect.option);
         if (Option.isNone(decoded) || decoded.value.action !== request.action) {
-          return { _tag: "failed", code: "guest_failed" };
+          return { _tag: "failed", code: "response_invalid" };
         }
         if (
           request.action !== "computer.list" &&
@@ -1654,7 +1685,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             decoded.value.computer.status !==
               (request.action === "computer.assign" ? "assigned" : "unassigned"))
         ) {
-          return { _tag: "failed", code: "guest_failed" };
+          return { _tag: "failed", code: "response_invalid" };
         }
         return { _tag: "completed", response: decoded.value };
       });

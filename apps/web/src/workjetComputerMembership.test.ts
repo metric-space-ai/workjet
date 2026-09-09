@@ -42,6 +42,28 @@ const bridge = (requestComputerControl: NonNullable<DesktopCtoxBridge["requestCo
   ({ requestComputerControl }) as DesktopCtoxBridge;
 
 describe("instance computer membership", () => {
+  it.each([
+    ["sync_unavailable", "synchronization was interrupted"],
+    ["query_unsupported", "does not support loading"],
+    ["command_failed", "could not complete"],
+    ["response_invalid", "incompatible computer result"],
+  ] as const)(
+    "explains %s without granting membership and permits a successful retry",
+    async (code, message) => {
+      const store = createComputerMembershipStore();
+      const request = port()
+        .mockResolvedValueOnce({ _tag: "failed", code })
+        .mockResolvedValueOnce(listed([projection]));
+      await store.refresh("managed:welsch", bridge(request));
+      expect(store.getSnapshot().error).toContain(message);
+      expect(store.getSnapshot().computers).toEqual([]);
+      await store.refresh("managed:welsch", bridge(request));
+      expect(store.getSnapshot().phase).toBe("ready");
+      expect(store.getSnapshot().error).toBeNull();
+      expect(store.getSnapshot().computers).toEqual([projection]);
+    },
+  );
+
   it("keeps confirmed computers during a same-instance refresh, but clears them on failure", async () => {
     const store = createComputerMembershipStore();
     const request = port().mockResolvedValueOnce(listed([projection]));

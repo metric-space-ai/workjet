@@ -134,9 +134,9 @@ describe("shared CTOX MCP transport", () => {
         }),
       );
       expect(error).toMatchObject({ reason: "remote-response-invalid" });
-      expect(Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(error)).not.toContain(
-        "private",
-      );
+      expect(
+        yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(error),
+      ).not.toContain("private");
       expect(remote.calls).toHaveLength(1);
     }),
   );

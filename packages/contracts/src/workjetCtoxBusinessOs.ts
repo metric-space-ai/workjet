@@ -13,10 +13,11 @@ const App = {
 };
 const Limit = Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })));
 const RetryKey = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/));
-const Delegation = { idempotency_key: Schema.optionalKey(RetryKey) };
+const Delegation = { idempotency_key: RetryKey };
 
 /** Finite Business OS operations. Routing and actor context are never model arguments. */
 const CtoxBusinessOsRequest = Schema.Union([
+  Schema.Struct({ operation: Schema.Literal("get_delegation"), idempotency_key: RetryKey }),
   Schema.Struct({ operation: Schema.Literals(["status", "list_modules"]) }),
   Schema.Struct({
     operation: Schema.Literals([
@@ -90,4 +91,5 @@ export type WorkjetCtoxBusinessOsResult = typeof WorkjetCtoxBusinessOsResult.Typ
 export const CTOX_BUSINESS_OS_INSTRUCTIONS = `Use ctox_business_os for the Business OS instance bound to this thread. Start with status and list_modules. A connection failure does not authorize switching instances or using another identity.
 For direct app development, inspect get_module or prepare_app_source, then list_app_files/read_app_file/search_app_source and write_app_file. Read every required development_contract skill resource with read_app_skill_resource before editing. Use the returned shell/runtime contract; do not invent a shell, database path, CLI, SQL or browser data bridge. Validate changes with validate_app; use smoke_app/e2e_app for the relevant UI and persistence workflows. Do not claim success without the returned evidence.
 Use create_app/modify_app only to delegate work to native CTOX. Choose and retain an idempotency_key for each logical delegation before sending it. These enqueue work; retain command_id/task_id and inspect get_command_status/get_run before reporting completion. After transport uncertainty, reuse the same key and identical arguments; never generate a new key for that retry. Workjet checks server support before dispatch. If retry support is missing, do not remove the key to force a retry. Other writes do not have this retry contract: check their actual outcome before repeating them. Use open_link to return the Business OS result to the user.
+Workjet durably records keyed delegation intent before sending it. Use get_delegation with the original key after a lost response, compaction or restart to recover the exact request and any known command/task ids. Missing ids mean the remote outcome is unknown, not that nothing ran. The stored reference is not live execution status: query get_command_status for current progress. If credentials changed, reconcile the original request before attempting new work.
 This capability grants typed app access under the server's policy. It does not grant CTOX's global CTO role, Crew memory or permission to fabricate approvals. Follow the authenticated actor's actual permissions; never inject _context or credentials.`;

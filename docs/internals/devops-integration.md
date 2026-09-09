@@ -130,3 +130,34 @@ connection registry as the provider and connection-management RPC surfaces.
 This source integration is not yet runtime-verified. Native harness dispatch,
 Crew/memory/learning, adapter lifecycle conformance and desktop/web acceptance
 remain open. Added tests drive the registered MCP tool through a fake daemon.
+
+## Native request persistence and recovery
+
+Workjet requires a retry key for native create/modify delegation. Migration 60
+records that intent before the first
+remote write, scoped to its Workjet thread, connection and CTOX instance. The
+claim allocates a separate server-owned native retry key once; identical client
+keys in different threads cannot merge their native tasks. Replays reuse the
+key from the winning persisted claim, including after service reconstruction.
+The actual MCP handler uses this store and records returned command/task ids. A
+lost response leaves an explicitly unresolved request, not an invented failure
+or completion. `get_delegation` recovers the original typed request and known
+references without contacting CTOX; live execution status still comes from the
+native command/run tools. This is also the persistence boundary for the planned
+native harness adapter, whose menu/session/event integration remains pending.
+
+Workjet negotiates the selected native tool's retry-key schema before dispatch.
+CTOX PR #84 supplies the corresponding actor/workspace-scoped atomic claim.
+Local claims cannot change intent or instance, and stored native task references
+cannot be replaced by later conflicting responses. Until CTOX exposes a durable
+authenticated-principal identity, retries also retain a digest of the exact
+endpoint and credential: rotating a token may change the remote actor and must
+not silently select a different idempotency scope. Tokens are never persisted in
+the request store or returned by the recovery tool.
+
+Focused tests cover service reconstruction, pre-send intent, lost responses,
+concurrent conflicting claims, credential/instance changes, task-reference
+immutability and thread isolation. These new tests are not yet executed locally;
+tmp capacity and swap still prevent admission. The prior Workjet CI reached
+type checking and found two synchronous-schema calls in test generators; those
+and the equivalent new paths now use typed Effect encoding.

@@ -14,6 +14,9 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import * as Invocation from "../../McpInvocationContext.ts";
 import { DecisionHubConnectionRegistry } from "../../../workjet/decisionHub/DecisionHubConnectionRegistry.ts";
+import { CtoxNativeRequests } from "../../../workjet/ctox/CtoxNativeRequests.ts";
+import * as NodeSqliteClient from "../../../persistence/NodeSqliteClient.ts";
+import migration60 from "../../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
 import {
   CtoxBusinessOsToolkitRegistrationLive,
   CTOX_BUSINESS_OS_TOOL_NAME,
@@ -52,7 +55,7 @@ const Request = Schema.Struct({
 });
 const decode = Schema.decodeUnknownSync(Schema.fromJsonString(Request));
 
-function fixture(retrySupport = false) {
+function fixture(retrySupport = false, loseDelegationResponse = false) {
   const calls: Array<{ url: string; body: typeof Request.Type }> = [];
   const resolutions: Array<{ id: string; instanceId: string | undefined }> = [];
   const http = HttpClient.make((request) =>
@@ -60,6 +63,9 @@ function fixture(retrySupport = false) {
       if (request.body._tag !== "Uint8Array") throw new Error("Expected JSON");
       const body = decode(new TextDecoder().decode(request.body.body));
       calls.push({ url: request.url, body });
+      if (loseDelegationResponse && body.method === "tools/call") {
+        return HttpClientResponse.fromWeb(request, new Response("lost response", { status: 502 }));
+      }
       const result =
         body.method === "initialize"
           ? { serverInfo: { name: "ctox-business-os-mcp" } }
@@ -77,7 +83,19 @@ function fixture(retrySupport = false) {
                   },
                 ],
               }
-            : { structuredContent: { ok: true, module_id: "app-a" } };
+            : {
+                structuredContent:
+                  body.params?.name === "business_os.modify_app"
+                    ? {
+                        ok: true,
+                        module_id: "app-a",
+                        command_type: "ctox.business_os.app.modify",
+                        command_id: "cmd-native-a",
+                        task_id: "task-native-a",
+                        status: "accepted",
+                      }
+                    : { ok: true, module_id: "app-a" },
+              };
       return HttpClientResponse.fromWeb(request, Response.json({ jsonrpc: "2.0", result }));
     }),
   );
@@ -98,6 +116,13 @@ function fixture(retrySupport = false) {
   });
   const layer = CtoxBusinessOsToolkitRegistrationLive.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),
+    Layer.provideMerge(
+      CtoxNativeRequests.layer.pipe(
+        Layer.provide(
+          Layer.effectDiscard(migration60).pipe(Layer.provideMerge(NodeSqliteClient.layerMemory())),
+        ),
+      ),
+    ),
     Layer.provide(Layer.succeed(HttpClient.HttpClient, http)),
     Layer.provide(Layer.succeed(DecisionHubConnectionRegistry, registry)),
   );
@@ -137,7 +162,7 @@ it.effect("writes through the registered MCP tool using only the session's pinne
       name: "business_os.write_app_file",
       arguments: { module_id: "app-a", path: "index.js", content: "export {};" },
     });
-    expect(Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))(result)).not.toContain(
+    expect(yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(result)).not.toContain(
       "server-only-test-token",
     );
   }).pipe(Effect.provide(test.layer));
@@ -174,7 +199,7 @@ it.effect("dispatches a retry key only when the native operation advertises supp
             arguments: {
               module_id: "app-a",
               instruction: "Add an inventory review action",
-              idempotency_key: "workjet-turn-1",
+              idempotency_key: expect.stringMatching(/^workjet_[a-f0-9-]{36}$/),
             },
           });
         } else {
@@ -186,6 +211,44 @@ it.effect("dispatches a retry key only when the native operation advertises supp
       }).pipe(Effect.provide(test.layer));
     }
   }),
+);
+
+it.effect(
+  "recovers a lost-response delegation from durable intent without another remote call",
+  () => {
+    const test = fixture(true, true);
+    return Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const request = {
+        operation: "modify_app",
+        module_id: "app-a",
+        instruction: "Add an inventory review action",
+        idempotency_key: "lost-response-request",
+      };
+      const dispatch = yield* server.callTool({
+        name: CTOX_BUSINESS_OS_TOOL_NAME,
+        arguments: { request },
+      });
+      expect(dispatch.isError).toBe(true);
+      const callsBeforeRead = test.calls.length;
+      const recovered = yield* server.callTool({
+        name: CTOX_BUSINESS_OS_TOOL_NAME,
+        arguments: {
+          request: { operation: "get_delegation", idempotency_key: request.idempotency_key },
+        },
+      });
+      expect(recovered.isError).toBe(false);
+      expect(recovered.structuredContent).toMatchObject({
+        instanceId: "instance-a",
+        result: { request, commandId: null, taskId: null, receivedAt: null },
+      });
+      expect(test.calls).toHaveLength(callsBeforeRead);
+    }).pipe(
+      Effect.provideService(Invocation.McpInvocationContext, scope),
+      Effect.provideService(McpSchema.McpServerClient, client),
+      Effect.provide(test.layer),
+    );
+  },
 );
 
 it.effect("does not contact CTOX after a revoked grant or an instance mismatch", () => {

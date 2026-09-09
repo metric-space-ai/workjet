@@ -65,6 +65,7 @@ describe("CTOX thread identity and typed app access", () => {
     });
     for (const operation of ["create_app", "modify_app"]) {
       const request = { operation, module_id: "app-a", instruction: "Update the app" };
+      expect(() => decode({ request })).toThrow();
       expect(
         decode({ request: { ...request, idempotency_key: "workjet:thread-1.turn-2" } }).request,
       ).toMatchObject({ idempotency_key: "workjet:thread-1.turn-2" });

@@ -126,9 +126,12 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
           binding.instanceId,
         );
         const { operation, ...arguments_ } = input.request;
-        const name = `business_os.${operation}`;
+        const name =
+          operation === "delegate_task" ? "business_os.execute_action" : `business_os.${operation}`;
         const requiresRetryContract =
-          (input.request.operation === "create_app" || input.request.operation === "modify_app") &&
+          (input.request.operation === "create_app" ||
+            input.request.operation === "modify_app" ||
+            input.request.operation === "delegate_task") &&
           input.request.idempotency_key !== undefined;
         yield* transport.probe(
           target,
@@ -136,11 +139,17 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
           requiresRetryContract ? { [name]: ["idempotency_key"] } : {},
         );
         const nativeRequest =
-          (input.request.operation === "create_app" || input.request.operation === "modify_app") &&
+          (input.request.operation === "create_app" ||
+            input.request.operation === "modify_app" ||
+            input.request.operation === "delegate_task") &&
           input.request.idempotency_key !== undefined
             ? { ...input.request, idempotency_key: input.request.idempotency_key }
             : undefined;
-        let dispatchArguments: Readonly<Record<string, unknown>> = arguments_;
+        const nativeArguments =
+          operation === "delegate_task"
+            ? { ...arguments_, action_id: "ctox.delegate_task" }
+            : arguments_;
+        let dispatchArguments: Readonly<Record<string, unknown>> = nativeArguments;
         if (nativeRequest) {
           if (Option.isNone(nativeRequests))
             return failureResult("native-request-store-unavailable");
@@ -149,7 +158,7 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
             nativeRequest,
             target,
           );
-          dispatchArguments = { ...arguments_, idempotency_key: remoteRequestKey };
+          dispatchArguments = { ...nativeArguments, idempotency_key: remoteRequestKey };
         }
         const timeout =
           operation === "validate_app" || operation === "smoke_app" || operation === "e2e_app"

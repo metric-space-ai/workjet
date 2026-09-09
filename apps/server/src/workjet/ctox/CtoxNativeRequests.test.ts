@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
-import { CtoxNativeRequests, type NativeAppRequest } from "./CtoxNativeRequests.ts";
+import { CtoxNativeRequests, type NativeTaskRequest } from "./CtoxNativeRequests.ts";
 
 const identity = {
   threadId: ThreadId.make("thread-a"),
@@ -13,7 +13,7 @@ const identity = {
   instanceId: "instance-a",
   requestKey: "request-a",
 };
-const request: NativeAppRequest = {
+const request: NativeTaskRequest = {
   operation: "modify_app",
   module_id: "inventory",
   instruction: "Add a review action",
@@ -29,6 +29,39 @@ const receipt = {
 const open = CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
 
 describe("durable native CTOX request identity", () => {
+  it.effect("recovers general native delegation and rejects an app-command receipt", () =>
+    Effect.gen(function* () {
+      yield* migration60;
+      const requests = yield* open;
+      const delegated: NativeTaskRequest = {
+        operation: "delegate_task",
+        module_id: "inventory",
+        title: "Review inventory",
+        objective: "Identify records that require replenishment",
+        record_id: "inventory-1",
+        idempotency_key: identity.requestKey,
+      };
+      const nativeKey = yield* requests.prepare(identity, delegated, target);
+      expect(yield* Effect.flip(requests.recordReceipt(identity, receipt))).toMatchObject({
+        reason: "native-response-invalid",
+      });
+      const restarted = yield* open;
+      expect((yield* restarted.get(identity)).request).toEqual(delegated);
+      expect(yield* restarted.prepare(identity, delegated, target)).toBe(nativeKey);
+      yield* restarted.recordReceipt(identity, { ...receipt, command_type: "ctox.delegate_task" });
+      expect(yield* restarted.get(identity)).toMatchObject({
+        request: delegated,
+        commandId: receipt.command_id,
+        taskId: receipt.task_id,
+      });
+      expect(
+        yield* Effect.flip(
+          restarted.prepare(identity, { ...delegated, objective: "Different work" }, target),
+        ),
+      ).toMatchObject({ reason: "native-request-conflict" });
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
   it.effect("recovers prepared intent and the same native task after service reconstruction", () =>
     Effect.gen(function* () {
       yield* migration60;

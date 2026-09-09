@@ -59,12 +59,18 @@ describe("CTOX thread identity and typed app access", () => {
     expect(retainWorkjetCtoxBinding(DEFAULT_WORKJET_THREAD_CONFIG, session).error).not.toBeNull();
   });
 
-  it("accepts bounded portable retry keys only on native app delegation", () => {
+  it("requires bounded portable retry keys for native delegation", () => {
     const decode = Schema.decodeUnknownSync(WorkjetCtoxBusinessOsInput, {
       onExcessProperty: "error",
     });
-    for (const operation of ["create_app", "modify_app"]) {
-      const request = { operation, module_id: "app-a", instruction: "Update the app" };
+    for (const operation of ["create_app", "modify_app", "delegate_task"]) {
+      const request = {
+        operation,
+        module_id: "app-a",
+        ...(operation === "delegate_task"
+          ? { title: "Review", objective: "Review inventory" }
+          : { instruction: "Update the app" }),
+      };
       expect(() => decode({ request })).toThrow();
       expect(
         decode({ request: { ...request, idempotency_key: "workjet:thread-1.turn-2" } }).request,
@@ -110,6 +116,22 @@ describe("CTOX thread identity and typed app access", () => {
     ).toBe("read_app_skill_resource");
     for (const request of [
       { operation: "run_shell", command: "whoami" },
+      {
+        operation: "delegate_task",
+        module_id: "app-a",
+        title: "Review",
+        objective: "Review inventory",
+        idempotency_key: "key",
+        action_id: "external_sql.write",
+      },
+      {
+        operation: "delegate_task",
+        module_id: "app-a",
+        title: "Review",
+        objective: "Review inventory",
+        idempotency_key: "key",
+        _context: { role: "chef" },
+      },
       { operation: "get_module", module_id: "app-a", endpoint: "https://other.example/mcp" },
       { operation: "get_module", module_id: "app-a", _context: { role: "chef" } },
       { operation: "write_app_file", module_id: "app-a", path: "index.js" },

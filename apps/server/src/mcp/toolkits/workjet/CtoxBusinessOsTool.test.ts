@@ -81,15 +81,26 @@ function fixture(retrySupport = false, loseDelegationResponse = false) {
                       properties: retrySupport ? { idempotency_key: { type: "string" } } : {},
                     },
                   },
+                  {
+                    name: "business_os.execute_action",
+                    inputSchema: {
+                      type: "object",
+                      properties: retrySupport ? { idempotency_key: { type: "string" } } : {},
+                    },
+                  },
                 ],
               }
             : {
                 structuredContent:
-                  body.params?.name === "business_os.modify_app"
+                  body.params?.name === "business_os.modify_app" ||
+                  body.params?.name === "business_os.execute_action"
                     ? {
                         ok: true,
                         module_id: "app-a",
-                        command_type: "ctox.business_os.app.modify",
+                        command_type:
+                          body.params?.name === "business_os.execute_action"
+                            ? "ctox.delegate_task"
+                            : "ctox.business_os.app.modify",
                         command_id: "cmd-native-a",
                         task_id: "task-native-a",
                         status: "accepted",
@@ -170,45 +181,58 @@ it.effect("writes through the registered MCP tool using only the session's pinne
 
 it.effect("dispatches a retry key only when the native operation advertises support", () =>
   Effect.gen(function* () {
-    for (const supported of [false, true]) {
-      const test = fixture(supported);
-      yield* Effect.gen(function* () {
-        const server = yield* McpServer.McpServer;
-        const result = yield* server
-          .callTool({
-            name: CTOX_BUSINESS_OS_TOOL_NAME,
-            arguments: {
-              request: {
-                operation: "modify_app",
-                module_id: "app-a",
-                instruction: "Add an inventory review action",
-                idempotency_key: "workjet-turn-1",
+    for (const operation of ["modify_app", "delegate_task"] as const) {
+      for (const supported of [false, true]) {
+        const test = fixture(supported);
+        yield* Effect.gen(function* () {
+          const server = yield* McpServer.McpServer;
+          const result = yield* server
+            .callTool({
+              name: CTOX_BUSINESS_OS_TOOL_NAME,
+              arguments: {
+                request: {
+                  operation,
+                  module_id: "app-a",
+                  ...(operation === "modify_app"
+                    ? { instruction: "Add an inventory review action" }
+                    : { title: "Inventory review", objective: "Review the inventory" }),
+                  idempotency_key: "workjet-turn-1",
+                },
               },
-            },
-          })
-          .pipe(
-            Effect.provideService(Invocation.McpInvocationContext, scope),
-            Effect.provideService(McpSchema.McpServerClient, client),
-          );
-        const writes = test.calls.filter(({ body }) => body.method === "tools/call");
-        expect(result.isError).toBe(!supported);
-        if (supported) {
-          expect(writes).toHaveLength(1);
-          expect(writes[0]?.body.params).toEqual({
-            name: "business_os.modify_app",
-            arguments: {
-              module_id: "app-a",
-              instruction: "Add an inventory review action",
-              idempotency_key: expect.stringMatching(/^workjet_[a-f0-9-]{36}$/),
-            },
-          });
-        } else {
-          expect(writes).toEqual([]);
-          expect(result.structuredContent).toMatchObject({
-            error: { reason: "remote-tools-missing" },
-          });
-        }
-      }).pipe(Effect.provide(test.layer));
+            })
+            .pipe(
+              Effect.provideService(Invocation.McpInvocationContext, scope),
+              Effect.provideService(McpSchema.McpServerClient, client),
+            );
+          const writes = test.calls.filter(({ body }) => body.method === "tools/call");
+          expect(result.isError).toBe(!supported);
+          if (supported) {
+            expect(writes).toHaveLength(1);
+            expect(writes[0]?.body.params).toEqual({
+              name:
+                operation === "modify_app"
+                  ? "business_os.modify_app"
+                  : "business_os.execute_action",
+              arguments: {
+                module_id: "app-a",
+                ...(operation === "modify_app"
+                  ? { instruction: "Add an inventory review action" }
+                  : {
+                      action_id: "ctox.delegate_task",
+                      title: "Inventory review",
+                      objective: "Review the inventory",
+                    }),
+                idempotency_key: expect.stringMatching(/^workjet_[a-f0-9-]{36}$/),
+              },
+            });
+          } else {
+            expect(writes).toEqual([]);
+            expect(result.structuredContent).toMatchObject({
+              error: { reason: "remote-tools-missing" },
+            });
+          }
+        }).pipe(Effect.provide(test.layer));
+      }
     }
   }),
 );

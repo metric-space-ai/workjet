@@ -13,9 +13,9 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type { CtoxMcpTarget } from "./CtoxMcpTransport.ts";
 
-export type NativeAppRequest = Extract<
+export type NativeTaskRequest = Extract<
   WorkjetCtoxBusinessOsInput["request"],
-  { readonly operation: "create_app" | "modify_app" }
+  { readonly operation: "create_app" | "modify_app" | "delegate_task" }
 > & { readonly idempotency_key: string };
 
 interface RequestIdentity {
@@ -26,7 +26,7 @@ interface RequestIdentity {
 }
 
 export interface NativeTaskReference {
-  readonly request: NativeAppRequest;
+  readonly request: NativeTaskRequest;
   readonly instanceId: string;
   readonly commandId: string | null;
   readonly taskId: string | null;
@@ -99,7 +99,7 @@ const make = Effect.gen(function* () {
 
   const prepare = Effect.fn("CtoxNativeRequests.prepare")(function* (
     identity: RequestIdentity,
-    request: NativeAppRequest,
+    request: NativeTaskRequest,
     target: CtoxMcpTarget,
   ) {
     if (request.idempotency_key !== identity.requestKey)
@@ -139,12 +139,16 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => failure("native-response-invalid")),
     );
     if (
-      (request.operation !== "create_app" && request.operation !== "modify_app") ||
+      (request.operation !== "create_app" &&
+        request.operation !== "modify_app" &&
+        request.operation !== "delegate_task") ||
       receipt.module_id !== request.module_id ||
       receipt.command_type !==
         (request.operation === "create_app"
           ? "ctox.business_os.app.create"
-          : "ctox.business_os.app.modify")
+          : request.operation === "modify_app"
+            ? "ctox.business_os.app.modify"
+            : "ctox.delegate_task")
     ) {
       return yield* failure("native-response-invalid");
     }
@@ -166,7 +170,9 @@ const make = Effect.gen(function* () {
     const row = yield* load(identity);
     const { request } = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
     if (
-      (request.operation !== "create_app" && request.operation !== "modify_app") ||
+      (request.operation !== "create_app" &&
+        request.operation !== "modify_app" &&
+        request.operation !== "delegate_task") ||
       !request.idempotency_key
     )
       return yield* unavailable();

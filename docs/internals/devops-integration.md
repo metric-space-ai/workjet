@@ -133,7 +133,7 @@ remain open. Added tests drive the registered MCP tool through a fake daemon.
 
 ## Native request persistence and recovery
 
-Workjet requires a retry key for native create/modify delegation. Migration 60
+Workjet requires a retry key for native create/modify/general-task delegation. Migration 60
 records that intent before the first
 remote write, scoped to its Workjet thread, connection and CTOX instance. The
 claim allocates a separate server-owned native retry key once; identical client
@@ -145,6 +145,15 @@ or completion. `get_delegation` recovers the original typed request and known
 references without contacting CTOX; live execution status still comes from the
 native command/run tools. This is also the persistence boundary for the planned
 native harness adapter, whose menu/session/event integration remains pending.
+
+`delegate_task` accepts a module, title, objective and optional record. The
+server fixes the remote action to `ctox.delegate_task`, verifies the native
+`execute_action` retry contract and uses the same durable request ledger as app
+delegation. Model arguments cannot select another action, target or actor.
+Receipt validation checks the native command kind before attaching its ids;
+an app-command receipt cannot be substituted for a general task. This is the
+shared dispatch prerequisite, not an independent CTOX runtime or a completed
+provider adapter.
 
 Workjet negotiates the selected native tool's retry-key schema before dispatch.
 CTOX PR #84 supplies the corresponding actor/workspace-scoped atomic claim.

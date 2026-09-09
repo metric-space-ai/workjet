@@ -18,7 +18,7 @@ export type NativeTaskRequest = Extract<
   { readonly operation: "create_app" | "modify_app" | "delegate_task" }
 > & { readonly idempotency_key: string };
 
-interface RequestIdentity {
+export interface CtoxNativeRequestIdentity {
   readonly threadId: ThreadId;
   readonly connectionId: WorkjetConnectionId;
   readonly instanceId: string;
@@ -44,6 +44,7 @@ export class CtoxNativeRequestError extends Schema.TaggedErrorClass<CtoxNativeRe
       "native-request-store-unavailable",
       "native-task-reference-conflict",
       "native-response-invalid",
+      "ctox-operation-rejected",
     ]),
   },
 ) {}
@@ -77,7 +78,7 @@ const Receipt = Schema.Struct({
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const load = (identity: RequestIdentity) =>
+  const load = (identity: CtoxNativeRequestIdentity) =>
     sql`
     SELECT connection_id AS "connectionId", instance_id AS "instanceId",
       intent_json AS "intentJson", target_digest AS "targetDigest", remote_request_key AS "remoteRequestKey",
@@ -98,7 +99,7 @@ const make = Effect.gen(function* () {
     );
 
   const prepare = Effect.fn("CtoxNativeRequests.prepare")(function* (
-    identity: RequestIdentity,
+    identity: CtoxNativeRequestIdentity,
     request: NativeTaskRequest,
     target: CtoxMcpTarget,
   ) {
@@ -130,7 +131,7 @@ const make = Effect.gen(function* () {
   });
 
   const recordReceipt = Effect.fn("CtoxNativeRequests.recordReceipt")(function* (
-    identity: RequestIdentity,
+    identity: CtoxNativeRequestIdentity,
     value: unknown,
   ) {
     const row = yield* load(identity);
@@ -166,7 +167,7 @@ const make = Effect.gen(function* () {
     if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
   });
 
-  const get = Effect.fn("CtoxNativeRequests.get")(function* (identity: RequestIdentity) {
+  const get = Effect.fn("CtoxNativeRequests.get")(function* (identity: CtoxNativeRequestIdentity) {
     const row = yield* load(identity);
     const { request } = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
     if (

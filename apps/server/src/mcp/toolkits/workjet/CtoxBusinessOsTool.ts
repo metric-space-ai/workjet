@@ -13,6 +13,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import { DecisionHubConnectionRegistry } from "../../../workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import { makeCtoxMcpTransport } from "../../../workjet/ctox/CtoxMcpTransport.ts";
 import { CtoxNativeRequests } from "../../../workjet/ctox/CtoxNativeRequests.ts";
+import { makeCtoxNativeTaskClient } from "../../../workjet/ctox/CtoxNativeTaskClient.ts";
 
 export const CTOX_BUSINESS_OS_TOOL_NAME = "ctox_business_os";
 export const isCtoxBusinessOsToolVisible = (scope: McpInvocationContext.McpInvocationScope) =>
@@ -121,59 +122,42 @@ const register = Effect.fn("mcp.registerCtoxBusinessOs")(function* () {
           });
         }
         if (Option.isNone(registry)) return failureResult("connection-unavailable");
-        const target = yield* registry.value.resolveReadyTarget(
-          binding.connectionId,
-          binding.instanceId,
-        );
-        const { operation, ...arguments_ } = input.request;
-        const name =
-          operation === "delegate_task" ? "business_os.execute_action" : `business_os.${operation}`;
-        const requiresRetryContract =
-          (input.request.operation === "create_app" ||
-            input.request.operation === "modify_app" ||
-            input.request.operation === "delegate_task") &&
-          input.request.idempotency_key !== undefined;
-        yield* transport.probe(
-          target,
-          [name],
-          requiresRetryContract ? { [name]: ["idempotency_key"] } : {},
-        );
-        const nativeRequest =
-          (input.request.operation === "create_app" ||
-            input.request.operation === "modify_app" ||
-            input.request.operation === "delegate_task") &&
-          input.request.idempotency_key !== undefined
-            ? { ...input.request, idempotency_key: input.request.idempotency_key }
-            : undefined;
-        const nativeArguments =
-          operation === "delegate_task"
-            ? { ...arguments_, action_id: "ctox.delegate_task" }
-            : arguments_;
-        let dispatchArguments: Readonly<Record<string, unknown>> = nativeArguments;
-        if (nativeRequest) {
+        let result: unknown;
+        if (
+          input.request.operation === "create_app" ||
+          input.request.operation === "modify_app" ||
+          input.request.operation === "delegate_task"
+        ) {
           if (Option.isNone(nativeRequests))
             return failureResult("native-request-store-unavailable");
-          const remoteRequestKey = yield* nativeRequests.value.prepare(
-            identity(nativeRequest.idempotency_key),
-            nativeRequest,
-            target,
+          const nativeClient = makeCtoxNativeTaskClient({
+            connections: registry.value,
+            requests: nativeRequests.value,
+            transport,
+          });
+          const submitted = yield* nativeClient.submit(
+            identity(input.request.idempotency_key),
+            input.request,
           );
-          dispatchArguments = { ...nativeArguments, idempotency_key: remoteRequestKey };
-        }
-        const timeout =
-          operation === "validate_app" || operation === "smoke_app" || operation === "e2e_app"
-            ? Duration.seconds(310)
-            : Duration.seconds(10);
-        const result = yield* transport.callTool(target, name, dispatchArguments, timeout);
-        if (result.isError || result.structuredContent === undefined)
-          return failureResult("ctox-operation-rejected");
-        if (nativeRequest && Option.isSome(nativeRequests)) {
-          yield* nativeRequests.value.recordReceipt(
-            identity(nativeRequest.idempotency_key),
-            result.structuredContent,
+          result = submitted.result;
+        } else {
+          const target = yield* registry.value.resolveReadyTarget(
+            binding.connectionId,
+            binding.instanceId,
           );
+          const { operation, ...arguments_ } = input.request;
+          const name = `business_os.${operation}`;
+          yield* transport.probe(target, [name]);
+          const timeout =
+            operation === "validate_app" || operation === "smoke_app" || operation === "e2e_app"
+              ? Duration.seconds(310)
+              : Duration.seconds(10);
+          const response = yield* transport.callTool(target, name, arguments_, timeout);
+          if (response.isError || response.structuredContent === undefined)
+            return failureResult("ctox-operation-rejected");
+          result = response.structuredContent;
         }
-        const output = { instanceId: binding.instanceId, result: result.structuredContent };
+        const output = { instanceId: binding.instanceId, result };
         return new McpSchema.CallToolResult({
           isError: false,
           structuredContent: output,

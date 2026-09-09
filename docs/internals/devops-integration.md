@@ -155,6 +155,25 @@ an app-command receipt cannot be substituted for a general task. This is the
 shared dispatch prerequisite, not an independent CTOX runtime or a completed
 provider adapter.
 
+The command reactor now forwards the persisted command/event identity as
+`ProviderSendTurnInput.requestId`. This identity survives provider-service
+session recovery; it is optional for existing direct callers and does not
+claim that external vendor harnesses support idempotent execution.
+`CtoxNativeTaskClient` centralizes native dispatch and is used by the registered
+MCP tool. Its `submitTurn` path derives the local retry key from the persisted
+intent identity, then uses the existing request ledger's separate native key.
+After an accepted response is lost, reconstructing the client and submitting
+the same turn recovers the original task; changed intent is rejected and a
+distinct command remains distinct even when its text is identical. The client
+owns no daemon, cancellation or background polling. Provider menu/session/event
+wiring is still required to expose it as the native CTOX harness.
+
+Added verification covers the real reactor's forwarded command id, provider
+session recovery retaining that id, and a database-backed client reconstruction
+with a fake native peer that accepts a request before losing its response.
+Existing registered-tool tests exercise the shared dispatch path. These tests
+remain subject to CI; syntax/formatting alone is not behavioral verification.
+
 Workjet negotiates the selected native tool's retry-key schema before dispatch.
 CTOX PR #84 supplies the corresponding actor/workspace-scoped atomic claim.
 Local claims cannot change intent or instance, and stored native task references

@@ -1,9 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowUpIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { openInstanceSetup } from "../instanceSetup";
 import { Button } from "./ui/button";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 
 import { CtoxInstanceSelectOption } from "./ctox/CtoxInstanceSelectOption";
 import { useCtoxMode } from "./ctox/CtoxModeShell";
@@ -33,7 +33,6 @@ export function resolveActiveCtoxInstanceId(
 export function ActiveCtoxInstanceSelector() {
   const navigate = useNavigate();
   const { discovery, selectedId, select, showNetwork } = useCtoxMode();
-  const picker = useRef<HTMLSelectElement>(null);
   const { selectionRevision } = useActiveWorkjetScope();
   const instances = useMemo(() => selectableCtoxInstances(discovery), [discovery]);
   const activeId = resolveActiveCtoxInstanceId(instances, selectedId);
@@ -66,10 +65,6 @@ export function ActiveCtoxInstanceSelector() {
         <label className="block min-w-0 flex-1">
           <span className="sr-only">CTOX-Instanz auswählen</span>
           <select
-            ref={picker}
-            aria-describedby={
-              activeId === null && !loading ? "workjet-instance-selection-hint" : undefined
-            }
             aria-label="CTOX-Instanz auswählen"
             className="h-8 w-full truncate rounded-md border border-sidebar-border bg-sidebar-accent/35 px-2 text-sm font-semibold text-sidebar-foreground outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
             disabled={loading || failed || instances.length === 0}
@@ -91,35 +86,6 @@ export function ActiveCtoxInstanceSelector() {
           <PlusIcon className="size-4" />
         </Button>
       </div>
-      {activeId === null && !loading ? (
-        <div
-          id="workjet-instance-selection-hint"
-          role="status"
-          className="mt-2 rounded-lg border border-primary/40 bg-popover p-3 text-sm"
-        >
-          <ArrowUpIcon aria-hidden className="mb-1 size-5 text-primary" />
-          <button
-            type="button"
-            className="text-left font-medium text-foreground"
-            onClick={() => {
-              if (instances.length === 0) {
-                openInstanceSetup();
-                return;
-              }
-              picker.current?.focus();
-              try {
-                picker.current?.showPicker();
-              } catch {
-                /* Focus remains available for keyboard selection. */
-              }
-            }}
-          >
-            {instances.length === 0
-              ? "Erste Instanz erstellen oder verbinden"
-              : "Bitte zuerst eine Instanz wählen"}
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

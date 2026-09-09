@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { LaptopIcon, NetworkIcon, PlusIcon, ServerIcon, SmartphoneIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
+import { NetworkDiagram } from "./NetworkDiagram";
 import type {
   CtoxInstanceAppsResult,
   CtoxManagedInstance,
@@ -70,6 +71,7 @@ function InstanceNode({
   const [apps, setApps] = useState<CtoxInstanceAppsResult | null>(null);
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[] | null>(null);
   const [configure, setConfigure] = useState(false);
+  const [inspected, setInspected] = useState<string | null>(null);
   const [setupBusy, setSetupBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const { environments } = useEnvironments();
@@ -117,125 +119,139 @@ function InstanceNode({
         environment.environmentId === hostComputer.environmentId &&
         environment.connection.phase === "connected",
     );
+  const satelliteNodes =
+    assigned
+      ?.filter((computer) => !computer.selfHostedColocation)
+      .map((computer) => {
+        const configured = computers.find((candidate) => candidate.id === computer.id);
+        return {
+          id: computer.id,
+          name: computer.displayName,
+          connected: Boolean(
+            configured &&
+            environments.some(
+              (environment) =>
+                environment.environmentId === configured.environmentId &&
+                environment.connection.phase === "connected",
+            ),
+          ),
+        };
+      }) ?? null;
+  const inspectedComputer =
+    inspected === "master"
+      ? hostComputer
+      : computers.find(
+          (computer) =>
+            computer.id === inspected && satelliteNodes?.some((node) => node.id === computer.id),
+        );
+  const inspectedConnected =
+    inspected === "master"
+      ? hostConnected
+      : satelliteNodes?.find((computer) => computer.id === inspected)?.connected;
   return (
-    <article
-      className="rounded-2xl border border-border bg-card/30 p-5"
-      data-workjet-network-instance={instance.id}
-    >
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{ctoxInstanceDisplayTitle(instance)}</h2>
-          <p className="text-xs text-muted-foreground">
-            Eigenes Netzwerk · gemeinsamer Sync über den CTOX-Master
-          </p>
+    <article className="network-instance" data-workjet-network-instance={instance.id}>
+      <header className="network-instance-header">
+        <div className="network-instance-title">
+          <h2>{ctoxInstanceDisplayTitle(instance)}</h2>
+          <span>
+            {instance.source === "local_daemon" ? "Lokal" : (instance.domain ?? "Remote")}
+          </span>
         </div>
-        <Button size="sm" disabled={!available} onClick={() => onSelect(instance)}>
-          {available ? "Instanz auswählen" : "Derzeit nicht erreichbar"}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!available}
+          onClick={() => onSelect(instance)}
+        >
+          {available ? "Instanz auswählen" : "Nicht erreichbar"}
         </Button>
       </header>
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)]">
-        <section className="min-w-0 rounded-xl border border-border p-4">
-          <h3 className="flex items-center gap-2 text-sm font-medium">
-            <SmartphoneIcon className="size-4" aria-hidden />
-            Desktop- und Mobil-Clients
-          </h3>
-          <p className="mt-2 text-xs text-muted-foreground">
-            {devices === null
-              ? "Registrierte Geräte: noch nicht geprüft"
-              : `${devices.length} registrierte Geräte`}
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Aktuell verbundene Benutzer und Clients: noch nicht gemeldet.
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Ein Client kann auf mehrere Instanzen zugreifen.
-          </p>
-        </section>
-        <section className="min-w-0 rounded-xl border border-primary/40 bg-primary/5 p-4">
-          <p className="flex items-center gap-2 text-sm font-medium">
-            <ServerIcon className="size-4" aria-hidden />
-            Zentralrechner
-          </p>
-          <p className="mt-1 break-words text-xs text-muted-foreground">
-            {host?.displayName ?? instanceHostLabel(instance)}
-          </p>
-          <div className="mt-4 rounded-lg border border-primary/25 p-3 text-sm">
-            <h3 className="flex items-center gap-2 font-medium">
-              <NetworkIcon className="size-4" aria-hidden />
-              CTOX-Master
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">Sync · Projekte · Aufgaben</p>
-            <p className="mt-2 text-xs">Ops / Business OS · {instanceAppsLabel(apps)}</p>
-          </div>
-          <details className="mt-3 text-sm">
-            <summary className="cursor-pointer">Harnesses auf dem Zentralrechner</summary>
-            {hostConnected && hostComputer ? (
-              <ComputerHarnesses environmentId={hostComputer.environmentId} />
+      <div className="network-instance-body">
+        <NetworkDiagram
+          name={ctoxInstanceDisplayTitle(instance)}
+          host={host?.displayName ?? instanceHostLabel(instance)}
+          ready={instance.healthSummary.dataPlaneReady}
+          satellites={satelliteNodes}
+          registeredClients={devices?.length ?? null}
+          selected={inspected}
+          onInspect={setInspected}
+          canAdd={available}
+          onAdd={() => setConfigure(true)}
+        />
+        {inspected !== null && (
+          <aside className="network-inspector" aria-label="Knotendetails">
+            <header className="network-inspector-header">
+              <h3>
+                {inspected === "master"
+                  ? "Zentralrechner"
+                  : inspected === "clients"
+                    ? "App-Clients"
+                    : "Satellit"}
+              </h3>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Details schließen"
+                onClick={() => setInspected(null)}
+              >
+                <XIcon size={15} />
+              </Button>
+            </header>
+            {inspected === "clients" ? (
+              <>
+                <div className="network-inspector-name">Desktop &amp; Mobil</div>
+                <p>
+                  {devices === null
+                    ? "Geräte wurden noch nicht bestätigt."
+                    : `${devices.length} registrierte Geräte.`}
+                </p>
+                <h4>Aktuell verbunden</h4>
+                <p>Benutzer und Live-Präsenz werden von dieser Instanz noch nicht gemeldet.</p>
+              </>
             ) : (
-              <p className="mt-2 text-xs text-muted-foreground">Noch nicht geprüft</p>
+              <>
+                <div className="network-inspector-name">
+                  {inspected === "master"
+                    ? (host?.displayName ?? instanceHostLabel(instance))
+                    : satelliteNodes?.find((node) => node.id === inspected)?.name}
+                </div>
+                <p>
+                  {inspectedConnected
+                    ? "Mit dieser App verbunden"
+                    : "Computerverbindung nicht bestätigt"}
+                </p>
+                {inspected === "master" && (
+                  <>
+                    <h4>CTOX-Instanz</h4>
+                    <p>Gemeinsamer Sync · Projekte · Aufgaben</p>
+                    <p>Ops / Business OS · {instanceAppsLabel(apps)}</p>
+                  </>
+                )}
+                <h4>Harnesses</h4>
+                {inspectedConnected && inspectedComputer ? (
+                  <ComputerHarnesses environmentId={inspectedComputer.environmentId} />
+                ) : (
+                  <p>Verfügbarkeit noch nicht geprüft.</p>
+                )}
+              </>
             )}
-          </details>
-        </section>
-        <section className="min-w-0 space-y-3 border-l-2 border-primary/25 pl-4">
-          <h3 className="flex items-center gap-2 text-sm font-medium">
-            <LaptopIcon className="size-4" aria-hidden />
-            Satelliten-PCs
-          </h3>
-          {assigned === null ? (
-            <p className="text-xs text-muted-foreground">
-              Die Instanz hat ihre Computerzuordnung noch nicht bestätigt.
+            <h4>Netzwerk</h4>
+            <p>
+              {assigned === null
+                ? "Computerzuordnung noch nicht bestätigt."
+                : `${satelliteNodes?.length ?? 0} Satelliten zugeordnet.`}
             </p>
-          ) : assigned.filter((computer) => !computer.selfHostedColocation).length === 0 ? (
-            <p className="text-xs text-muted-foreground">Noch keine Satelliten-PCs zugeordnet.</p>
-          ) : null}
-          {assigned
-            ?.filter((computer) => !computer.selfHostedColocation)
-            .map((computer) => {
-              const configured = computers.find((candidate) => candidate.id === computer.id);
-              const connected =
-                configured &&
-                environments.some(
-                  (environment) =>
-                    environment.environmentId === configured.environmentId &&
-                    environment.connection.phase === "connected",
-                );
-              return (
-                <details key={computer.id} className="rounded-lg border border-border p-3">
-                  <summary className="cursor-pointer break-words text-sm font-medium">
-                    {computer.displayName}
-                  </summary>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {connected ? "Mit dieser App verbunden" : "Verbindung noch nicht bestätigt"}
-                  </p>
-                  {connected && configured ? (
-                    <ComputerHarnesses environmentId={configured.environmentId} />
-                  ) : (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Harnesses: noch nicht geprüft
-                    </p>
-                  )}
-                </details>
-              );
-            })}
-          <Button
-            variant="outline"
-            className="h-auto w-full whitespace-normal border-dashed py-3 sm:h-auto"
-            disabled={!available}
-            onClick={() => setConfigure(true)}
-          >
-            <PlusIcon className="size-4" aria-hidden />
-            Satelliten-PC hinzufügen
-          </Button>
-        </section>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-4"
+              onClick={() => setRevision((value) => value + 1)}
+            >
+              Netzwerk prüfen
+            </Button>
+          </aside>
+        )}
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-3"
-        onClick={() => setRevision((value) => value + 1)}
-      >
-        Netzwerk prüfen
-      </Button>
       <Dialog
         open={configure}
         onOpenChange={(open) => {
@@ -271,26 +287,30 @@ export function InstanceNetworkOverview({
   readonly onSelect: (instance: CtoxManagedInstance) => void;
 }) {
   return (
-    <section aria-label="Dein Workjet-Netzwerk" className="space-y-5">
-      {instances.map((instance) => (
-        <InstanceNode key={instance.id} instance={instance} onSelect={onSelect} />
-      ))}
-      <button
-        type="button"
-        className="flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border bg-muted/10 p-8 text-muted-foreground hover:border-primary/50 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-primary"
-        onClick={() => openInstanceSetup()}
-      >
-        <ServerIcon className="size-8" aria-hidden />
-        <span className="font-medium">
-          {instances.length === 0
-            ? "Zentralrechner einrichten oder verbinden"
-            : "Weiteren CTOX-Master hinzufügen"}
-        </span>
-        <span className="max-w-md text-center text-sm">
-          Neue Instanz auf einem Computer einrichten oder Zugriff auf eine vorhandene Instanz
-          hinzufügen.
-        </span>
-      </button>
+    <section aria-label="Dein Workjet-Netzwerk">
+      {instances.length === 0 ? (
+        <NetworkDiagram
+          name="Erstes Netzwerk"
+          host=""
+          ready={false}
+          satellites={[]}
+          registeredClients={null}
+          selected={null}
+          empty
+          onInspect={() => {}}
+          onAdd={() => openInstanceSetup()}
+        />
+      ) : (
+        instances.map((instance) => (
+          <InstanceNode key={instance.id} instance={instance} onSelect={onSelect} />
+        ))
+      )}
+      {instances.length > 0 && (
+        <button type="button" className="network-new-instance" onClick={() => openInstanceSetup()}>
+          <PlusIcon size={18} />
+          Weitere Instanz hinzufügen
+        </button>
+      )}
     </section>
   );
 }

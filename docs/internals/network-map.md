@@ -36,6 +36,24 @@ that a user must configure in parallel with a computer.
   must identify the authenticated user and Desktop/Mobile client for each
   instance, and expire after disconnect or missing heartbeats.
 
+## Diagram composition
+
+The network home uses the full workspace without a project sidebar. A compact
+header contains the instance selector and Settings. Each instance is drawn as a
+connected topology: client access above the central CTOX host, confirmed computer
+assignments below it, and a dashed add-computer node. Missing resources are setup
+affordances, not invented inventory.
+
+Nodes are native keyboard-accessible buttons. Clicking a node opens its context
+inspector; it never changes the selected instance. Only the explicit instance
+selection action changes scope. The inspector closes independently. Zoom controls
+and fit-to-width keep the graph navigable without horizontal document overflow;
+an enlarged graph scrolls inside its own viewport. Reduced motion is respected.
+The map has no continuous animation or graph-layout simulation.
+
+The earlier nested text-card layout is rejected. This replacement is still a
+visual draft pending actual rendered review and integrated desktop acceptance.
+
 ## Evidence boundary
 
 The current computer projection supplies assignment, declared capabilities and

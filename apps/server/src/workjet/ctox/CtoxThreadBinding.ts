@@ -54,7 +54,22 @@ export interface CtoxThreadBindingFacts {
 export class CtoxThreadBindingSource extends Context.Service<
   CtoxThreadBindingSource,
   {
+    /**
+     * The RESUME path. Reads the thread's persisted runtime binding, which only
+     * exists once a session has been started.
+     */
     readonly forThread: (threadId: ThreadId) => Effect.Effect<CtoxThreadBindingFacts>;
+    /**
+     * The FIRST-START path. `ProviderSessionStartInput` already carries the
+     * validated `workjetConfig`, so a first start must resolve from that rather
+     * than from a ProviderSessionDirectory row that is written only afterwards.
+     * Reading the row first would make every first start fail with
+     * "no-thread-binding" — and pretending the session was persisted in order to
+     * get past it would be worse.
+     */
+    readonly fromStartConfig: (
+      workjetConfig: WorkjetThreadConfig,
+    ) => Effect.Effect<CtoxThreadBindingFacts>;
   }
 >()("workjet/workjet/ctox/CtoxThreadBinding/CtoxThreadBindingSource") {}
 
@@ -72,19 +87,10 @@ export const make = Effect.gen(function* () {
   const sessions = yield* ProviderSessionDirectory.ProviderSessionDirectory;
   const connections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
 
-  const forThread = (threadId: ThreadId): Effect.Effect<CtoxThreadBindingFacts> =>
+  /** The one derivation both entry points share, so they cannot disagree. */
+  const factsFor = (workjetConfig: WorkjetThreadConfig): Effect.Effect<CtoxThreadBindingFacts> =>
     Effect.gen(function* () {
       const environmentId = yield* environment.getEnvironmentId;
-      const found = yield* sessions
-        .getBinding(threadId)
-        .pipe(
-          Effect.orElseSucceed(() =>
-            Option.none<ProviderSessionDirectory.ProviderRuntimeBinding>(),
-          ),
-        );
-      if (Option.isNone(found)) return { environmentId, binding: undefined };
-
-      const workjetConfig = persistedWorkjetConfig(found.value.runtimePayload);
       const summaries = yield* Option.match(connections, {
         onNone: () => Effect.succeed([]),
         onSome: (registry) => registry.list.pipe(Effect.orElseSucceed(() => [])),
@@ -112,7 +118,22 @@ export const make = Effect.gen(function* () {
       };
     });
 
-  return { forThread } as const;
+  const forThread = (threadId: ThreadId): Effect.Effect<CtoxThreadBindingFacts> =>
+    Effect.gen(function* () {
+      const found = yield* sessions
+        .getBinding(threadId)
+        .pipe(
+          Effect.orElseSucceed(() =>
+            Option.none<ProviderSessionDirectory.ProviderRuntimeBinding>(),
+          ),
+        );
+      if (Option.isNone(found)) {
+        return { environmentId: yield* environment.getEnvironmentId, binding: undefined };
+      }
+      return yield* factsFor(persistedWorkjetConfig(found.value.runtimePayload));
+    });
+
+  return { forThread, fromStartConfig: factsFor } as const;
 });
 
 export const CtoxThreadBindingSourceLive = Layer.effect(CtoxThreadBindingSource, make);

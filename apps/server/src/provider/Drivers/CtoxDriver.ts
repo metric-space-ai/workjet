@@ -29,6 +29,7 @@
 import {
   ProviderDriverKind,
   TextGenerationError,
+  type WorkjetThreadConfig,
   type ServerProvider,
   type WorkjetConnectionId,
 } from "@workjet/contracts";
@@ -193,9 +194,15 @@ export const CtoxDriver: ProviderDriver<CtoxProviderConfig, CtoxDriverEnv> = {
        */
       const resolveTaskScope = (
         threadId: Parameters<Parameters<typeof makeCtoxAdapter>[0]["resolveTaskScope"]>[0],
+        workjetConfig?: WorkjetThreadConfig,
       ): Effect.Effect<CtoxTaskScope, ProviderAdapterRequestError> =>
         Effect.gen(function* () {
-          const facts = yield* bindings.forThread(threadId);
+          // First start: the validated start input is the only place the
+          // binding exists yet, because the runtime row is written after this
+          // returns. Resume: the persisted binding is the durable answer.
+          const facts = yield* workjetConfig
+            ? bindings.fromStartConfig(workjetConfig)
+            : bindings.forThread(threadId);
           const scope = yield* resolveCtoxThreadScope({
             threadId,
             environmentId: facts.environmentId,

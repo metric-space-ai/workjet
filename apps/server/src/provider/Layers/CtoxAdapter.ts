@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Stable native turn/event ids; no CLI process is started.
 import * as NodeCrypto from "node:crypto";
 import {
+  type WorkjetThreadConfig,
   EventId,
   ProviderDriverKind,
   RuntimeItemId,
@@ -68,8 +69,16 @@ export const makeCtoxAdapter = (options: {
   readonly ctoxInstanceId: string;
   readonly connectionId: WorkjetConnectionId;
   readonly client: NativeClient;
+  /**
+   * `workjetConfig` is the VALIDATED start input, present on a first start and
+   * absent on every later call. A first start has no persisted runtime binding
+   * yet — that row is written after this returns — so a resolver that only read
+   * persisted state would refuse every new thread. Passing the real input
+   * through is the alternative to pretending the session was already stored.
+   */
   readonly resolveTaskScope: (
     threadId: ThreadId,
+    workjetConfig?: WorkjetThreadConfig,
   ) => Effect.Effect<CtoxTaskScope, ProviderAdapterError>;
 }) =>
   Effect.gen(function* () {
@@ -280,7 +289,7 @@ export const makeCtoxAdapter = (options: {
               "startSession",
               "CTOX uses the model configuration of its own instance.",
             );
-          const taskScope = yield* options.resolveTaskScope(input.threadId);
+          const taskScope = yield* options.resolveTaskScope(input.threadId, input.workjetConfig);
           const cursor = cursorFor(taskScope);
           if (input.resumeCursor !== undefined) {
             const resumed = yield* decodeCursor(input.resumeCursor).pipe(

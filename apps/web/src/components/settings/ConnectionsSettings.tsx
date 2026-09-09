@@ -1493,6 +1493,7 @@ function SavedBackendListRow({
                   size="xs"
                   variant="outline"
                   disabled={removingEnvironmentId === environmentId}
+                  aria-label={`Remove ${environment.label}`}
                   onClick={() => void onRemove(environmentId)}
                 >
                   {removingEnvironmentId === environmentId ? "Removing…" : "Remove"}
@@ -1502,6 +1503,7 @@ function SavedBackendListRow({
                 size="xs"
                 variant="outline"
                 disabled={isConnecting || removingEnvironmentId === environmentId}
+                aria-label={`${isConnected ? "Disconnect" : "Connect"} ${environment.label}`}
                 onClick={() =>
                   void (isConnected ? onDisconnect(environmentId) : onConnect(environmentId))
                 }

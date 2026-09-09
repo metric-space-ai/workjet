@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
+import { normalizeCtoxMcpEndpoint } from "../ctox/CtoxMcpTransport.ts";
 import { DecisionHubMcpClient, type DecisionHubMcpTarget } from "./DecisionHubMcpClient.ts";
 
 const ConnectionRow = Schema.Struct({
@@ -44,21 +45,7 @@ const secretName = (connectionId: WorkjetConnectionId): string =>
 export const normalizeDecisionHubEndpoint = (
   value: string,
 ): Effect.Effect<string, WorkjetDecisionHubConnectionError> =>
-  Effect.try({
-    try: () => {
-      const url = new URL(value);
-      if (url.username !== "" || url.password !== "" || url.hash !== "") throw new Error();
-      const loopback =
-        url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
-      if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new Error();
-      url.search = "";
-      url.pathname = url.pathname.replace(/\/+$/, "");
-      if (!url.pathname.endsWith("/mcp"))
-        url.pathname = `${url.pathname}/mcp`.replace("//mcp", "/mcp");
-      return url.toString();
-    },
-    catch: () => failure("invalid-endpoint"),
-  });
+  normalizeCtoxMcpEndpoint(value).pipe(Effect.mapError((error) => failure(error.reason)));
 
 export interface DecisionHubConnectionRegistryShape {
   readonly list: Effect.Effect<

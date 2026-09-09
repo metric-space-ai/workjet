@@ -3,13 +3,18 @@ import {
   WorkjetDecisionHubConnectionError,
   type WorkjetDecisionHubEscalationResult,
 } from "@workjet/contracts";
-import * as Duration from "effect/Duration";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { HttpClient } from "effect/unstable/http";
+
+import { makeCtoxMcpTransport, type CtoxMcpTarget } from "../ctox/CtoxMcpTransport.ts";
+
+export {
+  CTOX_MCP_SERVER_NAME,
+  isCtoxMcpResponseWithinLimit as isDecisionHubResponseWithinLimit,
+} from "../ctox/CtoxMcpTransport.ts";
 
 export const DECISION_HUB_REQUEST_TOOL = "decision_hub.request_decision";
 export const DECISION_HUB_GET_TOOL = "decision_hub.get_decision";
@@ -17,28 +22,8 @@ export const DECISION_HUB_REMOTE_TOOLS = Object.freeze([
   DECISION_HUB_REQUEST_TOOL,
   DECISION_HUB_GET_TOOL,
 ]);
-export const CTOX_MCP_SERVER_NAME = "ctox-business-os-mcp";
 
-const REQUEST_TIMEOUT = Duration.seconds(10);
-const MAX_RESPONSE_BYTES = 256 * 1_024;
-
-const JsonRpcEnvelope = Schema.Struct({
-  result: Schema.optional(Schema.Unknown),
-  error: Schema.optional(Schema.Struct({ code: Schema.optional(Schema.Number) })),
-});
-const decodeEnvelope = Schema.decodeUnknownEffect(Schema.fromJsonString(JsonRpcEnvelope));
-const ServerInfo = Schema.Struct({ serverInfo: Schema.Struct({ name: Schema.String }) });
-const ToolList = Schema.Struct({
-  tools: Schema.Array(Schema.Struct({ name: Schema.String })),
-});
-const ToolResult = Schema.Struct({
-  isError: Schema.optional(Schema.Boolean),
-  structuredContent: Schema.optional(Schema.Unknown),
-});
-const RequestResult = Schema.Struct({
-  decision_id: Schema.String,
-  status: Schema.String,
-});
+const RequestResult = Schema.Struct({ decision_id: Schema.String, status: Schema.String });
 const GetResult = Schema.Struct({
   decision_id: Schema.String,
   status: Schema.String,
@@ -65,9 +50,6 @@ type ConnectionErrorReason = WorkjetDecisionHubConnectionError["reason"];
 const failure = (reason: ConnectionErrorReason) =>
   new WorkjetDecisionHubConnectionError({ reason });
 
-export const isDecisionHubResponseWithinLimit = (body: string): boolean =>
-  new TextEncoder().encode(body).byteLength <= MAX_RESPONSE_BYTES;
-
 export const mapRemoteStatus = (status: string): "open" | "resolved" | "expired" | undefined => {
   if (status === "open" || status === "offen") return "open";
   if (status === "resolved" || status === "entschieden") return "resolved";
@@ -75,10 +57,7 @@ export const mapRemoteStatus = (status: string): "open" | "resolved" | "expired"
   return undefined;
 };
 
-export interface DecisionHubMcpTarget {
-  readonly endpoint: string;
-  readonly token: string;
-}
+export type DecisionHubMcpTarget = CtoxMcpTarget;
 
 export interface DecisionHubMcpClientShape {
   readonly probe: (
@@ -100,73 +79,19 @@ export class DecisionHubMcpClient extends Context.Service<
 >()("workjet/workjet/decisionHub/DecisionHubMcpClient") {}
 
 const make = Effect.gen(function* () {
-  const httpClient = yield* HttpClient.HttpClient;
-  let requestId = 0;
-
-  const call = (
-    target: DecisionHubMcpTarget,
-    method: "initialize" | "tools/list" | "tools/call",
-    params?: unknown,
-  ): Effect.Effect<unknown, WorkjetDecisionHubConnectionError> =>
-    Effect.gen(function* () {
-      const request = HttpClientRequest.post(target.endpoint).pipe(
-        HttpClientRequest.bodyJsonUnsafe({
-          jsonrpc: "2.0",
-          id: ++requestId,
-          method,
-          ...(params === undefined ? {} : { params }),
-        }),
-        HttpClientRequest.acceptJson,
-        HttpClientRequest.bearerToken(target.token),
-      );
-      const response = yield* httpClient.execute(request);
-      if (response.status < 200 || response.status >= 300) {
-        return yield* failure("connection-unavailable");
-      }
-      const body = yield* response.text;
-      if (!isDecisionHubResponseWithinLimit(body)) {
-        return yield* failure("remote-response-invalid");
-      }
-      const envelope = yield* decodeEnvelope(body).pipe(Effect.option);
-      if (Option.isNone(envelope) || envelope.value.error !== undefined) {
-        return yield* failure("remote-response-invalid");
-      }
-      if (envelope.value.result === undefined) {
-        return yield* failure("remote-response-invalid");
-      }
-      return envelope.value.result;
-    }).pipe(
-      Effect.scoped,
-      Effect.timeout(REQUEST_TIMEOUT),
-      Effect.catchTags({
-        TimeoutError: () => Effect.fail(failure("connection-unavailable")),
-        HttpClientError: () => Effect.fail(failure("connection-unavailable")),
-      }),
-    );
-
+  const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
   const probe: DecisionHubMcpClientShape["probe"] = (target) =>
-    Effect.gen(function* () {
-      const initialized = yield* call(target, "initialize");
-      const info = yield* Schema.decodeUnknownEffect(ServerInfo)(initialized).pipe(Effect.option);
-      if (Option.isNone(info) || info.value.serverInfo.name !== CTOX_MCP_SERVER_NAME) {
-        return yield* failure("remote-identity-mismatch");
-      }
-      const listed = yield* call(target, "tools/list", {});
-      const tools = yield* Schema.decodeUnknownEffect(ToolList)(listed).pipe(Effect.option);
-      const names = new Set(Option.isSome(tools) ? tools.value.tools.map(({ name }) => name) : []);
-      if (DECISION_HUB_REMOTE_TOOLS.some((tool) => !names.has(tool))) {
-        return yield* failure("remote-tools-missing");
-      }
-    });
+    transport
+      .probe(target, DECISION_HUB_REMOTE_TOOLS)
+      .pipe(Effect.mapError((error) => failure(error.reason)));
 
   const callTool = (
     target: DecisionHubMcpTarget,
     name: (typeof DECISION_HUB_REMOTE_TOOLS)[number],
     arguments_: Readonly<Record<string, unknown>>,
   ) =>
-    call(target, "tools/call", { name, arguments: arguments_ }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(ToolResult)),
-      Effect.mapError(() => failure("remote-response-invalid")),
+    transport.callTool(target, name, arguments_).pipe(
+      Effect.mapError((error) => failure(error.reason)),
       Effect.flatMap((result) =>
         result.isError === true || result.structuredContent === undefined
           ? Effect.fail(failure("remote-response-invalid"))

@@ -70,3 +70,23 @@ CTOX main was fetched read-only; no canonical working copy was reset or edited.
 
 No release/deployment or merge is implied by this draft. Each pending outcome
 must be implemented and proved before the overall goal is complete.
+
+## Shared CTOX MCP transport
+
+`workjet/ctox/CtoxMcpTransport.ts` now owns the authenticated, bounded JSON-RPC
+transport previously embedded in Decision Hub. Decision Hub retains its typed
+inputs/results and its required-tool probe. Other Business OS adapters can
+probe their own required tools without falsely requiring Decision Hub support.
+Managed `/mcp/<instance-id>` endpoints are preserved instead of appending a
+second `/mcp`. Calls are never automatically retried.
+
+This is transport consolidation, not the completed CTOX capability. The
+connection registry, immutable thread/instance binding, typed app tools, menu
+activation and Crew context still need integration. The existing cross-mode
+client also has an outbound transport; its authority checks and typed rejection
+semantics must survive consolidation. No raw RPC entry point is exposed to a
+harness by this change.
+
+Transport tests cover managed routing, peer/tool discovery, bounded responses,
+no write retry, tool denials and Decision Hub compatibility. Local execution
+was rejected by the shared resource gate before the runner started.

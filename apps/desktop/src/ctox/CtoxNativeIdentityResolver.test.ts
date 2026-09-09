@@ -4,6 +4,7 @@ import { describe, it } from "@effect/vitest";
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -20,6 +21,7 @@ const SSH = "ssh:AAAAAAAAAAAAAAAAAAAAAA";
 const KEY = "ed25519:" + "ab".repeat(32);
 const ROOT = "/fixture/instances/chosen";
 const encoder = new TextEncoder();
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const descriptor: CtoxManagedInstance = {
   id: LOCAL,
   source: "local_daemon",
@@ -155,9 +157,9 @@ describe("native identity resolution through existing trusted host paths", () =>
     Effect.gen(function* () {
       const account = yield* Account.make;
       for (const output of [
-        JSON.stringify({ identity: KEY, pkcs8: "must-not-leak" }),
-        JSON.stringify({ identity: "wrong-format" }),
-        JSON.stringify({ identity: KEY }) + "second document",
+        encodeUnknownJson({ identity: KEY, pkcs8: "must-not-leak" }),
+        encodeUnknownJson({ identity: "wrong-format" }),
+        encodeUnknownJson({ identity: KEY }) + "second document",
         "x".repeat(4097),
       ]) {
         const resolver = yield* makeResolver(
@@ -166,7 +168,7 @@ describe("native identity resolution through existing trusted host paths", () =>
         );
         const error = yield* resolver.resolve(LOCAL).pipe(Effect.flip);
         expect(error.message).toBe("The selected instance could not be verified.");
-        expect(JSON.stringify(error)).not.toContain("must-not-leak");
+        expect(encodeUnknownJson(error)).not.toContain("must-not-leak");
       }
       const failed = yield* makeResolver(
         account,

@@ -117,7 +117,7 @@ const register = Effect.fn("mcp.registerCtoxCrew")(function* () {
             content: [
               {
                 type: "text",
-                text: yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(result),
+                text: yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(result),
               },
             ],
           });

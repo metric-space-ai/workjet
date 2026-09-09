@@ -258,9 +258,9 @@ it.effect("isolates Crew grants from provider config and revokes them on session
         });
         if (!issued) return yield* Effect.die("missing active registry credential");
         expect(issued.config).not.toHaveProperty("ctoxCrewExecution");
-        expect(Schema.encodeSync(Schema.UnknownFromJsonString)(issued.config)).not.toContain(
-          "native-attempt",
-        );
+        expect(
+          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(issued.config),
+        ).not.toContain("native-attempt");
         const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
         grant.attemptId = "caller-mutation";
         const resolved = yield* registry.resolve(token);

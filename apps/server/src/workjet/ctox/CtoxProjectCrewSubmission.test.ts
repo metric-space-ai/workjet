@@ -246,7 +246,9 @@ it.effect("recovers project submission after a lost receipt and rejects another 
       });
     }
     const claimed = yield* restarted.claimProjectOffer(identity, "computer", "attempt");
-    expect(JSON.stringify(claimed)).not.toContain("signed-session");
+    expect(
+      yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(claimed),
+    ).not.toContain("signed-session");
     const plan = { steps: [{ label: "Work", status: "completed" as const }] };
     expect(yield* claimed.updatePlan(plan)).toMatchObject({
       percent: 90,

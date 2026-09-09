@@ -39,17 +39,30 @@ const fixture = (loseFirstWrite = false) =>
   Effect.gen(function* () {
     yield* migration60;
     yield* migration61;
-    const state = { status: "running", writes: 0, loseFirstWrite };
+    // `duringWrite` runs inside the native submission, i.e. while `sendTurn` is
+    // holding its session entry and waiting on the network. That is the only
+    // moment the close-during-submit race exists.
+    const state = {
+      status: "running",
+      writes: 0,
+      loseFirstWrite,
+      duringWrite: undefined as Effect.Effect<void> | undefined,
+    };
     const tasks = new Map<
       string,
       { module_id: string; command_type: string; command_id: string; task_id: string }
     >();
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
-      probe: () => Effect.void,
+      probe: () => Effect.succeed(undefined),
       callTool: (_, name, args) =>
         Effect.gen(function* () {
           if (name === "business_os.execute_action") {
             state.writes += 1;
+            if (state.duringWrite) {
+              const during = state.duringWrite;
+              state.duringWrite = undefined;
+              yield* during;
+            }
             const data = yield* decodeArgs(args).pipe(Effect.orDie);
             let task = tasks.get(data.idempotency_key);
             if (!task) {
@@ -218,4 +231,60 @@ it.effect(
       });
       yield* adapter.stopAll();
     }).pipe(Effect.scoped, Effect.provide(NodeSqliteClient.layerMemory())),
+);
+
+/**
+ * CLOSING DEV WHILE A SUBMISSION IS STILL IN FLIGHT.
+ *
+ * `sendTurn` resolves its session entry up front and then waits on the network.
+ * `stopSession` meanwhile removes that entry, interrupts its observer and emits
+ * `session.exited`. When the submission then returns, `sendTurn` still holds the
+ * entry it captured — and arming an observer on it emits `turn.started` and
+ * `item.started` for a session Dev has already been told is closed, forking a
+ * fiber into the owner scope that nothing will ever stop.
+ *
+ * The native task is not the thing at risk here: it is accepted, it keeps
+ * running, and Ops must still show it. Only the observation is dropped.
+ */
+it.effect("drops only observation when Dev closes during a native submission", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture();
+    const first = yield* test.open;
+    const events: ProviderRuntimeEvent[] = [];
+    yield* Stream.runForEach(first.adapter.streamEvents, (event) =>
+      Effect.sync(() => {
+        events.push(event);
+      }),
+    ).pipe(Effect.forkScoped);
+    yield* Effect.yieldNow;
+    yield* first.adapter.startSession(startInput);
+    // Dev closes exactly while the submission is on the wire.
+    test.state.duringWrite = first.adapter.stopSession(threadId).pipe(Effect.orDie);
+    yield* first.adapter.sendTurn(turnInput).pipe(Effect.result);
+    yield* TestClock.adjust("2 seconds");
+
+    // The session is gone and stays gone: no observer re-armed it.
+    expect(yield* first.adapter.hasSession(threadId)).toBe(false);
+    expect(yield* first.adapter.listSessions()).toEqual([]);
+    const exited = events.findIndex((event) => event.type === "session.exited");
+    expect(exited).toBeGreaterThanOrEqual(0);
+    expect(events.slice(exited + 1).map(({ type }) => type)).toEqual([]);
+
+    // The native task was accepted exactly once and is untouched by the close.
+    expect(test.state.writes).toBe(1);
+    expect(test.tasks.size).toBe(1);
+    expect(test.state.status).toBe("running");
+
+    // Reopening Dev finds that same task rather than starting a second one.
+    const second = yield* test.open;
+    yield* second.adapter.startSession(startInput);
+    yield* TestClock.adjust("2 seconds");
+    expect(test.state.writes).toBe(1);
+    expect(test.tasks.size).toBe(1);
+    expect(yield* second.client.latestNativeTurn(scope)).toMatchObject({
+      requestId: turnInput.requestId,
+      reference: { commandId: "cmd-0", taskId: "task-0" },
+    });
+    yield* second.adapter.stopAll();
+  }).pipe(Effect.scoped, Effect.provide(NodeSqliteClient.layerMemory())),
 );

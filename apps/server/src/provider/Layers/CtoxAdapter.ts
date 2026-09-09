@@ -235,6 +235,14 @@ export const makeCtoxAdapter = (options: {
       });
     const startObserver = (threadId: ThreadId, entry: Entry, turn: NativeTurn) =>
       Effect.gen(function* () {
+        // Dev can close while a submission is still in flight: `sendTurn` holds
+        // this entry across its network calls, and `stopSession` meanwhile
+        // removes it from `sessions`, interrupts its observer and emits
+        // `session.exited`. Re-arming here would flip that closed session back
+        // to "running" and fork a fiber into the owner scope that no one is
+        // watching. Observation is the only thing being dropped — the native
+        // task keeps running and stays visible in Ops, which is the point.
+        if (sessions.get(threadId) !== entry) return;
         if (entry.observer) yield* Fiber.interrupt(entry.observer);
         entry.turn = turn;
         entry.session = {

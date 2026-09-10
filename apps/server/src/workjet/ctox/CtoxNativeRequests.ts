@@ -268,7 +268,7 @@ const make = Effect.gen(function* () {
         AND attempt_id = ${attemptId}
     `.pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(CrewStartBinding))),
-      Effect.mapError(unavailable),
+      Effect.mapError(() => failure("native-task-reference-conflict")),
     );
     const row = rows[0] ?? null;
     if (row && (row.providerInstanceId === null) !== (row.providerThreadId === null))

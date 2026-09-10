@@ -4,6 +4,7 @@ import {
   WorkjetCtoxBusinessOsInput,
   WorkjetCtoxCrewRequest,
   WorkjetCtoxCrewReceipt,
+  ProviderInstanceId,
   type ThreadId,
   type WorkjetConnectionId,
 } from "@workjet/contracts";
@@ -95,6 +96,8 @@ const CrewStartBinding = Schema.Struct({
   taskId: CrewStartId,
   executorId: CrewStartId,
   memberId: CrewStartId,
+  providerInstanceId: Schema.NullOr(ProviderInstanceId),
+  providerThreadId: Schema.NullOr(CrewStartId),
 });
 
 const make = Effect.gen(function* () {
@@ -258,7 +261,8 @@ const make = Effect.gen(function* () {
     yield* load(identity);
     const rows = yield* sql`
       SELECT attempt_id AS "attemptId", command_id AS "commandId", task_id AS "taskId",
-        executor_id AS "executorId", member_id AS "memberId"
+        executor_id AS "executorId", member_id AS "memberId",
+        provider_instance_id AS "providerInstanceId", provider_thread_id AS "providerThreadId"
       FROM workjet_ctox_crew_starts
       WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
         AND attempt_id = ${attemptId}
@@ -266,8 +270,59 @@ const make = Effect.gen(function* () {
       Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(CrewStartBinding))),
       Effect.mapError(unavailable),
     );
-    return rows[0] ?? null;
+    const row = rows[0] ?? null;
+    if (row && (row.providerInstanceId === null) !== (row.providerThreadId === null))
+      return yield* failure("native-task-reference-conflict");
+    return row;
   });
+
+  /**
+   * Pin an existing reservation to one provider instance and provider thread.
+   * Legacy rows remain unassigned. Once assigned, the pair is immutable and
+   * exact retries return the same binding.
+   */
+  const bindCrewStartProvider = Effect.fn("CtoxNativeRequests.bindCrewStartProvider")(
+    function* (
+      requestIdentity: CtoxNativeRequestIdentity,
+      attemptId: string,
+      providerInstanceId: typeof ProviderInstanceId.Type,
+      providerThreadId: string,
+    ) {
+      const identity = { ...requestIdentity };
+      const decodedAttemptId = yield* Schema.decodeUnknownEffect(CrewStartId)(attemptId).pipe(
+        Effect.mapError(() => failure("native-response-invalid")),
+      );
+      const decodedProviderInstanceId = yield* Schema.decodeUnknownEffect(ProviderInstanceId)(
+        providerInstanceId,
+      ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+      const decodedProviderThreadId = yield* Schema.decodeUnknownEffect(CrewStartId)(
+        providerThreadId,
+      ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+      yield* load(identity);
+      const updated = yield* sql`
+        UPDATE workjet_ctox_crew_starts
+        SET provider_instance_id = ${decodedProviderInstanceId},
+            provider_thread_id = ${decodedProviderThreadId}
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${decodedAttemptId}
+          AND (
+            (provider_instance_id IS NULL AND provider_thread_id IS NULL)
+            OR (provider_instance_id = ${decodedProviderInstanceId}
+                AND provider_thread_id = ${decodedProviderThreadId})
+          )
+        RETURNING attempt_id
+      `.pipe(Effect.mapError(unavailable));
+      if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+      const saved = yield* readCrewStart(identity, decodedAttemptId);
+      if (
+        !saved ||
+        saved.providerInstanceId !== decodedProviderInstanceId ||
+        saved.providerThreadId !== decodedProviderThreadId
+      )
+        return yield* failure("native-task-reference-conflict");
+      return saved;
+    },
+  );
 
   /** Reserve BEFORE the remote claim. Only the inserting caller may start fresh.
    * An interrupted/ambiguous claim leaves the reservation intact for explicit
@@ -350,6 +405,7 @@ const make = Effect.gen(function* () {
     get,
     readCrewStart,
     reserveCrewStart,
+    bindCrewStartProvider,
     registerNativeTurn,
     latestNativeTurn,
   };

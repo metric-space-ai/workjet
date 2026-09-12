@@ -217,6 +217,8 @@ pub fn handle_web_command_with_context(
                     mode,
                     fields,
                     include_private,
+                    person_priorities: Vec::new(),
+                    known_person_records: Vec::new(),
                     workspace,
                     persist_workspace,
                 },

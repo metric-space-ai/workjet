@@ -32,10 +32,12 @@ use chrono::DateTime;
 use rusqlite::Connection;
 use rusqlite::OpenFlags;
 use rusqlite::OptionalExtension;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
 
 use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
+use crate::person_ranking::compare_person_records;
 use crate::sources::{
     self, scrape_bridge, Country, FieldKey, ResearchMode, SourceCtx, SourceHit, SourceModule, Tier,
 };
@@ -53,6 +55,25 @@ const MAX_CLOCK_SKEW_MS: u64 = 5 * 60 * 1_000;
 // Public request / response shape
 // ---------------------------------------------------------------------------
 
+/// A person already known to the caller's Sellify CRM.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KnownPersonRecord {
+    #[serde(default)]
+    pub vorname: Option<String>,
+    #[serde(default)]
+    pub nachname: Option<String>,
+    #[serde(default)]
+    pub funktion: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub telefon: Option<String>,
+    #[serde(default)]
+    pub sellify_contact_id: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
 /// Input to [`run_ctox_person_research_tool`].
 #[derive(Debug, Clone)]
 pub struct PersonResearchRequest {
@@ -66,6 +87,10 @@ pub struct PersonResearchRequest {
     /// tenant has explicitly opted in to. Without an entry here, Tier-C
     /// sources are skipped from the plan even if a credential is present.
     pub include_private: Vec<String>,
+    /// Ordered role-category labels supplied by the calling application.
+    pub person_priorities: Vec<String>,
+    /// Sellify CRM people that remain authoritative during contact merging.
+    pub known_person_records: Vec<KnownPersonRecord>,
     /// Optional explicit workspace directory. Falls back to
     /// `runtime/research/person/<timestamp>-<slug>/` when `None`.
     pub workspace: Option<PathBuf>,
@@ -448,7 +473,13 @@ pub fn run_person_research_tool_with_context(
         }
     }
 
-    let aggregated = aggregate_fields(&request.fields, plans.as_slice(), field_evidence);
+    let person_records = grouped_person_records(&mut field_evidence, &request.person_priorities);
+    let aggregated = aggregate_fields(
+        &request.fields,
+        plans.as_slice(),
+        field_evidence,
+        &person_records,
+    );
 
     let payload = json!({
         "ok": true,
@@ -471,6 +502,9 @@ pub fn run_person_research_tool_with_context(
             }))
             .collect::<Vec<_>>(),
         "fields": aggregated,
+        "person_records": person_records,
+        "person_priorities": request.person_priorities,
+        "known_person_records": request.known_person_records,
         "search_runs": search_runs,
         "read_runs": read_runs,
         "scrape_runs": scrape_runs,
@@ -735,10 +769,311 @@ fn browser_assist_task_from_scrape_result(
 // Aggregation
 // ---------------------------------------------------------------------------
 
+const PERSON_RECORD_FIELDS: &[FieldKey] = &[
+    FieldKey::PersonVorname,
+    FieldKey::PersonNachname,
+    FieldKey::PersonFunktion,
+    FieldKey::PersonPosition,
+    FieldKey::PersonTitel,
+    FieldKey::PersonGeschlecht,
+    FieldKey::PersonEmail,
+    FieldKey::PersonTelefon,
+    FieldKey::PersonXing,
+    FieldKey::PersonLinkedin,
+];
+
+const PERSON_EVIDENCE_FIELDS: &[FieldKey] = &[
+    FieldKey::PersonVorname,
+    FieldKey::PersonNachname,
+    FieldKey::PersonFunktion,
+    FieldKey::PersonPosition,
+    FieldKey::PersonTitel,
+    FieldKey::PersonGeschlecht,
+    FieldKey::PersonEmail,
+    FieldKey::PersonEmailValidation,
+    FieldKey::PersonTelefon,
+    FieldKey::PersonXing,
+    FieldKey::PersonLinkedin,
+];
+
+fn grouped_person_records(
+    raw: &mut BTreeMap<FieldKey, Vec<Value>>,
+    priorities: &[String],
+) -> Vec<Value> {
+    assign_name_only_person_keys(raw);
+    let mut grouped = BTreeMap::<String, serde_json::Map<String, Value>>::new();
+    for field in PERSON_EVIDENCE_FIELDS {
+        let Some(candidates) = raw.get_mut(field) else {
+            continue;
+        };
+        for candidate in candidates {
+            let Some(value) = candidate.get("value").and_then(browser_extract_scalar) else {
+                continue;
+            };
+            let source_url = candidate
+                .get("source_url")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .unwrap_or_default();
+            let explicit_key = candidate
+                .get("person_key")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string);
+            let profile_value = matches!(field, FieldKey::PersonXing | FieldKey::PersonLinkedin)
+                .then_some(value.as_str())
+                .filter(|value| valid_http_url(value));
+            let person_key = explicit_key
+                .or_else(|| profile_value.map(str::to_string))
+                .or_else(|| (!source_url.is_empty()).then(|| source_url.clone()))
+                .or_else(|| person_name_key_from_candidate(candidate))
+                .unwrap_or_else(|| {
+                    format!(
+                        "unbound:{}:{}",
+                        candidate
+                            .get("source_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                        normalize_person_name(&value)
+                    )
+                });
+            candidate["person_key"] = Value::String(person_key.clone());
+            let entry = grouped.entry(person_key.clone()).or_insert_with(|| {
+                serde_json::Map::from_iter([
+                    ("person_key".to_string(), Value::String(person_key.clone())),
+                    (
+                        "source_id".to_string(),
+                        candidate.get("source_id").cloned().unwrap_or(Value::Null),
+                    ),
+                    (
+                        "source_url".to_string(),
+                        if source_url.is_empty() {
+                            Value::Null
+                        } else {
+                            Value::String(source_url.to_string())
+                        },
+                    ),
+                    (
+                        "tier".to_string(),
+                        candidate.get("tier").cloned().unwrap_or(Value::Null),
+                    ),
+                    ("evidence_count".to_string(), json!(0)),
+                    ("evidence".to_string(), Value::Array(Vec::new())),
+                ])
+            });
+            if PERSON_RECORD_FIELDS.contains(field) {
+                entry.insert(field.as_str().to_string(), Value::String(value));
+            }
+            if entry.get("source_url").is_none_or(Value::is_null) && !source_url.is_empty() {
+                entry.insert(
+                    "source_url".to_string(),
+                    Value::String(source_url.to_string()),
+                );
+            }
+            let evidence_count = entry
+                .get("evidence_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            entry.insert("evidence_count".to_string(), json!(evidence_count + 1));
+            if let Some(evidence) = entry.get_mut("evidence").and_then(Value::as_array_mut) {
+                let mut person_evidence = candidate.clone();
+                person_evidence["field"] = Value::String(field.as_str().to_string());
+                evidence.push(person_evidence);
+            }
+        }
+    }
+
+    let mut records = coalesce_name_only_person_records(grouped)
+        .into_values()
+        .filter_map(|record| {
+            let has_identity = [
+                "person_vorname",
+                "person_nachname",
+                "person_email",
+                "person_xing",
+                "person_linkedin",
+            ]
+            .iter()
+            .any(|field| {
+                record
+                    .get(*field)
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())
+            });
+            has_identity.then(|| Value::Object(record))
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|left, right| compare_person_records(left, right, priorities));
+    records
+}
+
+fn coalesce_name_only_person_records(
+    grouped: BTreeMap<String, serde_json::Map<String, Value>>,
+) -> BTreeMap<String, serde_json::Map<String, Value>> {
+    let mut out = BTreeMap::new();
+    for (key, mut record) in grouped {
+        let first = record
+            .get("person_vorname")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let last = record
+            .get("person_nachname")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let source_url = record
+            .get("source_url")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let target_key = if source_url.is_empty() && (!first.is_empty() || !last.is_empty()) {
+            format!("name:{}", normalize_person_name(&format!("{first} {last}")))
+        } else {
+            key
+        };
+        if let Some(existing) = out.get_mut(&target_key) {
+            merge_grouped_record(existing, &mut record);
+        } else {
+            record.insert("person_key".to_string(), Value::String(target_key.clone()));
+            out.insert(target_key, record);
+        }
+    }
+    out
+}
+
+fn merge_grouped_record(
+    existing: &mut serde_json::Map<String, Value>,
+    incoming: &mut serde_json::Map<String, Value>,
+) {
+    let incoming_count = incoming
+        .get("evidence_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let existing_count = existing
+        .get("evidence_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let incoming_evidence = incoming
+        .get("evidence")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for (field, value) in incoming.iter() {
+        if field != "evidence" && existing.get(field).is_none_or(Value::is_null) {
+            existing.insert(field.clone(), value.clone());
+        }
+    }
+    if let Some(evidence) = existing.get_mut("evidence").and_then(Value::as_array_mut) {
+        evidence.extend(incoming_evidence);
+    }
+    existing.insert(
+        "evidence_count".to_string(),
+        json!(existing_count + incoming_count),
+    );
+}
+
+fn assign_name_only_person_keys(raw: &mut BTreeMap<FieldKey, Vec<Value>>) {
+    let mut names = BTreeMap::<(String, usize), (String, String)>::new();
+    for (field, first_name) in [
+        (FieldKey::PersonVorname, true),
+        (FieldKey::PersonNachname, false),
+    ] {
+        let mut ordinals = BTreeMap::<String, usize>::new();
+        for candidate in raw.get(&field).into_iter().flatten() {
+            if candidate_has_person_binding(candidate) {
+                continue;
+            }
+            let provenance = person_candidate_provenance(candidate);
+            let ordinal = ordinals.entry(provenance.clone()).or_default();
+            let value = candidate
+                .get("value")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let names = names
+                .entry((provenance, *ordinal))
+                .or_insert_with(|| (String::new(), String::new()));
+            if first_name {
+                names.0 = value;
+            } else {
+                names.1 = value;
+            }
+            *ordinal += 1;
+        }
+    }
+    for field in PERSON_EVIDENCE_FIELDS {
+        let mut ordinals = BTreeMap::<String, usize>::new();
+        for candidate in raw.get_mut(field).into_iter().flatten() {
+            if candidate_has_person_binding(candidate) {
+                continue;
+            }
+            let provenance = person_candidate_provenance(candidate);
+            let ordinal = ordinals.entry(provenance.clone()).or_default();
+            if let Some((first, last)) = names.get(&(provenance, *ordinal)) {
+                let normalized = normalize_person_name(&format!("{first} {last}"));
+                if !normalized.is_empty() {
+                    candidate["person_key"] = Value::String(format!("name:{normalized}"));
+                    candidate["person_vorname"] = Value::String(first.clone());
+                    candidate["person_nachname"] = Value::String(last.clone());
+                }
+            }
+            *ordinal += 1;
+        }
+    }
+}
+
+fn candidate_has_person_binding(candidate: &Value) -> bool {
+    candidate
+        .get("person_key")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.trim().is_empty())
+        || candidate
+            .get("source_url")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+}
+
+fn person_candidate_provenance(candidate: &Value) -> String {
+    ["source_id", "tier", "via"]
+        .iter()
+        .map(|key| {
+            candidate
+                .get(*key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
+fn person_name_key_from_candidate(candidate: &Value) -> Option<String> {
+    let first = candidate
+        .get("person_vorname")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let last = candidate
+        .get("person_nachname")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let normalized = normalize_person_name(&format!("{first} {last}"));
+    (!normalized.is_empty()).then(|| format!("name:{normalized}"))
+}
+
+fn normalize_person_name(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|ch| ch.is_alphanumeric())
+        .collect()
+}
+
 fn aggregate_fields(
     requested: &[FieldKey],
     plans: &[PersonResearchPlan],
     raw: BTreeMap<FieldKey, Vec<Value>>,
+    person_records: &[Value],
 ) -> Value {
     let mut out = serde_json::Map::new();
     let universe: Vec<FieldKey> = if requested.is_empty() {
@@ -752,9 +1087,34 @@ fn aggregate_fields(
     } else {
         requested.to_vec()
     };
+    let best_person_key = person_records
+        .first()
+        .and_then(|record| record.get("person_key"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            PERSON_EVIDENCE_FIELDS.iter().find_map(|field| {
+                raw.get(field).into_iter().flatten().find_map(|candidate| {
+                    candidate
+                        .get("person_key")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.trim().is_empty())
+                })
+            })
+        });
 
     for field in universe {
-        let candidates = raw.get(&field).cloned().unwrap_or_default();
+        let candidates = raw
+            .get(&field)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|candidate| aggregate_candidate_eligible(field, candidate))
+            .filter(|candidate| {
+                !PERSON_EVIDENCE_FIELDS.contains(&field)
+                    || best_person_key.is_none()
+                    || candidate.get("person_key").and_then(Value::as_str) == best_person_key
+            })
+            .collect::<Vec<_>>();
         if candidates.is_empty() {
             out.insert(
                 field.as_str().to_string(),
@@ -782,6 +1142,7 @@ fn aggregate_fields(
                 "source_url": top.get("source_url").cloned().unwrap_or(Value::Null),
                 "tier": top.get("tier").cloned().unwrap_or(Value::Null),
                 "note": top.get("note").cloned().unwrap_or(Value::Null),
+                "person_key": top.get("person_key").cloned().unwrap_or(Value::Null),
                 "candidates": ranked,
             }),
         );
@@ -847,21 +1208,20 @@ pub fn merge_person_research_source_records(
         let Some(value) = record.get("value").and_then(browser_extract_scalar) else {
             continue;
         };
-        let Some(source_url) = record
+        let source_url = record
             .get("source_url")
             .and_then(Value::as_str)
             .map(str::trim)
-            .filter(|value| !value.is_empty())
-        else {
-            continue;
-        };
-        if !valid_http_url(source_url)
-            || !url_belongs_to_source(
-                source_url,
-                module.id(),
-                module.aliases(),
-                module.host_suffixes(),
-            )
+            .filter(|value| !value.is_empty());
+        if source_url.is_some_and(|source_url| {
+            !valid_http_url(source_url)
+                || !url_belongs_to_source(
+                    source_url,
+                    module.id(),
+                    module.aliases(),
+                    module.host_suffixes(),
+                )
+        }) || (source_url.is_none() && !field.as_str().starts_with("person_"))
         {
             continue;
         }
@@ -921,7 +1281,137 @@ pub fn merge_person_research_source_records(
         }
         added += 1;
     }
+    rebuild_grouped_person_records(payload)?;
     Ok(added)
+}
+
+fn rebuild_grouped_person_records(payload: &mut Value) -> Result<()> {
+    let priorities = payload
+        .get("person_priorities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut raw = BTreeMap::<FieldKey, Vec<Value>>::new();
+    for evidence in payload
+        .get("person_records")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|record| {
+            record
+                .get("evidence")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+    {
+        let Some(field) = evidence
+            .get("field")
+            .and_then(Value::as_str)
+            .and_then(FieldKey::from_str)
+        else {
+            continue;
+        };
+        if PERSON_EVIDENCE_FIELDS.contains(&field) {
+            push_unique_person_candidate(&mut raw, field, evidence.clone());
+        }
+    }
+    for (field_name, field_result) in payload
+        .get("fields")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let Some(field) = FieldKey::from_str(field_name) else {
+            continue;
+        };
+        if !PERSON_EVIDENCE_FIELDS.contains(&field) {
+            continue;
+        }
+        for candidate in field_result
+            .get("candidates")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            push_unique_person_candidate(&mut raw, field, candidate.clone());
+        }
+    }
+    let records = grouped_person_records(&mut raw, &priorities);
+    let aggregated = aggregate_fields(PERSON_EVIDENCE_FIELDS, &[], raw, &records);
+    let fields = payload
+        .get_mut("fields")
+        .and_then(Value::as_object_mut)
+        .context("person-research result has no fields object")?;
+    for field in PERSON_EVIDENCE_FIELDS {
+        if let Some(result) = aggregated.get(field.as_str()).cloned() {
+            if fields.contains_key(field.as_str()) {
+                fields.insert(field.as_str().to_string(), result);
+            }
+        }
+    }
+    merge_grouped_person_records(payload, records)
+}
+
+fn aggregate_candidate_eligible(field: FieldKey, candidate: &Value) -> bool {
+    let Some(value) = candidate.get("value").and_then(Value::as_str) else {
+        return true;
+    };
+    match field {
+        FieldKey::PersonVorname | FieldKey::PersonNachname => {
+            let normalized = value
+                .trim()
+                .trim_matches(|ch: char| !ch.is_alphabetic())
+                .to_lowercase();
+            !normalized.is_empty()
+                && !matches!(
+                    normalized.as_str(),
+                    "der"
+                        | "die"
+                        | "das"
+                        | "den"
+                        | "dem"
+                        | "ein"
+                        | "eine"
+                        | "einer"
+                        | "eines"
+                        | "geschäftsführer"
+                        | "geschäftsführerin"
+                        | "geschäftsführung"
+                        | "vorstand"
+                        | "inhaber"
+                        | "inhaberin"
+                        | "vertretungsberechtigt"
+                )
+        }
+        _ => true,
+    }
+}
+
+fn push_unique_person_candidate(
+    raw: &mut BTreeMap<FieldKey, Vec<Value>>,
+    field: FieldKey,
+    candidate: Value,
+) {
+    let candidates = raw.entry(field).or_default();
+    if !candidates.iter().any(|existing| {
+        existing.get("value") == candidate.get("value")
+            && existing.get("source_id") == candidate.get("source_id")
+            && existing.get("source_url") == candidate.get("source_url")
+    }) {
+        candidates.push(candidate);
+    }
+}
+
+fn merge_grouped_person_records(payload: &mut Value, records: Vec<Value>) -> Result<()> {
+    payload
+        .as_object_mut()
+        .context("person-research result must be an object")?
+        .insert("person_records".to_string(), Value::Array(records));
+    Ok(())
 }
 
 pub fn merge_runtime_scrape_result(
@@ -1072,6 +1562,7 @@ pub fn merge_runtime_scrape_result(
                 "frame_data_in_payload": false,
             }));
     }
+    rebuild_grouped_person_records(payload)?;
     Ok(added)
 }
 
@@ -1607,6 +2098,9 @@ fn empty_plan_response(company: &str, request: &PersonResearchRequest, reason: &
         "country": request.country.as_iso(),
         "mode": request.mode.as_str(),
         "fields": Value::Object(Default::default()),
+        "person_records": [],
+        "person_priorities": request.person_priorities,
+        "known_person_records": request.known_person_records,
         "plan": [],
         "search_runs": [],
         "read_runs": [],
@@ -2151,6 +2645,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::PersonFunktion],
             include_private: Vec::new(),
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2178,6 +2674,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::PersonVorname],
             include_private: Vec::new(),
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2207,6 +2705,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::PersonFunktion],
             include_private: vec!["linkedin.com".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2222,6 +2722,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::PersonFunktion],
             include_private: vec!["linkedin".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2241,6 +2743,8 @@ mod tests {
                 FieldKey::PersonVorname,
             ],
             include_private: vec!["linkedin".into(), "dnb".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2263,6 +2767,8 @@ mod tests {
             mode: ResearchMode::HaveData,
             fields: vec![FieldKey::FirmaName],
             include_private: Vec::new(),
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2283,11 +2789,40 @@ mod tests {
                 json!({"value": "445000000", "confidence": "medium", "source_id": "northdata.de"}),
             ],
         );
-        let agg = aggregate_fields(&[FieldKey::Umsatz], &[], raw);
+        let agg = aggregate_fields(&[FieldKey::Umsatz], &[], raw, &[]);
         let umsatz = agg.get("umsatz").unwrap();
         assert_eq!(umsatz["value"], "440000000");
         assert_eq!(umsatz["confidence"], "high");
         assert_eq!(umsatz["candidates"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn aggregate_rejects_grammatical_placeholders_as_person_names() {
+        let mut raw = BTreeMap::new();
+        raw.insert(
+            FieldKey::PersonVorname,
+            vec![
+                json!({"value": "den", "confidence": "high", "source_id": "impressum"}),
+                json!({"value": "Frank", "confidence": "medium", "source_id": "impressum"}),
+            ],
+        );
+        raw.insert(
+            FieldKey::PersonNachname,
+            vec![
+                json!({"value": "Geschäftsführer", "confidence": "high", "source_id": "impressum"}),
+                json!({"value": "Eberspächer", "confidence": "medium", "source_id": "impressum"}),
+            ],
+        );
+
+        let aggregated = aggregate_fields(
+            &[FieldKey::PersonVorname, FieldKey::PersonNachname],
+            &[],
+            raw,
+            &[],
+        );
+
+        assert_eq!(aggregated["person_vorname"]["value"], "Frank");
+        assert_eq!(aggregated["person_nachname"]["value"], "Eberspächer");
     }
 
     #[test]
@@ -2345,6 +2880,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::PersonLinkedin],
             include_private: vec!["linkedin".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2386,6 +2923,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::PersonLinkedin],
             include_private: vec!["linkedin".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2602,6 +3141,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::PersonLinkedin, FieldKey::PersonFunktion],
             include_private: vec!["linkedin".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2701,6 +3242,8 @@ mod tests {
             mode: ResearchMode::NewRecord,
             fields: vec![FieldKey::FirmaName],
             include_private: Vec::new(),
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
             workspace: None,
             persist_workspace: false,
         };
@@ -2816,6 +3359,160 @@ mod tests {
         let serialized = serde_json::to_string(&payload).unwrap();
         assert!(!serialized.contains("evil.example"));
         assert!(!serialized.contains("must-not-pass"));
+    }
+
+    #[test]
+    fn person_records_without_urls_group_by_normalized_name() {
+        let mut raw = BTreeMap::from([
+            (
+                FieldKey::PersonVorname,
+                vec![json!({"value":"Anna","source_id":"impressum","tier":"P"})],
+            ),
+            (
+                FieldKey::PersonNachname,
+                vec![json!({"value":"Müller","source_id":"impressum","tier":"P"})],
+            ),
+            (
+                FieldKey::PersonFunktion,
+                vec![json!({"value":"Geschäftsführerin","source_id":"impressum","tier":"P"})],
+            ),
+            (
+                FieldKey::PersonEmailValidation,
+                vec![json!({"value":"valid","source_id":"impressum","tier":"P"})],
+            ),
+        ]);
+
+        let records = grouped_person_records(&mut raw, &[]);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["person_key"], "name:annamüller");
+        assert_eq!(records[0]["person_funktion"], "Geschäftsführerin");
+        assert!(records[0].get("person_email_validation").is_none());
+        assert!(records[0]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|evidence| evidence["person_key"] == "name:annamüller"));
+        assert!(records[0]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|evidence| evidence["field"] == "person_email_validation"));
+    }
+
+    #[test]
+    fn beiersdorf_xing_fixture_groups_eight_people_and_keeps_flat_fields_person_bound() {
+        let people = [
+            ("Jana", "Laufer", Some("Geschäftsführerin"), "Jana_Laufer"),
+            ("Falk", "Herbst", None, "Falk_Herbst"),
+            ("Frederic", "Heilmann", Some("Leipzig"), "Frederic_Heilmann"),
+            ("Frederic", "Heilmann", None, "Frederic_Heilmann_2"),
+            ("Heiko", "Fischer", None, "Heiko_Fischer"),
+            ("Ringo", "Bergelt", None, "Ringo_Bergelt"),
+            ("Swantje", "Trinitz", None, "Swantje_Trinitz"),
+            (
+                "TimNils",
+                "Berner",
+                Some("Tim Nils Berner"),
+                "TimNils_Berner",
+            ),
+        ];
+        let mut raw = BTreeMap::<FieldKey, Vec<Value>>::new();
+        for (first, last, function, slug) in people {
+            let url = format!("https://www.xing.com/profile/{slug}");
+            for (field, value) in [
+                (FieldKey::PersonVorname, first.to_string()),
+                (FieldKey::PersonNachname, last.to_string()),
+                (FieldKey::PersonXing, url.clone()),
+            ] {
+                raw.entry(field).or_default().push(json!({
+                    "value": value,
+                    "confidence": "high",
+                    "source_id": "xing.com",
+                    "source_url": url.clone(),
+                    "tier": "S",
+                }));
+            }
+            if let Some(function) = function {
+                raw.entry(FieldKey::PersonFunktion)
+                    .or_default()
+                    .push(json!({
+                        "value": function,
+                        "confidence": "medium",
+                        "source_id": "xing.com",
+                        "source_url": url.clone(),
+                        "tier": "S",
+                    }));
+            }
+        }
+
+        let records = grouped_person_records(&mut raw, &[]);
+        let fields = aggregate_fields(PERSON_RECORD_FIELDS, &[], raw, &records);
+
+        assert_eq!(records.len(), 8);
+        assert_eq!(records[0]["person_vorname"], "Jana");
+        assert_eq!(fields["person_vorname"]["value"], "Jana");
+        assert!(fields["person_vorname"]["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| candidate["person_key"] == records[0]["person_key"]));
+        assert!(records.iter().all(|record| record["evidence_count"]
+            .as_u64()
+            .is_some_and(|count| count >= 3)));
+    }
+
+    #[test]
+    fn authenticated_person_records_stay_grouped_by_profile() {
+        let mut payload = json!({
+            "plan": [{
+                "source_id": "xing.com",
+                "tier": "C",
+                "target_fields": [
+                    "person_vorname",
+                    "person_nachname",
+                    "person_funktion",
+                    "person_xing"
+                ]
+            }],
+            "fields": {
+                "person_vorname": {"value": null, "confidence": "missing", "candidates": []},
+                "person_nachname": {"value": null, "confidence": "missing", "candidates": []},
+                "person_funktion": {"value": null, "confidence": "missing", "candidates": []},
+                "person_xing": {"value": null, "confidence": "missing", "candidates": []}
+            }
+        });
+        let records = [
+            ("Ada", "Lovelace", "Geschäftsführung", "Ada_Lovelace"),
+            ("Grace", "Hopper", "Leitung Vertrieb", "Grace_Hopper"),
+        ]
+        .into_iter()
+        .flat_map(|(first, last, role, slug)| {
+            let url = format!("https://www.xing.com/profile/{slug}");
+            [
+                json!({"field": "person_vorname", "value": first, "confidence": "medium", "source_url": url}),
+                json!({"field": "person_nachname", "value": last, "confidence": "medium", "source_url": url}),
+                json!({"field": "person_funktion", "value": role, "confidence": "medium", "source_url": url}),
+                json!({"field": "person_xing", "value": url, "confidence": "high", "source_url": url}),
+            ]
+        })
+        .collect::<Vec<_>>();
+
+        let added =
+            merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap();
+
+        assert_eq!(added, 8);
+        assert_eq!(payload["person_records"].as_array().map(Vec::len), Some(2));
+        assert_eq!(payload["person_records"][0]["person_vorname"], "Ada");
+        assert_eq!(
+            payload["person_records"][0]["person_funktion"],
+            "Geschäftsführung"
+        );
+        assert_eq!(payload["person_records"][1]["person_vorname"], "Grace");
+        assert_ne!(
+            payload["person_records"][0]["source_url"],
+            payload["person_records"][1]["source_url"]
+        );
     }
 
     #[test]

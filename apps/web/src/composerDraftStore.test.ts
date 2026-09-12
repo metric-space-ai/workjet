@@ -7,6 +7,8 @@ import {
 import * as Schema from "effect/Schema";
 import {
   defaultInstanceIdForDriver,
+  CommandId,
+  WorkjetConnectionId,
   EnvironmentId,
   ProjectId,
   ProviderDriverKind,
@@ -76,6 +78,12 @@ import {
   type TerminalContextDraft,
 } from "./lib/terminalContext";
 import { createDebouncedStorage } from "./lib/storage";
+import {
+  createWorkjetPrivateChat,
+  privateChatIntentRequest,
+  type WorkjetPrivateChatIntent,
+} from "./workjetPrivateChat";
+import type { WorkjetProjectControlPort } from "./workjetProjectControl";
 
 function makeImage(input: {
   id: string;
@@ -545,6 +553,73 @@ describe("composerDraftStore terminal contexts", () => {
         text: "",
       },
     ]);
+  });
+
+  it("replays the saved creation command after a lost response and rehydration", async () => {
+    const candidate: WorkjetPrivateChatIntent = {
+      instanceId: "instance-one",
+      connectionId: WorkjetConnectionId.make("connection-one"),
+      projectId: ProjectId.make("project-one"),
+      workerProfileId: "worker-one",
+      separate: true,
+      membershipCommandId: CommandId.make("membership-one"),
+      chatCommandId: CommandId.make("chat-one"),
+      createdAt: "2026-09-12T10:00:00.000Z",
+    };
+    const original = useComposerDraftStore
+      .getState()
+      .preparePrivateChatIntent(threadRef, candidate);
+    const port = vi
+      .fn<WorkjetProjectControlPort>()
+      .mockRejectedValueOnce(new Error("response lost"));
+    await expect(
+      createWorkjetPrivateChat({
+        ...original,
+        request: privateChatIntentRequest(original, "project.chat.create"),
+        isCurrent: () => true,
+        port,
+      }),
+    ).rejects.toThrow("response lost");
+    const persistApi = useComposerDraftStore.persist;
+    const saved = await persistApi.getOptions().storage!.getItem(COMPOSER_DRAFT_STORAGE_KEY);
+    expect(saved).not.toBeNull();
+    // Reconstruct through the real persist merge, discarding all in-memory drafts.
+    useComposerDraftStore.setState(
+      persistApi.getOptions().merge!(saved!.state, {
+        ...useComposerDraftStore.getState(),
+        draftsByThreadKey: {},
+      }),
+    );
+    const retried = useComposerDraftStore.getState().preparePrivateChatIntent(threadRef, {
+      ...candidate,
+      chatCommandId: CommandId.make("would-create-a-duplicate"),
+      membershipCommandId: CommandId.make("fresh-membership"),
+    });
+    expect(retried).toEqual(original);
+    port.mockResolvedValueOnce({
+      _tag: "completed",
+      response: {
+        action: "project.chat.create",
+        commandId: original.chatCommandId,
+        projectId: original.projectId,
+        workerProfileId: original.workerProfileId,
+        chatId: "workjet_private_native_original",
+      },
+    });
+    const chat = await createWorkjetPrivateChat({
+      ...retried,
+      request: privateChatIntentRequest(retried, "project.chat.create"),
+      isCurrent: () => true,
+      port,
+    });
+    expect(chat.chatId).toBe("workjet_private_native_original");
+    expect(port.mock.calls[1]).toEqual(port.mock.calls[0]);
+    expect(() =>
+      useComposerDraftStore.getState().preparePrivateChatIntent(threadRef, {
+        ...candidate,
+        projectId: ProjectId.make("different-project"),
+      }),
+    ).toThrow("pending private chat");
   });
 
   it("hydrates the selected Workjet worker and its managed instructions", () => {

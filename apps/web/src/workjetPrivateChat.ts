@@ -4,10 +4,53 @@ import type {
   WorkjetThreadConfig,
 } from "@workjet/contracts";
 import { normalizeWorkjetThreadConfig } from "@workjet/contracts";
+import { CommandId, ProjectId, WorkjetConnectionId, IsoDateTime } from "@workjet/contracts";
+import * as Schema from "effect/Schema";
+
 import {
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
 } from "./workjetProjectControl";
+
+// Draft-owned write-ahead intent also retains project ownership after binding.
+export const WorkjetPrivateChatIntent = Schema.Struct({
+  instanceId: Schema.String,
+  connectionId: WorkjetConnectionId,
+  projectId: ProjectId,
+  workerProfileId: Schema.String,
+  separate: Schema.Boolean,
+  membershipCommandId: CommandId,
+  chatCommandId: CommandId,
+  createdAt: IsoDateTime,
+});
+export type WorkjetPrivateChatIntent = typeof WorkjetPrivateChatIntent.Type;
+
+export function samePrivateChatIntentScope(
+  a: WorkjetPrivateChatIntent,
+  b: WorkjetPrivateChatIntent,
+): boolean {
+  return (
+    a.instanceId === b.instanceId &&
+    a.connectionId === b.connectionId &&
+    a.projectId === b.projectId &&
+    a.workerProfileId === b.workerProfileId &&
+    a.separate === b.separate
+  );
+}
+
+export function privateChatIntentRequest(
+  intent: WorkjetPrivateChatIntent,
+  action: PrivateChatCreationRequest["action"],
+): PrivateChatCreationRequest {
+  const common = {
+    projectId: intent.projectId,
+    workerProfileId: intent.workerProfileId,
+    createdAt: intent.createdAt,
+  };
+  return action === "project.worker.add"
+    ? { ...common, action, commandId: intent.membershipCommandId }
+    : { ...common, action, commandId: intent.chatCommandId, title: "Chat" };
+}
 
 export type PrivateChatCreationRequest = Extract<
   CtoxWorkjetProjectControlRequest,

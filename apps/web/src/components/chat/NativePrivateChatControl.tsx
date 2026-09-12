@@ -9,6 +9,8 @@ import { toastManager } from "../ui/toast";
 import { randomUUID } from "../../lib/utils";
 import {
   createWorkjetPrivateChat,
+  privateChatIntentRequest,
+  type WorkjetPrivateChatIntent,
   type PrivateChatCreationRequest,
 } from "../../workjetPrivateChat";
 
@@ -23,6 +25,8 @@ export function NativePrivateChatControl(props: {
   readonly projectId: PrivateChatCreationRequest["projectId"];
   readonly workerId: string;
   readonly config: WorkjetThreadConfig;
+  readonly prepareIntent: (candidate: WorkjetPrivateChatIntent) => WorkjetPrivateChatIntent;
+  readonly isScopeCurrent: () => boolean;
   readonly onBound: (chat: WorkjetThreadCtoxCrewChat) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -36,44 +40,34 @@ export function NativePrivateChatControl(props: {
       live.current = false;
     };
   }, []);
-  // Retain command IDs after ambiguous failures so a retry cannot create another chat.
-  const attempts = useRef(new Map<string, PrivateChatCreationRequest>());
+
   const open = async (separate: boolean) => {
     if (pending.current || props.connectionId === null) return;
     const captured = props;
     const isCurrent = () =>
       live.current &&
+      captured.isScopeCurrent() &&
       current.current.instanceId === captured.instanceId &&
       current.current.connectionId === captured.connectionId &&
       current.current.projectId === captured.projectId &&
       current.current.workerId === captured.workerId &&
       current.current.config === captured.config;
-    const request = (action: PrivateChatCreationRequest["action"]): PrivateChatCreationRequest => {
-      const key = JSON.stringify([
-        captured.instanceId,
-        captured.connectionId,
-        captured.projectId,
-        captured.workerId,
-        action,
-      ]);
-      const existing = attempts.current.get(key);
-      if (existing) return existing;
-      const common = {
-        commandId: CommandId.make(randomUUID()),
-        projectId: captured.projectId,
-        workerProfileId: captured.workerId,
-        createdAt: new Date().toISOString(),
-      };
-      const value: PrivateChatCreationRequest =
-        action === "project.chat.create"
-          ? { ...common, action, title: "Chat" }
-          : { ...common, action };
-      attempts.current.set(key, value);
-      return value;
-    };
+
     pending.current = true;
     setBusy(true);
     try {
+      if (!isCurrent()) throw new Error("The selected project changed. Reopen its draft.");
+      // Synchronously persist before any native request; rehydrated retries reuse both IDs.
+      const intent = captured.prepareIntent({
+        instanceId: captured.instanceId,
+        connectionId: captured.connectionId!,
+        projectId: captured.projectId,
+        workerProfileId: captured.workerId,
+        separate,
+        membershipCommandId: CommandId.make(randomUUID()),
+        chatCommandId: CommandId.make(randomUUID()),
+        createdAt: new Date().toISOString(),
+      });
       const scope = {
         instanceId: captured.instanceId,
         connectionId: captured.connectionId!,
@@ -81,10 +75,13 @@ export function NativePrivateChatControl(props: {
       };
       const first = await createWorkjetPrivateChat({
         ...scope,
-        request: request("project.worker.add"),
+        request: privateChatIntentRequest(intent, "project.worker.add"),
       });
       const chat = separate
-        ? await createWorkjetPrivateChat({ ...scope, request: request("project.chat.create") })
+        ? await createWorkjetPrivateChat({
+            ...scope,
+            request: privateChatIntentRequest(intent, "project.chat.create"),
+          })
         : first;
       if (isCurrent()) captured.onBound(chat);
     } catch (error) {

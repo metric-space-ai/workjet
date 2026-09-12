@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   CommandId,
+  EnvironmentId,
+  WorkjetComputerId,
   ProjectId,
   WorkjetConnectionId,
   DEFAULT_WORKJET_THREAD_CONFIG,
@@ -11,6 +13,7 @@ import {
   type PrivateChatCreationRequest,
 } from "./workjetPrivateChat";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
+import { resolvePrivateChatDraftProject } from "./workjetPrivateChatScope";
 
 const request: PrivateChatCreationRequest = {
   action: "project.chat.create",
@@ -35,6 +38,71 @@ const scope = {
 };
 
 describe("native private chat binding", () => {
+  it("keeps a retained draft bound to its working-copy project when the registry selection changes", () => {
+    const environmentId = EnvironmentId.make("remote");
+    const computer = {
+      id: WorkjetComputerId.make("remote-computer"),
+      label: "Remote",
+      environmentId,
+      presentationKind: "remote" as const,
+      harnesses: [],
+    };
+    const first = {
+      id: ProjectId.make("native-one"),
+      title: "First",
+      workingCopies: [
+        {
+          id: "copy-one",
+          computerId: computer.id,
+          path: "/projects/one",
+          status: "active" as const,
+        },
+      ],
+    };
+    const second = {
+      id: ProjectId.make("native-two"),
+      title: "Second",
+      workingCopies: [
+        {
+          id: "copy-two",
+          computerId: computer.id,
+          path: "/projects/two",
+          status: "active" as const,
+        },
+      ],
+    };
+    const registry = {
+      presentationInstanceId: "instance-one",
+      phase: "ready" as const,
+      projects: [first, second],
+      selectedProjectId: first.id,
+    };
+    const draft = {
+      environmentId,
+      projectId: ProjectId.make("local-one"),
+      worktreePath: "/projects/one",
+    };
+    const input = { registry, draft, computers: [computer] };
+    expect(resolvePrivateChatDraftProject(input)).toEqual(first);
+    expect(
+      resolvePrivateChatDraftProject({
+        ...input,
+        registry: { ...registry, selectedProjectId: second.id },
+      }),
+    ).toBeUndefined();
+    expect(
+      resolvePrivateChatDraftProject({
+        ...input,
+        draft: { ...draft, environmentId: EnvironmentId.make("other") },
+      }),
+    ).toBeUndefined();
+    expect(
+      resolvePrivateChatDraftProject({
+        ...input,
+        registry: { ...registry, projects: [first, { ...first, id: second.id }] },
+      }),
+    ).toBeUndefined();
+  });
   it("preserves the exact native ID and creation request", async () => {
     const port = vi
       .fn<WorkjetProjectControlPort>()

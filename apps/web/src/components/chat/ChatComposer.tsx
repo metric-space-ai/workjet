@@ -25,9 +25,13 @@ import {
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import type { EnvironmentConnectionPresentation } from "@workjet/client-runtime/connection";
-import { useActiveWorkjetScope } from "../../activeWorkjetScope";
-import { useWorkjetProjectRegistry } from "../../workjetProjectRegistry";
+import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
+import {
+  readWorkjetProjectRegistry,
+  useWorkjetProjectRegistry,
+} from "../../workjetProjectRegistry";
 import { bindWorkjetPrivateChat } from "../../workjetPrivateChat";
+import { resolvePrivateChatDraftProject } from "../../workjetPrivateChatScope";
 import { NativePrivateChatControl } from "./NativePrivateChatControl";
 import { serializeComposerFileLink } from "@workjet/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@workjet/shared/model";
@@ -1376,12 +1380,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const decisionHubConnections = decisionHubConnectionsQuery.data?.connections ?? [];
   const activeWorkjetScope = useActiveWorkjetScope();
   const nativeProjectRegistry = useWorkjetProjectRegistry(activeWorkjetScope.selectedInstanceId);
-  const nativeProject =
-    nativeProjectRegistry.phase === "ready"
-      ? nativeProjectRegistry.projects.find(
-          (project) => project.id === nativeProjectRegistry.selectedProjectId,
-        )
-      : undefined;
+  const nativeDraftSession = useComposerDraftStore((store) =>
+    store.getDraftThread(composerDraftTarget),
+  );
+  const nativeProject = resolvePrivateChatDraftProject({
+    registry: nativeProjectRegistry,
+    draft: nativeDraftSession,
+    computers: workjetComputers,
+  });
   const effectiveCapabilityBindings = composerTargetIsThread
     ? (workjetCapabilityBindings ?? [])
     : draftWorkjetConfig.capabilityBindings;
@@ -1493,6 +1499,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           ? `Decision Hub is ${selectedDecisionHubConnection.status}${selectedDecisionHubConnection.reason ? `: ${selectedDecisionHubConnection.reason}` : ""}`
           : null;
   const privateChatBinding = draftWorkjetConfig.ctoxCrewChat;
+  const nativeDraftIntent = composerDraft.privateChatIntent;
+  const privateChatProjectDisabledReason =
+    !composerTargetIsThread &&
+    selectedWorkjetWorker !== null &&
+    activeWorkjetScope.selectedInstanceId !== null &&
+    (nativeProject === undefined ||
+      (nativeDraftIntent !== undefined &&
+        (nativeDraftIntent.projectId !== nativeProject.id ||
+          nativeDraftIntent.workerProfileId !== selectedWorkjetWorker.id)) ||
+      (privateChatBinding !== undefined && nativeDraftIntent === undefined))
+      ? "Choose the project and worker belonging to this draft's private chat."
+      : null;
   const privateChatSendDisabledReason =
     !composerTargetIsThread &&
     privateChatBinding !== undefined &&
@@ -1506,6 +1524,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     sendDisabledReason ??
     decisionHubSendDisabledReason ??
     ctoxSendDisabledReason ??
+    privateChatProjectDisabledReason ??
     privateChatSendDisabledReason ??
     (!composerTargetIsThread &&
     selectedWorkjetWorker !== null &&
@@ -3966,6 +3985,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }))}
                     onSelectConnection={setNativeChatConnectionId}
                     config={draftWorkjetConfig}
+                    prepareIntent={(candidate) =>
+                      useComposerDraftStore
+                        .getState()
+                        .preparePrivateChatIntent(composerDraftTarget, candidate)
+                    }
+                    isScopeCurrent={() => {
+                      const active = readActiveWorkjetScope();
+                      const registry = readWorkjetProjectRegistry(active.selectedInstanceId);
+                      return (
+                        active.selectionRevision === activeWorkjetScope.selectionRevision &&
+                        active.selectedInstanceId === activeWorkjetScope.selectedInstanceId &&
+                        registry.phase === "ready" &&
+                        registry.selectedProjectId === nativeProject.id &&
+                        useComposerDraftStore.getState().getDraftThread(composerDraftTarget) ===
+                          nativeDraftSession
+                      );
+                    }}
                     onBound={(chat) =>
                       setComposerDraftWorkjetConfig(
                         composerDraftTarget,

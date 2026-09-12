@@ -957,7 +957,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // A composer draft is always a root thread. Persisted worker configs are
   // rejected here instead of leaking a child role into first-turn bootstrap.
-  const draftWorkjetConfig =
+  const draftWorkjetConfig: ReturnType<typeof normalizeWorkjetThreadConfig> =
     normalizedDraftWorkjetConfig.role === "worker"
       ? DEFAULT_WORKJET_THREAD_CONFIG
       : normalizedDraftWorkjetConfig;

@@ -90,12 +90,15 @@ const NativeTurns = Schema.Array(
 );
 
 const CrewStartId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
-const CrewStartBinding = Schema.Struct({
+const CrewStartReservation = Schema.Struct({
   attemptId: CrewStartId,
   commandId: CrewStartId,
   taskId: CrewStartId,
   executorId: CrewStartId,
   memberId: CrewStartId,
+});
+const CrewStartBinding = Schema.Struct({
+  ...CrewStartReservation.fields,
   providerInstanceId: Schema.NullOr(ProviderInstanceId),
   providerThreadId: Schema.NullOr(CrewStartId),
 });
@@ -267,8 +270,12 @@ const make = Effect.gen(function* () {
       WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
         AND attempt_id = ${attemptId}
     `.pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(CrewStartBinding))),
-      Effect.mapError(() => failure("native-task-reference-conflict")),
+      Effect.mapError(unavailable),
+      Effect.flatMap((rows) =>
+        Schema.decodeUnknownEffect(Schema.Array(CrewStartBinding))(rows).pipe(
+          Effect.mapError(() => failure("native-task-reference-conflict")),
+        ),
+      ),
     );
     const row = rows[0] ?? null;
     if (row && (row.providerInstanceId === null) !== (row.providerThreadId === null))
@@ -281,30 +288,37 @@ const make = Effect.gen(function* () {
    * Legacy rows remain unassigned. Once assigned, the pair is immutable and
    * exact retries return the same binding.
    */
-  const bindCrewStartProvider = Effect.fn("CtoxNativeRequests.bindCrewStartProvider")(
-    function* (
-      requestIdentity: CtoxNativeRequestIdentity,
-      attemptId: string,
-      providerInstanceId: typeof ProviderInstanceId.Type,
-      providerThreadId: string,
-    ) {
-      const identity = { ...requestIdentity };
-      const decodedAttemptId = yield* Schema.decodeUnknownEffect(CrewStartId)(attemptId).pipe(
-        Effect.mapError(() => failure("native-response-invalid")),
-      );
-      const decodedProviderInstanceId = yield* Schema.decodeUnknownEffect(ProviderInstanceId)(
-        providerInstanceId,
-      ).pipe(Effect.mapError(() => failure("native-response-invalid")));
-      const decodedProviderThreadId = yield* Schema.decodeUnknownEffect(CrewStartId)(
-        providerThreadId,
-      ).pipe(Effect.mapError(() => failure("native-response-invalid")));
-      yield* load(identity);
-      const updated = yield* sql`
+  const bindCrewStartProvider = Effect.fn("CtoxNativeRequests.bindCrewStartProvider")(function* (
+    requestIdentity: CtoxNativeRequestIdentity,
+    requestedBinding: typeof CrewStartReservation.Type,
+    providerInstanceId: typeof ProviderInstanceId.Type,
+    providerThreadId: string,
+  ) {
+    const identity = { ...requestIdentity };
+    const binding = yield* Schema.decodeUnknownEffect(CrewStartReservation)({
+      ...requestedBinding,
+    }).pipe(Effect.mapError(() => failure("native-response-invalid")));
+    const decodedProviderInstanceId = yield* Schema.decodeUnknownEffect(ProviderInstanceId)(
+      providerInstanceId,
+    ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+    const decodedProviderThreadId = yield* Schema.decodeUnknownEffect(CrewStartId)(
+      providerThreadId,
+    ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+    const reference = yield* get(identity);
+    if (
+      reference.request.operation !== "start_crew_execution" ||
+      reference.commandId !== binding.commandId ||
+      reference.taskId !== binding.taskId
+    )
+      return yield* failure("native-task-reference-conflict");
+    const updated = yield* sql`
         UPDATE workjet_ctox_crew_starts
         SET provider_instance_id = ${decodedProviderInstanceId},
             provider_thread_id = ${decodedProviderThreadId}
         WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
-          AND attempt_id = ${decodedAttemptId}
+          AND attempt_id = ${binding.attemptId}
+          AND command_id = ${binding.commandId} AND task_id = ${binding.taskId}
+          AND executor_id = ${binding.executorId} AND member_id = ${binding.memberId}
           AND (
             (provider_instance_id IS NULL AND provider_thread_id IS NULL)
             OR (provider_instance_id = ${decodedProviderInstanceId}
@@ -312,17 +326,16 @@ const make = Effect.gen(function* () {
           )
         RETURNING attempt_id
       `.pipe(Effect.mapError(unavailable));
-      if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
-      const saved = yield* readCrewStart(identity, decodedAttemptId);
-      if (
-        !saved ||
-        saved.providerInstanceId !== decodedProviderInstanceId ||
-        saved.providerThreadId !== decodedProviderThreadId
-      )
-        return yield* failure("native-task-reference-conflict");
-      return saved;
-    },
-  );
+    if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+    const saved = yield* readCrewStart(identity, binding.attemptId);
+    if (
+      !saved ||
+      saved.providerInstanceId !== decodedProviderInstanceId ||
+      saved.providerThreadId !== decodedProviderThreadId
+    )
+      return yield* failure("native-task-reference-conflict");
+    return saved;
+  });
 
   /** Reserve BEFORE the remote claim. Only the inserting caller may start fresh.
    * An interrupted/ambiguous claim leaves the reservation intact for explicit
@@ -330,10 +343,10 @@ const make = Effect.gen(function* () {
    */
   const reserveCrewStart = Effect.fn("CtoxNativeRequests.reserveCrewStart")(function* (
     requestIdentity: CtoxNativeRequestIdentity,
-    requestedBinding: typeof CrewStartBinding.Type,
+    requestedBinding: typeof CrewStartReservation.Type,
   ) {
     const identity = { ...requestIdentity };
-    const binding = yield* Schema.decodeUnknownEffect(CrewStartBinding)({
+    const binding = yield* Schema.decodeUnknownEffect(CrewStartReservation)({
       ...requestedBinding,
     }).pipe(Effect.mapError(() => failure("native-response-invalid")));
     const reference = yield* get(identity);

@@ -7,7 +7,7 @@ import {
 } from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
-import * as Either from "effect/Either";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
@@ -188,7 +188,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     const providerThreadId = "provider-thread";
     const assigned = yield* restoredRequests.bindCrewStartProvider(
       admitted.identity,
-      attemptId,
+      binding,
       providerInstanceId,
       providerThreadId,
     );
@@ -196,7 +196,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(
       yield* restoredRequests.bindCrewStartProvider(
         admitted.identity,
-        attemptId,
+        binding,
         providerInstanceId,
         providerThreadId,
       ),
@@ -205,7 +205,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       yield* Effect.flip(
         restoredRequests.bindCrewStartProvider(
           admitted.identity,
-          attemptId,
+          binding,
           ProviderInstanceId.make("claude_agent"),
           "other-provider-thread",
         ),
@@ -269,18 +269,18 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(secondReservation.state).toBe("reserved");
     const concurrentBindings = yield* Effect.all(
       [
-        Effect.either(
+        Effect.result(
           restoredRequests.bindCrewStartProvider(
             admitted.identity,
-            secondAttempt,
+            secondReservation.binding,
             ProviderInstanceId.make("codex_a"),
             "provider-thread-a",
           ),
         ),
-        Effect.either(
+        Effect.result(
           restoredRequests.bindCrewStartProvider(
             admitted.identity,
-            secondAttempt,
+            secondReservation.binding,
             ProviderInstanceId.make("codex_b"),
             "provider-thread-b",
           ),
@@ -288,8 +288,8 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       ],
       { concurrency: 2 },
     );
-    expect(concurrentBindings.filter(Either.isRight)).toHaveLength(1);
-    expect(concurrentBindings.filter(Either.isLeft)).toHaveLength(1);
+    expect(concurrentBindings.filter(Result.isSuccess)).toHaveLength(1);
+    expect(concurrentBindings.filter(Result.isFailure)).toHaveLength(1);
     yield* sql`
       UPDATE workjet_ctox_crew_starts
       SET provider_instance_id = NULL

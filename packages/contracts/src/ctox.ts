@@ -489,6 +489,21 @@ const CtoxProjectText = (maximum: number) =>
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   Schema.Struct({ action: Schema.Literal("project.list") }),
   Schema.Struct({
+    action: Schema.Literal("project.worker.add"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    workerProfileId: CtoxProjectText(256),
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.chat.create"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    workerProfileId: CtoxProjectText(256),
+    title: CtoxProjectText(256),
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.create"),
     commandId: CommandId,
     projectId: ProjectId,
@@ -540,6 +555,13 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   Schema.Struct({ action: Schema.Literal("project.list"), projects: CtoxWorkjetProjectList }),
+  Schema.Struct({
+    action: Schema.Literals(["project.worker.add", "project.chat.create"]),
+    commandId: CommandId,
+    projectId: ProjectId,
+    workerProfileId: CtoxProjectText(256),
+    chatId: CtoxProjectText(256).check(Schema.isPattern(/^workjet_private_.+/)),
+  }),
   Schema.Struct({
     action: Schema.Literal("project.create"),
     project: CtoxWorkjetProjectProjection,

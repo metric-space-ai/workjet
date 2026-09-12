@@ -569,6 +569,11 @@ describe("composerDraftStore terminal contexts", () => {
               role: "orchestrator",
               parent: null,
               managedInstructions: "Your name is E2E-Lead.",
+              ctoxCrewChat: {
+                instanceId: "native-instance",
+                connectionId: "native-connection",
+                chatId: "workjet_private_opaque_native_id",
+              },
               enabledCapabilityIds: [],
               capabilityBindings: [],
             },
@@ -588,6 +593,11 @@ describe("composerDraftStore terminal contexts", () => {
         role: "orchestrator",
         parent: null,
         managedInstructions: "Your name is E2E-Lead.",
+        ctoxCrewChat: {
+          instanceId: "native-instance",
+          connectionId: "native-connection",
+          chatId: "workjet_private_opaque_native_id",
+        },
         enabledCapabilityIds: [],
         capabilityBindings: [],
       },

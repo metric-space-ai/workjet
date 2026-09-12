@@ -128,6 +128,8 @@ const PersistedElementContextDraft = Schema.Struct({
 });
 type PersistedElementContextDraft = typeof PersistedElementContextDraft.Type;
 
+import { WorkjetPrivateChatIntent, samePrivateChatIntentScope } from "./workjetPrivateChat";
+
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
@@ -159,6 +161,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
     Schema.NullOr(Schema.Struct({ provider: ProviderInstanceId, model: Schema.String })),
   ),
   workjetConfig: Schema.optionalKey(WorkjetThreadConfig),
+  privateChatIntent: Schema.optionalKey(WorkjetPrivateChatIntent),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -293,6 +296,7 @@ export interface ComposerThreadDraftState {
   workjetManualReturn: { readonly provider: ProviderInstanceId; readonly model: string } | null;
   /** Exact first-turn Workjet authority for a draft; null uses the contract default. */
   workjetConfig: WorkjetThreadConfig | null;
+  privateChatIntent?: WorkjetPrivateChatIntent;
 }
 
 /**
@@ -492,6 +496,10 @@ interface ComposerDraftStoreState {
     threadRef: ComposerThreadTarget,
     workjetConfig: WorkjetThreadConfig | null,
   ) => void;
+  preparePrivateChatIntent: (
+    target: ComposerThreadTarget,
+    candidate: WorkjetPrivateChatIntent,
+  ) => WorkjetPrivateChatIntent;
   setRuntimeMode: (
     threadRef: ComposerThreadTarget,
     runtimeMode: RuntimeMode | null | undefined,
@@ -768,7 +776,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.runtimeMode === null &&
     draft.interactionMode === null &&
     draft.workjetWorkerId === null &&
-    draft.workjetConfig === null
+    draft.workjetConfig === null &&
+    draft.privateChatIntent === undefined
   );
 }
 
@@ -1769,6 +1778,9 @@ function normalizePersistedDraftsByThreadId(
     const workjetConfig = isWorkjetThreadConfig(draftCandidate.workjetConfig)
       ? draftCandidate.workjetConfig
       : null;
+    const privateChatIntent = Schema.is(WorkjetPrivateChatIntent)(draftCandidate.privateChatIntent)
+      ? draftCandidate.privateChatIntent
+      : undefined;
     const prompt = ensureInlineTerminalContextPlaceholders(
       promptCandidate,
       terminalContexts.length,
@@ -1832,7 +1844,8 @@ function normalizePersistedDraftsByThreadId(
       !interactionMode &&
       workjetWorkerId === null &&
       workjetManualReturn === null &&
-      workjetConfig === null
+      workjetConfig === null &&
+      privateChatIntent === undefined
     ) {
       continue;
     }
@@ -1867,6 +1880,7 @@ function normalizePersistedDraftsByThreadId(
       ...(workjetConfig !== null
         ? { workjetConfig: workjetConfig as DeepMutable<WorkjetThreadConfig> }
         : {}),
+      ...(privateChatIntent !== undefined ? { privateChatIntent } : {}),
     };
   }
 
@@ -1971,7 +1985,8 @@ function partializeComposerDraftStoreState(
       draft.runtimeMode === null &&
       draft.interactionMode === null &&
       draft.workjetWorkerId == null &&
-      draft.workjetConfig === null
+      draft.workjetConfig === null &&
+      draft.privateChatIntent === undefined
     ) {
       continue;
     }
@@ -2036,6 +2051,9 @@ function partializeComposerDraftStoreState(
         : {}),
       ...(draft.workjetConfig
         ? { workjetConfig: draft.workjetConfig as DeepMutable<WorkjetThreadConfig> }
+        : {}),
+      ...(draft.privateChatIntent !== undefined
+        ? { privateChatIntent: { ...draft.privateChatIntent } }
         : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
@@ -2286,6 +2304,9 @@ function toHydratedThreadDraft(
     workjetWorkerId: persistedDraft.workjetWorkerId ?? null,
     workjetManualReturn: persistedDraft.workjetManualReturn ?? null,
     workjetConfig: persistedDraft.workjetConfig ?? null,
+    ...(persistedDraft.privateChatIntent !== undefined
+      ? { privateChatIntent: persistedDraft.privateChatIntent }
+      : {}),
   };
 }
 
@@ -2672,6 +2693,9 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               workjetWorkerId: source.workjetWorkerId,
               workjetManualReturn: source.workjetManualReturn,
               workjetConfig: source.workjetConfig,
+              ...(source.privateChatIntent !== undefined
+                ? { privateChatIntent: source.privateChatIntent }
+                : {}),
             };
             if (shouldRemoveDraft(promotedDraft)) {
               return nextState;
@@ -2931,6 +2955,34 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             }
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
+        },
+        preparePrivateChatIntent: (target, candidate) => {
+          const threadKey = resolveComposerDraftKey(get(), target);
+          if (!threadKey) throw new Error("The draft is no longer available.");
+          const base = get().draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+          const intent = base.privateChatIntent ?? candidate;
+          if (!samePrivateChatIntentScope(intent, candidate)) {
+            throw new Error("Resume the pending private chat or open a new draft.");
+          }
+          set((state) => ({
+            draftsByThreadKey: {
+              ...state.draftsByThreadKey,
+              [threadKey]: { ...base, privateChatIntent: intent },
+            },
+          }));
+          composerDebouncedStorage.flush();
+          const persisted = composerDebouncedStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY);
+          if (
+            typeof persisted !== "string" ||
+            JSON.stringify(
+              JSON.parse(persisted)?.state?.draftsByThreadKey?.[threadKey]?.privateChatIntent,
+            ) !== JSON.stringify(intent)
+          ) {
+            throw new Error(
+              "The private chat request could not be saved. Retry before connecting.",
+            );
+          }
+          return intent;
         },
         setWorkjetConfig: (threadRef, workjetConfig) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";

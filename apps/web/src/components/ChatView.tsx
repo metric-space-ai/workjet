@@ -5757,7 +5757,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       return;
     }
-    const workjetConfigForFirstTurn =
+    const workjetConfigForFirstTurn: WorkjetThreadConfig =
       useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.workjetConfig ??
       DEFAULT_WORKJET_THREAD_CONFIG;
     if (

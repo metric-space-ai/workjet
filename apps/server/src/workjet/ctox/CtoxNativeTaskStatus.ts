@@ -55,8 +55,8 @@ function taskState(value: string): CtoxNativeTaskState {
 }
 
 /** Validate the real BusinessOsMcpRecordResponse against the locally pinned
- * native ids. This observation does not copy remote execution state into the
- * request ledger or infer completion from a successful HTTP response.
+ * native ids. An initially absent task id may be learned from its command.
+ * This observation does not copy remote execution state into the request ledger or infer completion from a successful HTTP response.
  */
 export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus")(function* (
   reference: NativeTaskReference,
@@ -68,20 +68,31 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
   // App development commands belong to the native Creator module; their
   // record_id identifies the app. General delegation belongs to its own module.
   const request = reference.request;
-  const nativeModule = request.operation === "delegate_task" ? request.module_id : "creator";
+  const nativeModule =
+    request.operation === "start_crew_execution"
+      ? "ctox"
+      : request.operation === "delegate_task"
+        ? request.module_id
+        : "creator";
   const commandType =
-    request.operation === "delegate_task"
-      ? "ctox.delegate_task"
-      : request.operation === "create_app"
-        ? "ctox.business_os.app.create"
-        : "ctox.business_os.app.modify";
+    request.operation === "start_crew_execution"
+      ? "business_os.chat.task"
+      : request.operation === "delegate_task"
+        ? "ctox.delegate_task"
+        : request.operation === "create_app"
+          ? "ctox.business_os.app.create"
+          : "ctox.business_os.app.modify";
   const recordId =
-    request.operation === "delegate_task" ? (request.record_id ?? null) : request.module_id;
+    request.operation === "start_crew_execution"
+      ? null
+      : request.operation === "delegate_task"
+        ? (request.record_id ?? null)
+        : request.module_id;
   if (
     !reference.commandId ||
     record.id !== reference.commandId ||
     record.data.command_id !== reference.commandId ||
-    (record.data.task_id ?? null) !== reference.taskId ||
+    (reference.taskId !== null && (record.data.task_id ?? null) !== reference.taskId) ||
     (record.data.module !== undefined && record.data.module !== nativeModule) ||
     (record.data.record_id !== undefined && record.data.record_id !== recordId) ||
     (record.data.command_type !== undefined && record.data.command_type !== commandType) ||
@@ -93,7 +104,10 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
   // the compatibility command record. task_status is authoritative when present.
   const status = record.data.task_status ?? record.data.status;
   return {
-    reference,
+    reference:
+      reference.taskId === null && record.data.task_id
+        ? { ...reference, taskId: record.data.task_id }
+        : reference,
     state: taskState(status),
     status,
     note: record.data.status_note ?? null,

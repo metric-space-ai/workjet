@@ -8,7 +8,7 @@ export function workjetBrowserSurfaceEnabled(input: {
   draftConfig: WorkjetThreadConfig | null;
 }): boolean {
   const draft = input.draftConfig?.role === "worker" ? null : input.draftConfig;
-  const config = input.isServerThread
+  const config: WorkjetThreadConfig | null = input.isServerThread
     ? input.serverConfig
     : (draft ?? DEFAULT_WORKJET_THREAD_CONFIG);
   return config?.enabledCapabilityIds.includes("web-stack-browser") ?? false;

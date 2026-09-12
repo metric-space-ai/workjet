@@ -1,4 +1,4 @@
-import { WorkjetConnectionId } from "@workjet/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetConnectionId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveDelegatedCapabilities, validateCapabilityActivation } from "./activation.ts";
@@ -85,4 +85,51 @@ describe("capability activation policy", () => {
       issues: [{ capabilityId: "decision-hub", code: "child-delegation-forbidden" }],
     });
   });
+});
+
+it("keeps native Crew chat references and rejects foreign app-MCP routes", () => {
+  const ctoxCrewChat = {
+    instanceId: "crew-instance",
+    connectionId: WorkjetConnectionId.make("crew-connection"),
+    chatId: "workjet_private_chat",
+  };
+  const validate = (instanceId: string, connectionId: string) =>
+    validateCapabilityActivation({
+      config: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        ctoxCrewChat,
+        enabledCapabilityIds: ["ctox-business-os"],
+        capabilityBindings: [
+          {
+            capabilityId: "ctox-business-os",
+            target: {
+              kind: "ctox-connection",
+              instanceId,
+              connectionId: WorkjetConnectionId.make(connectionId),
+            },
+          },
+        ],
+      },
+      knownConnectionIds: new Set([connectionId]),
+      reachableConnectionIds: new Set([connectionId]),
+      connectionInstances: new Map([[connectionId, instanceId]]),
+    });
+  const matching = validate("crew-instance", "crew-connection");
+  expect(matching.issues).toEqual([]);
+  expect(matching.config.ctoxCrewChat).toEqual(ctoxCrewChat);
+  for (const [instance, connection] of [
+    ["foreign-instance", "crew-connection"],
+    ["crew-instance", "foreign-connection"],
+  ]) {
+    expect(validate(instance!, connection!).issues).toContainEqual({
+      capabilityId: "ctox-business-os",
+      code: "binding-foreign",
+    });
+  }
+  const crewOnly = validateCapabilityActivation({
+    config: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat },
+  });
+  expect(crewOnly.config.ctoxCrewChat).toEqual(ctoxCrewChat);
+  expect(crewOnly.config.enabledCapabilityIds).toEqual([]);
+  expect(crewOnly.issues).toEqual([]);
 });

@@ -1,12 +1,20 @@
 import { expect, it } from "@effect/vitest";
-import { ThreadId, WorkjetConnectionId, type WorkjetCtoxCrewOffers } from "@workjet/contracts";
+import {
+  ProviderInstanceId,
+  ThreadId,
+  WorkjetConnectionId,
+  type WorkjetCtoxCrewOffers,
+} from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
 import migration61 from "../../persistence/Migrations/061_WorkjetCtoxNativeTurns.ts";
 import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
+import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -16,7 +24,9 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     yield* migration60;
     yield* migration61;
     yield* migration62;
+    yield* migration63;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
+    const sql = yield* SqlClient.SqlClient;
     const scope = {
       threadId: ThreadId.make("dev"),
       connectionId: WorkjetConnectionId.make("connection"),
@@ -170,8 +180,38 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       taskId: "task",
       executorId: "computer",
       memberId: "crew",
+      providerInstanceId: null,
+      providerThreadId: null,
     });
     if (!binding) return yield* Effect.die("Expected persisted start binding");
+    const providerInstanceId = ProviderInstanceId.make("codex_work");
+    const providerThreadId = "provider-thread";
+    const assigned = yield* restoredRequests.bindCrewStartProvider(
+      admitted.identity,
+      binding,
+      providerInstanceId,
+      providerThreadId,
+    );
+    expect(assigned).toMatchObject({ providerInstanceId, providerThreadId });
+    expect(
+      yield* restoredRequests.bindCrewStartProvider(
+        admitted.identity,
+        binding,
+        providerInstanceId,
+        providerThreadId,
+      ),
+    ).toEqual(assigned);
+    expect(
+      yield* Effect.flip(
+        restoredRequests.bindCrewStartProvider(
+          admitted.identity,
+          binding,
+          ProviderInstanceId.make("claude_agent"),
+          "other-provider-thread",
+        ),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    expect(yield* restoredRequests.readCrewStart(admitted.identity, attemptId)).toEqual(assigned);
     expect(
       yield* Effect.flip(
         restoredRequests.reserveCrewStart(admitted.identity, { ...binding, memberId: "foreign" }),
@@ -220,5 +260,45 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect((yield* prepare()).state).toBe("native-terminal");
     expect(claims).toBe(3);
     expect(new Set(sentKeys).size).toBe(1);
+
+    const secondAttempt = "second-provider";
+    const secondReservation = yield* restoredRequests.reserveCrewStart(admitted.identity, {
+      ...binding,
+      attemptId: secondAttempt,
+    });
+    expect(secondReservation.state).toBe("reserved");
+    const concurrentBindings = yield* Effect.all(
+      [
+        Effect.result(
+          restoredRequests.bindCrewStartProvider(
+            admitted.identity,
+            secondReservation.binding,
+            ProviderInstanceId.make("codex_a"),
+            "provider-thread-a",
+          ),
+        ),
+        Effect.result(
+          restoredRequests.bindCrewStartProvider(
+            admitted.identity,
+            secondReservation.binding,
+            ProviderInstanceId.make("codex_b"),
+            "provider-thread-b",
+          ),
+        ),
+      ],
+      { concurrency: 2 },
+    );
+    expect(concurrentBindings.filter(Result.isSuccess)).toHaveLength(1);
+    expect(concurrentBindings.filter(Result.isFailure)).toHaveLength(1);
+    yield* sql`
+      UPDATE workjet_ctox_crew_starts
+      SET provider_instance_id = NULL
+      WHERE thread_id = ${admitted.identity.threadId}
+        AND request_key = ${admitted.identity.requestKey}
+        AND attempt_id = ${secondAttempt}
+    `;
+    expect(
+      yield* Effect.flip(restoredRequests.readCrewStart(admitted.identity, secondAttempt)),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
   }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );

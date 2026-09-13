@@ -76,9 +76,9 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
@@ -392,8 +392,8 @@ const makeStack = (log: PeerLog, baseDir: string) => {
  * working tree.
  */
 const scopedBaseDir = Effect.acquireRelease(
-  Effect.sync(() => fs.mkdtempSync(path.join(os.tmpdir(), "ctox-dispatch-"))),
-  (dir) => Effect.sync(() => fs.rmSync(dir, { recursive: true, force: true })),
+  Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "ctox-dispatch-"))),
+  (dir) => Effect.sync(() => NodeFS.rmSync(dir, { recursive: true, force: true })),
 );
 
 const makeLog = Effect.gen(function* () {

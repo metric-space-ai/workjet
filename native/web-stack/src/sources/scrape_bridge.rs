@@ -1894,6 +1894,26 @@ printf '%s' '{"ok":false,"classification":{"status":"authorization_required"},"r
     }
 
     #[test]
+    fn pending_provider_does_not_trigger_browser_fallback_or_retry() {
+        let module = crate::sources::find("northdata.de").unwrap();
+        let mut executions = 0;
+        let result = run_with_public_browser_fallback(
+            module,
+            json!({}),
+            |_| {
+                executions += 1;
+                stub_result("awaiting_provider")
+            },
+            |_| panic!("pending provider must never launch browser fallback"),
+        );
+        assert_eq!(executions, 1);
+        assert_eq!(result.classification, "awaiting_provider");
+        assert!(!requires_public_browser_fallback(&result.classification));
+        assert!(result.fields.is_empty());
+        assert!(result.public_browser_fallback.is_none());
+    }
+
+    #[test]
     fn access_failures_run_one_public_unlock_and_one_adapter_retry() {
         for initial_status in ["blocked", "temporary_unreachable"] {
             let module = crate::sources::find("northdata.de").unwrap();

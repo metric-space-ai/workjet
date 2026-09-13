@@ -101,6 +101,14 @@ must remain rooted in native-owned state and separately bind the query, so a
 changed company/country in the same operation fails closed instead of triggering
 a second collection. This propagation alone does not implement adapter resume.
 
+A native `awaiting_provider` outcome retains its current scrape run ID in the
+research receipt. That source does not enter the later search/API cascade or
+historical browser-capture collection. Other sources may still contribute their
+own evidence. Research returns `ok: false`, `status: awaiting_provider` and the
+waiting source IDs, rather than claiming completion. CTOX must retrieve the
+validated continuation from its own durable scrape run and resume its existing
+command; this crate neither starts a poller nor invents a new operation.
+
 Registered public scrape adapters have one bounded browser fallback for access
 failures. When an adapter classifies a run as `blocked` or
 `temporary_unreachable`, the Web Stack opens the source's public start page in

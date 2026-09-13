@@ -197,6 +197,11 @@ pub fn run_person_research_tool_with_context(
                     "initial_classification": result.initial_classification,
                     "public_browser_fallback": result.public_browser_fallback,
                 }));
+                if result.classification == "awaiting_provider" {
+                    // The accepted provider job owns this source's result.
+                    // Do not substitute another API/search/browser attempt.
+                    continue;
+                }
                 for (field, ev) in result.fields {
                     if !request.fields.is_empty() && !request.fields.contains(&field) {
                         continue;
@@ -458,7 +463,13 @@ pub fn run_person_research_tool_with_context(
         }
     }
 
-    match collect_browser_extract_evidence(root, &company, plans.as_slice(), &request.fields) {
+    let awaiting_provider_sources = pending_provider_sources(&scrape_runs);
+    let capture_plans = plans
+        .iter()
+        .filter(|plan| !awaiting_provider_sources.contains(plan.source_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    match collect_browser_extract_evidence(root, &company, &capture_plans, &request.fields) {
         Ok((browser_evidence, runs)) => {
             browser_extract_runs = runs;
             for (field, candidates) in browser_evidence {
@@ -482,8 +493,8 @@ pub fn run_person_research_tool_with_context(
         &person_records,
     );
 
-    let payload = json!({
-        "ok": true,
+    let mut payload = json!({
+        "ok": awaiting_provider_sources.is_empty(),
         "tool": "ctox_person_research",
         "company": company,
         "country": request.country.as_iso(),
@@ -511,8 +522,12 @@ pub fn run_person_research_tool_with_context(
         "scrape_runs": scrape_runs,
         "browser_extract_runs": browser_extract_runs,
         "browser_assist_tasks": browser_assist_tasks,
-        "browser_assist_recommendations": browser_assist_recommendations(plans.as_slice()),
+        "browser_assist_recommendations": browser_assist_recommendations(&capture_plans),
     });
+    if !awaiting_provider_sources.is_empty() {
+        payload["status"] = json!("awaiting_provider");
+        payload["awaiting_provider_sources"] = json!(awaiting_provider_sources);
+    }
 
     if request.persist_workspace {
         let workspace = request
@@ -539,6 +554,18 @@ pub fn run_person_research_tool_with_context(
 // ---------------------------------------------------------------------------
 // Plan
 // ---------------------------------------------------------------------------
+
+fn pending_provider_sources(scrape_runs: &[Value]) -> BTreeSet<String> {
+    scrape_runs
+        .iter()
+        .filter(|run| {
+            run.get("classification").and_then(Value::as_str) == Some("awaiting_provider")
+        })
+        .filter_map(|run| run.get("source_id").and_then(Value::as_str))
+        .filter(|source| !source.is_empty())
+        .map(str::to_string)
+        .collect()
+}
 
 fn build_person_research_plan(request: &PersonResearchRequest) -> Vec<PersonResearchPlan> {
     // The "fields wanted" are the explicit request list, or every field
@@ -2637,6 +2664,19 @@ fn slugify(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pending_provider_sources_do_not_relabel_other_source_outcomes() {
+        let pending = pending_provider_sources(&[
+            json!({"source_id":"linkedin.com","classification":"awaiting_provider","run_id":"scrape_run-current"}),
+            json!({"source_id":"northdata.de","classification":"succeeded"}),
+            json!({"source_id":"xing.com","classification":"blocked"}),
+            json!({"source_id":"dnbhoovers.com","classification":"temporary_unreachable"}),
+            json!({"source_id":"linkedin.com","classification":"awaiting_provider"}),
+        ]);
+        assert_eq!(pending, BTreeSet::from(["linkedin.com".to_string()]));
+        assert!(pending_provider_sources(&[]).is_empty());
+    }
 
     #[test]
     fn plan_excludes_tier_c_unless_opted_in() {

@@ -293,9 +293,11 @@ const TailscalePeerStatusJson = Schema.Struct({
   ),
 });
 
+const decodeTailscalePeersJson = Schema.decodeEffect(Schema.fromJsonString(TailscalePeerStatusJson));
+
 /** Only the current daemon's peers are candidates; local SSH aliases are never consulted. */
 export const parseTailscalePeers = (raw: string) =>
-  Schema.decodeEffect(Schema.fromJsonString(TailscalePeerStatusJson))(raw).pipe(
+  decodeTailscalePeersJson(raw).pipe(
     Effect.mapError(
       () => new TailscaleStatusParseError({ cause: "Invalid Tailscale peer status." }),
     ),

@@ -318,7 +318,7 @@ fn run_person_research_with_checkpoint(
         // instead of silently failing here.
         if let Some(module) = sources::find(plan.source_id) {
             if module.scrape_target_key().is_some() || plan.configured_target.is_some() {
-                let result = if let Some(target) = &plan.configured_target {
+                let (result, verified_email) = if let Some(target) = &plan.configured_target {
                     scrape_bridge::run_via_configured_scrape_target(
                         module,
                         &target.target_key,
@@ -329,17 +329,20 @@ fn run_person_research_with_checkpoint(
                         dispatch.as_deref_mut().expect("checked native dispatch"),
                     )
                 } else {
-                    scrape_bridge::run_via_scrape_target_with_dispatch(
-                        module,
-                        &company,
-                        request.country,
-                        root,
-                        &ctox_bin,
-                        request.workspace.as_deref(),
-                        match &mut dispatch {
-                            Some(dispatch) => Some(&mut **dispatch),
-                            None => None,
-                        },
+                    (
+                        scrape_bridge::run_via_scrape_target_with_dispatch(
+                            module,
+                            &company,
+                            request.country,
+                            root,
+                            &ctox_bin,
+                            request.workspace.as_deref(),
+                            match &mut dispatch {
+                                Some(dispatch) => Some(&mut **dispatch),
+                                None => None,
+                            },
+                        ),
+                        None,
                     )
                 };
                 if plan.configured_target.is_none() {
@@ -363,6 +366,7 @@ fn run_person_research_with_checkpoint(
                     "public_browser_fallback": result.public_browser_fallback,
                     "configured_target": plan.configured_target,
                     "validation_email": validation_email,
+                    "verified_subject_email": verified_email,
                 }));
                 if result.classification == "awaiting_provider" {
                     // The accepted provider job owns this source's result.
@@ -385,7 +389,7 @@ fn run_person_research_with_checkpoint(
                         "via": "scrape_target",
                         "note": ev.note,
                     });
-                    if let Some(email) = validation_email.as_deref() {
+                    if let Some(email) = verified_email.as_deref() {
                         candidate["subject_email"] = json!(email);
                         let keys = field_evidence
                             .get(&FieldKey::PersonEmail)
@@ -3403,7 +3407,8 @@ mod tests {
                 validators.push(source.to_string());
                 return Ok(
                     json!({"ok":true,"status":"succeeded","run_id":format!("scrape_run-{source}"),"records":[{
-                        "field":"person_email_validation","value":"valid","company":"Fixture GmbH","confidence":"high",
+                    "field":"person_email_validation","value":"valid","company":"Fixture GmbH","confidence":"high",
+                    "subject_email":"contact@fixture.test",
                         "run_id":format!("scrape_run-{source}"),"source_id":source,"source_url":format!("https://{source}/email-check"),
                         "evidence_eligible":true,"verification_status":"verified","http_status":200,
                         "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
@@ -3487,6 +3492,61 @@ mod tests {
                     && r["run_id"].is_null()
                     && r["attempts"] == 0));
             }
+        }
+    }
+
+    #[test]
+    fn configured_validators_reject_missing_wrong_and_contradictory_response_subjects() {
+        for subject in [
+            json!({}),
+            json!({"subject_email":"other@fixture.test"}),
+            json!({"subject_email":"one@fixture.test","email":"other@fixture.test"}),
+            json!({"subject_email":"one@fixture.test","provenance":{"email":"other@fixture.test"}}),
+            json!({"subject_email":null}),
+        ] {
+            let root = ConfiguredTestRoot::new();
+            let mut request = configured_request(&root.0);
+            request.fields = vec![FieldKey::PersonEmailValidation];
+            request.known_person_records = vec![KnownPersonRecord {
+                email: Some("one@fixture.test".into()),
+                ..Default::default()
+            }];
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut calls = 0;
+            let mut dispatch = |_: &str, input: &Value| {
+                calls += 1;
+                let source = input["source_id"].as_str().unwrap();
+                let run = format!("scrape_run-{source}");
+                let mut record = json!({
+                    "field":"person_email_validation","value":"valid","company":"Fixture GmbH","confidence":"high",
+                    "run_id":run,"source_id":source,"source_url":format!("https://{source}/email-check"),
+                    "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                    "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                    "snapshot_hash":"sha256:fixture"
+                });
+                record
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(subject.as_object().unwrap().clone());
+                Ok(json!({"ok":true,"status":"succeeded","run_id":run,"records":[record]}))
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert_eq!(calls, 2);
+            assert!(result["fields"]["person_email_validation"]["value"].is_null());
+            assert!(result["scrape_runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["record_count"] == 0
+                    && r["verified_subject_email"].is_null()
+                    && !r["evidence_rejections"].as_array().unwrap().is_empty()));
         }
     }
 

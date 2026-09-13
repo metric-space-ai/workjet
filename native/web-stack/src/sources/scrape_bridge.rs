@@ -190,7 +190,7 @@ pub fn run_via_configured_scrape_target(
     research_workspace: Option<&Path>,
     candidate_email: Option<&str>,
     dispatch: &mut ScrapeTargetDispatch<'_>,
-) -> ScrapeBridgeResult {
+) -> (ScrapeBridgeResult, Option<String>) {
     let mut input = research_scrape_input(
         module.id(),
         target_key,
@@ -206,7 +206,7 @@ pub fn run_via_configured_scrape_target(
             "status": "executor_error", "reason": "configured native adapter execution failed"
         })
     });
-    parse_scrape_envelope(target_key, module, company, &envelope)
+    parse_scrape_envelope_for_subject(target_key, module, company, &envelope, candidate_email)
 }
 
 fn research_scrape_input(
@@ -565,6 +565,16 @@ fn parse_scrape_envelope(
     company: &str,
     envelope: &Value,
 ) -> ScrapeBridgeResult {
+    parse_scrape_envelope_for_subject(target_key, module, company, envelope, None).0
+}
+
+fn parse_scrape_envelope_for_subject(
+    target_key: &str,
+    module: &dyn SourceModule,
+    company: &str,
+    envelope: &Value,
+    expected_email: Option<&str>,
+) -> (ScrapeBridgeResult, Option<String>) {
     let classification = envelope
         .get("classification")
         .and_then(|v| v.get("status"))
@@ -623,13 +633,30 @@ fn parse_scrape_envelope(
             .unwrap_or_default()
     };
 
+    let mut verified_subject_email = None;
     let fields = if evidence_rejections.is_empty() {
         records
             .into_iter()
             .enumerate()
             .filter_map(|(index, record)| {
+                let subject = if let Some(expected) = expected_email {
+                    match verified_record_email_subject(&record, expected) {
+                        Ok(subject) => Some(subject),
+                        Err(reason) => {
+                            evidence_rejections.push(format!("record_{index}:{reason}"));
+                            return None;
+                        }
+                    }
+                } else {
+                    None
+                };
                 match record_to_field_evidence(&record, module, company, run_id.as_deref()) {
-                    Ok(field) => field,
+                    Ok(field) => {
+                        if field.is_some() && subject.is_some() {
+                            verified_subject_email = subject;
+                        }
+                        field
+                    }
                     Err(reason) => {
                         evidence_rejections.push(format!("record_{index}:{reason}"));
                         None
@@ -641,18 +668,45 @@ fn parse_scrape_envelope(
         Vec::new()
     };
 
-    ScrapeBridgeResult {
-        target_key: target_key.to_string(),
-        fields,
-        classification,
-        reason,
-        repair_queued,
-        run_id,
-        evidence_rejections,
-        attempts: 1,
-        initial_classification: None,
-        public_browser_fallback: None,
+    (
+        ScrapeBridgeResult {
+            target_key: target_key.to_string(),
+            fields,
+            classification,
+            reason,
+            repair_queued,
+            run_id,
+            evidence_rejections,
+            attempts: 1,
+            initial_classification: None,
+            public_browser_fallback: None,
+        },
+        verified_subject_email,
+    )
+}
+
+fn verified_record_email_subject(record: &Value, expected: &str) -> Result<String, &'static str> {
+    let mut subject = None;
+    for value in [
+        record.get("subject_email"),
+        record.get("email"),
+        record.pointer("/provenance/subject_email"),
+        record.pointer("/provenance/email"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let actual = value
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or("invalid_validation_subject")?;
+        if actual != expected {
+            return Err("validation_subject_mismatch");
+        }
+        subject = Some(actual.to_string());
     }
+    subject.ok_or("missing_validation_subject")
 }
 
 fn parse_runtime_scrape_envelope(

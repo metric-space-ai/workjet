@@ -87,6 +87,8 @@ pub use person_research::resume_ctox_person_research_tool;
 #[cfg(feature = "full")]
 pub use person_research::run_ctox_person_research_tool;
 #[cfg(feature = "full")]
+pub use person_research::run_ctox_person_research_with_dispatch;
+#[cfg(feature = "full")]
 pub use person_research::run_person_research_tool_with_context;
 pub use person_research::KnownPersonRecord;
 #[cfg(feature = "full")]

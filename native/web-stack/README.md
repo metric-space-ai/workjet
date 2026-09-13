@@ -119,6 +119,15 @@ scope, workspace or missing checkpoint fails before any source execution. The
 host owns bounded deadlines/poll counts and must not accept this checkpoint from
 browser request data or an arbitrary file. No public request field was added.
 
+Native hosts may use `run_ctox_person_research_with_dispatch` to execute the
+registered adapter in-process through their existing authorized scrape engine.
+Only source execution is injected: the same planner, operation/input binding,
+record admission, public-browser fallback and checkpoint restore remain active.
+The callback is supplied by embedding code, not request/browser configuration.
+Default public entry points retain their CLI behavior. This seam also allows a
+real command recovery test to execute native registered fixture scripts rather
+than accidentally relaunching the Rust test harness as a CTOX CLI.
+
 Registered public scrape adapters have one bounded browser fallback for access
 failures. When an adapter classifies a run as `blocked` or
 `temporary_unreachable`, the Web Stack opens the source's public start page in

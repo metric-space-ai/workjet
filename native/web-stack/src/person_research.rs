@@ -130,7 +130,7 @@ pub fn run_person_research_tool_with_context(
     context: WebStackContext<'_>,
     request: &PersonResearchRequest,
 ) -> Result<Value> {
-    run_person_research_with_checkpoint(context, request, None)
+    run_person_research_with_checkpoint(context, request, None, None)
 }
 
 /// Resume only the pending providers of a native, command-owned checkpoint.
@@ -142,13 +142,37 @@ pub fn resume_ctox_person_research_tool(
     previous: &Value,
 ) -> Result<Value> {
     let store = CtoxRuntimeConfigStore::from_root(root);
-    run_person_research_with_checkpoint(WebStackContext::new(root, &store), request, Some(previous))
+    run_person_research_with_checkpoint(
+        WebStackContext::new(root, &store),
+        request,
+        Some(previous),
+        None,
+    )
+}
+
+/// Native embedding path: only registered-source execution is delegated to the
+/// host. Planning, input/operation binding, result admission and resume remain
+/// the same implementation used by the CLI-backed public entry points.
+pub fn run_ctox_person_research_with_dispatch(
+    root: &Path,
+    request: &PersonResearchRequest,
+    previous: Option<&Value>,
+    dispatch: &mut scrape_bridge::ScrapeTargetDispatch<'_>,
+) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_person_research_with_checkpoint(
+        WebStackContext::new(root, &store),
+        request,
+        previous,
+        Some(dispatch),
+    )
 }
 
 fn run_person_research_with_checkpoint(
     context: WebStackContext<'_>,
     request: &PersonResearchRequest,
     previous: Option<&Value>,
+    mut dispatch: Option<&mut scrape_bridge::ScrapeTargetDispatch<'_>>,
 ) -> Result<Value> {
     let root = context.root;
     let company = normalize_required_company(&request.company)?;
@@ -208,13 +232,17 @@ fn run_person_research_with_checkpoint(
         // instead of silently failing here.
         if let Some(module) = sources::find(plan.source_id) {
             if module.scrape_target_key().is_some() {
-                let result = scrape_bridge::run_via_scrape_target_with_operation(
+                let result = scrape_bridge::run_via_scrape_target_with_dispatch(
                     module,
                     &company,
                     request.country,
                     root,
                     &ctox_bin,
                     request.workspace.as_deref(),
+                    match &mut dispatch {
+                        Some(dispatch) => Some(&mut **dispatch),
+                        None => None,
+                    },
                 );
                 if let Some(task) = browser_assist_task_from_scrape_result(plan, module, &result) {
                     browser_assist_tasks.push(task);

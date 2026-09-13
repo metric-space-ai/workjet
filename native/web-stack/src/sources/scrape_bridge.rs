@@ -105,6 +105,31 @@ pub fn run_via_scrape_target_with_operation(
     ctox_bin: &Path,
     research_workspace: Option<&Path>,
 ) -> ScrapeBridgeResult {
+    run_via_scrape_target_with_dispatch(
+        module,
+        company,
+        country,
+        root,
+        ctox_bin,
+        research_workspace,
+        None,
+    )
+}
+
+/// Trusted embedding-host execution of an already planned registered target.
+/// Browser/request data cannot supply this callback. The ordinary CLI path is
+/// unchanged; both paths use identical input, decoding and fallback policy.
+pub type ScrapeTargetDispatch<'a> = dyn FnMut(&str, &Value) -> anyhow::Result<Value> + 'a;
+
+pub fn run_via_scrape_target_with_dispatch(
+    module: &dyn SourceModule,
+    company: &str,
+    country: Country,
+    root: &Path,
+    ctox_bin: &Path,
+    research_workspace: Option<&Path>,
+    mut dispatch: Option<&mut ScrapeTargetDispatch<'_>>,
+) -> ScrapeBridgeResult {
     let Some(target_key) = module.scrape_target_key() else {
         // Not opted in — caller should use the Rust path.
         return ScrapeBridgeResult {
@@ -132,7 +157,21 @@ pub fn run_via_scrape_target_with_operation(
     let current = run_with_public_browser_fallback(
         module,
         input,
-        |input| execute_scrape_target_once(module, company, root, ctox_bin, target_key, input),
+        |input| match dispatch.as_deref_mut() {
+            Some(dispatch) => match dispatch(target_key, input) {
+                Ok(envelope) => parse_scrape_envelope(target_key, module, company, &envelope),
+                Err(error) => parse_scrape_envelope(
+                    target_key,
+                    module,
+                    company,
+                    &json!({
+                        "status": if error.to_string().contains("target_key not found") { "target_not_registered" } else { "executor_error" },
+                        "reason":"native registered adapter execution failed"
+                    }),
+                ),
+            },
+            None => execute_scrape_target_once(module, company, root, ctox_bin, target_key, input),
+        },
         |request| crate::unlock::run_public_browser_fallback(root, ctox_bin, request),
     );
     if !requires_public_browser_fallback(&current.classification) {
@@ -1338,6 +1377,60 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_dispatch_preserves_planner_input_and_pending_without_cli() {
+        let module = crate::sources::find("linkedin.com").unwrap();
+        let workspace = Path::new("/native/research/command-one");
+        let mut calls = Vec::new();
+        let mut dispatch = |target: &str, input: &Value| {
+            calls.push((target.to_string(), input.clone()));
+            Ok(json!({"status":"awaiting_provider","run_id":"scrape_run-native"}))
+        };
+        let result = run_via_scrape_target_with_dispatch(
+            module,
+            "Fixture GmbH",
+            Country::De,
+            Path::new("/nonexistent"),
+            Path::new("/must-not-spawn-ctox"),
+            Some(workspace),
+            Some(&mut dispatch),
+        );
+        assert_eq!(result.classification, "awaiting_provider");
+        assert_eq!(result.run_id.as_deref(), Some("scrape_run-native"));
+        assert!(result.public_browser_fallback.is_none());
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "linkedin-com");
+        assert_eq!(
+            calls[0].1,
+            research_scrape_input(
+                "linkedin.com",
+                "linkedin-com",
+                "Fixture GmbH",
+                Country::De,
+                Some(workspace)
+            )
+        );
+    }
+
+    #[test]
+    fn provider_dispatch_preserves_unregistered_classification_without_error_leak() {
+        let module = crate::sources::find("linkedin.com").unwrap();
+        let mut dispatch =
+            |_: &str, _: &Value| Err(anyhow::anyhow!("target_key not found; private-canary"));
+        let result = run_via_scrape_target_with_dispatch(
+            module,
+            "Fixture GmbH",
+            Country::De,
+            Path::new("/nonexistent"),
+            Path::new("/must-not-spawn-ctox"),
+            None,
+            Some(&mut dispatch),
+        );
+        assert_eq!(result.classification, "target_not_registered");
+        assert!(!result.reason.unwrap().contains("private-canary"));
+        assert!(result.public_browser_fallback.is_none());
+    }
 
     #[cfg(unix)]
     #[test]

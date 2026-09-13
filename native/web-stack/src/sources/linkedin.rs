@@ -84,6 +84,10 @@ impl SourceModule for LinkedIn {
         &["api.linkedin.com"]
     }
 
+    fn scrape_target_key(&self) -> Option<&'static str> {
+        Some("linkedin-com")
+    }
+
     fn tier(&self) -> Tier {
         Tier::C
     }

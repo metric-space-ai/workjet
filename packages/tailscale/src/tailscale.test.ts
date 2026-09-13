@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -27,6 +28,7 @@ import {
 } from "./tailscale.ts";
 
 const encoder = new TextEncoder();
+const encodeFixtureJson = Schema.encodeSync(Schema.UnknownFromJsonString);
 
 /**
  * Asserts nothing reachable from `error` contains `secret`. Recurses through
@@ -122,7 +124,7 @@ describe("tailscale", () => {
   it.effect("discovers only daemon peers and retains offline state without including self", () =>
     Effect.gen(function* () {
       const result = yield* parseTailscalePeers(
-        JSON.stringify({
+        encodeFixtureJson({
           BackendState: "Running",
           Self: { HostName: "this-computer", TailscaleIPs: ["100.64.0.1"], Online: true },
           Peer: {
@@ -148,7 +150,7 @@ describe("tailscale", () => {
     Effect.gen(function* () {
       for (const BackendState of ["Stopped", "NeedsLogin", "Starting"]) {
         const result = yield* parseTailscalePeers(
-          JSON.stringify({
+          encodeFixtureJson({
             BackendState,
             Peer: {
               old: { HostName: "old", TailscaleIPs: ["100.64.1.1"], Online: true },

@@ -7,7 +7,12 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
 import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import {
+  FetchHttpClient,
+  HttpRouter,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/unstable/http";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -31,6 +36,7 @@ import * as WebStackSearch from "./toolkits/workjet/WebStackSearch.ts";
 import { WebStackToolkitRegistrationLive } from "./toolkits/workjet/WebStackTool.ts";
 import { WorkerToolkitRegistrationLive } from "./toolkits/workjet/WorkerTool.ts";
 import { DecisionHubToolkitRegistrationLive } from "./toolkits/workjet/DecisionHubTool.ts";
+import { CtoxBusinessOsToolkitRegistrationLive } from "./toolkits/workjet/CtoxBusinessOsTool.ts";
 import { CollectiveToolkitRegistrationLive } from "./toolkits/workjet/CollectiveTool.ts";
 import { WorkBlockToolkitRegistrationLive } from "./toolkits/workjet/WorkBlockTool.ts";
 import { ManagerToolkitRegistrationLive } from "./toolkits/workjet/ManagerTool.ts";
@@ -234,6 +240,7 @@ const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
   ManagerToolkitRegistrationLive,
   WorkerToolkitRegistrationLive,
   DecisionHubToolkitRegistrationLive,
+  CtoxBusinessOsToolkitRegistrationLive.pipe(Layer.provide(FetchHttpClient.layer)),
   MailboxToolkitRegistrationLive,
   WorkjetToolkitRegistrationLive.pipe(Layer.provide(GreppySearch.layer)),
   WebStackToolkitRegistrationLive.pipe(

@@ -1723,7 +1723,7 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
-  it("forwards plan interaction mode to the provider turn request", async () => {
+  it("forwards plan mode and the persisted command identity to the provider turn request", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -1758,6 +1758,7 @@ describe("ProviderCommandReactor", () => {
     expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
       threadId: ThreadId.make("thread-1"),
       interactionMode: "plan",
+      requestId: "command:cmd-turn-start-plan",
     });
   });
 
@@ -1805,6 +1806,7 @@ describe("ProviderCommandReactor", () => {
 
     expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
       threadId: ThreadId.make("thread-1"),
+      requestId: "command:cmd-turn-start-unsupported-2",
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5-codex",

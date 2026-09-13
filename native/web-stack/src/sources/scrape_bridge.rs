@@ -200,6 +200,16 @@ pub fn run_via_configured_scrape_target(
     );
     if let Some(email) = candidate_email {
         input["email"] = json!(email);
+        if let Some(parent) = input["research_operation_id"].as_str() {
+            let mut digest = Sha256::new();
+            digest.update(b"ctox-research-email-subject-v1");
+            for part in [parent.as_bytes(), email.as_bytes()] {
+                digest.update((part.len() as u64).to_be_bytes());
+                digest.update(part);
+            }
+            input["research_operation_id"] =
+                json!(format!("research-email-v1-{:x}", digest.finalize()));
+        }
     }
     let envelope = dispatch(target_key, &input).unwrap_or_else(|_| {
         json!({

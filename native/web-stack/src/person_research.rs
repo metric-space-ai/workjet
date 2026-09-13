@@ -278,33 +278,34 @@ fn run_person_research_with_checkpoint(
     let mut visited_urls: BTreeSet<String> = BTreeSet::new();
     let ctox_bin = scrape_bridge::default_ctox_bin();
 
-    for plan in &plans {
+    'sources: for plan in &plans {
         if checkpoint.completed_sources.contains(plan.source_id) {
             // Retain the exact earlier evidence/receipt (including failures).
             // A provider poll must not rerun completed sources or their APIs.
             continue;
         }
-        let validation_email = if is_configured_email_validator(plan) {
+        let validation_emails = if is_configured_email_validator(plan) {
             if !pending_provider_sources(&scrape_runs).is_empty() {
                 deferred_sources.insert(plan.source_id.to_string());
                 continue;
             }
-            let email = configured_validation_email(request, &field_evidence);
-            if email.is_none() {
+            let emails = configured_validation_emails(request, &field_evidence);
+            if emails.is_empty() || emails.len() > MAX_VALIDATION_EMAILS {
                 scrape_runs.push(json!({
                     "source_id":plan.source_id,
                     "target_key":plan.configured_target.as_ref().unwrap().target_key,
                     "configured_target":plan.configured_target,
                     "classification":"input_required",
-                    "reason":"email_validation_requires_one_unambiguous_candidate",
+                    "reason":if emails.is_empty() { "email_validation_requires_candidate" } else { "email_validation_subject_limit_exceeded" },
+                    "subject_count":emails.len(), "subject_limit":MAX_VALIDATION_EMAILS,
                     "record_count":0,"run_id":null,"repair_queued":false,
                     "evidence_rejections":[],"attempts":0,"public_browser_fallback":null,
                 }));
                 continue;
             }
-            email
+            emails.into_iter().map(Some).collect::<Vec<_>>()
         } else {
-            None
+            vec![None]
         };
         // Fields this source's scrape target already produced this iteration.
         // The cascade below intentionally still runs (to supplement fields the
@@ -316,43 +317,54 @@ fn run_person_research_with_checkpoint(
         // extraction to the universal-scraping pipeline. Drift then flows
         // through `ctox scrape execute --allow-heal` into the repair queue
         // instead of silently failing here.
-        if let Some(module) = sources::find(plan.source_id) {
-            if module.scrape_target_key().is_some() || plan.configured_target.is_some() {
-                let (result, verified_email) = if let Some(target) = &plan.configured_target {
-                    scrape_bridge::run_via_configured_scrape_target(
-                        module,
-                        &target.target_key,
-                        &company,
-                        request.country,
-                        request.workspace.as_deref(),
-                        validation_email.as_deref(),
-                        dispatch.as_deref_mut().expect("checked native dispatch"),
-                    )
-                } else {
-                    (
-                        scrape_bridge::run_via_scrape_target_with_dispatch(
+        let validation_subject_count = validation_emails.len();
+        for (subject_index, validation_email) in validation_emails.into_iter().enumerate() {
+            if let Some(module) = sources::find(plan.source_id) {
+                if module.scrape_target_key().is_some() || plan.configured_target.is_some() {
+                    let (mut result, verified_email) = if let Some(target) = &plan.configured_target
+                    {
+                        scrape_bridge::run_via_configured_scrape_target(
                             module,
+                            &target.target_key,
                             &company,
                             request.country,
-                            root,
-                            &ctox_bin,
                             request.workspace.as_deref(),
-                            match &mut dispatch {
-                                Some(dispatch) => Some(&mut **dispatch),
-                                None => None,
-                            },
-                        ),
-                        None,
-                    )
-                };
-                if plan.configured_target.is_none() {
-                    if let Some(task) =
-                        browser_assist_task_from_scrape_result(plan, module, &result)
-                    {
-                        browser_assist_tasks.push(task);
+                            validation_email.as_deref(),
+                            dispatch.as_deref_mut().expect("checked native dispatch"),
+                        )
+                    } else {
+                        (
+                            scrape_bridge::run_via_scrape_target_with_dispatch(
+                                module,
+                                &company,
+                                request.country,
+                                root,
+                                &ctox_bin,
+                                request.workspace.as_deref(),
+                                match &mut dispatch {
+                                    Some(dispatch) => Some(&mut **dispatch),
+                                    None => None,
+                                },
+                            ),
+                            None,
+                        )
+                    };
+                    // These validators have a synchronous contract. A provider job
+                    // is not a verdict and cannot enter the source-only resume path.
+                    if validation_email.is_some() && result.classification == "awaiting_provider" {
+                        result.initial_classification = Some(result.classification.clone());
+                        result.classification = "adapter_protocol_error".to_string();
+                        result.reason = Some("email_validator_async_unsupported".to_string());
+                        result.fields.clear();
                     }
-                }
-                scrape_runs.push(json!({
+                    if plan.configured_target.is_none() {
+                        if let Some(task) =
+                            browser_assist_task_from_scrape_result(plan, module, &result)
+                        {
+                            browser_assist_tasks.push(task);
+                        }
+                    }
+                    scrape_runs.push(json!({
                     "source_id": plan.source_id,
                     "target_key": result.target_key,
                     "classification": result.classification,
@@ -367,61 +379,75 @@ fn run_person_research_with_checkpoint(
                     "configured_target": plan.configured_target,
                     "validation_email": validation_email,
                     "verified_subject_email": verified_email,
+                    "unattempted_subject_count": if result.classification == "adapter_protocol_error" {
+                        validation_subject_count - subject_index - 1
+                    } else { 0 },
                 }));
-                if result.classification == "awaiting_provider" {
-                    // The accepted provider job owns this source's result.
-                    // Do not substitute another API/search/browser attempt.
-                    continue;
-                }
-                for (field, ev) in result.fields {
-                    if plan.configured_target.is_some() && !plan.target_fields.contains(&field) {
-                        continue;
+                    if validation_email.is_some()
+                        && result.classification == "adapter_protocol_error"
+                    {
+                        break;
                     }
-                    if !request.fields.is_empty() && !request.fields.contains(&field) {
-                        continue;
+                    if result.classification == "awaiting_provider" {
+                        // The accepted provider job owns this source's result.
+                        // Do not substitute another API/search/browser attempt.
+                        continue 'sources;
                     }
-                    let mut candidate = json!({
-                        "value": ev.value,
-                        "confidence": ev.confidence.as_str(),
-                        "source_id": plan.source_id,
-                        "source_url": ev.source_url,
-                        "tier": tier_label(plan.tier),
-                        "via": "scrape_target",
-                        "note": ev.note,
-                    });
-                    if let Some(email) = verified_email.as_deref() {
-                        candidate["subject_email"] = json!(email);
-                        let keys = field_evidence
-                            .get(&FieldKey::PersonEmail)
-                            .into_iter()
-                            .flatten()
-                            .filter(|evidence| {
-                                evidence["value"].as_str().map(str::trim) == Some(email)
-                            })
-                            .filter_map(|evidence| {
-                                evidence["person_key"]
-                                    .as_str()
-                                    .or_else(|| evidence["source_url"].as_str())
-                            })
-                            .filter(|key| !key.is_empty())
-                            .collect::<BTreeSet<_>>();
-                        candidate["person_key"] = json!(if keys.len() == 1 {
-                            keys.into_iter().next().unwrap().to_string()
-                        } else {
-                            format!("email:{email}")
+                    for (field, ev) in result.fields {
+                        if plan.configured_target.is_some() && !plan.target_fields.contains(&field)
+                        {
+                            continue;
+                        }
+                        if !request.fields.is_empty() && !request.fields.contains(&field) {
+                            continue;
+                        }
+                        let mut candidate = json!({
+                            "value": ev.value,
+                            "confidence": ev.confidence.as_str(),
+                            "source_id": plan.source_id,
+                            "source_url": ev.source_url,
+                            "tier": tier_label(plan.tier),
+                            "via": "scrape_target",
+                            "note": ev.note,
                         });
+                        if let Some(email) = verified_email.as_deref() {
+                            candidate["subject_email"] = json!(email);
+                            candidate["run_id"] = json!(result.run_id);
+                            let keys = field_evidence
+                                .get(&FieldKey::PersonEmail)
+                                .into_iter()
+                                .flatten()
+                                .filter(|evidence| {
+                                    evidence["value"].as_str().map(str::trim) == Some(email)
+                                })
+                                .filter_map(|evidence| {
+                                    evidence["person_key"]
+                                        .as_str()
+                                        .or_else(|| evidence["source_url"].as_str())
+                                })
+                                .filter(|key| !key.is_empty())
+                                .collect::<BTreeSet<_>>();
+                            candidate["person_key"] = json!(if keys.len() == 1 {
+                                keys.into_iter().next().unwrap().to_string()
+                            } else {
+                                format!("email:{email}")
+                            });
+                        }
+                        field_evidence.entry(field).or_default().push(candidate);
+                        scrape_covered_fields.insert(field);
                     }
-                    field_evidence.entry(field).or_default().push(candidate);
-                    scrape_covered_fields.insert(field);
+                    if plan.configured_target.is_some() {
+                        continue;
+                    }
+                    // For drift / unreachable / blocked, fall through to the
+                    // search+read path as a safety net; for `succeeded` we
+                    // still run the cascade in case the script returned a
+                    // partial result and the cascade can supplement.
                 }
-                if plan.configured_target.is_some() {
-                    continue;
-                }
-                // For drift / unreachable / blocked, fall through to the
-                // search+read path as a safety net; for `succeeded` we
-                // still run the cascade in case the script returned a
-                // partial result and the cascade can supplement.
             }
+        }
+        if plan.configured_target.is_some() {
+            continue;
         }
 
         // Honor the source's `shape_query` for the search-engine query
@@ -824,10 +850,12 @@ fn is_configured_email_validator(plan: &PersonResearchPlan) -> bool {
     plan.configured_target.is_some() && matches!(plan.source_id, "experte.de" | "mailtester.com")
 }
 
-fn configured_validation_email(
+const MAX_VALIDATION_EMAILS: usize = 10;
+
+fn configured_validation_emails(
     request: &PersonResearchRequest,
     evidence: &BTreeMap<FieldKey, Vec<Value>>,
-) -> Option<String> {
+) -> Vec<String> {
     let addresses = request
         .known_person_records
         .iter()
@@ -848,8 +876,8 @@ fn configured_validation_email(
         })
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
-    // A validation result is about one address, never every person at a firm.
-    (addresses.len() == 1).then(|| addresses.into_iter().next().unwrap())
+    // Dispatch each exact subject once, even when several people share it.
+    addresses.into_iter().collect()
 }
 
 fn restore_provider_checkpoint(
@@ -878,6 +906,12 @@ fn restore_provider_checkpoint(
         .context("checkpoint has no source receipts")?;
     let pending = pending_provider_sources(runs);
     anyhow::ensure!(!pending.is_empty(), "checkpoint has no pending provider");
+    anyhow::ensure!(
+        !plans
+            .iter()
+            .any(|plan| is_configured_email_validator(plan) && pending.contains(plan.source_id)),
+        "email_validator_async_unsupported: cannot replay a source-only validator checkpoint"
+    );
     let source_ids = plans
         .iter()
         .map(|plan| plan.source_id.to_string())
@@ -3450,13 +3484,8 @@ mod tests {
     }
 
     #[test]
-    fn configured_validators_require_a_single_known_address_without_inventing_a_run() {
-        for addresses in [
-            vec![],
-            vec!["one@fixture.test"],
-            vec!["one@fixture.test", "two@fixture.test"],
-            vec!["not an address"],
-        ] {
+    fn configured_validators_require_bounded_known_addresses_without_inventing_a_run() {
+        for addresses in [vec![], vec!["one@fixture.test"], vec!["not an address"]] {
             let root = ConfiguredTestRoot::new();
             let mut request = configured_request(&root.0);
             request.fields = vec![FieldKey::PersonEmailValidation];
@@ -3493,6 +3522,199 @@ mod tests {
                     && r["attempts"] == 0));
             }
         }
+    }
+
+    #[test]
+    fn configured_validators_keep_each_contact_subject_and_operation_separate() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields = vec![FieldKey::PersonEmailValidation];
+        request.known_person_records = ["one@fixture.test", "two@fixture.test", "one@fixture.test"]
+            .into_iter()
+            .map(|email| KnownPersonRecord {
+                email: Some(email.into()),
+                ..Default::default()
+            })
+            .collect();
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut previous_calls = None;
+        for _ in 0..2 {
+            let mut calls = Vec::new();
+            let mut dispatch = |_: &str, input: &Value| {
+                calls.push(input.clone());
+                let source = input["source_id"].as_str().unwrap();
+                let email = input["email"].as_str().unwrap();
+                let run = format!(
+                    "scrape_run-{}",
+                    input["research_operation_id"].as_str().unwrap()
+                );
+                let verdict = if email == "one@fixture.test" {
+                    "valid"
+                } else {
+                    "invalid"
+                };
+                Ok(
+                    json!({"ok":true,"status":"succeeded","run_id":run,"records":[{
+                        "field":"person_email_validation","value":verdict,"company":"Fixture GmbH","confidence":"high",
+                        "run_id":run,"source_id":source,"source_url":format!("https://{source}/email-check"),
+                        "subject_email":email,"evidence_eligible":true,"verification_status":"verified","http_status":200,
+                        "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                        "snapshot_hash":"sha256:fixture"
+                    }]}),
+                )
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert_eq!(calls.len(), 4);
+            let ids = calls
+                .iter()
+                .map(|input| input["research_operation_id"].as_str().unwrap())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(ids.len(), 4);
+            assert!(calls
+                .iter()
+                .all(|input| input["company"] == "Fixture GmbH" && input["country"] == "DE"));
+            for source in ["experte.de", "mailtester.com"] {
+                let subjects = calls
+                    .iter()
+                    .filter(|input| input["source_id"] == source)
+                    .map(|input| input["email"].as_str().unwrap())
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(
+                    subjects,
+                    BTreeSet::from(["one@fixture.test", "two@fixture.test"])
+                );
+            }
+            let receipts = result["scrape_runs"].as_array().unwrap();
+            assert_eq!(receipts.len(), 4);
+            assert!(receipts
+                .iter()
+                .all(|r| r["record_count"] == 1
+                    && r["verified_subject_email"] == r["validation_email"]));
+            let candidates = result["fields"]["person_email_validation"]["candidates"]
+                .as_array()
+                .unwrap();
+            assert_eq!(candidates.len(), 4);
+            for candidate in candidates {
+                let email = candidate["subject_email"].as_str().unwrap();
+                assert_eq!(candidate["person_key"], format!("email:{email}"));
+                assert_eq!(
+                    candidate["value"],
+                    if email == "one@fixture.test" {
+                        "valid"
+                    } else {
+                        "invalid"
+                    }
+                );
+                assert!(receipts
+                    .iter()
+                    .any(|r| r["run_id"] == candidate["run_id"]
+                        && r["verified_subject_email"] == email));
+            }
+            let stored: Value = serde_json::from_slice(
+                &fs::read(request.workspace.as_ref().unwrap().join("envelope.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(stored["scrape_runs"], result["scrape_runs"]);
+            assert_eq!(stored["person_records"], result["person_records"]);
+            if let Some(previous) = previous_calls.as_ref() {
+                assert_eq!(&calls, previous);
+            }
+            previous_calls = Some(calls);
+        }
+    }
+
+    #[test]
+    fn configured_validators_over_limit_and_async_protocol_do_not_spawn_more_work() {
+        for over_limit in [true, false] {
+            let root = ConfiguredTestRoot::new();
+            let mut request = configured_request(&root.0);
+            request.fields = vec![FieldKey::PersonEmailValidation];
+            let count = if over_limit {
+                MAX_VALIDATION_EMAILS + 1
+            } else {
+                2
+            };
+            request.known_person_records = (0..count)
+                .map(|n| KnownPersonRecord {
+                    email: Some(format!("person{n}@fixture.test")),
+                    ..Default::default()
+                })
+                .collect();
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut calls = 0;
+            let mut dispatch = |_: &str, input: &Value| {
+                calls += 1;
+                Ok(configured_receipt(input, "awaiting_provider"))
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert_eq!(calls, if over_limit { 0 } else { 2 });
+            assert_ne!(result["status"], "awaiting_provider");
+            assert!(result["provider_resume"].is_null());
+            assert!(result["fields"]["person_email_validation"]["value"].is_null());
+            for run in result["scrape_runs"].as_array().unwrap() {
+                assert_eq!(run["record_count"], 0);
+                if over_limit {
+                    assert_eq!(run["reason"], "email_validation_subject_limit_exceeded");
+                    assert_eq!(run["subject_count"], count);
+                    assert!(run["run_id"].is_null());
+                } else {
+                    assert_eq!(run["classification"], "adapter_protocol_error");
+                    assert_eq!(run["initial_classification"], "awaiting_provider");
+                    assert_eq!(run["unattempted_subject_count"], 1);
+                    assert!(run["run_id"].is_string());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn configured_validator_legacy_pending_checkpoint_fails_before_dispatch() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields = vec![FieldKey::PersonEmailValidation];
+        request.known_person_records = vec![KnownPersonRecord {
+            email: Some("one@fixture.test".into()),
+            ..Default::default()
+        }];
+        let mut plans = build_person_research_plan(&request);
+        for plan in &mut plans {
+            plan.configured_target = Some(configured_target(plan.source_id));
+        }
+        plans.sort_by_key(is_configured_email_validator);
+        let previous = json!({
+            "status":"awaiting_provider",
+            "provider_resume":{"schema":"ctox.research.provider_resume.v1","request_sha256":provider_resume_binding(&request,&plans).unwrap()},
+            "scrape_runs":[{"source_id":"experte.de","classification":"awaiting_provider","run_id":"scrape_run-legacy"}],
+        });
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut dispatch = |_: &str, _: &Value| -> Result<Value> {
+            panic!("legacy subjectless validator was resubmitted")
+        };
+        let error = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            Some(&previous),
+            Some(&mut dispatch),
+            Some(&mut resolver),
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("email_validator_async_unsupported"));
     }
 
     #[test]

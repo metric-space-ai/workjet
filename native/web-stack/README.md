@@ -119,6 +119,20 @@ scope, workspace or missing checkpoint fails before any source execution. The
 host owns bounded deadlines/poll counts and must not accept this checkpoint from
 browser request data or an arbitrary file. No public request field was added.
 
+Configured Experte and MailTester validation runs after address discovery has
+settled. Each distinct exact trimmed address is dispatched sequentially to each
+selected validator with a separate stable subject operation ID. Shared addresses
+are checked once per provider; every admitted verdict retains its actual address,
+run ID and person binding. A request admits at most ten distinct addresses
+(twenty initial validator calls); exceeding this bound emits an explicit
+input-required receipt before any validation calls, without silently choosing a
+subset. Missing addresses also require input rather than inventing a run.
+These two adapters are synchronous. An unexpected pending provider job is
+recorded as an adapter protocol error with its original classification and run
+ID; remaining subjects for that provider are not submitted. Such a job cannot
+enter the source-only asynchronous checkpoint path. Legacy pending validator
+checkpoints fail closed before dispatch. LinkedIn continuation is unchanged.
+
 Native hosts may use `run_ctox_person_research_with_dispatch` to execute the
 registered adapter in-process through their existing authorized scrape engine.
 Only source execution is injected: the same planner, operation/input binding,

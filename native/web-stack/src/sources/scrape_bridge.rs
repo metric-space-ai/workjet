@@ -180,6 +180,31 @@ pub fn run_via_scrape_target_with_dispatch(
     recent_successful_result(root, target_key, module, company, &current).unwrap_or(current)
 }
 
+/// Explicit host-selected target. Its current native receipt is authoritative;
+/// unlike the portable default route this never falls back or reads history.
+pub fn run_via_configured_scrape_target(
+    module: &dyn SourceModule,
+    target_key: &str,
+    company: &str,
+    country: Country,
+    research_workspace: Option<&Path>,
+    dispatch: &mut ScrapeTargetDispatch<'_>,
+) -> ScrapeBridgeResult {
+    let input = research_scrape_input(
+        module.id(),
+        target_key,
+        company,
+        country,
+        research_workspace,
+    );
+    let envelope = dispatch(target_key, &input).unwrap_or_else(|_| {
+        json!({
+            "status": "executor_error", "reason": "configured native adapter execution failed"
+        })
+    });
+    parse_scrape_envelope(target_key, module, company, &envelope)
+}
+
 fn research_scrape_input(
     source_id: &str,
     target_key: &str,

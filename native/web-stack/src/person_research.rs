@@ -112,7 +112,19 @@ struct PersonResearchPlan {
     /// with `pinned_sources = [source_id]`, which honours `fetch_direct`
     /// automatically via Phase 3 plumbing.
     api_path: bool,
+    configured_target: Option<ConfiguredResearchTarget>,
 }
+
+/// A registered adapter selected by the embedding host's authoritative policy.
+/// The opaque registry digest binds its configuration and immutable revision.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ConfiguredResearchTarget {
+    pub target_key: String,
+    pub registry_binding_sha256: String,
+}
+
+pub type ResearchTargetResolver<'a> =
+    dyn FnMut(&str) -> Result<Option<ConfiguredResearchTarget>> + 'a;
 
 // ---------------------------------------------------------------------------
 // Tool entry point
@@ -130,7 +142,7 @@ pub fn run_person_research_tool_with_context(
     context: WebStackContext<'_>,
     request: &PersonResearchRequest,
 ) -> Result<Value> {
-    run_person_research_with_checkpoint(context, request, None, None)
+    run_person_research_with_checkpoint(context, request, None, None, None)
 }
 
 /// Resume only the pending providers of a native, command-owned checkpoint.
@@ -146,6 +158,7 @@ pub fn resume_ctox_person_research_tool(
         WebStackContext::new(root, &store),
         request,
         Some(previous),
+        None,
         None,
     )
 }
@@ -165,6 +178,27 @@ pub fn run_ctox_person_research_with_dispatch(
         request,
         previous,
         Some(dispatch),
+        None,
+    )
+}
+
+/// Resolve only sources admitted by the normal country/field/private-source
+/// planner. Configured adapters own their outcome; no alternate API, browser,
+/// search or historical result may silently replace them.
+pub fn run_ctox_person_research_with_configured_dispatch(
+    root: &Path,
+    request: &PersonResearchRequest,
+    previous: Option<&Value>,
+    resolver: &mut ResearchTargetResolver<'_>,
+    dispatch: &mut scrape_bridge::ScrapeTargetDispatch<'_>,
+) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_person_research_with_checkpoint(
+        WebStackContext::new(root, &store),
+        request,
+        previous,
+        Some(dispatch),
+        Some(resolver),
     )
 }
 
@@ -173,6 +207,7 @@ fn run_person_research_with_checkpoint(
     request: &PersonResearchRequest,
     previous: Option<&Value>,
     mut dispatch: Option<&mut scrape_bridge::ScrapeTargetDispatch<'_>>,
+    mut resolver: Option<&mut ResearchTargetResolver<'_>>,
 ) -> Result<Value> {
     let root = context.root;
     let company = normalize_required_company(&request.company)?;
@@ -191,7 +226,7 @@ fn run_person_research_with_checkpoint(
         return Ok(empty_plan_response(&company, request, "mode_skipped"));
     }
 
-    let plans = build_person_research_plan(request);
+    let mut plans = build_person_research_plan(request);
     if plans.is_empty() {
         anyhow::ensure!(
             previous.is_none(),
@@ -204,6 +239,31 @@ fn run_person_research_with_checkpoint(
         ));
     }
 
+    if let Some(resolver) = resolver.as_mut() {
+        anyhow::ensure!(
+            dispatch.is_some(),
+            "configured adapters require native dispatch"
+        );
+        for plan in &mut plans {
+            if let Some(target) = resolver(plan.source_id)? {
+                anyhow::ensure!(
+                    !target.target_key.is_empty()
+                        && target.target_key.len() <= 128
+                        && target
+                            .target_key
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+                        && target.registry_binding_sha256.len() == 64
+                        && target
+                            .registry_binding_sha256
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit()),
+                    "invalid configured research target"
+                );
+                plan.configured_target = Some(target);
+            }
+        }
+    }
     let checkpoint = restore_provider_checkpoint(request, &plans, previous)?;
     let mut field_evidence = checkpoint.field_evidence;
     let mut search_runs = checkpoint.search_runs;
@@ -231,21 +291,36 @@ fn run_person_research_with_checkpoint(
         // through `ctox scrape execute --allow-heal` into the repair queue
         // instead of silently failing here.
         if let Some(module) = sources::find(plan.source_id) {
-            if module.scrape_target_key().is_some() {
-                let result = scrape_bridge::run_via_scrape_target_with_dispatch(
-                    module,
-                    &company,
-                    request.country,
-                    root,
-                    &ctox_bin,
-                    request.workspace.as_deref(),
-                    match &mut dispatch {
-                        Some(dispatch) => Some(&mut **dispatch),
-                        None => None,
-                    },
-                );
-                if let Some(task) = browser_assist_task_from_scrape_result(plan, module, &result) {
-                    browser_assist_tasks.push(task);
+            if module.scrape_target_key().is_some() || plan.configured_target.is_some() {
+                let result = if let Some(target) = &plan.configured_target {
+                    scrape_bridge::run_via_configured_scrape_target(
+                        module,
+                        &target.target_key,
+                        &company,
+                        request.country,
+                        request.workspace.as_deref(),
+                        dispatch.as_deref_mut().expect("checked native dispatch"),
+                    )
+                } else {
+                    scrape_bridge::run_via_scrape_target_with_dispatch(
+                        module,
+                        &company,
+                        request.country,
+                        root,
+                        &ctox_bin,
+                        request.workspace.as_deref(),
+                        match &mut dispatch {
+                            Some(dispatch) => Some(&mut **dispatch),
+                            None => None,
+                        },
+                    )
+                };
+                if plan.configured_target.is_none() {
+                    if let Some(task) =
+                        browser_assist_task_from_scrape_result(plan, module, &result)
+                    {
+                        browser_assist_tasks.push(task);
+                    }
                 }
                 scrape_runs.push(json!({
                     "source_id": plan.source_id,
@@ -259,6 +334,7 @@ fn run_person_research_with_checkpoint(
                     "attempts": result.attempts,
                     "initial_classification": result.initial_classification,
                     "public_browser_fallback": result.public_browser_fallback,
+                    "configured_target": plan.configured_target,
                 }));
                 if result.classification == "awaiting_provider" {
                     // The accepted provider job owns this source's result.
@@ -266,6 +342,9 @@ fn run_person_research_with_checkpoint(
                     continue;
                 }
                 for (field, ev) in result.fields {
+                    if plan.configured_target.is_some() && !plan.target_fields.contains(&field) {
+                        continue;
+                    }
                     if !request.fields.is_empty() && !request.fields.contains(&field) {
                         continue;
                     }
@@ -279,6 +358,9 @@ fn run_person_research_with_checkpoint(
                         "note": ev.note,
                     }));
                     scrape_covered_fields.insert(field);
+                }
+                if plan.configured_target.is_some() {
+                    continue;
                 }
                 // For drift / unreachable / blocked, fall through to the
                 // search+read path as a safety net; for `succeeded` we
@@ -532,6 +614,7 @@ fn run_person_research_with_checkpoint(
         .filter(|plan| {
             !awaiting_provider_sources.contains(plan.source_id)
                 && !checkpoint.completed_sources.contains(plan.source_id)
+                && plan.configured_target.is_none()
         })
         .cloned()
         .collect::<Vec<_>>();
@@ -584,6 +667,7 @@ fn run_person_research_with_checkpoint(
                 "source_id": p.source_id,
                 "tier": tier_label(p.tier),
                 "api_path": p.api_path,
+                "configured_target": p.configured_target,
                 "target_fields": p.target_fields.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
             }))
             .collect::<Vec<_>>(),
@@ -660,10 +744,16 @@ fn provider_resume_binding(
         "include_private": request.include_private,
         "person_priorities": request.person_priorities,
         "known_person_records": request.known_person_records,
-        "plan": plans.iter().map(|plan| json!({
-            "source_id": plan.source_id,
-            "target_fields": plan.target_fields.iter().map(|field| field.as_str()).collect::<Vec<_>>(),
-        })).collect::<Vec<_>>(),
+        "plan": plans.iter().map(|plan| {
+            let mut value = json!({
+                "source_id": plan.source_id,
+                "target_fields": plan.target_fields.iter().map(|field| field.as_str()).collect::<Vec<_>>(),
+            });
+            if let Some(target) = &plan.configured_target {
+                value["configured_target"] = json!(target);
+            }
+            value
+        }).collect::<Vec<_>>(),
     }))?;
     let mut digest = Sha256::new();
     digest.update(b"ctox-research-provider-resume-v1");
@@ -819,6 +909,7 @@ fn build_person_research_plan(request: &PersonResearchRequest) -> Vec<PersonRese
                     tier: module.tier(),
                     target_fields: Vec::new(),
                     api_path: probe_api_path(module),
+                    configured_target: None,
                 });
             if !entry.target_fields.contains(field) {
                 entry.target_fields.push(*field);
@@ -850,19 +941,10 @@ fn is_source_opted_in(module: &'static dyn SourceModule, include_private: &[Stri
     false
 }
 
-/// Heuristic: a module has an API path iff `fetch_direct` returns `Some`
-/// when called with a synthetic context.  We pass a fake root that
-/// doesn't carry credentials, so credential-gated APIs still report
-/// `Some(Err(CredentialMissing))` (which proves the API path exists),
-/// while pure crawl modules return `None`.
+/// Read capability metadata without issuing a synthetic provider query. Public
+/// APIs (notably Zefix) need no credential and would otherwise execute here.
 fn probe_api_path(module: &'static dyn SourceModule) -> bool {
-    let ctx = SourceCtx {
-        root: Path::new(""),
-        runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
-        country: Some(*module.countries().first().unwrap_or(&Country::De)),
-        mode: ResearchMode::NewRecord,
-    };
-    module.fetch_direct(&ctx, "probe").is_some()
+    module.has_direct_api()
 }
 
 fn browser_assist_recommendations(plans: &[PersonResearchPlan]) -> Vec<Value> {
@@ -2872,6 +2954,327 @@ fn slugify(raw: &str) -> String {
 mod tests {
     use super::*;
 
+    struct ConfiguredTestRoot(PathBuf);
+    impl ConfiguredTestRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "configured-research-{}-{}",
+                std::process::id(),
+                rand::random::<u64>()
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for ConfiguredTestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    struct NoFallbackConfig;
+    impl crate::runtime_config::RuntimeConfigStore for NoFallbackConfig {
+        fn get(&self, key: &str) -> Option<String> {
+            panic!("unexpected API/search configuration lookup: {key}")
+        }
+    }
+    fn configured_request(root: &Path) -> PersonResearchRequest {
+        PersonResearchRequest {
+            company: "Fixture GmbH".into(),
+            country: Country::De,
+            mode: ResearchMode::NewRecord,
+            fields: vec![FieldKey::FirmaName, FieldKey::Mitarbeiter],
+            include_private: vec!["leadfeeder.com".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
+            workspace: Some(root.join("research")),
+            persist_workspace: true,
+        }
+    }
+    fn configured_target(source: &str) -> ConfiguredResearchTarget {
+        ConfiguredResearchTarget {
+            target_key: format!("configured-{}", source.replace('.', "-")),
+            registry_binding_sha256: "a".repeat(64),
+        }
+    }
+    fn configured_receipt(input: &Value, status: &str) -> Value {
+        let source = input["source_id"].as_str().unwrap();
+        let run = format!("scrape_run-{}", source.replace('.', "-"));
+        let records = if source == "leadfeeder.com" && status == "succeeded" {
+            vec![("firma_name", "Fixture GmbH"), ("mitarbeiter", "321")].into_iter().map(|(field, value)| json!({
+                "field":field,"value":value,"company":"Fixture GmbH","confidence":"high",
+                "run_id":run,"source_id":source,"source_url":"https://api.leadfeeder.com/accounts/318555/leads/fixture",
+                "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                "snapshot_hash":"sha256:fixture"
+            })).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        json!({"ok":status=="succeeded","status":status,"run_id":run,"records":records})
+    }
+
+    #[test]
+    fn configured_adapter_fields_persist_without_api_search_or_browser_substitution() {
+        let root = ConfiguredTestRoot::new();
+        let request = configured_request(&root.0);
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut calls = Vec::new();
+        let mut dispatch = |target: &str, input: &Value| {
+            calls.push((target.to_string(), input.clone()));
+            Ok(configured_receipt(
+                input,
+                if input["source_id"] == "leadfeeder.com" {
+                    "succeeded"
+                } else {
+                    "completed_empty"
+                },
+            ))
+        };
+        let result = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut dispatch),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(result["fields"]["mitarbeiter"]["value"], "321");
+        let lead = calls
+            .iter()
+            .filter(|(_, input)| input["source_id"] == "leadfeeder.com")
+            .collect::<Vec<_>>();
+        assert_eq!(lead.len(), 1);
+        assert_eq!(lead[0].0, "configured-leadfeeder-com");
+        assert_eq!(lead[0].1["company"], "Fixture GmbH");
+        assert_eq!(lead[0].1["country"], "DE");
+        assert!(lead[0].1["research_operation_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("research-v1-"));
+        for key in [
+            "search_runs",
+            "read_runs",
+            "browser_extract_runs",
+            "browser_assist_tasks",
+        ] {
+            assert!(result[key].as_array().unwrap().is_empty(), "{key}");
+        }
+        let stored: Value = serde_json::from_slice(
+            &fs::read(request.workspace.unwrap().join("envelope.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stored["fields"], result["fields"]);
+        assert_eq!(stored["scrape_runs"], result["scrape_runs"]);
+        assert!(stored["scrape_runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|run| run["source_id"] == "leadfeeder.com"
+                && run["run_id"] == "scrape_run-leadfeeder-com"
+                && run["record_count"] == 2));
+    }
+
+    #[test]
+    fn configured_adapter_failure_empty_and_wait_keep_their_own_receipts() {
+        for status in ["blocked", "completed_empty", "awaiting_provider", "unknown"] {
+            let root = ConfiguredTestRoot::new();
+            let request = configured_request(&root.0);
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut dispatch = |_: &str, input: &Value| Ok(configured_receipt(input, status));
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert!(result["scrape_runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|run| run["classification"] == status
+                    && run["record_count"] == 0
+                    && run["public_browser_fallback"].is_null()));
+            for key in [
+                "search_runs",
+                "read_runs",
+                "browser_extract_runs",
+                "browser_assist_tasks",
+            ] {
+                assert!(result[key].as_array().unwrap().is_empty());
+            }
+            if status == "awaiting_provider" {
+                assert_eq!(result["ok"], false);
+                assert_eq!(result["status"], status);
+            }
+        }
+    }
+
+    #[test]
+    fn configured_adapter_resume_rejects_registry_or_target_drift_before_dispatch() {
+        let root = ConfiguredTestRoot::new();
+        let request = configured_request(&root.0);
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut dispatch =
+            |_: &str, input: &Value| Ok(configured_receipt(input, "awaiting_provider"));
+        let previous = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut dispatch),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        for change_target in [false, true] {
+            let mut changed = |source: &str| {
+                let mut target = configured_target(source);
+                if source == "leadfeeder.com" {
+                    if change_target {
+                        target.target_key.push_str("-changed");
+                    } else {
+                        target.registry_binding_sha256 = "b".repeat(64);
+                    }
+                }
+                Ok(Some(target))
+            };
+            let mut forbidden =
+                |_: &str, _: &Value| -> Result<Value> { panic!("dispatch after registry drift") };
+            assert!(run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                Some(&previous),
+                Some(&mut forbidden),
+                Some(&mut changed)
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn configured_adapter_resume_retains_completed_fields_without_duplicate_dispatch() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields.push(FieldKey::PersonLinkedin);
+        request.include_private.push("linkedin.com".into());
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut first = |_: &str, input: &Value| {
+            Ok(configured_receipt(
+                input,
+                if input["source_id"] == "linkedin.com" {
+                    "awaiting_provider"
+                } else if input["source_id"] == "leadfeeder.com" {
+                    "succeeded"
+                } else {
+                    "completed_empty"
+                },
+            ))
+        };
+        let previous = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut first),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(previous["status"], "awaiting_provider");
+        let mut calls = Vec::new();
+        let mut resume = |_: &str, input: &Value| {
+            calls.push(input["source_id"].as_str().unwrap().to_string());
+            Ok(configured_receipt(input, "completed_empty"))
+        };
+        let result = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            Some(&previous),
+            Some(&mut resume),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(calls, vec!["linkedin.com"]);
+        assert_ne!(result["status"], "awaiting_provider");
+        assert_eq!(result["fields"]["mitarbeiter"]["value"], "321");
+        assert_eq!(
+            result["scrape_runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["source_id"] == "leadfeeder.com")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn configured_adapter_resolution_keeps_country_field_and_private_source_gates() {
+        let root = ConfiguredTestRoot::new();
+        for country in [Country::De, Country::At, Country::Ch] {
+            let mut request = configured_request(&root.0);
+            request.country = country;
+            request.include_private.clear();
+            request.fields = vec![FieldKey::FirmaName];
+            let mut resolved = Vec::new();
+            let mut resolver = |source: &str| {
+                resolved.push(source.to_string());
+                Ok(Some(configured_target(source)))
+            };
+            let mut dispatch =
+                |_: &str, input: &Value| Ok(configured_receipt(input, "completed_empty"));
+            run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert!(!resolved.iter().any(|source| source == "leadfeeder.com"
+                || source == "linkedin.com"
+                || source == "xing.com"));
+            assert_eq!(
+                resolved.iter().any(|source| source == "zefix.ch"),
+                country == Country::Ch
+            );
+        }
+    }
+
+    #[test]
+    fn configured_planning_api_metadata_never_executes_a_probe() {
+        struct Trap;
+        impl SourceModule for Trap {
+            fn shape_query(&self, _: &str, _: &SourceCtx<'_>) -> Option<sources::ShapedQuery> {
+                None
+            }
+            fn id(&self) -> &'static str {
+                "fixture"
+            }
+            fn tier(&self) -> Tier {
+                Tier::P
+            }
+            fn countries(&self) -> &'static [Country] {
+                &[Country::Ch]
+            }
+            fn authoritative_for(&self) -> &'static [FieldKey] {
+                &[FieldKey::FirmaName]
+            }
+            fn has_direct_api(&self) -> bool {
+                true
+            }
+            fn fetch_direct(
+                &self,
+                _: &SourceCtx<'_>,
+                _: &str,
+            ) -> Option<std::result::Result<Vec<sources::SourceHit>, sources::SourceError>>
+            {
+                panic!("planner performed provider I/O")
+            }
+        }
+        static TRAP: Trap = Trap;
+        assert!(probe_api_path(&TRAP));
+        assert!(probe_api_path(sources::find("zefix.ch").unwrap()));
+    }
+
     fn provider_resume_fixture() -> (PersonResearchRequest, Vec<PersonResearchPlan>, Value) {
         let request = PersonResearchRequest {
             company: "ACME".into(),
@@ -3316,6 +3719,7 @@ mod tests {
             tier: module.tier(),
             target_fields: vec![FieldKey::FirmaName],
             api_path: false,
+            configured_target: None,
         };
         let result = scrape_bridge::ScrapeBridgeResult {
             target_key: "companyhouse-de".to_string(),

@@ -293,7 +293,9 @@ const TailscalePeerStatusJson = Schema.Struct({
   ),
 });
 
-const decodeTailscalePeersJson = Schema.decodeEffect(Schema.fromJsonString(TailscalePeerStatusJson));
+const decodeTailscalePeersJson = Schema.decodeEffect(
+  Schema.fromJsonString(TailscalePeerStatusJson),
+);
 
 /** Only the current daemon's peers are candidates; local SSH aliases are never consulted. */
 export const parseTailscalePeers = (raw: string) =>

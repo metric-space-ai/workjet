@@ -33,6 +33,7 @@ use rusqlite::Connection;
 use rusqlite::OpenFlags;
 use serde_json::json;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use super::Confidence;
 use super::Country;
@@ -86,6 +87,24 @@ pub fn run_via_scrape_target(
     root: &Path,
     ctox_bin: &Path,
 ) -> ScrapeBridgeResult {
+    run_via_scrape_target_with_operation(module, company, country, root, ctox_bin, None)
+}
+
+/// Dispatch with a stable, caller-owned research workspace identity.
+///
+/// Business OS supplies its command-derived workspace here. Only an opaque
+/// digest travels to the script, never a caller-selected checkpoint path.
+/// Resuming the same command/source/target preserves the identity; changing
+/// the query does not create another operation and must be checked against
+/// the adapter's persisted query binding before another provider submission.
+pub fn run_via_scrape_target_with_operation(
+    module: &dyn SourceModule,
+    company: &str,
+    country: Country,
+    root: &Path,
+    ctox_bin: &Path,
+    research_workspace: Option<&Path>,
+) -> ScrapeBridgeResult {
     let Some(target_key) = module.scrape_target_key() else {
         // Not opted in — caller should use the Rust path.
         return ScrapeBridgeResult {
@@ -102,11 +121,13 @@ pub fn run_via_scrape_target(
         };
     };
 
-    let input = json!({
-        "company": company,
-        "country": country.as_iso(),
-        "source_id": module.id(),
-    });
+    let input = research_scrape_input(
+        module.id(),
+        target_key,
+        company,
+        country,
+        research_workspace,
+    );
 
     let current = run_with_public_browser_fallback(
         module,
@@ -118,6 +139,36 @@ pub fn run_via_scrape_target(
         return current;
     }
     recent_successful_result(root, target_key, module, company, &current).unwrap_or(current)
+}
+
+fn research_scrape_input(
+    source_id: &str,
+    target_key: &str,
+    company: &str,
+    country: Country,
+    research_workspace: Option<&Path>,
+) -> Value {
+    let mut input = json!({
+        "company": company,
+        "country": country.as_iso(),
+        "source_id": source_id,
+    });
+    if let Some(workspace) = research_workspace.filter(|path| !path.as_os_str().is_empty()) {
+        let mut digest = Sha256::new();
+        digest.update(b"ctox-research-operation-v1");
+        // Length delimiters prevent tuple-boundary collisions. Preserve native
+        // path bytes rather than lossy Unicode conversion of distinct paths.
+        for part in [
+            workspace.as_os_str().as_encoded_bytes(),
+            source_id.as_bytes(),
+            target_key.as_bytes(),
+        ] {
+            digest.update((part.len() as u64).to_be_bytes());
+            digest.update(part);
+        }
+        input["research_operation_id"] = json!(format!("research-v1-{:x}", digest.finalize()));
+    }
+    input
 }
 
 /// Execute a runtime-installed adapter supplied by the tenant's typed research
@@ -1287,6 +1338,157 @@ fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn research_operation_reaches_registered_adapter_subprocess() {
+        use std::os::unix::fs::PermissionsExt;
+
+        struct TestRoot(PathBuf);
+        impl Drop for TestRoot {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let path = std::env::temp_dir().join(format!(
+            "ctox-research-operation-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let root = TestRoot(path);
+        let binary = root.0.join("capture-ctox");
+        std::fs::write(
+            &binary,
+            r#"#!/bin/sh
+previous=''
+for argument in "$@"; do
+    if [ "$previous" = '--input-json' ]; then
+        printf '%s' "$argument" > "$0.input"
+    fi
+    previous="$argument"
+done
+printf '%s' '{"ok":false,"classification":{"status":"authorization_required"},"run_id":"test-operation"}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let module = crate::sources::find("linkedin.com").unwrap();
+        let workspace = root.0.join("research/command-1");
+        let capture = root.0.join("capture-ctox.input");
+        let mut operation = None;
+        for _ in 0..2 {
+            let result = run_via_scrape_target_with_operation(
+                module,
+                "Example GmbH",
+                Country::De,
+                &root.0,
+                &binary,
+                Some(&workspace),
+            );
+            assert_eq!(result.classification, "authorization_required");
+            assert_eq!(result.attempts, 1);
+            let actual: Value = serde_json::from_slice(&std::fs::read(&capture).unwrap()).unwrap();
+            assert_eq!(
+                actual,
+                research_scrape_input(
+                    module.id(),
+                    module.scrape_target_key().unwrap(),
+                    "Example GmbH",
+                    Country::De,
+                    Some(&workspace)
+                )
+            );
+            if let Some(previous) = &operation {
+                assert_eq!(&actual["research_operation_id"], previous);
+            }
+            operation = Some(actual["research_operation_id"].clone());
+        }
+        run_via_scrape_target(module, "Example GmbH", Country::De, &root.0, &binary);
+        let legacy: Value = serde_json::from_slice(&std::fs::read(&capture).unwrap()).unwrap();
+        assert!(legacy.get("research_operation_id").is_none());
+    }
+
+    #[test]
+    fn research_operation_preserves_legacy_input_without_workspace() {
+        for workspace in [None, Some(Path::new(""))] {
+            assert_eq!(
+                research_scrape_input(
+                    "linkedin.com",
+                    "linkedin-com",
+                    "Example GmbH",
+                    Country::De,
+                    workspace
+                ),
+                json!({"company": "Example GmbH", "country": "DE", "source_id": "linkedin.com"})
+            );
+        }
+    }
+
+    #[test]
+    fn research_operation_resumes_same_command_even_when_query_changes() {
+        let workspace = Some(Path::new("/native/runtime/research/person/command-1"));
+        let first = research_scrape_input(
+            "linkedin.com",
+            "linkedin-com",
+            "Example GmbH",
+            Country::De,
+            workspace,
+        );
+        let resumed = research_scrape_input(
+            "linkedin.com",
+            "linkedin-com",
+            "Example GmbH",
+            Country::De,
+            workspace,
+        );
+        let changed = research_scrape_input(
+            "linkedin.com",
+            "linkedin-com",
+            "Other AG",
+            Country::Ch,
+            workspace,
+        );
+        assert_eq!(first, resumed);
+        assert_eq!(
+            first["research_operation_id"],
+            changed["research_operation_id"]
+        );
+        assert_ne!(first["company"], changed["company"]);
+        assert_ne!(first["country"], changed["country"]);
+        let id = first["research_operation_id"].as_str().unwrap();
+        assert!(id.starts_with("research-v1-"));
+        assert_eq!(id.len(), "research-v1-".len() + 64);
+        assert!(!first.to_string().contains("/native/"));
+    }
+
+    #[test]
+    fn research_operation_separates_commands_sources_and_targets() {
+        let input = |workspace: &str, source: &str, target: &str| {
+            research_scrape_input(
+                source,
+                target,
+                "Example GmbH",
+                Country::De,
+                Some(Path::new(workspace)),
+            )
+        };
+        let first = input("/native/command-1", "linkedin.com", "linkedin-com");
+        for other in [
+            input("/native/command-2", "linkedin.com", "linkedin-com"),
+            input("/native/command-1", "xing.com", "linkedin-com"),
+            input("/native/command-1", "linkedin.com", "other-target"),
+        ] {
+            assert_ne!(
+                first["research_operation_id"],
+                other["research_operation_id"]
+            );
+        }
+        assert_ne!(
+            input("/a", "bc", "d")["research_operation_id"],
+            input("/ab", "c", "d")["research_operation_id"]
+        );
+    }
 
     fn valid_record(source_id: &str, source_url: &str) -> Value {
         json!({

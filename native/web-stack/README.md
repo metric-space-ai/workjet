@@ -90,6 +90,17 @@ blocked until the one-time fixture-history purge is completed and verified.
 
 ## Public scrape fallback
 
+Registered source calls from person research include an opaque
+`research_operation_id` when the host supplies a research workspace. It is
+derived from the workspace, canonical source ID and registered target key;
+Business OS supplies a command-derived workspace. Retries of the same command
+therefore retain their adapter checkpoint identity without exposing the native
+workspace path to scripts. The legacy bridge without a workspace is unchanged.
+The identity is not a filesystem path or authorization token. Adapter storage
+must remain rooted in native-owned state and separately bind the query, so a
+changed company/country in the same operation fails closed instead of triggering
+a second collection. This propagation alone does not implement adapter resume.
+
 Registered public scrape adapters have one bounded browser fallback for access
 failures. When an adapter classifies a run as `blocked` or
 `temporary_unreachable`, the Web Stack opens the source's public start page in

@@ -36,8 +36,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
 
-use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 use crate::person_ranking::compare_person_records;
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 use crate::sources::{
     self, scrape_bridge, Country, FieldKey, ResearchMode, SourceCtx, SourceHit, SourceModule, Tier,
 };
@@ -173,12 +173,13 @@ pub fn run_person_research_tool_with_context(
         // instead of silently failing here.
         if let Some(module) = sources::find(plan.source_id) {
             if module.scrape_target_key().is_some() {
-                let result = scrape_bridge::run_via_scrape_target(
+                let result = scrape_bridge::run_via_scrape_target_with_operation(
                     module,
                     &company,
                     request.country,
                     root,
                     &ctox_bin,
+                    request.workspace.as_deref(),
                 );
                 if let Some(task) = browser_assist_task_from_scrape_result(plan, module, &result) {
                     browser_assist_tasks.push(task);

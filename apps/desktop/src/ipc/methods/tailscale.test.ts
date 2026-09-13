@@ -9,7 +9,7 @@ vi.mock("@workjet/tailscale", async () => {
   return {
     readTailscalePeers: Effect.suspend(() =>
       status.failed
-        ? Effect.fail(new Error("tskey-private CLI output"))
+        ? Effect.fail({ _tag: "TailscaleFixtureError", message: "tskey-private CLI output" })
         : Effect.succeed({
             status: "available",
             peers: [{ id: "gpu", name: "gpu1", hostname: "100.64.1.1", online: true }],

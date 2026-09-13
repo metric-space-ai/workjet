@@ -1324,6 +1324,16 @@ fn grouped_person_records(
             if PERSON_RECORD_FIELDS.contains(field) {
                 entry.insert(field.as_str().to_string(), Value::String(value));
             }
+            // An address-bound validator result is also about a known contact
+            // when this request asks only for validation, not email discovery.
+            // Keep that identity so per-person persistence does not discard it.
+            if *field == FieldKey::PersonEmailValidation {
+                if let Some(email) = candidate.get("subject_email").and_then(Value::as_str) {
+                    entry
+                        .entry("person_email".to_string())
+                        .or_insert_with(|| json!(email));
+                }
+            }
             if entry.get("source_url").is_none_or(Value::is_null) && !source_url.is_empty() {
                 entry.insert(
                     "source_url".to_string(),
@@ -3597,9 +3607,16 @@ mod tests {
                 .iter()
                 .all(|r| r["record_count"] == 1
                     && r["verified_subject_email"] == r["validation_email"]));
-            let candidates = result["fields"]["person_email_validation"]["candidates"]
-                .as_array()
-                .unwrap();
+            let people = result["person_records"].as_array().unwrap();
+            assert_eq!(people.len(), 2);
+            let candidates = people
+                .iter()
+                .flat_map(|person| {
+                    let email = person["person_email"].as_str().unwrap();
+                    assert_eq!(person["person_key"], format!("email:{email}"));
+                    person["evidence"].as_array().unwrap().iter()
+                })
+                .collect::<Vec<_>>();
             assert_eq!(candidates.len(), 4);
             for candidate in candidates {
                 let email = candidate["subject_email"].as_str().unwrap();

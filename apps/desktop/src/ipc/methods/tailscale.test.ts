@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import { NodeServices } from "@effect/platform-node";
 
@@ -19,23 +20,21 @@ vi.mock("@workjet/tailscale", async () => {
 import { discoverTailscalePeers } from "./tailscale.ts";
 
 describe("desktop Tailscale discovery IPC", () => {
-  it("returns the typed live peer result", async () => {
-    status.failed = false;
-    expect(
-      await Effect.runPromise(
-        discoverTailscalePeers.handler(undefined).pipe(Effect.provide(NodeServices.layer)),
-      ),
-    ).toEqual({
-      status: "available",
-      peers: [{ id: "gpu", name: "gpu1", hostname: "100.64.1.1", online: true }],
-    });
-  });
-  it("returns unavailable without CLI diagnostics or cached peers after failure", async () => {
-    status.failed = true;
-    expect(
-      await Effect.runPromise(
-        discoverTailscalePeers.handler(undefined).pipe(Effect.provide(NodeServices.layer)),
-      ),
-    ).toEqual({ status: "unavailable", peers: [] });
-  });
+  it.effect("returns the typed live peer result", () =>
+    Effect.gen(function* () {
+      status.failed = false;
+      const result = yield* discoverTailscalePeers.handler(undefined);
+      expect(result).toEqual({
+        status: "available",
+        peers: [{ id: "gpu", name: "gpu1", hostname: "100.64.1.1", online: true }],
+      });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+  it.effect("returns unavailable without CLI diagnostics or cached peers after failure", () =>
+    Effect.gen(function* () {
+      status.failed = true;
+      const result = yield* discoverTailscalePeers.handler(undefined);
+      expect(result).toEqual({ status: "unavailable", peers: [] });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });

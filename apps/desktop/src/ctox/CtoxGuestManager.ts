@@ -1746,6 +1746,19 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           { onExcessProperty: "error" },
         ).pipe(Effect.option);
         if (Option.isNone(decoded)) return { _tag: "failed", code: "guest_failed" };
+        if (decoded.value.action !== request.action) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        if (
+          (request.action === "project.worker.add" || request.action === "project.chat.create") &&
+          (decoded.value.action === "project.worker.add" ||
+            decoded.value.action === "project.chat.create") &&
+          (decoded.value.commandId !== request.commandId ||
+            decoded.value.projectId !== request.projectId ||
+            decoded.value.workerProfileId !== request.workerProfileId)
+        ) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
         return { _tag: "completed", response: decoded.value };
       });
 

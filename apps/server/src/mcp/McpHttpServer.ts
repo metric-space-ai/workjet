@@ -36,6 +36,7 @@ import * as WebStackSearch from "./toolkits/workjet/WebStackSearch.ts";
 import { WebStackToolkitRegistrationLive } from "./toolkits/workjet/WebStackTool.ts";
 import { WorkerToolkitRegistrationLive } from "./toolkits/workjet/WorkerTool.ts";
 import { DecisionHubToolkitRegistrationLive } from "./toolkits/workjet/DecisionHubTool.ts";
+import { CtoxCrewToolkitRegistrationLive } from "./toolkits/workjet/CtoxCrewTool.ts";
 import { CtoxBusinessOsToolkitRegistrationLive } from "./toolkits/workjet/CtoxBusinessOsTool.ts";
 import { CollectiveToolkitRegistrationLive } from "./toolkits/workjet/CollectiveTool.ts";
 import { WorkBlockToolkitRegistrationLive } from "./toolkits/workjet/WorkBlockTool.ts";
@@ -240,6 +241,7 @@ const ProductionWorkjetToolkitRegistrationLive = Layer.mergeAll(
   ManagerToolkitRegistrationLive,
   WorkerToolkitRegistrationLive,
   DecisionHubToolkitRegistrationLive,
+  CtoxCrewToolkitRegistrationLive,
   CtoxBusinessOsToolkitRegistrationLive.pipe(Layer.provide(FetchHttpClient.layer)),
   MailboxToolkitRegistrationLive,
   WorkjetToolkitRegistrationLive.pipe(Layer.provide(GreppySearch.layer)),

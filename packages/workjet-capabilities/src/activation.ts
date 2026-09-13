@@ -70,6 +70,12 @@ export function validateCapabilityActivation(input: {
           } else if (config.ctoxSession && config.ctoxSession.instanceId !== instanceId) {
             issues.push({ capabilityId, code: "binding-foreign" });
           } else if (
+            config.ctoxCrewChat &&
+            (config.ctoxCrewChat.instanceId !== instanceId ||
+              config.ctoxCrewChat.connectionId !== connectionId)
+          ) {
+            issues.push({ capabilityId, code: "binding-foreign" });
+          } else if (
             input.connectionInstances &&
             input.connectionInstances.get(connectionId) !== instanceId
           ) {

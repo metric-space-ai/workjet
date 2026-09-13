@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
@@ -213,5 +214,82 @@ it.effect("carries only an explicitly supplied provider-session cwd into the bea
     expect(withoutCwd.config).not.toHaveProperty("cwd");
     const withoutCwdToken = withoutCwd.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(yield* registry.resolve(withoutCwdToken)).not.toHaveProperty("cwd");
+  }),
+);
+
+it.effect("isolates Crew grants from provider config and revokes them on session replacement", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("crew-thread");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    let contextReads = 0;
+    const grant = {
+      threadId,
+      providerInstanceId,
+      attemptId: "native-attempt",
+      refreshContext: () =>
+        Effect.sync(() => {
+          contextReads++;
+          return {
+            schema: "ctox.crew_context.v1" as const,
+            command_id: "command",
+            attempt_id: "native-attempt",
+            task_id: "task",
+            module_id: "ctox",
+            member_id: "crew",
+            member_name: "Crew",
+            persona: "Persona",
+            memory_block: "Knowledge",
+            execution_plan: null,
+            context_version: "v1",
+          };
+        }),
+      updatePlan: () => Effect.die("unused"),
+      report: () => Effect.die("unused"),
+    };
+    yield* McpSessionRegistry.__testing.withActive(
+      registry,
+      Effect.gen(function* () {
+        const issued = yield* McpSessionRegistry.issueActiveMcpCredential({
+          threadId,
+          providerInstanceId,
+          threadCapabilityContext: emptyThreadCapabilityContext,
+          ctoxCrewExecution: grant,
+        });
+        if (!issued) return yield* Effect.die("missing active registry credential");
+        expect(issued.config).not.toHaveProperty("ctoxCrewExecution");
+        expect(
+          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(issued.config),
+        ).not.toContain("native-attempt");
+        const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+        grant.attemptId = "caller-mutation";
+        const resolved = yield* registry.resolve(token);
+        expect(resolved?.ctoxCrewExecution?.attemptId).toBe("native-attempt");
+        if (!resolved?.ctoxCrewExecution) return yield* Effect.die("missing Crew scope");
+        expect((yield* resolved.ctoxCrewExecution.refreshContext()).member_id).toBe("crew");
+        expect(contextReads).toBe(1);
+        const unrelated = yield* registry.issue({
+          threadId: ThreadId.make("other-thread"),
+          providerInstanceId,
+          threadCapabilityContext: emptyThreadCapabilityContext,
+        });
+        expect(
+          (yield* registry.resolve(unrelated.config.authorizationHeader.replace(/^Bearer\s+/, "")))
+            ?.ctoxCrewExecution,
+        ).toBeUndefined();
+        const replacement = yield* McpSessionRegistry.issueActiveMcpCredential({
+          threadId,
+          providerInstanceId,
+          threadCapabilityContext: emptyThreadCapabilityContext,
+        });
+        if (!replacement) return yield* Effect.die("missing replacement credential");
+        expect(yield* registry.resolve(token)).toBeUndefined();
+        const replacementToken = replacement.config.authorizationHeader.replace(/^Bearer\s+/, "");
+        expect((yield* registry.resolve(replacementToken))?.ctoxCrewExecution).toBeUndefined();
+        yield* McpSessionRegistry.revokeActiveMcpThread(threadId);
+        expect(yield* registry.resolve(replacementToken)).toBeUndefined();
+        expect(contextReads).toBe(1);
+      }),
+    );
   }),
 );

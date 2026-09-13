@@ -71,14 +71,12 @@ import {
 } from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import * as NodeFS from "node:fs";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
 
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../config.ts";
@@ -391,10 +389,10 @@ const makeStack = (log: PeerLog, baseDir: string) => {
  * repository would let one test read another's identity and would dirty the
  * working tree.
  */
-const scopedBaseDir = Effect.acquireRelease(
-  Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "ctox-dispatch-"))),
-  (dir) => Effect.sync(() => NodeFS.rmSync(dir, { recursive: true, force: true })),
-);
+const scopedBaseDir = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  return yield* fileSystem.makeTempDirectoryScoped({ prefix: "ctox-dispatch-" });
+}).pipe(Effect.provide(NodeServices.layer));
 
 const makeLog = Effect.gen(function* () {
   return {

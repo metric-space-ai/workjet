@@ -106,6 +106,8 @@ export interface CodexSessionRuntimeOptions {
   readonly model?: string;
   readonly serviceTier?: CodexServiceTier | undefined;
   readonly resumeCursor?: CodexResumeCursor;
+  /** A bound Crew attempt must never become a fresh provider execution. */
+  readonly resumePolicy?: "require-existing";
   readonly appServerArgs?: ReadonlyArray<string>;
   readonly compiledManagedPrompt?: string;
   readonly onProcessSpawn?: (handle: ChildProcessSpawner.ChildProcessHandle) => void;
@@ -472,6 +474,7 @@ export const openCodexThread = (input: {
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
+  readonly resumePolicy?: "require-existing";
 }): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
   const resumeThreadId = input.resumeThreadId;
   const startParams = buildThreadStartParams({
@@ -482,6 +485,14 @@ export const openCodexThread = (input: {
   });
 
   if (resumeThreadId === undefined) {
+    if (input.resumePolicy === "require-existing") {
+      return Effect.fail(
+        new CodexErrors.CodexAppServerRequestError({
+          code: -32602,
+          errorMessage: "Crew recovery requires an existing provider thread identity.",
+        }),
+      );
+    }
     return input.client.request("thread/start", startParams);
   }
 
@@ -491,14 +502,27 @@ export const openCodexThread = (input: {
       ...startParams,
     })
     .pipe(
-      Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
-          threadId: input.threadId,
-          requestedRuntimeMode: input.runtimeMode,
-          resumeThreadId,
-          recoverable: true,
-          cause: error,
-        }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
+      Effect.catchIf(
+        (error) =>
+          input.resumePolicy !== "require-existing" && isRecoverableThreadResumeError(error),
+        (error) =>
+          Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+            threadId: input.threadId,
+            requestedRuntimeMode: input.runtimeMode,
+            resumeThreadId,
+            recoverable: true,
+            cause: error,
+          }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
+      ),
+      Effect.flatMap((opened) =>
+        input.resumePolicy === "require-existing" && opened.thread.id !== resumeThreadId
+          ? Effect.fail(
+              new CodexErrors.CodexAppServerRequestError({
+                code: -32603,
+                errorMessage: "Crew recovery returned a different provider thread identity.",
+              }),
+            )
+          : Effect.succeed(opened),
       ),
     );
 };
@@ -1708,6 +1732,7 @@ export const makeCodexSessionRuntime = (
         requestedModel,
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
+        ...(options.resumePolicy ? { resumePolicy: options.resumePolicy } : {}),
       });
 
       const providerThreadId = opened.thread.id;

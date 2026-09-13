@@ -188,15 +188,19 @@ pub fn run_via_configured_scrape_target(
     company: &str,
     country: Country,
     research_workspace: Option<&Path>,
+    candidate_email: Option<&str>,
     dispatch: &mut ScrapeTargetDispatch<'_>,
 ) -> ScrapeBridgeResult {
-    let input = research_scrape_input(
+    let mut input = research_scrape_input(
         module.id(),
         target_key,
         company,
         country,
         research_workspace,
     );
+    if let Some(email) = candidate_email {
+        input["email"] = json!(email);
+    }
     let envelope = dispatch(target_key, &input).unwrap_or_else(|_| {
         json!({
             "status": "executor_error", "reason": "configured native adapter execution failed"

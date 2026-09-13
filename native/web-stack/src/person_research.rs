@@ -264,7 +264,11 @@ fn run_person_research_with_checkpoint(
             }
         }
     }
+    // Validation depends on addresses discovered by the other sources.
+    // Stable sorting preserves the ordinary tier order within both phases.
+    plans.sort_by_key(is_configured_email_validator);
     let checkpoint = restore_provider_checkpoint(request, &plans, previous)?;
+    let mut deferred_sources = BTreeSet::new();
     let mut field_evidence = checkpoint.field_evidence;
     let mut search_runs = checkpoint.search_runs;
     let mut read_runs = checkpoint.read_runs;
@@ -280,6 +284,28 @@ fn run_person_research_with_checkpoint(
             // A provider poll must not rerun completed sources or their APIs.
             continue;
         }
+        let validation_email = if is_configured_email_validator(plan) {
+            if !pending_provider_sources(&scrape_runs).is_empty() {
+                deferred_sources.insert(plan.source_id.to_string());
+                continue;
+            }
+            let email = configured_validation_email(request, &field_evidence);
+            if email.is_none() {
+                scrape_runs.push(json!({
+                    "source_id":plan.source_id,
+                    "target_key":plan.configured_target.as_ref().unwrap().target_key,
+                    "configured_target":plan.configured_target,
+                    "classification":"input_required",
+                    "reason":"email_validation_requires_one_unambiguous_candidate",
+                    "record_count":0,"run_id":null,"repair_queued":false,
+                    "evidence_rejections":[],"attempts":0,"public_browser_fallback":null,
+                }));
+                continue;
+            }
+            email
+        } else {
+            None
+        };
         // Fields this source's scrape target already produced this iteration.
         // The cascade below intentionally still runs (to supplement fields the
         // scrape target did not cover), but must not re-emit evidence for a
@@ -299,6 +325,7 @@ fn run_person_research_with_checkpoint(
                         &company,
                         request.country,
                         request.workspace.as_deref(),
+                        validation_email.as_deref(),
                         dispatch.as_deref_mut().expect("checked native dispatch"),
                     )
                 } else {
@@ -335,6 +362,7 @@ fn run_person_research_with_checkpoint(
                     "initial_classification": result.initial_classification,
                     "public_browser_fallback": result.public_browser_fallback,
                     "configured_target": plan.configured_target,
+                    "validation_email": validation_email,
                 }));
                 if result.classification == "awaiting_provider" {
                     // The accepted provider job owns this source's result.
@@ -348,7 +376,7 @@ fn run_person_research_with_checkpoint(
                     if !request.fields.is_empty() && !request.fields.contains(&field) {
                         continue;
                     }
-                    field_evidence.entry(field).or_default().push(json!({
+                    let mut candidate = json!({
                         "value": ev.value,
                         "confidence": ev.confidence.as_str(),
                         "source_id": plan.source_id,
@@ -356,7 +384,30 @@ fn run_person_research_with_checkpoint(
                         "tier": tier_label(plan.tier),
                         "via": "scrape_target",
                         "note": ev.note,
-                    }));
+                    });
+                    if let Some(email) = validation_email.as_deref() {
+                        candidate["subject_email"] = json!(email);
+                        let keys = field_evidence
+                            .get(&FieldKey::PersonEmail)
+                            .into_iter()
+                            .flatten()
+                            .filter(|evidence| {
+                                evidence["value"].as_str().map(str::trim) == Some(email)
+                            })
+                            .filter_map(|evidence| {
+                                evidence["person_key"]
+                                    .as_str()
+                                    .or_else(|| evidence["source_url"].as_str())
+                            })
+                            .filter(|key| !key.is_empty())
+                            .collect::<BTreeSet<_>>();
+                        candidate["person_key"] = json!(if keys.len() == 1 {
+                            keys.into_iter().next().unwrap().to_string()
+                        } else {
+                            format!("email:{email}")
+                        });
+                    }
+                    field_evidence.entry(field).or_default().push(candidate);
                     scrape_covered_fields.insert(field);
                 }
                 if plan.configured_target.is_some() {
@@ -689,6 +740,7 @@ fn run_person_research_with_checkpoint(
             "schema": "ctox.research.provider_resume.v1",
             "request_sha256": provider_resume_binding(request, &plans)?,
             "raw_field_evidence": resume_evidence,
+            "deferred_sources": deferred_sources,
         });
     }
 
@@ -764,6 +816,38 @@ fn provider_resume_binding(
     Ok(format!("{:x}", digest.finalize()))
 }
 
+fn is_configured_email_validator(plan: &PersonResearchPlan) -> bool {
+    plan.configured_target.is_some() && matches!(plan.source_id, "experte.de" | "mailtester.com")
+}
+
+fn configured_validation_email(
+    request: &PersonResearchRequest,
+    evidence: &BTreeMap<FieldKey, Vec<Value>>,
+) -> Option<String> {
+    let addresses = request
+        .known_person_records
+        .iter()
+        .filter_map(|person| person.email.as_deref())
+        .chain(
+            evidence
+                .get(&FieldKey::PersonEmail)
+                .into_iter()
+                .flatten()
+                .filter_map(|candidate| candidate["value"].as_str()),
+        )
+        .map(str::trim)
+        .filter(|value| {
+            value.len() <= 254
+                && value.contains('@')
+                && value.contains('.')
+                && !value.contains(char::is_whitespace)
+        })
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    // A validation result is about one address, never every person at a firm.
+    (addresses.len() == 1).then(|| addresses.into_iter().next().unwrap())
+}
+
 fn restore_provider_checkpoint(
     request: &PersonResearchRequest,
     plans: &[PersonResearchPlan],
@@ -798,8 +882,26 @@ fn restore_provider_checkpoint(
         pending.is_subset(&source_ids),
         "checkpoint contains unplanned provider"
     );
+    let mut unfinished = pending;
+    if let Some(deferred) = previous["provider_resume"].get("deferred_sources") {
+        for source in deferred
+            .as_array()
+            .context("invalid deferred research sources")?
+        {
+            let id = source
+                .as_str()
+                .context("invalid deferred source identifier")?;
+            anyhow::ensure!(
+                plans
+                    .iter()
+                    .any(|plan| plan.source_id == id && is_configured_email_validator(plan)),
+                "checkpoint contains unplanned deferred validator"
+            );
+            unfinished.insert(id.to_string());
+        }
+    }
     let completed_sources = source_ids
-        .difference(&pending)
+        .difference(&unfinished)
         .cloned()
         .collect::<BTreeSet<_>>();
     let retained = |name: &str| -> Result<Vec<Value>> {
@@ -3236,6 +3338,155 @@ mod tests {
                 resolved.iter().any(|source| source == "zefix.ch"),
                 country == Country::Ch
             );
+        }
+    }
+
+    #[test]
+    fn configured_validators_wait_for_provider_resume_and_receive_discovered_email() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields.extend([
+            FieldKey::PersonEmail,
+            FieldKey::PersonEmailValidation,
+            FieldKey::PersonLinkedin,
+        ]);
+        request.include_private.push("linkedin.com".into());
+        request.include_private.push("rocketreach.com".into());
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut first = |_: &str, input: &Value| {
+            let source = input["source_id"].as_str().unwrap();
+            assert!(
+                !matches!(source, "experte.de" | "mailtester.com"),
+                "validator ran before pending provider finished"
+            );
+            let mut receipt = configured_receipt(
+                input,
+                if source == "linkedin.com" {
+                    "awaiting_provider"
+                } else if matches!(source, "leadfeeder.com" | "rocketreach.com") {
+                    "succeeded"
+                } else {
+                    "completed_empty"
+                },
+            );
+            if source == "rocketreach.com" {
+                receipt["records"] = json!([{
+                    "field":"person_email","value":"contact@fixture.test","company":"Fixture GmbH","confidence":"high",
+                    "run_id":receipt["run_id"],"source_id":source,"source_url":"https://rocketreach.co/fixture",
+                    "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                    "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                    "snapshot_hash":"sha256:fixture"
+                }]);
+            }
+            Ok(receipt)
+        };
+        let previous = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut first),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(previous["status"], "awaiting_provider");
+        assert_eq!(
+            previous["provider_resume"]["deferred_sources"],
+            json!(["experte.de", "mailtester.com"])
+        );
+        let mut validators = Vec::new();
+        let mut resume = |_: &str, input: &Value| {
+            let source = input["source_id"].as_str().unwrap();
+            assert_ne!(source, "leadfeeder.com", "completed address source reran");
+            assert_ne!(source, "rocketreach.com", "completed address source reran");
+            if matches!(source, "experte.de" | "mailtester.com") {
+                assert_eq!(input["email"], "contact@fixture.test");
+                validators.push(source.to_string());
+                return Ok(
+                    json!({"ok":true,"status":"succeeded","run_id":format!("scrape_run-{source}"),"records":[{
+                        "field":"person_email_validation","value":"valid","company":"Fixture GmbH","confidence":"high",
+                        "run_id":format!("scrape_run-{source}"),"source_id":source,"source_url":format!("https://{source}/email-check"),
+                        "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                        "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                        "snapshot_hash":"sha256:fixture"
+                    }]}),
+                );
+            }
+            Ok(configured_receipt(input, "completed_empty"))
+        };
+        let result = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            Some(&previous),
+            Some(&mut resume),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(validators, vec!["experte.de", "mailtester.com"]);
+        assert_eq!(
+            result["fields"]["person_email_validation"]["value"],
+            "valid"
+        );
+        assert_eq!(
+            result["fields"]["person_email_validation"]["person_key"],
+            result["fields"]["person_email"]["person_key"]
+        );
+        assert!(result["fields"]["person_email_validation"]["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["subject_email"] == "contact@fixture.test"));
+        assert!(result["scrape_runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["validation_email"].is_string())
+            .all(|r| r["validation_email"] == "contact@fixture.test"));
+        assert_ne!(result["status"], "awaiting_provider");
+    }
+
+    #[test]
+    fn configured_validators_require_a_single_known_address_without_inventing_a_run() {
+        for addresses in [
+            vec![],
+            vec!["one@fixture.test"],
+            vec!["one@fixture.test", "two@fixture.test"],
+            vec!["not an address"],
+        ] {
+            let root = ConfiguredTestRoot::new();
+            let mut request = configured_request(&root.0);
+            request.fields = vec![FieldKey::PersonEmailValidation];
+            request.known_person_records = addresses
+                .iter()
+                .map(|email| KnownPersonRecord {
+                    email: Some(email.to_string()),
+                    ..Default::default()
+                })
+                .collect();
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut calls = 0;
+            let mut dispatch = |_: &str, input: &Value| {
+                calls += 1;
+                assert_eq!(input["email"], "one@fixture.test");
+                Ok(configured_receipt(input, "completed_empty"))
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            if addresses == vec!["one@fixture.test"] {
+                assert_eq!(calls, 2);
+            } else {
+                assert_eq!(calls, 0);
+                assert!(result["scrape_runs"].as_array().unwrap().iter().all(|r| r
+                    ["classification"]
+                    == "input_required"
+                    && r["run_id"].is_null()
+                    && r["attempts"] == 0));
+            }
         }
     }
 

@@ -86,12 +86,15 @@ pub use person_research::persist_person_research_workspace;
 pub use person_research::resume_ctox_person_research_tool;
 #[cfg(feature = "full")]
 pub use person_research::run_ctox_person_research_tool;
+#[cfg(feature = "full")]
 pub use person_research::run_ctox_person_research_with_configured_dispatch;
 #[cfg(feature = "full")]
 pub use person_research::run_ctox_person_research_with_dispatch;
 #[cfg(feature = "full")]
 pub use person_research::run_person_research_tool_with_context;
+#[cfg(feature = "full")]
 pub use person_research::ConfiguredResearchTarget;
+#[cfg(feature = "full")]
 pub use person_research::KnownPersonRecord;
 #[cfg(feature = "full")]
 pub use person_research::PersonResearchRequest;

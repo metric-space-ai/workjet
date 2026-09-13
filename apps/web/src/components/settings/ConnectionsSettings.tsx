@@ -122,6 +122,7 @@ import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { ServerUpdateAction, ServerUpdateProgress } from "../ServerUpdateAction";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
+import { TailscalePeerSuggestions } from "./TailscalePeerSuggestions";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -1783,9 +1784,7 @@ export function useComputerConnections({
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const desktopSshHosts = useEnvironmentQuery(
-    desktopBridge &&
-      (inline || addBackendDialogOpen) &&
-      (savedBackendMode === "ssh" || savedBackendMode === "tailscale")
+    desktopBridge && (inline || addBackendDialogOpen) && savedBackendMode === "ssh"
       ? desktopSshHostsStateAtom
       : null,
   );
@@ -1804,7 +1803,8 @@ export function useComputerConnections({
   const hasLoadedDiscoveredSshHosts =
     desktopSshHosts.data !== null || desktopSshHosts.error !== null;
   const isLoadingDiscoveredSshHosts = desktopSshHosts.isPending;
-  const discoveredSshHostsError = sshConnectionError ?? desktopSshHosts.error;
+  const discoveredSshHostsError =
+    sshConnectionError ?? (savedBackendMode === "ssh" ? desktopSshHosts.error : null);
   const handleAddSavedBackend = useCallback(async () => {
     if (isAddingSavedBackend || connectingSshHostAlias !== null) return;
     if (savedBackendMode === "ssh" || savedBackendMode === "tailscale") {
@@ -2191,8 +2191,10 @@ export function useComputerConnections({
           </label>
         </div>
         <p className="text-xs text-muted-foreground">
-          Use an IP address, hostname, or saved SSH alias. If a password is required, Workjet asks
-          for it when connecting.
+          {savedBackendMode === "tailscale"
+            ? "Choose an online computer below or enter its Tailscale address, then enter its SSH username."
+            : "Use an IP address, hostname, or saved SSH alias."}{" "}
+          If a password is required, Workjet asks for it when connecting.
         </p>
         {savedBackendError || discoveredSshHostsError ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -2209,46 +2211,54 @@ export function useComputerConnections({
           {isAddingSavedBackend ? "Adding…" : "Connect computer"}
         </Button>
       </div>
-      <div className="overflow-hidden rounded-lg border border-border/60">
-        <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-3 py-2">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-foreground">Suggested hosts</p>
-            <p className="text-[11px] text-muted-foreground">From SSH config and known hosts</p>
+      {savedBackendMode === "tailscale" ? (
+        <TailscalePeerSuggestions
+          bridge={desktopBridge}
+          disabled={isAddingSavedBackend || connectingSshHostAlias !== null}
+          onSelect={setSavedBackendSshHost}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border/60">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground">Suggested hosts</p>
+              <p className="text-[11px] text-muted-foreground">From SSH config and known hosts</p>
+            </div>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={isLoadingDiscoveredSshHosts}
+              onClick={desktopSshHosts.refresh}
+            >
+              {isLoadingDiscoveredSshHosts ? (
+                <RefreshCwIcon className="size-3 animate-spin" />
+              ) : (
+                <RefreshCwIcon className="size-3" />
+              )}
+              Refresh
+            </Button>
           </div>
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={isLoadingDiscoveredSshHosts}
-            onClick={desktopSshHosts.refresh}
-          >
-            {isLoadingDiscoveredSshHosts ? (
-              <RefreshCwIcon className="size-3 animate-spin" />
-            ) : (
-              <RefreshCwIcon className="size-3" />
-            )}
-            Refresh
-          </Button>
+          <ScrollArea scrollFade className="max-h-56">
+            <div>
+              {unsavedDiscoveredSshHosts.map((target) => (
+                <DesktopSshHostRow
+                  key={`${target.alias}:${target.hostname}:${target.port ?? ""}`}
+                  target={target}
+                  connectingHostAlias={connectingSshHostAlias}
+                  onConnect={(nextTarget) => void handleConnectSshHost(nextTarget)}
+                />
+              ))}
+              {hasLoadedDiscoveredSshHosts &&
+              !isLoadingDiscoveredSshHosts &&
+              unsavedDiscoveredSshHosts.length === 0 ? (
+                <div className={ITEM_ROW_CLASSNAME}>
+                  <p className="text-xs text-muted-foreground">No new SSH hosts were discovered.</p>
+                </div>
+              ) : null}
+            </div>
+          </ScrollArea>
         </div>
-        <ScrollArea scrollFade className="max-h-56">
-          <div>
-            {unsavedDiscoveredSshHosts.map((target) => (
-              <DesktopSshHostRow
-                key={`${target.alias}:${target.hostname}:${target.port ?? ""}`}
-                target={target}
-                connectingHostAlias={connectingSshHostAlias}
-                onConnect={(nextTarget) => void handleConnectSshHost(nextTarget)}
-              />
-            ))}
-            {hasLoadedDiscoveredSshHosts &&
-            !isLoadingDiscoveredSshHosts &&
-            unsavedDiscoveredSshHosts.length === 0 ? (
-              <div className={ITEM_ROW_CLASSNAME}>
-                <p className="text-xs text-muted-foreground">No new SSH hosts were discovered.</p>
-              </div>
-            ) : null}
-          </div>
-        </ScrollArea>
-      </div>
+      )}
     </div>
   );
   const form = (

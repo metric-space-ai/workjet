@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import { discoverTailscalePeers } from "./methods/tailscale.ts";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
@@ -77,6 +78,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(clearConnectionCatalog);
 
   yield* ipc.handle(discoverSshHosts);
+  yield* ipc.handle(discoverTailscalePeers);
   yield* ipc.handle(ensureSshEnvironment);
   yield* ipc.handle(disconnectSshEnvironment);
   yield* ipc.handle(fetchSshEnvironmentDescriptor);

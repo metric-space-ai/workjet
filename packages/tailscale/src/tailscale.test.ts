@@ -28,7 +28,7 @@ import {
 } from "./tailscale.ts";
 
 const encoder = new TextEncoder();
-const encodeFixtureJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeFixtureJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 /**
  * Asserts nothing reachable from `error` contains `secret`. Recurses through

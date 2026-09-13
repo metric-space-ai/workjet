@@ -437,6 +437,92 @@ describe("isRecoverableThreadResumeError", () => {
 });
 
 describe("openCodexThread", () => {
+  it.effect("does not fresh-start a Crew attempt when its provider thread is missing", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const failure = new CodexErrors.CodexAppServerRequestError({
+        code: -32603,
+        errorMessage: "thread not found",
+      });
+      const error = yield* Effect.flip(
+        openCodexThread({
+          client: {
+            request: (method) => {
+              calls.push(method);
+              return Effect.fail(failure);
+            },
+          },
+          threadId: ThreadId.make("crew-thread"),
+          runtimeMode: "full-access",
+          cwd: "/workspace/crew",
+          requestedModel: undefined,
+          serviceTier: undefined,
+          resumeThreadId: "owned-provider-thread",
+          resumePolicy: "require-existing",
+        }),
+      );
+      NodeAssert.strictEqual(error, failure);
+      NodeAssert.deepStrictEqual(calls, ["thread/resume"]);
+    }),
+  );
+
+  it.effect("rejects Crew recovery without a provider identity before any RPC", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const error = yield* Effect.flip(
+        openCodexThread({
+          client: {
+            request: (method) => {
+              calls.push(method);
+              return Effect.die("Unexpected provider RPC");
+            },
+          },
+          threadId: ThreadId.make("crew-thread"),
+          runtimeMode: "full-access",
+          cwd: "/workspace/crew",
+          requestedModel: undefined,
+          serviceTier: undefined,
+          resumeThreadId: undefined,
+          resumePolicy: "require-existing",
+        }),
+      );
+      NodeAssert.ok(isCodexAppServerRequestError(error));
+      NodeAssert.match(error.errorMessage, /existing provider thread identity/);
+      NodeAssert.deepStrictEqual(calls, []);
+    }),
+  );
+
+  it.effect("accepts only the exact resumed Crew provider thread", () =>
+    Effect.gen(function* () {
+      for (const returnedId of ["owned-provider-thread", "different-provider-thread"]) {
+        const calls: string[] = [];
+        const result = yield* openCodexThread({
+          client: {
+            request: (method) => {
+              calls.push(method);
+              return Effect.succeed(makeThreadOpenResponse(returnedId));
+            },
+          },
+          threadId: ThreadId.make("crew-thread"),
+          runtimeMode: "full-access",
+          cwd: "/workspace/crew",
+          requestedModel: undefined,
+          serviceTier: undefined,
+          resumeThreadId: "owned-provider-thread",
+          resumePolicy: "require-existing",
+        }).pipe(Effect.result);
+        NodeAssert.deepStrictEqual(calls, ["thread/resume"]);
+        if (returnedId === "owned-provider-thread") {
+          NodeAssert.equal(result._tag, "Success");
+        } else {
+          NodeAssert.equal(result._tag, "Failure");
+          NodeAssert.ok(isCodexAppServerRequestError(result.failure));
+          NodeAssert.match(result.failure.errorMessage, /different provider thread identity/);
+        }
+      }
+    }),
+  );
+
   it.effect("falls back to thread/start when resume fails recoverably", () =>
     Effect.gen(function* () {
       const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];

@@ -16,6 +16,8 @@ import {
   isTailscaleIpv4Address,
   parseTailscaleMagicDnsName,
   parseTailscaleStatus,
+  parseTailscalePeers,
+  readTailscalePeers,
   readTailscaleStatus,
   TAILSCALE_STATUS_TIMEOUT,
   TailscaleCommandExitError,
@@ -117,6 +119,69 @@ function mockSpawnerLayer(
 }
 
 describe("tailscale", () => {
+  it.effect("discovers only daemon peers and retains offline state without including self", () =>
+    Effect.gen(function* () {
+      const result = yield* parseTailscalePeers(
+        JSON.stringify({
+          BackendState: "Running",
+          Self: { HostName: "this-computer", TailscaleIPs: ["100.64.0.1"], Online: true },
+          Peer: {
+            gpu1: { HostName: "gpu1-A6000", TailscaleIPs: ["100.87.204.48"], Online: true },
+            gpu3: { HostName: "gpu3-A4500", TailscaleIPs: ["100.71.114.101"], Online: false },
+            unknown: { DNSName: "unknown.tail.ts.net.", TailscaleIPs: ["100.64.1.3"] },
+            invalid: { HostName: "invalid", TailscaleIPs: ["100.64.0.2garbage"], Online: true },
+          },
+        }),
+      );
+      assert.deepEqual(result, {
+        status: "available",
+        peers: [
+          { id: "gpu1", name: "gpu1-A6000", hostname: "100.87.204.48", online: true },
+          { id: "gpu3", name: "gpu3-A4500", hostname: "100.71.114.101", online: false },
+          { id: "unknown", name: "unknown.tail.ts.net", hostname: "100.64.1.3", online: false },
+        ],
+      });
+    }),
+  );
+
+  it.effect("does not offer cached peers when the daemon is stopped or logged out", () =>
+    Effect.gen(function* () {
+      for (const BackendState of ["Stopped", "NeedsLogin", "Starting"]) {
+        const result = yield* parseTailscalePeers(
+          JSON.stringify({
+            BackendState,
+            Peer: {
+              old: { HostName: "old", TailscaleIPs: ["100.64.1.1"], Online: true },
+            },
+          }),
+        );
+        assert.deepEqual(result, { status: "unavailable", peers: [] });
+      }
+      assert.deepEqual(yield* parseTailscalePeers('{"BackendState":"Running","Peer":null}'), {
+        status: "available",
+        peers: [],
+      });
+      const error = yield* parseTailscalePeers('{"BackendState":123,"secret":"tskey-secret"}').pipe(
+        Effect.flip,
+      );
+      assertCarriesNoSecret(error, "tskey-secret");
+    }),
+  );
+
+  it.effect("reads peers through the bounded status command", () =>
+    readTailscalePeers.pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => assert.deepEqual(result, { status: "available", peers: [] })),
+      ),
+      Effect.provide(
+        mockSpawnerLayer((command, args) => {
+          assert.equal(command, "tailscale");
+          assert.deepEqual(args, ["status", "--json"]);
+          return { stdout: '{"BackendState":"Running","Peer":{}}' };
+        }),
+      ),
+    ),
+  );
   it.effect("detects Tailnet IPv4 addresses", () =>
     Effect.sync(() => {
       assert.equal(isTailscaleIpv4Address("100.64.0.1"), true);

@@ -33,6 +33,7 @@ use rusqlite::Connection;
 use rusqlite::OpenFlags;
 use serde_json::json;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use super::Confidence;
 use super::Country;
@@ -86,6 +87,49 @@ pub fn run_via_scrape_target(
     root: &Path,
     ctox_bin: &Path,
 ) -> ScrapeBridgeResult {
+    run_via_scrape_target_with_operation(module, company, country, root, ctox_bin, None)
+}
+
+/// Dispatch with a stable, caller-owned research workspace identity.
+///
+/// Business OS supplies its command-derived workspace here. Only an opaque
+/// digest travels to the script, never a caller-selected checkpoint path.
+/// Resuming the same command/source/target preserves the identity; changing
+/// the query does not create another operation and must be checked against
+/// the adapter's persisted query binding before another provider submission.
+pub fn run_via_scrape_target_with_operation(
+    module: &dyn SourceModule,
+    company: &str,
+    country: Country,
+    root: &Path,
+    ctox_bin: &Path,
+    research_workspace: Option<&Path>,
+) -> ScrapeBridgeResult {
+    run_via_scrape_target_with_dispatch(
+        module,
+        company,
+        country,
+        root,
+        ctox_bin,
+        research_workspace,
+        None,
+    )
+}
+
+/// Trusted embedding-host execution of an already planned registered target.
+/// Browser/request data cannot supply this callback. The ordinary CLI path is
+/// unchanged; both paths use identical input, decoding and fallback policy.
+pub type ScrapeTargetDispatch<'a> = dyn FnMut(&str, &Value) -> anyhow::Result<Value> + 'a;
+
+pub fn run_via_scrape_target_with_dispatch(
+    module: &dyn SourceModule,
+    company: &str,
+    country: Country,
+    root: &Path,
+    ctox_bin: &Path,
+    research_workspace: Option<&Path>,
+    mut dispatch: Option<&mut ScrapeTargetDispatch<'_>>,
+) -> ScrapeBridgeResult {
     let Some(target_key) = module.scrape_target_key() else {
         // Not opted in — caller should use the Rust path.
         return ScrapeBridgeResult {
@@ -102,22 +146,107 @@ pub fn run_via_scrape_target(
         };
     };
 
-    let input = json!({
-        "company": company,
-        "country": country.as_iso(),
-        "source_id": module.id(),
-    });
+    let input = research_scrape_input(
+        module.id(),
+        target_key,
+        company,
+        country,
+        research_workspace,
+    );
 
     let current = run_with_public_browser_fallback(
         module,
         input,
-        |input| execute_scrape_target_once(module, company, root, ctox_bin, target_key, input),
+        |input| match dispatch.as_deref_mut() {
+            Some(dispatch) => match dispatch(target_key, input) {
+                Ok(envelope) => parse_scrape_envelope(target_key, module, company, &envelope),
+                Err(error) => parse_scrape_envelope(
+                    target_key,
+                    module,
+                    company,
+                    &json!({
+                        "status": if error.to_string().contains("target_key not found") { "target_not_registered" } else { "executor_error" },
+                        "reason":"native registered adapter execution failed"
+                    }),
+                ),
+            },
+            None => execute_scrape_target_once(module, company, root, ctox_bin, target_key, input),
+        },
         |request| crate::unlock::run_public_browser_fallback(root, ctox_bin, request),
     );
     if !requires_public_browser_fallback(&current.classification) {
         return current;
     }
     recent_successful_result(root, target_key, module, company, &current).unwrap_or(current)
+}
+
+/// Explicit host-selected target. Its current native receipt is authoritative;
+/// unlike the portable default route this never falls back or reads history.
+pub fn run_via_configured_scrape_target(
+    module: &dyn SourceModule,
+    target_key: &str,
+    company: &str,
+    country: Country,
+    research_workspace: Option<&Path>,
+    candidate_email: Option<&str>,
+    dispatch: &mut ScrapeTargetDispatch<'_>,
+) -> (ScrapeBridgeResult, Option<String>) {
+    let mut input = research_scrape_input(
+        module.id(),
+        target_key,
+        company,
+        country,
+        research_workspace,
+    );
+    if let Some(email) = candidate_email {
+        input["email"] = json!(email);
+        if let Some(parent) = input["research_operation_id"].as_str() {
+            let mut digest = Sha256::new();
+            digest.update(b"ctox-research-email-subject-v1");
+            for part in [parent.as_bytes(), email.as_bytes()] {
+                digest.update((part.len() as u64).to_be_bytes());
+                digest.update(part);
+            }
+            input["research_operation_id"] =
+                json!(format!("research-email-v1-{:x}", digest.finalize()));
+        }
+    }
+    let envelope = dispatch(target_key, &input).unwrap_or_else(|_| {
+        json!({
+            "status": "executor_error", "reason": "configured native adapter execution failed"
+        })
+    });
+    parse_scrape_envelope_for_subject(target_key, module, company, &envelope, candidate_email)
+}
+
+fn research_scrape_input(
+    source_id: &str,
+    target_key: &str,
+    company: &str,
+    country: Country,
+    research_workspace: Option<&Path>,
+) -> Value {
+    let mut input = json!({
+        "company": company,
+        "country": country.as_iso(),
+        "source_id": source_id,
+    });
+    if let Some(workspace) = research_workspace.filter(|path| !path.as_os_str().is_empty()) {
+        let mut digest = Sha256::new();
+        digest.update(b"ctox-research-operation-v1");
+        // Length delimiters prevent tuple-boundary collisions. Preserve native
+        // path bytes rather than lossy Unicode conversion of distinct paths.
+        for part in [
+            workspace.as_os_str().as_encoded_bytes(),
+            source_id.as_bytes(),
+            target_key.as_bytes(),
+        ] {
+            digest.update((part.len() as u64).to_be_bytes());
+            digest.update(part);
+        }
+        input["research_operation_id"] = json!(format!("research-v1-{:x}", digest.finalize()));
+    }
+    input
 }
 
 /// Execute a runtime-installed adapter supplied by the tenant's typed research
@@ -446,6 +575,16 @@ fn parse_scrape_envelope(
     company: &str,
     envelope: &Value,
 ) -> ScrapeBridgeResult {
+    parse_scrape_envelope_for_subject(target_key, module, company, envelope, None).0
+}
+
+fn parse_scrape_envelope_for_subject(
+    target_key: &str,
+    module: &dyn SourceModule,
+    company: &str,
+    envelope: &Value,
+    expected_email: Option<&str>,
+) -> (ScrapeBridgeResult, Option<String>) {
     let classification = envelope
         .get("classification")
         .and_then(|v| v.get("status"))
@@ -504,13 +643,30 @@ fn parse_scrape_envelope(
             .unwrap_or_default()
     };
 
+    let mut verified_subject_email = None;
     let fields = if evidence_rejections.is_empty() {
         records
             .into_iter()
             .enumerate()
             .filter_map(|(index, record)| {
+                let subject = if let Some(expected) = expected_email {
+                    match verified_record_email_subject(&record, expected) {
+                        Ok(subject) => Some(subject),
+                        Err(reason) => {
+                            evidence_rejections.push(format!("record_{index}:{reason}"));
+                            return None;
+                        }
+                    }
+                } else {
+                    None
+                };
                 match record_to_field_evidence(&record, module, company, run_id.as_deref()) {
-                    Ok(field) => field,
+                    Ok(field) => {
+                        if field.is_some() && subject.is_some() {
+                            verified_subject_email = subject;
+                        }
+                        field
+                    }
                     Err(reason) => {
                         evidence_rejections.push(format!("record_{index}:{reason}"));
                         None
@@ -522,18 +678,45 @@ fn parse_scrape_envelope(
         Vec::new()
     };
 
-    ScrapeBridgeResult {
-        target_key: target_key.to_string(),
-        fields,
-        classification,
-        reason,
-        repair_queued,
-        run_id,
-        evidence_rejections,
-        attempts: 1,
-        initial_classification: None,
-        public_browser_fallback: None,
+    (
+        ScrapeBridgeResult {
+            target_key: target_key.to_string(),
+            fields,
+            classification,
+            reason,
+            repair_queued,
+            run_id,
+            evidence_rejections,
+            attempts: 1,
+            initial_classification: None,
+            public_browser_fallback: None,
+        },
+        verified_subject_email,
+    )
+}
+
+fn verified_record_email_subject(record: &Value, expected: &str) -> Result<String, &'static str> {
+    let mut subject = None;
+    for value in [
+        record.get("subject_email"),
+        record.get("email"),
+        record.pointer("/provenance/subject_email"),
+        record.pointer("/provenance/email"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let actual = value
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or("invalid_validation_subject")?;
+        if actual != expected {
+            return Err("validation_subject_mismatch");
+        }
+        subject = Some(actual.to_string());
     }
+    subject.ok_or("missing_validation_subject")
 }
 
 fn parse_runtime_scrape_envelope(
@@ -1288,6 +1471,211 @@ fn now_ms() -> u64 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn provider_dispatch_preserves_planner_input_and_pending_without_cli() {
+        let module = crate::sources::find("linkedin.com").unwrap();
+        let workspace = Path::new("/native/research/command-one");
+        let mut calls = Vec::new();
+        let mut dispatch = |target: &str, input: &Value| {
+            calls.push((target.to_string(), input.clone()));
+            Ok(json!({"status":"awaiting_provider","run_id":"scrape_run-native"}))
+        };
+        let result = run_via_scrape_target_with_dispatch(
+            module,
+            "Fixture GmbH",
+            Country::De,
+            Path::new("/nonexistent"),
+            Path::new("/must-not-spawn-ctox"),
+            Some(workspace),
+            Some(&mut dispatch),
+        );
+        assert_eq!(result.classification, "awaiting_provider");
+        assert_eq!(result.run_id.as_deref(), Some("scrape_run-native"));
+        assert!(result.public_browser_fallback.is_none());
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "linkedin-com");
+        assert_eq!(
+            calls[0].1,
+            research_scrape_input(
+                "linkedin.com",
+                "linkedin-com",
+                "Fixture GmbH",
+                Country::De,
+                Some(workspace)
+            )
+        );
+    }
+
+    #[test]
+    fn provider_dispatch_preserves_unregistered_classification_without_error_leak() {
+        let module = crate::sources::find("linkedin.com").unwrap();
+        let mut dispatch =
+            |_: &str, _: &Value| Err(anyhow::anyhow!("target_key not found; private-canary"));
+        let result = run_via_scrape_target_with_dispatch(
+            module,
+            "Fixture GmbH",
+            Country::De,
+            Path::new("/nonexistent"),
+            Path::new("/must-not-spawn-ctox"),
+            None,
+            Some(&mut dispatch),
+        );
+        assert_eq!(result.classification, "target_not_registered");
+        assert!(!result.reason.unwrap().contains("private-canary"));
+        assert!(result.public_browser_fallback.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn research_operation_reaches_registered_adapter_subprocess() {
+        use std::os::unix::fs::PermissionsExt;
+
+        struct TestRoot(PathBuf);
+        impl Drop for TestRoot {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let path = std::env::temp_dir().join(format!(
+            "ctox-research-operation-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        let root = TestRoot(path);
+        let binary = root.0.join("capture-ctox");
+        std::fs::write(
+            &binary,
+            r#"#!/bin/sh
+previous=''
+for argument in "$@"; do
+    if [ "$previous" = '--input-json' ]; then
+        printf '%s' "$argument" > "$0.input"
+    fi
+    previous="$argument"
+done
+printf '%s' '{"ok":false,"classification":{"status":"authorization_required"},"run_id":"test-operation"}'
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let module = crate::sources::find("linkedin.com").unwrap();
+        let workspace = root.0.join("research/command-1");
+        let capture = root.0.join("capture-ctox.input");
+        let mut operation = None;
+        for _ in 0..2 {
+            let result = run_via_scrape_target_with_operation(
+                module,
+                "Example GmbH",
+                Country::De,
+                &root.0,
+                &binary,
+                Some(&workspace),
+            );
+            assert_eq!(result.classification, "authorization_required");
+            assert_eq!(result.attempts, 1);
+            let actual: Value = serde_json::from_slice(&std::fs::read(&capture).unwrap()).unwrap();
+            assert_eq!(
+                actual,
+                research_scrape_input(
+                    module.id(),
+                    module.scrape_target_key().unwrap(),
+                    "Example GmbH",
+                    Country::De,
+                    Some(&workspace)
+                )
+            );
+            if let Some(previous) = &operation {
+                assert_eq!(&actual["research_operation_id"], previous);
+            }
+            operation = Some(actual["research_operation_id"].clone());
+        }
+        run_via_scrape_target(module, "Example GmbH", Country::De, &root.0, &binary);
+        let legacy: Value = serde_json::from_slice(&std::fs::read(&capture).unwrap()).unwrap();
+        assert!(legacy.get("research_operation_id").is_none());
+    }
+
+    #[test]
+    fn research_operation_preserves_legacy_input_without_workspace() {
+        for workspace in [None, Some(Path::new(""))] {
+            assert_eq!(
+                research_scrape_input(
+                    "linkedin.com",
+                    "linkedin-com",
+                    "Example GmbH",
+                    Country::De,
+                    workspace
+                ),
+                json!({"company": "Example GmbH", "country": "DE", "source_id": "linkedin.com"})
+            );
+        }
+    }
+
+    #[test]
+    fn research_operation_resumes_same_command_even_when_query_changes() {
+        let workspace = Some(Path::new("/native/runtime/research/person/command-1"));
+        let first = research_scrape_input(
+            "linkedin.com",
+            "linkedin-com",
+            "Example GmbH",
+            Country::De,
+            workspace,
+        );
+        let resumed = research_scrape_input(
+            "linkedin.com",
+            "linkedin-com",
+            "Example GmbH",
+            Country::De,
+            workspace,
+        );
+        let changed = research_scrape_input(
+            "linkedin.com",
+            "linkedin-com",
+            "Other AG",
+            Country::Ch,
+            workspace,
+        );
+        assert_eq!(first, resumed);
+        assert_eq!(
+            first["research_operation_id"],
+            changed["research_operation_id"]
+        );
+        assert_ne!(first["company"], changed["company"]);
+        assert_ne!(first["country"], changed["country"]);
+        let id = first["research_operation_id"].as_str().unwrap();
+        assert!(id.starts_with("research-v1-"));
+        assert_eq!(id.len(), "research-v1-".len() + 64);
+        assert!(!first.to_string().contains("/native/"));
+    }
+
+    #[test]
+    fn research_operation_separates_commands_sources_and_targets() {
+        let input = |workspace: &str, source: &str, target: &str| {
+            research_scrape_input(
+                source,
+                target,
+                "Example GmbH",
+                Country::De,
+                Some(Path::new(workspace)),
+            )
+        };
+        let first = input("/native/command-1", "linkedin.com", "linkedin-com");
+        for other in [
+            input("/native/command-2", "linkedin.com", "linkedin-com"),
+            input("/native/command-1", "xing.com", "linkedin-com"),
+            input("/native/command-1", "linkedin.com", "other-target"),
+        ] {
+            assert_ne!(
+                first["research_operation_id"],
+                other["research_operation_id"]
+            );
+        }
+        assert_ne!(
+            input("/a", "bc", "d")["research_operation_id"],
+            input("/ab", "c", "d")["research_operation_id"]
+        );
+    }
+
     fn valid_record(source_id: &str, source_url: &str) -> Value {
         json!({
             "field": "firma_anschrift",
@@ -1689,6 +2077,26 @@ mod tests {
             error: None,
             secret_value_in_payload: false,
         }
+    }
+
+    #[test]
+    fn pending_provider_does_not_trigger_browser_fallback_or_retry() {
+        let module = crate::sources::find("northdata.de").unwrap();
+        let mut executions = 0;
+        let result = run_with_public_browser_fallback(
+            module,
+            json!({}),
+            |_| {
+                executions += 1;
+                stub_result("awaiting_provider")
+            },
+            |_| panic!("pending provider must never launch browser fallback"),
+        );
+        assert_eq!(executions, 1);
+        assert_eq!(result.classification, "awaiting_provider");
+        assert!(!requires_public_browser_fallback(&result.classification));
+        assert!(result.fields.is_empty());
+        assert!(result.public_browser_fallback.is_none());
     }
 
     #[test]

@@ -425,6 +425,10 @@ impl SourceModule for Xing {
         })
     }
 
+    fn has_direct_api(&self) -> bool {
+        true
+    }
+
     fn fetch_direct(
         &self,
         ctx: &SourceCtx<'_>,

@@ -605,6 +605,11 @@ pub trait SourceModule: Sync {
         None
     }
 
+    /// Pure planning metadata. Planning must never probe a provider endpoint.
+    fn has_direct_api(&self) -> bool {
+        false
+    }
+
     /// Pull typed fields out of a single read page (HTML, PDF, or JSON body
     /// already rendered to text).
     ///

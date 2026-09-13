@@ -35,6 +35,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::person_ranking::compare_person_records;
 use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
@@ -129,12 +130,36 @@ pub fn run_person_research_tool_with_context(
     context: WebStackContext<'_>,
     request: &PersonResearchRequest,
 ) -> Result<Value> {
+    run_person_research_with_checkpoint(context, request, None)
+}
+
+/// Resume only the pending providers of a native, command-owned checkpoint.
+/// The caller must obtain `previous` from its authoritative command store,
+/// never from a browser payload or an arbitrary workspace file.
+pub fn resume_ctox_person_research_tool(
+    root: &Path,
+    request: &PersonResearchRequest,
+    previous: &Value,
+) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_person_research_with_checkpoint(WebStackContext::new(root, &store), request, Some(previous))
+}
+
+fn run_person_research_with_checkpoint(
+    context: WebStackContext<'_>,
+    request: &PersonResearchRequest,
+    previous: Option<&Value>,
+) -> Result<Value> {
     let root = context.root;
     let company = normalize_required_company(&request.company)?;
     if matches!(
         request.mode,
         ResearchMode::HaveData | ResearchMode::UpdateInventoryGeneral
     ) {
+        anyhow::ensure!(
+            previous.is_none(),
+            "cannot resume provider work with a skipped research mode"
+        );
         // HaveData → A-block, no research action.
         // UpdateInventoryGeneral → Excel B-block has no source columns
         // populated, so the plan is intentionally empty. We still emit a
@@ -144,6 +169,10 @@ pub fn run_person_research_tool_with_context(
 
     let plans = build_person_research_plan(request);
     if plans.is_empty() {
+        anyhow::ensure!(
+            previous.is_none(),
+            "cannot resume provider work without its source plan"
+        );
         return Ok(empty_plan_response(
             &company,
             request,
@@ -151,16 +180,22 @@ pub fn run_person_research_tool_with_context(
         ));
     }
 
-    let mut field_evidence: BTreeMap<FieldKey, Vec<Value>> = BTreeMap::new();
-    let mut search_runs: Vec<Value> = Vec::with_capacity(plans.len());
-    let mut read_runs: Vec<Value> = Vec::new();
-    let mut scrape_runs: Vec<Value> = Vec::new();
-    let mut browser_extract_runs: Vec<Value> = Vec::new();
-    let mut browser_assist_tasks: Vec<Value> = Vec::new();
+    let checkpoint = restore_provider_checkpoint(request, &plans, previous)?;
+    let mut field_evidence = checkpoint.field_evidence;
+    let mut search_runs = checkpoint.search_runs;
+    let mut read_runs = checkpoint.read_runs;
+    let mut scrape_runs = checkpoint.scrape_runs;
+    let mut browser_extract_runs = checkpoint.browser_extract_runs;
+    let mut browser_assist_tasks = checkpoint.browser_assist_tasks;
     let mut visited_urls: BTreeSet<String> = BTreeSet::new();
     let ctox_bin = scrape_bridge::default_ctox_bin();
 
     for plan in &plans {
+        if checkpoint.completed_sources.contains(plan.source_id) {
+            // Retain the exact earlier evidence/receipt (including failures).
+            // A provider poll must not rerun completed sources or their APIs.
+            continue;
+        }
         // Fields this source's scrape target already produced this iteration.
         // The cascade below intentionally still runs (to supplement fields the
         // scrape target did not cover), but must not re-emit evidence for a
@@ -466,12 +501,15 @@ pub fn run_person_research_tool_with_context(
     let awaiting_provider_sources = pending_provider_sources(&scrape_runs);
     let capture_plans = plans
         .iter()
-        .filter(|plan| !awaiting_provider_sources.contains(plan.source_id))
+        .filter(|plan| {
+            !awaiting_provider_sources.contains(plan.source_id)
+                && !checkpoint.completed_sources.contains(plan.source_id)
+        })
         .cloned()
         .collect::<Vec<_>>();
     match collect_browser_extract_evidence(root, &company, &capture_plans, &request.fields) {
         Ok((browser_evidence, runs)) => {
-            browser_extract_runs = runs;
+            browser_extract_runs.extend(runs);
             for (field, candidates) in browser_evidence {
                 field_evidence.entry(field).or_default().extend(candidates);
             }
@@ -485,6 +523,14 @@ pub fn run_person_research_tool_with_context(
         }
     }
 
+    // Save pre-ranking evidence: aggregated candidates intentionally contain
+    // only the best person and cannot restore all previously discovered people.
+    let resume_evidence = Value::Object(
+        field_evidence
+            .iter()
+            .map(|(field, candidates)| (field.as_str().to_string(), json!(candidates)))
+            .collect(),
+    );
     let person_records = grouped_person_records(&mut field_evidence, &request.person_priorities);
     let aggregated = aggregate_fields(
         &request.fields,
@@ -527,6 +573,11 @@ pub fn run_person_research_tool_with_context(
     if !awaiting_provider_sources.is_empty() {
         payload["status"] = json!("awaiting_provider");
         payload["awaiting_provider_sources"] = json!(awaiting_provider_sources);
+        payload["provider_resume"] = json!({
+            "schema": "ctox.research.provider_resume.v1",
+            "request_sha256": provider_resume_binding(request, &plans)?,
+            "raw_field_evidence": resume_evidence,
+        });
     }
 
     if request.persist_workspace {
@@ -549,6 +600,134 @@ pub fn run_person_research_tool_with_context(
     }
 
     Ok(payload)
+}
+
+#[derive(Default)]
+struct RestoredProviderCheckpoint {
+    completed_sources: BTreeSet<String>,
+    field_evidence: BTreeMap<FieldKey, Vec<Value>>,
+    search_runs: Vec<Value>,
+    read_runs: Vec<Value>,
+    scrape_runs: Vec<Value>,
+    browser_extract_runs: Vec<Value>,
+    browser_assist_tasks: Vec<Value>,
+}
+
+fn provider_resume_binding(
+    request: &PersonResearchRequest,
+    plans: &[PersonResearchPlan],
+) -> Result<String> {
+    let workspace = request
+        .workspace
+        .as_ref()
+        .context("provider resume requires native command workspace")?;
+    anyhow::ensure!(
+        !workspace.as_os_str().is_empty(),
+        "provider resume workspace is empty"
+    );
+    let scope = serde_json::to_vec(&json!({
+        "company": request.company.trim(), "country": request.country.as_iso(),
+        "mode": request.mode.as_str(),
+        "fields": request.fields.iter().map(|field| field.as_str()).collect::<Vec<_>>(),
+        "include_private": request.include_private,
+        "person_priorities": request.person_priorities,
+        "known_person_records": request.known_person_records,
+        "plan": plans.iter().map(|plan| json!({
+            "source_id": plan.source_id,
+            "target_fields": plan.target_fields.iter().map(|field| field.as_str()).collect::<Vec<_>>(),
+        })).collect::<Vec<_>>(),
+    }))?;
+    let mut digest = Sha256::new();
+    digest.update(b"ctox-research-provider-resume-v1");
+    for part in [workspace.as_os_str().as_encoded_bytes(), scope.as_slice()] {
+        digest.update((part.len() as u64).to_be_bytes());
+        digest.update(part);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn restore_provider_checkpoint(
+    request: &PersonResearchRequest,
+    plans: &[PersonResearchPlan],
+    previous: Option<&Value>,
+) -> Result<RestoredProviderCheckpoint> {
+    let Some(previous) = previous else {
+        return Ok(RestoredProviderCheckpoint::default());
+    };
+    anyhow::ensure!(
+        previous["status"] == "awaiting_provider",
+        "research checkpoint is not waiting"
+    );
+    anyhow::ensure!(
+        previous["provider_resume"]["schema"] == "ctox.research.provider_resume.v1",
+        "unknown research checkpoint schema"
+    );
+    anyhow::ensure!(
+        previous["provider_resume"]["request_sha256"].as_str()
+            == Some(provider_resume_binding(request, plans)?.as_str()),
+        "research checkpoint request changed"
+    );
+    let runs = previous["scrape_runs"]
+        .as_array()
+        .context("checkpoint has no source receipts")?;
+    let pending = pending_provider_sources(runs);
+    anyhow::ensure!(!pending.is_empty(), "checkpoint has no pending provider");
+    let source_ids = plans
+        .iter()
+        .map(|plan| plan.source_id.to_string())
+        .collect::<BTreeSet<_>>();
+    anyhow::ensure!(
+        pending.is_subset(&source_ids),
+        "checkpoint contains unplanned provider"
+    );
+    let completed_sources = source_ids
+        .difference(&pending)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let retained = |name: &str| -> Result<Vec<Value>> {
+        Ok(previous[name]
+            .as_array()
+            .with_context(|| format!("checkpoint is missing {name}"))?
+            .iter()
+            .filter(|row| {
+                row["source_id"]
+                    .as_str()
+                    .is_some_and(|id| completed_sources.contains(id))
+            })
+            .cloned()
+            .collect())
+    };
+    let mut field_evidence = BTreeMap::new();
+    for (name, candidates) in previous["provider_resume"]["raw_field_evidence"]
+        .as_object()
+        .context("checkpoint is missing raw evidence")?
+    {
+        let field = FieldKey::from_str(name).context("checkpoint contains unknown field")?;
+        let candidates = candidates
+            .as_array()
+            .context("checkpoint evidence is not an array")?;
+        let retained = candidates
+            .iter()
+            .filter(|candidate| {
+                candidate["source_id"]
+                    .as_str()
+                    .is_some_and(|id| completed_sources.contains(id))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !retained.is_empty() {
+            field_evidence.insert(field, retained);
+        }
+    }
+    Ok(RestoredProviderCheckpoint {
+        search_runs: retained("search_runs")?,
+        read_runs: retained("read_runs")?,
+        scrape_runs: retained("scrape_runs")?,
+        browser_extract_runs: retained("browser_extract_runs")?,
+        browser_assist_tasks: retained("browser_assist_tasks")?,
+        completed_sources,
+        field_evidence,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -2664,6 +2843,100 @@ fn slugify(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn provider_resume_fixture() -> (PersonResearchRequest, Vec<PersonResearchPlan>, Value) {
+        let request = PersonResearchRequest {
+            company: "ACME".into(),
+            country: Country::De,
+            mode: ResearchMode::NewRecord,
+            fields: Vec::new(),
+            include_private: vec!["linkedin.com".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
+            workspace: Some(PathBuf::from("/native/command-one")),
+            persist_workspace: false,
+        };
+        let plans = build_person_research_plan(&request);
+        assert!(plans.iter().any(|plan| plan.source_id == "linkedin.com"));
+        let completed = plans
+            .iter()
+            .find(|plan| plan.source_id != "linkedin.com")
+            .unwrap()
+            .source_id;
+        let payload = json!({
+            "status": "awaiting_provider",
+            "provider_resume": {
+                "schema": "ctox.research.provider_resume.v1",
+                "request_sha256": provider_resume_binding(&request, &plans).unwrap(),
+                "raw_field_evidence": {
+                    "person_vorname": [
+                        {"source_id": completed, "value": "Ada", "person_key": "person-a"},
+                        {"source_id": completed, "value": "Grace", "person_key": "person-b"},
+                        {"source_id": "linkedin.com", "value": "stale-pending-evidence"}
+                    ]
+                }
+            },
+            "scrape_runs": [
+                {"source_id": completed, "classification": "completed_empty", "run_id": "scrape_run-done"},
+                {"source_id": "linkedin.com", "classification": "awaiting_provider", "run_id": "scrape_run-wait"}
+            ],
+            "search_runs": [{"source_id": completed, "query": "original query"}],
+            "read_runs": [], "browser_extract_runs": [], "browser_assist_tasks": []
+        });
+        (request, plans, payload)
+    }
+
+    #[test]
+    fn provider_resume_keeps_completed_receipts_and_all_people_without_requery() {
+        let (request, plans, payload) = provider_resume_fixture();
+        let resumed = restore_provider_checkpoint(&request, &plans, Some(&payload)).unwrap();
+        let active = plans
+            .iter()
+            .filter(|plan| !resumed.completed_sources.contains(plan.source_id))
+            .map(|plan| plan.source_id)
+            .collect::<Vec<_>>();
+        assert_eq!(active, vec!["linkedin.com"]);
+        assert_eq!(resumed.scrape_runs, vec![payload["scrape_runs"][0].clone()]);
+        assert_eq!(
+            resumed.search_runs,
+            payload["search_runs"].as_array().unwrap().clone()
+        );
+        let people = &resumed.field_evidence[&FieldKey::PersonVorname];
+        assert_eq!(people.len(), 2);
+        assert_eq!(people[0]["value"], "Ada");
+        assert_eq!(people[1]["value"], "Grace");
+    }
+
+    #[test]
+    fn provider_resume_rejects_changed_request_workspace_and_unplanned_sources() {
+        let (request, plans, payload) = provider_resume_fixture();
+        for mutation in 0..5 {
+            let mut changed = request.clone();
+            match mutation {
+                0 => changed.company = "Other Company".into(),
+                1 => changed.country = Country::Ch,
+                2 => changed.workspace = Some(PathBuf::from("/native/command-two")),
+                3 => changed.fields = vec![FieldKey::FirmaName],
+                _ => changed.include_private.clear(),
+            }
+            assert!(restore_provider_checkpoint(&changed, &plans, Some(&payload)).is_err());
+        }
+        let mut foreign = payload.clone();
+        foreign["scrape_runs"][1]["source_id"] = json!("foreign.example");
+        assert!(restore_provider_checkpoint(&request, &plans, Some(&foreign)).is_err());
+        let mut terminal = payload;
+        terminal["status"] = json!("completed");
+        assert!(restore_provider_checkpoint(&request, &plans, Some(&terminal)).is_err());
+    }
+
+    #[test]
+    fn provider_resume_fresh_call_has_no_replayed_evidence() {
+        let (request, plans, _) = provider_resume_fixture();
+        let fresh = restore_provider_checkpoint(&request, &plans, None).unwrap();
+        assert!(fresh.completed_sources.is_empty());
+        assert!(fresh.field_evidence.is_empty());
+        assert!(fresh.scrape_runs.is_empty());
+    }
 
     #[test]
     fn pending_provider_sources_do_not_relabel_other_source_outcomes() {

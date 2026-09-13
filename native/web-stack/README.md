@@ -109,6 +109,16 @@ waiting source IDs, rather than claiming completion. CTOX must retrieve the
 validated continuation from its own durable scrape run and resume its existing
 command; this crate neither starts a poller nor invents a new operation.
 
+`resume_ctox_person_research_tool` accepts only the host's authoritative prior
+command result. A pending result includes a `provider_resume` checkpoint bound
+to the request, source plan and command workspace. Resume invokes only waiting
+sources: completed-source receipts (including genuine empty/error outcomes),
+search/read evidence and all pre-ranking person candidates are preserved.
+Completed sources do not repeat API/search/browser calls. Changed query, source
+scope, workspace or missing checkpoint fails before any source execution. The
+host owns bounded deadlines/poll counts and must not accept this checkpoint from
+browser request data or an arbitrary file. No public request field was added.
+
 Registered public scrape adapters have one bounded browser fallback for access
 failures. When an adapter classifies a run as `blocked` or
 `temporary_unreachable`, the Web Stack opens the source's public start page in

@@ -83,6 +83,8 @@ pub use person_research::merge_person_research_source_records;
 #[cfg(feature = "full")]
 pub use person_research::persist_person_research_workspace;
 #[cfg(feature = "full")]
+pub use person_research::resume_ctox_person_research_tool;
+#[cfg(feature = "full")]
 pub use person_research::run_ctox_person_research_tool;
 #[cfg(feature = "full")]
 pub use person_research::run_person_research_tool_with_context;

@@ -639,7 +639,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         createdAt: input.createdAt,
       } as const satisfies OrchestrationCommand;
       return engine.dispatch(command);
-    }).pipe(Effect.ignore);
+    }).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true }));
 
   /**
    * Bounded activity payload: ids and lifecycle state only — never the prompt,
@@ -1249,7 +1249,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       const source = delegation.source;
 
       if (source.environmentId === input.environmentId) {
-        yield* appendActivity({
+        const returned = yield* appendActivity({
           threadId: source.threadId,
           delegationId: delegation.delegationId,
           suffix: "result",
@@ -1259,6 +1259,12 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           payload: resultActivityPayload({ delegation, result: input.result }),
           createdAt: input.now,
         });
+        if (!returned) {
+          // Keep the durable result pending; the existing return scan retries
+          // the same activity command identity after a failure or restart.
+          yield* Effect.logWarning("Workjet local delegation result return deferred");
+          return;
+        }
         resultsReturned += 1;
         // A local return has no outbound envelope to redeliver, so the marker
         // is what keeps the row out of the cross-environment retry scan.
@@ -1746,10 +1752,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }
       const delegation = row.record.delegation;
       if (delegation.source.environmentId === environmentId) {
-        // A SAME-environment result was returned as a thread activity, which
-        // leaves no outbound envelope to redeliver. Rows finalized before this
-        // marker existed land here exactly once and are then stamped.
-        yield* markResultReturned(row.record.delegationId, now);
+        // Reuse the derived activity id for both failed returns and legacy
+        // unmarked rows. Only a successful durable append acknowledges it.
+        yield* deliverResult({ delegation, result: row.result, environmentId, now });
         continue;
       }
       const outcome = yield* enqueueCrossEnvironmentResult({

@@ -292,6 +292,7 @@ interface Harness {
    */
   readonly setThreadById: (threadId: ThreadId, next: OrchestrationThread) => void;
   readonly failNextTurnStarts: (count: number, error: { readonly _tag: string }) => void;
+  readonly failNextResultActivities: (count: number) => void;
   readonly failThreadReads: (fail: boolean) => void;
   /**
    * Fail the read for ONE thread id only. The parent-superset check reads a
@@ -346,6 +347,7 @@ const makeHarness = (options?: {
   const threadsById = new Map<string, OrchestrationThread>();
   const unreadableThreadIds = new Set<string>();
   let turnStartFailures = 0;
+  let resultActivityFailures = 0;
   let turnStartError: { readonly _tag: string } = retryableEngineError;
   let threadReadsFail = false;
   let enqueueFailures = 0;
@@ -378,6 +380,11 @@ const makeHarness = (options?: {
 
   const engine = {
     dispatch: (command: OrchestrationCommand) => {
+      if (command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_DELEGATION_RESULT_ACTIVITY_KIND && resultActivityFailures > 0) {
+        resultActivityFailures -= 1;
+        return Effect.fail(retryableEngineError);
+      }
       if (command.type === "thread.turn.start" && turnStartFailures > 0) {
         turnStartFailures -= 1;
         return Effect.fail(turnStartError);
@@ -402,6 +409,7 @@ const makeHarness = (options?: {
   return {
     commands,
     events,
+    failNextResultActivities: (count) => { resultActivityFailures = count; },
     setThread: (next) => {
       currentThread = next;
     },
@@ -2162,6 +2170,44 @@ it.effect("never re-enqueues a result that already reached the outbox", () =>
     assert.equal(second.resultReturnsAbandoned, 0);
     assert.equal(harness.enqueueAttempts(), 1);
   }).pipe(Effect.provide(testLayer("delegation-executor-redeliver-once"))),
+);
+
+it.effect("retries failed local result delivery after executor restart without rerunning the worker", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "local-result-retry",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "turn-local-result-retry",
+        turnState: "completed",
+      }),
+    });
+    harness.failNextResultActivities(2);
+    const store = yield* WorkjetMailboxStore;
+    yield* seed(delegation);
+    const executor = yield* harness.executor;
+    const first = yield* executor.runCycle;
+    assert.equal(first.resultsReturned, 0);
+    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 1);
+
+    // Reconstruct the executor over the same durable store, then fail once
+    // more in the return scan before allowing the acknowledgement to land.
+    const restarted = yield* harness.executor;
+    yield* restarted.runCycle;
+    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 1);
+    yield* restarted.runCycle;
+    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 0);
+    yield* restarted.runCycle;
+    const returned = harness.commands.filter((command) => command.type === "thread.activity.append" &&
+      command.activity.kind === WORKJET_DELEGATION_RESULT_ACTIVITY_KIND);
+    assert.lengthOf(returned, 1);
+    assert.lengthOf(harness.commands.filter((command) => command.type === "thread.turn.start"), 0);
+    assert.equal(harness.enqueueAttempts(), 0);
+  }).pipe(Effect.provide(testLayer("delegation-local-result-retry"))),
 );
 
 it.effect("marks a locally returned result so the cross-environment scan skips it", () =>

@@ -5760,7 +5760,9 @@ function ChatViewContent(props: ChatViewProps) {
       useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.workjetConfig ??
       DEFAULT_WORKJET_THREAD_CONFIG;
     if (
-      workjetConfigForFirstTurn.enabledCapabilityIds.includes("decision-hub") &&
+      workjetConfigForFirstTurn.enabledCapabilityIds.some(
+        (capabilityId) => capabilityId === "decision-hub",
+      ) &&
       (!("capabilityBindings" in workjetConfigForFirstTurn) ||
         workjetConfigForFirstTurn.capabilityBindings.filter(
           (binding) => binding.capabilityId === "decision-hub",

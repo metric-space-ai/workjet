@@ -561,6 +561,9 @@ function toResolvedPullRequest(pr: {
   baseRefName: string;
   headRefName: string;
   state?: "open" | "closed" | "merged";
+  headCommitOid?: string | null;
+  headRepositoryNameWithOwner?: string | null;
+  headRepositoryOwnerLogin?: string | null;
 }): ResolvedPullRequest {
   return {
     number: pr.number,
@@ -569,6 +572,13 @@ function toResolvedPullRequest(pr: {
     baseBranch: pr.baseRefName,
     headBranch: pr.headRefName,
     state: pr.state ?? "open",
+    ...(pr.headCommitOid !== undefined ? { headCommitOid: pr.headCommitOid } : {}),
+    ...(pr.headRepositoryNameWithOwner !== undefined
+      ? { headRepositoryNameWithOwner: pr.headRepositoryNameWithOwner }
+      : {}),
+    ...(pr.headRepositoryOwnerLogin !== undefined
+      ? { headRepositoryOwnerLogin: pr.headRepositoryOwnerLogin }
+      : {}),
   };
 }
 

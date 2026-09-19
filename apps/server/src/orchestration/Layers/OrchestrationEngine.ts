@@ -5,6 +5,7 @@ import type {
   ThreadId,
 } from "@workjet/contracts";
 import { OrchestrationCommand } from "@workjet/contracts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -83,6 +84,10 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const projectionPipeline = yield* OrchestrationProjectionPipeline;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
+  const environment = yield* Effect.serviceOption(ServerEnvironment);
+  const environmentId = Option.isSome(environment)
+    ? yield* environment.value.getEnvironmentId
+    : undefined;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   let commandReadModel = createEmptyReadModel(yield* nowIso);
@@ -153,6 +158,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
+          environmentId,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>

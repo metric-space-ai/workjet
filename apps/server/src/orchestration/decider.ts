@@ -1,8 +1,15 @@
 import {
   EventId,
+  ThreadId,
+  ProviderInstanceId,
+  DEFAULT_MODEL,
+  DEFAULT_RUNTIME_MODE,
+  DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type EnvironmentId,
 } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -21,6 +28,7 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
+import { requireProjectTeamOwnership } from "./projectTeamInvariants.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -181,8 +189,10 @@ type DecideOrchestrationCommandResult =
 const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   commands,
   readModel,
+  environmentId,
 }: {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
+  readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   ReadonlyArray<PlannedOrchestrationEvent>,
@@ -197,6 +207,7 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
     const decided = yield* decideOrchestrationCommand({
       command: nextCommand,
       readModel: nextReadModel,
+      environmentId,
     });
     const nextEvents = Array.isArray(decided) ? decided : [decided];
     for (const nextEvent of nextEvents) {
@@ -215,8 +226,10 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
   command,
   readModel,
+  environmentId,
 }: {
   readonly command: OrchestrationCommand;
+  readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
@@ -237,7 +250,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         exceptProjectId: command.projectId,
       });
 
-      return {
+      const projectEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
           aggregateKind: "project",
           aggregateId: command.projectId,
@@ -256,6 +269,46 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+      const crypto = yield* Crypto.Crypto;
+      const supervisorId = ThreadId.make(yield* crypto.randomUUIDv4);
+      const supervisorEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: supervisorId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.created",
+        payload: {
+          threadId: supervisorId,
+          projectId: command.projectId,
+          title: "Project supervisor",
+          modelSelection: command.defaultModelSelection ?? {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
+          },
+          runtimeMode: DEFAULT_RUNTIME_MODE,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            role: "orchestrator",
+            team: {
+              role: "supervisor",
+              projectId: command.projectId,
+              threadId: supervisorId,
+              parentThreadId: null,
+              goal: `Coordinate the goals of ${command.title}`,
+              createdAt: command.createdAt,
+            },
+          },
+          branch: null,
+          worktreePath: null,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      // Creation and command receipt commit together; replay retains this identity.
+      return [projectEvent, supervisorEvent];
     }
 
     case "project.meta.update": {
@@ -316,6 +369,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (activeThreads.length > 0) {
         return yield* decideCommandSequence({
           readModel,
+          environmentId,
           commands: [
             ...activeThreads.map(
               (thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
@@ -350,6 +404,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.create": {
+      yield* requireProjectTeamOwnership({
+        commandType: command.type,
+        threadId: command.threadId,
+        projectId: command.projectId,
+        config: command.workjetConfig,
+        readModel,
+        environmentId,
+      });
       yield* requireProject({
         readModel,
         command,
@@ -913,10 +975,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.workjet-config.set": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
+      });
+      yield* requireProjectTeamOwnership({
+        commandType: command.type,
+        threadId: command.threadId,
+        projectId: thread.projectId,
+        config: command.workjetConfig,
+        readModel,
+        environmentId,
       });
       const occurredAt = yield* nowIso;
       return {

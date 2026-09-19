@@ -30,6 +30,7 @@ import {
 import { isLiquidGlassSupported, LiquidGlassView } from "@callstack/liquid-glass";
 import {
   AppState,
+  Text,
   Keyboard,
   Platform,
   useColorScheme,
@@ -574,6 +575,15 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
 
   return (
     <View className="flex-1">
+      {props.selectedThread.workjetConfig.schemaVersion === 2 && props.selectedThread.workjetConfig.team ? (
+        <View accessibilityLabel="Project team" className="border-b px-4 py-2">
+          <Text>{props.selectedThread.workjetConfig.team.role} · {props.selectedThread.modelSelection.instanceId} · {props.selectedThread.modelSelection.model}</Text>
+          <Text>Goal: {props.selectedThread.workjetConfig.team.goal}</Text>
+          {props.selectedThread.workjetConfig.team.parentThreadId ? (
+            <Text>Parent: {props.selectedThread.workjetConfig.team.parentThreadId}</Text>
+          ) : null}
+        </View>
+      ) : null}
       {showContent ? (
         <View
           className="flex-1"

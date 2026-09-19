@@ -321,6 +321,7 @@ import {
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { WorkjetHandoffInbox, WorkjetWorkerOverview } from "./workjetSurfaces";
+import { ProjectTeamPanel } from "./chat/ProjectTeamPanel";
 import { publishCrossModeResultSubmitted } from "../crossMode/crossModeNotificationProducer";
 import { CrossModeNotificationCenter } from "../crossMode/CrossModeNotifications";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
@@ -7038,6 +7039,58 @@ function ChatViewContent(props: ChatViewProps) {
           an ordinary thread in the sidebar. Hidden for non-orchestrator threads
           and when the orchestrator owns no workers (the component returns null).
         */}
+        {activeServerThread && activeThreadEnvironmentId ? (
+          <ProjectTeamPanel
+            key={activeServerThread.id}
+            thread={activeServerThread}
+            threads={allThreadShells.filter((thread) => thread.environmentId === activeThreadEnvironmentId)}
+            onOpen={(threadId) => onOpenWorkjetPeerThread({ environmentId: activeThreadEnvironmentId, threadId })}
+            onSaveGoal={async (goal) => {
+              const config = activeServerThread.workjetConfig;
+              if (config.schemaVersion !== 2 || !config.team) return false;
+              const result = await setThreadWorkjetConfig({
+                environmentId: activeThreadEnvironmentId,
+                input: { threadId: activeServerThread.id, workjetConfig: { ...config, team: { ...config.team, goal } } },
+              });
+              return result._tag === "Success";
+            }}
+            onAddSpecialist={async (domain, goal) => {
+              const config = activeServerThread.workjetConfig;
+              if (config.schemaVersion !== 2 || config.team?.role !== "supervisor") return false;
+              const threadId = newThreadId();
+              const createdAt = new Date().toISOString();
+              const result = await createThread({
+                environmentId: activeThreadEnvironmentId,
+                input: {
+                  threadId,
+                  projectId: activeServerThread.projectId,
+                  title: domain,
+                  modelSelection: activeServerThread.modelSelection,
+                  runtimeMode: activeServerThread.runtimeMode,
+                  interactionMode: "default",
+                  workjetConfig: {
+                    ...config,
+                    role: "orchestrator",
+                    parent: null,
+                    team: {
+                      role: "specialist",
+                      projectId: activeServerThread.projectId,
+                      threadId,
+                      parentThreadId: activeServerThread.id,
+                      domain,
+                      goal,
+                      createdAt,
+                    },
+                  },
+                  branch: null,
+                  worktreePath: null,
+                  createdAt,
+                },
+              });
+              return result._tag === "Success";
+            }}
+          />
+        ) : null}
         {workjetIsOrchestratorThread && activeThreadEnvironmentId && activeThreadId ? (
           <WorkjetWorkerOverview
             environmentId={activeThreadEnvironmentId}

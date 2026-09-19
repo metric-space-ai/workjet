@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import { WorkjetProjectTeamMember } from "./workjetProjectTeam.ts";
 import {
   EnvironmentId,
   NonNegativeInt,
@@ -938,6 +939,7 @@ export type WorkjetThreadCtoxSession = typeof WorkjetThreadCtoxSession.Type;
 
 const WorkjetThreadConfigV2BaseFields = {
   schemaVersion: Schema.Literal(2),
+  team: Schema.optionalKey(WorkjetProjectTeamMember),
   managedInstructions: Schema.String,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),

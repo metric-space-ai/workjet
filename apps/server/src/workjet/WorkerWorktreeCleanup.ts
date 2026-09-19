@@ -15,7 +15,8 @@
  *  - only when that path resolves strictly beneath a trusted automatic
  *    worktree storage root (never the project workspace root, never a root
  *    itself);
- *  - only the branch ref named exactly `workjet/worker/<threadId>`.
+ *  - only the branch ref named exactly `workjet/worker/<threadId>`;
+ *  - never force removal: Git must retain dirty worktrees and unmerged refs.
  *
  * Every outcome is a value, so the reaction is observable, and the caller can
  * log a failure without ever failing the thread deletion it reacts to.
@@ -141,7 +142,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
     // it is executed from.
     const cwd = context.workspaceRoot;
     yield* gitWorkflow
-      .removeWorktree({ cwd, path: worktreePath, force: true })
+      .removeWorktree({ cwd, path: worktreePath, force: false })
       .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
 
     // `git worktree remove` leaves the branch behind. Only this worker's own
@@ -151,7 +152,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       return { status: "cleaned", worktreePath, deletedRefName: null } as const;
     }
     yield* gitWorkflow
-      .deleteBranch({ cwd, refName: workerRefName, force: true })
+      .deleteBranch({ cwd, refName: workerRefName, force: false })
       .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "delete-branch" })));
 
     return { status: "cleaned", worktreePath, deletedRefName: workerRefName } as const;

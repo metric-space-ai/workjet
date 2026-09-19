@@ -146,7 +146,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       if (parent.workjetConfig.role !== "orchestrator") {
         return yield* failure("parent-not-orchestrator");
       }
-      const parentTeam = parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+      const parentTeam =
+        parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
       if (parentTeam && parentTeam.role !== "specialist") {
         return yield* failure("role-not-authorized");
       }
@@ -243,17 +244,19 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           managedInstructions: parent.workjetConfig.managedInstructions,
           enabledCapabilityIds,
           capabilityBindings: [],
-          ...(parentTeam ? {
-            team: {
-              projectId: parent.projectId,
-              threadId: workerThreadId,
-              role: "worker" as const,
-              parentThreadId: parent.id,
-              packageId: workerThreadId,
-              goal: input.task,
-              createdAt,
-            },
-          } : {}),
+          ...(parentTeam
+            ? {
+                team: {
+                  projectId: parent.projectId,
+                  threadId: workerThreadId,
+                  role: "worker" as const,
+                  parentThreadId: parent.id,
+                  packageId: workerThreadId,
+                  goal: input.task.trim().slice(0, 4096),
+                  createdAt,
+                },
+              }
+            : {}),
         },
         branch: workerWorktree.refName,
         worktreePath: workerWorktree.path,

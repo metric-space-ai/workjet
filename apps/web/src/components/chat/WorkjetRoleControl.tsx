@@ -103,6 +103,7 @@ export function setWorkjetThreadRole(
   role: WorkjetSelectableRole,
 ): WorkjetThreadConfig {
   if (config.role === "worker") return config;
+  if (config.schemaVersion === 2 && config.team) return config;
   if (config.role === role) return config;
   return { ...config, role, parent: null };
 }

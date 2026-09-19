@@ -7041,16 +7041,54 @@ function ChatViewContent(props: ChatViewProps) {
         */}
         {activeServerThread && activeThreadEnvironmentId ? (
           <ProjectTeamPanel
-            key={activeServerThread.id}
+            key={`${activeThreadEnvironmentId}:${activeServerThread.id}`}
             thread={activeServerThread}
-            threads={allThreadShells.filter((thread) => thread.environmentId === activeThreadEnvironmentId)}
-            onOpen={(threadId) => onOpenWorkjetPeerThread({ environmentId: activeThreadEnvironmentId, threadId })}
+            threads={allThreadShells.filter(
+              (thread) => thread.environmentId === activeThreadEnvironmentId,
+            )}
+            onOpen={(threadId) =>
+              onOpenWorkjetPeerThread({ environmentId: activeThreadEnvironmentId, threadId })
+            }
             onSaveGoal={async (goal) => {
               const config = activeServerThread.workjetConfig;
               if (config.schemaVersion !== 2 || !config.team) return false;
               const result = await setThreadWorkjetConfig({
                 environmentId: activeThreadEnvironmentId,
-                input: { threadId: activeServerThread.id, workjetConfig: { ...config, team: { ...config.team, goal } } },
+                input: {
+                  threadId: activeServerThread.id,
+                  workjetConfig: { ...config, team: { ...config.team, goal } },
+                },
+              });
+              return result._tag === "Success";
+            }}
+            onCreateSupervisor={async () => {
+              const threadId = newThreadId();
+              const createdAt = new Date().toISOString();
+              const result = await createThread({
+                environmentId: activeThreadEnvironmentId,
+                input: {
+                  threadId,
+                  projectId: activeServerThread.projectId,
+                  title: "Project supervisor",
+                  modelSelection: activeServerThread.modelSelection,
+                  runtimeMode: activeServerThread.runtimeMode,
+                  interactionMode: "default",
+                  workjetConfig: {
+                    ...DEFAULT_WORKJET_THREAD_CONFIG,
+                    role: "orchestrator",
+                    team: {
+                      role: "supervisor",
+                      projectId: activeServerThread.projectId,
+                      threadId,
+                      parentThreadId: null,
+                      goal: "Coordinate this project",
+                      createdAt,
+                    },
+                  },
+                  branch: null,
+                  worktreePath: null,
+                  createdAt,
+                },
               });
               return result._tag === "Success";
             }}

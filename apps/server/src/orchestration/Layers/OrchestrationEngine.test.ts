@@ -94,6 +94,39 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("persists one supervisor with project creation despite duplicate client delivery", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      const command = {
+        type: "project.create",
+        commandId: CommandId.make("team-project-create"),
+        projectId: asProjectId("team-project"),
+        title: "Team project",
+        workspaceRoot: "/fixture/team-project",
+        createdAt: now(),
+      } as const;
+      const receipts = await Promise.all([
+        system.run(system.engine.dispatch(command)),
+        system.run(system.engine.dispatch(command)),
+      ]);
+      expect(receipts[0]).toEqual(receipts[1]);
+      const snapshot = await system.readModel();
+      const members = snapshot.threads.filter((thread) => thread.projectId === command.projectId);
+      expect(members).toHaveLength(1);
+      const member = members[0]!;
+      expect(member.workjetConfig.schemaVersion === 2 && member.workjetConfig.team?.role).toBe(
+        "supervisor",
+      );
+      const events = await system.run(Stream.runCollect(system.engine.readEvents(0)));
+      expect(Array.from(events).map((event) => event.type)).toEqual([
+        "project.created",
+        "thread.created",
+      ]);
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("bootstraps command handling from persisted projections without reading the full snapshot", async () => {
     let nextSequence = 8;
     const eventStore: OrchestrationEventStoreShape = {
@@ -454,6 +487,7 @@ describe("OrchestrationEngine", () => {
     expect(events.map((event) => event.type)).toEqual([
       "project.created",
       "thread.created",
+      "thread.created",
       "thread.deleted",
     ]);
     await system.dispose();
@@ -571,7 +605,9 @@ describe("OrchestrationEngine", () => {
     );
 
     const snapshot = await system.readModel();
-    expect(snapshot.threads[0]?.branch).toBe("workjet/generated-branch-name");
+    expect(snapshot.threads.find((thread) => thread.id === "thread-branch-race")?.branch).toBe(
+      "workjet/generated-branch-name",
+    );
     await system.dispose();
   });
 
@@ -624,8 +660,12 @@ describe("OrchestrationEngine", () => {
     );
 
     const snapshot = await system.readModel();
-    expect(snapshot.threads[0]?.branch).toBe("workjet/1234abcd");
-    expect(snapshot.threads[0]?.worktreePath).toBe("/tmp/project-worktree-bootstrap-worktree");
+    expect(
+      snapshot.threads.find((thread) => thread.id === "thread-worktree-bootstrap")?.branch,
+    ).toBe("workjet/1234abcd");
+    expect(
+      snapshot.threads.find((thread) => thread.id === "thread-worktree-bootstrap")?.worktreePath,
+    ).toBe("/tmp/project-worktree-bootstrap-worktree");
     await system.dispose();
   });
 

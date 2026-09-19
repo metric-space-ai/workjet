@@ -1,35 +1,63 @@
 # Project teams
 
-Project team ownership extends the existing thread configuration. It does not
-replace the provider runtime, mailbox, event store, or worker dispatch service.
+Project team ownership extends the existing thread configuration. The provider
+runtime, mailbox and event store remain the execution and persistence owners.
 
-A new project and its supervisor thread are emitted by one project-create
-command and persisted in the existing engine transaction. Replaying those
-events preserves the supervisor ID. The supervisor starts without a provider
-turn; its selected model comes from the project preference or the existing
-application default. Selection is not evidence of actual execution.
+## Authoritative path
 
-Optional v2 `workjetConfig.team` stores role, project/thread identity, goal,
-parent, and specialist domain or worker package. Historical/manual threads
-retain their existing behavior. Serialized command invariants reject duplicate
-supervisors, foreign-project parents, workers with children, and silent loss
-of team ownership. Specialists use the existing orchestrator execution role;
-team workers use the existing worker role and isolated worktree dispatch.
+Clients send existing project/thread commands through the shared client runtime.
+OrchestrationEngine serializes them and binds the server environment identity.
+The decider calls projectTeamInvariants before emitting events; that module owns
+team role, parent, uniqueness and archive/delete authorization. The projector
+rebuilds the persisted state; it does not authorize commands. UI visibility and
+disabled controls are presentation only.
 
-The web/desktop thread view exposes the team, parent, selected model, goal,
-and specialist creation. Mobile exposes the same persisted membership. Worker
-results continue through the existing mailbox/delegation machinery.
+A project.create command emits project.created and its supervisor thread.created
+in one engine transaction. Command receipts prevent duplicate application.
+Replay retains the supervisor identity. Creation selects the project's model
+preference or application default but does not start a provider turn.
+
+Optional v2 workjetConfig.team stores role, project/thread identity, goal,
+parent, specialist domain or worker package. Manual threads retain their previous
+behavior. Existing projects can explicitly create their supervisor through the
+same thread.create invariant boundary; concurrent clients cannot create two.
+
+Supervisor and specialist map to the existing orchestrator execution role.
+WorkerDispatch prepares isolated worker worktrees and submits engine commands;
+it is not an alternate authority for project membership. Team workers must name
+a local, active specialist. Role/parent/package reassignment is rejected. A
+parent cannot be archived with active children or deleted with retained children.
+The supervisor remains available until explicit project deletion; unarchive
+revalidates the parent.
+
+ThreadCapabilityContext derives provider instructions from persisted ownership.
+Desktop/web ProjectTeamPanel and mobile ThreadDetailScreen consume that same
+configuration. The panel submits ordinary thread commands for goals and specialist
+creation; it does not maintain a separate team catalog.
+
+## Execution and cleanup boundary
+
+WorkjetDelegationExecutor owns existing durable delegation execution and result
+delivery. Local results are marked returned only after the parent activity append
+succeeds; failed appends and marker writes can retry with the same command identity.
+An activity alone does not resume the parent. Team WorkerDispatch still needs
+integration with this durable path and queued parent continuation.
+
+Git/provider contracts retain the provider's PR head evidence. Non-force worktree
+removal protects dirty work and unmerged commits, but it is not merge proof.
+Destructive completion requires both verified repository/head/merged-PR evidence
+and serialization against new worker execution. Until that common lifecycle fence
+exists, an inactive snapshot is insufficient and automatic cleanup stays pending.
+Archive must follow successful cleanup rather than hide a failed cleanup.
 
 ## Implementation checkpoint
 
-This branch is not ready for production. Focused verification and real client
-stories are pending. Remaining required work includes safe existing-project
-adoption, all lifecycle mutation guards, authenticated environment binding,
-restart-proof completion/parent continuation acceptance, merged-PR evidence
-and archive integration, durable review learning and selection, and full mobile
-team-management controls. The review schema alone is not a persisted learning
-service. No deployment or end-to-end acceptance is claimed.
+This branch is not production-ready. Initial focused tests passed (15 tests across
+contracts, team invariants, learning calculation and capability context). Later
+lifecycle changes, engine receipts and mailbox retries await the shared admitted
+run. Real desktop/web/mobile acceptance has not run.
 
-The cleanup service now uses non-force Git removal. This protects dirty work
-and unmerged commits; it does not prove that a PR was merged and does not yet
-replace deletion with the requested archive lifecycle.
+Remaining work includes restart-safe dispatch and parent continuation, rework,
+cleanup/archive integration, and durable review/selection wiring. The review
+contract and pure selection calculation are not a persisted learning service.
+No deployment or end-to-end acceptance is claimed.

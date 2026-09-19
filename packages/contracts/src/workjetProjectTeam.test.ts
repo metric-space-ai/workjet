@@ -15,8 +15,12 @@ describe("project team contracts", () => {
   it("requires explicit parent ownership for specialists and workers", () => {
     expect(() => decodeMember({ ...member, role: "specialist", domain: "desktop" })).toThrow();
     expect(() => decodeMember({ ...member, role: "worker", packageId: "package-one" })).toThrow();
-    expect(decodeMember({ ...member, role: "supervisor", parentThreadId: null }).role).toBe("supervisor");
-    expect(() => decodeMember({ ...member, role: "supervisor", parentThreadId: "parent" })).toThrow();
+    expect(decodeMember({ ...member, role: "supervisor", parentThreadId: null }).role).toBe(
+      "supervisor",
+    );
+    expect(() =>
+      decodeMember({ ...member, role: "supervisor", parentThreadId: "parent" }),
+    ).toThrow();
   });
 
   it("keeps parent review and worker delivery separately attributable", () => {
@@ -25,7 +29,12 @@ describe("project team contracts", () => {
       packageId: "package-one",
       reviewerThreadId: "reviewer",
       subjectThreadId: "worker",
-      execution: { providerInstanceId: "codex", model: "actual-model", harness: "codex", harnessVersion: null },
+      execution: {
+        providerInstanceId: "codex",
+        model: "actual-model",
+        harness: "codex",
+        harnessVersion: null,
+      },
       taskType: "backend",
       difficulty: "standard",
       phase: "first-delivery",

@@ -28,7 +28,7 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-import { requireProjectTeamOwnership } from "./projectTeamInvariants.ts";
+import { requireProjectTeamLifecycle, requireProjectTeamOwnership } from "./projectTeamInvariants.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -190,8 +190,10 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   commands,
   readModel,
   environmentId,
+  allowTeamTermination = false,
 }: {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
+  readonly allowTeamTermination?: boolean;
   readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
@@ -208,6 +210,7 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
       command: nextCommand,
       readModel: nextReadModel,
       environmentId,
+      allowTeamTermination,
     });
     const nextEvents = Array.isArray(decided) ? decided : [decided];
     for (const nextEvent of nextEvents) {
@@ -227,8 +230,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   command,
   readModel,
   environmentId,
+  allowTeamTermination = false,
 }: {
   readonly command: OrchestrationCommand;
+  readonly allowTeamTermination?: boolean;
   readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
@@ -370,6 +375,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         return yield* decideCommandSequence({
           readModel,
           environmentId,
+          allowTeamTermination: true,
           commands: [
             ...activeThreads.map(
               (thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
@@ -447,11 +453,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.delete": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      yield* requireProjectTeamLifecycle({ commandType: command.type, thread, readModel, allowTeamTermination });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -469,11 +476,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.archive": {
-      yield* requireThreadNotArchived({
+      const thread = yield* requireThreadNotArchived({
         readModel,
         command,
         threadId: command.threadId,
       });
+      yield* requireProjectTeamLifecycle({ commandType: command.type, thread, readModel });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -492,10 +500,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.unarchive": {
-      yield* requireThreadArchived({
+      const thread = yield* requireThreadArchived({
         readModel,
         command,
         threadId: command.threadId,
+      });
+      yield* requireProjectTeamOwnership({
+        commandType: command.type,
+        threadId: command.threadId,
+        projectId: thread.projectId,
+        config: thread.workjetConfig,
+        readModel,
+        environmentId,
       });
       const occurredAt = yield* nowIso;
       return {

@@ -28,7 +28,10 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-import { requireProjectTeamLifecycle, requireProjectTeamOwnership } from "./projectTeamInvariants.ts";
+import {
+  requireProjectTeamLifecycle,
+  requireProjectTeamOwnership,
+} from "./projectTeamInvariants.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -458,7 +461,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      yield* requireProjectTeamLifecycle({ commandType: command.type, thread, readModel, allowTeamTermination });
+      yield* requireProjectTeamLifecycle({
+        commandType: command.type,
+        thread,
+        readModel,
+        allowTeamTermination,
+      });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({

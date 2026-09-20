@@ -181,15 +181,25 @@ describe("durable project teams", () => {
         },
       });
       expect(localWorker.state.threads).toHaveLength(3);
-    const archivedWorker = yield* apply(localWorker.state, {
-      type: "thread.archive", commandId: CommandId.make("archive-worker"), threadId: workerId,
-    });
-    const archivedParent = yield* apply(archivedWorker.state, {
-      type: "thread.archive", commandId: CommandId.make("archive-specialist"), threadId: specialistId,
-    });
-    expect((yield* Effect.exit(apply(archivedParent.state, {
-      type: "thread.unarchive", commandId: CommandId.make("unarchive-worker"), threadId: workerId,
-    })))._tag).toBe("Failure");
+      const archivedWorker = yield* apply(localWorker.state, {
+        type: "thread.archive",
+        commandId: CommandId.make("archive-worker"),
+        threadId: workerId,
+      });
+      const archivedParent = yield* apply(archivedWorker.state, {
+        type: "thread.archive",
+        commandId: CommandId.make("archive-specialist"),
+        threadId: specialistId,
+      });
+      expect(
+        (yield* Effect.exit(
+          apply(archivedParent.state, {
+            type: "thread.unarchive",
+            commandId: CommandId.make("unarchive-worker"),
+            threadId: workerId,
+          }),
+        ))._tag,
+      ).toBe("Failure");
       expect(
         (yield* Effect.exit(
           apply(localWorker.state, {

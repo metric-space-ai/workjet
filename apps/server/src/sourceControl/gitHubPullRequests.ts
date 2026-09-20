@@ -97,7 +97,7 @@ function normalizeGitHubPullRequestRecord(
     ...(raw.headRefOid !== undefined
       ? {
           headCommitOid: /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(raw.headRefOid ?? "")
-            ? raw.headRefOid?.toLowerCase() ?? null
+            ? (raw.headRefOid?.toLowerCase() ?? null)
             : null,
         }
       : {}),

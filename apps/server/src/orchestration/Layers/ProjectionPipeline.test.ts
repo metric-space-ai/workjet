@@ -2718,7 +2718,7 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
         FROM projection_state
         WHERE projector = 'projection.projects'
       `;
-      assert.deepEqual(projectorRows, [{ lastAppliedSequence: 1 }]);
+      assert.deepEqual(projectorRows, [{ lastAppliedSequence: 2 }]);
     }),
   );
 

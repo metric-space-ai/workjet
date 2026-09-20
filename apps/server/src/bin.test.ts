@@ -475,10 +475,16 @@ it.layer(NodeServices.layer)("bin cli parsing", (it) => {
       assert.equal(renamedProject?.title, "Beta");
       assert.equal(renamedProject?.deletedAt, null);
 
+      // Project creation also persists its supervisor, so removal is explicit.
+      const ordinaryRemoval = yield* Effect.exit(
+        runCliWithRuntime(["project", "remove", addedProject?.id ?? "", "--base-dir", baseDir]),
+      );
+      assert.equal(ordinaryRemoval._tag, "Failure");
       yield* runCliWithRuntime([
         "project",
         "remove",
         addedProject?.id ?? "",
+        "--force",
         "--base-dir",
         baseDir,
       ]);

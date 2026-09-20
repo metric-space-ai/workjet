@@ -123,19 +123,26 @@ export function requireProjectTeamLifecycle(input: {
   const fail = (detail: string) =>
     Effect.fail(new OrchestrationCommandInvariantError({ commandType, detail }));
   if (team?.role === "supervisor") {
-    return fail(commandType === "thread.delete"
-      ? "The project supervisor is retained until the project is deleted."
-      : "The project supervisor remains available as the main contact.");
+    return fail(
+      commandType === "thread.delete"
+        ? "The project supervisor is retained until the project is deleted."
+        : "The project supervisor remains available as the main contact.",
+    );
   }
-  if (readModel.threads.some((child) =>
-    child.deletedAt === null &&
-    (commandType === "thread.delete" || child.archivedAt === null) &&
-    child.workjetConfig.schemaVersion === 2 &&
-    child.workjetConfig.team?.parentThreadId === thread.id
-  )) {
-    return fail(commandType === "thread.delete"
-      ? "A team parent with retained child threads cannot be deleted."
-      : "A team parent with active child threads cannot be archived.");
+  if (
+    readModel.threads.some(
+      (child) =>
+        child.deletedAt === null &&
+        (commandType === "thread.delete" || child.archivedAt === null) &&
+        child.workjetConfig.schemaVersion === 2 &&
+        child.workjetConfig.team?.parentThreadId === thread.id,
+    )
+  ) {
+    return fail(
+      commandType === "thread.delete"
+        ? "A team parent with retained child threads cannot be deleted."
+        : "A team parent with active child threads cannot be archived.",
+    );
   }
   return Effect.void;
 }

@@ -944,7 +944,7 @@ describe("OrchestrationEngine", () => {
       }),
     );
 
-    expect(result.sequence).toBe(2);
+    expect(result.sequence).toBe(3);
     const eventsAfterRetry = await runtime.runPromise(
       Stream.runCollect(engine.readEvents(0)).pipe(
         Effect.map((chunk): OrchestrationEvent[] => Array.from(chunk)),
@@ -952,6 +952,7 @@ describe("OrchestrationEngine", () => {
     );
     expect(eventsAfterRetry.map((event) => event.type)).toEqual([
       "project.created",
+      "thread.created", // durable supervisor
       "thread.created",
     ]);
     await runtime.dispose();
@@ -1055,11 +1056,12 @@ describe("OrchestrationEngine", () => {
     );
     expect(eventsAfterFailure.map((event) => event.type)).toEqual([
       "project.created",
+      "thread.created", // durable supervisor
       "thread.created",
     ]);
 
     const retryResult = await runtime.runPromise(engine.dispatch(turnStartCommand));
-    expect(retryResult.sequence).toBe(4);
+    expect(retryResult.sequence).toBe(5);
 
     const eventsAfterRetry = await runtime.runPromise(
       Stream.runCollect(engine.readEvents(0)).pipe(
@@ -1068,6 +1070,7 @@ describe("OrchestrationEngine", () => {
     );
     expect(eventsAfterRetry.map((event) => event.type)).toEqual([
       "project.created",
+      "thread.created", // durable supervisor
       "thread.created",
       "thread.message-sent",
       "thread.turn-start-requested",

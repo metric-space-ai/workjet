@@ -853,7 +853,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
    * The grants the delegation's PARENT holds, when this machine can know them.
    *
    * "Parent" is the authority the delegation descends from, and there are two
-   * shapes of it, checked in this order:
+   * shapes of it. All locally available owners constrain the grants:
    *
    *  1. `delegation.parent` — a review/revise/follow-up chain. Its `owner` is
    *     the address authoritative for that delegation, which is the parent
@@ -881,36 +881,36 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   > =>
     Effect.gen(function* () {
       const parentRef = input.delegation.parent;
-      const parentThreadId =
-        parentRef !== undefined && parentRef.owner.environmentId === input.environmentId
-          ? parentRef.owner.threadId
-          : input.delegation.source.environmentId === input.environmentId
-            ? input.delegation.source.threadId
-            : null;
-      if (parentThreadId === null) return { _tag: "unknowable" } as const;
-
-      const parentOption = yield* query.getThreadDetailById(parentThreadId).pipe(Effect.option);
-      // A projection hiccup is NOT evidence about grants. Retry rather than
-      // decide, exactly as the target read above does.
-      if (Option.isNone(parentOption)) return { _tag: "unreadable" } as const;
-
-      const parent = Option.getOrUndefined(parentOption.value);
-      // The parent thread is gone or deleted. FAIL CLOSED: with no authority on
-      // record, the empty set is the only defensible superset, so a target
-      // holding no capabilities still runs and one holding any is refused.
-      // Running under a parent that no longer exists is what this check is for.
-      if (parent === undefined || parent.deletedAt !== null) {
-        return { _tag: "grants", capabilityIds: new Set<string>() } as const;
+      const localOwners = new Set<ThreadId>();
+      if (input.delegation.source.environmentId === input.environmentId) {
+        localOwners.add(input.delegation.source.threadId);
       }
-      return {
-        _tag: "grants",
-        capabilityIds: new Set<string>(
-          resolveDelegatedCapabilities({
-            parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
-            targetRole: "worker",
-          }).capabilityIds,
-        ),
-      } as const;
+      if (parentRef?.owner.environmentId === input.environmentId) {
+        localOwners.add(parentRef.owner.threadId);
+      }
+      if (localOwners.size === 0) return { _tag: "unknowable" } as const;
+
+      let capabilityIds: Set<string> | undefined;
+      for (const ownerId of localOwners) {
+        const ownerRead = yield* query.getThreadDetailById(ownerId).pipe(Effect.option);
+        // Read failures cannot establish authority; retain the retryable state.
+        if (Option.isNone(ownerRead)) return { _tag: "unreadable" } as const;
+        const owner = Option.getOrUndefined(ownerRead.value);
+        const grants = new Set<string>(
+          owner === undefined || owner.deletedAt !== null || owner.archivedAt != null
+            ? []
+            : resolveDelegatedCapabilities({
+                parentCapabilityIds: owner.workjetConfig.enabledCapabilityIds,
+                targetRole: "worker",
+              }).capabilityIds,
+        );
+        // Graph ancestry never replaces the current sender's authority.
+        capabilityIds =
+          capabilityIds === undefined
+            ? grants
+            : new Set([...capabilityIds].filter((capabilityId) => grants.has(capabilityId)));
+      }
+      return { _tag: "grants", capabilityIds: capabilityIds ?? new Set<string>() } as const;
     });
 
   /**

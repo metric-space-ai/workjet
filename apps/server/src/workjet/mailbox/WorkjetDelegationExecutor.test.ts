@@ -853,6 +853,49 @@ it.effect("takes the grants from the PARENT DELEGATION when the chain names one"
   }).pipe(Effect.provide(testLayer("delegation-executor-capability-chain"))),
 );
 
+for (const senderState of ["granted", "revoked", "unreadable"] as const) {
+  it.effect(`checks the current ${senderState} sender as well as the delegation ancestor`, () =>
+    Effect.gen(function* () {
+      const ancestor = ThreadId.make("thread-rework-ancestor");
+      const harness = makeHarness({ initialThread: thread({ capabilityIds: ["greppy"] }) });
+      const executor = yield* harness.executor;
+      harness.setThreadById(ancestor, thread({ id: ancestor, capabilityIds: ["greppy"] }));
+      harness.setThreadById(
+        SOURCE_THREAD,
+        thread({
+          id: SOURCE_THREAD,
+          role: "orchestrator",
+          capabilityIds: ["greppy"],
+        }),
+      );
+      const chained = yield* seed(
+        delegationFixture({
+          id: `current-sender-${senderState}`,
+          digest: yield* storePrompt(PROMPT_TEXT),
+          state: "delivered",
+          parent: {
+            schemaVersion: 1,
+            delegationId: WorkjetDelegationId.make("wjd-rework-original0000000"),
+            owner: address(LOCAL_ENVIRONMENT, ancestor),
+          },
+        }),
+      );
+      if (senderState === "revoked") {
+        harness.setThreadById(SOURCE_THREAD, thread({ id: SOURCE_THREAD, role: "orchestrator" }));
+      } else if (senderState === "unreadable") {
+        harness.failThreadReadFor(SOURCE_THREAD);
+      }
+      const status = yield* executor.runCycle;
+      assert.equal(status.executed, senderState === "granted" ? 1 : 0);
+      assert.equal(status.failures.targetCapabilityEscalation, senderState === "revoked" ? 1 : 0);
+      assert.equal(
+        yield* stateOf(chained),
+        senderState === "granted" ? "running" : senderState === "revoked" ? "failed" : "delivered",
+      );
+    }).pipe(Effect.provide(testLayer(`delegation-current-sender-${senderState}`))),
+  );
+}
+
 it.effect("fails closed when the parent thread is gone, and stays open when it is unreadable", () =>
   Effect.gen(function* () {
     const harness = makeHarness({ initialThread: thread({ capabilityIds: ["greppy"] }) });

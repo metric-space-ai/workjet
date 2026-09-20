@@ -226,6 +226,17 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 "Worker creation and delegation must share an active local specialist parent.",
             });
           }
+          if (
+            config.enabledCapabilityIds.some(
+              (capability) =>
+                !parent.workjetConfig.enabledCapabilityIds.some((grant) => grant === capability),
+            )
+          ) {
+            return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail: "Worker capabilities exceed the specialist's current grants.",
+            });
+          }
         }
 
         const eventBase = yield* decideOrchestrationCommand({
@@ -260,7 +271,20 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
               if (envelope.workerDelegation) {
                 const prepared = envelope.workerDelegation;
-                yield* mailbox
+                const existing = yield* mailbox
+                  .getDelegation(prepared.delegation.delegationId)
+                  .pipe(
+                    Effect.mapError(
+                      toPersistenceSqlError("OrchestrationEngine.workerDelegation.lookup"),
+                    ),
+                  );
+                if (Option.isSome(existing)) {
+                  return yield* new OrchestrationCommandInvariantError({
+                    commandType: envelope.command.type,
+                    detail: "Worker delegation identity is already in use.",
+                  });
+                }
+                const enqueued = yield* mailbox
                   .enqueueOutbound(prepared.envelope, {
                     _tag: "delegation",
                     delegation: prepared.delegation,
@@ -268,6 +292,12 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                   .pipe(
                     Effect.mapError(toPersistenceSqlError("OrchestrationEngine.workerDelegation")),
                   );
+                if (enqueued._tag !== "enqueued") {
+                  return yield* new OrchestrationCommandInvariantError({
+                    commandType: envelope.command.type,
+                    detail: "Worker delegation envelope identity is already in use.",
+                  });
+                }
               }
 
               const lastSavedEvent = committedEvents.at(-1) ?? null;

@@ -240,6 +240,22 @@ describe("OrchestrationEngine", () => {
         },
       };
       const before = await system.run(system.engine.latestSequence);
+      await expect(
+        system.run(
+          system.engine.dispatch(
+            {
+              ...command,
+              commandId: CommandId.make("atomic-worker-escalation"),
+              workjetConfig: { ...command.workjetConfig, enabledCapabilityIds: ["web-search"] },
+            },
+            options,
+          ),
+        ),
+      ).rejects.toMatchObject({
+        _tag: "OrchestrationCommandInvariantError",
+        detail: "Worker capabilities exceed the specialist's current grants.",
+      });
+      expect(await system.run(system.engine.latestSequence)).toBe(before);
       await system.run(system.sql`CREATE TRIGGER fail_worker_delegation
         BEFORE INSERT ON workjet_delegations
         BEGIN SELECT RAISE(ABORT, 'injected worker delegation failure'); END`);
@@ -265,6 +281,57 @@ describe("OrchestrationEngine", () => {
         await system.run(system.sql`SELECT delegation_id FROM workjet_delegations`),
       ).toHaveLength(1);
       expect(await system.run(system.engine.dispatch(command, options))).toEqual(accepted);
+      for (const collision of ["delegation", "envelope"] as const) {
+        const otherWorkerId = ThreadId.make(`atomic-worker-collision-${collision}`);
+        const otherCommand = {
+          ...command,
+          commandId: CommandId.make(`atomic-collision-${collision}`),
+          threadId: otherWorkerId,
+          workjetConfig: {
+            ...command.workjetConfig,
+            team: {
+              ...command.workjetConfig.team,
+              threadId: otherWorkerId,
+              packageId: otherWorkerId,
+            },
+          },
+        };
+        const otherEnvelopeId =
+          collision === "envelope"
+            ? envelopeId
+            : WorkjetEnvelopeId.make("wjm-distinct-envelope-for-collision");
+        const otherDelegation = {
+          ...delegation,
+          envelopeId: otherEnvelopeId,
+          delegationId:
+            collision === "delegation"
+              ? delegation.delegationId
+              : WorkjetDelegationId.make("wjd-distinct-delegation-for-collision"),
+          target: { ...delegation.target, threadId: otherWorkerId },
+        };
+        const sequence = await system.run(system.engine.latestSequence);
+        await expect(
+          system.run(
+            system.engine.dispatch(otherCommand, {
+              workerDelegation: {
+                delegation: otherDelegation,
+                envelope: { ...options.workerDelegation.envelope, envelopeId: otherEnvelopeId },
+              },
+            }),
+          ),
+        ).rejects.toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
+        expect(await system.run(system.engine.latestSequence)).toBe(sequence);
+        expect(
+          (await system.readModel()).threads.some((thread) => thread.id === otherWorkerId),
+        ).toBe(false);
+        expect(
+          await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
+        ).toHaveLength(1);
+        expect(
+          await system.run(system.sql`SELECT delegation_id FROM workjet_delegations`),
+        ).toHaveLength(1);
+      }
+
       const events = await system.run(Stream.runCollect(system.engine.readEvents(before)));
       expect(
         Array.from(events).filter((event) => event.type === "thread.turn-start-requested"),

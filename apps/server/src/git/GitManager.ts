@@ -561,9 +561,9 @@ function toResolvedPullRequest(pr: {
   baseRefName: string;
   headRefName: string;
   state?: "open" | "closed" | "merged";
-  headCommitOid?: string | null;
-  headRepositoryNameWithOwner?: string | null;
-  headRepositoryOwnerLogin?: string | null;
+  headCommitOid?: string | null | undefined;
+  headRepositoryNameWithOwner?: string | null | undefined;
+  headRepositoryOwnerLogin?: string | null | undefined;
 }): ResolvedPullRequest {
   return {
     number: pr.number,

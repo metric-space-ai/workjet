@@ -209,6 +209,83 @@ it.effect("commits outbound delegations atomically and preserves advanced state 
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("rolls back a linked delegation when its relationship cannot be persisted", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = envelopeId("linked-rework");
+    const original = delegation({
+      id: delegationId("original"),
+      envelope: envelopeId("original"),
+      state: "completed",
+      at: T0,
+      budgetExpiresAt: FAR_FUTURE,
+    });
+    yield* store.upsertDelegation(original);
+    const task = {
+      ...delegation({
+        id: delegationId("linked-rework"),
+        envelope: id,
+        state: "queued",
+        at: T1,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+      depth: 1,
+      parent: {
+        schemaVersion: 1 as const,
+        delegationId: original.delegationId,
+        owner: original.target,
+      },
+    };
+    const relationship = {
+      schemaVersion: 1 as const,
+      kind: "revises" as const,
+      from: { schemaVersion: 1 as const, delegationId: task.delegationId, owner: task.target },
+      to: task.parent,
+      depth: task.depth,
+      createdAt: T1,
+    };
+    const envelope = routingEnvelope({
+      id,
+      kind: "delegation",
+      createdAt: T1,
+      expiresAt: FAR_FUTURE,
+    });
+    const payload = { _tag: "delegation", delegation: task } as const;
+    const mismatch = yield* store
+      .enqueueOutbound(envelope, payload, {
+        ...relationship,
+        to: { ...relationship.to, owner: SOURCE_ADDRESS },
+      })
+      .pipe(Effect.exit);
+    assert.equal(mismatch._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(id)));
+
+    yield* sql`CREATE TRIGGER reject_rework_edge
+      BEFORE INSERT ON workjet_delegation_edges
+      BEGIN SELECT RAISE(ABORT, 'injected relationship failure'); END`;
+    const failed = yield* store.enqueueOutbound(envelope, payload, relationship).pipe(Effect.exit);
+    assert.equal(failed._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(id)));
+    assert.isTrue(Option.isNone(yield* store.getDelegation(task.delegationId)));
+    assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 0);
+    assert.equal(
+      Option.getOrThrow(yield* store.getDelegation(original.delegationId)).state,
+      "completed",
+    );
+
+    yield* sql`DROP TRIGGER reject_rework_edge`;
+    assert.equal((yield* store.enqueueOutbound(envelope, payload, relationship))._tag, "enqueued");
+    assert.equal((yield* store.enqueueOutbound(envelope, payload, relationship))._tag, "duplicate");
+    assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 1);
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(task.delegationId)).state, "queued");
+    assert.equal(
+      Option.getOrThrow(yield* store.getDelegation(original.delegationId)).state,
+      "completed",
+    );
+  }).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("enqueues an outbound envelope and reports a duplicate id without throwing", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;

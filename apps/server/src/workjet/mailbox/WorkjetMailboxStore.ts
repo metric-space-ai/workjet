@@ -651,6 +651,7 @@ export interface WorkjetMailboxStoreShape {
   readonly enqueueOutbound: (
     envelope: WorkjetRoutingEnvelope,
     payload: WorkjetMailboxPayload,
+    relationship?: WorkjetDelegationEdge,
   ) => Effect.Effect<WorkjetOutboundEnqueueOutcome, WorkjetMailboxStoreError>;
 
   readonly recordInboundEnvelope: (
@@ -1125,9 +1126,32 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const enqueueOutbound: WorkjetMailboxStoreShape["enqueueOutbound"] = (envelope, payload) =>
+  const enqueueOutbound: WorkjetMailboxStoreShape["enqueueOutbound"] = (
+    envelope,
+    payload,
+    relationship,
+  ) =>
     Effect.gen(function* () {
       const encoded = yield* encodeEnvelopeAndPayload(envelope, payload);
+      if (relationship !== undefined) {
+        const task = payload._tag === "delegation" ? payload.delegation : undefined;
+        const parent = task?.parent;
+        const sameOwner = (left: WorkjetWorkerAddress, right: WorkjetWorkerAddress) =>
+          left.workspaceId === right.workspaceId &&
+          left.environmentId === right.environmentId &&
+          left.threadId === right.threadId;
+        if (
+          !task ||
+          !parent ||
+          relationship.from.delegationId !== task.delegationId ||
+          relationship.to.delegationId !== parent.delegationId ||
+          !sameOwner(relationship.from.owner, task.target) ||
+          !sameOwner(relationship.to.owner, parent.owner) ||
+          relationship.depth !== task.depth
+        ) {
+          return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+        }
+      }
 
       const inserted = yield* sql<{ readonly envelopeId: string }>`
         INSERT INTO workjet_mailbox_outbox (
@@ -1162,6 +1186,9 @@ export const make = Effect.gen(function* () {
       // Replays must not reset a delegation that has already advanced.
       if (inserted.length > 0 && payload._tag === "delegation") {
         yield* upsertDelegation(payload.delegation);
+        if (relationship !== undefined) {
+          yield* insertDelegationEdge(relationship);
+        }
       }
       return inserted.length > 0
         ? ({ _tag: "enqueued", envelopeId: envelope.envelopeId } as const)

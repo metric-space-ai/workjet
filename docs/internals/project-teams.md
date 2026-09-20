@@ -40,8 +40,11 @@ creation; it does not maintain a separate team catalog.
 WorkjetDelegationExecutor owns existing durable delegation execution and result
 delivery. Local results are marked returned only after the parent activity append
 succeeds; failed appends and marker writes can retry with the same command identity.
-An activity alone does not resume the parent. Team WorkerDispatch still needs
-integration with this durable path and queued parent continuation.
+For local project-team parents, return now requests a continuation with a stable
+command/message identity before acknowledging the result. Engine-serialized busy
+admission defers without a rejected receipt; the existing pending-result scan
+owns retries. This new continuation and its regression tests await verification.
+Team WorkerDispatch still needs integration with the durable delegation path.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
 removal protects dirty work and unmerged commits, but it is not merge proof.

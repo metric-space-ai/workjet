@@ -1264,6 +1264,40 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           yield* Effect.logWarning("Workjet local delegation result return deferred");
           return;
         }
+        const parentRead = yield* query.getThreadDetailById(source.threadId).pipe(Effect.option);
+        if (Option.isNone(parentRead)) return;
+        const parent = Option.getOrUndefined(parentRead.value);
+        const team =
+          parent?.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+        if (parent && team && team.role !== "worker") {
+          // The existing pending-result row remains the durable retry owner.
+          // Never acknowledge before the continuation has an engine receipt.
+          if (parent.deletedAt !== null || parent.archivedAt !== null) return;
+          const continuation = yield* Effect.result(
+            engine.dispatch(
+              {
+                type: "thread.turn.start",
+                commandId: CommandId.make(
+                  `server:workjet-result-continuation:${delegation.delegationId}`,
+                ),
+                threadId: parent.id,
+                message: {
+                  messageId: MessageId.make(
+                    `workjet-result-continuation:${delegation.delegationId}`,
+                  ),
+                  role: "user",
+                  text: `A delegated task returned. Review the persisted delegation result activity for ${delegation.delegationId} (outcome: ${input.result.outcome}). Verify its evidence, arrange rework if needed, and continue your remaining project goal. A reported completion is not independent verification.`,
+                  attachments: [],
+                },
+                runtimeMode: parent.runtimeMode,
+                interactionMode: parent.interactionMode,
+                createdAt: input.result.reportedAt,
+              },
+              { deferWhileBusy: true },
+            ),
+          );
+          if (continuation._tag === "Failure") return;
+        }
         resultsReturned += 1;
         // A local return has no outbound envelope to redeliver, so the marker
         // is what keeps the row out of the cross-environment retry scan.

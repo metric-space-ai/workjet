@@ -94,6 +94,64 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("admits only one of two concurrent background starts", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("concurrent-admission-project"),
+          projectId: asProjectId("concurrent-admission-project"),
+          title: "Concurrent admission",
+          workspaceRoot: "/fixture/concurrent-admission",
+          createdAt: now(),
+        }),
+      );
+      const threadId = (await system.readModel()).threads[0]!.id;
+      const commands = ["one", "two"].map((id) => ({
+        type: "thread.turn.start" as const,
+        commandId: CommandId.make(`concurrent-${id}`),
+        threadId,
+        message: {
+          messageId: asMessageId(`concurrent-${id}`),
+          role: "user" as const,
+          text: id,
+          attachments: [],
+        },
+        runtimeMode: "approval-required" as const,
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        createdAt: now(),
+      }));
+      const results = await Promise.allSettled(
+        commands.map((command) =>
+          system.run(system.engine.dispatch(command, { deferWhileBusy: true })),
+        ),
+      );
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.find((result) => result.status === "rejected");
+      expect(rejected).toMatchObject({
+        status: "rejected",
+        reason: { _tag: "OrchestrationCommandDeferredError" },
+      });
+      const acceptedIndex = results.findIndex((result) => result.status === "fulfilled");
+      const accepted = results[acceptedIndex];
+      if (accepted?.status !== "fulfilled") throw new Error("Missing accepted command");
+      expect(
+        await system.run(
+          system.engine.dispatch(commands[acceptedIndex]!, {
+            deferWhileBusy: true,
+          }),
+        ),
+      ).toEqual(accepted.value);
+      const events = await system.run(Stream.runCollect(system.engine.readEvents(0)));
+      expect(
+        Array.from(events).filter((event) => event.type === "thread.turn-start-requested"),
+      ).toHaveLength(1);
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("defers background turns without poisoning their retry receipt", async () => {
     const system = await createOrchestrationSystem();
     try {

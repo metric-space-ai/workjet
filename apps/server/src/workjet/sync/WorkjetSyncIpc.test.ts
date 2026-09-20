@@ -8,6 +8,29 @@ import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { it } from "@effect/vitest";
 import { describe, expect } from "vite-plus/test";
 import { requestSyncAuthority } from "./WorkjetSyncIpc.ts";
+import type { SessionHandoffPermit } from "@workjet/contracts/ctoxSync";
+
+// Wire-shape fixture only; native Authority verifies signatures and current policy.
+function handoffPermit(phase: SessionHandoffPermit["phase"], nonce: string): SessionHandoffPermit {
+  return {
+    version: 1,
+    bindingDigest: "b".repeat(64),
+    phase,
+    audience: "scope",
+    nonce,
+    jobId: "job",
+    sessionId: "session",
+    scopeId: "scope",
+    checkpointDigest: "a".repeat(64),
+    checkpointSequence: 7,
+    ownershipGeneration: 3,
+    principalEpoch: 1,
+    bindingRevision: 1,
+    issuedAtMs: 1,
+    expiresAtMs: 2,
+    signature: "test-signature",
+  };
+}
 
 const request = { version: 1, requestId: "request", operation: { type: "hello" as const } };
 const response = {
@@ -53,6 +76,42 @@ const withSocket = Effect.fn("withSocket")(function* (
   });
 });
 describe("native CTOX Sync IPC", () => {
+  it.effect("rejects handoff requests missing native permit evidence before connecting", () =>
+    Effect.gen(function* () {
+      for (const operation of [
+        {
+          type: "protectCheckpoint",
+          jobId: "job",
+          ownership: { nodeId: 1, generation: 3 },
+          receipts: [],
+        },
+        {
+          type: "takeOver",
+          jobId: "job",
+          expected: { nodeId: 1, generation: 3 },
+          checkpointDigest: "a".repeat(64),
+        },
+      ]) {
+        let requests = 0;
+        yield* withSocket(
+          (socket) => {
+            requests += 1;
+            socket.end(frame(response));
+          },
+          async (endpoint) => {
+            // Exercise runtime validation of an older/malformed wire request.
+            const input = {
+              version: 1,
+              requestId: "missing-permit",
+              operation,
+            } as unknown as Parameters<typeof requestSyncAuthority>[1];
+            await expect(requestSyncAuthority(endpoint, input)).rejects.toThrow();
+            expect(requests).toBe(0);
+          },
+        );
+      }
+    }),
+  );
   it.effect("preserves checkpoint protection and takeover receipts, including replay", () =>
     Effect.gen(function* () {
       const spec = {
@@ -78,8 +137,20 @@ describe("native CTOX Sync IPC", () => {
         signature: "test-signature",
       };
       for (const operation of [
-        { type: "protectCheckpoint", jobId: "job", ownership, receipts: [receipt] },
-        { type: "takeOver", jobId: "job", expected: ownership, checkpointDigest: digest },
+        {
+          type: "protectCheckpoint",
+          jobId: "job",
+          ownership,
+          receipts: [receipt],
+          disclosure: handoffPermit("disclose", "checkpoint"),
+        },
+        {
+          type: "takeOver",
+          jobId: "job",
+          expected: ownership,
+          checkpointDigest: digest,
+          resume: handoffPermit("resume", "checkpoint"),
+        },
       ] as const) {
         for (const type of ["applied", "replayed"] as const) {
           // Cryptographic receipt/quorum validation belongs to native Authority.
@@ -126,6 +197,7 @@ describe("native CTOX Sync IPC", () => {
                   jobId: "job",
                   expected: { nodeId: 1, generation: 3 },
                   checkpointDigest: "a".repeat(64),
+                  resume: handoffPermit("resume", "request"),
                   ...extra,
                 },
               }),
@@ -154,6 +226,7 @@ describe("native CTOX Sync IPC", () => {
                 jobId: "job",
                 expected: { nodeId: 1, generation: 3 },
                 checkpointDigest: "a".repeat(64),
+                resume: handoffPermit("resume", "uncertain-takeover"),
               },
             }),
           ).rejects.toThrow("disconnected before confirming");

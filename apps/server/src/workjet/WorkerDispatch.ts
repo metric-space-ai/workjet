@@ -202,7 +202,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         const snapshot = yield* snapshotStore.value
           .put(input.task)
           .pipe(Effect.mapError(() => failure("create-failed")));
-        const expiresAt = new Date(Date.parse(createdAt) + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const expiresAt = DateTime.makeUnsafe(createdAt).pipe(
+          DateTime.add({ days: 7 }),
+          DateTime.formatIso,
+        );
         const envelopeId = WorkjetEnvelopeId.make(`wjm-worker-${workerThreadId}`);
         const source = {
           schemaVersion: 1 as const,

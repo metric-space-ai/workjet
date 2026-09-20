@@ -43,6 +43,7 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   WorkjetMailboxStore,
+  isWorkjetMailboxError,
   type WorkjetDelegationRecord,
   type WorkjetReceivedHandoffRecord,
   type WorkjetMailboxStoreError,
@@ -416,7 +417,21 @@ export const applyDeliveredDelegation = (input: {
     }
     return yield* input.store
       .transitionDelegationState(input.delegation.delegationId, "queued", "delivered", input.now)
-      .pipe(Effect.mapError(boundMailboxStoreError));
+      .pipe(
+        Effect.catch((cause) =>
+          Effect.gen(function* () {
+            // The recovery loop may have completed delivery while the original
+            // caller was still appending its activity. Keep the advanced state.
+            if (!isWorkjetMailboxError(cause) || cause.reason !== "invalid-state-transition") {
+              return yield* Effect.fail(cause);
+            }
+            const current = yield* input.store.getDelegation(input.delegation.delegationId);
+            if (Option.isSome(current) && current.value.state !== "queued") return current.value;
+            return yield* Effect.fail(cause);
+          }),
+        ),
+        Effect.mapError(boundMailboxStoreError),
+      );
   });
 
 const clampTtlSeconds = (value: number | undefined): number => {

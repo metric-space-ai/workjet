@@ -1746,7 +1746,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * instead of aborting the whole batch. A transient store outage still fails
      * the read, which `Effect.option` folds into an empty batch for this cycle.
      */
-    const scan = (state: "accepted" | "delivered" | "running") =>
+    const scan = (state: "queued" | "accepted" | "delivered" | "running") =>
       store
         .listDelegationRowsByState(state, WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
         .pipe(
@@ -1868,6 +1868,42 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           now,
         }),
       );
+    }
+
+    // Local outbox work is excluded from the network transport. Recover the
+    // gap between enqueue and local delivery, including a crash after inbox
+    // insertion or the delivered marker but before the lifecycle transition.
+    for (const entry of yield* scan("queued")) {
+      if (entry._tag === "corrupt") continue;
+      const delegation = entry.record.delegation;
+      if (
+        delegation.source.environmentId !== environmentId ||
+        delegation.target.environmentId !== environmentId ||
+        delegation.source.workspaceId !== identity.workspaceId ||
+        delegation.target.workspaceId !== identity.workspaceId
+      )
+        continue;
+      const recovered = yield* Effect.gen(function* () {
+        const outbound = yield* store.getOutbound(delegation.envelopeId);
+        if (Option.isNone(outbound) || outbound.value.state === "dead") return;
+        const { envelope, payload } = outbound.value;
+        if (
+          envelope.kind !== "delegation" ||
+          envelope.sourceEnvironmentId !== environmentId ||
+          envelope.targetEnvironmentId !== environmentId ||
+          envelope.sourceWorkspaceId !== identity.workspaceId ||
+          envelope.targetWorkspaceId !== identity.workspaceId ||
+          payload._tag !== "delegation" ||
+          payload.delegation.delegationId !== delegation.delegationId ||
+          !(yield* identity.verifyRoutingEnvelope(envelope))
+        )
+          return;
+        const inbound = yield* store.recordInboundEnvelope(envelope, payload, now);
+        if (inbound._tag === "expired") return;
+        yield* store.markDelivered(envelope.envelopeId, now);
+        yield* store.transitionDelegationState(delegation.delegationId, "queued", "delivered", now);
+      }).pipe(Effect.exit);
+      if (recovered._tag === "Failure") transientSkips += 1;
     }
 
     for (const entry of yield* scan("delivered")) {

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded activity payloads.
+import { applyDeliveredDelegation } from "./WorkjetMailboxDelivery.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -266,6 +267,7 @@ const endedTurnThread = (input: {
  */
 const identityDouble = {
   workspaceId: WORKSPACE,
+  verifyRoutingEnvelope: () => Effect.succeed(true),
   signRoutingEnvelope: (envelope: unknown) =>
     Effect.succeed({ ...(envelope as Record<string, unknown>), signature: "c2lnbmF0dXJlLXN0dWI" }),
 } as unknown as WorkjetMeshIdentity["Service"];
@@ -326,6 +328,7 @@ const makeHarness = (options?: {
   readonly initialThread?: OrchestrationThread | undefined;
   readonly nowValues?: ReadonlyArray<string>;
   readonly failAudit?: boolean;
+  readonly validSignature?: boolean;
   /**
    * Force `recordDelegationUsage` to refuse with this reason. The executor
    * never produces a non-zero cost delta (no per-turn cost figure is projected
@@ -445,7 +448,10 @@ const makeHarness = (options?: {
       const base = makeWorkjetDelegationExecutorWithSources(sources).pipe(
         Effect.provideService(OrchestrationEngineService, engine),
         Effect.provideService(ProjectionSnapshotQuery, query),
-        Effect.provideService(WorkjetMeshIdentity, identityDouble),
+        Effect.provideService(WorkjetMeshIdentity, {
+          ...identityDouble,
+          verifyRoutingEnvelope: () => Effect.succeed(options?.validSignature ?? true),
+        }),
       );
       const refusal = options?.refuseUsageCharge;
       const real = yield* WorkjetMailboxStore;
@@ -593,6 +599,59 @@ it.effect("runs a delivered delegation as a normal turn carrying the snapshot te
     assert.notInclude(JSON.stringify(activity.activity.payload), PROMPT_TEXT);
   }).pipe(Effect.provide(testLayer("delegation-executor-happy"))),
 );
+
+for (const checkpoint of ["outbox", "inbox", "delivered-marker", "invalid-signature"] as const) {
+  it.effect(`reconciles local delegation after restart at ${checkpoint}`, () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ validSignature: checkpoint !== "invalid-signature" });
+      const store = yield* WorkjetMailboxStore;
+      const digest = yield* storePrompt(PROMPT_TEXT);
+      const delegation = delegationFixture({
+        id: `recovery-${checkpoint}`,
+        digest,
+        state: "queued",
+      });
+      const envelope = {
+        schemaVersion: 1 as const,
+        envelopeId: delegation.envelopeId,
+        kind: "delegation" as const,
+        sourceWorkspaceId: WORKSPACE,
+        sourceEnvironmentId: LOCAL_ENVIRONMENT,
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        createdAt: NOW,
+        expiresAt: EXPIRES,
+        signature: "c2lnbmF0dXJlLXN0dWI",
+      };
+      const payload = { _tag: "delegation", delegation } as const;
+      yield* store.enqueueOutbound(envelope, payload);
+      if (checkpoint !== "outbox") yield* store.recordInboundEnvelope(envelope, payload, NOW);
+      if (checkpoint === "delivered-marker") yield* store.markDelivered(envelope.envelopeId, NOW);
+
+      const restarted = yield* harness.executor;
+      yield* restarted.runCycle;
+      if (checkpoint === "invalid-signature") {
+        assert.equal(yield* stateOf(delegation), "queued");
+        assert.equal(turnStarts(harness.commands).length, 0);
+        return;
+      }
+      assert.equal(yield* stateOf(delegation), "running");
+      assert.equal(turnStarts(harness.commands).length, 1);
+      // The interrupted original caller may finish after recovery has started
+      // execution. Its delivery acknowledgement must preserve the running row.
+      const lateDelivery = yield* applyDeliveredDelegation({
+        store,
+        delegation,
+        now: NOW,
+        upsert: false,
+      });
+      assert.equal(lateDelivery.state, "running");
+      const again = yield* harness.executor;
+      yield* again.runCycle;
+      assert.equal(turnStarts(harness.commands).length, 1);
+    }).pipe(Effect.provide(testLayer(`delegation-local-recovery-${checkpoint}`))),
+  );
+}
 
 it.effect("holds a pending-approval delegation in delivered until it is approved", () =>
   Effect.gen(function* () {

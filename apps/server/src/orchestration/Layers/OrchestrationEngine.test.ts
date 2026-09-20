@@ -94,6 +94,80 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("defers background turns without poisoning their retry receipt", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("idle-admission-project"),
+          projectId: asProjectId("idle-admission-project"),
+          title: "Admission",
+          workspaceRoot: "/fixture/idle-admission",
+          createdAt: now(),
+        }),
+      );
+      const threadId = (await system.readModel()).threads[0]!.id;
+      const first = {
+        type: "thread.turn.start" as const,
+        commandId: CommandId.make("idle-first"),
+        threadId,
+        message: {
+          messageId: asMessageId("idle-first"),
+          role: "user" as const,
+          text: "first",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required" as const,
+        createdAt: now(),
+      };
+      const second = {
+        ...first,
+        commandId: CommandId.make("idle-second"),
+        message: { ...first.message, messageId: asMessageId("idle-second"), text: "second" },
+      };
+      const accepted = await system.run(system.engine.dispatch(first, { deferWhileBusy: true }));
+      const sequence = await system.run(system.engine.latestSequence);
+      // Even an old unadopted start stays protected from a background turn.
+      await expect(
+        system.run(system.engine.dispatch(second, { deferWhileBusy: true })),
+      ).rejects.toMatchObject({ _tag: "OrchestrationCommandDeferredError" });
+      expect(await system.run(system.engine.latestSequence)).toBe(sequence);
+      expect(await system.run(system.engine.dispatch(first, { deferWhileBusy: true }))).toEqual(
+        accepted,
+      );
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("idle-failed-start"),
+          threadId,
+          session: {
+            threadId,
+            status: "error",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: "start failed",
+            updatedAt: now(),
+          },
+          createdAt: now(),
+        }),
+      );
+      // Same ID succeeds after the previous start fails: no rejected receipt.
+      const retried = await system.run(system.engine.dispatch(second, { deferWhileBusy: true }));
+      expect(retried.sequence).toBeGreaterThan(sequence);
+      const events = await system.run(Stream.runCollect(system.engine.readEvents(0)));
+      expect(
+        Array.from(events).filter(
+          (event) => event.commandId === second.commandId && event.type === "thread.message-sent",
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("persists one supervisor with project creation despite duplicate client delivery", async () => {
     const system = await createOrchestrationSystem();
     try {

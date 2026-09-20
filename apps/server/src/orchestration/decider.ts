@@ -115,7 +115,7 @@ function hasOpenBlockingRequest(thread: {
  * as long as the skew lasts, extending the block far past the intended two
  * minutes.
  */
-function threadHasQueuedTurnStart(
+export function threadHasQueuedTurnStart(
   thread: {
     readonly messages: ReadonlyArray<{ readonly role: string; readonly createdAt: string }>;
     readonly latestTurn: {
@@ -126,6 +126,7 @@ function threadHasQueuedTurnStart(
     readonly session: { readonly status: string } | null;
   },
   occurredAt: string,
+  graceMs = QUEUED_TURN_START_GRACE_MS,
 ): boolean {
   const latestUserMessageAtMs = thread.messages.reduce(
     (latest, message) =>
@@ -149,7 +150,7 @@ function threadHasQueuedTurnStart(
     thread.session?.status !== "error" &&
     Number.isFinite(latestUserMessageAtMs) &&
     latestUserMessageAtMs > latestTurnAtMs &&
-    Math.abs(queuedAgeMs) <= QUEUED_TURN_START_GRACE_MS
+    Math.abs(queuedAgeMs) <= graceMs
   );
 }
 

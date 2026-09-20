@@ -493,9 +493,8 @@ const delegationActivityEventId = (delegationId: WorkjetDelegationId, suffix: st
  * window between the turn-start request and the provider session, and
  * `session.activeTurnId` covers a live session.
  *
- * The orchestration decider does NOT refuse a `thread.turn.start` on a busy
- * thread — it happily appends a second user message — so this check is the only
- * thing standing between a delegation and a trampled turn.
+ * This snapshot check avoids unnecessary attempts. Final admission happens in
+ * the engine queue via deferWhileBusy, covering races and unadopted starts.
  */
 export const threadHasActiveTurn = (thread: OrchestrationThread): boolean =>
   thread.latestTurn?.state === "running" || (thread.session?.activeTurnId ?? null) !== null;
@@ -811,7 +810,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         createdAt: input.now,
       } as const satisfies OrchestrationCommand;
 
-      const dispatched = yield* Effect.result(engine.dispatch(command));
+      const dispatched = yield* Effect.result(engine.dispatch(command, { deferWhileBusy: true }));
       if (dispatched._tag === "Failure") {
         if (isNonRetryableDispatchError(dispatched.failure)) {
           return yield* refuse({

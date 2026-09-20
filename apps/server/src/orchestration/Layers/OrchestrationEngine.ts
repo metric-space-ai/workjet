@@ -33,12 +33,13 @@ import { toPersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
 import {
+  OrchestrationCommandDeferredError,
   OrchestrationCommandInvariantError,
   OrchestrationCommandPreviouslyRejectedError,
   type OrchestrationDispatchError,
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
-import { decideOrchestrationCommand } from "../decider.ts";
+import { decideOrchestrationCommand, threadHasQueuedTurnStart } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -55,6 +56,7 @@ interface CommandEnvelope {
   command: OrchestrationCommand;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
+  deferWhileBusy?: boolean | undefined;
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
@@ -153,6 +155,28 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             commandId: envelope.command.commandId,
             detail: existingReceipt.value.error ?? "Previously rejected.",
           });
+        }
+
+        // Check after receipt lookup: retrying an accepted command must return
+        // its receipt even when that command itself made the thread busy.
+        if (envelope.deferWhileBusy && envelope.command.type === "thread.turn.start") {
+          const threadId = envelope.command.threadId;
+          const thread = commandReadModel.threads.find((item) => item.id === threadId);
+          if (
+            thread &&
+            thread.deletedAt === null &&
+            thread.archivedAt === null &&
+            (thread.latestTurn?.state === "running" ||
+              (thread.session?.activeTurnId ?? null) !== null ||
+              thread.session?.status === "starting" ||
+              thread.session?.status === "running" ||
+              threadHasQueuedTurnStart(thread, yield* nowIso, Number.POSITIVE_INFINITY))
+          ) {
+            return yield* new OrchestrationCommandDeferredError({
+              commandId: envelope.command.commandId,
+              threadId: thread.id,
+            });
+          }
         }
 
         const eventBase = yield* decideOrchestrationCommand({
@@ -315,13 +339,14 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const readEvents: OrchestrationEngineShape["readEvents"] = (fromSequenceExclusive, limit) =>
     eventStore.readFromSequence(fromSequenceExclusive, limit);
 
-  const dispatch: OrchestrationEngineShape["dispatch"] = (command) =>
+  const dispatch: OrchestrationEngineShape["dispatch"] = (command, options) =>
     Effect.gen(function* () {
       const result = yield* Deferred.make<{ sequence: number }, OrchestrationDispatchError>();
       yield* Queue.offer(commandQueue, {
         command,
         result,
         startedAtMs: yield* Clock.currentTimeMillis,
+        deferWhileBusy: options?.deferWhileBusy,
       });
       return yield* Deferred.await(result);
     });

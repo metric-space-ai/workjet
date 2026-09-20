@@ -44,10 +44,13 @@ export interface OrchestrationEngineShape {
    * @returns Effect containing the sequence of the persisted event.
    *
    * Dispatch is serialized through an internal queue and deduplicated via
-   * command receipts.
+   * command receipts. Internal background callers may request deferWhileBusy:
+   * turn starts are admitted only when idle, after receipt lookup. A deferred
+   * command writes no receipt and may retry with its original command ID.
    */
   readonly dispatch: (
     command: OrchestrationCommand,
+    options?: { readonly deferWhileBusy: true },
   ) => Effect.Effect<{ sequence: number }, OrchestrationDispatchError, never>;
 
   /**

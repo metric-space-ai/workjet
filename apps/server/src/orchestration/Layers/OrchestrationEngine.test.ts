@@ -1,6 +1,14 @@
 import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
 import {
   CheckpointRef,
+  EnvironmentId,
+  WorkjetEnvelopeId,
+  WorkjetDelegationId,
+  WorkjetMeshWorkspaceId,
+  WorkjetSealedPayloadRef,
+  WorkjetContentDigest,
+  type OrchestrationCommand,
+  type WorkjetDelegation,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   MessageId,
@@ -41,18 +49,30 @@ import {
 } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
-async function createOrchestrationSystem() {
+async function createOrchestrationSystem(environmentId?: EnvironmentId) {
+  const engineLayer = environmentId
+    ? OrchestrationEngineLive.pipe(
+        Layer.provide(
+          Layer.succeed(ServerEnvironment, {
+            getEnvironmentId: Effect.succeed(environmentId),
+            getDescriptor: Effect.die("unused test descriptor"),
+          }),
+        ),
+      )
+    : OrchestrationEngineLive;
   const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "workjet-orchestration-engine-test-",
   });
   const orchestrationLayer = Layer.mergeAll(
-    OrchestrationEngineLive.pipe(
+    engineLayer.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
       Layer.provide(OrchestrationProjectionPipelineLive),
     ),
@@ -63,15 +83,17 @@ async function createOrchestrationSystem() {
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
   );
   const runtime = ManagedRuntime.make(orchestrationLayer);
   const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
   const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
+  const sql = await runtime.runPromise(SqlClient.SqlClient);
   return {
     engine,
+    sql,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
     dispose: () => runtime.dispose(),
@@ -94,6 +116,164 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("commits worker creation and delegation together and retries a failed transaction", async () => {
+    const environmentId = EnvironmentId.make("atomic-worker-env");
+    const system = await createOrchestrationSystem(environmentId);
+    const projectId = asProjectId("atomic-worker-project");
+    const specialistId = ThreadId.make("atomic-specialist");
+    const workerId = ThreadId.make("atomic-worker");
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("atomic-project-create"),
+          projectId,
+          title: "Atomic worker",
+          workspaceRoot: "/fixture/atomic-worker",
+          createdAt: now(),
+        }),
+      );
+      const supervisor = (await system.readModel()).threads[0]!;
+      const common = {
+        projectId,
+        title: "Team member",
+        modelSelection: supervisor.modelSelection,
+        runtimeMode: supervisor.runtimeMode,
+        interactionMode: supervisor.interactionMode,
+        branch: "test",
+        worktreePath: "/fixture/atomic-worker/member",
+        createdAt: now(),
+      };
+      await system.run(
+        system.engine.dispatch({
+          ...common,
+          type: "thread.create",
+          commandId: CommandId.make("atomic-specialist-create"),
+          threadId: specialistId,
+          workjetConfig: {
+            schemaVersion: 2,
+            role: "orchestrator",
+            parent: null,
+            managedInstructions: "",
+            enabledCapabilityIds: [],
+            capabilityBindings: [],
+            team: {
+              role: "specialist",
+              domain: "implementation",
+              goal: "Implement the project",
+              projectId,
+              threadId: specialistId,
+              parentThreadId: supervisor.id,
+              createdAt: now(),
+            },
+          },
+        }),
+      );
+      const command = {
+        ...common,
+        type: "thread.create",
+        commandId: CommandId.make("atomic-worker-create"),
+        threadId: workerId,
+        workjetConfig: {
+          schemaVersion: 2,
+          role: "worker",
+          parent: { environmentId, threadId: specialistId },
+          managedInstructions: "",
+          enabledCapabilityIds: [],
+          capabilityBindings: [],
+          team: {
+            role: "worker",
+            packageId: workerId,
+            goal: "Implement the package",
+            projectId,
+            threadId: workerId,
+            parentThreadId: specialistId,
+            createdAt: now(),
+          },
+        },
+      } as const satisfies OrchestrationCommand;
+      const workspaceId = WorkjetMeshWorkspaceId.make("atomic-workspace");
+      const envelopeId = WorkjetEnvelopeId.make("wjm-atomic-worker-envelope-000001");
+      const source = {
+        schemaVersion: 1 as const,
+        workspaceId,
+        environmentId,
+        threadId: specialistId,
+      };
+      const expiresAt = "2026-01-08T00:00:00.000Z";
+      const delegation = {
+        schemaVersion: 1,
+        delegationId: WorkjetDelegationId.make("wjd-atomic-worker-delegation-000001"),
+        envelopeId,
+        source,
+        target: { ...source, threadId: workerId },
+        createdAt: now(),
+        expiresAt,
+        prompt: {
+          schemaVersion: 1,
+          snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+          digest: WorkjetContentDigest.make("a".repeat(64)),
+          byteLength: 42,
+        },
+        scope: { schemaVersion: 1, files: [], nonGoals: "No unrelated changes." },
+        completion: { schemaVersion: 1, acceptance: "Complete the implementation." },
+        budget: { schemaVersion: 1, maxDepth: 1, maxReviewRounds: 2, expiresAt },
+        state: "queued",
+        stateChangedAt: now(),
+        depth: 0,
+      } as const satisfies WorkjetDelegation;
+      const options = {
+        workerDelegation: {
+          delegation,
+          envelope: {
+            schemaVersion: 1 as const,
+            envelopeId,
+            kind: "delegation" as const,
+            sourceWorkspaceId: workspaceId,
+            targetWorkspaceId: workspaceId,
+            sourceEnvironmentId: environmentId,
+            targetEnvironmentId: environmentId,
+            createdAt: now(),
+            expiresAt,
+            signature: "c2lnbmF0dXJlLXN0dWI",
+          },
+        },
+      };
+      const before = await system.run(system.engine.latestSequence);
+      await system.run(system.sql`CREATE TRIGGER fail_worker_delegation
+        BEFORE INSERT ON workjet_delegations
+        BEGIN SELECT RAISE(ABORT, 'injected worker delegation failure'); END`);
+      await expect(system.run(system.engine.dispatch(command, options))).rejects.toMatchObject({
+        _tag: "PersistenceSqlError",
+      });
+      expect((await system.readModel()).threads.some((thread) => thread.id === workerId)).toBe(
+        false,
+      );
+      expect(await system.run(system.engine.latestSequence)).toBe(before);
+      expect(
+        await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
+      ).toHaveLength(0);
+      await system.run(system.sql`DROP TRIGGER fail_worker_delegation`);
+      const accepted = await system.run(system.engine.dispatch(command, options));
+      expect(
+        (await system.readModel()).threads.filter((thread) => thread.id === workerId),
+      ).toHaveLength(1);
+      expect(
+        await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
+      ).toHaveLength(1);
+      expect(
+        await system.run(system.sql`SELECT delegation_id FROM workjet_delegations`),
+      ).toHaveLength(1);
+      expect(await system.run(system.engine.dispatch(command, options))).toEqual(accepted);
+      const events = await system.run(Stream.runCollect(system.engine.readEvents(before)));
+      expect(
+        Array.from(events).filter((event) => event.type === "thread.turn-start-requested"),
+      ).toHaveLength(0);
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("admits only one of two concurrent background starts", async () => {
     const system = await createOrchestrationSystem();
     try {

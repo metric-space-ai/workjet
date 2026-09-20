@@ -2,6 +2,9 @@ import {
   CommandId,
   MessageId,
   ThreadId,
+  WorkjetDelegationId,
+  WorkjetEnvelopeId,
+  type WorkjetDelegation,
   type EnvironmentId,
   type ModelSelection,
   type OrchestrationCommand,
@@ -21,6 +24,9 @@ import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
+import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
+import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
 
 export interface WorkerDispatchInput {
   readonly task: string;
@@ -129,6 +135,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const engine = yield* OrchestrationEngineService;
   const query = yield* ProjectionSnapshotQuery;
   const gitWorkflow = yield* GitWorkflowService;
+  const snapshotStore = yield* Effect.serviceOption(WorkjetSnapshotStore);
+  const meshIdentity = yield* Effect.serviceOption(WorkjetMeshIdentity);
 
   const dispatch: WorkerDispatchShape["dispatch"] = Effect.fn("WorkerDispatch.dispatch")(
     function* (invocation, input) {
@@ -140,7 +148,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         .getThreadDetailById(invocation.threadId)
         .pipe(Effect.mapError(() => failure("parent-unavailable")));
       const parent = Option.getOrUndefined(parentOption);
-      if (!parent || parent.deletedAt !== null) {
+      if (!parent || parent.deletedAt !== null || parent.archivedAt != null) {
         return yield* failure("parent-unavailable");
       }
       if (parent.workjetConfig.role !== "orchestrator") {
@@ -185,6 +193,68 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       const messageId = MessageId.make(yield* sources.randomUUID);
       const createdAt = yield* sources.nowIso;
       const title = input.title?.trim() || deriveWorkerTitle(input.task);
+      let preparedDelegation: OrchestrationDispatchOptions["workerDelegation"];
+      if (parentTeam) {
+        if (Option.isNone(snapshotStore) || Option.isNone(meshIdentity)) {
+          return yield* failure("create-failed");
+        }
+        const identity = meshIdentity.value;
+        const snapshot = yield* snapshotStore.value
+          .put(input.task)
+          .pipe(Effect.mapError(() => failure("create-failed")));
+        const expiresAt = new Date(Date.parse(createdAt) + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const envelopeId = WorkjetEnvelopeId.make(`wjm-worker-${workerThreadId}`);
+        const source = {
+          schemaVersion: 1 as const,
+          workspaceId: identity.workspaceId,
+          environmentId: invocation.environmentId,
+          threadId: parent.id,
+        };
+        const target = { ...source, threadId: workerThreadId };
+        const delegation = {
+          schemaVersion: 1,
+          delegationId: WorkjetDelegationId.make(`wjd-worker-${workerThreadId}`),
+          envelopeId,
+          source,
+          target,
+          createdAt,
+          expiresAt,
+          prompt: {
+            schemaVersion: 1,
+            snapshotRef: snapshot.snapshotRef,
+            digest: snapshot.digest,
+            byteLength: snapshot.byteLength,
+          },
+          scope: {
+            schemaVersion: 1,
+            files: [],
+            nonGoals: "Do not perform work outside the assigned task.",
+          },
+          completion: {
+            schemaVersion: 1,
+            acceptance:
+              "Complete the task in the verified prompt snapshot and return implementation and verification evidence.",
+          },
+          budget: { schemaVersion: 1, maxDepth: 1, maxReviewRounds: 2, expiresAt },
+          state: "queued",
+          stateChangedAt: createdAt,
+          depth: 0,
+        } as const satisfies WorkjetDelegation;
+        const envelope = yield* identity
+          .signRoutingEnvelope({
+            schemaVersion: 1,
+            envelopeId,
+            kind: "delegation",
+            sourceWorkspaceId: source.workspaceId,
+            sourceEnvironmentId: source.environmentId,
+            targetWorkspaceId: target.workspaceId,
+            targetEnvironmentId: target.environmentId,
+            createdAt,
+            expiresAt,
+          })
+          .pipe(Effect.mapError(() => failure("create-failed")));
+        preparedDelegation = { envelope, delegation };
+      }
 
       // The owner decision of 2026-08-17 rejects worktree inheritance: parallel
       // workers must never share a checkout. Every worker therefore gets its own
@@ -263,10 +333,32 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         createdAt,
       } as const satisfies OrchestrationCommand;
 
-      const createExit = yield* Effect.exit(engine.dispatch(createCommand));
+      const createExit = yield* Effect.exit(
+        engine.dispatch(
+          createCommand,
+          preparedDelegation ? { workerDelegation: preparedDelegation } : undefined,
+        ),
+      );
       if (createExit._tag === "Failure") {
+        // A lost acknowledgement can follow a committed delegation. Retain its
+        // checkout until durable receipt reconciliation proves it safe to remove.
+        if (preparedDelegation) return yield* failure("rollback-failed");
         const cleanupExit = yield* removeWorkerWorktree;
         return yield* failure(cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed");
+      }
+
+      // Thread and queued delegation have one durable receipt. The existing
+      // executor alone starts the turn and returns its result after a restart.
+      if (preparedDelegation) {
+        return {
+          schemaVersion: 1,
+          status: "dispatched",
+          environmentId: invocation.environmentId,
+          workerThreadId,
+          parent: parentReference,
+          modelSelection,
+          enabledCapabilityIds,
+        } as const;
       }
 
       const turnStartCommand = {

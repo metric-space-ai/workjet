@@ -552,7 +552,12 @@ export const makeRoutesLayer = Layer.mergeAll(
   McpHttpServer.layer.pipe(
     Layer.provide(DecisionHubEscalationServiceLive),
     Layer.provide(McpSessionRegistry.layer),
-    Layer.provide(WorkerDispatch.layer),
+    Layer.provide(
+      WorkerDispatch.layer.pipe(
+        Layer.provide(WorkjetMeshIdentity.layer),
+        Layer.provide(WorkjetSnapshotStoreLive),
+      ),
+    ),
     // The durable Workjet mailbox is provided exactly where worker dispatch is:
     // the store resolves the ambient `SqlClient` from `PersistenceLayerLive`,
     // and the delivery service resolves the orchestration engine and projection

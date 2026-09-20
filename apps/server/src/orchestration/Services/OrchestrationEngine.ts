@@ -10,7 +10,12 @@
  *
  * @module OrchestrationEngineService
  */
-import type { OrchestrationCommand, OrchestrationEvent } from "@workjet/contracts";
+import type {
+  OrchestrationCommand,
+  OrchestrationEvent,
+  WorkjetDelegation,
+  WorkjetRoutingEnvelope,
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -21,6 +26,15 @@ import type { OrchestrationEventStoreError } from "../../persistence/Errors.ts";
 /**
  * OrchestrationEngineShape - Service API for orchestration command and event flow.
  */
+export interface OrchestrationDispatchOptions {
+  readonly deferWhileBusy?: true;
+  /** Internal only: commit a prepared team-worker delegation with thread creation. */
+  readonly workerDelegation?: {
+    readonly envelope: WorkjetRoutingEnvelope;
+    readonly delegation: WorkjetDelegation;
+  };
+}
+
 export interface OrchestrationEngineShape {
   /**
    * Replay persisted orchestration events from an exclusive sequence cursor.
@@ -50,7 +64,7 @@ export interface OrchestrationEngineShape {
    */
   readonly dispatch: (
     command: OrchestrationCommand,
-    options?: { readonly deferWhileBusy: true },
+    options?: OrchestrationDispatchOptions,
   ) => Effect.Effect<{ sequence: number }, OrchestrationDispatchError, never>;
 
   /**

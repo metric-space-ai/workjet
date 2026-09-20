@@ -44,7 +44,14 @@ For local project-team parents, return now requests a continuation with a stable
 command/message identity before acknowledging the result. Engine-serialized busy
 admission defers without a rejected receipt; the existing pending-result scan
 owns retries. This new continuation and its regression tests await verification.
-Team WorkerDispatch still needs integration with the durable delegation path.
+Team WorkerDispatch writes the complete task to the snapshot store and prepares
+a signed local delegation. Its internal thread.create option commits the worker
+event, queued delegation and outbox in the same engine SQL transaction and receipt.
+The executor recovers local delivery and owns the sole first-turn start. Legacy
+non-team dispatch retains its existing behavior. If the creation acknowledgement
+fails, a team worker checkout is retained because a committed delegation may
+already own it; receipt-based cleanup reconciliation remains to be implemented.
+These changes and their failure-injection tests await execution.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
 removal protects dirty work and unmerged commits, but it is not merge proof.
@@ -60,7 +67,8 @@ contracts, team invariants, learning calculation and capability context). Later
 lifecycle changes, engine receipts and mailbox retries await the shared admitted
 run. Real desktop/web/mobile acceptance has not run.
 
-Remaining work includes restart-safe dispatch and parent continuation, rework,
+Remaining work includes verification of atomic dispatch and parent continuation,
+creation-acknowledgement recovery, queued-scan fairness, rework,
 cleanup/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

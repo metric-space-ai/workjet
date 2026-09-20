@@ -2,6 +2,9 @@
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  WorkjetMeshWorkspaceId,
+  WorkjetContentDigest,
+  WorkjetSealedPayloadRef,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -14,7 +17,12 @@ import * as Option from "effect/Option";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import {
+  OrchestrationEngineService,
+  type OrchestrationDispatchOptions,
+} from "../orchestration/Services/OrchestrationEngine.ts";
+import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
+import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   WorktreeStorage,
@@ -101,6 +109,7 @@ const makeHarness = (input?: {
   readonly failBranchDelete?: boolean;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
+  const dispatchOptions: Array<OrchestrationDispatchOptions | undefined> = [];
   const worktreeCreates: Array<WorktreeCreateRecord> = [];
   const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
   const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
@@ -112,8 +121,9 @@ const makeHarness = (input?: {
     nowIso: Effect.succeed(now),
   };
   const engine = {
-    dispatch: (command: OrchestrationCommand) => {
+    dispatch: (command: OrchestrationCommand, options?: OrchestrationDispatchOptions) => {
       commands.push(command);
+      dispatchOptions.push(options);
       return input?.failCommandTypes?.includes(command.type)
         ? Effect.fail({
             _tag: "DownstreamTestError",
@@ -196,8 +206,63 @@ const makeHarness = (input?: {
       Effect.provideService(GitWorkflowService, gitWorkflow),
     );
   }).pipe(Effect.provide(worktreeStorageLayer));
-  return { commands, service, worktreeCreates, worktreeRemovals, branchDeletions };
+  return { commands, dispatchOptions, service, worktreeCreates, worktreeRemovals, branchDeletions };
 };
+
+it.effect("commits a team worker with its delegation and leaves turn launch to the executor", () =>
+  Effect.gen(function* () {
+    const teamParent = {
+      ...parent,
+      workjetConfig: {
+        ...parent.workjetConfig,
+        schemaVersion: 2,
+        capabilityBindings: [],
+        team: {
+          projectId: parent.projectId,
+          threadId: parent.id,
+          role: "specialist",
+          parentThreadId: ThreadId.make("supervisor"),
+          domain: "implementation",
+          goal: "Implement the project",
+          createdAt: now,
+        },
+      },
+    } as OrchestrationThread;
+    const harness = makeHarness({ currentParent: teamParent });
+    const storedPrompts: string[] = [];
+    const service = yield* harness.service.pipe(
+      Effect.provideService(WorkjetSnapshotStore, {
+        put: (prompt: string) =>
+          Effect.sync(() => {
+            storedPrompts.push(prompt);
+            return {
+              snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+              digest: WorkjetContentDigest.make("a".repeat(64)),
+              byteLength: prompt.length,
+            };
+          }),
+      } as unknown as WorkjetSnapshotStore["Service"]),
+      Effect.provideService(WorkjetMeshIdentity, {
+        workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+        signRoutingEnvelope: (envelope: object) =>
+          Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+      } as unknown as WorkjetMeshIdentity["Service"]),
+    );
+    const result = yield* service.dispatch(invocation, {
+      task: "Implement the complete assigned task.",
+    });
+    expect(storedPrompts).toEqual(["Implement the complete assigned task."]);
+    expect(harness.commands.map((command) => command.type)).toEqual(["thread.create"]);
+    const prepared = harness.dispatchOptions[0]?.workerDelegation;
+    expect(prepared?.delegation).toMatchObject({
+      state: "queued",
+      source: { threadId: parent.id, environmentId },
+      target: { threadId: result.workerThreadId, environmentId },
+    });
+    expect(prepared?.envelope.envelopeId).toBe(prepared?.delegation.envelopeId);
+    expect(harness.worktreeRemovals).toEqual([]);
+  }),
+);
 
 const workerRefFor = (threadId: string) => `${WORKER_REF_PREFIX}${threadId}`;
 const workerPathFor = (threadId: string) =>

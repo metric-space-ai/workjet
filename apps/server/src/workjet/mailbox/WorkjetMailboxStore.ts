@@ -808,6 +808,11 @@ export interface WorkjetMailboxStoreShape {
   readonly listDelegationRowsByState: (
     state: WorkjetDelegationState,
     limit: number,
+    localRecovery?: {
+      readonly environmentId: EnvironmentId;
+      readonly workspaceId: WorkjetMeshWorkspaceId;
+      readonly afterId?: string;
+    },
   ) => Effect.Effect<ReadonlyArray<WorkjetDelegationRowResult>, WorkjetMailboxStoreError>;
 
   /**
@@ -1914,6 +1919,7 @@ export const make = Effect.gen(function* () {
   const listDelegationRowsByState: WorkjetMailboxStoreShape["listDelegationRowsByState"] = (
     state,
     limit,
+    localRecovery,
   ) =>
     Effect.gen(function* () {
       const rows = yield* sql
@@ -1922,10 +1928,33 @@ export const make = Effect.gen(function* () {
           SELECT ${DELEGATION_COLUMNS}
           FROM workjet_delegations
           WHERE state = ?
-          ORDER BY state_changed_at_ms ASC, delegation_id ASC
+          ${
+            localRecovery
+              ? `AND delegation_id > ?
+            AND CASE WHEN json_valid(delegation_json) THEN
+              json_extract(delegation_json, '$.source.environmentId') = ?
+              AND json_extract(delegation_json, '$.target.environmentId') = ?
+              AND json_extract(delegation_json, '$.source.workspaceId') = ?
+              AND json_extract(delegation_json, '$.target.workspaceId') = ?
+            ELSE 0 END`
+              : ""
+          }
+          ORDER BY ${localRecovery ? "delegation_id ASC" : "state_changed_at_ms ASC, delegation_id ASC"}
           LIMIT ?
         `,
-          [state, limit],
+          [
+            state,
+            ...(localRecovery
+              ? [
+                  localRecovery.afterId ?? "",
+                  localRecovery.environmentId,
+                  localRecovery.environmentId,
+                  localRecovery.workspaceId,
+                  localRecovery.workspaceId,
+                ]
+              : []),
+            limit,
+          ],
         )
         .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listDelegationRowsByState:select")));
       return yield* Effect.forEach(rows, (row) => {

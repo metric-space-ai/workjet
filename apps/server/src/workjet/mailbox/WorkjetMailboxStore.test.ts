@@ -384,6 +384,44 @@ it.effect("inserts an inbound envelope idempotently and rejects an expired one",
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("filters local recovery before limiting and advances by delegation id", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const base = delegation({
+      id: delegationId("a-foreign"),
+      envelope: envelopeId("a-foreign"),
+      state: "queued",
+      at: T0,
+      budgetExpiresAt: FAR_FUTURE,
+    });
+    yield* store.upsertDelegation(base);
+    for (const suffix of ["b-local", "c-local", "a-corrupt"]) {
+      yield* store.upsertDelegation({
+        ...base,
+        delegationId: delegationId(suffix),
+        target: { ...base.target, environmentId: SOURCE_ENVIRONMENT },
+      });
+    }
+    yield* sql`UPDATE workjet_delegations SET delegation_json = 'invalid-json'
+      WHERE delegation_id = ${delegationId("a-corrupt")}`;
+    const filter = { environmentId: SOURCE_ENVIRONMENT, workspaceId: WORKSPACE };
+    const first = yield* store.listDelegationRowsByState("queued", 1, filter);
+    assert.equal(first.length, 1);
+    const entry = first[0];
+    assert.equal(entry?._tag, "record");
+    if (entry?._tag !== "record") return;
+    assert.equal(entry.record.delegationId, delegationId("b-local"));
+    const second = yield* store.listDelegationRowsByState("queued", 1, {
+      ...filter,
+      afterId: entry.record.delegationId,
+    });
+    assert.equal(second[0]?._tag, "record");
+    if (second[0]?._tag !== "record") return;
+    assert.equal(second[0].record.delegationId, delegationId("c-local"));
+  }).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("marks an inbound envelope processed once", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;

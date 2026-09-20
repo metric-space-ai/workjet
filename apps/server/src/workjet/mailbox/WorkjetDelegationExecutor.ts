@@ -539,6 +539,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   const identity = yield* WorkjetMeshIdentity;
 
   let cycles = 0;
+  let localRecoveryAfterId: string | undefined;
   let scanned = 0;
   let executed = 0;
   let backpressure = 0;
@@ -1873,7 +1874,29 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     // Local outbox work is excluded from the network transport. Recover the
     // gap between enqueue and local delivery, including a crash after inbox
     // insertion or the delivered marker but before the lifecycle transition.
-    for (const entry of yield* scan("queued")) {
+    const localQueued = yield* store
+      .listDelegationRowsByState("queued", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE, {
+        environmentId,
+        workspaceId: identity.workspaceId,
+        ...(localRecoveryAfterId ? { afterId: localRecoveryAfterId } : {}),
+      })
+      .pipe(Effect.option);
+    const localBatch = Option.getOrElse(
+      localQueued,
+      () => [] as ReadonlyArray<WorkjetDelegationRowResult>,
+    );
+    // Advance past permanently invalid rows as well as runnable ones. Wrap
+    // after the last page; foreign queues cannot consume this local batch.
+    if (Option.isSome(localQueued)) {
+      const last = localBatch.at(-1);
+      localRecoveryAfterId =
+        localBatch.length === WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE && last
+          ? last._tag === "corrupt"
+            ? last.rowId
+            : last.record.delegationId
+          : undefined;
+    }
+    for (const entry of localBatch) {
       if (entry._tag === "corrupt") continue;
       const delegation = entry.record.delegation;
       if (

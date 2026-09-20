@@ -333,12 +333,19 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         createdAt,
       } as const satisfies OrchestrationCommand;
 
-      const createExit = yield* Effect.exit(
+      let createExit = yield* Effect.exit(
         engine.dispatch(
           createCommand,
           preparedDelegation ? { workerDelegation: preparedDelegation } : undefined,
         ),
       );
+      if (createExit._tag === "Failure" && preparedDelegation) {
+        // One bounded replay uses the same receipt identity. If the commit
+        // succeeded but acknowledgement failed, the engine returns its receipt.
+        createExit = yield* Effect.exit(
+          engine.dispatch(createCommand, { workerDelegation: preparedDelegation }),
+        );
+      }
       if (createExit._tag === "Failure") {
         // A lost acknowledgement can follow a committed delegation. Retain its
         // checkout until durable receipt reconciliation proves it safe to remove.

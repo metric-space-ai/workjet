@@ -47,7 +47,11 @@ owns retries. This new continuation and its regression tests await verification.
 Team WorkerDispatch writes the complete task to the snapshot store and prepares
 a signed local delegation. Its internal thread.create option commits the worker
 event, queued delegation and outbox in the same engine SQL transaction and receipt.
-The executor recovers local delivery and owns the sole first-turn start. Legacy
+The executor recovers local delivery and owns the sole first-turn start. Local
+recovery filters address ownership before limiting results and pages by delegation
+identity, so foreign or permanently invalid queues do not hide later local work.
+A failed creation acknowledgement is replayed once with the same command identity.
+Legacy
 non-team dispatch retains its existing behavior. If the creation acknowledgement
 fails, a team worker checkout is retained because a committed delegation may
 already own it; receipt-based cleanup reconciliation remains to be implemented.
@@ -68,7 +72,7 @@ lifecycle changes, engine receipts and mailbox retries await the shared admitted
 run. Real desktop/web/mobile acceptance has not run.
 
 Remaining work includes verification of atomic dispatch and parent continuation,
-creation-acknowledgement recovery, queued-scan fairness, rework,
+recovery after repeated creation-acknowledgement failures, rework,
 cleanup/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

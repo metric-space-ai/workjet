@@ -105,6 +105,7 @@ const makeHarness = (input?: {
   readonly queryFails?: boolean;
   readonly failCommandTypes?: ReadonlyArray<OrchestrationCommand["type"]>;
   readonly failWorktreeCreate?: boolean;
+  readonly failCreateAttempts?: number;
   readonly failWorktreeRemove?: boolean;
   readonly failBranchDelete?: boolean;
 }) => {
@@ -114,6 +115,7 @@ const makeHarness = (input?: {
   const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
   const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
   let idIndex = 0;
+  let createFailures = input?.failCreateAttempts ?? 0;
   const sources: WorkerDispatchSources = {
     // Deterministic and unbounded, so a second dispatch in the same harness gets
     // genuinely fresh identifiers instead of reusing the first worker's id.
@@ -124,6 +126,10 @@ const makeHarness = (input?: {
     dispatch: (command: OrchestrationCommand, options?: OrchestrationDispatchOptions) => {
       commands.push(command);
       dispatchOptions.push(options);
+      if (command.type === "thread.create" && createFailures > 0) {
+        createFailures -= 1;
+        return Effect.fail({ _tag: "PersistenceSqlError", detail: "lost acknowledgement" });
+      }
       return input?.failCommandTypes?.includes(command.type)
         ? Effect.fail({
             _tag: "DownstreamTestError",
@@ -209,60 +215,70 @@ const makeHarness = (input?: {
   return { commands, dispatchOptions, service, worktreeCreates, worktreeRemovals, branchDeletions };
 };
 
-it.effect("commits a team worker with its delegation and leaves turn launch to the executor", () =>
-  Effect.gen(function* () {
-    const teamParent = {
-      ...parent,
-      workjetConfig: {
-        ...parent.workjetConfig,
-        schemaVersion: 2,
-        capabilityBindings: [],
-        team: {
-          projectId: parent.projectId,
-          threadId: parent.id,
-          role: "specialist",
-          parentThreadId: ThreadId.make("supervisor"),
-          domain: "implementation",
-          goal: "Implement the project",
-          createdAt: now,
+for (const failCreateAttempts of [0, 1]) {
+  it.effect(`dispatches a team delegation with ${failCreateAttempts} lost acknowledgements`, () =>
+    Effect.gen(function* () {
+      const teamParent = {
+        ...parent,
+        workjetConfig: {
+          ...parent.workjetConfig,
+          schemaVersion: 2,
+          capabilityBindings: [],
+          team: {
+            projectId: parent.projectId,
+            threadId: parent.id,
+            role: "specialist",
+            parentThreadId: ThreadId.make("supervisor"),
+            domain: "implementation",
+            goal: "Implement the project",
+            createdAt: now,
+          },
         },
-      },
-    } as OrchestrationThread;
-    const harness = makeHarness({ currentParent: teamParent });
-    const storedPrompts: string[] = [];
-    const service = yield* harness.service.pipe(
-      Effect.provideService(WorkjetSnapshotStore, {
-        put: (prompt: string) =>
-          Effect.sync(() => {
-            storedPrompts.push(prompt);
-            return {
-              snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
-              digest: WorkjetContentDigest.make("a".repeat(64)),
-              byteLength: prompt.length,
-            };
-          }),
-      } as unknown as WorkjetSnapshotStore["Service"]),
-      Effect.provideService(WorkjetMeshIdentity, {
-        workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
-        signRoutingEnvelope: (envelope: object) =>
-          Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
-      } as unknown as WorkjetMeshIdentity["Service"]),
-    );
-    const result = yield* service.dispatch(invocation, {
-      task: "Implement the complete assigned task.",
-    });
-    expect(storedPrompts).toEqual(["Implement the complete assigned task."]);
-    expect(harness.commands.map((command) => command.type)).toEqual(["thread.create"]);
-    const prepared = harness.dispatchOptions[0]?.workerDelegation;
-    expect(prepared?.delegation).toMatchObject({
-      state: "queued",
-      source: { threadId: parent.id, environmentId },
-      target: { threadId: result.workerThreadId, environmentId },
-    });
-    expect(prepared?.envelope.envelopeId).toBe(prepared?.delegation.envelopeId);
-    expect(harness.worktreeRemovals).toEqual([]);
-  }),
-);
+      } as OrchestrationThread;
+      const harness = makeHarness({ currentParent: teamParent, failCreateAttempts });
+      const storedPrompts: string[] = [];
+      const service = yield* harness.service.pipe(
+        Effect.provideService(WorkjetSnapshotStore, {
+          put: (prompt: string) =>
+            Effect.sync(() => {
+              storedPrompts.push(prompt);
+              return {
+                snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+                digest: WorkjetContentDigest.make("a".repeat(64)),
+                byteLength: prompt.length,
+              };
+            }),
+        } as unknown as WorkjetSnapshotStore["Service"]),
+        Effect.provideService(WorkjetMeshIdentity, {
+          workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+          signRoutingEnvelope: (envelope: object) =>
+            Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+        } as unknown as WorkjetMeshIdentity["Service"]),
+      );
+      const result = yield* service.dispatch(invocation, {
+        task: "Implement the complete assigned task.",
+      });
+      expect(storedPrompts).toEqual(["Implement the complete assigned task."]);
+      expect(harness.commands.map((command) => command.type)).toEqual(
+        Array.from({ length: failCreateAttempts + 1 }, () => "thread.create"),
+      );
+      expect(new Set(harness.commands.map((command) => command.commandId)).size).toBe(1);
+      expect(
+        harness.dispatchOptions.every(
+          (options) => options?.workerDelegation === harness.dispatchOptions[0]?.workerDelegation,
+        ),
+      ).toBe(true);
+      const prepared = harness.dispatchOptions[0]?.workerDelegation;
+      expect(prepared?.delegation).toMatchObject({
+        state: "queued",
+        source: { threadId: parent.id, environmentId },
+        target: { threadId: result.workerThreadId, environmentId },
+      });
+      expect(prepared?.envelope.envelopeId).toBe(prepared?.delegation.envelopeId);
+      expect(harness.worktreeRemovals).toEqual([]);
+    }),
+  );
+}
 
 const workerRefFor = (threadId: string) => `${WORKER_REF_PREFIX}${threadId}`;
 const workerPathFor = (threadId: string) =>

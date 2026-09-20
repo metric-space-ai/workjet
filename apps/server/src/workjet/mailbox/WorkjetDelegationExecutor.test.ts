@@ -39,6 +39,7 @@ import {
   delegationTurnInterruptCommandId,
   delegationTurnMessageId,
   makeWorkjetDelegationExecutorWithSources,
+  WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE,
   threadHasActiveTurn,
   turnTokenUsage,
   WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND,
@@ -598,6 +599,39 @@ it.effect("runs a delivered delegation as a normal turn carrying the snapshot te
     // Bounded payload: ids and lifecycle only, never the prompt.
     assert.notInclude(JSON.stringify(activity.activity.payload), PROMPT_TEXT);
   }).pipe(Effect.provide(testLayer("delegation-executor-happy"))),
+);
+
+it.effect("advances local recovery past a full batch of unrecoverable queued rows", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const executor = yield* harness.executor;
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    for (let index = 0; index < WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE; index += 1) {
+      yield* seed(delegationFixture({ id: `aaa-missing-${index}`, digest, state: "queued" }));
+    }
+    const delegation = delegationFixture({ id: "zzz-recoverable", digest, state: "queued" });
+    yield* store.enqueueOutbound(
+      {
+        schemaVersion: 1,
+        envelopeId: delegation.envelopeId,
+        kind: "delegation",
+        sourceWorkspaceId: WORKSPACE,
+        targetWorkspaceId: WORKSPACE,
+        sourceEnvironmentId: LOCAL_ENVIRONMENT,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        createdAt: NOW,
+        expiresAt: EXPIRES,
+        signature: "c2lnbmF0dXJlLXN0dWI",
+      },
+      { _tag: "delegation", delegation },
+    );
+    yield* executor.runCycle;
+    assert.equal(turnStarts(harness.commands).length, 0);
+    yield* executor.runCycle;
+    assert.equal(yield* stateOf(delegation), "running");
+    assert.equal(turnStarts(harness.commands).length, 1);
+  }).pipe(Effect.provide(testLayer("delegation-local-recovery-pages"))),
 );
 
 for (const checkpoint of ["outbox", "inbox", "delivered-marker", "invalid-signature"] as const) {

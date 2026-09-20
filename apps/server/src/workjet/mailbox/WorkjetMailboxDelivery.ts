@@ -862,11 +862,9 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       .enqueueOutbound(envelope, payload)
       .pipe(Effect.mapError(boundStoreError));
 
-    // A duplicate envelope means the delegation row already exists and may
-    // already have moved on; re-upserting `queued` over it would be refused by
-    // the store, so the replay simply skips both writes.
+    // The store commits the envelope and delegation atomically. Replays leave
+    // the existing lifecycle state unchanged.
     if (enqueued._tag === "enqueued") {
-      yield* store.upsertDelegation(delegation).pipe(Effect.mapError(boundStoreError));
       yield* emit({
         _tag: "envelope-enqueued",
         occurredAt: now,

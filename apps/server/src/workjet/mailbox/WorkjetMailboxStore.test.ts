@@ -165,6 +165,50 @@ const testLayer = Layer.mergeAll(
 // Outbox
 // ===============================
 
+it.effect("commits outbound delegations atomically and preserves advanced state on replay", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = envelopeId("atomic-delegation");
+    const task = delegation({
+      id: delegationId("atomic-delegation"),
+      envelope: id,
+      state: "queued",
+      at: T0,
+      budgetExpiresAt: FAR_FUTURE,
+    });
+    const envelope = routingEnvelope({
+      id,
+      kind: "delegation",
+      createdAt: T0,
+      expiresAt: FAR_FUTURE,
+    });
+    const payload = { _tag: "delegation", delegation: task } as const;
+
+    // Fail the second write after the outbox insert has run.
+    yield* sql`CREATE TRIGGER reject_delegation_insert
+      BEFORE INSERT ON workjet_delegations
+      BEGIN SELECT RAISE(ABORT, 'injected delegation failure'); END`;
+    const failed = yield* store.enqueueOutbound(envelope, payload).pipe(Effect.exit);
+    assert.equal(failed._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(id)));
+    assert.isTrue(Option.isNone(yield* store.getDelegation(task.delegationId)));
+
+    yield* sql`DROP TRIGGER reject_delegation_insert`;
+    const retried = yield* store.enqueueOutbound(envelope, payload);
+    assert.equal(retried._tag, "enqueued");
+    assert.isTrue(Option.isSome(yield* store.getOutbound(id)));
+    const created = Option.getOrThrow(yield* store.getDelegation(task.delegationId));
+    assert.equal(created.state, "queued");
+
+    yield* store.transitionDelegationState(task.delegationId, "queued", "delivered", T1);
+    const replay = yield* store.enqueueOutbound(envelope, payload);
+    assert.equal(replay._tag, "duplicate");
+    const retained = Option.getOrThrow(yield* store.getDelegation(task.delegationId));
+    assert.equal(retained.state, "delivered");
+  }).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("enqueues an outbound envelope and reports a duplicate id without throwing", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;

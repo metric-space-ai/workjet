@@ -1153,10 +1153,26 @@ export const make = Effect.gen(function* () {
         RETURNING envelope_id AS "envelopeId"
       `.pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.enqueueOutbound:insert")));
 
+      // Persist the lifecycle owner before the outbound work becomes visible.
+      // Replays must not reset a delegation that has already advanced.
+      if (inserted.length > 0 && payload._tag === "delegation") {
+        yield* upsertDelegation(payload.delegation);
+      }
       return inserted.length > 0
         ? ({ _tag: "enqueued", envelopeId: envelope.envelopeId } as const)
         : ({ _tag: "duplicate", envelopeId: envelope.envelopeId } as const);
-    });
+    }).pipe(
+      sql.withTransaction,
+      Effect.mapError(
+        (cause): WorkjetMailboxStoreError =>
+          isWorkjetMailboxError(cause)
+            ? cause
+            : new PersistenceSqlError({
+                operation: "WorkjetMailboxStore.enqueueOutbound:transaction",
+                cause,
+              }),
+      ),
+    );
 
   const recordInboundEnvelope: WorkjetMailboxStoreShape["recordInboundEnvelope"] = (
     envelope,

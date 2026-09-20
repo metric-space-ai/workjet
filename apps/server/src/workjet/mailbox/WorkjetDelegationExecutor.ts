@@ -1268,9 +1268,12 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         const parentRead = yield* query.getThreadDetailById(source.threadId).pipe(Effect.option);
         if (Option.isNone(parentRead)) return;
         const parent = Option.getOrUndefined(parentRead.value);
+        // A missing projection is not proof that no team continuation is needed.
+        // Keep the durable result pending until the parent can be inspected.
+        if (!parent) return;
         const team =
-          parent?.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
-        if (parent && team && team.role !== "worker") {
+          parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+        if (team && team.role !== "worker") {
           // The existing pending-result row remains the durable retry owner.
           // Never acknowledge before the continuation has an engine receipt.
           if (parent.deletedAt !== null || parent.archivedAt !== null) return;

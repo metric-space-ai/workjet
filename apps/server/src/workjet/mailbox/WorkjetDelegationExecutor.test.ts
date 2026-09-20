@@ -293,7 +293,7 @@ interface Harness {
    * only looks at the target; the parent-superset check reads a SECOND thread,
    * so it needs the two to be distinguishable.
    */
-  readonly setThreadById: (threadId: ThreadId, next: OrchestrationThread) => void;
+  readonly setThreadById: (threadId: ThreadId, next: OrchestrationThread | undefined) => void;
   readonly failNextTurnStarts: (count: number, error: { readonly _tag: string }) => void;
   readonly failNextResultActivities: (count: number) => void;
   readonly failNextResultMarkers: (count: number) => void;
@@ -349,7 +349,7 @@ const makeHarness = (options?: {
   const events: Array<WorkjetMailboxAuditEventInput> = [];
   let currentThread: OrchestrationThread | undefined =
     options && "initialThread" in options ? options.initialThread : thread();
-  const threadsById = new Map<string, OrchestrationThread>();
+  const threadsById = new Map<string, OrchestrationThread | undefined>();
   const unreadableThreadIds = new Set<string>();
   let turnStartFailures = 0;
   let resultActivityFailures = 0;
@@ -408,7 +408,7 @@ const makeHarness = (options?: {
       if (threadReadsFail || unreadableThreadIds.has(threadId))
         return Effect.fail({ _tag: "ProjectionRepositoryError" } as const);
       const override = threadsById.get(threadId);
-      if (override !== undefined) return Effect.succeed(Option.some(override));
+      if (threadsById.has(threadId)) return Effect.succeed(Option.fromNullishOr(override));
       return Effect.succeed(
         currentThread === undefined ? Option.none() : Option.some(currentThread),
       );
@@ -2372,57 +2372,62 @@ it.effect(
     }).pipe(Effect.provide(testLayer("delegation-local-marker-retry"))),
 );
 
-it.effect("retries a team parent continuation after busy admission and restart", () =>
-  Effect.gen(function* () {
-    const delegation = delegationFixture({
-      id: "team-parent-return",
-      digest: yield* storePrompt(PROMPT_TEXT),
-      state: "running",
-    });
-    const harness = makeHarness({
-      initialThread: endedTurnThread({
-        delegationId: delegation.delegationId,
-        turnId: "team-parent-return",
-        turnState: "completed",
-      }),
-    });
-    const parent = {
-      ...thread({ id: delegation.source.threadId, role: "orchestrator" }),
-      archivedAt: null,
-      workjetConfig: {
-        schemaVersion: 2,
-        role: "orchestrator",
-        enabledCapabilityIds: [],
-        team: {
-          role: "supervisor",
-          threadId: delegation.source.threadId,
-          projectId: "project",
-          parentThreadId: null,
-          goal: "Complete the project",
-          createdAt: NOW,
+for (const unavailable of ["busy", "missing"] as const) {
+  it.effect(`retries a team parent continuation after ${unavailable} parent and restart`, () =>
+    Effect.gen(function* () {
+      const delegation = delegationFixture({
+        id: "team-parent-return",
+        digest: yield* storePrompt(PROMPT_TEXT),
+        state: "running",
+      });
+      const harness = makeHarness({
+        initialThread: endedTurnThread({
+          delegationId: delegation.delegationId,
+          turnId: "team-parent-return",
+          turnState: "completed",
+        }),
+      });
+      const parent = {
+        ...thread({ id: delegation.source.threadId, role: "orchestrator" }),
+        archivedAt: null,
+        workjetConfig: {
+          schemaVersion: 2,
+          role: "orchestrator",
+          enabledCapabilityIds: [],
+          team: {
+            role: "supervisor",
+            threadId: delegation.source.threadId,
+            projectId: "project",
+            parentThreadId: null,
+            goal: "Complete the project",
+            createdAt: NOW,
+          },
         },
-      },
-    } as unknown as OrchestrationThread;
-    harness.setThreadById(parent.id, parent);
-    harness.failNextTurnStarts(1, { _tag: "OrchestrationCommandDeferredError" });
-    const store = yield* WorkjetMailboxStore;
-    yield* seed(delegation);
-    const executor = yield* harness.executor;
-    yield* executor.runCycle;
-    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 1);
-    const restarted = yield* harness.executor;
-    yield* restarted.runCycle;
-    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 0);
-    yield* restarted.runCycle;
-    const starts = harness.commands.filter((command) => command.type === "thread.turn.start");
-    assert.lengthOf(starts, 1);
-    assert.equal(starts[0]?.threadId, parent.id);
-    assert.equal(
-      starts[0]?.commandId,
-      `server:workjet-result-continuation:${delegation.delegationId}`,
-    );
-  }).pipe(Effect.provide(testLayer("team-parent-continuation"))),
-);
+      } as unknown as OrchestrationThread;
+      harness.setThreadById(parent.id, unavailable === "missing" ? undefined : parent);
+      if (unavailable === "busy") {
+        harness.failNextTurnStarts(1, { _tag: "OrchestrationCommandDeferredError" });
+      }
+      const store = yield* WorkjetMailboxStore;
+      yield* seed(delegation);
+      const executor = yield* harness.executor;
+      yield* executor.runCycle;
+      assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 1);
+      harness.setThreadById(parent.id, parent);
+      const restarted = yield* harness.executor;
+      yield* restarted.runCycle;
+      assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 0);
+      yield* restarted.runCycle;
+      const starts = harness.commands.filter((command) => command.type === "thread.turn.start");
+      assert.lengthOf(starts, 1);
+      assert.equal(starts[0]?.threadId, parent.id);
+      assert.equal(
+        starts[0]?.commandId,
+        `server:workjet-result-continuation:${delegation.delegationId}`,
+      );
+    }).pipe(Effect.provide(testLayer(`team-parent-continuation-${unavailable}`))),
+  );
+}
 
 it.effect("marks a locally returned result so the cross-environment scan skips it", () =>
   Effect.gen(function* () {

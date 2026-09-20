@@ -679,6 +679,38 @@ it.effect("writes NO event for a transition that was refused", () =>
   }).pipe(Effect.provide(testLayer)),
 );
 
+for (const state of ["completed", "failed", "cancelled", "expired"] as const) {
+  it.effect(`preserves the original ${state} delegation body against an upsert`, () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const original = delegation({
+        id: delegationId(`immutable-${state}`),
+        envelope: envelopeId(`immutable-${state}`),
+        state,
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      });
+      yield* store.upsertDelegation(original);
+      const changed = yield* store
+        .upsertDelegation({
+          ...original,
+          stateChangedAt: T1,
+          prompt: { ...original.prompt, digest: WorkjetContentDigest.make("c".repeat(64)) },
+          completion: { ...original.completion, acceptance: "Altered after completion" },
+        })
+        .pipe(Effect.result);
+      assert.equal(changed._tag, "Failure");
+      if (changed._tag === "Failure") {
+        assertMailboxErrorReason(changed.failure, "invalid-state-transition");
+      }
+      assert.deepEqual(
+        Option.getOrThrow(yield* store.getDelegation(original.delegationId)).delegation,
+        original,
+      );
+    }).pipe(Effect.provide(testLayer)),
+  );
+}
+
 it.effect("rejects an illegal transition and keeps a terminal delegation immutable", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;

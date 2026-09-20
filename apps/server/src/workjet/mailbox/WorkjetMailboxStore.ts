@@ -1518,7 +1518,7 @@ export const make = Effect.gen(function* () {
             // the transition API's job, so re-storing a delegation with a
             // different state — or touching a terminal one at all — is refused
             // rather than silently bypassing the transition table.
-            if (current.state !== delegation.state) {
+            if (current.state !== delegation.state || isTerminalDelegationState(delegation.state)) {
               return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
             }
 

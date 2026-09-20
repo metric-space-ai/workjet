@@ -85,7 +85,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       case "turn-start-failed":
         return "The worker thread was rolled back after its first turn could not start.";
       case "rollback-failed":
-        return "The worker turn failed and its rollback also failed.";
+        return "Worker dispatch failed and its rollback could not complete; retained work requires recovery.";
     }
   }
 }
@@ -220,10 +220,10 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       // throwaway worker ref is deleted too — otherwise every rolled-back
       // dispatch would leak a dangling `workjet/worker/<uuid>`.
       const removeWorkerWorktree = Effect.suspend(() =>
-        gitWorkflow.removeWorktree({ cwd: gitCwd, path: workerWorktree.path, force: true }).pipe(
+        gitWorkflow.removeWorktree({ cwd: gitCwd, path: workerWorktree.path, force: false }).pipe(
           // Lazy: the ref is only deleted once the worktree is actually gone.
           Effect.andThen(() =>
-            gitWorkflow.deleteBranch({ cwd: gitCwd, refName: workerRefName, force: true }),
+            gitWorkflow.deleteBranch({ cwd: gitCwd, refName: workerRefName, force: false }),
           ),
         ),
       ).pipe(Effect.exit);
@@ -265,8 +265,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
 
       const createExit = yield* Effect.exit(engine.dispatch(createCommand));
       if (createExit._tag === "Failure") {
-        yield* removeWorkerWorktree;
-        return yield* failure("create-failed");
+        const cleanupExit = yield* removeWorkerWorktree;
+        return yield* failure(cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed");
       }
 
       const turnStartCommand = {
@@ -292,11 +292,12 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           threadId: workerThreadId,
         } as const satisfies OrchestrationCommand;
         const rollbackExit = yield* Effect.exit(engine.dispatch(rollbackCommand));
+        // A failed thread deletion leaves ownership unresolved. Never remove
+        // its checkout while that thread may still run or be retried.
+        if (rollbackExit._tag === "Failure") return yield* failure("rollback-failed");
         const worktreeRollbackExit = yield* removeWorkerWorktree;
         return yield* failure(
-          rollbackExit._tag === "Failure" || worktreeRollbackExit._tag === "Failure"
-            ? "rollback-failed"
-            : "turn-start-failed",
+          worktreeRollbackExit._tag === "Failure" ? "rollback-failed" : "turn-start-failed",
         );
       }
 

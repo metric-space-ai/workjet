@@ -171,11 +171,21 @@ const makeHarness = (input?: {
           }),
         );
       },
-      removeWorktree: (removeInput: { readonly cwd: string; readonly path: string }) => {
+      removeWorktree: (removeInput: {
+        readonly cwd: string;
+        readonly path: string;
+        readonly force?: boolean;
+      }) => {
+        expect(removeInput.force).toBe(false);
         worktreeRemovals.push({ cwd: removeInput.cwd, path: removeInput.path });
         return input?.failWorktreeRemove ? Effect.fail(gitCommandFailure) : Effect.void;
       },
-      deleteBranch: (deleteInput: { readonly cwd: string; readonly refName: string }) => {
+      deleteBranch: (deleteInput: {
+        readonly cwd: string;
+        readonly refName: string;
+        readonly force?: boolean;
+      }) => {
+        expect(deleteInput.force).toBe(false);
         branchDeletions.push({ cwd: deleteInput.cwd, refName: deleteInput.refName });
         return input?.failBranchDelete ? Effect.fail(gitCommandFailure) : Effect.void;
       },
@@ -420,6 +430,8 @@ it.effect("does not delete after create failure and rolls back bounded turn-star
       .dispatch(invocation, { task: "Sensitive rollback task." })
       .pipe(Effect.flip);
     expect(rollbackError.reason).toBe("rollback-failed");
+    expect(rollbackFailure.worktreeRemovals).toEqual([]);
+    expect(rollbackFailure.branchDeletions).toEqual([]);
     expect(JSON.stringify(rollbackError)).not.toContain("downstream secret");
     expect(JSON.stringify(rollbackError)).not.toContain("Sensitive rollback task");
   }),
@@ -537,6 +549,17 @@ it.effect("removes only the worktree this dispatch created when rollback runs", 
     expect(createFailure.branchDeletions).toEqual([
       { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
     ]);
+
+    const createCleanupFailure = makeHarness({
+      failCommandTypes: ["thread.create"],
+      failWorktreeRemove: true,
+    });
+    const createCleanupService = yield* createCleanupFailure.service;
+    const createCleanupError = yield* createCleanupService
+      .dispatch(invocation, { task: "Create rollback failure." })
+      .pipe(Effect.flip);
+    expect(createCleanupError.reason).toBe("rollback-failed");
+    expect(createCleanupFailure.branchDeletions).toEqual([]);
 
     // A failed worktree removal is reported as a rollback failure.
     const removeFailure = makeHarness({

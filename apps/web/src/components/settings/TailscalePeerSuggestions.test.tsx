@@ -37,7 +37,7 @@ describe("Tailscale peer suggestions", () => {
     hooks.beginRender();
     return TailscalePeerSuggestions({ bridge, disabled: false, onSelect });
   }
-  it("offers the online peer address and labels the offline peer without a connect action", async () => {
+  it("offers only online peers and never lists offline peers or SSH aliases", async () => {
     const bridge = { discoverTailscalePeers: vi.fn().mockResolvedValue(result) };
     const select = vi.fn();
     render(bridge, select);
@@ -47,7 +47,8 @@ describe("Tailscale peer suggestions", () => {
     expect(action).not.toBeNull();
     (action?.props.onClick as () => void)();
     expect(select).toHaveBeenCalledWith("100.87.204.48");
-    expect(JSON.stringify(tree)).toContain("gpu3-A4500");
+    expect(JSON.stringify(tree)).toContain("gpu1-A6000");
+    expect(JSON.stringify(tree)).not.toContain("gpu3-A4500");
     expect(JSON.stringify(tree).match(/Use computer/gu)).toHaveLength(1);
     expect(JSON.stringify(tree)).not.toContain("known hosts");
   });

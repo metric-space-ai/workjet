@@ -32,7 +32,6 @@ export function TailscalePeerSuggestions({
     };
   }, [bridge, revision]);
   const online = result?.peers.filter((peer) => peer.online) ?? [];
-  const offline = result?.peers.filter((peer) => !peer.online) ?? [];
   return (
     <section
       className="space-y-3 rounded-lg border border-border/60 p-3"
@@ -78,11 +77,6 @@ export function TailscalePeerSuggestions({
             </div>
           ))
         : null}
-      {result?.status === "available" && offline.length > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Offline: {offline.map((peer) => peer.name).join(", ")}
-        </p>
-      ) : null}
     </section>
   );
 }

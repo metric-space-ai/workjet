@@ -60,6 +60,11 @@ const DECLARED_INBOUND_WRITES: ReadonlyArray<{
   readonly why: string;
 }> = [
   {
+    file: "WorkjetDelegationExecutor.ts",
+    declaration: "runCycle",
+    why: "local recovery verifies the signed outbox envelope before recording it inbound",
+  },
+  {
     file: "WorkjetMailboxDelivery.ts",
     declaration: "deliverLocally",
     why: "the same-environment fast path for a message or a delegation",

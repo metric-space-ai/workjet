@@ -608,7 +608,13 @@ it.effect("advances local recovery past a full batch of unrecoverable queued row
     const store = yield* WorkjetMailboxStore;
     const digest = yield* storePrompt(PROMPT_TEXT);
     for (let index = 0; index < WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE; index += 1) {
-      yield* seed(delegationFixture({ id: `aaa-missing-${index}`, digest, state: "queued" }));
+      yield* seed(
+        delegationFixture({
+          id: `aaa-missing-${String(index).padStart(2, "0")}`,
+          digest,
+          state: "queued",
+        }),
+      );
     }
     const delegation = delegationFixture({ id: "zzz-recoverable", digest, state: "queued" });
     yield* store.enqueueOutbound(

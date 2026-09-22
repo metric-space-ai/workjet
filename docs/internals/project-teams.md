@@ -47,6 +47,8 @@ owns retries. This new continuation and its regression tests await verification.
 Team WorkerDispatch writes the complete task to the snapshot store and prepares
 a signed local delegation. Its internal thread.create option commits the worker
 event, queued delegation and outbox in the same engine SQL transaction and receipt.
+The initial delegation explicitly scopes the isolated checkout root (`.`); a
+narrower file selection is not yet part of the dispatch contract.
 The executor recovers local delivery and owns the sole first-turn start. Local
 recovery filters address ownership before limiting results and pages by delegation
 identity, so foreign or permanently invalid queues do not hide later local work.

@@ -4,6 +4,7 @@ import {
   ThreadId,
   WorkjetDelegationId,
   WorkjetEnvelopeId,
+  WorkjetRepositoryPath,
   type WorkjetDelegation,
   type EnvironmentId,
   type ModelSelection,
@@ -230,7 +231,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           },
           scope: {
             schemaVersion: 1,
-            files: [],
+            // A worker without a narrower file selection owns the isolated
+            // checkout root. The mailbox contract requires an explicit scope.
+            files: [WorkjetRepositoryPath.make(".")],
             nonGoals: "Do not perform work outside the assigned task.",
           },
           completion: {

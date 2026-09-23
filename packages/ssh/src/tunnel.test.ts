@@ -414,4 +414,55 @@ describe("ssh tunnel scripts", () => {
       assert.equal(tunnelKillCount, 1);
     }).pipe(Effect.provide(layer), Effect.scoped);
   });
+
+  it.effect("releases a replaced local tunnel without stopping the remote server", () => {
+    let tunnelStartCount = 0;
+    let tunnelKillCount = 0;
+    let stopCommandCount = 0;
+    const spawner = ChildProcessSpawner.make((command) =>
+      Effect.sync(() => {
+        const args = commandArgs(command);
+        if (args.includes("-N")) {
+          tunnelStartCount += 1;
+          return makeRunningProcess(() => {
+            tunnelKillCount += 1;
+          });
+        }
+        if (args.includes("sh") && args.includes("--")) {
+          return makeSuccessfulProcess('{"remotePort":3773}\n');
+        }
+        if (args.includes("sh")) {
+          stopCommandCount += 1;
+          return makeSuccessfulProcess('{"stopped":true}\n');
+        }
+        return makeSuccessfulProcess("\n");
+      }),
+    );
+    const layer = Layer.mergeAll(
+      NodeServices.layer,
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Layer.succeed(HttpClient.HttpClient, testHttpClient),
+      Layer.succeed(NetService.NetService, testNetService),
+      SshPasswordPrompt.disabledLayer,
+      SshEnvironmentManager.layer(),
+    );
+    const target = {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    } as const;
+
+    return Effect.gen(function* () {
+      const manager = yield* SshEnvironmentManager;
+      const first = yield* manager.ensureEnvironment(target);
+      yield* manager.releaseEnvironment(first.target);
+      assert.equal(tunnelKillCount, 1);
+      assert.equal(stopCommandCount, 0);
+
+      yield* manager.ensureEnvironment(target);
+      assert.equal(tunnelStartCount, 2);
+      assert.equal(stopCommandCount, 0);
+    }).pipe(Effect.provide(layer), Effect.scoped);
+  });
 });

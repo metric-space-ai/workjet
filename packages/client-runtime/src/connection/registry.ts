@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@workjet/contracts";
+import { EnvironmentId, type DesktopSshEnvironmentTarget } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -36,6 +36,15 @@ import * as ConnectionDriver from "./driver.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
 const isSshConnectionProfile = Schema.is(SshConnectionProfile);
+
+const sameSshTarget = (
+  left: DesktopSshEnvironmentTarget,
+  right: DesktopSshEnvironmentTarget,
+): boolean =>
+  left.alias === right.alias &&
+  left.hostname === right.hostname &&
+  left.username === right.username &&
+  left.port === right.port;
 
 export class EnvironmentNotRegisteredError extends Schema.TaggedErrorClass<EnvironmentNotRegisteredError>()(
   "EnvironmentNotRegisteredError",
@@ -382,6 +391,20 @@ export const make = Effect.gen(function* () {
       return;
     }
 
+    const previousSshTarget =
+      previous !== undefined &&
+      previous.target._tag === "SshConnectionTarget" &&
+      Option.isSome(previous.profile) &&
+      isSshConnectionProfile(previous.profile.value)
+        ? previous.profile.value.target
+        : null;
+    const nextSshTarget =
+      entry.target._tag === "SshConnectionTarget" &&
+      Option.isSome(entry.profile) &&
+      isSshConnectionProfile(entry.profile.value)
+        ? entry.profile.value.target
+        : null;
+
     yield* closeServiceScope(target.environmentId);
     yield* SubscriptionRef.update(entries, (current) => {
       const next = new Map(current);
@@ -389,6 +412,30 @@ export const make = Effect.gen(function* () {
       return next;
     });
     yield* createServiceScope(entry);
+    const oldTunnelStillInUse =
+      previousSshTarget !== null &&
+      [...(yield* SubscriptionRef.get(entries)).values()].some(
+        (candidate) =>
+          candidate.target._tag === "SshConnectionTarget" &&
+          Option.isSome(candidate.profile) &&
+          isSshConnectionProfile(candidate.profile.value) &&
+          sameSshTarget(candidate.profile.value.target, previousSshTarget),
+      );
+    if (
+      previousSshTarget !== null &&
+      !oldTunnelStillInUse &&
+      (nextSshTarget === null || !sameSshTarget(previousSshTarget, nextSshTarget))
+    ) {
+      yield* ssh.release(previousSshTarget).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("Could not release the replaced SSH tunnel.", {
+            environmentId: target.environmentId,
+            error,
+          }),
+        ),
+        Effect.ignore,
+      );
+    }
   });
 
   const register = Effect.fn("EnvironmentRegistry.register")(function* (

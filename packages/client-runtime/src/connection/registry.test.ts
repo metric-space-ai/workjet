@@ -24,6 +24,7 @@ import {
   type ConnectionRegistration,
   PrimaryConnectionRegistration,
   RelayConnectionRegistration,
+  SshConnectionRegistration,
   SshConnectionProfile,
   type ConnectionCredential,
   type ConnectionProfile,
@@ -171,6 +172,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     ]),
   );
   const disconnectedSshTargets = yield* Ref.make<ReadonlyArray<DesktopSshEnvironmentTarget>>([]);
+  const releasedSshTargets = yield* Ref.make<ReadonlyArray<DesktopSshEnvironmentTarget>>([]);
 
   const targetStore = Persistence.ConnectionTargetStore.of({
     list: Ref.get(storedTargets).pipe(Effect.map((targets) => [...targets.values()])),
@@ -333,6 +335,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     provision: () => Effect.die(new Error("SSH provisioning is not used.")),
     prepare: () => Effect.die(new Error("SSH preparation is not used.")),
     disconnect: (target) => Ref.update(disconnectedSshTargets, (current) => [...current, target]),
+    release: (target) => Ref.update(releasedSshTargets, (current) => [...current, target]),
   });
   const driver = ConnectionDriver.ConnectionDriver.of({
     connect: (entry, reportProgress) =>
@@ -400,6 +403,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     storedCredentials,
     storedRemoteTokens,
     disconnectedSshTargets,
+    releasedSshTargets,
     networkStatus,
   };
 });
@@ -595,6 +599,99 @@ describe("EnvironmentRegistry", () => {
         );
         expect(yield* Ref.get(harness.sessions)).toHaveLength(1);
       }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("closes a replaced SSH tunnel but keeps the same target on a label update", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE]);
+      const replacementTarget: DesktopSshEnvironmentTarget = {
+        ...SSH_TARGET,
+        alias: "replacement",
+      };
+      const replacementConnection = new SshConnectionTarget({
+        environmentId: SSH_CONNECTION.environmentId,
+        connectionId: SSH_CONNECTION.connectionId,
+        label: "Replacement SSH environment",
+      });
+      const replacementProfile = new SshConnectionProfile({
+        connectionId: replacementConnection.connectionId,
+        environmentId: replacementConnection.environmentId,
+        label: replacementConnection.label,
+        target: replacementTarget,
+      });
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* registry.register(
+          new SshConnectionRegistration({
+            target: replacementConnection,
+            profile: replacementProfile,
+          }),
+        );
+        expect(yield* Ref.get(harness.releasedSshTargets)).toEqual([SSH_TARGET]);
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([]);
+        expect((yield* Ref.get(harness.storedProfiles)).get(SSH_CONNECTION.connectionId)).toEqual(
+          replacementProfile,
+        );
+
+        const renamedConnection = new SshConnectionTarget({
+          environmentId: replacementConnection.environmentId,
+          connectionId: replacementConnection.connectionId,
+          label: "Renamed SSH environment",
+        });
+        yield* registry.register(
+          new SshConnectionRegistration({
+            target: renamedConnection,
+            profile: new SshConnectionProfile({
+              connectionId: renamedConnection.connectionId,
+              environmentId: renamedConnection.environmentId,
+              label: renamedConnection.label,
+              target: replacementTarget,
+            }),
+          }),
+        );
+        expect(yield* Ref.get(harness.releasedSshTargets)).toEqual([SSH_TARGET]);
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("keeps an SSH tunnel used by another registered environment", () =>
+    Effect.gen(function* () {
+      const secondConnection = new SshConnectionTarget({
+        environmentId: EnvironmentId.make("environment-ssh-shared"),
+        connectionId: "ssh-connection-shared",
+        label: "Shared SSH environment",
+      });
+      const secondProfile = new SshConnectionProfile({
+        connectionId: secondConnection.connectionId,
+        environmentId: secondConnection.environmentId,
+        label: secondConnection.label,
+        target: SSH_TARGET,
+      });
+      const harness = yield* makeHarness(
+        [SSH_CONNECTION, secondConnection],
+        [SSH_PROFILE, secondProfile],
+      );
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* registry.register(
+          new SshConnectionRegistration({
+            target: SSH_CONNECTION,
+            profile: new SshConnectionProfile({
+              connectionId: SSH_CONNECTION.connectionId,
+              environmentId: SSH_CONNECTION.environmentId,
+              label: SSH_CONNECTION.label,
+              target: { ...SSH_TARGET, alias: "replacement" },
+            }),
+          }),
+        );
+        expect(yield* Ref.get(harness.releasedSshTargets)).toEqual([]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
 

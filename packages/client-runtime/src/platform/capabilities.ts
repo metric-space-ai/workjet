@@ -64,5 +64,8 @@ export class SshEnvironmentGateway extends Context.Service<
     readonly disconnect: (
       target: DesktopSshEnvironmentTarget,
     ) => Effect.Effect<void, ConnectionAttemptError>;
+    readonly release: (
+      target: DesktopSshEnvironmentTarget,
+    ) => Effect.Effect<void, ConnectionAttemptError>;
   }
 >()("@workjet/client-runtime/platform/capabilities/SshEnvironmentGateway") {}

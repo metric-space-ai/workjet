@@ -61,6 +61,9 @@ export class DesktopSshEnvironment extends Context.Service<
     readonly disconnectEnvironment: (
       target: DesktopSshEnvironmentTarget,
     ) => Effect.Effect<void, DesktopSshEnvironmentOperationError>;
+    readonly releaseEnvironment: (
+      target: DesktopSshEnvironmentTarget,
+    ) => Effect.Effect<void, DesktopSshEnvironmentOperationError>;
   }
 >()("@workjet/desktop/ssh/DesktopSshEnvironment") {}
 
@@ -151,6 +154,14 @@ export const make = Effect.gen(function* () {
           Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
           Effect.provide(runtimeContext),
           Effect.withSpan("desktop.ssh.disconnectEnvironment"),
+        ),
+    releaseEnvironment: (target) =>
+      manager
+        .releaseEnvironment(target)
+        .pipe(
+          Effect.provideService(SshAuth.SshPasswordPrompt, passwordPrompt),
+          Effect.provide(runtimeContext),
+          Effect.withSpan("desktop.ssh.releaseEnvironment"),
         ),
   });
 });

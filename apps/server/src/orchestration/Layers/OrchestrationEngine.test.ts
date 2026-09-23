@@ -215,6 +215,56 @@ describe("OrchestrationEngine", () => {
     }
   });
 
+  it("releases the turn-start fence after failure, timeout and interruption", async () => {
+    const system = await createOrchestrationSystem();
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("turn-start-fence-release-create"),
+          projectId: asProjectId("turn-start-fence-release"),
+          title: "Fence release",
+          workspaceRoot: "/fixture/turn-start-fence-release",
+          createdAt: now(),
+        }),
+      );
+      const threadId = (await system.readModel()).threads[0]!.id;
+      await system.run(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const failed = yield* system.engine
+              .runTurnStartIfActive(threadId, Effect.fail(new Error("send failed")))
+              .pipe(Effect.catch(() => Effect.succeed(false)));
+            expect(failed).toBe(false);
+
+            const unacknowledged = yield* Deferred.make<void>();
+            const timedOut = yield* system.engine
+              .runTurnStartIfActive(threadId, Deferred.await(unacknowledged))
+              .pipe(Effect.timeoutOption("10 millis"));
+            expect(Option.isNone(timedOut)).toBe(true);
+
+            const entered = yield* Deferred.make<void>();
+            const interrupted = yield* Effect.forkScoped(
+              system.engine.runTurnStartIfActive(
+                threadId,
+                Effect.gen(function* () {
+                  yield* Deferred.succeed(entered, undefined);
+                  yield* Deferred.await(unacknowledged);
+                }),
+              ),
+            );
+            yield* Deferred.await(entered);
+            yield* Fiber.interrupt(interrupted);
+
+            expect(yield* system.engine.runTurnStartIfActive(threadId, Effect.void)).toBe(true);
+          }),
+        ),
+      );
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("commits worker creation and delegation together and retries a failed transaction", async () => {
     const environmentId = EnvironmentId.make("atomic-worker-env");
     const system = await createOrchestrationSystem(environmentId);

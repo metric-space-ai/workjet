@@ -90,6 +90,7 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+const PROVIDER_SEND_ACK_TIMEOUT = Duration.seconds(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const DEFAULT_THREAD_TITLE = "New thread";
 const MAX_REGENERATION_ATTACHMENTS = 4;
@@ -1191,7 +1192,12 @@ const make = Effect.gen(function* () {
     // thread state under the deletion fence and holds it until sendTurn has
     // acknowledged the start. Fork the fenced operation, not the bare send.
     yield* orchestrationEngine
-      .runTurnStartIfActive(event.payload.threadId, providerService.sendTurn(sendTurnRequest.value))
+      .runTurnStartIfActive(
+        event.payload.threadId,
+        providerService
+          .sendTurn(sendTurnRequest.value)
+          .pipe(Effect.timeout(PROVIDER_SEND_ACK_TIMEOUT)),
+      )
       .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
   });
 

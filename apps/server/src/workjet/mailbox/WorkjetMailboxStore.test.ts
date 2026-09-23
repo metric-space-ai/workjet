@@ -1022,6 +1022,20 @@ it.effect("keeps an unreturned review result retryable after changes are request
     );
 
     yield* store.transitionDelegationState(id, "review-requested", "changes-requested", T2);
+    const awaiting = yield* store.listDelegationsAwaitingRework(
+      SOURCE_ENVIRONMENT,
+      WORKSPACE,
+      undefined,
+      10,
+    );
+    assert.deepEqual(
+      awaiting.map((row) => (row._tag === "record" ? row.record.delegationId : row.rowId)),
+      [id],
+    );
+    assert.lengthOf(
+      yield* store.listDelegationsAwaitingRework(TARGET_ENVIRONMENT, WORKSPACE, undefined, 10),
+      0,
+    );
     const restarted = yield* store.listDelegationsPendingResultReturn(10);
     assert.equal(restarted.length, 1);
     assert.equal(restarted[0]?._tag, "record");
@@ -1033,6 +1047,22 @@ it.effect("keeps an unreturned review result retryable after changes are request
     });
     assert.equal(replay._tag, "already-finalized");
     assert.deepEqual(replay.result, result);
+    yield* store.insertDelegationEdge({
+      schemaVersion: 1,
+      kind: "revises",
+      from: {
+        schemaVersion: 1,
+        delegationId: delegationId("review-child"),
+        owner: TARGET_ADDRESS,
+      },
+      to: { schemaVersion: 1, delegationId: id, owner: SOURCE_ADDRESS },
+      createdAt: T2,
+      depth: 1,
+    });
+    assert.lengthOf(
+      yield* store.listDelegationsAwaitingRework(SOURCE_ENVIRONMENT, WORKSPACE, undefined, 10),
+      0,
+    );
     assert.isTrue(yield* store.markDelegationResultReturned(id, T2));
     assert.equal((yield* store.listDelegationsPendingResultReturn(10)).length, 0);
   }).pipe(Effect.provide(testLayer)),

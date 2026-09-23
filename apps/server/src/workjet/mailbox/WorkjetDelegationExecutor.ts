@@ -540,6 +540,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
 
   let cycles = 0;
   let localRecoveryAfterId: string | undefined;
+  let reworkRecoveryAfterId: string | undefined;
+  const reworkRemindersAccepted = new Set<string>();
   let scanned = 0;
   let executed = 0;
   let backpressure = 0;
@@ -1820,6 +1822,72 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         continue;
       }
       yield* Effect.logWarning("Workjet delegation result redelivery deferred");
+    }
+
+    // A review rejection and its replacement delegation are separate commands.
+    // If the source process stops between them, this source-owned scan starts a
+    // stable parent continuation. The child enqueue commits its `revises` edge
+    // atomically, which removes the parent from this recovery set. Engine command
+    // identity deduplicates a replay after this executor itself restarts.
+    const pendingReworkRead = yield* store
+      .listDelegationsAwaitingRework(
+        environmentId,
+        identity.workspaceId,
+        reworkRecoveryAfterId,
+        WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE,
+      )
+      .pipe(Effect.option);
+    const pendingRework = Option.getOrElse(
+      pendingReworkRead,
+      () => [] as ReadonlyArray<WorkjetDelegationRowResult>,
+    );
+    if (Option.isSome(pendingReworkRead)) {
+      const last = pendingRework.at(-1);
+      reworkRecoveryAfterId =
+        pendingRework.length === WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE && last
+          ? last._tag === "corrupt"
+            ? last.rowId
+            : last.record.delegationId
+          : undefined;
+    }
+    for (const entry of pendingRework) {
+      scanned += 1;
+      if (entry._tag === "corrupt") {
+        yield* Effect.logWarning("Workjet rework row unreadable by this server version");
+        record({ _tag: "version-unsupported" });
+        continue;
+      }
+      const delegation = entry.record.delegation;
+      if (reworkRemindersAccepted.has(delegation.delegationId)) continue;
+      const parentRead = yield* query
+        .getThreadDetailById(delegation.source.threadId)
+        .pipe(Effect.option);
+      if (Option.isNone(parentRead)) continue;
+      const parent = Option.getOrUndefined(parentRead.value);
+      if (!parent || parent.id !== delegation.source.threadId) continue;
+      if (parent.deletedAt !== null || parent.archivedAt !== null) continue;
+      const team = parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+      if (!team || team.role === "worker") continue;
+      const resumed = yield* Effect.result(
+        engine.dispatch(
+          {
+            type: "thread.turn.start",
+            commandId: CommandId.make(`server:workjet-review-rework:${delegation.delegationId}`),
+            threadId: parent.id,
+            message: {
+              messageId: MessageId.make(`workjet-review-rework:${delegation.delegationId}`),
+              role: "user",
+              text: `Review requested changes for delegation ${delegation.delegationId}, but no linked rework delegation is recorded. Resume the project goal: create a bounded linked delegation with parentDelegationId ${delegation.delegationId} for the same worker, or resolve the review explicitly.`,
+              attachments: [],
+            },
+            runtimeMode: parent.runtimeMode,
+            interactionMode: parent.interactionMode,
+            createdAt: delegation.stateChangedAt,
+          },
+          { deferWhileBusy: true },
+        ),
+      );
+      if (resumed._tag === "Success") reworkRemindersAccepted.add(delegation.delegationId);
     }
 
     /**

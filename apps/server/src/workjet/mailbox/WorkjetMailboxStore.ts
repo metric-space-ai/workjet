@@ -817,6 +817,18 @@ export interface WorkjetMailboxStoreShape {
   ) => Effect.Effect<ReadonlyArray<WorkjetDelegationRowResult>, WorkjetMailboxStoreError>;
 
   /**
+   * Source-owned review rejections without a linked `revises` child. A cursor
+   * lets the reconciler reach later rows even when earlier parents remain open.
+   * The edge exclusion shares the same database as the atomic child enqueue.
+   */
+  readonly listDelegationsAwaitingRework: (
+    sourceEnvironmentId: EnvironmentId,
+    sourceWorkspaceId: WorkjetMeshWorkspaceId,
+    afterId: string | undefined,
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetDelegationRowResult>, WorkjetMailboxStoreError>;
+
+  /**
    * Re-point a still-pending delegation at a DIFFERENT target thread WITHOUT
    * changing its lifecycle state. Only a delegation in `delivered` or
    * `needs-input` may be reassigned; a terminal, `running`, or otherwise
@@ -2075,6 +2087,47 @@ export const make = Effect.gen(function* () {
       });
     });
 
+  const listDelegationsAwaitingRework: WorkjetMailboxStoreShape["listDelegationsAwaitingRework"] = (
+    sourceEnvironmentId,
+    sourceWorkspaceId,
+    afterId,
+    limit,
+  ) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+            SELECT ${DELEGATION_COLUMNS}
+            FROM workjet_delegations
+            WHERE state = 'changes-requested'
+              AND result_json IS NOT NULL
+              AND delegation_id > ?
+              AND CASE WHEN json_valid(delegation_json) THEN
+                json_extract(delegation_json, '$.source.environmentId') = ?
+                AND json_extract(delegation_json, '$.source.workspaceId') = ?
+              ELSE 0 END
+              AND NOT EXISTS (
+                SELECT 1 FROM workjet_delegation_edges
+                WHERE to_delegation_id = workjet_delegations.delegation_id
+                  AND kind = 'revises'
+              )
+            ORDER BY delegation_id ASC
+            LIMIT ?
+          `,
+          [afterId ?? "", sourceEnvironmentId, sourceWorkspaceId, limit],
+        )
+        .pipe(
+          Effect.mapError(sqlFailure("WorkjetMailboxStore.listDelegationsAwaitingRework:select")),
+        );
+      return yield* Effect.forEach(rows, (row) => {
+        const rowId = rowIdOf(row);
+        return decodeDelegation(row, rowId).pipe(
+          Effect.map((record) => ({ _tag: "record", record }) as const),
+          Effect.catch(() => Effect.succeed({ _tag: "corrupt", rowId } as const)),
+        );
+      });
+    });
+
   const reassignDelegation: WorkjetMailboxStoreShape["reassignDelegation"] = (
     delegationId,
     newTarget,
@@ -2897,6 +2950,7 @@ export const make = Effect.gen(function* () {
     markDelegationResultReturnFailed,
     listDelegationsByState,
     listDelegationRowsByState,
+    listDelegationsAwaitingRework,
     reassignDelegation,
     recordDelegationUsage,
     getDelegationAccounting,

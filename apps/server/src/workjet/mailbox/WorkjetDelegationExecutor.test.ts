@@ -822,6 +822,30 @@ it.effect("returns a completed worker turn for review and runs approved rework",
     });
     assert.equal(review.state, "changes-requested");
 
+    harness.failNextTurnStarts(1, { _tag: "OrchestrationCommandDeferredError" });
+    const recovery = yield* harness.executor;
+    yield* recovery.runCycle;
+    const restartedRecovery = yield* harness.executor;
+    yield* restartedRecovery.runCycle;
+    const reworkReminders = () =>
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.turn.start" &&
+          command.commandId === `server:workjet-review-rework:${original.delegationId}`,
+      );
+    // The transient refusal left the row pending; the next executor accepted
+    // it. A further restart replays the same id, which production receipts
+    // deduplicate even though this recording double captures both attempts.
+    assert.lengthOf(reworkReminders(), 1);
+    const replayedRecovery = yield* harness.executor;
+    yield* replayedRecovery.runCycle;
+    assert.lengthOf(reworkReminders(), 2);
+    const firstReminder = reworkReminders()[0];
+    assert.equal(firstReminder?.type, "thread.turn.start");
+    if (firstReminder?.type === "thread.turn.start") {
+      assert.equal(firstReminder.threadId, SOURCE_THREAD);
+    }
+
     const rework = yield* delivery.delegateTask(actor, {
       targetWorkspaceId: WORKSPACE,
       targetEnvironmentId: LOCAL_ENVIRONMENT,
@@ -836,6 +860,7 @@ it.effect("returns a completed worker turn for review and runs approved rework",
     assert.equal((yield* store.listDelegationEdges(original.delegationId, 10)).length, 2);
     const restarted = yield* harness.executor;
     yield* restarted.runCycle;
+    assert.lengthOf(reworkReminders(), 2);
     const child = Option.getOrThrow(yield* store.getDelegation(childId));
     assert.equal(child.state, "running");
     assert.equal(child.delegation.target.threadId, original.target.threadId);

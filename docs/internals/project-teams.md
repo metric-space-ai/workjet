@@ -80,7 +80,12 @@ result can then create the linked rework task on the same worker; the executor
 starts it after restart and its result can be reviewed and approved. A budget
 with zero review rounds still completes directly.
 The review decision and creation of the linked delegation are separate
-commands; recovery of an interrupted handoff between them remains open. The
+commands. The executor scans source-owned `changes-requested` rows with a stored
+result and no `revises` child, pages over them, and dispatches a stable parent
+continuation after a crash or transient dispatch refusal. The child enqueue's
+atomic graph edge removes the row from the recovery set. An accepted continuation
+still depends on the parent to create or explicitly resolve the replacement;
+it cannot derive a new task's prompt and scope from the verdict alone. The
 rejected original remains in `changes-requested` while its replacement runs.
 Review reasons and round verdicts are not yet persisted as learning evidence.
 
@@ -99,7 +104,8 @@ atomic review edges, and result-to-rework have targeted local tests; exact-head
 CI and real desktop/web/mobile acceptance for these additions remain pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
-recovery of checkouts retained after unreadable receipts, review-to-rework handoff recovery,
+recovery of checkouts retained after unreadable receipts, unresolved rework after
+an accepted parent continuation,
 cleanup/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

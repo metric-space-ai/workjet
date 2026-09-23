@@ -60,7 +60,8 @@ export class ProjectTeamLearningStore extends Context.Service<
 const evidenceError = (detail: string) => new ProjectTeamLearningEvidenceError({ detail });
 const isEvidenceError = Schema.is(ProjectTeamLearningEvidenceError);
 const isPersistenceSqlError = Schema.is(PersistenceSqlError);
-const transactionError = (operation: string) =>
+const transactionError =
+  (operation: string) =>
   (cause: unknown): ProjectTeamLearningStoreError =>
     isEvidenceError(cause) || isPersistenceSqlError(cause)
       ? cause
@@ -140,7 +141,9 @@ export const make = Effect.gen(function* () {
       }>`
         SELECT worker_thread_id AS "workerThreadId", task_type AS "taskType", difficulty
         FROM workjet_team_selections WHERE selection_id = ${selectionId}
-      `.pipe(Effect.mapError(toPersistenceSqlError("ProjectTeamLearningStore.assessmentSelection")));
+      `.pipe(
+        Effect.mapError(toPersistenceSqlError("ProjectTeamLearningStore.assessmentSelection")),
+      );
       if (
         selected[0]?.workerThreadId !== review.subjectThreadId ||
         selected[0]?.taskType !== review.taskType ||

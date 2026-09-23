@@ -53,33 +53,43 @@ const withDatabase = <A, E>(
 ) => effect.pipe(Effect.provide(layer.pipe(Layer.provideMerge(NodeSqliteClient.layerMemory()))));
 
 describe("ProjectTeamLearningStore", () => {
-  it.effect("retains the randomized assignment as unassessed until a first delivery is scored", () =>
-    withDatabase(
-      Effect.gen(function* () {
-        yield* runMigrations();
-        const store = yield* ProjectTeamLearningStore;
-        yield* store.recordSelection(selection);
-        yield* store.recordSelection(selection);
-        const before = yield* store.listObservations(selection);
-        assert.equal(before.length, 1);
-        assert.equal(before[0]?.firstScore, null);
-        assert.equal(
-          compareTeamCandidates({
-            candidates: [selection.candidate, "another/model/harness/1"],
-            observations: before,
-            ...selection,
-          }).rows.find((row) => row.candidate === selection.candidate)?.unassessed,
-          1,
-        );
+  it.effect(
+    "retains the randomized assignment as unassessed until a first delivery is scored",
+    () =>
+      withDatabase(
+        Effect.gen(function* () {
+          yield* runMigrations();
+          const store = yield* ProjectTeamLearningStore;
+          yield* store.recordSelection(selection);
+          yield* store.recordSelection(selection);
+          const before = yield* store.listObservations(selection);
+          assert.equal(before.length, 1);
+          assert.equal(before[0]?.firstScore, null);
+          assert.equal(
+            compareTeamCandidates({
+              candidates: [selection.candidate, "another/model/harness/1"],
+              observations: before,
+              ...selection,
+            }).rows.find((row) => row.candidate === selection.candidate)?.unassessed,
+            1,
+          );
 
-        yield* store.recordAssessment({ selectionId: selection.selectionId, review, cause: "model" });
-        yield* store.recordAssessment({ selectionId: selection.selectionId, review, cause: "model" });
-        const after = yield* store.listObservations(selection);
-        assert.equal(after.length, 1);
-        assert.equal(after[0]?.firstScore, 8);
-        assert.equal(after[0]?.cause, "model");
-      }),
-    ),
+          yield* store.recordAssessment({
+            selectionId: selection.selectionId,
+            review,
+            cause: "model",
+          });
+          yield* store.recordAssessment({
+            selectionId: selection.selectionId,
+            review,
+            cause: "model",
+          });
+          const after = yield* store.listObservations(selection);
+          assert.equal(after.length, 1);
+          assert.equal(after[0]?.firstScore, 8);
+          assert.equal(after[0]?.cause, "model");
+        }),
+      ),
   );
 
   it.effect("rejects substituted assignments and reviews while keeping the original evidence", () =>
@@ -112,7 +122,11 @@ describe("ProjectTeamLearningStore", () => {
           ))._tag,
           "Failure",
         );
-        yield* store.recordAssessment({ selectionId: selection.selectionId, review, cause: "model" });
+        yield* store.recordAssessment({
+          selectionId: selection.selectionId,
+          review,
+          cause: "model",
+        });
         assert.equal(
           (yield* Effect.exit(
             store.recordAssessment({

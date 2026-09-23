@@ -48,6 +48,35 @@ layer("064_WorkjetWorkerCleanupReceipts", (it) => {
         SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id = 64
       `;
       assert.deepStrictEqual(applied, [{ migration_id: 64, name: "WorkjetWorkerCleanupReceipts" }]);
+      const tables = yield* sql<{ readonly name: string }>`
+        SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workjet_worker_cleanup_receipts'
+      `;
+      assert.deepStrictEqual(tables, [{ name: "workjet_worker_cleanup_receipts" }]);
+    }),
+  );
+
+  it.effect("refuses a reused native migration ID with a different name", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 58 });
+      for (const [id, name] of [
+        [59, "WorkjetCtoxConnectionBindings"],
+        [60, "WorkjetCtoxNativeRequests"],
+        [61, "WorkjetWorkerCleanupReceipts"],
+        [62, "WorkjetCtoxCrewStarts"],
+        [63, "WorkjetCtoxCrewProviderBinding"],
+      ] as const) {
+        yield* sql`
+          INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, ${name})
+        `;
+      }
+
+      const result = yield* Effect.exit(runMigrations({ toMigrationInclusive: 64 }));
+      assert.equal(result._tag, "Failure");
+      const applied = yield* sql<{ readonly migration_id: number }>`
+        SELECT migration_id FROM effect_sql_migrations WHERE migration_id = 64
+      `;
+      assert.deepStrictEqual(applied, []);
     }),
   );
 });

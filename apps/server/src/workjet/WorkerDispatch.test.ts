@@ -375,15 +375,13 @@ for (const receiptStatus of ["rejected", "missing", "unavailable"] as const) {
         const error = yield* service
           .dispatch(invocation, { task: "Retain or remove only with a durable receipt." })
           .pipe(Effect.flip);
-        expect(error.reason).toBe(
-          receiptStatus === "rejected" ? "create-failed" : "rollback-failed",
-        );
+        expect(error.reason).toBe("rollback-failed");
         expect(harness.commands.map((command) => command.type)).toEqual([
           "thread.create",
           "thread.create",
         ]);
-        expect(harness.worktreeRemovals).toHaveLength(receiptStatus === "rejected" ? 1 : 0);
-        expect(harness.branchDeletions).toHaveLength(receiptStatus === "rejected" ? 1 : 0);
+        expect(harness.worktreeRemovals).toEqual([]);
+        expect(harness.branchDeletions).toEqual([]);
       }),
   );
 }
@@ -630,14 +628,14 @@ it.effect("denies a stale invocation role even when the persisted parent is an o
   }),
 );
 
-it.effect("does not delete after create failure and rolls back bounded turn-start failures", () =>
+it.effect("retains a failed dispatch's source after bounded turn-start rollback", () =>
   Effect.gen(function* () {
     const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
     const createService = yield* createFailure.service;
     const createError = yield* createService
       .dispatch(invocation, { task: "Sensitive create task." })
       .pipe(Effect.flip);
-    expect(createError.reason).toBe("create-failed");
+    expect(createError.reason).toBe("rollback-failed");
     expect(createFailure.commands.map(({ type }) => type)).toEqual(["thread.create"]);
 
     const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
@@ -645,7 +643,7 @@ it.effect("does not delete after create failure and rolls back bounded turn-star
     const turnError = yield* turnService
       .dispatch(invocation, { task: "Sensitive turn task." })
       .pipe(Effect.flip);
-    expect(turnError.reason).toBe("turn-start-failed");
+    expect(turnError.reason).toBe("rollback-failed");
     expect(turnFailure.commands.map(({ type }) => type)).toEqual([
       "thread.create",
       "thread.turn.start",
@@ -748,7 +746,7 @@ it.effect("fails bounded when the isolated worker worktree cannot be created", (
   }),
 );
 
-it.effect("removes only the worktree this dispatch created when rollback runs", () =>
+it.effect("retains checkout and ref when rollback cannot safely remove them", () =>
   Effect.gen(function* () {
     const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
     const turnService = yield* turnFailure.service;
@@ -756,76 +754,18 @@ it.effect("removes only the worktree this dispatch created when rollback runs", 
       .dispatch(invocation, { task: "Rolled back task." })
       .pipe(Effect.flip);
 
-    expect(turnError.reason).toBe("turn-start-failed");
-    expect(turnFailure.worktreeRemovals).toEqual([
-      { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
-    ]);
-    // `git worktree remove` leaves the branch behind, so the rollback must
-    // delete this dispatch's own worker ref too — and only that one.
-    expect(turnFailure.branchDeletions).toEqual([
-      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
-    ]);
-    // The orchestrator's own worktree and ref are never removal targets.
-    expect(turnFailure.worktreeRemovals.some(({ path }) => path === parent.worktreePath)).toBe(
-      false,
-    );
-    expect(turnFailure.branchDeletions.some(({ refName }) => refName === parent.branch)).toBe(
-      false,
-    );
+    expect(turnError.reason).toBe("rollback-failed");
+    expect(turnFailure.worktreeRemovals).toEqual([]);
+    expect(turnFailure.branchDeletions).toEqual([]);
 
-    // A create failure must not leak the worktree or the ref either.
+    // A rejected create leaves the checkout and ref available for recovery.
     const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
     const createService = yield* createFailure.service;
     const createError = yield* createService
       .dispatch(invocation, { task: "Create failure task." })
       .pipe(Effect.flip);
-    expect(createError.reason).toBe("create-failed");
-    expect(createFailure.worktreeRemovals).toEqual([
-      { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
-    ]);
-    expect(createFailure.branchDeletions).toEqual([
-      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
-    ]);
-
-    const createCleanupFailure = makeHarness({
-      failCommandTypes: ["thread.create"],
-      failWorktreeRemove: true,
-    });
-    const createCleanupService = yield* createCleanupFailure.service;
-    const createCleanupError = yield* createCleanupService
-      .dispatch(invocation, { task: "Create rollback failure." })
-      .pipe(Effect.flip);
-    expect(createCleanupError.reason).toBe("rollback-failed");
-    expect(createCleanupFailure.branchDeletions).toEqual([]);
-
-    // A failed worktree removal is reported as a rollback failure.
-    const removeFailure = makeHarness({
-      failCommandTypes: ["thread.turn.start"],
-      failWorktreeRemove: true,
-    });
-    const removeService = yield* removeFailure.service;
-    const removeError = yield* removeService
-      .dispatch(invocation, { task: "Removal failure task." })
-      .pipe(Effect.flip);
-    expect(removeError.reason).toBe("rollback-failed");
-    expect(JSON.stringify(removeError)).not.toContain("downstream git secret");
-    // A failed worktree removal short-circuits before the ref delete.
-    expect(removeFailure.branchDeletions).toEqual([]);
-
-    // A failed ref deletion is a rollback failure too: the dangling ref is the
-    // exact leak this path exists to prevent.
-    const branchFailure = makeHarness({
-      failCommandTypes: ["thread.turn.start"],
-      failBranchDelete: true,
-    });
-    const branchService = yield* branchFailure.service;
-    const branchError = yield* branchService
-      .dispatch(invocation, { task: "Branch failure task." })
-      .pipe(Effect.flip);
-    expect(branchError.reason).toBe("rollback-failed");
-    expect(branchFailure.branchDeletions).toEqual([
-      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
-    ]);
-    expect(JSON.stringify(branchError)).not.toContain("downstream git secret");
+    expect(createError.reason).toBe("rollback-failed");
+    expect(createFailure.worktreeRemovals).toEqual([]);
+    expect(createFailure.branchDeletions).toEqual([]);
   }),
 );

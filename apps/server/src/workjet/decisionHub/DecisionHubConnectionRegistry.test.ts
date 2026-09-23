@@ -112,6 +112,11 @@ describe("durable CTOX connection identity", () => {
       expect(
         yield* Effect.flip(registry.provision({ ...input, endpoint: otherInstance.endpoint })),
       ).toMatchObject({ reason: "connection-instance-mismatch" });
+      // The bare managed relay can target a configured upstream unrelated to
+      // the claimed instance; only /mcp/<instance-id> pins that route.
+      expect(
+        yield* Effect.flip(registry.provision({ ...input, endpoint: "https://mcp.ctox.dev/mcp" })),
+      ).toMatchObject({ reason: "connection-instance-mismatch" });
       expect(test.writes()).toBe(0);
       expect(yield* registry.list).toEqual([]);
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),

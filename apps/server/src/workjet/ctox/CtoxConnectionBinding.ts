@@ -17,7 +17,7 @@ export const requireCtoxManagedInstanceRoute = (endpoint: string, instanceId: st
     try: () => {
       const url = new URL(endpoint);
       if (url.hostname !== "mcp.ctox.dev") return;
-      if (url.pathname === "/mcp") return;
+      if (url.pathname === "/mcp") throw new Error("Managed relay does not name an instance");
       const match = /^\/mcp\/([^/]+)$/.exec(url.pathname);
       if (!match || decodeURIComponent(match[1]!) !== instanceId) {
         throw new Error("Managed route names another instance");

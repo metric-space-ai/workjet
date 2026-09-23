@@ -62,22 +62,23 @@ const parent = {
   worktreePath: "/workspace/worktree",
   deletedAt: null,
 } as unknown as OrchestrationThread;
+const teamConfig = {
+  ...parent.workjetConfig,
+  schemaVersion: 2,
+  capabilityBindings: [],
+  team: {
+    projectId: parent.projectId,
+    threadId: parent.id,
+    role: "specialist",
+    parentThreadId: ThreadId.make("supervisor"),
+    domain: "implementation",
+    goal: "Implement the project",
+    createdAt: "2026-08-15T12:34:56.000Z",
+  },
+} as const;
 const teamParent = {
   ...parent,
-  workjetConfig: {
-    ...parent.workjetConfig,
-    schemaVersion: 2,
-    capabilityBindings: [],
-    team: {
-      projectId: parent.projectId,
-      threadId: parent.id,
-      role: "specialist",
-      parentThreadId: ThreadId.make("supervisor"),
-      domain: "implementation",
-      goal: "Implement the project",
-      createdAt: "2026-08-15T12:34:56.000Z",
-    },
-  },
+  workjetConfig: teamConfig,
 } as OrchestrationThread;
 const invocation: McpInvocationScope = {
   environmentId,
@@ -180,7 +181,7 @@ const makeHarness = (input?: {
               role: "worker",
               parent: { environmentId, threadId: parentThreadId },
               team: {
-                ...teamParent.workjetConfig.team,
+                ...teamConfig.team,
                 role: "worker",
                 parentThreadId,
                 threadId,

@@ -714,6 +714,7 @@ function waitForGuestNavigationCommit(
     try: () =>
       new Promise<boolean>((resolve) => {
         let settled = false;
+        let timeout: ReturnType<typeof setTimeout> | undefined;
         const removeListener = (event: string, listener: (...args: Array<never>) => void): void => {
           try {
             webContents.off(event as never, listener as never);
@@ -748,6 +749,7 @@ function waitForGuestNavigationCommit(
         };
         const onDestroyed = (): void => finish(false);
         cleanup = (): void => {
+          if (timeout !== undefined) clearTimeout(timeout);
           removeListener("did-frame-navigate", onDidFrameNavigate as never);
           removeListener("did-fail-load", onDidFailLoad as never);
           removeListener("will-navigate", onWillNavigate as never);
@@ -761,6 +763,7 @@ function waitForGuestNavigationCommit(
         };
 
         try {
+          timeout = setTimeout(() => finish(false), 30_000);
           webContents.on("did-frame-navigate", onDidFrameNavigate as never);
           webContents.on("did-fail-load", onDidFailLoad as never);
           webContents.on("will-navigate", onWillNavigate as never);

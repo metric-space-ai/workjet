@@ -9,6 +9,38 @@ import * as NodeSqliteClient from "../NodeSqliteClient.ts";
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
 layer("064_WorkjetWorkerCleanupReceipts", (it) => {
+  it.effect("applies native CTOX and project-team migrations in order on a fresh database", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 66 });
+
+      const applied = yield* sql<{ readonly migration_id: number; readonly name: string }>`
+        SELECT migration_id, name FROM effect_sql_migrations
+        WHERE migration_id BETWEEN 59 AND 66 ORDER BY migration_id
+      `;
+      assert.deepStrictEqual(applied, [
+        { migration_id: 59, name: "WorkjetCtoxConnectionBindings" },
+        { migration_id: 60, name: "WorkjetCtoxNativeRequests" },
+        { migration_id: 61, name: "WorkjetCtoxNativeTurns" },
+        { migration_id: 62, name: "WorkjetCtoxCrewStarts" },
+        { migration_id: 63, name: "WorkjetCtoxCrewProviderBinding" },
+        { migration_id: 64, name: "WorkjetWorkerCleanupReceipts" },
+        { migration_id: 65, name: "WorkjetMailboxReviewRedrive" },
+        { migration_id: 66, name: "WorkjetProjectTeamLearning" },
+      ]);
+      const tables = yield* sql<{ readonly name: string }>`
+        SELECT name FROM sqlite_master WHERE type = 'table'
+          AND name IN ('workjet_ctox_native_requests', 'workjet_worker_cleanup_receipts', 'workjet_team_reviews')
+        ORDER BY name
+      `;
+      assert.deepStrictEqual(tables, [
+        { name: "workjet_ctox_native_requests" },
+        { name: "workjet_team_reviews" },
+        { name: "workjet_worker_cleanup_receipts" },
+      ]);
+    }),
+  );
+
   it.effect("refuses project-team migrations on a fresh database that only has migration 58", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

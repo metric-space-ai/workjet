@@ -509,13 +509,24 @@ describe("DesktopConnectionCatalogStore", () => {
       const failDecrypt = yield* Ref.make(false);
       const copyStarted = yield* Deferred.make<void>();
       const releaseCopy = yield* Deferred.make<void>();
+      const backupPaused = yield* Ref.make(false);
+      const writeWhileBackupPaused = yield* Ref.make(false);
       const pausedCopy = Layer.succeed(FileSystem.FileSystem, {
         ...fileSystem,
         copyFile: (source, destination) =>
           Effect.gen(function* () {
+            yield* Ref.set(backupPaused, true);
             yield* Deferred.succeed(copyStarted, undefined);
             yield* Deferred.await(releaseCopy);
+            yield* Ref.set(backupPaused, false);
             yield* fileSystem.copyFile(source, destination);
+          }),
+        makeDirectory: (path, options) =>
+          Effect.gen(function* () {
+            if (yield* Ref.get(backupPaused)) {
+              yield* Ref.set(writeWhileBackupPaused, true);
+            }
+            yield* fileSystem.makeDirectory(path, options);
           }),
       });
       const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
@@ -535,6 +546,9 @@ describe("DesktopConnectionCatalogStore", () => {
         { startImmediately: true },
       );
       yield* Deferred.await(writerAttempted);
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      assert.isUndefined(writer.pollUnsafe());
+      assert.isFalse(yield* Ref.get(writeWhileBackupPaused));
       yield* Deferred.succeed(releaseCopy, undefined);
       assert.isNotNull(yield* Fiber.join(recovery));
       assert.isTrue(yield* Fiber.join(writer));

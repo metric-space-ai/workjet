@@ -82,6 +82,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
                     task_id: taskId,
                     module: "ctox",
                     command_type: "business_os.chat.task",
+                    payload: { thread_id: task.thread_id },
                     status,
                   },
                 },

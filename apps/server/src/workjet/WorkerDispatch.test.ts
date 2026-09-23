@@ -185,6 +185,7 @@ const makeHarness = (input?: {
                 role: "worker",
                 parentThreadId,
                 threadId,
+                packageId: threadId,
               },
             },
           } as OrchestrationThread),

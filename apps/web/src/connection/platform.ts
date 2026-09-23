@@ -272,6 +272,20 @@ const capabilitiesLayer = Layer.effectContext(
             }),
         });
       }),
+      release: Effect.fn("web.connectionPlatform.ssh.release")(function* (target) {
+        const bridge = window.desktopBridge;
+        if (bridge === undefined) {
+          return;
+        }
+        yield* Effect.tryPromise({
+          try: () => bridge.disconnectSshEnvironment(target, { releaseOnly: true }),
+          catch: (cause) =>
+            new ConnectionTransientError({
+              reason: "remote-unavailable",
+              detail: `Could not release the SSH tunnel: ${String(cause)}`,
+            }),
+        });
+      }),
     });
 
     return Context.make(CloudSession, cloudSession).pipe(

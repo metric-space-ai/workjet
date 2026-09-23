@@ -474,7 +474,14 @@ export type CtoxWorkjetDeviceControlInput = typeof CtoxWorkjetDeviceControlInput
 export const CtoxWorkjetDeviceControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: WorkjetDeviceWebRtcResponseV1 }),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "not_active", "unsupported", "guest_failed"]),
+    code: Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "unsupported",
+      "sync_unavailable",
+      "forbidden",
+      "guest_failed",
+    ]),
   }),
 ]);
 export type CtoxWorkjetDeviceControlResult = typeof CtoxWorkjetDeviceControlResult.Type;

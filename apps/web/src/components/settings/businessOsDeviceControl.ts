@@ -16,6 +16,23 @@ export interface BusinessOsWebRtcDeviceInvite {
   readonly manualConnection: WorkjetManagedDeviceInviteManualConnectionResult;
 }
 
+export function businessOsDeviceControlErrorMessage(error: unknown, fallback: string): string {
+  const code = error instanceof Error ? error.message : "";
+  switch (code) {
+    case "unsupported":
+    case "ctox_webrtc_unavailable":
+      return "Dieses CTOX-Backend unterstützt die Geräteverwaltung noch nicht. Aktualisiere das Backend.";
+    case "sync_unavailable":
+      return "CTOX Sync ist für Geräteanfragen nicht erreichbar. Öffne das Backend erneut und prüfe die Verbindung.";
+    case "forbidden":
+      return "Dein CTOX-Konto darf Geräte für dieses Backend nicht verwalten.";
+    case "not_active":
+      return "Öffne dieses Backend in Business OS und versuche es erneut.";
+    default:
+      return fallback;
+  }
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("CTOX device response is invalid.");

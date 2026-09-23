@@ -788,13 +788,47 @@ it.effect("cancels a delegation with no graph edge", () =>
 
 it.effect("submits an approve verdict: review-requested→completed with a reviews edge", () =>
   Effect.gen(function* () {
-    const { service } = makeHarness();
+    const { service, events } = makeHarness();
     const delivery = yield* service;
     const store = yield* WorkjetMailboxStore;
     const id = yield* seedDelegation(delivery, store, [
       ...RUNNING_PATH,
       ["running", "review-requested"],
     ]);
+
+    const premature = yield* delivery
+      .updateDelegation(invocation, {
+        delegationId: id,
+        update: { _tag: "review", decision: "approve", round: 1 },
+      })
+      .pipe(Effect.flip);
+    assert.equal(premature.reason, "invalid-state-transition");
+    const record = Option.getOrThrow(yield* store.getDelegation(id));
+    yield* store.finalizeDelegationResult({
+      delegationId: id,
+      to: "review-requested",
+      result: {
+        schemaVersion: 1,
+        envelopeId: WorkjetEnvelopeId.make("wjm-review-result-000000000000"),
+        delegation: { schemaVersion: 1, delegationId: id, owner: record.delegation.target },
+        reportedBy: record.delegation.target,
+        reportedAt: NOW,
+        outcome: "completed",
+        summary: "Worker turn completed; review required.",
+        artifacts: { schemaVersion: 1, commitHashes: [], paths: [] },
+      },
+      changedAt: NOW,
+    });
+    const selfReview = yield* delivery
+      .updateDelegation(
+        { ...invocation, threadId: TARGET_THREAD },
+        {
+          delegationId: id,
+          update: { _tag: "review", decision: "approve", round: 1 },
+        },
+      )
+      .pipe(Effect.flip);
+    assert.equal(selfReview.reason, "unauthorized");
 
     const outcome = yield* delivery.updateDelegation(invocation, {
       delegationId: id,
@@ -806,6 +840,7 @@ it.effect("submits an approve verdict: review-requested→completed with a revie
       (yield* store.listDelegationEdges(id, 32)).map((edge) => edge.kind),
       ["reviews"],
     );
+    assert.equal(events.filter((event) => event._tag === "delegation-completed").length, 1);
   }).pipe(Effect.provide(testLayer)),
 );
 

@@ -364,11 +364,10 @@ export type WorkjetDelegationUpsertOutcome =
 /**
  * Outcome of finalizing a `running` delegation with its result.
  *
- * `finalized` is the fresh transition `running → completed|failed` that also
- * persisted the result JSON. `already-finalized` is the idempotent replay: the
- * row was terminal with a stored result, so the SAME persisted result is
- * returned rather than a second transition — a late or duplicate completion
- * therefore returns exactly what the first one did.
+ * `finalized` persists the result of an ended turn. Successful delegations with
+ * review rounds enter `review-requested` until the source decides; failures and
+ * no-review successes are terminal. `already-finalized` returns the stored
+ * result rather than making a second transition.
  */
 export type WorkjetDelegationFinalizeOutcome =
   | {
@@ -745,13 +744,13 @@ export interface WorkjetMailboxStoreShape {
   ) => Effect.Effect<Option.Option<WorkjetDelegationRecord>, WorkjetMailboxStoreError>;
 
   /**
-   * Transition a `running` delegation to a terminal `completed`/`failed` and
-   * persist its result in ONE transaction. Idempotent: a delegation already
-   * finalized returns its stored result instead of transitioning again.
+   * Persist the target turn's result with its next state in ONE transaction.
+   * Reviewable successes remain nonterminal; a row with an existing result
+   * returns that result instead of making a second transition.
    */
   readonly finalizeDelegationResult: (input: {
     readonly delegationId: WorkjetDelegationId;
-    readonly to: "completed" | "failed";
+    readonly to: "review-requested" | "completed" | "failed";
     readonly result: WorkjetDelegationResult;
     readonly changedAt: WorkjetMailboxTimestamp;
   }) => Effect.Effect<WorkjetDelegationFinalizeOutcome, WorkjetMailboxStoreError>;
@@ -762,7 +761,7 @@ export interface WorkjetMailboxStoreShape {
   ) => Effect.Effect<Option.Option<WorkjetDelegationResult>, WorkjetMailboxStoreError>;
 
   /**
-   * Terminal delegations whose persisted result was never successfully returned
+   * Delegations whose persisted result was never successfully returned
    * to the source: `result_json IS NOT NULL` with both migration-049 markers
    * still NULL. This is the durable retry queue behind the reconciler's
    * result-redelivery scan — without it a transient enqueue failure lost the
@@ -1761,7 +1760,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(() => new WorkjetMailboxError({ reason: "malformed-envelope" })),
       );
 
-      // Legality, the terminal write, and the result persistence share ONE
+      // Legality, the state write, and the result persistence share ONE
       // transaction: a concurrent cancellation or expiry cannot slip between the
       // observed state and the finalize, and the result column never diverges
       // from the state it describes.
@@ -1783,33 +1782,43 @@ export const make = Effect.gen(function* () {
             const record = yield* decodeDelegation(row, rowIdOf(row));
             const existingResultJson = (row as { readonly resultJson?: unknown }).resultJson;
 
-            // A delegation already finalized returns its STORED result — the
+            // A delegation with a result returns its STORED result — the
             // idempotent replay a late or duplicate completion must observe.
+            if (typeof existingResultJson === "string") {
+              const storedResult = yield* decodeDelegationResultJson(existingResultJson).pipe(
+                Effect.mapError(
+                  () =>
+                    new WorkjetMailboxStoreCorruptRowError({
+                      table: "workjet_delegations",
+                      rowId: input.delegationId,
+                      issue: "result_json",
+                    }),
+                ),
+              );
+              return {
+                _tag: "already-finalized",
+                record,
+                result: storedResult,
+              } as const;
+            }
             if (record.terminal) {
-              if (typeof existingResultJson === "string") {
-                const storedResult = yield* decodeDelegationResultJson(existingResultJson).pipe(
-                  Effect.mapError(
-                    () =>
-                      new WorkjetMailboxStoreCorruptRowError({
-                        table: "workjet_delegations",
-                        rowId: input.delegationId,
-                        issue: "result_json",
-                      }),
-                  ),
-                );
-                return {
-                  _tag: "already-finalized",
-                  record,
-                  result: storedResult,
-                } as const;
-              }
               // Terminal by another path (cancelled/expired/refused) with no
               // stored result: there is no result to return and the state is
               // immutable, so the finalize is refused rather than inventing one.
               return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
             }
 
-            if (record.state !== "running" || !isLegalDelegationTransition("running", input.to)) {
+            if (
+              (record.state !== "running" && record.state !== "review-requested") ||
+              (record.state === "running" && !isLegalDelegationTransition("running", input.to)) ||
+              (record.state === "review-requested" &&
+                input.to !== "review-requested" &&
+                input.to !== "failed") ||
+              (input.to === "review-requested" && record.delegation.budget.maxReviewRounds === 0) ||
+              (input.to === "failed" && input.result.outcome !== "failed") ||
+              (input.to !== "failed" && input.result.outcome !== "completed") ||
+              input.result.delegation.delegationId !== input.delegationId
+            ) {
               return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
             }
 
@@ -1822,16 +1831,24 @@ export const make = Effect.gen(function* () {
               Effect.mapError(() => new WorkjetMailboxError({ reason: "malformed-envelope" })),
             );
 
+            const terminal = isTerminalDelegationState(input.to) ? 1 : 0;
             yield* sql`
               UPDATE workjet_delegations
               SET delegation_json = ${delegationJson},
                   state = ${input.to},
                   state_changed_at_ms = ${changedAtMillis},
-                  terminal = 1,
+                  terminal = ${terminal},
                   result_json = ${resultJson}
               WHERE delegation_id = ${input.delegationId}
-                AND state = 'running'
+                AND state = ${record.state}
             `;
+            if (record.state !== input.to) {
+              yield* sql`
+                INSERT INTO workjet_delegation_state_events
+                  (delegation_id, from_state, to_state, terminal, changed_at_ms)
+                VALUES (${input.delegationId}, ${record.state}, ${input.to}, ${terminal}, ${changedAtMillis})
+              `;
+            }
 
             return {
               _tag: "finalized",
@@ -1840,7 +1857,7 @@ export const make = Effect.gen(function* () {
                 delegation: updatedDelegation,
                 state: input.to,
                 stateChangedAtMillis: changedAtMillis,
-                terminal: true,
+                terminal: terminal === 1,
               } satisfies WorkjetDelegationRecord,
               result: input.result,
             } as const;
@@ -1896,8 +1913,7 @@ export const make = Effect.gen(function* () {
             `
           SELECT ${DELEGATION_COLUMNS}, result_json AS "resultJson"
           FROM workjet_delegations
-          WHERE terminal = 1
-            AND result_json IS NOT NULL
+          WHERE result_json IS NOT NULL
             AND result_enqueued_at_ms IS NULL
             AND result_enqueue_failed_at_ms IS NULL
           ORDER BY state_changed_at_ms ASC, delegation_id ASC

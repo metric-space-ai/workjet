@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded activity payloads.
-import { applyDeliveredDelegation } from "./WorkjetMailboxDelivery.ts";
+import {
+  applyDeliveredDelegation,
+  makeWorkjetMailboxDeliveryWithSources,
+  type WorkjetMailboxDeliveryShape,
+} from "./WorkjetMailboxDelivery.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -96,6 +100,7 @@ const delegationFixture = (input: {
   readonly requiresApproval?: boolean;
   readonly maxTokens?: number;
   readonly maxCostMicros?: number;
+  readonly maxReviewRounds?: number;
   /** A review/revise chain link, whose `owner` is the parent's SOURCE thread. */
   readonly parent?: WorkjetDelegationRef;
 }): WorkjetDelegation => ({
@@ -128,7 +133,7 @@ const delegationFixture = (input: {
   budget: {
     schemaVersion: 1,
     maxDepth: 4,
-    maxReviewRounds: 2,
+    maxReviewRounds: input.maxReviewRounds ?? 0,
     expiresAt: EXPIRES,
     ...(input.requiresApproval === true ? { requiresApproval: true } : {}),
     ...(input.maxTokens !== undefined ? { maxTokens: input.maxTokens } : {}),
@@ -317,6 +322,7 @@ interface Harness {
     never,
     WorkjetMailboxStore | WorkjetSnapshotStore
   >;
+  readonly delivery: Effect.Effect<WorkjetMailboxDeliveryShape, never, WorkjetMailboxStore>;
 }
 
 /**
@@ -360,6 +366,7 @@ const makeHarness = (options?: {
   let enqueueFailureKind: "transient" | "permanent" = "transient";
   let enqueueCalls = 0;
   let nowIndex = 0;
+  let deliveryUuidIndex = 0;
   const nowValues = options?.nowValues ?? [NOW];
 
   const sources: WorkjetDelegationExecutorSources = {
@@ -445,6 +452,16 @@ const makeHarness = (options?: {
       enqueueFailureKind = kind;
     },
     enqueueAttempts: () => enqueueCalls,
+    delivery: makeWorkjetMailboxDeliveryWithSources({
+      randomUUID: Effect.sync(
+        () => `00000000-0000-4000-8000-${String(++deliveryUuidIndex).padStart(12, "0")}`,
+      ),
+      nowIso: Effect.succeed(NOW),
+    }).pipe(
+      Effect.provideService(OrchestrationEngineService, engine),
+      Effect.provideService(ProjectionSnapshotQuery, query),
+      Effect.provideService(WorkjetMeshIdentity, identityDouble),
+    ),
     executor: Effect.gen(function* () {
       const base = makeWorkjetDelegationExecutorWithSources(sources).pipe(
         Effect.provideService(OrchestrationEngineService, engine),
@@ -747,6 +764,179 @@ it.effect("starts a linked rework turn once after restart", () =>
     yield* again.runCycle;
     assert.equal(turnStarts(harness.commands).length, 1);
   }).pipe(Effect.provide(testLayer("delegation-linked-rework-restart"))),
+);
+
+it.effect("returns a completed worker turn for review and runs approved rework", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const original = delegationFixture({
+      id: "reviewed-worker",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxReviewRounds: 2,
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: original.delegationId,
+        turnId: "reviewed-worker-turn",
+        turnState: "completed",
+      }),
+    });
+    const parent = {
+      ...thread({ id: SOURCE_THREAD, role: "orchestrator" }),
+      archivedAt: null,
+      workjetConfig: {
+        schemaVersion: 2,
+        role: "orchestrator",
+        enabledCapabilityIds: [],
+        team: {
+          role: "supervisor",
+          threadId: SOURCE_THREAD,
+          projectId: "project",
+          parentThreadId: null,
+          goal: "Review worker results",
+          createdAt: NOW,
+        },
+      },
+    } as unknown as OrchestrationThread;
+    harness.setThreadById(SOURCE_THREAD, parent);
+    yield* seed(original);
+
+    const executor = yield* harness.executor;
+    yield* executor.runCycle;
+    assert.equal(yield* stateOf(original), "review-requested");
+    assert.isTrue(Option.isSome(yield* store.getDelegationResult(original.delegationId)));
+    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 0);
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) => command.type === "thread.turn.start" && command.threadId === SOURCE_THREAD,
+      ),
+      1,
+    );
+
+    const delivery = yield* harness.delivery;
+    const actor = { environmentId: LOCAL_ENVIRONMENT, threadId: SOURCE_THREAD };
+    const review = yield* delivery.updateDelegation(actor, {
+      delegationId: original.delegationId,
+      update: { _tag: "review", decision: "changes-requested", round: 1 },
+    });
+    assert.equal(review.state, "changes-requested");
+
+    const rework = yield* delivery.delegateTask(actor, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      prompt: original.prompt,
+      scope: original.scope,
+      completion: original.completion,
+      budget: { maxDepth: 4, maxReviewRounds: 1, ttlSeconds: 7_200 },
+      parentDelegationId: original.delegationId,
+    });
+    const childId = rework.delegation.delegationId;
+    assert.equal((yield* store.listDelegationEdges(original.delegationId, 10)).length, 2);
+    const restarted = yield* harness.executor;
+    yield* restarted.runCycle;
+    const child = Option.getOrThrow(yield* store.getDelegation(childId));
+    assert.equal(child.state, "running");
+    assert.equal(child.delegation.target.threadId, original.target.threadId);
+    assert.equal(child.delegation.parent?.delegationId, original.delegationId);
+
+    harness.setThreadById(
+      TARGET_THREAD,
+      endedTurnThread({ delegationId: childId, turnId: "rework-turn", turnState: "completed" }),
+    );
+    yield* restarted.runCycle;
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(childId)).state, "review-requested");
+    const approval = yield* delivery.updateDelegation(actor, {
+      delegationId: childId,
+      update: { _tag: "review", decision: "approve", round: 1 },
+    });
+    assert.equal(approval.state, "completed");
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(childId)).state, "completed");
+  }).pipe(Effect.provide(testLayer("delegation-result-review-rework"))),
+);
+
+it.effect("persists the result when review was requested before the worker turn ended", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "early-review-request",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "review-requested",
+      maxReviewRounds: 2,
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "early-review-turn",
+        turnState: "completed",
+      }),
+    });
+    yield* seed(delegation);
+    const executor = yield* harness.executor;
+    yield* executor.runCycle;
+    const store = yield* WorkjetMailboxStore;
+    assert.equal(yield* stateOf(delegation), "review-requested");
+    assert.isTrue(Option.isSome(yield* store.getDelegationResult(delegation.delegationId)));
+    const activities = harness.commands.filter(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
+    );
+    assert.lengthOf(activities, 1);
+    const restarted = yield* harness.executor;
+    yield* restarted.runCycle;
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
+      ),
+      1,
+    );
+  }).pipe(Effect.provide(testLayer("delegation-early-review-result"))),
+);
+
+it.effect("redelivers a review result after the source requested changes", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "review-return-retry",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxReviewRounds: 2,
+    });
+    const harness = makeHarness({
+      initialThread: endedTurnThread({
+        delegationId: delegation.delegationId,
+        turnId: "review-retry-turn",
+        turnState: "completed",
+      }),
+    });
+    yield* seed(delegation);
+    harness.failNextResultActivities(1);
+    const executor = yield* harness.executor;
+    yield* executor.runCycle;
+    const store = yield* WorkjetMailboxStore;
+    assert.equal(yield* stateOf(delegation), "review-requested");
+    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 1);
+    yield* store.transitionDelegationState(
+      delegation.delegationId,
+      "review-requested",
+      "changes-requested",
+      LATER,
+    );
+    const restarted = yield* harness.executor;
+    yield* restarted.runCycle;
+    assert.lengthOf(yield* store.listDelegationsPendingResultReturn(10), 0);
+    assert.equal(yield* stateOf(delegation), "changes-requested");
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
+      ),
+      1,
+    );
+  }).pipe(Effect.provide(testLayer("delegation-review-return-retry"))),
 );
 
 it.effect("holds a pending-approval delegation in delivered until it is approved", () =>

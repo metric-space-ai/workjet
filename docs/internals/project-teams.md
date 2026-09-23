@@ -70,11 +70,19 @@ by the parent. The mailbox store rechecks parent state and ownership in the
 enqueue transaction. The existing executor starts the linked turn with a stable
 command identity after restart. A `needs-input` or completed parent may similarly
 be followed up.
-The review decision and creation of the linked delegation are still separate
-commands; recovery of an interrupted handoff between them remains open.
-Ordinary team workers currently finalize and deliver their result as terminal
-`completed`, bypassing `review-requested`; this means the normal worker-result
-path cannot yet enter `changes-requested` and trigger the linked rework flow.
+Successful worker turns with a positive review-round budget now persist their
+result while entering `review-requested`. The stored result is returned to the
+parent with the same durable retry marker as a terminal result, and the parent
+continuation can decide `changes-requested` or approve. A completed turn whose
+worker requested review early is also reconciled. The reviewer must be the
+delegation source and cannot approve before the turn result is stored. A rejected
+result can then create the linked rework task on the same worker; the executor
+starts it after restart and its result can be reviewed and approved. A budget
+with zero review rounds still completes directly.
+The review decision and creation of the linked delegation are separate
+commands; recovery of an interrupted handoff between them remains open. The
+rejected original remains in `changes-requested` while its replacement runs.
+Review reasons and round verdicts are not yet persisted as learning evidence.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
 removal protects dirty work and unmerged commits, but it is not merge proof.
@@ -86,10 +94,9 @@ Archive must follow successful cleanup rather than hide a failed cleanup.
 ## Implementation checkpoint
 
 This branch is not production-ready. Exact-head CI on 74f37cd9e passed Check,
-Test, Release Smoke and Mobile Native Static Analysis. The receipt follow-up
-passed 19 focused dispatch/unit and end-to-end tests plus server typecheck
-locally; broad CI on the updated head remains pending. Real desktop/web/mobile
-acceptance has not run.
+Test, Release Smoke and Mobile Native Static Analysis. Receipt reconciliation,
+atomic review edges, and result-to-rework have targeted local tests; exact-head
+CI and real desktop/web/mobile acceptance for these additions remain pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
 recovery of checkouts retained after unreadable receipts, review-to-rework handoff recovery,

@@ -1194,8 +1194,21 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
         } as const satisfies WorkjetMailboxUpdateDelegationOutcome;
       }
       case "review": {
+        if (
+          actor.workspaceId !== delegation.source.workspaceId ||
+          actor.environmentId !== delegation.source.environmentId ||
+          actor.threadId !== delegation.source.threadId
+        ) {
+          return yield* failure("unauthorized");
+        }
         if (input.update.round > delegation.budget.maxReviewRounds) {
           return yield* failure("review-rounds-exceeded");
+        }
+        const storedResult = yield* store
+          .getDelegationResult(input.delegationId)
+          .pipe(Effect.mapError(boundStoreError));
+        if (Option.isNone(storedResult)) {
+          return yield* failure("invalid-state-transition");
         }
         const to: WorkjetDelegationState =
           input.update.decision === "approve" ? "completed" : "changes-requested";
@@ -1204,6 +1217,17 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
           to,
           relationship("reviews", actorRef, reviewedRef, delegation.depth),
         );
+        if (to === "completed") {
+          yield* emit({
+            _tag: "delegation-completed",
+            occurredAt: now,
+            delegationId: input.delegationId,
+            envelopeId: delegation.envelopeId,
+            source: auditAddress(delegation.source),
+            target: auditAddress(delegation.target),
+            outcome: "completed",
+          });
+        }
         return {
           delegationId: input.delegationId,
           state: result.state,

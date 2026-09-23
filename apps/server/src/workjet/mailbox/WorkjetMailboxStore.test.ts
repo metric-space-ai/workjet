@@ -986,6 +986,58 @@ it.effect("queues an unreturned delegation result and stamps it exactly once", (
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("keeps an unreturned review result retryable after changes are requested", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("review-return");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("review-return"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    yield* store.transitionDelegationState(id, "queued", "delivered", T0);
+    yield* store.transitionDelegationState(id, "delivered", "accepted", T0);
+    yield* store.transitionDelegationState(id, "accepted", "running", T0);
+    const result = delegationResult({
+      id,
+      envelope: envelopeId("review-result"),
+      outcome: "completed",
+    });
+    const finalized = yield* store.finalizeDelegationResult({
+      delegationId: id,
+      to: "review-requested",
+      result,
+      changedAt: T1,
+    });
+    assert.equal(finalized.record.state, "review-requested");
+    assert.isFalse(finalized.record.terminal);
+    assert.equal((yield* store.listDelegationsPendingResultReturn(10)).length, 1);
+    assert.deepEqual(
+      (yield* store.listDelegationStateEvents(id)).map((event) => event.toState),
+      ["delivered", "accepted", "running", "review-requested"],
+    );
+
+    yield* store.transitionDelegationState(id, "review-requested", "changes-requested", T2);
+    const restarted = yield* store.listDelegationsPendingResultReturn(10);
+    assert.equal(restarted.length, 1);
+    assert.equal(restarted[0]?._tag, "record");
+    const replay = yield* store.finalizeDelegationResult({
+      delegationId: id,
+      to: "failed",
+      result: delegationResult({ id, envelope: envelopeId("review-late"), outcome: "failed" }),
+      changedAt: T2,
+    });
+    assert.equal(replay._tag, "already-finalized");
+    assert.deepEqual(replay.result, result);
+    assert.isTrue(yield* store.markDelegationResultReturned(id, T2));
+    assert.equal((yield* store.listDelegationsPendingResultReturn(10)).length, 0);
+  }).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("drops a reconciled outbox row from the unreconciled scan only", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;

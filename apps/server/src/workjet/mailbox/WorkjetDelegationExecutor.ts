@@ -1511,11 +1511,12 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
 
   /**
    * Advance a `running` delegation whose target thread is LOCAL. The delegation
-   * is completed ONLY when the exact turn this executor dispatched has ended:
+   * receives a result ONLY when the exact turn this executor dispatched has ended:
    * the correlated user message's turn is the latest turn, that turn is no
    * longer running, and the session is not still driving it. A turn that ended
-   * in error or interruption moves `running → failed`. Idempotent: the store
-   * refuses a second finalize and returns the stored result.
+   * in error or interruption moves it to `failed`. A successful turn enters
+   * `review-requested` when review rounds are budgeted, otherwise `completed`.
+   * Idempotent: the store refuses a second result write and returns the stored result.
    */
   const advanceRunning = (input: {
     readonly record: WorkjetDelegationRecord;
@@ -1618,10 +1619,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         interrupted,
       });
 
+      const finalState =
+        outcome === "completed" && delegation.budget.maxReviewRounds > 0
+          ? "review-requested"
+          : outcome;
       const finalized = yield* store
         .finalizeDelegationResult({
           delegationId: delegation.delegationId,
-          to: outcome,
+          to: finalState,
           result,
           changedAt: input.now as WorkjetMailboxTimestamp,
         })
@@ -1641,16 +1646,18 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         now: input.now,
       });
 
-      // Emitted AFTER the durable finalize, carrying only the terminal outcome.
-      yield* emit({
-        _tag: "delegation-completed",
-        occurredAt: input.now as WorkjetMailboxTimestamp,
-        delegationId: delegation.delegationId,
-        envelopeId: delegation.envelopeId,
-        source: auditAddress(delegation.source),
-        target: auditAddress(delegation.target),
-        outcome,
-      });
+      // A successful turn awaiting review is not a completed delegation.
+      if (finalState !== "review-requested") {
+        yield* emit({
+          _tag: "delegation-completed",
+          occurredAt: input.now as WorkjetMailboxTimestamp,
+          delegationId: delegation.delegationId,
+          envelopeId: delegation.envelopeId,
+          source: auditAddress(delegation.source),
+          target: auditAddress(delegation.target),
+          outcome,
+        });
+      }
 
       return outcome === "completed"
         ? ({ _tag: "completed" } as const)
@@ -1750,7 +1757,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * instead of aborting the whole batch. A transient store outage still fails
      * the read, which `Effect.option` folds into an empty batch for this cycle.
      */
-    const scan = (state: "queued" | "accepted" | "delivered" | "running") =>
+    const scan = (state: "queued" | "accepted" | "delivered" | "running" | "review-requested") =>
       store
         .listDelegationRowsByState(state, WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
         .pipe(
@@ -1760,7 +1767,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
 
     /**
      * Result REDELIVERY, before anything else finalizes a delegation in this
-     * cycle: a terminal delegation whose durable result was never handed to the
+     * cycle: a delegation whose durable result was never handed to the
      * outbox (its enqueue failed transiently on the cycle that produced it, or
      * the process died between the finalize and the enqueue). Nothing used to
      * re-read those rows — the result stayed on the row and the source was
@@ -1831,6 +1838,23 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }
       const row = entry.record;
       if (row.terminal) continue;
+      record(yield* advanceRunning({ record: row, environmentId, now }));
+    }
+
+    // A worker can request review before its turn has finished. Such a row is
+    // already in `review-requested`, but still needs the ended turn's durable
+    // result before the source may decide. The result check keeps completed
+    // review rows out of the execution scan after a restart.
+    for (const entry of yield* scan("review-requested")) {
+      scanned += 1;
+      if (entry._tag === "corrupt") {
+        yield* Effect.logWarning("Workjet review row unreadable by this server version");
+        record({ _tag: "version-unsupported" });
+        continue;
+      }
+      const row = entry.record;
+      const resultRead = yield* store.getDelegationResult(row.delegationId).pipe(Effect.option);
+      if (Option.isNone(resultRead) || Option.isSome(resultRead.value)) continue;
       record(yield* advanceRunning({ record: row, environmentId, now }));
     }
 

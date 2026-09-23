@@ -2214,6 +2214,26 @@ export function isCurrentCtoxGuestActivation(
   );
 }
 
+export function scheduleCtoxGuestActivationDeadline(
+  expected: CtoxGuestActivationState,
+  current: () => CtoxGuestActivationState,
+  mounted: () => boolean,
+  onSlow: () => void,
+  onTimeout: () => void,
+): () => void {
+  const stillCurrent = () => isCurrentCtoxGuestActivation(mounted(), current(), expected);
+  const hint = setTimeout(() => {
+    if (stillCurrent()) onSlow();
+  }, 15_000);
+  const deadline = setTimeout(() => {
+    if (stillCurrent()) onTimeout();
+  }, 30_000);
+  return () => {
+    clearTimeout(hint);
+    clearTimeout(deadline);
+  };
+}
+
 export function trackCtoxGuestActivation(
   activation: Promise<CtoxManagedGuestResult>,
   isCurrent: () => boolean,
@@ -2333,13 +2353,22 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       setConnectingTooLong(false);
       return;
     }
-    const hint = setTimeout(() => setConnectingTooLong(true), 15_000);
-    const deadline = setTimeout(() => setConnection("error"), 30_000);
-    return () => {
-      clearTimeout(hint);
-      clearTimeout(deadline);
+    setConnectingTooLong(false);
+    const expectedActivation = {
+      activationKey,
+      bridge,
+      instanceId: instance.id,
+      modeReady,
+      selectedId,
     };
-  }, [connection, modeReady, setConnection]);
+    return scheduleCtoxGuestActivationDeadline(
+      expectedActivation,
+      () => activationStateRef.current,
+      () => mountedRef.current,
+      () => setConnectingTooLong(true),
+      () => setConnection("error"),
+    );
+  }, [activationKey, bridge, connection, instance.id, modeReady, selectedId, setConnection]);
 
   const fallback = {
     connecting: connectingTooLong

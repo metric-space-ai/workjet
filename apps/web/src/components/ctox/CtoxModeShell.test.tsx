@@ -46,6 +46,7 @@ import {
   removeCtoxPairedInstance,
   resolveCtoxGuestBounds,
   retainCtoxGuestBounds,
+  scheduleCtoxGuestActivationDeadline,
   submitCtoxInvite,
   readCtoxRailCollapsed,
   submitCtoxManualPairing,
@@ -676,6 +677,50 @@ describe("CTOX native guest bounds", () => {
     await Promise.resolve();
 
     expect(states).toEqual([]);
+  });
+
+  it("gives retries and instance switches a fresh deadline", () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = inertBridge();
+      const first = {
+        activationKey: 1,
+        bridge,
+        instanceId: "managed:alpha",
+        modeReady: true,
+        selectedId: "managed:alpha",
+      };
+      let current = first;
+      const slow = vi.fn();
+      const timeout = vi.fn();
+      const schedule = (expected: typeof first) =>
+        scheduleCtoxGuestActivationDeadline(
+          expected,
+          () => current,
+          () => true,
+          slow,
+          timeout,
+        );
+      const cancelFirst = schedule(first);
+      vi.advanceTimersByTime(15_000);
+      expect(slow).toHaveBeenCalledTimes(1);
+
+      current = { ...first, activationKey: 2 };
+      const cancelRetry = schedule(current);
+      cancelFirst();
+      vi.advanceTimersByTime(15_000);
+      expect(timeout).not.toHaveBeenCalled();
+      expect(slow).toHaveBeenCalledTimes(2);
+
+      current = { ...current, instanceId: "managed:beta", selectedId: "managed:beta" };
+      const cancelSwitch = schedule(current);
+      vi.advanceTimersByTime(30_000);
+      expect(timeout).toHaveBeenCalledTimes(1);
+      cancelRetry();
+      cancelSwitch();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

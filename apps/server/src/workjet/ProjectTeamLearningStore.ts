@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import { toPersistenceSqlError, type PersistenceSqlError } from "../persistence/Errors.ts";
+import { PersistenceSqlError, toPersistenceSqlError } from "../persistence/Errors.ts";
 import type { TeamSelectionObservation } from "./ProjectTeamLearning.ts";
 
 export interface TeamSelectionRecord {
@@ -58,6 +58,13 @@ export class ProjectTeamLearningStore extends Context.Service<
 >()("workjet/workjet/ProjectTeamLearningStore") {}
 
 const evidenceError = (detail: string) => new ProjectTeamLearningEvidenceError({ detail });
+const isEvidenceError = Schema.is(ProjectTeamLearningEvidenceError);
+const isPersistenceSqlError = Schema.is(PersistenceSqlError);
+const transactionError = (operation: string) =>
+  (cause: unknown): ProjectTeamLearningStoreError =>
+    isEvidenceError(cause) || isPersistenceSqlError(cause)
+      ? cause
+      : toPersistenceSqlError(operation)(cause);
 
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -118,7 +125,10 @@ export const make = Effect.gen(function* () {
       ) {
         return yield* evidenceError("Team model selection evidence changed on retry");
       }
-    }).pipe(sql.withTransaction);
+    }).pipe(
+      sql.withTransaction,
+      Effect.mapError(transactionError("ProjectTeamLearningStore.recordSelection:transaction")),
+    );
 
   const recordAssessment: ProjectTeamLearningStoreShape["recordAssessment"] = (assessment) =>
     Effect.gen(function* () {
@@ -192,7 +202,10 @@ export const make = Effect.gen(function* () {
       ) {
         return yield* evidenceError("Team review evidence changed on retry");
       }
-    }).pipe(sql.withTransaction);
+    }).pipe(
+      sql.withTransaction,
+      Effect.mapError(transactionError("ProjectTeamLearningStore.recordAssessment:transaction")),
+    );
 
   const listObservations: ProjectTeamLearningStoreShape["listObservations"] = (input) =>
     sql<{

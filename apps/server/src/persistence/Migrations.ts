@@ -70,9 +70,9 @@ import Migration0055 from "./Migrations/055_WorkjetDecisionHub.ts";
 import Migration0056 from "./Migrations/056_WorkjetSessionImports.ts";
 import Migration0057 from "./Migrations/057_WorkjetBusinessOsComputerOwnership.ts";
 import Migration0058 from "./Migrations/058_WorkjetDevicePairing.ts";
-import Migration0059 from "./Migrations/059_WorkjetWorkerCleanupReceipts.ts";
-import Migration0060 from "./Migrations/060_WorkjetMailboxReviewRedrive.ts";
-import Migration0061 from "./Migrations/061_WorkjetProjectTeamLearning.ts";
+import Migration0064 from "./Migrations/064_WorkjetWorkerCleanupReceipts.ts";
+import Migration0065 from "./Migrations/065_WorkjetMailboxReviewRedrive.ts";
+import Migration0066 from "./Migrations/066_WorkjetProjectTeamLearning.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -143,9 +143,10 @@ export const migrationEntries = [
   [56, "WorkjetSessionImports", Migration0056],
   [57, "WorkjetBusinessOsComputerOwnership", Migration0057],
   [58, "WorkjetDevicePairing", Migration0058],
-  [59, "WorkjetWorkerCleanupReceipts", Migration0059],
-  [60, "WorkjetMailboxReviewRedrive", Migration0060],
-  [61, "WorkjetProjectTeamLearning", Migration0061],
+  // 59-63 belong to CTOX connection, native request and Crew bindings.
+  [64, "WorkjetWorkerCleanupReceipts", Migration0064],
+  [65, "WorkjetMailboxReviewRedrive", Migration0065],
+  [66, "WorkjetProjectTeamLearning", Migration0066],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

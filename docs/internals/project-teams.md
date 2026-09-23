@@ -116,7 +116,7 @@ both continuations end without either action, the executor appends one durable
 error activity to the parent. The original remains `changes-requested` until a
 human or parent decision; automatic child generation is not implied.
 Source-owned review decisions now persist their round and bounded reasons on
-the transactional `reviews` edge. Migration 061 and `ProjectTeamLearningStore`
+the transactional `reviews` edge. Migration 066 and `ProjectTeamLearningStore`
 provide immutable assignment and assessment rows, including an unassessed
 assignment until first delivery receives a score. The store is not yet called
 by worker dispatch or review decisions; actual provider execution identity,

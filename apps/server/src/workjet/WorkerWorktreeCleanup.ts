@@ -125,7 +125,45 @@ const isStrictlyWithin = (path: Path.Path, candidate: string, root: string): boo
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 };
 
-export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
+export type WorkerRemovalPathGuard = (input: {
+  readonly worktreePath: string;
+  readonly workspaceRoot: string;
+  readonly trustedRoots: ReadonlyArray<string>;
+}) => Effect.Effect<string | null, never, FileSystem.FileSystem | Path.Path>;
+
+/** Return the canonical target only when no path component redirects a worker checkout. */
+export const canonicalWorkerRemovalPath: WorkerRemovalPathGuard = (input) =>
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    const fs = yield* FileSystem.FileSystem;
+    const lexicalTarget = path.resolve(input.worktreePath);
+    const targetOption = yield* fs.realPath(lexicalTarget).pipe(Effect.option);
+    const workspaceOption = yield* fs.realPath(path.resolve(input.workspaceRoot)).pipe(Effect.option);
+    if (Option.isNone(targetOption) || Option.isNone(workspaceOption)) return null;
+    const target = targetOption.value;
+    const workspace = workspaceOption.value;
+    if (target === workspace || isStrictlyWithin(path, target, workspace)) return null;
+
+    for (const root of input.trustedRoots) {
+      const lexicalRoot = path.resolve(root);
+      if (!isStrictlyWithin(path, lexicalTarget, lexicalRoot)) continue;
+      const rootOption = yield* fs.realPath(lexicalRoot).pipe(Effect.option);
+      if (Option.isNone(rootOption)) continue;
+      const canonicalRoot = rootOption.value;
+      const relative = path.relative(lexicalRoot, lexicalTarget);
+      if (
+        isStrictlyWithin(path, target, canonicalRoot) &&
+        path.resolve(canonicalRoot, relative) === target
+      ) {
+        return target;
+      }
+    }
+    return null;
+  });
+
+export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
+  removalPathGuard: WorkerRemovalPathGuard = canonicalWorkerRemovalPath,
+) {
   const query = yield* ProjectionSnapshotQuery;
   const gitWorkflow = yield* GitWorkflowService;
   const git = yield* GitVcsDriver;
@@ -134,6 +172,11 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
   const receipts = yield* WorkerCleanupReceiptStore;
+  const validateRemovalPath = (input: Parameters<WorkerRemovalPathGuard>[0]) =>
+    removalPathGuard(input).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+    );
 
   const cleanupDeletedThread: WorkerWorktreeCleanupShape["cleanupDeletedThread"] = Effect.fn(
     "WorkerWorktreeCleanup.cleanupDeletedThread",
@@ -201,6 +244,14 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       if (local.refName !== workerRefName || local.hasWorkingTreeChanges) {
         return { status: "skipped", reason: "merge-unverified" } as const;
       }
+      const safeRemovalPath = yield* validateRemovalPath({
+        worktreePath,
+        workspaceRoot: cwd,
+        trustedRoots,
+      });
+      if (safeRemovalPath === null) {
+        return { status: "skipped", reason: "outside-storage-root" } as const;
+      }
       const head = yield* git
         .resolveCommit({ cwd: worktreePath, revision: "HEAD" })
         .pipe(Effect.orElseSucceed(() => null));
@@ -225,8 +276,16 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       if (!recorded) return { status: "skipped", reason: "merge-unverified" } as const;
       // The project workspace root is the surviving checkout. Never force a
       // dirty worktree removal, even when its HEAD is already merged.
+      const removalPath = yield* validateRemovalPath({
+        worktreePath,
+        workspaceRoot: cwd,
+        trustedRoots,
+      });
+      if (removalPath === null || removalPath !== safeRemovalPath) {
+        return { status: "skipped", reason: "outside-storage-root" } as const;
+      }
       yield* gitWorkflow
-        .removeWorktree({ cwd, path: worktreePath, force: false })
+        .removeWorktree({ cwd, path: removalPath, force: false })
         .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
     } else {
       // A prior removal may have succeeded while branch deletion failed. If a

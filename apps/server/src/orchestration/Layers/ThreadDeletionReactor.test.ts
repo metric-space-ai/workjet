@@ -26,7 +26,10 @@ import {
   type VerifiedWorkerCleanup,
 } from "../../workjet/WorkerCleanupReceiptStore.ts";
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
-import { layer as workerWorktreeCleanupLayer } from "../../workjet/WorkerWorktreeCleanup.ts";
+import {
+  WorkerWorktreeCleanup,
+  make as makeWorkerWorktreeCleanup,
+} from "../../workjet/WorkerWorktreeCleanup.ts";
 import { layerTest as worktreeStorageLayerTest } from "../../worktree/WorktreeStorage.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -111,6 +114,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly mergeState?: "open" | "closed" | "merged";
     readonly providerHead?: string | null;
     readonly dirty?: boolean;
+    readonly rejectRemovalPathOnSecondCheck?: boolean;
   }) => {
     const removals: Array<{ readonly cwd: string; readonly path: string }> = [];
     const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
@@ -128,6 +132,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     let branchResolveAttempts = 0;
     let branchRefLookupAttempts = 0;
     let completionAttempts = 0;
+    let removalPathChecks = 0;
     const receipts = new Map<ThreadId, WorkerCleanupReceipt>();
 
     // `start()` forks stream consumption, so `drain` alone would race the
@@ -305,6 +310,17 @@ describe("worker worktree cleanup on thread.deleted", () => {
       },
     } as WorkerCleanupReceiptStore["Service"]);
 
+    const workerWorktreeCleanupLayer = Layer.effect(
+      WorkerWorktreeCleanup,
+      makeWorkerWorktreeCleanup(({ worktreePath }) =>
+        Effect.sync(() => {
+          removalPathChecks += 1;
+          return input.rejectRemovalPathOnSecondCheck && removalPathChecks === 2
+            ? null
+            : worktreePath;
+        }),
+      ),
+    );
     const reactorLayer = ThreadDeletionReactorLive.pipe(
       Layer.provide(workerWorktreeCleanupLayer),
       Layer.provide(
@@ -413,6 +429,27 @@ describe("worker worktree cleanup on thread.deleted", () => {
       yield* harness.run;
       expect(harness.removals).toEqual([]);
       expect(harness.branchDeletions).toEqual([]);
+    });
+  });
+
+  it.effect("retains the worker if the checkout path changes before removal", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [deletedEvent(workerThreadId)],
+      rejectRemovalPathOnSecondCheck: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.removals).toEqual([]);
+      expect(harness.branchDeletions).toEqual([]);
+      expect(harness.archives).toEqual([]);
     });
   });
 

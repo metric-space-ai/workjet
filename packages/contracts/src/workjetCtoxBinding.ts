@@ -14,6 +14,21 @@ export function retainWorkjetCtoxBinding(
     (binding) => binding.capabilityId === "ctox-business-os",
   );
   const binding = requested[0];
+  const originalChat = before.ctoxCrewChat;
+  const requestedChat = after.ctoxCrewChat;
+  if (
+    originalChat &&
+    requestedChat &&
+    (originalChat.instanceId !== requestedChat.instanceId ||
+      originalChat.connectionId !== requestedChat.connectionId ||
+      originalChat.chatId !== requestedChat.chatId)
+  ) {
+    return {
+      config: next,
+      error:
+        "This thread keeps its original private CTOX chat. Start a new thread for another chat.",
+    };
+  }
   if (requested.length > 1 || (binding && !binding.target.instanceId)) {
     return { config: next, error: "CTOX Business OS requires one explicit instance binding." };
   }
@@ -40,11 +55,19 @@ export function retainWorkjetCtoxBinding(
       error: "The CTOX tool binding must match the thread's registered instance.",
     };
   }
+  // A replace-all config update may omit the chat while changing unrelated
+  // settings. Preserve the first private-chat identity just like the native
+  // instance binding, so a later command cannot erase or retarget it.
+  const retainedChat =
+    originalChat && !requestedChat ? { ...after, ctoxCrewChat: originalChat } : next;
   return {
     config:
       original && !binding
-        ? { ...after, capabilityBindings: [...after.capabilityBindings, original] }
-        : next,
+        ? {
+            ...normalizeWorkjetThreadConfig(retainedChat),
+            capabilityBindings: [...after.capabilityBindings, original],
+          }
+        : retainedChat,
     error: null,
   };
 }

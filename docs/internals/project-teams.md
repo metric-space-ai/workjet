@@ -59,6 +59,10 @@ receipt returns the original worker, a rejected receipt permits cleanup of that
 worker's checkout and branch, and a missing or unreadable receipt retains the
 checkout because ownership is still uncertain. Startup reconciliation of a
 retained ambiguous checkout remains to be implemented.
+Review, revise and follow-up state transitions now commit their graph edge in
+the same mailbox transaction. A failed edge insert rolls back the state and its
+history event. The review-request message is still enqueued separately; recovery
+if that enqueue fails remains open.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
 removal protects dirty work and unmerged commits, but it is not merge proof.

@@ -727,6 +727,7 @@ export interface WorkjetMailboxStoreShape {
     from: WorkjetDelegationState,
     to: WorkjetDelegationState,
     changedAt: WorkjetMailboxTimestamp,
+    edge?: WorkjetDelegationEdge,
   ) => Effect.Effect<WorkjetDelegationRecord, WorkjetMailboxStoreError>;
 
   /**
@@ -1551,6 +1552,7 @@ export const make = Effect.gen(function* () {
     from,
     to,
     changedAt,
+    edge,
   ) =>
     Effect.gen(function* () {
       const changedAtMillis = yield* toEpochMillis(changedAt);
@@ -1609,6 +1611,16 @@ export const make = Effect.gen(function* () {
                 (delegation_id, from_state, to_state, terminal, changed_at_ms)
               VALUES (${delegationId}, ${from}, ${to}, ${terminal}, ${changedAtMillis})
             `;
+            if (edge) {
+              if (
+                edge.from.delegationId !== delegationId ||
+                edge.to.delegationId !== delegationId ||
+                edge.createdAt !== changedAt
+              ) {
+                return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+              }
+              yield* insertDelegationEdge(edge);
+            }
 
             return {
               delegationId,

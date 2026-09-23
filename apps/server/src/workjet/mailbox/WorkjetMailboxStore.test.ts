@@ -679,6 +679,51 @@ it.effect("writes NO event for a transition that was refused", () =>
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("rolls back a state transition when its review edge cannot be persisted", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = delegationId("atomic-review");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("atomic-review"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    yield* store.transitionDelegationState(id, "queued", "delivered", T1);
+    yield* store.transitionDelegationState(id, "delivered", "accepted", T1);
+    yield* store.transitionDelegationState(id, "accepted", "running", T1);
+    const edge = {
+      schemaVersion: 1 as const,
+      kind: "reviews" as const,
+      from: { schemaVersion: 1 as const, delegationId: id, owner: SOURCE_ADDRESS },
+      to: { schemaVersion: 1 as const, delegationId: id, owner: TARGET_ADDRESS },
+      createdAt: T1,
+      depth: 0,
+    };
+
+    yield* sql`CREATE TRIGGER reject_transition_edge
+      BEFORE INSERT ON workjet_delegation_edges
+      BEGIN SELECT RAISE(ABORT, 'injected transition edge failure'); END`;
+    const failed = yield* store
+      .transitionDelegationState(id, "running", "review-requested", T1, edge)
+      .pipe(Effect.result);
+    assert.equal(failed._tag, "Failure");
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(id)).state, "running");
+    assert.lengthOf(yield* store.listDelegationStateEvents(id), 3);
+    assert.lengthOf(yield* store.listDelegationEdges(id, 10), 0);
+
+    yield* sql`DROP TRIGGER reject_transition_edge`;
+    yield* store.transitionDelegationState(id, "running", "review-requested", T1, edge);
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(id)).state, "review-requested");
+    assert.lengthOf(yield* store.listDelegationStateEvents(id), 4);
+    assert.lengthOf(yield* store.listDelegationEdges(id, 10), 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
 for (const state of ["completed", "failed", "cancelled", "expired"] as const) {
   it.effect(`preserves the original ${state} delegation body against an upsert`, () =>
     Effect.gen(function* () {

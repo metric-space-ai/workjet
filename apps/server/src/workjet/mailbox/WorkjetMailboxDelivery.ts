@@ -1022,10 +1022,6 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     }
 
     const now = yield* sources.nowIso;
-    const transitioned = yield* store
-      .transitionDelegationState(input.delegationId, "running", "review-requested", now)
-      .pipe(Effect.mapError(boundStoreError));
-
     const { target: reviewer } = resolveAddresses(invocation, input);
     const reviewedRef: WorkjetDelegationRef = {
       schemaVersion: 1,
@@ -1045,7 +1041,9 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       createdAt: now,
       depth: delegation.depth,
     };
-    yield* store.insertDelegationEdge(edge).pipe(Effect.mapError(boundStoreError));
+    const transitioned = yield* store
+      .transitionDelegationState(input.delegationId, "running", "review-requested", now, edge)
+      .pipe(Effect.mapError(boundStoreError));
 
     const delivery = yield* sendMessage(invocation, {
       targetWorkspaceId: input.targetWorkspaceId,
@@ -1102,19 +1100,20 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       owner: actor,
     };
 
-    const writeEdge = (
+    const relationship = (
       kind: WorkjetDelegationEdgeKind,
       from: WorkjetDelegationRef,
       to: WorkjetDelegationRef,
       depth: number,
+    ): WorkjetDelegationEdge => ({ schemaVersion: 1, kind, from, to, createdAt: now, depth });
+
+    const transition = (
+      from: WorkjetDelegationState,
+      to: WorkjetDelegationState,
+      edge?: WorkjetDelegationEdge,
     ) =>
       store
-        .insertDelegationEdge({ schemaVersion: 1, kind, from, to, createdAt: now, depth })
-        .pipe(Effect.mapError(boundStoreError));
-
-    const transition = (from: WorkjetDelegationState, to: WorkjetDelegationState) =>
-      store
-        .transitionDelegationState(input.delegationId, from, to, now)
+        .transitionDelegationState(input.delegationId, from, to, now, edge)
         .pipe(Effect.mapError(boundStoreError));
 
     switch (input.update._tag) {
@@ -1134,8 +1133,11 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
         }
         const to: WorkjetDelegationState =
           input.update.decision === "approve" ? "completed" : "changes-requested";
-        const result = yield* transition("review-requested", to);
-        yield* writeEdge("reviews", actorRef, reviewedRef, delegation.depth);
+        const result = yield* transition(
+          "review-requested",
+          to,
+          relationship("reviews", actorRef, reviewedRef, delegation.depth),
+        );
         return {
           delegationId: input.delegationId,
           state: result.state,
@@ -1147,8 +1149,11 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
         if (depth > delegation.budget.maxDepth) {
           return yield* failure("depth-exceeded");
         }
-        const result = yield* transition("changes-requested", "running");
-        yield* writeEdge("revises", actorRef, reviewedRef, depth);
+        const result = yield* transition(
+          "changes-requested",
+          "running",
+          relationship("revises", actorRef, reviewedRef, depth),
+        );
         return {
           delegationId: input.delegationId,
           state: result.state,
@@ -1160,8 +1165,11 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
         if (depth > delegation.budget.maxDepth) {
           return yield* failure("depth-exceeded");
         }
-        const result = yield* transition("running", "needs-input");
-        yield* writeEdge("follows-up", actorRef, originatingRef, depth);
+        const result = yield* transition(
+          "running",
+          "needs-input",
+          relationship("follows-up", actorRef, originatingRef, depth),
+        );
         return {
           delegationId: input.delegationId,
           state: result.state,

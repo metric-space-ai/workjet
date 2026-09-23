@@ -3,7 +3,6 @@ import { assert, describe, it } from "@effect/vitest";
 import { ConnectionCatalogDocument } from "@workjet/client-runtime/platform";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@workjet/contracts";
 import * as Deferred from "effect/Deferred";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
@@ -531,9 +530,8 @@ describe("DesktopConnectionCatalogStore", () => {
       const recovery = yield* Effect.forkChild(store.recover, { startImmediately: true });
       yield* Deferred.await(copyStarted);
       const writer = yield* Effect.forkChild(store.set(later), { startImmediately: true });
-      const writerBeforeRecovery = yield* Fiber.await(writer).pipe(
-        Effect.timeoutOption(Duration.seconds(2)),
-      );
+      yield* Effect.yieldNow();
+      const writerBeforeRecovery = yield* Fiber.poll(writer);
       assert.isTrue(Option.isNone(writerBeforeRecovery));
       yield* Deferred.succeed(releaseCopy, undefined);
       assert.isNotNull(yield* Fiber.join(recovery));

@@ -5,10 +5,12 @@ import {
   EnvironmentId,
   NonNegativeInt,
   PositiveInt,
+  ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
+import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
 
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
@@ -938,6 +940,21 @@ export const WorkjetThreadCtoxSession = Schema.Struct({
 });
 export type WorkjetThreadCtoxSession = typeof WorkjetThreadCtoxSession.Type;
 
+/** A project/working-copy identity confirmed by the selected native guest's
+ * session.create response. The Workjet project may have a different physical
+ * id on another computer; never infer the native project from that id alone.
+ */
+export const WorkjetThreadCtoxProject = Schema.Struct({
+  codeProjectId: ProjectId,
+  codeThreadId: ThreadId,
+  presentationInstanceId: WorkjetThreadCtoxText(512),
+  businessOsInstanceId: BusinessOsInstanceId,
+  nativeProjectId: WorkjetThreadCtoxText(128),
+  workingCopyId: WorkjetThreadCtoxText(160),
+  nativeSessionId: WorkjetThreadCtoxText(160),
+});
+export type WorkjetThreadCtoxProject = typeof WorkjetThreadCtoxProject.Type;
+
 /** A selected native private Crew chat, not a transfer session or an execution
  * attempt. These are references only: CTOX authorizes the chat and admits each
  * attempt. Absence preserves an ordinary Dev thread. App backlinks stay separate.
@@ -955,6 +972,7 @@ const WorkjetThreadConfigV2BaseFields = {
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
   ctoxCrewChat: Schema.optionalKey(WorkjetThreadCtoxCrewChat),
+  ctoxProject: Schema.optionalKey(WorkjetThreadCtoxProject),
   ctoxSession: Schema.optionalKey(Schema.NullOr(WorkjetThreadCtoxSession)).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),

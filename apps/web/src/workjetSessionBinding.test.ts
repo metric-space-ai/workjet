@@ -1,8 +1,10 @@
 import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  BusinessOsInstanceId,
   EnvironmentId,
   ProjectId,
+  ThreadId,
   WorkjetComputerId,
   type CtoxWorkjetProjectProjection,
   type CtoxWorkjetSessionControlResult,
@@ -16,6 +18,8 @@ import { resolveDraftCtoxSessionTarget, withCtoxSessionBinding } from "./workjet
 const environmentId = EnvironmentId.make("environment-local");
 const serverProjectId = ProjectId.make("11111111-1111-4111-8111-111111111111");
 const ctoxProjectId = ProjectId.make("22222222-2222-4222-8222-222222222222");
+const codeThreadId = ThreadId.make("thread-1");
+const businessOsInstanceId = BusinessOsInstanceId.make("native-welsch");
 const computer: WorkjetComputer = {
   id: WorkjetComputerId.make("computer-local"),
   label: "Local computer",
@@ -106,9 +110,25 @@ describe("withCtoxSessionBinding", () => {
       withCtoxSessionBinding(DEFAULT_WORKJET_THREAD_CONFIG, {
         instanceId: "managed:welsch",
         result,
+        project: {
+          codeProjectId: serverProjectId,
+          codeThreadId,
+          businessOsInstanceId,
+          nativeProjectId: ctoxProjectId,
+          workingCopyId: "working-copy-local",
+        },
       }),
     ).toEqual({
       ...DEFAULT_WORKJET_THREAD_CONFIG,
+      ctoxProject: {
+        codeProjectId: serverProjectId,
+        codeThreadId,
+        presentationInstanceId: "managed:welsch",
+        businessOsInstanceId,
+        nativeProjectId: ctoxProjectId,
+        workingCopyId: "working-copy-local",
+        nativeSessionId: "session-1",
+      },
       ctoxSession: {
         instanceId: "managed:welsch",
         sessionId: "session-1",
@@ -134,7 +154,42 @@ describe("withCtoxSessionBinding", () => {
     expect(withCtoxSessionBinding(config, { instanceId: "managed:welsch", result })).toEqual({
       ...DEFAULT_WORKJET_THREAD_CONFIG,
       ctoxSession: null,
+      ctoxProject: undefined,
     });
+  });
+
+  it("refuses to preserve a native project when session.create confirms another project", () => {
+    const result = {
+      _tag: "completed",
+      response: {
+        action: "session.create",
+        session: {
+          id: "session-foreign",
+          projectId: ProjectId.make("foreign"),
+          workingCopyId: "working-copy-local",
+          computerId: computer.id,
+          threadId: codeThreadId,
+          codingSessionId: null,
+          runStatus: "running",
+          fenceEpoch: 0,
+          activeTransferId: null,
+          updatedAtMs: 1,
+        },
+      },
+    } satisfies CtoxWorkjetSessionControlResult;
+    expect(
+      withCtoxSessionBinding(DEFAULT_WORKJET_THREAD_CONFIG, {
+        instanceId: "managed:welsch",
+        result,
+        project: {
+          codeProjectId: serverProjectId,
+          codeThreadId,
+          businessOsInstanceId,
+          nativeProjectId: ctoxProjectId,
+          workingCopyId: "working-copy-local",
+        },
+      }),
+    ).toMatchObject({ ctoxSession: null, ctoxProject: undefined });
   });
 });
 
@@ -167,6 +222,31 @@ describe("resolveDraftCtoxSessionTarget", () => {
   it("returns null when the working copy belongs to another computer", () => {
     expect(
       resolve({ registry: registry("ready", [syncedProject(undefined, "computer-other")]) }),
+    ).toBeNull();
+  });
+
+  it("refuses ambiguous native projects or working copies for one physical project", () => {
+    const first = syncedProject();
+    expect(
+      resolve({
+        registry: registry("ready", [
+          first,
+          { ...first, id: ProjectId.make("another-logical-project") },
+        ]),
+      }),
+    ).toBeNull();
+    expect(
+      resolve({
+        registry: registry("ready", [
+          {
+            ...first,
+            workingCopies: [
+              ...first.workingCopies,
+              { ...first.workingCopies[0]!, id: "another-working-copy" },
+            ],
+          },
+        ]),
+      }),
     ).toBeNull();
   });
 });

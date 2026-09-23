@@ -55,6 +55,7 @@ export type WorkerWorktreeCleanupSkipReason =
   | "no-worktree-path"
   | "outside-storage-root"
   | "merge-unverified"
+  | "safe-removal-unavailable"
   | "already-cleaned";
 
 export type WorkerWorktreeCleanupOutcome =
@@ -138,7 +139,9 @@ export const canonicalWorkerRemovalPath: WorkerRemovalPathGuard = (input) =>
     const fs = yield* FileSystem.FileSystem;
     const lexicalTarget = path.resolve(input.worktreePath);
     const targetOption = yield* fs.realPath(lexicalTarget).pipe(Effect.option);
-    const workspaceOption = yield* fs.realPath(path.resolve(input.workspaceRoot)).pipe(Effect.option);
+    const workspaceOption = yield* fs
+      .realPath(path.resolve(input.workspaceRoot))
+      .pipe(Effect.option);
     if (Option.isNone(targetOption) || Option.isNone(workspaceOption)) return null;
     const target = targetOption.value;
     const workspace = workspaceOption.value;
@@ -274,19 +277,12 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
           Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-verification" })),
         );
       if (!recorded) return { status: "skipped", reason: "merge-unverified" } as const;
-      // The project workspace root is the surviving checkout. Never force a
-      // dirty worktree removal, even when its HEAD is already merged.
-      const removalPath = yield* validateRemovalPath({
-        worktreePath,
-        workspaceRoot: cwd,
-        trustedRoots,
-      });
-      if (removalPath === null || removalPath !== safeRemovalPath) {
-        return { status: "skipped", reason: "outside-storage-root" } as const;
-      }
-      yield* gitWorkflow
-        .removeWorktree({ cwd, path: removalPath, force: false })
-        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
+      // Git's pathname-based removal can follow a same-user replacement after
+      // either canonical check. A clean forged .git backlink was enough to
+      // delete a file outside the worker checkout in a disposable fixture.
+      // Retain the verified receipt and source until the no-follow remover and
+      // provider-process boundary are both available.
+      return { status: "skipped", reason: "safe-removal-unavailable" } as const;
     } else {
       // A prior removal may have succeeded while branch deletion failed. If a
       // path still exists but is no longer a Git worktree, retain its files.

@@ -164,8 +164,9 @@ swap before Git removes the worktree. A disposable Git 2.50.1 fixture replaced a
 clean worker checkout with a symlink to a sibling directory containing a copied
 tracked file and forged matching `.git` backlink. Plain `git worktree remove`
 without `--force` deleted that sibling file before failing, so this is a
-demonstrated path escape. The server still invokes that pathname-based Git
-removal; the descriptor-relative native helper is not wired. Automatic removal
+demonstrated path escape. The server now retains the verified receipt and
+checkout instead of invoking that pathname-based Git removal; the
+descriptor-relative native helper is not wired. Automatic removal
 must use a no-follow boundary and unregister only that worktree's Git metadata,
 and provider shutdown must prove detached descendants quiescent or retain the
 checkout. Do not merge or install automatic cleanup on the current path.

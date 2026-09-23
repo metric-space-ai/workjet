@@ -117,7 +117,9 @@ function nativeCrewHarness(driver: string): WorkjetCtoxCrewRequest["harness"] | 
 }
 
 function nativeCrewTitle(title: string, instruction: string): string {
-  const source = (title === DEFAULT_THREAD_TITLE ? instruction.split("\n", 1)[0] : title).trim();
+  const source = (
+    title === DEFAULT_THREAD_TITLE ? (instruction.split("\n", 1)[0] ?? "") : title
+  ).trim();
   const encoder = new TextEncoder();
   let result = "";
   for (const character of source) {
@@ -848,13 +850,16 @@ const make = Effect.gen(function* () {
         ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
         createdAt: input.createdAt,
       });
+      if (sendTurnRequest === null)
+        return yield* new ProviderAdapterRequestError({
+          provider: "ctox",
+          method: "thread.turn.start",
+          detail: "The claimed Crew turn could not establish a provider session.",
+        });
       const activeSession = yield* providerService.listSessions().pipe(
         Effect.map((sessions) => sessions.find((session) => session.threadId === input.threadId)),
       );
-      if (
-        !activeSession ||
-        activeSession.providerInstanceId !== input.modelSelection.instanceId
-      )
+      if (!activeSession || activeSession.providerInstanceId !== input.modelSelection.instanceId)
         return yield* new ProviderAdapterRequestError({
           provider: providerErrorLabelFromInstanceHint({
             instanceId: String(input.modelSelection.instanceId),
@@ -1287,6 +1292,33 @@ const make = Effect.gen(function* () {
             method: "thread.turn.start",
             detail: "Crew work requires a text instruction of at most 16,000 UTF-8 bytes.",
           });
+        // MCP capabilities are fixed when a provider process starts. A later
+        // native attempt must never inherit the previous attempt's credential.
+        const priorSession = yield* providerService
+          .listSessions()
+          .pipe(
+            Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
+          );
+        if (
+          thread.session?.status === "running" ||
+          priorSession?.status === "running" ||
+          priorSession?.status === "connecting"
+        )
+          return yield* new ProviderAdapterRequestError({
+            provider: "ctox",
+            method: "thread.turn.start",
+            detail:
+              "The previous Crew turn is still running; wait for its result before starting another.",
+          });
+        if (priorSession) {
+          const stopped = yield* providerService.stopSession({ threadId: thread.id });
+          if (stopped?.terminated !== true)
+            return yield* new ProviderAdapterRequestError({
+              provider: "ctox",
+              method: "thread.turn.start",
+              detail: "The previous Crew provider session could not be stopped safely.",
+            });
+        }
         const prepared = yield* crewAdmission.value.prepare({
           threadId: thread.id,
           requestId: key,
@@ -1671,7 +1703,17 @@ const make = Effect.gen(function* () {
     });
 
     yield* forkParked(Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent));
-    yield* forkParked(recoverCrewTurns);
+    yield* forkParked(
+      recoverCrewTurns().pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("native Crew startup recovery failed", {
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      ),
+    );
 
     // The domain event stream is hot, so work pending before this reactor
     // starts cannot be resumed. Correlated completions only clear the request

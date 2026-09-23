@@ -77,6 +77,10 @@ import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
+  reviewSignalReceivedCommand,
+  WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX,
+} from "./WorkjetMailboxDelivery.ts";
+import {
   WorkjetMailboxAuditEmitter,
   emitAudit,
   type WorkjetMailboxAuditSink,
@@ -1670,6 +1674,47 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   const runCycle = Effect.fn("WorkjetDelegationExecutor.runCycle")(function* () {
     const environmentId = yield* sources.environmentId;
     const now = yield* sources.nowIso;
+
+    // The review state, outbox and local inbox commit together. If the server
+    // stopped before the thread-visible activity was appended, replay the
+    // accepted inbox row with a command ID derived from its envelope ID. A
+    // crash after that command but before the processed marker is harmless.
+    const pendingReviewSignals = yield* store
+      .listUnprocessedReviewSignals(WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
+      .pipe(Effect.orElseSucceed(() => []));
+    for (const signal of pendingReviewSignals) {
+      if (
+        !signal.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX) ||
+        signal.envelope.targetEnvironmentId !== environmentId ||
+        signal.payload._tag !== "message"
+      ) {
+        yield* Effect.logWarning("Workjet review signal inbox row cannot be projected");
+        yield* store
+          .markInboundProcessed(signal.envelopeId, now as WorkjetMailboxTimestamp)
+          .pipe(Effect.ignore);
+        continue;
+      }
+      const delegationIdRead = signal.payload.message.inReplyTo
+        ? yield* store
+            .findDelegationIdByEnvelopeId(signal.payload.message.inReplyTo)
+            .pipe(Effect.option)
+        : Option.some(Option.none());
+      if (Option.isNone(delegationIdRead)) continue;
+      const delegationId = delegationIdRead.value;
+      const projected = yield* engine
+        .dispatch(
+          reviewSignalReceivedCommand({
+            message: signal.payload.message,
+            ...(Option.isSome(delegationId) ? { delegationId: delegationId.value } : {}),
+          }),
+        )
+        .pipe(Effect.option);
+      if (Option.isSome(projected)) {
+        yield* store
+          .markInboundProcessed(signal.envelopeId, now as WorkjetMailboxTimestamp)
+          .pipe(Effect.ignore);
+      }
+    }
 
     /**
      * Threads this cycle has already dispatched into. The projection is

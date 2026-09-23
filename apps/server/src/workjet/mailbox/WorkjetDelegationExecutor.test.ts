@@ -3,6 +3,7 @@
 import {
   applyDeliveredDelegation,
   makeWorkjetMailboxDeliveryWithSources,
+  WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
   type WorkjetMailboxDeliveryShape,
 } from "./WorkjetMailboxDelivery.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -301,6 +302,7 @@ interface Harness {
   readonly setThreadById: (threadId: ThreadId, next: OrchestrationThread | undefined) => void;
   readonly failNextTurnStarts: (count: number, error: { readonly _tag: string }) => void;
   readonly failNextResultActivities: (count: number) => void;
+  readonly failNextReviewActivities: (count: number) => void;
   readonly failNextResultMarkers: (count: number) => void;
   readonly failThreadReads: (fail: boolean) => void;
   /**
@@ -359,6 +361,7 @@ const makeHarness = (options?: {
   const unreadableThreadIds = new Set<string>();
   let turnStartFailures = 0;
   let resultActivityFailures = 0;
+  let reviewActivityFailures = 0;
   let resultMarkerFailures = 0;
   let turnStartError: { readonly _tag: string } = retryableEngineError;
   let threadReadsFail = false;
@@ -399,6 +402,14 @@ const makeHarness = (options?: {
         resultActivityFailures > 0
       ) {
         resultActivityFailures -= 1;
+        return Effect.fail(retryableEngineError);
+      }
+      if (
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND &&
+        reviewActivityFailures > 0
+      ) {
+        reviewActivityFailures -= 1;
         return Effect.fail(retryableEngineError);
       }
       if (command.type === "thread.turn.start" && turnStartFailures > 0) {
@@ -443,6 +454,9 @@ const makeHarness = (options?: {
     events,
     failNextResultActivities: (count) => {
       resultActivityFailures = count;
+    },
+    failNextReviewActivities: (count) => {
+      reviewActivityFailures = count;
     },
     failNextResultMarkers: (count) => {
       resultMarkerFailures = count;
@@ -1027,6 +1041,68 @@ it.effect("persists the result when review was requested before the worker turn 
       1,
     );
   }).pipe(Effect.provide(testLayer("delegation-early-review-result"))),
+);
+
+it.effect("replays a committed review signal after its thread activity failed", () =>
+  Effect.gen(function* () {
+    const delegation = delegationFixture({
+      id: "review-signal-replay",
+      digest: yield* storePrompt(PROMPT_TEXT),
+      state: "running",
+      maxReviewRounds: 2,
+    });
+    const harness = makeHarness();
+    yield* seed(delegation);
+    harness.failNextReviewActivities(1);
+    const delivery = yield* harness.delivery;
+    const outcome = yield* delivery.requestReview(
+      { environmentId: LOCAL_ENVIRONMENT, threadId: SOURCE_THREAD },
+      {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: delegation.delegationId,
+        round: 1,
+        body: { _tag: "inline", text: "Review the worker result" },
+      },
+    );
+    const store = yield* WorkjetMailboxStore;
+    assert.equal(yield* stateOf(delegation), "review-requested");
+    assert.isNull(
+      Option.getOrThrow(yield* store.getInbound(outcome.delivery.envelopeId)).processedAtMillis,
+    );
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+      ),
+      0,
+    );
+
+    const restarted = yield* harness.executor;
+    yield* restarted.runCycle;
+    assert.isNotNull(
+      Option.getOrThrow(yield* store.getInbound(outcome.delivery.envelopeId)).processedAtMillis,
+    );
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+      ),
+      1,
+    );
+    yield* restarted.runCycle;
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+      ),
+      1,
+    );
+  }).pipe(Effect.provide(testLayer("delegation-review-signal-replay"))),
 );
 
 it.effect("redelivers a review result after the source requested changes", () =>

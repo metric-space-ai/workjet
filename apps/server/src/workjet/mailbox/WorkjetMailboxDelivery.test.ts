@@ -16,11 +16,13 @@ import {
   type OrchestrationThread,
   type WorkjetDelegationState,
   type WorkjetMessageBody,
+  type WorkjetMailboxTimestamp,
   type WorkjetThreadHandoff,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import type { McpInvocationScope } from "../../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
@@ -757,6 +759,11 @@ it.effect(
       assert.equal(outcome.state, "review-requested");
       assert.equal(outcome.edgeKind, "reviews");
       assert.equal(outcome.delivery._tag, "acknowledged");
+      assert.equal(
+        Option.getOrThrow(yield* store.getOutbound(outcome.delivery.envelopeId)).state,
+        "delivered",
+      );
+      assert.isTrue(Option.isSome(yield* store.getInbound(outcome.delivery.envelopeId)));
 
       const record = (yield* store.getDelegation(id)).pipe(Option.getOrThrow);
       assert.equal(record.state, "review-requested");
@@ -767,6 +774,128 @@ it.effect(
         ["reviews"],
       );
     }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("rolls back the review transition when its durable signal cannot be enqueued", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+    yield* sql`CREATE TRIGGER reject_review_signal
+      BEFORE INSERT ON workjet_mailbox_outbox
+      BEGIN SELECT RAISE(ABORT, 'injected review signal failure'); END`;
+
+    yield* delivery
+      .requestReview(invocation, {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: id,
+        round: 1,
+        body: inlineBody,
+      })
+      .pipe(Effect.flip);
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(id)).state, "running");
+    assert.lengthOf(yield* store.listDelegationEdges(id, 32), 0);
+
+    yield* sql`DROP TRIGGER reject_review_signal`;
+    const retried = yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId: id,
+      round: 1,
+      body: inlineBody,
+    });
+    assert.equal(retried.state, "review-requested");
+    assert.isTrue(Option.isSome(yield* store.getInbound(retried.delivery.envelopeId)));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("rolls back the review and outbound signal when local inbox persistence fails", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+    const before = yield* sql<{ readonly count: number }>`
+      SELECT COUNT(*) AS "count" FROM workjet_mailbox_outbox
+    `;
+    yield* sql`CREATE TRIGGER reject_review_inbox
+      BEFORE INSERT ON workjet_mailbox_inbox
+      BEGIN SELECT RAISE(ABORT, 'injected review inbox failure'); END`;
+
+    yield* delivery
+      .requestReview(invocation, {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: id,
+        round: 1,
+        body: inlineBody,
+      })
+      .pipe(Effect.flip);
+    const after = yield* sql<{ readonly count: number }>`
+      SELECT COUNT(*) AS "count" FROM workjet_mailbox_outbox
+    `;
+    assert.equal(after[0]?.count, before[0]?.count);
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(id)).state, "running");
+    assert.lengthOf(yield* store.listDelegationEdges(id, 32), 0);
+    yield* sql`DROP TRIGGER reject_review_inbox`;
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("commits a remote review signal to the outbox with the review state", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+
+    const outcome = yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: REMOTE_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId: id,
+      round: 1,
+      body: sealedBody,
+    });
+    assert.equal(outcome.delivery._tag, "queued");
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(id)).state, "review-requested");
+    assert.equal(
+      Option.getOrThrow(yield* store.getOutbound(outcome.delivery.envelopeId)).state,
+      "pending",
+    );
+    assert.isTrue(Option.isNone(yield* store.getInbound(outcome.delivery.envelopeId)));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("retains an accepted review inbox row past TTL until its activity is projected", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness({ failCommands: true });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const id = yield* seedDelegation(delivery, store, RUNNING_PATH);
+    const outcome = yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId: id,
+      round: 1,
+      body: inlineBody,
+      ttlSeconds: 60,
+    });
+    const later = "2026-08-19T14:00:00.000Z" as WorkjetMailboxTimestamp;
+    assert.lengthOf(yield* store.listUnprocessedReviewSignals(10), 1);
+    yield* store.expireOverdue(later);
+    assert.isTrue(Option.isSome(yield* store.getInbound(outcome.delivery.envelopeId)));
+    yield* store.markInboundProcessed(outcome.delivery.envelopeId, later);
+    yield* store.expireOverdue(later);
+    assert.isTrue(Option.isNone(yield* store.getInbound(outcome.delivery.envelopeId)));
+  }).pipe(Effect.provide(testLayer)),
 );
 
 it.effect("cancels a delegation with no graph edge", () =>

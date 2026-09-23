@@ -668,6 +668,11 @@ export interface WorkjetMailboxStoreShape {
     limit: number,
   ) => Effect.Effect<ReadonlyArray<WorkjetInboxRecord>, WorkjetMailboxStoreError>;
 
+  /** Accepted review signals whose thread-visible notification still needs acknowledgement. */
+  readonly listUnprocessedReviewSignals: (
+    limit: number,
+  ) => Effect.Effect<ReadonlyArray<WorkjetInboxRecord>, WorkjetMailboxStoreError>;
+
   readonly getInbound: (
     envelopeId: WorkjetEnvelopeId,
   ) => Effect.Effect<Option.Option<WorkjetInboxRecord>, WorkjetMailboxStoreError>;
@@ -729,6 +734,22 @@ export interface WorkjetMailboxStoreShape {
     edge?: WorkjetDelegationEdge,
   ) => Effect.Effect<WorkjetDelegationRecord, WorkjetMailboxStoreError>;
 
+  /** The review transition and its signal share one commit, including local inbox delivery. */
+  readonly requestReviewWithSignal: (input: {
+    readonly delegationId: WorkjetDelegationId;
+    readonly changedAt: WorkjetMailboxTimestamp;
+    readonly edge: WorkjetDelegationEdge;
+    readonly envelope: WorkjetRoutingEnvelope;
+    readonly payload: WorkjetMailboxPayload;
+    readonly deliverLocally: boolean;
+  }) => Effect.Effect<
+    {
+      readonly record: WorkjetDelegationRecord;
+      readonly inbound: WorkjetInboundRecordOutcome | null;
+    },
+    WorkjetMailboxStoreError
+  >;
+
   /**
    * One delegation's transition history, oldest first.
    *
@@ -742,6 +763,10 @@ export interface WorkjetMailboxStoreShape {
   readonly getDelegation: (
     delegationId: WorkjetDelegationId,
   ) => Effect.Effect<Option.Option<WorkjetDelegationRecord>, WorkjetMailboxStoreError>;
+
+  readonly findDelegationIdByEnvelopeId: (
+    envelopeId: WorkjetEnvelopeId,
+  ) => Effect.Effect<Option.Option<WorkjetDelegationId>, WorkjetMailboxStoreError>;
 
   /**
    * Persist the target turn's result with its next state in ONE transaction.
@@ -1353,6 +1378,25 @@ export const make = Effect.gen(function* () {
       return yield* Effect.forEach(rows, (row) => decodeInbox(row, rowIdOf(row)));
     });
 
+  const listUnprocessedReviewSignals: WorkjetMailboxStoreShape["listUnprocessedReviewSignals"] = (
+    limit,
+  ) =>
+    Effect.gen(function* () {
+      const rows = yield* sql
+        .unsafe(
+          `
+            SELECT ${INBOX_COLUMNS}
+            FROM workjet_mailbox_inbox
+            WHERE processed_at_ms IS NULL AND envelope_id LIKE 'wjm-review-%'
+            ORDER BY received_at_ms ASC, envelope_id ASC
+            LIMIT ?
+          `,
+          [limit],
+        )
+        .pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.listUnprocessedReviewSignals")));
+      return yield* Effect.forEach(rows, (row) => decodeInbox(row, rowIdOf(row)));
+    });
+
   const getInbound: WorkjetMailboxStoreShape["getInbound"] = (envelopeId) =>
     Effect.gen(function* () {
       const rows = yield* sql
@@ -1716,6 +1760,52 @@ export const make = Effect.gen(function* () {
         );
     });
 
+  const requestReviewWithSignal: WorkjetMailboxStoreShape["requestReviewWithSignal"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          if (input.payload._tag !== "message") {
+            return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+          }
+          const record = yield* transitionDelegationState(
+            input.delegationId,
+            "running",
+            "review-requested",
+            input.changedAt,
+            input.edge,
+          );
+          const outbound = yield* enqueueOutbound(input.envelope, input.payload);
+          if (outbound._tag !== "enqueued") {
+            return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+          }
+          if (!input.deliverLocally) return { record, inbound: null } as const;
+          const inbound = yield* recordInboundEnvelope(
+            input.envelope,
+            input.payload,
+            input.changedAt,
+          );
+          if (inbound._tag !== "accepted-new") {
+            return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+          }
+          const delivered = yield* markDelivered(input.envelope.envelopeId, input.changedAt);
+          if (delivered._tag !== "delivered") {
+            return yield* new WorkjetMailboxError({ reason: "mailbox-unavailable" });
+          }
+          return { record, inbound } as const;
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          (cause): WorkjetMailboxStoreError =>
+            isWorkjetMailboxError(cause) || isWorkjetMailboxStoreCorruptRowError(cause)
+              ? cause
+              : new PersistenceSqlError({
+                  operation: "WorkjetMailboxStore.requestReviewWithSignal:transaction",
+                  cause,
+                }),
+        ),
+      );
+
   const listDelegationStateEvents: WorkjetMailboxStoreShape["listDelegationStateEvents"] = (
     delegationId,
   ) =>
@@ -1774,6 +1864,23 @@ export const make = Effect.gen(function* () {
         ? Option.none<WorkjetDelegationRecord>()
         : Option.some(yield* decodeDelegation(row, rowIdOf(row)));
     });
+
+  const findDelegationIdByEnvelopeId: WorkjetMailboxStoreShape["findDelegationIdByEnvelopeId"] = (
+    envelopeId,
+  ) =>
+    sql<{ readonly delegationId: string }>`
+        SELECT delegation_id AS "delegationId"
+        FROM workjet_delegations
+        WHERE json_extract(delegation_json, '$.envelopeId') = ${envelopeId}
+        LIMIT 1
+      `.pipe(
+      Effect.mapError(sqlFailure("WorkjetMailboxStore.findDelegationIdByEnvelopeId")),
+      Effect.map((rows) =>
+        rows[0] === undefined
+          ? Option.none()
+          : Option.some(WorkjetDelegationId.make(rows[0].delegationId)),
+      ),
+    );
 
   const finalizeDelegationResult: WorkjetMailboxStoreShape["finalizeDelegationResult"] = (input) =>
     Effect.gen(function* () {
@@ -2454,6 +2561,7 @@ export const make = Effect.gen(function* () {
             const dropped = yield* sql<{ readonly envelopeId: string }>`
               DELETE FROM workjet_mailbox_inbox
               WHERE expires_at_ms <= ${nowMillis}
+                AND (processed_at_ms IS NOT NULL OR envelope_id NOT LIKE 'wjm-review-%')
               RETURNING envelope_id AS "envelopeId"
             `;
 
@@ -2941,6 +3049,7 @@ export const make = Effect.gen(function* () {
     recordInboundEnvelope,
     markInboundProcessed,
     listUnprocessedInbound,
+    listUnprocessedReviewSignals,
     getInbound,
     listPendingOutbound,
     listOutboundByState,
@@ -2951,8 +3060,10 @@ export const make = Effect.gen(function* () {
     recordAttempt,
     upsertDelegation,
     transitionDelegationState,
+    requestReviewWithSignal,
     listDelegationStateEvents,
     getDelegation,
+    findDelegationIdByEnvelopeId,
     finalizeDelegationResult,
     getDelegationResult,
     listDelegationsPendingResultReturn,

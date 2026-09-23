@@ -96,6 +96,7 @@ export const WORKJET_MAILBOX_DEFAULT_TTL_SECONDS = 3_600;
 /** Thread-visible activity kinds appended for mailbox traffic. */
 export const WORKJET_MESSAGE_SENT_ACTIVITY_KIND = "workjet.message.sent";
 export const WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND = "workjet.message.received";
+export const WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX = "wjm-review-";
 export const WORKJET_DELEGATION_SENT_ACTIVITY_KIND = "workjet.delegation.sent";
 export const WORKJET_DELEGATION_RECEIVED_ACTIVITY_KIND = "workjet.delegation.received";
 export const WORKJET_HANDOFF_SENT_ACTIVITY_KIND = "workjet.handoff.sent";
@@ -489,6 +490,40 @@ const activityPayload = (input: {
   createdAt: input.createdAt,
   expiresAt: input.expiresAt,
 });
+
+/** Stable command identity lets a restart replay a committed review inbox row once. */
+export const reviewSignalReceivedCommand = (input: {
+  readonly message: WorkjetWorkerMessage;
+  readonly delegationId?: WorkjetDelegationId;
+}): OrchestrationCommand => {
+  const message = input.message;
+  const stableId = `workjet-review-received:${message.envelopeId}`;
+  return {
+    type: "thread.activity.append",
+    commandId: CommandId.make(`server:${stableId}`),
+    threadId: message.target.threadId,
+    activity: {
+      id: EventId.make(stableId),
+      tone: "info",
+      kind: WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
+      summary: "Workjet message received",
+      payload: activityPayload({
+        envelopeId: message.envelopeId,
+        direction: "inbound",
+        source: message.source,
+        target: message.target,
+        bodyKind: message.body._tag,
+        disposition: "accepted-new",
+        ...(input.delegationId === undefined ? {} : { delegationId: input.delegationId }),
+        createdAt: message.createdAt,
+        expiresAt: message.expiresAt,
+      }),
+      turnId: null,
+      createdAt: message.createdAt,
+    },
+    createdAt: message.createdAt,
+  };
+};
 
 export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
   "WorkjetMailboxDelivery.makeWithSources",
@@ -1107,24 +1142,111 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       createdAt: now,
       depth: delegation.depth,
     };
-    const transitioned = yield* store
-      .transitionDelegationState(input.delegationId, "running", "review-requested", now, edge)
-      .pipe(Effect.mapError(boundStoreError));
-
-    const delivery = yield* sendMessage(invocation, {
-      targetWorkspaceId: input.targetWorkspaceId,
-      targetEnvironmentId: input.targetEnvironmentId,
-      targetThreadId: input.targetThreadId,
+    const { source, target, sameEnvironment } = resolveAddresses(invocation, input);
+    if (!sameEnvironment && input.body._tag === "inline") {
+      return yield* failure("malformed-envelope");
+    }
+    if (sameEnvironment) yield* requireLocalTargetThread(target.threadId);
+    const expiresAt = yield* addSeconds(now, clampTtlSeconds(input.ttlSeconds));
+    const id = WorkjetEnvelopeId.make(
+      `${WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX}${yield* sources.randomUUID}`,
+    );
+    const message: WorkjetWorkerMessage = {
+      schemaVersion: 1,
+      envelopeId: id,
+      source,
+      target,
+      createdAt: now,
+      expiresAt,
       body: input.body,
       inReplyTo: delegation.envelopeId,
-      delegationId: input.delegationId,
-      ...(input.ttlSeconds !== undefined ? { ttlSeconds: input.ttlSeconds } : {}),
+    };
+    const payload = { _tag: "message", message } as const satisfies WorkjetMailboxPayload;
+    const envelope = yield* routingEnvelope({
+      envelopeId: id,
+      kind: "message",
+      source,
+      target,
+      createdAt: now,
+      expiresAt,
     });
+    if (!(yield* identity.verifyRoutingEnvelope(envelope))) {
+      return yield* failure("invalid-signature");
+    }
+    const committed = yield* store
+      .requestReviewWithSignal({
+        delegationId: input.delegationId,
+        changedAt: now,
+        edge,
+        envelope,
+        payload,
+        deliverLocally: sameEnvironment,
+      })
+      .pipe(Effect.mapError(boundStoreError));
+
+    yield* emit({
+      _tag: "envelope-enqueued",
+      occurredAt: now,
+      envelopeId: id,
+      source: auditAddress(source),
+      target: auditAddress(target),
+    });
+    yield* appendActivity({
+      threadId: source.threadId,
+      kind: WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
+      summary: sameEnvironment ? "Workjet message sent" : "Workjet message queued",
+      payload: activityPayload({
+        envelopeId: id,
+        direction: "outbound",
+        source,
+        target,
+        bodyKind: input.body._tag,
+        delegationId: input.delegationId,
+        createdAt: now,
+        expiresAt,
+      }),
+      createdAt: now,
+    });
+
+    let delivery: WorkjetMailboxSendOutcome;
+    if (sameEnvironment) {
+      const disposition = committed.inbound?._tag;
+      if (disposition !== "accepted-new") {
+        return yield* failure("mailbox-unavailable");
+      }
+      const received = yield* engine
+        .dispatch(reviewSignalReceivedCommand({ message, delegationId: input.delegationId }))
+        .pipe(Effect.option);
+      if (Option.isSome(received)) {
+        yield* store.markInboundProcessed(id, now).pipe(Effect.ignore);
+      }
+      yield* emit({
+        _tag: "envelope-delivered",
+        occurredAt: now,
+        envelopeId: id,
+        source: auditAddress(source),
+        target: auditAddress(target),
+        disposition,
+      });
+      delivery = {
+        _tag: "acknowledged",
+        envelopeId: id,
+        receipt: {
+          schemaVersion: 1,
+          envelopeId: id,
+          acknowledgedBy: target,
+          acknowledgedAt: now,
+          disposition,
+        },
+      };
+    } else {
+      delivery = { _tag: "queued", envelopeId: id };
+    }
 
     return {
       delivery,
       delegation: reviewedRef,
-      state: transitioned.state,
+      state: committed.record.state,
       edgeKind: "reviews",
     } as const satisfies WorkjetMailboxReviewRequestOutcome;
   });

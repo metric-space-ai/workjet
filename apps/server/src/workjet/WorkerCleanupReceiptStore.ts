@@ -5,7 +5,10 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+
+import { PersistenceSqlError, toPersistenceSqlError } from "../persistence/Errors.ts";
 
 export interface WorkerCleanupReceipt {
   readonly threadId: ThreadId;
@@ -18,11 +21,24 @@ export interface WorkerCleanupReceipt {
 
 export type VerifiedWorkerCleanup = Omit<WorkerCleanupReceipt, "status">;
 
+export class WorkerCleanupEvidenceError extends Schema.TaggedErrorClass<WorkerCleanupEvidenceError>()(
+  "WorkerCleanupEvidenceError",
+  { detail: Schema.String },
+) {}
+
+export type WorkerCleanupReceiptStoreError = PersistenceSqlError | WorkerCleanupEvidenceError;
+
 export interface WorkerCleanupReceiptStoreShape {
-  readonly get: (threadId: ThreadId) => Effect.Effect<Option.Option<WorkerCleanupReceipt>, unknown>;
+  readonly get: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<WorkerCleanupReceipt>, WorkerCleanupReceiptStoreError>;
   /** Refuses to replace evidence for another path, ref, commit or PR. */
-  readonly recordVerified: (receipt: VerifiedWorkerCleanup) => Effect.Effect<boolean, unknown>;
-  readonly markComplete: (receipt: VerifiedWorkerCleanup) => Effect.Effect<void, unknown>;
+  readonly recordVerified: (
+    receipt: VerifiedWorkerCleanup,
+  ) => Effect.Effect<boolean, WorkerCleanupReceiptStoreError>;
+  readonly markComplete: (
+    receipt: VerifiedWorkerCleanup,
+  ) => Effect.Effect<void, WorkerCleanupReceiptStoreError>;
 }
 
 export class WorkerCleanupReceiptStore extends Context.Service<
@@ -53,7 +69,10 @@ export const make = Effect.gen(function* () {
              branch_ref AS "branchRef", merged_head_oid AS "mergedHeadOid",
              merged_change_request_url AS "mergedChangeRequestUrl", status
       FROM workjet_worker_cleanup_receipts WHERE thread_id = ${threadId}
-    `.pipe(Effect.map((rows) => Option.fromNullishOr(rows[0])));
+    `.pipe(
+      Effect.mapError(toPersistenceSqlError("WorkerCleanupReceiptStore.get")),
+      Effect.map((rows) => Option.fromNullishOr(rows[0])),
+    );
 
   const recordVerified: WorkerCleanupReceiptStoreShape["recordVerified"] = (receipt) =>
     Effect.gen(function* () {
@@ -66,7 +85,7 @@ export const make = Effect.gen(function* () {
           ${receipt.threadId}, ${receipt.worktreePath}, ${receipt.branchRef},
           ${receipt.mergedHeadOid}, ${receipt.mergedChangeRequestUrl}, 'verified', ${now}
         ) ON CONFLICT(thread_id) DO NOTHING
-      `;
+      `.pipe(Effect.mapError(toPersistenceSqlError("WorkerCleanupReceiptStore.recordVerified")));
       const recorded = yield* get(receipt.threadId);
       return Option.isSome(recorded) && sameEvidence(recorded.value, receipt);
     });
@@ -75,7 +94,7 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const recorded = yield* get(receipt.threadId);
       if (Option.isNone(recorded) || !sameEvidence(recorded.value, receipt)) {
-        return yield* Effect.fail(new Error("Worker cleanup evidence changed"));
+        return yield* new WorkerCleanupEvidenceError({ detail: "Worker cleanup evidence changed" });
       }
       if (recorded.value.status === "complete") return;
       const now = yield* Clock.currentTimeMillis;
@@ -87,10 +106,12 @@ export const make = Effect.gen(function* () {
           AND branch_ref = ${receipt.branchRef}
           AND merged_head_oid = ${receipt.mergedHeadOid}
           AND merged_change_request_url = ${receipt.mergedChangeRequestUrl}
-      `;
+      `.pipe(Effect.mapError(toPersistenceSqlError("WorkerCleanupReceiptStore.markComplete")));
       const complete = yield* get(receipt.threadId);
       if (Option.isNone(complete) || complete.value.status !== "complete") {
-        return yield* Effect.fail(new Error("Worker cleanup completion was not persisted"));
+        return yield* new WorkerCleanupEvidenceError({
+          detail: "Worker cleanup completion was not persisted",
+        });
       }
     });
 

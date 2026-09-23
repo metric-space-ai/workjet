@@ -24,6 +24,7 @@ import {
   type WorkerCleanupReceipt,
   type VerifiedWorkerCleanup,
 } from "../../workjet/WorkerCleanupReceiptStore.ts";
+import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { layer as workerWorktreeCleanupLayer } from "../../workjet/WorkerWorktreeCleanup.ts";
 import { layerTest as worktreeStorageLayerTest } from "../../worktree/WorktreeStorage.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -251,7 +252,13 @@ describe("worker worktree cleanup on thread.deleted", () => {
     const receiptLayer = Layer.succeed(WorkerCleanupReceiptStore, {
       get: (threadId: ThreadId) => Effect.succeed(Option.fromNullishOr(receipts.get(threadId))),
       recordVerified: (receipt: VerifiedWorkerCleanup) => {
-        if (input.failRecordVerified) return Effect.fail(new Error("database write failed"));
+        if (input.failRecordVerified)
+          return Effect.fail(
+            new PersistenceSqlError({
+              operation: "WorkerCleanupReceiptStore.recordVerified",
+              detail: "database write failed",
+            }),
+          );
         const existing = receipts.get(receipt.threadId);
         if (existing !== undefined) {
           return Effect.succeed(
@@ -267,7 +274,12 @@ describe("worker worktree cleanup on thread.deleted", () => {
       markComplete: (receipt: VerifiedWorkerCleanup) => {
         completionAttempts += 1;
         if (input.failMarkCompleteOnce && completionAttempts === 1) {
-          return Effect.fail(new Error("database write interrupted"));
+          return Effect.fail(
+            new PersistenceSqlError({
+              operation: "WorkerCleanupReceiptStore.markComplete",
+              detail: "database write interrupted",
+            }),
+          );
         }
         receipts.set(receipt.threadId, { ...receipt, status: "complete" });
         return Effect.void;

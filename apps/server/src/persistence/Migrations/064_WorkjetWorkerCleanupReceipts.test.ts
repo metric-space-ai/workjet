@@ -5,6 +5,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "../NodeSqliteClient.ts";
+import Migration0064 from "./064_WorkjetWorkerCleanupReceipts.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
@@ -41,12 +42,12 @@ layer("064_WorkjetWorkerCleanupReceipts", (it) => {
     }),
   );
 
-  it.effect("refuses project-team migrations on a fresh database that only has migration 58", () =>
+  it.effect("refuses direct project-team migration before native CTOX migrations", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 58 });
 
-      const result = yield* Effect.exit(runMigrations({ toMigrationInclusive: 64 }));
+      const result = yield* Effect.exit(Migration0064);
       assert.equal(result._tag, "Failure");
       const applied = yield* sql<{ readonly migration_id: number }>`
         SELECT migration_id FROM effect_sql_migrations WHERE migration_id = 64

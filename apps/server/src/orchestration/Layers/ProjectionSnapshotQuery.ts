@@ -536,8 +536,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           deleted_at AS "deletedAt"
         FROM projection_threads
-        WHERE deleted_at IS NULL
-          AND archived_at IS NOT NULL
+        WHERE archived_at IS NOT NULL
+          AND (
+            deleted_at IS NULL
+            OR json_extract(workjet_config_json, '$.role') = 'worker'
+          )
         ORDER BY project_id ASC, archived_at DESC, thread_id DESC
       `,
   });
@@ -670,8 +673,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         FROM projection_thread_sessions sessions
         INNER JOIN projection_threads threads
           ON threads.thread_id = sessions.thread_id
-        WHERE threads.deleted_at IS NULL
-          AND threads.archived_at IS NOT NULL
+        WHERE threads.archived_at IS NOT NULL
+          AND (
+            threads.deleted_at IS NULL
+            OR json_extract(threads.workjet_config_json, '$.role') = 'worker'
+          )
         ORDER BY sessions.thread_id ASC
       `,
   });
@@ -765,8 +771,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         JOIN projection_turns turns
           ON turns.thread_id = threads.thread_id
           AND turns.turn_id = threads.latest_turn_id
-        WHERE threads.deleted_at IS NULL
-          AND threads.archived_at IS NOT NULL
+        WHERE threads.archived_at IS NOT NULL
+          AND (
+            threads.deleted_at IS NULL
+            OR json_extract(threads.workjet_config_json, '$.role') = 'worker'
+          )
           AND threads.latest_turn_id IS NOT NULL
         ORDER BY turns.thread_id ASC
       `,
@@ -2142,6 +2151,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
+                  deletedAt: row.deletedAt,
                   settledOverride: row.settledOverride,
                   settledAt: row.settledAt,
                   snoozedUntil: row.snoozedUntil,

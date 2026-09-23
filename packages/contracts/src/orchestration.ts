@@ -453,6 +453,9 @@ export const OrchestrationThreadShell = Schema.Struct({
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  // Archived worker tombstones remain visible after their source checkout is deleted.
+  // Optional for snapshots produced by older servers.
+  deletedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   settledOverride: Schema.NullOr(Schema.Literals(["settled", "active"])).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),

@@ -23,6 +23,8 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 const NOW = "2026-08-14T00:00:00.000Z";
 const ACTIVE_THREAD_ID = ThreadId.make("thread-workjet-active");
 const ARCHIVED_THREAD_ID = ThreadId.make("thread-workjet-archived");
+const DELETED_WORKER_ID = ThreadId.make("thread-workjet-deleted-worker");
+const DELETED_NON_WORKER_ID = ThreadId.make("thread-workjet-deleted-non-worker");
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 const encodeWorkjetThreadConfig = Schema.encodeSync(Schema.fromJsonString(WorkjetThreadConfig));
 
@@ -96,6 +98,7 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         readonly title: string;
         readonly workjetConfig: WorkjetThreadConfig;
         readonly archivedAt: string | null;
+        readonly deletedAt?: string | null;
       }) =>
         sql`
           INSERT INTO projection_threads (
@@ -131,7 +134,7 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
             ${NOW},
             ${NOW},
             ${input.archivedAt},
-            NULL
+            ${input.deletedAt ?? null}
           )
         `;
 
@@ -146,6 +149,20 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         title: "Archived worker",
         workjetConfig: workerConfig,
         archivedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
+        threadId: DELETED_WORKER_ID,
+        title: "Completed worker",
+        workjetConfig: workerConfig,
+        archivedAt: "2026-08-14T00:00:02.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
+        threadId: DELETED_NON_WORKER_ID,
+        title: "Deleted non-worker",
+        workjetConfig: orchestratorConfig,
+        archivedAt: "2026-08-14T00:00:03.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
       });
 
       const snapshot = yield* snapshotQuery.getSnapshot();
@@ -176,8 +193,11 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
 
       const archivedShellSnapshot = yield* snapshotQuery.getArchivedShellSnapshot();
       assert.deepEqual(
-        archivedShellSnapshot.threads.map((thread) => thread.workjetConfig),
-        [workerConfig],
+        archivedShellSnapshot.threads.map((thread) => [thread.id, thread.deletedAt]),
+        [
+          [DELETED_WORKER_ID, "2026-08-14T00:00:01.000Z"],
+          [ARCHIVED_THREAD_ID, null],
+        ],
       );
 
       const threadShell = yield* snapshotQuery.getThreadShellById(ACTIVE_THREAD_ID);

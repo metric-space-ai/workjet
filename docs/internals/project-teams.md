@@ -133,6 +133,10 @@ deletion fences new turns and a completed receipt matches its recorded checkout
 and branch. The deletion reactor archives after successful cleanup with a stable
 command identity; startup reconciliation retries the archival step after an
 interruption. A deleted, archived worker cannot be unarchived.
+The archived shell snapshot includes these deleted worker records while
+excluding other deleted threads. Mobile Archive displays them as completed,
+read-only rows without unarchive or delete gestures. The underlying deleted
+thread detail is not yet available as a read-only conversation view.
 
 ## Implementation checkpoint
 

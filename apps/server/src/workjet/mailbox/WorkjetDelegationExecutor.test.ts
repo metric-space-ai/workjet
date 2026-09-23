@@ -859,6 +859,7 @@ it.effect("returns a completed worker turn for review and runs approved rework",
       ...thread({ id: SOURCE_THREAD, role: "orchestrator" }),
       archivedAt: null,
       messages: [],
+      activities: [],
       workjetConfig: {
         schemaVersion: 2,
         role: "orchestrator",

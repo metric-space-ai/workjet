@@ -5,6 +5,7 @@ import { CtoxNativeRequestError, type NativeTaskReference } from "./CtoxNativeRe
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 const Status = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
 const NativeProjectPayload = Schema.Struct({ project_id: Id });
+const NativeCrewPayload = Schema.Struct({ thread_id: Id });
 const CommandStatusResponse = Schema.Struct({
   ok: Schema.Literal(true),
   record: Schema.Struct({
@@ -103,6 +104,11 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
         record.data.command_type !== commandType ||
         !Schema.is(NativeProjectPayload)(record.data.payload) ||
         record.data.payload.project_id !== request.project_id)) ||
+    (request.operation === "start_crew_execution" &&
+      (record.data.module !== nativeModule ||
+        record.data.command_type !== commandType ||
+        !Schema.is(NativeCrewPayload)(record.data.payload) ||
+        record.data.payload.thread_id !== request.thread_id)) ||
     (record.status !== undefined && record.status !== record.data.status)
   ) {
     return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });

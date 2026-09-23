@@ -185,6 +185,9 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       providerThreadId: null,
     });
     if (!binding) return yield* Effect.die("Expected persisted start binding");
+    expect(
+      yield* Effect.flip(client.reissueClaimedProjectOffer(admitted.identity, attemptId)),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
     const providerInstanceId = ProviderInstanceId.make("codex_work");
     const providerThreadId = "provider-thread";
     const assigned = yield* restoredRequests.bindCrewStartProvider(
@@ -253,6 +256,12 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       "resume-required",
     );
     expect(claims).toBe(1);
+    offers = [{ ...offered, state: "claimed" }];
+    const reissued = yield* restored.reissueClaimedProjectOffer(admitted.identity, attemptId);
+    expect(reissued.reservation).toEqual(assigned);
+    expect(reissued.claim.attemptId).toBe(attemptId);
+    expect(reissued.claim.context.member_id).toBe("crew");
+    expect(claims).toBe(2);
 
     // A different native attempt may be offered after native review/retry.
     attemptId = "wrong-member";
@@ -260,7 +269,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     memberId = "other-crew";
     expect(yield* Effect.flip(prepare())).toMatchObject({ reason: "native-response-invalid" });
     expect((yield* prepare()).state).toBe("resume-required");
-    expect(claims).toBe(2);
+    expect(claims).toBe(3);
 
     attemptId = "ambiguous-claim";
     offers = [{ ...offered, attempt_id: attemptId }];
@@ -271,10 +280,10 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect((yield* restored.prepareProjectExecution(scope, "persisted-event", task)).state).toBe(
       "resume-required",
     );
-    expect(claims).toBe(3);
+    expect(claims).toBe(4);
     status = "completed";
     expect((yield* prepare()).state).toBe("native-terminal");
-    expect(claims).toBe(3);
+    expect(claims).toBe(4);
     expect(new Set(sentKeys).size).toBe(1);
 
     const secondAttempt = "second-provider";

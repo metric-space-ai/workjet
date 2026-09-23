@@ -1,12 +1,15 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, BufRead, BufWriter, Write};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use sysinfo::{
     MINIMUM_CPU_UPDATE_INTERVAL, Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind,
 };
+
+mod safe_worktree_cleanup;
 
 const PROTOCOL_VERSION: u32 = 2;
 const MIN_SAMPLE_INTERVAL_MS: u64 = 250;
@@ -663,6 +666,36 @@ fn write_history(
 }
 
 fn main() -> io::Result<()> {
+    let mut args = std::env::args_os();
+    let _program = args.next();
+    if let Some(command) = args.next() {
+        if command != "--remove-verified-dir" {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "unknown command",
+            ));
+        }
+        let path = PathBuf::from(
+            args.next()
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing path"))?,
+        );
+        let parse_identity = |value: Option<std::ffi::OsString>| -> io::Result<u64> {
+            value
+                .and_then(|part| part.to_str().and_then(|text| text.parse::<u64>().ok()))
+                .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid identity"))
+        };
+        let expected_dev = parse_identity(args.next())?;
+        let expected_ino = parse_identity(args.next())?;
+        if args.next().is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "unexpected argument",
+            ));
+        }
+        safe_worktree_cleanup::remove_verified_directory(&path, expected_dev, expected_ino)?;
+        println!("{{\"status\":\"removed\"}}");
+        return Ok(());
+    }
     let mut writer = BufWriter::new(io::stdout().lock());
     write_event(
         &mut writer,

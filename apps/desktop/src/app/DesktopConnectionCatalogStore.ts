@@ -14,7 +14,6 @@ import type { PersistedSavedEnvironmentRecord } from "@workjet/contracts";
 import { fromLenientJson } from "@workjet/shared/schemaJson";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
-import * as Either from "effect/Either";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as FileSystem from "effect/FileSystem";
@@ -526,11 +525,11 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("desktop.connectionCatalogStore.clear"),
     ),
     recover: Effect.gen(function* () {
-      const current = yield* Effect.either(getCatalog);
-      if (Either.isRight(current)) {
+      const current = yield* Effect.result(getCatalog);
+      if (current._tag === "Success") {
         return null;
       }
-      const error = current.left;
+      const error = current.failure;
       if (
         !(error instanceof DesktopConnectionCatalogStoreDocumentDecodeError) &&
         !(error instanceof DesktopConnectionCatalogStoreDecodeError) &&

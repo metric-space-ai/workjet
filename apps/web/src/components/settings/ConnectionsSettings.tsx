@@ -1792,6 +1792,9 @@ export function useComputerConnections({
   const unsavedDiscoveredSshHosts = useMemo(
     () =>
       discoveredSshHosts.filter((target) => {
+        // known_hosts is a record of past handshakes, not a list of computers
+        // the user intentionally configured or can still reach.
+        if (target.source !== "ssh-config") return false;
         const address = formatDesktopSshTarget(target);
         return (
           !savedDesktopSshEnvironmentKeys.has(target.alias) &&
@@ -2221,8 +2224,8 @@ export function useComputerConnections({
         <div className="overflow-hidden rounded-lg border border-border/60">
           <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-3 py-2">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-foreground">Suggested hosts</p>
-              <p className="text-[11px] text-muted-foreground">From SSH config and known hosts</p>
+              <p className="text-xs font-medium text-foreground">Saved SSH aliases</p>
+              <p className="text-[11px] text-muted-foreground">From your SSH config</p>
             </div>
             <Button
               size="xs"
@@ -2252,7 +2255,9 @@ export function useComputerConnections({
               !isLoadingDiscoveredSshHosts &&
               unsavedDiscoveredSshHosts.length === 0 ? (
                 <div className={ITEM_ROW_CLASSNAME}>
-                  <p className="text-xs text-muted-foreground">No new SSH hosts were discovered.</p>
+                  <p className="text-xs text-muted-foreground">
+                    No unsaved SSH aliases. Enter an IP address or hostname above.
+                  </p>
                 </div>
               ) : null}
             </div>

@@ -1,6 +1,9 @@
 import {
   EnvironmentId,
   ThreadId,
+  WorkjetConnectionId,
+  WorkjetCrossModeError,
+  WorkjetCrossModeLinkId,
   WorkjetBusinessOsObjectId,
   WorkjetBusinessOsObjectKind,
   type CtoxAppModuleId,
@@ -9,7 +12,6 @@ import {
   type WorkjetCrossModeActivityPayload,
   type WorkjetCrossModeCtoxRef,
   type WorkjetCrossModeEvidence,
-  type WorkjetCrossModeLinkId,
 } from "@workjet/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -41,6 +43,7 @@ const INSTANCE: CtoxManagedInstanceId = "paired:manual_pairing:office-1";
 const INVENTED_INSTANCE: CtoxManagedInstanceId = "paired:manual_pairing:attacker";
 const MODULE = "crm" as CtoxAppModuleId;
 const HOST_THREAD = ThreadId.make("thread-host");
+const OPS_CONNECTION = WorkjetConnectionId.make("ops-main");
 const NOW = "2026-08-19T10:00:00.000Z";
 
 const ctoxRef = (
@@ -155,6 +158,10 @@ const harness = (
     readonly hostDeleted?: boolean;
     readonly liveThreads?: ReadonlyArray<string>;
     readonly nowIso?: string;
+    readonly verifyBrowserOpsConnection?: (
+      connectionId: WorkjetConnectionId,
+      instanceId: CtoxManagedInstanceId,
+    ) => Effect.Effect<void, WorkjetCrossModeError>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -192,6 +199,9 @@ const harness = (
       randomUUID: Ref.updateAndGet(uuids, (n) => n + 1).pipe(
         Effect.map((n) => `0000000000000000-${n}`),
       ),
+      ...(options.verifyBrowserOpsConnection !== undefined
+        ? { verifyBrowserOpsConnection: options.verifyBrowserOpsConnection }
+        : {}),
     });
 
     return { handlers, links, recorder } as const;
@@ -359,6 +369,108 @@ it.effect("answers the Code-side backlink read, and answers absence without an e
 
     const listed = yield* handlers.listLinks({});
     assert.equal(listed.links.length, 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("resolves browser Ops only for the live linked thread and exact ready connection", () =>
+  Effect.gen(function* () {
+    const checks = yield* Ref.make(0);
+    const { handlers } = yield* harness({
+      verifyBrowserOpsConnection: (connectionId, instanceId) =>
+        Ref.update(checks, (count) => count + 1).pipe(
+          Effect.flatMap(() =>
+            connectionId === OPS_CONNECTION && instanceId === INSTANCE
+              ? Effect.void
+              : Effect.fail(new WorkjetCrossModeError({ reason: "unverified-authority" })),
+          ),
+        ),
+    });
+    const created = yield* handlers.openInCode({
+      ctox: ctoxRef(),
+      presentation: PRESENTATION,
+      hostThreadId: HOST_THREAD,
+      context: CONTEXT,
+    });
+    const input = {
+      threadId: created.link.code.threadId,
+      connectionId: OPS_CONNECTION,
+      selectedInstanceId: INSTANCE,
+    };
+    const resolved = yield* handlers.resolveBrowserOps(input);
+    assert.deepEqual(resolved, {
+      _tag: "linked-object",
+      schemaVersion: 1,
+      connectionId: OPS_CONNECTION,
+      instanceId: INSTANCE,
+      linkId: created.link.linkId,
+      ctox: created.link.ctox,
+    });
+    assert.equal(yield* Ref.get(checks), 1);
+
+    const generic = yield* handlers.resolveBrowserOps({
+      connectionId: OPS_CONNECTION,
+      selectedInstanceId: INSTANCE,
+    });
+    assert.deepEqual(generic, {
+      _tag: "instance",
+      schemaVersion: 1,
+      connectionId: OPS_CONNECTION,
+      instanceId: INSTANCE,
+    });
+
+    const changedInstance = yield* handlers
+      .resolveBrowserOps({ ...input, selectedInstanceId: INVENTED_INSTANCE })
+      .pipe(Effect.result);
+    assert.equal(changedInstance._tag, "Failure");
+    if (changedInstance._tag === "Failure") {
+      assert.equal(changedInstance.failure.reason, "unverified-authority");
+    }
+    const changedConnection = yield* handlers
+      .resolveBrowserOps({
+        ...input,
+        connectionId: WorkjetConnectionId.make("ops-other"),
+      })
+      .pipe(Effect.result);
+    assert.equal(changedConnection._tag, "Failure");
+    if (changedConnection._tag === "Failure") {
+      assert.equal(changedConnection.failure.reason, "unverified-authority");
+    }
+    const foreignThread = yield* handlers
+      .resolveBrowserOps({ ...input, threadId: ThreadId.make("thread-foreign") })
+      .pipe(Effect.result);
+    assert.equal(foreignThread._tag, "Failure");
+    if (foreignThread._tag === "Failure") {
+      assert.equal(foreignThread.failure.reason, "unauthorized");
+    }
+    assert.equal(yield* Ref.get(checks), 3);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses an expired browser Ops link before probing the connection", () =>
+  Effect.gen(function* () {
+    const checks = yield* Ref.make(0);
+    const { handlers, links } = yield* harness({
+      verifyBrowserOpsConnection: () => Ref.update(checks, (count) => count + 1),
+    });
+    yield* links.createOrSelect({
+      schemaVersion: 1,
+      linkId: WorkjetCrossModeLinkId.make("wjx-expired-browser-ops"),
+      ctox: ctoxRef(),
+      code: { schemaVersion: 1, environmentId: ENVIRONMENT, threadId: ThreadId.make("thread-1") },
+      presentation: PRESENTATION,
+      createdAt: "2026-08-19T08:00:00.000Z",
+      expiresAt: "2026-08-19T09:00:00.000Z",
+    });
+    const refused = yield* handlers
+      .resolveBrowserOps({
+        threadId: ThreadId.make("thread-1"),
+        connectionId: OPS_CONNECTION,
+        selectedInstanceId: INSTANCE,
+      })
+      .pipe(Effect.result);
+    assert.equal(refused._tag, "Failure");
+    if (refused._tag === "Failure") assert.equal(refused.failure.reason, "link-expired");
+    assert.equal(yield* Ref.get(checks), 0);
   }).pipe(Effect.provide(testLayer)),
 );
 

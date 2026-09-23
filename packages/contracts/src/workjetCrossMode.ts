@@ -60,6 +60,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { CtoxAppModuleId, CtoxManagedInstanceId } from "./ctox.ts";
+import { WorkjetConnectionId } from "./workjet.ts";
 import { WorkjetArtifactReferences, WorkjetDelegationApprovalState } from "./workjetMailbox.ts";
 
 /** Current schema version of every contract in this module. */
@@ -423,6 +424,38 @@ export const WorkjetCrossModeGetThreadLinkRpcResult = Schema.Struct({
 });
 export type WorkjetCrossModeGetThreadLinkRpcResult =
   typeof WorkjetCrossModeGetThreadLinkRpcResult.Type;
+
+/**
+ * A browser asks whether it may open the selected Ops connection, optionally
+ * from a linked Code thread. The selected instance is a consistency check,
+ * never authority: the server compares it with the stored link when present
+ * and with its own connection binding on every request.
+ */
+export const WorkjetCrossModeResolveBrowserOpsRpcInput = Schema.Struct({
+  threadId: Schema.optionalKey(ThreadId),
+  connectionId: WorkjetConnectionId,
+  selectedInstanceId: CtoxManagedInstanceId,
+});
+export type WorkjetCrossModeResolveBrowserOpsRpcInput =
+  typeof WorkjetCrossModeResolveBrowserOpsRpcInput.Type;
+
+/** No URL, token or pairing material crosses back to the browser. */
+export const WorkjetCrossModeResolveBrowserOpsRpcResult = Schema.Union([
+  Schema.TaggedStruct("instance", {
+    schemaVersion: CrossModeSchemaVersion,
+    connectionId: WorkjetConnectionId,
+    instanceId: CtoxManagedInstanceId,
+  }),
+  Schema.TaggedStruct("linked-object", {
+    schemaVersion: CrossModeSchemaVersion,
+    connectionId: WorkjetConnectionId,
+    instanceId: CtoxManagedInstanceId,
+    linkId: WorkjetCrossModeLinkId,
+    ctox: WorkjetCrossModeCtoxRef,
+  }),
+]);
+export type WorkjetCrossModeResolveBrowserOpsRpcResult =
+  typeof WorkjetCrossModeResolveBrowserOpsRpcResult.Type;
 
 export const WorkjetCrossModeListLinksRpcInput = Schema.Struct({
   limit: Schema.optional(

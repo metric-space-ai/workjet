@@ -541,7 +541,6 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   let cycles = 0;
   let localRecoveryAfterId: string | undefined;
   let reworkRecoveryAfterId: string | undefined;
-  const reworkRemindersAccepted = new Set<string>();
   let scanned = 0;
   let executed = 0;
   let backpressure = 0;
@@ -1825,10 +1824,11 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
     }
 
     // A review rejection and its replacement delegation are separate commands.
-    // If the source process stops between them, this source-owned scan starts a
-    // stable parent continuation. The child enqueue commits its `revises` edge
-    // atomically, which removes the parent from this recovery set. Engine command
-    // identity deduplicates a replay after this executor itself restarts.
+    // The first reminder is replayed with one command identity until its
+    // message is projected. If its turn ends without a linked child, a second,
+    // distinct identity gives the parent one bounded recovery turn. A receipt
+    // for the first command alone cannot restart a completed turn. The child
+    // enqueue commits its `revises` edge atomically and ends this scan.
     const pendingReworkRead = yield* store
       .listDelegationsAwaitingRework(
         environmentId,
@@ -1858,7 +1858,6 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         continue;
       }
       const delegation = entry.record.delegation;
-      if (reworkRemindersAccepted.has(delegation.delegationId)) continue;
       const parentRead = yield* query
         .getThreadDetailById(delegation.source.threadId)
         .pipe(Effect.option);
@@ -1868,26 +1867,41 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       if (parent.deletedAt !== null || parent.archivedAt !== null) continue;
       const team = parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
       if (!team || team.role === "worker") continue;
+      const reminderId = `workjet-review-rework:${delegation.delegationId}`;
+      const firstMessage = parent.messages.find((message) => message.id === reminderId);
+      const retryMessage = parent.messages.find((message) => message.id === `${reminderId}:retry`);
+      if (retryMessage) continue;
+      const firstTurnId = firstMessage?.turnId;
+      const firstTurnFinished =
+        firstTurnId !== null &&
+        firstTurnId !== undefined &&
+        parent.latestTurn?.turnId === firstTurnId &&
+        parent.latestTurn.state !== "running";
+      if (firstMessage && !firstTurnFinished) continue;
+      const retry = firstTurnFinished;
+      const commandSuffix = retry ? ":retry" : "";
       const resumed = yield* Effect.result(
         engine.dispatch(
           {
             type: "thread.turn.start",
-            commandId: CommandId.make(`server:workjet-review-rework:${delegation.delegationId}`),
+            commandId: CommandId.make(`server:${reminderId}${commandSuffix}`),
             threadId: parent.id,
             message: {
-              messageId: MessageId.make(`workjet-review-rework:${delegation.delegationId}`),
+              messageId: MessageId.make(`${reminderId}${commandSuffix}`),
               role: "user",
-              text: `Review requested changes for delegation ${delegation.delegationId}, but no linked rework delegation is recorded. Resume the project goal: create a bounded linked delegation with parentDelegationId ${delegation.delegationId} for the same worker, or resolve the review explicitly.`,
+              text: `Review requested changes for delegation ${delegation.delegationId}, but no linked rework delegation is recorded. ${retry ? "The previous continuation ended without resolving it. " : ""}Resume the project goal: create a bounded linked delegation with parentDelegationId ${delegation.delegationId} for the same worker, or cancel the rejected delegation explicitly.`,
               attachments: [],
             },
             runtimeMode: parent.runtimeMode,
             interactionMode: parent.interactionMode,
-            createdAt: delegation.stateChangedAt,
+            createdAt: retry ? now : delegation.stateChangedAt,
           },
           { deferWhileBusy: true },
         ),
       );
-      if (resumed._tag === "Success") reworkRemindersAccepted.add(delegation.delegationId);
+      if (resumed._tag === "Failure") {
+        yield* Effect.logWarning("Workjet rework parent continuation will be retried");
+      }
     }
 
     /**

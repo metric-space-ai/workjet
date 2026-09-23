@@ -81,12 +81,16 @@ starts it after restart and its result can be reviewed and approved. A budget
 with zero review rounds still completes directly.
 The review decision and creation of the linked delegation are separate
 commands. The executor scans source-owned `changes-requested` rows with a stored
-result and no `revises` child, pages over them, and dispatches a stable parent
-continuation after a crash or transient dispatch refusal. The child enqueue's
-atomic graph edge removes the row from the recovery set. An accepted continuation
-still depends on the parent to create or explicitly resolve the replacement;
-it cannot derive a new task's prompt and scope from the verdict alone. The
-rejected original remains in `changes-requested` while its replacement runs.
+result and no `revises` child. It dispatches a stable parent continuation after
+a crash or transient refusal. If that accepted turn ends without a child, it
+dispatches one further continuation under a distinct command identity; replaying
+the first accepted receipt cannot start another turn. A projected retry message
+stops further automatic turns. The child enqueue's atomic graph edge removes
+the row from the recovery set, and the store refuses a second `revises` child
+for the same rejected delegation. The parent still must create a revised task
+with its chosen prompt and scope, or explicitly cancel the rejected task. If
+both continuations end without either action, the original stays visibly
+`changes-requested`; automatic child generation is not implied.
 Review reasons and round verdicts are not yet persisted as learning evidence.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
@@ -98,14 +102,14 @@ Archive must follow successful cleanup rather than hide a failed cleanup.
 
 ## Implementation checkpoint
 
-This branch is not production-ready. Exact-head CI on 74f37cd9e passed Check,
-Test, Release Smoke and Mobile Native Static Analysis. Receipt reconciliation,
-atomic review edges, and result-to-rework have targeted local tests; exact-head
-CI and real desktop/web/mobile acceptance for these additions remain pending.
+This branch is not production-ready. Receipt reconciliation, atomic review
+edges, result-to-rework, and the bounded rework reminder have targeted local
+tests. Exact-head CI and real desktop/web/mobile acceptance for the latest
+changes remain pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
-recovery of checkouts retained after unreadable receipts, unresolved rework after
-an accepted parent continuation,
+recovery of checkouts retained after unreadable receipts, explicit handling when
+both parent rework continuations end without a linked child,
 cleanup/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

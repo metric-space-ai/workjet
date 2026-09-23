@@ -785,6 +785,7 @@ it.effect("returns a completed worker turn for review and runs approved rework",
     const parent = {
       ...thread({ id: SOURCE_THREAD, role: "orchestrator" }),
       archivedAt: null,
+      messages: [],
       workjetConfig: {
         schemaVersion: 2,
         role: "orchestrator",
@@ -827,24 +828,73 @@ it.effect("returns a completed worker turn for review and runs approved rework",
     yield* recovery.runCycle;
     const restartedRecovery = yield* harness.executor;
     yield* restartedRecovery.runCycle;
+    const reminderId = `workjet-review-rework:${original.delegationId}`;
     const reworkReminders = () =>
       harness.commands.filter(
         (command) =>
           command.type === "thread.turn.start" &&
-          command.commandId === `server:workjet-review-rework:${original.delegationId}`,
+          command.commandId.startsWith(`server:${reminderId}`),
       );
-    // The transient refusal left the row pending; the next executor accepted
-    // it. A further restart replays the same id, which production receipts
-    // deduplicate even though this recording double captures both attempts.
     assert.lengthOf(reworkReminders(), 1);
-    const replayedRecovery = yield* harness.executor;
-    yield* replayedRecovery.runCycle;
-    assert.lengthOf(reworkReminders(), 2);
     const firstReminder = reworkReminders()[0];
     assert.equal(firstReminder?.type, "thread.turn.start");
     if (firstReminder?.type === "thread.turn.start") {
       assert.equal(firstReminder.threadId, SOURCE_THREAD);
     }
+    // A projected, completed first reminder with no child must produce a new
+    // command identity. Replaying its accepted receipt would never run again.
+    const firstReminderTurn = "review-reminder-turn";
+    harness.setThreadById(SOURCE_THREAD, {
+      ...parent,
+      messages: [
+        {
+          id: reminderId,
+          role: "user",
+          text: "",
+          turnId: firstReminderTurn,
+          streaming: false,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+      latestTurn: {
+        turnId: firstReminderTurn,
+        state: "completed",
+        requestedAt: NOW,
+        startedAt: NOW,
+        completedAt: NOW,
+        assistantMessageId: null,
+      },
+    } as unknown as OrchestrationThread);
+    const replayedRecovery = yield* harness.executor;
+    yield* replayedRecovery.runCycle;
+    assert.lengthOf(reworkReminders(), 2);
+    assert.equal(reworkReminders()[1]?.commandId, `server:${reminderId}:retry`);
+    harness.setThreadById(SOURCE_THREAD, {
+      ...parent,
+      messages: [
+        {
+          id: `${reminderId}:retry`,
+          role: "user",
+          text: "",
+          turnId: "review-retry-turn",
+          streaming: false,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      ],
+      latestTurn: {
+        turnId: "review-retry-turn",
+        state: "completed",
+        requestedAt: NOW,
+        startedAt: NOW,
+        completedAt: NOW,
+        assistantMessageId: null,
+      },
+    } as unknown as OrchestrationThread);
+    const boundedRecovery = yield* harness.executor;
+    yield* boundedRecovery.runCycle;
+    assert.lengthOf(reworkReminders(), 2);
 
     const rework = yield* delivery.delegateTask(actor, {
       targetWorkspaceId: WORKSPACE,
@@ -857,6 +907,20 @@ it.effect("returns a completed worker turn for review and runs approved rework",
       parentDelegationId: original.delegationId,
     });
     const childId = rework.delegation.delegationId;
+    assert.equal((yield* store.listDelegationEdges(original.delegationId, 10)).length, 2);
+    const duplicateChild = yield* delivery
+      .delegateTask(actor, {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: LOCAL_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        prompt: original.prompt,
+        scope: original.scope,
+        completion: original.completion,
+        budget: { maxDepth: 4, maxReviewRounds: 1, ttlSeconds: 7_200 },
+        parentDelegationId: original.delegationId,
+      })
+      .pipe(Effect.flip);
+    assert.equal(duplicateChild.reason, "invalid-state-transition");
     assert.equal((yield* store.listDelegationEdges(original.delegationId, 10)).length, 2);
     const restarted = yield* harness.executor;
     yield* restarted.runCycle;

@@ -1223,6 +1223,16 @@ export const make = Effect.gen(function* () {
           if (!validState) {
             return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
           }
+          if (relationship.kind === "revises") {
+            const priorRework = yield* sql.unsafe(
+              `SELECT 1 FROM workjet_delegation_edges
+               WHERE to_delegation_id = ? AND kind = 'revises' LIMIT 1`,
+              [parentRef.delegationId],
+            );
+            if (priorRework.length > 0) {
+              return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+            }
+          }
           if (
             !sameOwner(child.source, parent.delegation.source) ||
             !sameOwner(parentRef.owner, parent.delegation.source) ||

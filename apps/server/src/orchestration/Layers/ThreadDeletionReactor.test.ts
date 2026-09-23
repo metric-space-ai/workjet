@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 import { describe, expect, it } from "@effect/vitest";
 
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
@@ -87,6 +88,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly events: ReadonlyArray<OrchestrationEvent>;
     readonly failRemoveWorktree?: boolean;
     readonly failDeleteBranch?: boolean;
+    readonly failStopProvider?: boolean;
+    readonly failProviderLookup?: boolean;
     readonly mergeState?: "open" | "closed" | "merged";
     readonly providerHead?: string | null;
     readonly dirty?: boolean;
@@ -109,7 +112,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
       ),
     } as unknown as OrchestrationEngineService["Service"]);
     const providerLayer = Layer.succeed(ProviderService, {
-      stopSession: () => Effect.void,
+      stopSession: () =>
+        input.failStopProvider ? Effect.fail("provider stop failed") : Effect.void,
     } as unknown as ProviderService["Service"]);
     const terminalLayer = Layer.succeed(TerminalManager.TerminalManager, {
       close: () => Effect.void,
@@ -132,25 +136,12 @@ describe("worker worktree cleanup on thread.deleted", () => {
       },
     } as unknown as ProjectionSnapshotQuery["Service"]);
     const gitLayer = Layer.succeed(GitWorkflowService, {
-      invalidateStatus: () => Effect.void,
-      status: () =>
+      invalidateLocalStatus: () => Effect.void,
+      localStatus: () =>
         Effect.succeed({
           isRepo: true,
           refName: workerRefName,
           hasWorkingTreeChanges: input.dirty ?? false,
-          pr: {
-            number: 42,
-            headRef: workerRefName,
-            state: input.mergeState ?? "merged",
-          },
-        }),
-      resolvePullRequest: () =>
-        Effect.succeed({
-          pullRequest: {
-            state: input.mergeState ?? "merged",
-            headBranch: workerRefName,
-            headCommitOid: input.providerHead === undefined ? commitSha : input.providerHead,
-          },
         }),
       removeWorktree: (removeInput: { readonly cwd: string; readonly path: string }) => {
         removals.push({ cwd: removeInput.cwd, path: removeInput.path });
@@ -161,6 +152,22 @@ describe("worker worktree cleanup on thread.deleted", () => {
         return input.failDeleteBranch ? Effect.fail(gitFailure) : Effect.void;
       },
     } as unknown as GitWorkflowService["Service"]);
+    const sourceControlLayer = Layer.succeed(SourceControlProviderRegistry, {
+      resolve: () =>
+        Effect.succeed({
+          listChangeRequests: () =>
+            input.failProviderLookup
+              ? Effect.fail(gitFailure)
+              : Effect.succeed([
+                  {
+                    state: input.mergeState ?? "merged",
+                    headRefName: workerRefName,
+                    headCommitOid:
+                      input.providerHead === undefined ? commitSha : input.providerHead,
+                  },
+                ]),
+        }),
+    } as unknown as SourceControlProviderRegistry["Service"]);
     const gitDriverLayer = Layer.succeed(GitVcsDriver, {
       resolveCommit: () => Effect.succeed({ commitSha }),
     } as unknown as GitVcsDriver["Service"]);
@@ -174,6 +181,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           terminalLayer,
           queryLayer,
           gitLayer,
+          sourceControlLayer,
           gitDriverLayer,
           worktreeStorageLayerTest({ trustedRoots: [worktreeRoot] }),
           NodeServices.layer,
@@ -262,6 +270,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
         { providerHead: "b".repeat(40) },
         { providerHead: null },
         { dirty: true },
+        { failProviderLookup: true },
       ]) {
         const harness = makeHarness({
           threads: {
@@ -280,6 +289,26 @@ describe("worker worktree cleanup on thread.deleted", () => {
       }
     }),
   );
+
+  it.effect("retains worker source when provider session termination fails", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [deletedEvent(workerThreadId)],
+      failStopProvider: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.removals).toEqual([]);
+      expect(harness.branchDeletions).toEqual([]);
+    });
+  });
 
   it.effect("does not fail the deletion reaction when cleanup fails", () =>
     Effect.gen(function* () {

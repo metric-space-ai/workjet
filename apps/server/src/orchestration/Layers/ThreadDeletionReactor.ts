@@ -45,11 +45,21 @@ const make = Effect.gen(function* () {
   const workerWorktreeCleanup = yield* WorkerWorktreeCleanup;
 
   const stopProviderSession = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
-    logCleanupCauseUnlessInterrupted({
-      effect: providerService.stopSession({ threadId }),
-      message: "thread deletion cleanup skipped provider session stop",
-      threadId,
-    });
+    providerService.stopSession({ threadId }).pipe(
+      Effect.as(true),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.failCause(cause);
+        }
+        return Effect.logWarning(
+          "thread deletion skipped worktree cleanup after provider stop failed",
+          {
+            threadId,
+            cause: Cause.pretty(cause),
+          },
+        ).pipe(Effect.as(false));
+      }),
+    );
 
   const closeThreadTerminals = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     logCleanupCauseUnlessInterrupted({
@@ -88,9 +98,11 @@ const make = Effect.gen(function* () {
     event: ThreadDeletedEvent,
   ) {
     const { threadId } = event.payload;
-    yield* stopProviderSession(threadId);
+    const providerStopped = yield* stopProviderSession(threadId);
     yield* closeThreadTerminals(threadId);
-    yield* removeWorkerWorktree(threadId);
+    if (providerStopped) {
+      yield* removeWorkerWorktree(threadId);
+    }
   });
 
   const processThreadDeletedSafely = (event: ThreadDeletedEvent) =>

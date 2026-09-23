@@ -34,6 +34,7 @@ import * as Schema from "effect/Schema";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { WORKER_REF_PREFIX } from "./WorkerDispatch.ts";
@@ -108,6 +109,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
   const query = yield* ProjectionSnapshotQuery;
   const gitWorkflow = yield* GitWorkflowService;
   const git = yield* GitVcsDriver;
+  const sourceControlProviders = yield* SourceControlProviderRegistry;
   const worktreeStorage = yield* WorktreeStorage;
   const path = yield* Path.Path;
 
@@ -151,27 +153,25 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
     // exact commit still checked out here. Any missing/stale evidence retains
     // the worktree and branch for recovery.
     const verifiedMerge = yield* Effect.gen(function* () {
-      yield* gitWorkflow.invalidateStatus(worktreePath);
-      const status = yield* gitWorkflow.status({ cwd: worktreePath });
-      if (
-        !status.isRepo ||
-        status.refName !== workerRefName ||
-        status.hasWorkingTreeChanges ||
-        status.pr?.state !== "merged" ||
-        status.pr.headRef !== workerRefName
-      ) {
-        return false;
-      }
-      const resolved = yield* gitWorkflow.resolvePullRequest({
-        cwd: worktreePath,
-        reference: String(status.pr.number),
-      });
-      const pr = resolved.pullRequest;
-      if (pr.state !== "merged" || pr.headBranch !== workerRefName || !pr.headCommitOid) {
+      yield* gitWorkflow.invalidateLocalStatus(worktreePath);
+      const status = yield* gitWorkflow.localStatus({ cwd: worktreePath });
+      if (!status.isRepo || status.refName !== workerRefName || status.hasWorkingTreeChanges) {
         return false;
       }
       const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
-      return pr.headCommitOid.toLowerCase() === head.commitSha.toLowerCase();
+      const provider = yield* sourceControlProviders.resolve({ cwd: worktreePath });
+      const merged = yield* provider.listChangeRequests({
+        cwd: worktreePath,
+        headSelector: workerRefName,
+        state: "merged",
+        limit: 100,
+      });
+      return merged.some(
+        (pr) =>
+          pr.state === "merged" &&
+          pr.headRefName === workerRefName &&
+          pr.headCommitOid?.toLowerCase() === head.commitSha.toLowerCase(),
+      );
     }).pipe(Effect.orElseSucceed(() => false));
     if (!verifiedMerge) {
       return { status: "skipped", reason: "merge-unverified" } as const;

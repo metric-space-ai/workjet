@@ -98,10 +98,12 @@ the transactional `reviews` edge. The learning service still does not record
 first/final scores or drive model selection from these verdicts.
 
 On `thread.deleted`, worker worktree removal now requires a clean checkout on
-the recorded worker branch and fresh provider evidence that a merged PR's head
-equals local HEAD. Missing or mismatched evidence retains the checkout and logs
+the recorded worker branch and a direct provider query showing that a merged
+PR's head equals local HEAD. This still works after a merged PR's remote branch
+is deleted. Missing or mismatched evidence retains the checkout and logs
 the skip. This prevents deletion of unmerged source, but it does not yet provide
-a retry after later merge, serialization against new execution, or a completed
+a retry after later merge, durable proof that the provider session stopped,
+serialization against new execution, or a completed
 archive transition. Archive must follow successful cleanup rather than hide a
 failed or skipped cleanup.
 

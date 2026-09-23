@@ -43,7 +43,7 @@ succeeds; failed appends and marker writes can retry with the same command ident
 For local project-team parents, return now requests a continuation with a stable
 command/message identity before acknowledging the result. Engine-serialized busy
 admission defers without a rejected receipt; the existing pending-result scan
-owns retries. This new continuation and its regression tests await verification.
+owns retries. Focused executor tests cover the continuation and retry boundary.
 Team WorkerDispatch writes the complete task to the snapshot store and prepares
 a signed local delegation. Its internal thread.create option commits the worker
 event, queued delegation and outbox in the same engine SQL transaction and receipt.
@@ -61,8 +61,12 @@ checkout because ownership is still uncertain. Startup reconciliation of a
 retained ambiguous checkout remains to be implemented.
 Review, revise and follow-up state transitions now commit their graph edge in
 the same mailbox transaction. A failed edge insert rolls back the state and its
-history event. The review-request message is still enqueued separately; recovery
-if that enqueue fails remains open.
+history event. A review request commits its state, `reviews` edge and signed
+message together. Local delivery also commits an inbox row; an executor cycle
+replays its thread activity after a failed dispatch or restart with a stable
+command identity. An unprocessed local review signal is retained past message
+TTL until that activity is marked processed. Remote signals use the outbox and
+still need explicit dead-letter and reissue handling.
 An orchestrator can now submit a linked delegation after a `changes-requested`
 review. The delivery service derives a `revises` edge and depth, restricts the
 new task to the same worker and bounds its depth, review rounds, and expiry
@@ -106,20 +110,29 @@ cycles. If a prior attempt removed the worktree but failed to delete its branch,
 the retry checks the branch commit against a merged PR and deletes that ref only
 with Git's expected-old-commit check. A branch with new unique commits stays.
 Missing or mismatched merge evidence retains source. Provider session stop is
-retried before removal. A durable cleanup receipt, proof against concurrent new
-execution, and completed archive transition are still absent. Archive must follow
+retried before removal. A durable receipt records the matching merged PR URL
+and commit before checkout or branch removal and records completion afterward.
+Restart reconciliation finishes an interrupted completion only when the exact
+receipt and Git ref state agree. Missing, unreadable or changed Git evidence
+keeps the receipt pending and retains any remaining source. Deleted threads
+reject new turn commands. The engine now fences provider turn starts against
+thread deletion and forced project deletion through send acknowledgement, after
+asynchronous session startup. Archive must follow
 successful cleanup rather than hide a failed or skipped cleanup.
 
 ## Implementation checkpoint
 
 This branch is not production-ready. Receipt reconciliation, atomic review
-edges, result-to-rework, and the bounded rework reminder have targeted local
-tests. Exact-head CI and real desktop/web/mobile acceptance for the latest
-changes remain pending.
+signals and edges, result-to-rework, bounded rework reminders, and guarded
+cleanup have focused local tests. The exact `cc948834e` CI head passed Check,
+Test, Release Smoke, Mobile Native Static Analysis and the macOS ARM64 app
+artifact. The Android preview APK failed in the shared Metro `image-size@2.0.4`
+asset path. Real desktop/web/mobile acceptance for this branch remains pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
 recovery of checkouts retained after unreadable receipts, explicit handling when
 both parent rework continuations end without a linked child,
-cleanup receipt/archive integration, and durable review/selection wiring. The review
+cleanup/archive integration, remote review-signal dead letters,
+and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

@@ -19,6 +19,7 @@ import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Semaphore from "effect/Semaphore";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -103,6 +104,20 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
   const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
+  const turnStartFence = yield* Semaphore.make(1);
+
+  const runTurnStartIfActive: OrchestrationEngineShape["runTurnStartIfActive"] = (
+    threadId,
+    start,
+  ) =>
+    turnStartFence.withPermits(1)(
+      Effect.gen(function* () {
+        const thread = commandReadModel.threads.find((item) => item.id === threadId);
+        if (!thread || thread.deletedAt !== null) return false;
+        yield* start;
+        return true;
+      }),
+    );
 
   const projectEventsOntoReadModel = (
     baseReadModel: OrchestrationReadModel,
@@ -350,7 +365,11 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           }
         }
         return { sequence: committedCommand.lastSequence };
-      }).pipe(Effect.withSpan(`orchestration.command.${envelope.command.type}`)),
+      }).pipe(Effect.withSpan(`orchestration.command.${envelope.command.type}`), (effect) =>
+        envelope.command.type === "thread.delete" || envelope.command.type === "project.delete"
+          ? turnStartFence.withPermits(1)(effect)
+          : effect,
+      ),
     ).pipe(
       Effect.flatMap((exit) =>
         Effect.gen(function* () {
@@ -446,6 +465,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   return {
     readEvents,
     dispatch,
+    runTurnStartIfActive,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (wsServer, ProviderRuntimeIngestion, CheckpointReactor, etc.)
     // each independently receive all domain events.

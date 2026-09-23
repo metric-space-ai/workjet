@@ -21,6 +21,8 @@ import {
 } from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Metric from "effect/Metric";
@@ -117,6 +119,102 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("fences provider turn starts against thread and forced-project deletion", async () => {
+    for (const deletion of ["thread", "project"] as const) {
+      const system = await createOrchestrationSystem();
+      const projectId = asProjectId(`turn-start-fence-${deletion}`);
+      try {
+        await system.run(
+          system.engine.dispatch({
+            type: "project.create",
+            commandId: CommandId.make(`turn-start-fence-${deletion}-create`),
+            projectId,
+            title: "Turn start fence",
+            workspaceRoot: "/fixture/turn-start-fence",
+            createdAt: now(),
+          }),
+        );
+        const supervisor = (await system.readModel()).threads[0]!;
+        const threadId =
+          deletion === "project" ? supervisor.id : ThreadId.make("turn-start-fence-normal-thread");
+        if (deletion === "thread") {
+          await system.run(
+            system.engine.dispatch({
+              type: "thread.create",
+              commandId: CommandId.make("turn-start-fence-normal-thread-create"),
+              threadId,
+              projectId,
+              title: "Normal thread",
+              modelSelection: supervisor.modelSelection,
+              interactionMode: supervisor.interactionMode,
+              workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+              runtimeMode: supervisor.runtimeMode,
+              branch: null,
+              worktreePath: null,
+              createdAt: now(),
+            }),
+          );
+        }
+        const sequenceBeforeDelete = await system.run(system.engine.latestSequence);
+
+        await system.run(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const sendStarted = yield* Deferred.make<void>();
+              const releaseSend = yield* Deferred.make<void>();
+              const send = yield* Effect.forkScoped(
+                system.engine.runTurnStartIfActive(
+                  threadId,
+                  Effect.gen(function* () {
+                    yield* Deferred.succeed(sendStarted, undefined);
+                    yield* Deferred.await(releaseSend);
+                  }),
+                ),
+              );
+              yield* Deferred.await(sendStarted);
+
+              const deleteProject = yield* Effect.forkScoped(
+                system.engine.dispatch(
+                  deletion === "project"
+                    ? {
+                        type: "project.delete",
+                        commandId: CommandId.make(`turn-start-fence-${deletion}-delete`),
+                        projectId,
+                        force: true,
+                      }
+                    : {
+                        type: "thread.delete",
+                        commandId: CommandId.make(`turn-start-fence-${deletion}-delete`),
+                        threadId,
+                      },
+                ),
+              );
+              yield* Effect.yieldNow;
+              expect(yield* system.engine.latestSequence).toBe(sequenceBeforeDelete);
+
+              yield* Deferred.succeed(releaseSend, undefined);
+              expect(yield* Fiber.join(send)).toBe(true);
+              yield* Fiber.join(deleteProject);
+
+              let lateSendStarted = false;
+              expect(
+                yield* system.engine.runTurnStartIfActive(
+                  threadId,
+                  Effect.sync(() => {
+                    lateSendStarted = true;
+                  }),
+                ),
+              ).toBe(false);
+              expect(lateSendStarted).toBe(false);
+            }),
+          ),
+        );
+      } finally {
+        await system.dispose();
+      }
+    }
+  });
+
   it("commits worker creation and delegation together and retries a failed transaction", async () => {
     const environmentId = EnvironmentId.make("atomic-worker-env");
     const system = await createOrchestrationSystem(environmentId);

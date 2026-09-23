@@ -15,6 +15,7 @@ import type {
   OrchestrationEvent,
   WorkjetDelegation,
   WorkjetRoutingEnvelope,
+  ThreadId,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -36,6 +37,17 @@ export interface OrchestrationDispatchOptions {
 }
 
 export interface OrchestrationEngineShape {
+  /**
+   * Start a provider turn only while the thread is live. This holds the same
+   * fence as thread and forced-project deletion through the provider start
+   * acknowledgement, so deletion cannot commit between the final check and
+   * the actual send. False means the thread was already deleted.
+   */
+  readonly runTurnStartIfActive: <A, E, R>(
+    threadId: ThreadId,
+    start: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<boolean, E, R>;
+
   /**
    * Replay persisted orchestration events from an exclusive sequence cursor.
    *

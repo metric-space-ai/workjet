@@ -1181,13 +1181,17 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    // Session startup can outlive deletion. Recheck after the asynchronous
-    // startup path so a delayed turn event cannot restart a deleted worker.
+    // Avoid starting a send fiber for a thread already deleted while its
+    // provider session was starting. The engine fence closes the final race
+    // after this projection check.
     const latestThread = yield* resolveThread(event.payload.threadId);
     if (!latestThread || latestThread.deletedAt !== null) return;
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
+    // Session startup can outlive deletion. The engine checks the authoritative
+    // thread state under the deletion fence and holds it until sendTurn has
+    // acknowledged the start. Fork the fenced operation, not the bare send.
+    yield* orchestrationEngine
+      .runTurnStartIfActive(event.payload.threadId, providerService.sendTurn(sendTurnRequest.value))
       .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
   });
 

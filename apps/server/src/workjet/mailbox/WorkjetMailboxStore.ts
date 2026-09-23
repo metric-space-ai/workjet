@@ -71,6 +71,12 @@ export const WORKJET_MAILBOX_MAX_BACKOFF_MILLIS = 300_000;
  */
 export const WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS = 8;
 
+/** One fresh remote review signal per original; the resend id survives retries. */
+export const freshReviewSignalId = (originalId: WorkjetEnvelopeId): WorkjetEnvelopeId | null => {
+  const match = /^wjm-review-([0-9a-fA-F-]{36})$/.exec(originalId);
+  return match ? WorkjetEnvelopeId.make(`wjm-review-resend-${match[1]}`) : null;
+};
+
 /**
  * Bounded exponential backoff for the given (already incremented) attempt
  * count. Deterministic on purpose: the reconciler that will later consume this
@@ -716,6 +722,14 @@ export interface WorkjetMailboxStoreShape {
     envelopeId: WorkjetEnvelopeId,
     now: WorkjetMailboxTimestamp,
   ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
+
+  /** Atomically recheck the dead original and open review before queuing its fresh signal. */
+  readonly enqueueFreshReviewSignal: (input: {
+    readonly originalEnvelopeId: WorkjetEnvelopeId;
+    readonly envelope: WorkjetRoutingEnvelope;
+    readonly payload: WorkjetMailboxPayload;
+    readonly now: WorkjetMailboxTimestamp;
+  }) => Effect.Effect<WorkjetOutboundEnqueueOutcome, WorkjetMailboxStoreError>;
 
   readonly getOutbound: (
     envelopeId: WorkjetEnvelopeId,
@@ -1913,6 +1927,97 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const enqueueFreshReviewSignal: WorkjetMailboxStoreShape["enqueueFreshReviewSignal"] = (input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const expectedId = freshReviewSignalId(input.originalEnvelopeId);
+          if (!expectedId || input.envelope.envelopeId !== expectedId) {
+            return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+          }
+          const existing = Option.getOrUndefined(yield* getOutbound(expectedId));
+          if (existing) {
+            if (
+              input.payload._tag !== "message" ||
+              existing.payload._tag !== "message" ||
+              existing.payload.message.envelopeId !== expectedId ||
+              existing.payload.message.inReplyTo !== input.payload.message.inReplyTo ||
+              JSON.stringify(existing.payload.message.source) !==
+                JSON.stringify(input.payload.message.source) ||
+              JSON.stringify(existing.payload.message.target) !==
+                JSON.stringify(input.payload.message.target) ||
+              JSON.stringify(existing.payload.message.body) !==
+                JSON.stringify(input.payload.message.body)
+            ) {
+              return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+            }
+            return { _tag: "duplicate", envelopeId: expectedId } as const;
+          }
+
+          const original = Option.getOrUndefined(yield* getOutbound(input.originalEnvelopeId));
+          if (!original || original.payload._tag !== "message") {
+            return yield* new WorkjetMailboxError({ reason: "unknown-target" });
+          }
+          const oldMessage = original.payload.message;
+          if (
+            original.state !== "dead" ||
+            (original.reviewRedriveCount === 0 && original.expiresAtMillis > Date.parse(input.now))
+          ) {
+            return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+          }
+          const delegationId = oldMessage.inReplyTo
+            ? Option.getOrUndefined(yield* findDelegationIdByEnvelopeId(oldMessage.inReplyTo))
+            : undefined;
+          const delegation = delegationId
+            ? Option.getOrUndefined(yield* getDelegation(delegationId))
+            : undefined;
+          if (!delegation) {
+            return yield* new WorkjetMailboxError({ reason: "unknown-target" });
+          }
+          if (delegation.state !== "review-requested") {
+            return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+          }
+          if (
+            Date.parse(input.now) >= Date.parse(delegation.delegation.budget.expiresAt) ||
+            Date.parse(input.envelope.expiresAt) >
+              Date.parse(delegation.delegation.budget.expiresAt)
+          ) {
+            return yield* new WorkjetMailboxError({ reason: "delegation-expired" });
+          }
+          if (
+            input.payload._tag !== "message" ||
+            input.payload.message.envelopeId !== expectedId ||
+            input.payload.message.inReplyTo !== oldMessage.inReplyTo ||
+            input.envelope.kind !== "message" ||
+            input.envelope.createdAt !== input.now ||
+            input.envelope.createdAt !== input.payload.message.createdAt ||
+            input.envelope.expiresAt !== input.payload.message.expiresAt ||
+            Date.parse(input.envelope.expiresAt) <= Date.parse(input.now) ||
+            input.envelope.sourceWorkspaceId !== oldMessage.source.workspaceId ||
+            input.envelope.sourceEnvironmentId !== oldMessage.source.environmentId ||
+            input.envelope.targetWorkspaceId !== oldMessage.target.workspaceId ||
+            input.envelope.targetEnvironmentId !== oldMessage.target.environmentId ||
+            JSON.stringify(input.payload.message.source) !== JSON.stringify(oldMessage.source) ||
+            JSON.stringify(input.payload.message.target) !== JSON.stringify(oldMessage.target) ||
+            JSON.stringify(input.payload.message.body) !== JSON.stringify(oldMessage.body)
+          ) {
+            return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+          }
+          return yield* enqueueOutbound(input.envelope, input.payload);
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          (cause): WorkjetMailboxStoreError =>
+            isWorkjetMailboxError(cause) || isWorkjetMailboxStoreCorruptRowError(cause)
+              ? cause
+              : new PersistenceSqlError({
+                  operation: "WorkjetMailboxStore.enqueueFreshReviewSignal:transaction",
+                  cause,
+                }),
+        ),
+      );
+
   const finalizeDelegationResult: WorkjetMailboxStoreShape["finalizeDelegationResult"] = (input) =>
     Effect.gen(function* () {
       const changedAtMillis = yield* toEpochMillis(input.changedAt);
@@ -3096,6 +3201,7 @@ export const make = Effect.gen(function* () {
     listDelegationStateEvents,
     getDelegation,
     findDelegationIdByEnvelopeId,
+    enqueueFreshReviewSignal,
     finalizeDelegationResult,
     getDelegationResult,
     listDelegationsPendingResultReturn,

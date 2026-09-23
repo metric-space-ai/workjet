@@ -43,6 +43,7 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   WorkjetMailboxStore,
+  freshReviewSignalId,
   isWorkjetMailboxError,
   type WorkjetDelegationRecord,
   type WorkjetReceivedHandoffRecord,
@@ -210,6 +211,18 @@ export interface WorkjetMailboxRequestReviewInput {
   readonly ttlSeconds?: number;
 }
 
+/** Retry one dead remote review signal with a new signed envelope and bounded lifetime. */
+export interface WorkjetMailboxResendReviewSignalInput {
+  readonly originalEnvelopeId: WorkjetEnvelopeId;
+}
+
+export interface WorkjetMailboxResendReviewSignalOutcome {
+  readonly status: "queued" | "already-sent";
+  readonly originalEnvelopeId: WorkjetEnvelopeId;
+  readonly envelopeId: WorkjetEnvelopeId;
+  readonly delegationId: WorkjetDelegationId;
+}
+
 /** The bounded state operation `workjet_update_delegation` performs. */
 export type WorkjetMailboxDelegationUpdate =
   | { readonly _tag: "cancel" }
@@ -325,6 +338,11 @@ export interface WorkjetMailboxDeliveryShape {
     invocation: WorkjetMailboxSenderScope,
     input: WorkjetMailboxRequestReviewInput,
   ) => Effect.Effect<WorkjetMailboxReviewRequestOutcome, WorkjetMailboxError>;
+
+  readonly resendReviewSignal: (
+    invocation: WorkjetMailboxSenderScope,
+    input: WorkjetMailboxResendReviewSignalInput,
+  ) => Effect.Effect<WorkjetMailboxResendReviewSignalOutcome, WorkjetMailboxError>;
 
   readonly updateDelegation: (
     invocation: WorkjetMailboxSenderScope,
@@ -1251,6 +1269,114 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     } as const satisfies WorkjetMailboxReviewRequestOutcome;
   });
 
+  const resendReviewSignal: WorkjetMailboxDeliveryShape["resendReviewSignal"] = Effect.fn(
+    "WorkjetMailboxDelivery.resendReviewSignal",
+  )(function* (invocation, input) {
+    const id = freshReviewSignalId(input.originalEnvelopeId);
+    if (!id) return yield* failure("malformed-envelope");
+    const original = Option.getOrUndefined(
+      yield* store.getOutbound(input.originalEnvelopeId).pipe(Effect.mapError(boundStoreError)),
+    );
+    if (!original || original.payload._tag !== "message") {
+      return yield* failure("unknown-target");
+    }
+    const oldMessage = original.payload.message;
+    if (
+      oldMessage.source.workspaceId !== identity.workspaceId ||
+      oldMessage.source.environmentId !== invocation.environmentId ||
+      oldMessage.source.threadId !== invocation.threadId
+    ) {
+      return yield* failure("unauthorized");
+    }
+    if (
+      oldMessage.envelopeId !== input.originalEnvelopeId ||
+      oldMessage.source.environmentId === oldMessage.target.environmentId ||
+      oldMessage.body._tag !== "sealed" ||
+      !oldMessage.inReplyTo ||
+      original.envelope.kind !== "message" ||
+      original.envelope.sourceWorkspaceId !== oldMessage.source.workspaceId ||
+      original.envelope.sourceEnvironmentId !== oldMessage.source.environmentId ||
+      original.envelope.targetWorkspaceId !== oldMessage.target.workspaceId ||
+      original.envelope.targetEnvironmentId !== oldMessage.target.environmentId ||
+      !(yield* identity.verifyRoutingEnvelope(original.envelope))
+    ) {
+      return yield* failure("malformed-envelope");
+    }
+    const delegationId = Option.getOrUndefined(
+      yield* store
+        .findDelegationIdByEnvelopeId(oldMessage.inReplyTo)
+        .pipe(Effect.mapError(boundStoreError)),
+    );
+    if (!delegationId) return yield* failure("unknown-target");
+    const delegation = yield* loadDelegation(delegationId);
+
+    const now = yield* sources.nowIso;
+    if (Date.parse(now) >= Date.parse(delegation.delegation.budget.expiresAt)) {
+      return yield* failure("delegation-expired");
+    }
+    const ordinaryExpiry = yield* addSeconds(now, WORKJET_MAILBOX_DEFAULT_TTL_SECONDS);
+    const expiresAt = new Date(
+      Math.min(Date.parse(ordinaryExpiry), Date.parse(delegation.delegation.budget.expiresAt)),
+    ).toISOString() as WorkjetMailboxTimestamp;
+    const message: WorkjetWorkerMessage = {
+      ...oldMessage,
+      envelopeId: id,
+      createdAt: now,
+      expiresAt,
+    };
+    const payload = { _tag: "message", message } as const satisfies WorkjetMailboxPayload;
+    const envelope = yield* routingEnvelope({
+      envelopeId: id,
+      kind: "message",
+      source: oldMessage.source,
+      target: oldMessage.target,
+      createdAt: now,
+      expiresAt,
+    });
+    if (!(yield* identity.verifyRoutingEnvelope(envelope))) {
+      return yield* failure("invalid-signature");
+    }
+    const enqueued = yield* store
+      .enqueueFreshReviewSignal({
+        originalEnvelopeId: input.originalEnvelopeId,
+        envelope,
+        payload,
+        now,
+      })
+      .pipe(Effect.mapError(boundStoreError));
+    if (enqueued._tag === "enqueued") {
+      yield* emit({
+        _tag: "envelope-enqueued",
+        occurredAt: now,
+        envelopeId: id,
+        source: auditAddress(oldMessage.source),
+        target: auditAddress(oldMessage.target),
+      });
+      yield* appendActivity({
+        threadId: oldMessage.source.threadId,
+        kind: WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
+        summary: "Remote Workjet review signal queued again",
+        payload: activityPayload({
+          envelopeId: id,
+          direction: "outbound",
+          source: oldMessage.source,
+          target: oldMessage.target,
+          bodyKind: oldMessage.body._tag,
+          delegationId,
+          createdAt: now,
+          expiresAt,
+        }),
+        createdAt: now,
+      });
+    }
+    return {
+      status: enqueued._tag === "enqueued" ? "queued" : "already-sent",
+      originalEnvelopeId: input.originalEnvelopeId,
+      envelopeId: id,
+      delegationId,
+    } as const;
+  });
+
   /**
    * The bounded state operations on an existing delegation. Every branch maps
    * to ONE legal transition in the store's enforced table (never a new one) and,
@@ -1767,6 +1893,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     delegateTask,
     reply,
     requestReview,
+    resendReviewSignal,
     updateDelegation,
     sendHandoff,
     listReceivedHandoffs,

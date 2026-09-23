@@ -161,13 +161,14 @@ const makeHarness = (input?: {
   readonly failCommands?: boolean;
   readonly failAudit?: boolean;
   readonly identity?: Effect.Effect<WorkjetMeshIdentity["Service"]>;
+  readonly now?: () => string;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
   const events: Array<WorkjetMailboxAuditEventInput> = [];
   let idIndex = 0;
   const sources: WorkjetMailboxDeliverySources = {
     randomUUID: Effect.sync(() => nthId(idIndex++)),
-    nowIso: Effect.succeed(NOW),
+    nowIso: Effect.sync(() => input?.now?.() ?? NOW),
     audit: {
       emit: (event) => {
         events.push(event);
@@ -774,6 +775,127 @@ it.effect(
         ["reviews"],
       );
     }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("resends an expired remote review signal once with a fresh signed envelope", () =>
+  Effect.gen(function* () {
+    let currentTime = NOW;
+    const identity = yield* makeTestIdentity();
+    const { commands, service } = makeHarness({
+      identity: Effect.succeed(identity),
+      now: () => currentTime,
+    });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const delegationId = yield* seedDelegation(delivery, store, RUNNING_PATH);
+    const original = yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: REMOTE_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId,
+      round: 1,
+      body: sealedBody,
+      ttlSeconds: 60,
+    });
+    assert.equal(original.delivery._tag, "queued");
+    const originalId = original.delivery.envelopeId;
+    const old = Option.getOrThrow(yield* store.getOutbound(originalId));
+    currentTime = "2026-08-19T12:02:00.000Z";
+    yield* sql`
+      UPDATE workjet_mailbox_outbox
+      SET state = 'dead', dead_lettered_at_ms = ${Date.parse(currentTime)}
+      WHERE envelope_id = ${originalId}
+    `;
+    const wrongSource = yield* delivery
+      .resendReviewSignal({ ...invocation, threadId: TARGET_THREAD }, { originalEnvelopeId: originalId })
+      .pipe(Effect.flip);
+    assert.equal(wrongSource.reason, "unauthorized");
+
+    const sentCount = activityKinds(commands).length;
+    const first = yield* delivery.resendReviewSignal(invocation, {
+      originalEnvelopeId: originalId,
+    });
+    assert.equal(first.status, "queued");
+    assert.notEqual(first.envelopeId, originalId);
+    assert.equal(first.delegationId, delegationId);
+    const fresh = Option.getOrThrow(yield* store.getOutbound(first.envelopeId));
+    assert.equal(fresh.state, "pending");
+    assert.isTrue(yield* identity.verifyRoutingEnvelope(fresh.envelope));
+    assert.equal(fresh.payload._tag, "message");
+    if (fresh.payload._tag === "message" && old.payload._tag === "message") {
+      assert.deepEqual(fresh.payload.message.body, old.payload.message.body);
+      assert.equal(fresh.payload.message.inReplyTo, old.payload.message.inReplyTo);
+      assert.equal(fresh.payload.message.createdAt, currentTime);
+      assert.isAbove(fresh.expiresAtMillis, old.expiresAtMillis);
+    }
+
+    const repeated = yield* delivery.resendReviewSignal(invocation, {
+      originalEnvelopeId: originalId,
+    });
+    assert.equal(repeated.status, "already-sent");
+    assert.equal(repeated.envelopeId, first.envelopeId);
+    assert.equal(activityKinds(commands).length, sentCount + 1);
+    const secondGeneration = yield* delivery
+      .resendReviewSignal(invocation, { originalEnvelopeId: first.envelopeId })
+      .pipe(Effect.flip);
+    assert.equal(secondGeneration.reason, "malformed-envelope");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("refuses a fresh resend while the original still has its in-place redrive", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const delegationId = yield* seedDelegation(delivery, store, RUNNING_PATH);
+    const original = yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: REMOTE_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId,
+      round: 1,
+      body: sealedBody,
+    });
+    yield* sql`
+      UPDATE workjet_mailbox_outbox
+      SET state = 'dead', dead_lettered_at_ms = ${Date.parse(NOW)}
+      WHERE envelope_id = ${original.delivery.envelopeId}
+    `;
+    const error = yield* delivery
+      .resendReviewSignal(invocation, { originalEnvelopeId: original.delivery.envelopeId })
+      .pipe(Effect.flip);
+    assert.equal(error.reason, "invalid-state-transition");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("does not queue a fresh review signal after the review has closed", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const delegationId = yield* seedDelegation(delivery, store, RUNNING_PATH);
+    const original = yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: REMOTE_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId,
+      round: 1,
+      body: sealedBody,
+    });
+    yield* sql`
+      UPDATE workjet_mailbox_outbox
+      SET state = 'dead', review_redrive_count = 1, dead_lettered_at_ms = ${Date.parse(NOW)}
+      WHERE envelope_id = ${original.delivery.envelopeId}
+    `;
+    yield* store.transitionDelegationState(delegationId, "review-requested", "completed", NOW);
+    const error = yield* delivery
+      .resendReviewSignal(invocation, { originalEnvelopeId: original.delivery.envelopeId })
+      .pipe(Effect.flip);
+    assert.equal(error.reason, "invalid-state-transition");
+  }).pipe(Effect.provide(testLayer)),
 );
 
 it.effect("rolls back the review transition when its durable signal cannot be enqueued", () =>

@@ -76,8 +76,14 @@ leave the row for retry. An expired or twice-dead letter stays queryable and is
 logged. When review is still pending, the executor appends one error activity
 to the source thread
 with a stable command identity; a failed activity append retries after restart.
-The source must notify the reviewer again or resolve the delegation. A dedicated
-freshly sealed resend action remains to be implemented.
+The source must notify the reviewer again or resolve the delegation. The
+`workjet_resend_review_signal` action can now queue one newly signed remote
+signal after the original expires or exhausts its in-place redrive, while the
+delegation still awaits review. Its id derives from the original review UUID;
+repeating the call returns the same outbox identity without another activity.
+The store rechecks the dead original and open review in the enqueue transaction,
+and the new expiry stays inside the delegation budget. A resend cannot be used
+as the source of another resend.
 An orchestrator can now submit a linked delegation after a `changes-requested`
 review. The delivery service derives a `revises` edge and depth, restricts the
 new task to the same worker and bounds its depth, review rounds, and expiry
@@ -155,8 +161,8 @@ exact-head CI and real Mobile acceptance. Android preview APK and real
 desktop/web/mobile acceptance remain pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
-recovery of checkouts retained after unreadable receipts, a dedicated fresh
-remote review-signal resend action, and runtime review/selection wiring. The
+recovery of checkouts retained after unreadable receipts, real remote review
+resend acceptance, and runtime review/selection wiring. The
 learning rows and pure calculation do not yet select a worker model or score a
 completed run.
 No deployment or end-to-end acceptance is claimed.

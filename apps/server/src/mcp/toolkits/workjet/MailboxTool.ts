@@ -45,6 +45,7 @@ export const WORKJET_SEND_MESSAGE_TOOL_NAME = "workjet_send_message";
 export const WORKJET_DELEGATE_TASK_TOOL_NAME = "workjet_delegate_task";
 export const WORKJET_REPLY_TOOL_NAME = "workjet_reply";
 export const WORKJET_REQUEST_REVIEW_TOOL_NAME = "workjet_request_review";
+export const WORKJET_RESEND_REVIEW_SIGNAL_TOOL_NAME = "workjet_resend_review_signal";
 export const WORKJET_UPDATE_DELEGATION_TOOL_NAME = "workjet_update_delegation";
 
 /**
@@ -232,6 +233,10 @@ export const WorkjetRequestReviewInputSchema = Schema.Struct({
   ttlSeconds: Schema.optional(TtlSeconds),
 });
 
+export const WorkjetResendReviewSignalInputSchema = Schema.Struct({
+  originalEnvelopeId: WorkjetEnvelopeId,
+});
+
 /**
  * The bounded state operations. `cancel`, `revise`, and `follow-up` carry no
  * further fields; a `review` carries the verdict decision, its 1-based round,
@@ -273,6 +278,14 @@ export const WorkjetRequestReviewResultSchema = Schema.Struct({
   acknowledgedAt: Schema.optional(WorkjetMailboxTimestamp),
 });
 
+export const WorkjetResendReviewSignalResultSchema = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  status: Schema.Literals(["queued", "already-sent"]),
+  originalEnvelopeId: WorkjetEnvelopeId,
+  envelopeId: WorkjetEnvelopeId,
+  delegationId: WorkjetDelegationId,
+});
+
 export const WorkjetUpdateDelegationResultSchema = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   delegationId: WorkjetDelegationId,
@@ -286,6 +299,10 @@ const decodeReplyInputSchema = Schema.decodeUnknownEffect(WorkjetReplyInputSchem
 const decodeRequestReviewInputSchema = Schema.decodeUnknownEffect(WorkjetRequestReviewInputSchema, {
   onExcessProperty: "error",
 });
+const decodeResendReviewSignalInputSchema = Schema.decodeUnknownEffect(
+  WorkjetResendReviewSignalInputSchema,
+  { onExcessProperty: "error" },
+);
 const decodeUpdateDelegationInputSchema = Schema.decodeUnknownEffect(
   WorkjetUpdateDelegationInputSchema,
   { onExcessProperty: "error" },
@@ -300,6 +317,13 @@ export const decodeRequestReviewInput = (payload: unknown) =>
   decodeRequestReviewInputSchema(payload).pipe(
     Effect.mapError(
       () => new McpSchema.InvalidParams({ message: "Invalid Workjet review-request input." }),
+    ),
+  );
+
+export const decodeResendReviewSignalInput = (payload: unknown) =>
+  decodeResendReviewSignalInputSchema(payload).pipe(
+    Effect.mapError(
+      () => new McpSchema.InvalidParams({ message: "Invalid Workjet review resend input." }),
     ),
   );
 
@@ -394,6 +418,23 @@ export const RequestReviewMcpTool = Tool.make(WORKJET_REQUEST_REVIEW_TOOL_NAME, 
   .annotate(Tool.OpenWorld, true)
   .annotate(McpSchema.EnabledWhen, enabledWhen);
 
+export const ResendReviewSignalMcpTool = Tool.make(WORKJET_RESEND_REVIEW_SIGNAL_TOOL_NAME, {
+  description:
+    "Queue one freshly signed remote review signal after the original expired or exhausted its redrive. Repeating the same call returns the saved resend identity.",
+  parameters: WorkjetResendReviewSignalInputSchema,
+  success: WorkjetResendReviewSignalResultSchema,
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    WorkjetMailboxDelivery.WorkjetMailboxDelivery,
+  ],
+})
+  .annotate(Tool.Title, "Resend Workjet review signal")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, true)
+  .annotate(McpSchema.EnabledWhen, enabledWhen);
+
 export const UpdateDelegationMcpTool = Tool.make(WORKJET_UPDATE_DELEGATION_TOOL_NAME, {
   description:
     "Advance an existing Workjet delegation through a bounded state operation: cancel it, submit a review verdict (approve completes it, changes-requested sends it back), record a revise re-run, or record a follow-up. Each maps to one enforced lifecycle transition and, where it creates a relationship, one typed delegation-graph edge; a revise or follow-up beyond the maxDepth budget is refused.",
@@ -429,6 +470,7 @@ const toolAnnotations = (
     | typeof DelegateTaskMcpTool
     | typeof ReplyMcpTool
     | typeof RequestReviewMcpTool
+    | typeof ResendReviewSignalMcpTool
     | typeof UpdateDelegationMcpTool,
 ) => ({
   ...Context.getOption(tool.annotations, Tool.Title).pipe(
@@ -732,6 +774,44 @@ const registerRequestReview = Effect.fn("McpHttpServer.registerWorkjetRequestRev
   });
 });
 
+const registerResendReviewSignal = Effect.fn("McpHttpServer.registerWorkjetResendReviewSignal")(
+  function* () {
+    const server = yield* McpServer.McpServer;
+    const delivery = yield* WorkjetMailboxDelivery.WorkjetMailboxDelivery;
+    const tool = ResendReviewSignalMcpTool;
+    yield* server.addTool({
+      tool: new McpSchema.Tool({
+        name: tool.name,
+        description: Tool.getDescription(tool),
+        inputSchema: Tool.getJsonSchema(tool),
+        outputSchema: Tool.getJsonSchemaFromSchema(WorkjetResendReviewSignalResultSchema),
+        annotations: toolAnnotations(tool),
+      }),
+      annotations: tool.annotations,
+      handle: (payload) =>
+        Effect.withFiber((fiber) => {
+          const invocation = Context.getUnsafe(
+            fiber.context,
+            McpInvocationContext.McpInvocationContext,
+          );
+          return Effect.gen(function* () {
+            yield* McpInvocationContext.requireWorkjetOrchestrator();
+            const input = yield* decodeResendReviewSignalInput(payload);
+            const outcome = yield* delivery.resendReviewSignal(invocation, input);
+            return successResult({ schemaVersion: 1, ...outcome });
+          }).pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+            Effect.catchTags({
+              WorkjetOrchestratorUnavailableError: () =>
+                Effect.succeed(failureResult("unauthorized")),
+              WorkjetMailboxError: (error) => Effect.succeed(failureResult(error.reason)),
+            }),
+          );
+        }),
+    });
+  },
+);
+
 const registerUpdateDelegation = Effect.fn("McpHttpServer.registerWorkjetUpdateDelegation")(
   function* () {
     const server = yield* McpServer.McpServer;
@@ -794,5 +874,6 @@ export const MailboxToolkitRegistrationLive = Layer.mergeAll(
   Layer.effectDiscard(registerDelegateTask()),
   Layer.effectDiscard(registerReply()),
   Layer.effectDiscard(registerRequestReview()),
+  Layer.effectDiscard(registerResendReviewSignal()),
   Layer.effectDiscard(registerUpdateDelegation()),
 );

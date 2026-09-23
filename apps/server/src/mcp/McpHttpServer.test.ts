@@ -62,6 +62,7 @@ const WorkjetMailboxDeliveryTestLayer = Layer.succeed(
     delegateTask: () => Effect.die("unused"),
     reply: () => Effect.die("unused"),
     requestReview: () => Effect.die("unused"),
+    resendReviewSignal: () => Effect.die("unused"),
     updateDelegation: () => Effect.die("unused"),
     sendHandoff: () => Effect.die("unused"),
     listReceivedHandoffs: () => Effect.die("unused"),

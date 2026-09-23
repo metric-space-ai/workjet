@@ -528,9 +528,9 @@ describe("DesktopConnectionCatalogStore", () => {
       assert.isTrue(yield* store.set(first));
       yield* Ref.set(failDecrypt, true);
 
-      const recovery = yield* Effect.fork(store.recover);
+      const recovery = yield* Effect.forkChild(store.recover, { startImmediately: true });
       yield* Deferred.await(copyStarted);
-      const writer = yield* Effect.fork(store.set(later));
+      const writer = yield* Effect.forkChild(store.set(later), { startImmediately: true });
       const writerBeforeRecovery = yield* Fiber.await(writer).pipe(
         Effect.timeoutOption(Duration.seconds(2)),
       );

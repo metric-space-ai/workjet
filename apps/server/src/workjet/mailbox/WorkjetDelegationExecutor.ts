@@ -124,6 +124,8 @@ export const WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE = 32;
 const WORKJET_ARTIFACT_PATHS_LIMIT = 256;
 
 const WORKJET_DELEGATION_EXECUTOR_CYCLE_TIMEOUT = Duration.seconds(60);
+const WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX = "wjm-review-reissue-";
+const WORKJET_REVIEW_SIGNAL_REISSUE_TTL_SECONDS = 3_600;
 
 /** Thread-visible activity kinds appended by the executor. */
 export const WORKJET_DELEGATION_STARTED_ACTIVITY_KIND = "workjet.delegation.started";
@@ -2172,13 +2174,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * delivered, which must not reopen or re-fail the finished delegation.
      * Idempotent: a delegation already terminal is skipped.
      *
-     * Each row is examined EXACTLY ONCE. The scan is restricted to rows without
-     * the migration-049 `reconciled_at_ms` marker and stamps every row it sees —
-     * including the ones it deliberately skips — because a dead envelope is
-     * never resurrected, so re-reading it on every ten-second cycle for the rest
-     * of the row's life buys nothing. A row pinned before the marker existed is
-     * unmarked, so it reconciles one last time (harmlessly: the check above is
-     * idempotent) and is then stamped.
+     * A dead remote review signal gets one new signed envelope while its
+     * delegation still awaits review. The replacement id is derived from the
+     * original, so a crash after enqueue cannot create another signal.
+     *
+     * The scan is restricted to rows without the migration-049
+     * `reconciled_at_ms` marker. Transient lookup or enqueue failures leave a
+     * row unmarked; a repeated scan uses the same replacement id. Other rows
+     * are stamped after their disposition, so they do not recur forever.
      */
     for (const outbox of yield* store
       .listUnreconciledOutboundByState("dead", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
@@ -2192,6 +2195,100 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       const markReconciled = store
         .markOutboundReconciled(outbox.envelopeId, now as WorkjetMailboxTimestamp)
         .pipe(Effect.ignore);
+      if (
+        outbox.payload._tag === "message" &&
+        outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX) &&
+        !outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX)
+      ) {
+        const original = outbox.payload.message;
+        const lookup = yield* Effect.result(
+          original.inReplyTo
+            ? store.findDelegationIdByEnvelopeId(original.inReplyTo)
+            : Effect.succeed(Option.none<WorkjetDelegationId>()),
+        );
+        if (lookup._tag === "Failure") {
+          yield* Effect.logWarning("dead review signal delegation lookup deferred", {
+            envelopeId: outbox.envelopeId,
+            cause: lookup.failure,
+          });
+          continue;
+        }
+        const foundId = Option.getOrUndefined(lookup.success);
+        const record = foundId ? yield* Effect.result(store.getDelegation(foundId)) : undefined;
+        if (record?._tag === "Failure") {
+          yield* Effect.logWarning("dead review signal state lookup deferred", {
+            envelopeId: outbox.envelopeId,
+            cause: record.failure,
+          });
+          continue;
+        }
+        const awaiting =
+          record?._tag === "Success" ? Option.getOrUndefined(record.success) : undefined;
+        const nowInstant = Option.getOrUndefined(DateTime.make(now));
+        const budgetEnd = awaiting
+          ? Option.getOrUndefined(DateTime.make(awaiting.delegation.budget.expiresAt))
+          : undefined;
+        if (
+          awaiting?.state === "review-requested" &&
+          nowInstant &&
+          budgetEnd &&
+          DateTime.toEpochMillis(budgetEnd) > DateTime.toEpochMillis(nowInstant)
+        ) {
+          const expiresAt = DateTime.formatIso(
+            DateTime.makeUnsafe(
+              Math.min(
+                DateTime.toEpochMillis(budgetEnd),
+                DateTime.toEpochMillis(nowInstant) +
+                  WORKJET_REVIEW_SIGNAL_REISSUE_TTL_SECONDS * 1_000,
+              ),
+            ),
+          ) as WorkjetMailboxTimestamp;
+          const envelopeId = WorkjetEnvelopeId.make(
+            `${WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX}${outbox.envelopeId.slice(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX.length)}`,
+          );
+          const message = { ...original, envelopeId, createdAt: now, expiresAt } as const;
+          const unsigned: WorkjetUnsignedRoutingEnvelope = {
+            schemaVersion: 1,
+            envelopeId,
+            kind: "message",
+            sourceWorkspaceId: outbox.envelope.sourceWorkspaceId,
+            sourceEnvironmentId: outbox.envelope.sourceEnvironmentId,
+            targetWorkspaceId: outbox.envelope.targetWorkspaceId,
+            targetEnvironmentId: outbox.envelope.targetEnvironmentId,
+            createdAt: now,
+            expiresAt,
+          };
+          const reissued = yield* Effect.result(
+            identity
+              .signRoutingEnvelope(unsigned)
+              .pipe(
+                Effect.flatMap((envelope) =>
+                  store.enqueueOutbound(envelope, { _tag: "message", message }),
+                ),
+              ),
+          );
+          if (reissued._tag === "Failure") {
+            if (!isWorkjetMailboxError(reissued.failure)) {
+              yield* Effect.logWarning("dead review signal reissue deferred", {
+                envelopeId: outbox.envelopeId,
+                cause: reissued.failure,
+              });
+              continue;
+            }
+            yield* Effect.logWarning("dead review signal could not be reissued", {
+              envelopeId: outbox.envelopeId,
+              cause: reissued.failure,
+            });
+          }
+        }
+        yield* markReconciled;
+        continue;
+      }
+      if (outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX)) {
+        yield* Effect.logWarning("remote review signal exhausted its reissue", {
+          envelopeId: outbox.envelopeId,
+        });
+      }
       if (outbox.payload._tag !== "delegation") {
         yield* markReconciled;
         continue;

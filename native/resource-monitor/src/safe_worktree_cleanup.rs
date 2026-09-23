@@ -495,6 +495,70 @@ mod unix {
             std::fs::remove_file(&worktree).unwrap();
             std::fs::remove_dir_all(root).unwrap();
         }
+
+        #[test]
+        fn removes_a_real_git_worktree_and_its_exact_registration() {
+            use std::process::Command;
+
+            let root = std::fs::canonicalize(fixture("real-git")).unwrap();
+            let repo = root.join("repo");
+            let worktree = root.join("worker");
+            let run = |args: &[&str]| {
+                let output = Command::new("git")
+                    .arg("-C")
+                    .arg(&repo)
+                    .args(args)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "git {:?}: {}",
+                    args,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                String::from_utf8(output.stdout).unwrap()
+            };
+            Command::new("git")
+                .args(["init", "-q", "--initial-branch=main"])
+                .arg(&repo)
+                .status()
+                .unwrap();
+            run(&["config", "user.name", "Workjet test"]);
+            run(&["config", "user.email", "workjet-test@example.invalid"]);
+            std::fs::write(repo.join("file"), b"merged").unwrap();
+            run(&["add", "file"]);
+            run(&["-c", "commit.gpgsign=false", "commit", "-qm", "initial"]);
+            let output = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(["worktree", "add", "-q", "-b", "worker"])
+                .arg(&worktree)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let backlink = std::fs::read_to_string(worktree.join(".git")).unwrap();
+            let admin = std::path::PathBuf::from(backlink.trim().strip_prefix("gitdir: ").unwrap());
+            let worktree_stat = std::fs::metadata(&worktree).unwrap();
+            let admin_stat = std::fs::metadata(&admin).unwrap();
+
+            remove_verified_worktree_and_admin(
+                &worktree,
+                worktree_stat.dev(),
+                worktree_stat.ino(),
+                &admin,
+                admin_stat.dev(),
+                admin_stat.ino(),
+            )
+            .unwrap();
+
+            assert!(!worktree.exists());
+            assert!(!admin.exists());
+            assert!(
+                !run(&["worktree", "list", "--porcelain"])
+                    .contains(&worktree.display().to_string())
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 }
 

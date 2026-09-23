@@ -140,6 +140,42 @@ it.effect("accepts only the bound native project's CTOX chat command status", ()
   }),
 );
 
+it.effect("accepts only the bound private Crew chat command status", () =>
+  Effect.gen(function* () {
+    const crewReference: NativeTaskReference = {
+      ...reference,
+      request: {
+        operation: "start_crew_execution",
+        thread_id: "workjet_private_chat-a",
+        title: "Project review",
+        instruction: "Review this project",
+        harness: "codex",
+        timeout_seconds: 300,
+        idempotency_key: "request-crew",
+      },
+    };
+    const data = {
+      module: "ctox",
+      command_type: "business_os.chat.task",
+      record_id: null,
+      payload: { thread_id: "workjet_private_chat-a" },
+    };
+    expect(
+      (yield* decodeCtoxNativeTaskStatus(crewReference, response("running", data))).state,
+    ).toBe("running");
+    for (const wrong of [
+      { ...data, module: "inventory" },
+      { ...data, command_type: "ctox.delegate_task" },
+      { ...data, payload: { thread_id: "workjet_private_chat-b" } },
+      { ...data, payload: null },
+    ]) {
+      expect(
+        yield* Effect.flip(decodeCtoxNativeTaskStatus(crewReference, response("running", wrong))),
+      ).toMatchObject({ reason: "native-response-invalid" });
+    }
+  }),
+);
+
 it.effect("refuses status from another command, task, module or collection", () =>
   Effect.gen(function* () {
     const good = response("completed");

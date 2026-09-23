@@ -1520,6 +1520,33 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.getArchivedTeamWorkerDetail]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getArchivedTeamWorkerDetail,
+            Effect.gen(function* () {
+              const snapshot = yield* projectionSnapshotQuery
+                .getArchivedTeamWorkerDetailSnapshot(input.threadId, {
+                  turnLimit: input.turnLimit,
+                  ...(input.beforeCursor !== undefined ? { beforeCursor: input.beforeCursor } : {}),
+                })
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationGetSnapshotError({
+                        message: "Failed to load archived worker history",
+                        cause,
+                      }),
+                  ),
+                );
+              if (Option.isNone(snapshot)) {
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "Archived worker history was not found",
+                });
+              }
+              return snapshot.value;
+            }),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,

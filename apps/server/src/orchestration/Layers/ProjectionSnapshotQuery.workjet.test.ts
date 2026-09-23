@@ -25,6 +25,7 @@ const NOW = "2026-08-14T00:00:00.000Z";
 const ACTIVE_THREAD_ID = ThreadId.make("thread-workjet-active");
 const ARCHIVED_THREAD_ID = ThreadId.make("thread-workjet-archived");
 const DELETED_WORKER_ID = ThreadId.make("thread-workjet-deleted-worker");
+const DELETED_UNARCHIVED_WORKER_ID = ThreadId.make("thread-workjet-deleted-unarchived-worker");
 const DELETED_LEGACY_WORKER_ID = ThreadId.make("thread-workjet-deleted-legacy-worker");
 const DELETED_NON_WORKER_ID = ThreadId.make("thread-workjet-deleted-non-worker");
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
@@ -181,6 +182,16 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         deletedAt: "2026-08-14T00:00:01.000Z",
       });
       yield* insertThread({
+        threadId: DELETED_UNARCHIVED_WORKER_ID,
+        title: "Deleted worker awaiting cleanup",
+        workjetConfig: {
+          ...deletedTeamWorkerConfig,
+          team: { ...deletedTeamWorkerConfig.team, threadId: DELETED_UNARCHIVED_WORKER_ID },
+        },
+        archivedAt: null,
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
         threadId: DELETED_LEGACY_WORKER_ID,
         title: "Deleted legacy worker",
         workjetConfig: workerConfig,
@@ -194,6 +205,15 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         archivedAt: "2026-08-14T00:00:03.000Z",
         deletedAt: "2026-08-14T00:00:01.000Z",
       });
+
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
+        ) VALUES (
+          'completed-worker-message', ${DELETED_WORKER_ID}, NULL, 'assistant',
+          'Completed the delegated work.', 0, ${NOW}, ${NOW}
+        )
+      `;
 
       const snapshot = yield* snapshotQuery.getSnapshot();
       assert.deepEqual(
@@ -240,6 +260,30 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
       assert.deepEqual(
         Option.getOrNull(threadDetailSnapshot)?.thread.workjetConfig,
         orchestratorConfig,
+      );
+
+      assert.isTrue(Option.isNone(yield* snapshotQuery.getThreadDetailSnapshot(DELETED_WORKER_ID)));
+      const archivedWorker =
+        yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_WORKER_ID);
+      assert.equal(Option.getOrNull(archivedWorker)?.thread.deletedAt, "2026-08-14T00:00:01.000Z");
+      assert.equal(
+        Option.getOrNull(archivedWorker)?.thread.messages[0]?.text,
+        "Completed the delegated work.",
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_LEGACY_WORKER_ID),
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_NON_WORKER_ID),
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_UNARCHIVED_WORKER_ID),
+        ),
       );
     }),
   );

@@ -1,7 +1,7 @@
 import type { EnvironmentId } from "@workjet/contracts";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useMemo, useState } from "react";
 
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
@@ -18,6 +18,7 @@ import {
 import { useBusinessOs } from "../business-os/BusinessOsProvider";
 
 export function ArchivedThreadsRouteScreen() {
+  const navigation = useNavigation();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const {
     environmentBindings,
@@ -112,6 +113,12 @@ export function ArchivedThreadsRouteScreen() {
       groups={groups}
       isLoading={isLoading}
       onDeleteThread={confirmDeleteThread}
+      onOpenWorker={(thread) =>
+        navigation.navigate("SettingsArchivedWorker", {
+          environmentId: thread.environmentId,
+          threadId: thread.id,
+        })
+      }
       onEnvironmentChange={(environmentId) => {
         setSelectedEnvironmentIdOverride(environmentId);
       }}

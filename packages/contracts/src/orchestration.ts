@@ -31,6 +31,7 @@ export const ORCHESTRATION_WS_METHODS = {
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
+  getArchivedTeamWorkerDetail: "orchestration.getArchivedTeamWorkerDetail",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
@@ -1734,6 +1735,14 @@ export const OrchestrationRpcSchemas = {
   getArchivedShellSnapshot: {
     input: Schema.Struct({}),
     output: OrchestrationShellSnapshot,
+  },
+  getArchivedTeamWorkerDetail: {
+    input: Schema.Struct({
+      threadId: ThreadId,
+      turnLimit: PositiveInt,
+      beforeCursor: Schema.optionalKey(TrimmedNonEmptyString),
+    }),
+    output: OrchestrationThreadDetailSnapshot,
   },
   subscribeThread: {
     input: OrchestrationSubscribeThreadInput,

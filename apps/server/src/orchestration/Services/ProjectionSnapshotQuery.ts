@@ -229,6 +229,12 @@ export interface ProjectionSnapshotQueryShape {
     threadId: ThreadId,
     window?: OrchestrationThreadDetailWindow,
   ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>, ProjectionRepositoryError>;
+
+  /** Read the retained history of a deleted, archived v2 project-team worker only. */
+  readonly getArchivedTeamWorkerDetailSnapshot: (
+    threadId: ThreadId,
+    window?: OrchestrationThreadDetailWindow,
+  ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>, ProjectionRepositoryError>;
 }
 
 /**

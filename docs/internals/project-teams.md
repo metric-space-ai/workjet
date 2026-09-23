@@ -136,22 +136,22 @@ command identity; startup reconciliation retries the archival step after an
 interruption. A deleted, archived worker cannot be unarchived.
 The archived shell snapshot includes these deleted worker records while
 excluding other deleted threads. Mobile Archive displays them as completed,
-read-only rows without unarchive or delete gestures. The underlying deleted
-thread detail is not yet available as a read-only conversation view.
+read-only rows without unarchive or delete gestures. Opening one reads its
+retained messages and activities in pages through a separate read-scope RPC.
+That query requires the row to be a deleted, archived v2 team worker; ordinary
+thread detail and command reads still reject deleted threads.
 
 ## Implementation checkpoint
 
 This branch is not production-ready. Receipt reconciliation, atomic review
 signals and edges, result-to-rework, bounded rework reminders, guarded cleanup,
-and one bounded remote review-signal redrive have focused local tests. The
-previous `fcf32e3bf` CI head passed Check, Test, Release Smoke and Mobile Native
-Static Analysis; the new head still requires exact-head CI. Android preview
-APK and real desktop/web/mobile acceptance remain pending.
+and one bounded remote review-signal redrive have focused tests. The archive
+history read is protected by a typed RPC and a query boundary, but still needs
+exact-head CI and real Mobile acceptance. Android preview APK and real
+desktop/web/mobile acceptance remain pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
-recovery of checkouts retained after unreadable receipts, explicit handling when
-both parent rework continuations end without a linked child,
-a dedicated fresh remote review-signal resend action, and durable review/selection
-wiring. The review
+recovery of checkouts retained after unreadable receipts, a dedicated fresh
+remote review-signal resend action, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

@@ -21,6 +21,7 @@ import {
   type OrchestrationProject,
   type OrchestrationSession,
   type OrchestrationThreadActivity,
+  type OrchestrationThreadDetailWindow,
   type OrchestrationThreadShell,
   ModelSelection,
   ProjectId,
@@ -1031,6 +1032,47 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE thread_id = ${threadId}
           AND deleted_at IS NULL
           AND archived_at IS NULL
+        LIMIT 1
+      `,
+  });
+
+  const getArchivedTeamWorkerThreadRowById = SqlSchema.findOneOption({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadDbRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          project_id AS "projectId",
+          title,
+          model_selection_json AS "modelSelection",
+          runtime_mode AS "runtimeMode",
+          interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
+          branch,
+          worktree_path AS "worktreePath",
+          latest_turn_id AS "latestTurnId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          settled_override AS "settledOverride",
+          settled_at AS "settledAt",
+          snoozed_until AS "snoozedUntil",
+          snoozed_at AS "snoozedAt",
+          pinned_at AS "pinnedAt",
+          pin_order_key AS "pinOrderKey",
+          title_regeneration_request_id AS "titleRegenerationRequestId",
+          title_regeneration_started_at AS "titleRegenerationStartedAt",
+          latest_user_message_at AS "latestUserMessageAt",
+          pending_approval_count AS "pendingApprovalCount",
+          pending_user_input_count AS "pendingUserInputCount",
+          has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          deleted_at AS "deletedAt"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+          AND deleted_at IS NOT NULL
+          AND archived_at IS NOT NULL
+          AND json_extract(workjet_config_json, '$.team.role') = 'worker'
         LIMIT 1
       `,
   });
@@ -2495,7 +2537,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     readonly beforeTurnKey: string;
   }
 
-  const getThreadDetailByIdBounded = (threadId: ThreadId, bounds: ThreadDetailBounds | undefined) =>
+  const getThreadDetailByIdBounded = (
+    threadId: ThreadId,
+    bounds: ThreadDetailBounds | undefined,
+    archivedTeamWorkerOnly = false,
+  ) =>
     Effect.gen(function* () {
       const [
         threadRow,
@@ -2506,7 +2552,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         latestTurnRow,
         sessionRow,
       ] = yield* Effect.all([
-        getActiveThreadRowById({ threadId }).pipe(
+        (archivedTeamWorkerOnly
+          ? getArchivedTeamWorkerThreadRowById({ threadId })
+          : getActiveThreadRowById({ threadId })
+        ).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(
               "ProjectionSnapshotQuery.getThreadDetailById:getThread:query",
@@ -2595,7 +2644,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         pinnedAt: threadRow.value.pinnedAt,
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
-        deletedAt: null,
+        deletedAt: threadRow.value.deletedAt,
         messages: messageRows.map((row) => {
           const message = {
             id: row.messageId,
@@ -2680,9 +2729,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   // Sentinels for unbounded keyset ends; "~" sorts after any ISO timestamp.
   const ANCHOR_UNBOUNDED = "~";
 
-  const getThreadDetailSnapshot: ProjectionSnapshotQueryShape["getThreadDetailSnapshot"] = (
-    threadId,
-    window,
+  const getThreadDetailSnapshotFor = (
+    threadId: ThreadId,
+    window: OrchestrationThreadDetailWindow | undefined,
+    archivedTeamWorkerOnly: boolean,
   ) =>
     // Read the thread detail and the snapshot sequence within a single
     // transaction so the sequence is consistent with the returned state; a
@@ -2694,7 +2744,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           if (window?.turnLimit === undefined) {
-            const thread = yield* getThreadDetailById(threadId);
+            const thread = yield* getThreadDetailByIdBounded(
+              threadId,
+              undefined,
+              archivedTeamWorkerOnly,
+            );
             if (Option.isNone(thread)) {
               return Option.none<OrchestrationThreadDetailSnapshot>();
             }
@@ -2747,7 +2801,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ? { minAnchorAt: "", minTurnKey: "", beforeAnchorAt: "", beforeTurnKey: "" }
               : undefined;
 
-          const thread = yield* getThreadDetailByIdBounded(threadId, emptyBounds ?? bounds);
+          const thread = yield* getThreadDetailByIdBounded(
+            threadId,
+            emptyBounds ?? bounds,
+            archivedTeamWorkerOnly,
+          );
           if (Option.isNone(thread)) {
             return Option.none<OrchestrationThreadDetailSnapshot>();
           }
@@ -2814,6 +2872,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         ),
       );
 
+  const getThreadDetailSnapshot: ProjectionSnapshotQueryShape["getThreadDetailSnapshot"] = (
+    threadId,
+    window,
+  ) => getThreadDetailSnapshotFor(threadId, window, false);
+
+  const getArchivedTeamWorkerDetailSnapshot: ProjectionSnapshotQueryShape["getArchivedTeamWorkerDetailSnapshot"] =
+    (threadId, window) => getThreadDetailSnapshotFor(threadId, window, true);
+
   return {
     getCommandReadModel,
     getSnapshot,
@@ -2833,6 +2899,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getThreadDetailById,
     isThreadTurnTerminal,
     getThreadDetailSnapshot,
+    getArchivedTeamWorkerDetailSnapshot,
   } satisfies ProjectionSnapshotQueryShape;
 });
 

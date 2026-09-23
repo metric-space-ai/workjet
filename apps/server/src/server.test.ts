@@ -873,6 +873,7 @@ const buildAppUnderTest = (options?: {
           getProjectShellById: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
+          getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
           getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
           getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
@@ -6107,6 +6108,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* buildAppUnderTest({
         layers: {
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.succeed(Option.some({ snapshotSequence: 1, thread })),
           },
@@ -6216,6 +6218,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             streamDomainEvents: Stream.fromPubSub(liveEvents),
           },
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.gen(function* () {
                 yield* Effect.sleep("25 millis");
@@ -6258,6 +6261,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               }),
           },
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.succeed(Option.some({ snapshotSequence: 100_000, thread })),
           },
@@ -6303,6 +6307,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               }),
           },
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.succeed(Option.some({ snapshotSequence: 5, thread })),
           },

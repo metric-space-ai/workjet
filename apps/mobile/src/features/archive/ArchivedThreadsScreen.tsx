@@ -415,6 +415,7 @@ function ArchivedThreadRow(props: {
   readonly isFirst: boolean;
   readonly isLast: boolean;
   readonly onDelete: () => void;
+  readonly onOpenWorker: () => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly simultaneousSwipeGesture?: ComponentProps<
@@ -485,7 +486,16 @@ function ArchivedThreadRow(props: {
     </View>
   );
   if (isDeletedWorker) {
-    return <View style={containerStyle}>{content}</View>;
+    return (
+      <Pressable
+        accessibilityLabel={`Open completed worker ${props.thread.title}`}
+        accessibilityRole="button"
+        onPress={props.onOpenWorker}
+        style={containerStyle}
+      >
+        {content}
+      </Pressable>
+    );
   }
   return (
     <ThreadSwipeable
@@ -536,6 +546,7 @@ export function ArchivedThreadsScreen(props: {
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly sortOrder: ArchivedThreadSortOrder;
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
+  readonly onOpenWorker: (thread: EnvironmentThreadShell) => void;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onRefresh: () => void;
   readonly onSearchQueryChange: (query: string) => void;
@@ -608,6 +619,7 @@ export function ArchivedThreadsScreen(props: {
           isFirst={item.isFirst}
           isLast={item.isLast}
           onDelete={() => onDeleteThread(item.thread)}
+          onOpenWorker={() => props.onOpenWorker(item.thread)}
           onSwipeableClose={handleSwipeableClose}
           onSwipeableWillOpen={handleSwipeableWillOpen}
           onUnarchive={() => onUnarchiveThread(item.thread)}
@@ -621,6 +633,7 @@ export function ArchivedThreadsScreen(props: {
       handleSwipeableClose,
       handleSwipeableWillOpen,
       onDeleteThread,
+      props.onOpenWorker,
       onUnarchiveThread,
     ],
   );

@@ -233,6 +233,21 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
           Effect.succeed({ endpoint: "https://ctox.example/mcp", token: "token" }),
       },
     });
+    const recoveryPage = yield* restoredRequests.listCrewRecoveryCandidates();
+    expect(recoveryPage.candidates).toHaveLength(1);
+    const recoveryCandidate = recoveryPage.candidates[0]!;
+    expect(recoveryCandidate.requestId).toBe("persisted-event");
+    expect(
+      (yield* restored.prepareRecoveredProjectExecution(recoveryCandidate)).state,
+    ).toBe("resume-required");
+    expect(
+      yield* Effect.flip(
+        restored.prepareRecoveredProjectExecution({
+          ...recoveryCandidate,
+          requestId: "forged-event",
+        }),
+      ),
+    ).toMatchObject({ reason: "native-request-conflict" });
     expect((yield* restored.prepareProjectExecution(scope, "persisted-event", task)).state).toBe(
       "resume-required",
     );

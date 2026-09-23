@@ -361,8 +361,40 @@ export function makeCtoxNativeTaskClient(dependencies: {
     },
   );
 
+  /** Re-observe a turn from its persisted ledger identity after process restart.
+   * The native idempotency key and original intent must still match before any
+   * remote replay. A reservation or claimed offer remains resume-only.
+   */
+  const prepareRecoveredProjectExecution = Effect.fn(
+    "CtoxNativeTaskClient.prepareRecoveredProjectExecution",
+  )(function* (candidate: {
+    readonly identity: CtoxNativeRequestIdentity;
+    readonly requestId: string;
+  }) {
+    const { identity, requestId } = candidate;
+    if (!requestId.trim() || requestId.length > 512)
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const expectedKey = `turn_${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
+    if (identity.requestKey !== expectedKey)
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const reference = yield* dependencies.requests.get(identity);
+    if (reference.request.operation !== "start_crew_execution")
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const { operation: _operation, idempotency_key: _idempotencyKey, ...task } = reference.request;
+    return yield* prepareProjectExecution(
+      {
+        threadId: identity.threadId,
+        connectionId: identity.connectionId,
+        instanceId: identity.instanceId,
+      },
+      requestId,
+      task,
+    );
+  });
+
   return {
     prepareProjectExecution,
+    prepareRecoveredProjectExecution,
     submit,
     submitTurn,
     submitProjectTurn,

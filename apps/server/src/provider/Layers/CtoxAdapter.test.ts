@@ -27,7 +27,12 @@ const scope = { threadId, connectionId, instanceId: "instance-office" };
 const target = { endpoint: "https://mcp.ctox.dev/mcp/instance-office", token: "test-token" };
 const TaskArgs = Schema.Struct({ idempotency_key: Schema.String, module_id: Schema.String });
 const decodeArgs = Schema.decodeUnknownEffect(TaskArgs);
-const ProjectArgs = Schema.Struct({ idempotency_key: Schema.String, project_id: Schema.String });
+const ProjectArgs = Schema.Struct({
+  idempotency_key: Schema.String,
+  project_id: Schema.String,
+  title: Schema.String,
+  instruction: Schema.String,
+});
 const decodeProjectArgs = Schema.decodeUnknownEffect(ProjectArgs);
 const startInput = {
   threadId,
@@ -49,6 +54,7 @@ const fixture = (loseFirstWrite = false, taskScope: CtoxTaskScope = { module_id:
       writes: 0,
       loseFirstWrite,
       duringWrite: undefined as Effect.Effect<void> | undefined,
+      projectTitles: [] as string[],
     };
     const tasks = new Map<
       string,
@@ -75,6 +81,7 @@ const fixture = (loseFirstWrite = false, taskScope: CtoxTaskScope = { module_id:
               name === "business_os.start_project_task"
                 ? yield* decodeProjectArgs(args).pipe(Effect.orDie)
                 : yield* decodeArgs(args).pipe(Effect.orDie);
+            if ("project_id" in data) state.projectTitles.push(data.title);
             let task = tasks.get(data.idempotency_key);
             if (!task) {
               task = {
@@ -259,6 +266,24 @@ it.effect(
       ).toMatchObject({ _tag: "ProviderAdapterRequestError" });
       yield* second.adapter.stopAll();
     }).pipe(Effect.scoped, Effect.provide(NodeSqliteClient.layerMemory())),
+);
+
+it.effect("bounds native project text and title by CTOX UTF-8 bytes before submission", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture(false, { project_id: "logical-project-a" });
+    const { adapter } = yield* test.open;
+    yield* adapter.startSession(startInput);
+    expect(
+      yield* Effect.flip(adapter.sendTurn({ ...turnInput, input: "😀".repeat(4_001) })),
+    ).toMatchObject({ _tag: "ProviderAdapterRequestError" });
+    expect(test.state.writes).toBe(0);
+
+    yield* adapter.sendTurn({ ...turnInput, input: "😀".repeat(100) });
+    expect(test.state.projectTitles).toEqual(["😀".repeat(64)]);
+    expect(Buffer.byteLength(test.state.projectTitles[0]!, "utf8")).toBe(256);
+    expect(test.state.writes).toBe(1);
+    yield* adapter.stopAll();
+  }).pipe(Effect.scoped, Effect.provide(NodeSqliteClient.layerMemory())),
 );
 
 it.effect(

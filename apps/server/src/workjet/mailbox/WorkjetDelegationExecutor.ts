@@ -129,6 +129,8 @@ const WORKJET_DELEGATION_EXECUTOR_CYCLE_TIMEOUT = Duration.seconds(60);
 export const WORKJET_DELEGATION_STARTED_ACTIVITY_KIND = "workjet.delegation.started";
 export const WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND = "workjet.delegation.refused";
 export const WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND = "workjet.review.delivery-failed";
+export const WORKJET_REWORK_RECOVERY_EXHAUSTED_ACTIVITY_KIND =
+  "workjet.review.rework-recovery-exhausted";
 /**
  * Appended to the SOURCE thread when a delegation's result returns to it.
  *
@@ -1916,7 +1918,44 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       const reminderId = `workjet-review-rework:${delegation.delegationId}`;
       const firstMessage = parent.messages.find((message) => message.id === reminderId);
       const retryMessage = parent.messages.find((message) => message.id === `${reminderId}:retry`);
-      if (retryMessage) continue;
+      if (retryMessage) {
+        const retryTurnId = retryMessage.turnId;
+        if (
+          retryTurnId !== null &&
+          retryTurnId !== undefined &&
+          (yield* query
+            .isThreadTurnTerminal(parent.id, retryTurnId)
+            .pipe(Effect.orElseSucceed(() => false)))
+        ) {
+          const suffix = "rework-recovery-exhausted";
+          if (
+            !parent.activities.some(
+              (activity) =>
+                activity.id === delegationActivityEventId(delegation.delegationId, suffix),
+            )
+          ) {
+            const alerted = yield* appendActivity({
+              threadId: parent.id,
+              delegationId: delegation.delegationId,
+              suffix,
+              kind: WORKJET_REWORK_RECOVERY_EXHAUSTED_ACTIVITY_KIND,
+              tone: "error",
+              summary:
+                "Rework still needs a decision: both parent continuations ended without a linked delegation. Create the bounded rework task or cancel the rejected delegation.",
+              payload: {
+                schemaVersion: 1,
+                delegationId: delegation.delegationId,
+                state: "changes-requested",
+              },
+              createdAt: now,
+            });
+            if (!alerted) {
+              yield* Effect.logWarning("Workjet rework recovery alert will be retried");
+            }
+          }
+        }
+        continue;
+      }
       const firstTurnId = firstMessage?.turnId;
       const firstTurnFinished =
         firstTurnId !== null &&

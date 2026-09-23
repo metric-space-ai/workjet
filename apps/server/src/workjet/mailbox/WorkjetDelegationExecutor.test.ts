@@ -52,6 +52,7 @@ import {
   WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
   WORKJET_DELEGATION_STARTED_ACTIVITY_KIND,
   WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
+  WORKJET_REWORK_RECOVERY_EXHAUSTED_ACTIVITY_KIND,
   type WorkjetDelegationExecutorShape,
   type WorkjetDelegationExecutorSources,
 } from "./WorkjetDelegationExecutor.ts";
@@ -970,7 +971,7 @@ it.effect("returns a completed worker turn for review and runs approved rework",
     yield* replayedRecovery.runCycle;
     assert.lengthOf(reworkReminders(), 2);
     assert.equal(reworkReminders()[1]?.commandId, `server:${reminderId}:retry`);
-    harness.setThreadById(SOURCE_THREAD, {
+    const retryParent = {
       ...parent,
       messages: [
         {
@@ -991,10 +992,41 @@ it.effect("returns a completed worker turn for review and runs approved rework",
         completedAt: NOW,
         assistantMessageId: null,
       },
-    } as unknown as OrchestrationThread);
+    } as unknown as OrchestrationThread;
+    harness.setThreadById(SOURCE_THREAD, retryParent);
+    yield* sql`
+      INSERT INTO projection_turns
+        (thread_id, turn_id, state, requested_at, started_at, completed_at, checkpoint_files_json)
+      VALUES
+        (${SOURCE_THREAD}, 'review-retry-turn', 'completed', ${LATER}, ${LATER}, ${LATER}, '[]')
+    `;
     const boundedRecovery = yield* harness.executor;
     yield* boundedRecovery.runCycle;
     assert.lengthOf(reworkReminders(), 2);
+    const exhaustedAlerts = () =>
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_REWORK_RECOVERY_EXHAUSTED_ACTIVITY_KIND,
+      );
+    assert.lengthOf(exhaustedAlerts(), 1);
+    const exhaustedAlert = exhaustedAlerts()[0];
+    assert.equal(exhaustedAlert?.type, "thread.activity.append");
+    if (exhaustedAlert?.type === "thread.activity.append") {
+      assert.equal(exhaustedAlert.threadId, SOURCE_THREAD);
+      assert.deepEqual(exhaustedAlert.activity.payload, {
+        schemaVersion: 1,
+        delegationId: original.delegationId,
+        state: "changes-requested",
+      });
+      harness.setThreadById(SOURCE_THREAD, {
+        ...retryParent,
+        activities: [exhaustedAlert.activity],
+      } as unknown as OrchestrationThread);
+    }
+    const replayedAlert = yield* harness.executor;
+    yield* replayedAlert.runCycle;
+    assert.lengthOf(exhaustedAlerts(), 1);
 
     const rework = yield* delivery.delegateTask(actor, {
       targetWorkspaceId: WORKSPACE,

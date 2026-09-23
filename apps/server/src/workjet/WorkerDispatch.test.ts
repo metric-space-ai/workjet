@@ -24,6 +24,7 @@ import {
 } from "../orchestration/Services/OrchestrationEngine.ts";
 import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
+import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
   WorktreeStorage,
@@ -125,6 +126,8 @@ const makeHarness = (input?: {
   readonly failWorktreeCreate?: boolean;
   readonly failCreateAttempts?: number;
   readonly createReceiptStatus?: "accepted" | "rejected" | "missing" | "unavailable";
+  readonly committedDelegation?: boolean;
+  readonly workerProjection?: "matching" | "mismatched";
   readonly failWorktreeRemove?: boolean;
   readonly failBranchDelete?: boolean;
 }) => {
@@ -158,16 +161,42 @@ const makeHarness = (input?: {
     },
   } as unknown as OrchestrationEngineService["Service"];
   const query = {
-    getThreadDetailById: () =>
-      input?.queryFails
-        ? Effect.fail({ _tag: "QueryTestError", message: "sensitive SQL text" } as const)
-        : Effect.succeed(
-            input && "currentParent" in input
-              ? input.currentParent === undefined
-                ? Option.none()
-                : Option.some(input.currentParent)
-              : Option.some(parent),
-          ),
+    getThreadDetailById: (threadId: ThreadId) => {
+      if (input?.queryFails) {
+        return Effect.fail({ _tag: "QueryTestError", message: "sensitive SQL text" } as const);
+      }
+      if (threadId !== parentThreadId) {
+        if (!input?.workerProjection) return Effect.succeed(Option.none());
+        const workerRef = `${WORKER_REF_PREFIX}${threadId}`;
+        return Effect.succeed(
+          Option.some({
+            ...teamParent,
+            id: threadId,
+            archivedAt: null,
+            branch: input.workerProjection === "matching" ? workerRef : "unrelated/branch",
+            worktreePath: `${worktreeRoot}/repository-hash/${workerRef.replace(/[^A-Za-z0-9._-]+/g, "-")}`,
+            workjetConfig: {
+              ...teamParent.workjetConfig,
+              role: "worker",
+              parent: { environmentId, threadId: parentThreadId },
+              team: {
+                ...teamParent.workjetConfig.team,
+                role: "worker",
+                parentThreadId,
+                threadId,
+              },
+            },
+          } as OrchestrationThread),
+        );
+      }
+      return Effect.succeed(
+        input && "currentParent" in input
+          ? input.currentParent === undefined
+            ? Option.none()
+            : Option.some(input.currentParent)
+          : Option.some(parent),
+      );
+    },
     getProjectShellById: () => Effect.succeed(Option.some({ workspaceRoot })),
   } as unknown as ProjectionSnapshotQuery["Service"];
   const receipts = {
@@ -187,6 +216,16 @@ const makeHarness = (input?: {
       );
     },
   } as unknown as OrchestrationCommandReceiptRepository["Service"];
+  const mailbox = {
+    getDelegation: () => {
+      const delegation = dispatchOptions[0]?.workerDelegation?.delegation;
+      return Effect.succeed(
+        input?.committedDelegation && delegation
+          ? Option.some({ delegation, delegationId: delegation.delegationId, state: "queued" })
+          : Option.none(),
+      );
+    },
+  } as unknown as WorkjetMailboxStore["Service"];
   const gitCommandFailure = {
     _tag: "GitCommandError",
     detail: "downstream git secret",
@@ -245,6 +284,7 @@ const makeHarness = (input?: {
     return yield* makeWorkerDispatchWithSources(sources).pipe(
       Effect.provideService(OrchestrationEngineService, engine),
       Effect.provideService(OrchestrationCommandReceiptRepository, receipts),
+      Effect.provideService(WorkjetMailboxStore, mailbox),
       Effect.provideService(ProjectionSnapshotQuery, query),
       Effect.provideService(GitWorkflowService, gitWorkflow),
     );
@@ -344,6 +384,56 @@ for (const receiptStatus of ["rejected", "missing", "unavailable"] as const) {
         expect(harness.branchDeletions).toHaveLength(receiptStatus === "rejected" ? 1 : 0);
       }),
   );
+}
+for (const receiptStatus of ["missing", "unavailable"] as const) {
+  for (const proof of [
+    { committedDelegation: true, workerProjection: "matching" },
+    { committedDelegation: true, workerProjection: "mismatched" },
+    { committedDelegation: false, workerProjection: "matching" },
+  ] as const) {
+    it.effect(
+      `reconciles a ${receiptStatus} receipt with delegation ${proof.committedDelegation} and ${proof.workerProjection} worker`,
+      () =>
+        Effect.gen(function* () {
+          const harness = makeHarness({
+            currentParent: teamParent,
+            failCreateAttempts: 2,
+            createReceiptStatus: receiptStatus,
+            committedDelegation: proof.committedDelegation,
+            workerProjection: proof.workerProjection,
+          });
+          const service = yield* harness.service.pipe(
+            Effect.provideService(WorkjetSnapshotStore, {
+              put: (prompt: string) =>
+                Effect.succeed({
+                  snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+                  digest: WorkjetContentDigest.make("a".repeat(64)),
+                  byteLength: prompt.length,
+                }),
+            } as unknown as WorkjetSnapshotStore["Service"]),
+            Effect.provideService(WorkjetMeshIdentity, {
+              workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+              signRoutingEnvelope: (envelope: object) =>
+                Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+            } as unknown as WorkjetMeshIdentity["Service"]),
+          );
+          const dispatch = service.dispatch(invocation, { task: "Recover an accepted worker." });
+          if (proof.committedDelegation && proof.workerProjection === "matching") {
+            const result = yield* dispatch;
+            expect(result.workerThreadId).toBe(ThreadId.make(ids[0]));
+            expect(result.status).toBe("dispatched");
+          } else {
+            const error = yield* dispatch.pipe(Effect.flip);
+            expect(error.reason).toBe("rollback-failed");
+          }
+          expect(harness.commands.map((command) => command.type)).toEqual([
+            "thread.create",
+            "thread.create",
+          ]);
+          expect(harness.worktreeRemovals).toEqual([]);
+        }),
+    );
+  }
 }
 const workerPathFor = (threadId: string) =>
   `${worktreeRoot}/repository-hash/${workerRefFor(threadId).replace(/[^A-Za-z0-9._-]+/g, "-")}`;

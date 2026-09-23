@@ -562,6 +562,7 @@ export const makeRoutesLayer = Layer.mergeAll(
         // Resolve a lost creation acknowledgement against the same durable
         // command-receipt store used by the orchestration engine.
         Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+        Layer.provide(WorkjetMailboxStoreLive),
         Layer.provide(WorkjetMeshIdentity.layer),
         Layer.provide(WorkjetSnapshotStoreLive),
       ),

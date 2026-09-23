@@ -28,6 +28,7 @@ import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSna
 import { OrchestrationCommandReceiptRepository } from "../persistence/Services/OrchestrationCommandReceipts.ts";
 import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
+import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
 
 export interface WorkerDispatchInput {
@@ -140,6 +141,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const gitWorkflow = yield* GitWorkflowService;
   const snapshotStore = yield* Effect.serviceOption(WorkjetSnapshotStore);
   const meshIdentity = yield* Effect.serviceOption(WorkjetMeshIdentity);
+  const mailbox = yield* Effect.serviceOption(WorkjetMailboxStore);
 
   const dispatch: WorkerDispatchShape["dispatch"] = Effect.fn("WorkerDispatch.dispatch")(
     function* (invocation, input) {
@@ -382,6 +384,55 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                   return yield* failure(
                     cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed",
                   );
+                }
+              }
+            }
+          }
+          // A committed team create also stores its worker and delegation in
+          // one transaction. When the receipt lookup itself is unavailable,
+          // those two durable records can prove that the worker was accepted.
+          // Neither record alone is sufficient: an unrelated thread or a
+          // partially observed projection must never turn a failed dispatch
+          // into a successful one.
+          if (Option.isSome(mailbox)) {
+            const delegationRead = yield* Effect.result(
+              mailbox.value.getDelegation(preparedDelegation.delegation.delegationId),
+            );
+            if (delegationRead._tag === "Success") {
+              const committed = Option.getOrUndefined(delegationRead.success);
+              if (
+                committed?.delegation.source.threadId === parent.id &&
+                committed.delegation.target.threadId === workerThreadId &&
+                committed.delegation.envelopeId === preparedDelegation.delegation.envelopeId
+              ) {
+                const workerRead = yield* Effect.result(query.getThreadDetailById(workerThreadId));
+                if (workerRead._tag === "Success") {
+                  const worker = Option.getOrUndefined(workerRead.success);
+                  if (
+                    worker?.id === workerThreadId &&
+                    worker.projectId === parent.projectId &&
+                    worker.deletedAt === null &&
+                    worker.archivedAt === null &&
+                    worker.branch === workerRefName &&
+                    worker.worktreePath === workerWorktree.path &&
+                    worker.workjetConfig.schemaVersion === 2 &&
+                    worker.workjetConfig.role === "worker" &&
+                    worker.workjetConfig.parent?.environmentId === invocation.environmentId &&
+                    worker.workjetConfig.parent?.threadId === parent.id &&
+                    worker.workjetConfig.team?.projectId === parent.projectId &&
+                    worker.workjetConfig.team?.threadId === workerThreadId &&
+                    worker.workjetConfig.team?.parentThreadId === parent.id
+                  ) {
+                    return {
+                      schemaVersion: 1,
+                      status: "dispatched",
+                      environmentId: invocation.environmentId,
+                      workerThreadId,
+                      parent: parentReference,
+                      modelSelection,
+                      enabledCapabilityIds,
+                    } as const;
+                  }
                 }
               }
             }

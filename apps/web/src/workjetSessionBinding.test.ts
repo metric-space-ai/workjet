@@ -145,6 +145,15 @@ describe("withCtoxSessionBinding", () => {
         sessionId: "stale-session",
         fenceEpoch: 2,
       },
+      ctoxProject: {
+        codeProjectId: serverProjectId,
+        codeThreadId,
+        presentationInstanceId: "managed:welsch",
+        businessOsInstanceId,
+        nativeProjectId: ctoxProjectId,
+        workingCopyId: "working-copy-local",
+        nativeSessionId: "stale-session",
+      },
     };
     const result = {
       _tag: "failed",
@@ -154,7 +163,6 @@ describe("withCtoxSessionBinding", () => {
     expect(withCtoxSessionBinding(config, { instanceId: "managed:welsch", result })).toEqual({
       ...DEFAULT_WORKJET_THREAD_CONFIG,
       ctoxSession: null,
-      ctoxProject: undefined,
     });
   });
 
@@ -189,7 +197,7 @@ describe("withCtoxSessionBinding", () => {
           workingCopyId: "working-copy-local",
         },
       }),
-    ).toMatchObject({ ctoxSession: null, ctoxProject: undefined });
+    ).toEqual({ ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxSession: null });
   });
 });
 

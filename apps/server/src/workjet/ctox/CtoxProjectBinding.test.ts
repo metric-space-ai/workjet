@@ -42,10 +42,14 @@ const input = {
   threadId,
   binding: { connectionId, instanceId },
 };
-const thread = { id: threadId, projectId, workjetConfig: config } as OrchestrationThreadShell;
+const thread = {
+  id: threadId,
+  projectId,
+  workjetConfig: config,
+} as unknown as OrchestrationThreadShell;
 const projectedThread = (value: OrchestrationThreadShell | null) =>
   Layer.succeed(ProjectionSnapshotQuery, {
-    getThreadShellById: () => Effect.succeed(Option.fromNullable(value)),
+    getThreadShellById: () => Effect.succeed(value === null ? Option.none() : Option.some(value)),
   } as unknown as ProjectionSnapshotQueryShape);
 
 describe("resolveCtoxProjectBinding", () => {

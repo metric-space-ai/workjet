@@ -40,13 +40,15 @@ export function withCtoxSessionBinding(
   bindingResult: CtoxSessionBindingResult,
 ): WorkjetThreadConfigV2 {
   const normalized = normalizeWorkjetThreadConfig(config);
+  const withoutProject = { ...normalized };
+  delete withoutProject.ctoxProject;
   const result = bindingResult.result;
   if (
     bindingResult.instanceId === null ||
     result?._tag !== "completed" ||
     result.response.action !== "session.create"
   ) {
-    return { ...normalized, ctoxSession: null, ctoxProject: undefined };
+    return { ...withoutProject, ctoxSession: null };
   }
   const project = bindingResult.project;
   const nativeSession = result.response.session;
@@ -66,11 +68,11 @@ export function withCtoxSessionBinding(
         }
       : undefined;
   if (project !== undefined && confirmedProject === undefined) {
-    return { ...normalized, ctoxSession: null, ctoxProject: undefined };
+    return { ...withoutProject, ctoxSession: null };
   }
   return {
-    ...normalized,
-    ctoxProject: confirmedProject,
+    ...withoutProject,
+    ...(confirmedProject === undefined ? {} : { ctoxProject: confirmedProject }),
     ctoxSession: {
       instanceId: bindingResult.instanceId,
       sessionId: nativeSession.id,

@@ -147,7 +147,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
             const attempt = { commandId: command.commandId, threadId: command.threadId };
             archiveAttempts.push(attempt);
             if (input.failArchiveOnce && archiveAttempts.length === 1) {
-              return Effect.fail(new Error("archive dispatch interrupted"));
+              return Effect.die(new Error("archive dispatch interrupted"));
             }
             archives.push(attempt);
             archived.add(command.threadId);

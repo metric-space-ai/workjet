@@ -259,9 +259,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         // A completed receipt is immutable and never inferred from missing Git files.
         let workerCleanupComplete = false;
         if (envelope.command.type === "thread.archive") {
-          const thread = commandReadModel.threads.find(
-            (item) => item.id === envelope.command.threadId,
-          );
+          const { threadId } = envelope.command;
+          const thread = commandReadModel.threads.find((item) => item.id === threadId);
           if (
             thread?.workjetConfig.schemaVersion === 2 &&
             thread.workjetConfig.team?.role === "worker" &&

@@ -112,6 +112,21 @@ NodeTest.test("code symbols and persisted operation reasons are scoped exception
   );
 });
 
+NodeTest.test("generated guest-control code ignores comments but still audits visible copy", () => {
+  const path = "apps/desktop/src/ctox/CtoxGuestManager.ts";
+  const technical = auditSourceText(
+    'return `(async () => { // Native guest control\\n if (message === "Native WebRTC peer is not connected") return "sync_unavailable"; })()`;',
+    path,
+  );
+  const visible = auditSourceText('return `(async () => { const label = "Native"; })()`;', path);
+
+  NodeAssert.deepEqual(technical, []);
+  NodeAssert.deepEqual(
+    visible.map(({ term, kind }) => [term, kind]),
+    [["Native", "user-facing-literal"]],
+  );
+});
+
 NodeTest.test("product vocabulary remains unrestricted while metadata copy is audited", () => {
   const productCopy = auditSourceText(
     `<h1>Workjet</h1><p>Business OS · CTOX Backend · Backend</p>`,

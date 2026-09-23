@@ -15,7 +15,11 @@ describe("project team empirical selection", () => {
     };
     expect(teamExecutionCandidateKey(execution)).toBe("provider%2Fone/model/harness/");
     expect(teamExecutionCandidateKey(execution)).not.toBe(
-      teamExecutionCandidateKey({ ...execution, providerInstanceId: "provider", model: "one/model" }),
+      teamExecutionCandidateKey({
+        ...execution,
+        providerInstanceId: "provider",
+        model: "one/model",
+      }),
     );
     expect(teamExecutionCandidateKey(execution)).not.toBe(
       teamExecutionCandidateKey({ ...execution, harnessVersion: "unknown" }),

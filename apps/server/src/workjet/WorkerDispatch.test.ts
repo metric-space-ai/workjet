@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { OrchestrationCommandReceiptRepository } from "../persistence/Services/OrchestrationCommandReceipts.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import {
   OrchestrationEngineService,
@@ -60,6 +61,23 @@ const parent = {
   worktreePath: "/workspace/worktree",
   deletedAt: null,
 } as unknown as OrchestrationThread;
+const teamParent = {
+  ...parent,
+  workjetConfig: {
+    ...parent.workjetConfig,
+    schemaVersion: 2,
+    capabilityBindings: [],
+    team: {
+      projectId: parent.projectId,
+      threadId: parent.id,
+      role: "specialist",
+      parentThreadId: ThreadId.make("supervisor"),
+      domain: "implementation",
+      goal: "Implement the project",
+      createdAt: "2026-08-15T12:34:56.000Z",
+    },
+  },
+} as OrchestrationThread;
 const invocation: McpInvocationScope = {
   environmentId,
   threadId: parentThreadId,
@@ -106,6 +124,7 @@ const makeHarness = (input?: {
   readonly failCommandTypes?: ReadonlyArray<OrchestrationCommand["type"]>;
   readonly failWorktreeCreate?: boolean;
   readonly failCreateAttempts?: number;
+  readonly createReceiptStatus?: "accepted" | "rejected" | "missing" | "unavailable";
   readonly failWorktreeRemove?: boolean;
   readonly failBranchDelete?: boolean;
 }) => {
@@ -151,6 +170,23 @@ const makeHarness = (input?: {
           ),
     getProjectShellById: () => Effect.succeed(Option.some({ workspaceRoot })),
   } as unknown as ProjectionSnapshotQuery["Service"];
+  const receipts = {
+    getByCommandId: () => {
+      if (input?.createReceiptStatus === "unavailable") {
+        return Effect.fail({ _tag: "ReceiptReadError" });
+      }
+      if (!input?.createReceiptStatus || input.createReceiptStatus === "missing") {
+        return Effect.succeed(Option.none());
+      }
+      return Effect.succeed(
+        Option.some({
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make(ids[0]),
+          status: input.createReceiptStatus,
+        }),
+      );
+    },
+  } as unknown as OrchestrationCommandReceiptRepository["Service"];
   const gitCommandFailure = {
     _tag: "GitCommandError",
     detail: "downstream git secret",
@@ -208,6 +244,7 @@ const makeHarness = (input?: {
     } as unknown as GitWorkflowService["Service"];
     return yield* makeWorkerDispatchWithSources(sources).pipe(
       Effect.provideService(OrchestrationEngineService, engine),
+      Effect.provideService(OrchestrationCommandReceiptRepository, receipts),
       Effect.provideService(ProjectionSnapshotQuery, query),
       Effect.provideService(GitWorkflowService, gitWorkflow),
     );
@@ -215,27 +252,14 @@ const makeHarness = (input?: {
   return { commands, dispatchOptions, service, worktreeCreates, worktreeRemovals, branchDeletions };
 };
 
-for (const failCreateAttempts of [0, 1]) {
+for (const failCreateAttempts of [0, 1, 2]) {
   it.effect(`dispatches a team delegation with ${failCreateAttempts} lost acknowledgements`, () =>
     Effect.gen(function* () {
-      const teamParent = {
-        ...parent,
-        workjetConfig: {
-          ...parent.workjetConfig,
-          schemaVersion: 2,
-          capabilityBindings: [],
-          team: {
-            projectId: parent.projectId,
-            threadId: parent.id,
-            role: "specialist",
-            parentThreadId: ThreadId.make("supervisor"),
-            domain: "implementation",
-            goal: "Implement the project",
-            createdAt: now,
-          },
-        },
-      } as OrchestrationThread;
-      const harness = makeHarness({ currentParent: teamParent, failCreateAttempts });
+      const harness = makeHarness({
+        currentParent: teamParent,
+        failCreateAttempts,
+        createReceiptStatus: failCreateAttempts === 2 ? "accepted" : "missing",
+      });
       const storedPrompts: string[] = [];
       const service = yield* harness.service.pipe(
         Effect.provideService(WorkjetSnapshotStore, {
@@ -260,7 +284,7 @@ for (const failCreateAttempts of [0, 1]) {
       });
       expect(storedPrompts).toEqual(["Implement the complete assigned task."]);
       expect(harness.commands.map((command) => command.type)).toEqual(
-        Array.from({ length: failCreateAttempts + 1 }, () => "thread.create"),
+        Array.from({ length: Math.min(failCreateAttempts + 1, 2) }, () => "thread.create"),
       );
       expect(new Set(harness.commands.map((command) => command.commandId)).size).toBe(1);
       expect(
@@ -281,6 +305,46 @@ for (const failCreateAttempts of [0, 1]) {
 }
 
 const workerRefFor = (threadId: string) => `${WORKER_REF_PREFIX}${threadId}`;
+for (const receiptStatus of ["rejected", "missing", "unavailable"] as const) {
+  it.effect(
+    `reconciles two failed team create acknowledgements with a ${receiptStatus} receipt`,
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          currentParent: teamParent,
+          failCreateAttempts: 2,
+          createReceiptStatus: receiptStatus,
+        });
+        const service = yield* harness.service.pipe(
+          Effect.provideService(WorkjetSnapshotStore, {
+            put: (prompt: string) =>
+              Effect.succeed({
+                snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+                digest: WorkjetContentDigest.make("a".repeat(64)),
+                byteLength: prompt.length,
+              }),
+          } as unknown as WorkjetSnapshotStore["Service"]),
+          Effect.provideService(WorkjetMeshIdentity, {
+            workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+            signRoutingEnvelope: (envelope: object) =>
+              Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+          } as unknown as WorkjetMeshIdentity["Service"]),
+        );
+        const error = yield* service
+          .dispatch(invocation, { task: "Retain or remove only with a durable receipt." })
+          .pipe(Effect.flip);
+        expect(error.reason).toBe(
+          receiptStatus === "rejected" ? "create-failed" : "rollback-failed",
+        );
+        expect(harness.commands.map((command) => command.type)).toEqual([
+          "thread.create",
+          "thread.create",
+        ]);
+        expect(harness.worktreeRemovals).toHaveLength(receiptStatus === "rejected" ? 1 : 0);
+        expect(harness.branchDeletions).toHaveLength(receiptStatus === "rejected" ? 1 : 0);
+      }),
+  );
+}
 const workerPathFor = (threadId: string) =>
   `${worktreeRoot}/repository-hash/${workerRefFor(threadId).replace(/[^A-Za-z0-9._-]+/g, "-")}`;
 

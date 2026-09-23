@@ -53,11 +53,12 @@ The executor recovers local delivery and owns the sole first-turn start. Local
 recovery filters address ownership before limiting results and pages by delegation
 identity, so foreign or permanently invalid queues do not hide later local work.
 A failed creation acknowledgement is replayed once with the same command identity.
-Legacy
-non-team dispatch retains its existing behavior. If the creation acknowledgement
-fails, a team worker checkout is retained because a committed delegation may
-already own it; receipt-based cleanup reconciliation remains to be implemented.
-These changes and their failure-injection tests await execution.
+Legacy non-team dispatch retains its existing behavior. If the creation acknowledgement
+fails twice, team dispatch reads the transaction's command receipt. An accepted
+receipt returns the original worker, a rejected receipt permits cleanup of that
+worker's checkout and branch, and a missing or unreadable receipt retains the
+checkout because ownership is still uncertain. Startup reconciliation of a
+retained ambiguous checkout remains to be implemented.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
 removal protects dirty work and unmerged commits, but it is not merge proof.
@@ -68,13 +69,14 @@ Archive must follow successful cleanup rather than hide a failed cleanup.
 
 ## Implementation checkpoint
 
-This branch is not production-ready. Initial focused tests passed (15 tests across
-contracts, team invariants, learning calculation and capability context). Later
-lifecycle changes, engine receipts and mailbox retries await the shared admitted
-run. Real desktop/web/mobile acceptance has not run.
+This branch is not production-ready. Exact-head CI on 74f37cd9e passed Check,
+Test, Release Smoke and Mobile Native Static Analysis. The receipt follow-up
+passed 19 focused dispatch/unit and end-to-end tests plus server typecheck
+locally; broad CI on the updated head remains pending. Real desktop/web/mobile
+acceptance has not run.
 
-Remaining work includes verification of atomic dispatch and parent continuation,
-recovery after repeated creation-acknowledgement failures, rework,
+Remaining work includes full acceptance of atomic dispatch and parent continuation,
+recovery of checkouts retained after unreadable receipts, rework,
 cleanup/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

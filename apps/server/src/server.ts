@@ -126,6 +126,7 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
+import { OrchestrationCommandReceiptRepositoryLive } from "./persistence/Layers/OrchestrationCommandReceipts.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -554,6 +555,9 @@ export const makeRoutesLayer = Layer.mergeAll(
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(
       WorkerDispatch.layer.pipe(
+        // Resolve a lost creation acknowledgement against the same durable
+        // command-receipt store used by the orchestration engine.
+        Layer.provide(OrchestrationCommandReceiptRepositoryLive),
         Layer.provide(WorkjetMeshIdentity.layer),
         Layer.provide(WorkjetSnapshotStoreLive),
       ),

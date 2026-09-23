@@ -25,6 +25,7 @@ import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { OrchestrationCommandReceiptRepository } from "../persistence/Services/OrchestrationCommandReceipts.ts";
 import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
@@ -134,6 +135,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   sources: WorkerDispatchSources,
 ) {
   const engine = yield* OrchestrationEngineService;
+  const receipts = yield* Effect.serviceOption(OrchestrationCommandReceiptRepository);
   const query = yield* ProjectionSnapshotQuery;
   const gitWorkflow = yield* GitWorkflowService;
   const snapshotStore = yield* Effect.serviceOption(WorkjetSnapshotStore);
@@ -353,9 +355,41 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         );
       }
       if (createExit._tag === "Failure") {
-        // A lost acknowledgement can follow a committed delegation. Retain its
-        // checkout until durable receipt reconciliation proves it safe to remove.
-        if (preparedDelegation) return yield* failure("rollback-failed");
+        if (preparedDelegation) {
+          // Both acknowledgements may be lost after the atomic commit. The
+          // receipt is written in that transaction, so it resolves ownership
+          // without starting a second delegation or discarding its checkout.
+          if (Option.isSome(receipts)) {
+            const receiptRead = yield* Effect.result(
+              receipts.value.getByCommandId({ commandId: createCommandId }),
+            );
+            if (receiptRead._tag === "Success") {
+              const receipt = Option.getOrUndefined(receiptRead.success);
+              if (receipt?.aggregateKind === "thread" && receipt.aggregateId === workerThreadId) {
+                if (receipt.status === "accepted") {
+                  return {
+                    schemaVersion: 1,
+                    status: "dispatched",
+                    environmentId: invocation.environmentId,
+                    workerThreadId,
+                    parent: parentReference,
+                    modelSelection,
+                    enabledCapabilityIds,
+                  } as const;
+                }
+                if (receipt.status === "rejected") {
+                  const cleanupExit = yield* removeWorkerWorktree;
+                  return yield* failure(
+                    cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed",
+                  );
+                }
+              }
+            }
+          }
+          // A missing or unreadable receipt is still ambiguous: keep the
+          // checkout for recovery rather than risk deleting committed work.
+          return yield* failure("rollback-failed");
+        }
         const cleanupExit = yield* removeWorkerWorktree;
         return yield* failure(cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed");
       }

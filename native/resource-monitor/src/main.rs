@@ -669,7 +669,7 @@ fn main() -> io::Result<()> {
     let mut args = std::env::args_os();
     let _program = args.next();
     if let Some(command) = args.next() {
-        if command != "--remove-verified-dir" {
+        if command != "--remove-verified-dir" && command != "--remove-verified-worktree" {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unknown command",
@@ -686,13 +686,38 @@ fn main() -> io::Result<()> {
         };
         let expected_dev = parse_identity(args.next())?;
         let expected_ino = parse_identity(args.next())?;
-        if args.next().is_some() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "unexpected argument",
-            ));
+        if command == "--remove-verified-worktree" {
+            let admin_path = PathBuf::from(args.next().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "missing Git administration path",
+                )
+            })?);
+            let admin_dev = parse_identity(args.next())?;
+            let admin_ino = parse_identity(args.next())?;
+            if args.next().is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "unexpected argument",
+                ));
+            }
+            safe_worktree_cleanup::remove_verified_worktree_and_admin(
+                &path,
+                expected_dev,
+                expected_ino,
+                &admin_path,
+                admin_dev,
+                admin_ino,
+            )?;
+        } else {
+            if args.next().is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "unexpected argument",
+                ));
+            }
+            safe_worktree_cleanup::remove_verified_directory(&path, expected_dev, expected_ino)?;
         }
-        safe_worktree_cleanup::remove_verified_directory(&path, expected_dev, expected_ino)?;
         println!("{{\"status\":\"removed\"}}");
         return Ok(());
     }

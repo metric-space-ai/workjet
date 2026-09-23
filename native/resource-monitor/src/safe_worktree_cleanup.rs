@@ -10,6 +10,7 @@ use std::path::Path;
 mod unix {
     use super::*;
     use std::ffi::{CStr, CString, OsStr};
+    use std::io::Read;
     use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     use std::os::unix::ffi::OsStrExt;
     use std::path::Component;
@@ -78,6 +79,40 @@ mod unix {
         // SAFETY: fstat initialized the value on success.
         let stat = unsafe { stat.assume_init() };
         Ok((stat.st_dev as u64, stat.st_ino as u64))
+    }
+
+    fn read_regular_file_at(parent: &OwnedFd, name: &CStr) -> io::Result<String> {
+        // O_NOFOLLOW also applies to Git's backlink files. O_NONBLOCK avoids
+        // waiting on a swapped FIFO before fstat rejects non-regular input.
+        let fd = opened_fd(unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK,
+            )
+        })?;
+        let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+        if unsafe { libc::fstat(fd.as_raw_fd(), stat.as_mut_ptr()) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let stat = unsafe { stat.assume_init() };
+        if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Git backlink is not a regular file",
+            ));
+        }
+        let mut value = String::new();
+        std::fs::File::from(fd)
+            .take(4_097)
+            .read_to_string(&mut value)?;
+        if value.len() > 4_096 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Git backlink is too long",
+            ));
+        }
+        Ok(value)
     }
 
     #[cfg(target_os = "macos")]
@@ -221,6 +256,66 @@ mod unix {
         remove_with_hook(path, expected_dev, expected_ino, || ())
     }
 
+    pub(super) fn remove_verified_worktree_and_admin(
+        worktree_path: &Path,
+        worktree_dev: u64,
+        worktree_ino: u64,
+        admin_path: &Path,
+        admin_dev: u64,
+        admin_ino: u64,
+    ) -> io::Result<()> {
+        if admin_path.parent().and_then(Path::file_name) != Some(OsStr::new("worktrees"))
+            || admin_path.starts_with(worktree_path)
+            || worktree_path.starts_with(admin_path)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid Git worktree administration path",
+            ));
+        }
+        let (worktree_parent, worktree_name) = parent_and_name(worktree_path)?;
+        let worktree = open_dir_at(&worktree_parent, &worktree_name)?;
+        if identity(&worktree)? != (worktree_dev, worktree_ino) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "worktree directory identity changed",
+            ));
+        }
+        let (admin_parent, admin_name) = parent_and_name(admin_path)?;
+        let admin = open_dir_at(&admin_parent, &admin_name)?;
+        if identity(&admin)? != (admin_dev, admin_ino) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Git administration identity changed",
+            ));
+        }
+
+        let worktree_backlink = read_regular_file_at(&worktree, c".git")?;
+        let admin_backlink = read_regular_file_at(&admin, c"gitdir")?;
+        if worktree_backlink.trim_end() != format!("gitdir: {}", admin_path.display())
+            || admin_backlink.trim_end() != worktree_path.join(".git").display().to_string()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Git worktree backlinks do not match",
+            ));
+        }
+
+        remove_contents(&worktree, worktree_dev)?;
+        require_named_identity(
+            &worktree_parent,
+            &worktree_name,
+            (worktree_dev, worktree_ino),
+        )?;
+        unlink_at(&worktree_parent, &worktree_name, libc::AT_REMOVEDIR)?;
+
+        // This removes only the matching worktree's administration directory.
+        // Do not run `git worktree remove` on the now-replaceable pathname.
+        remove_contents(&admin, admin_dev)?;
+        require_named_identity(&admin_parent, &admin_name, (admin_dev, admin_ino))?;
+        unlink_at(&admin_parent, &admin_name, libc::AT_REMOVEDIR)
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
@@ -318,6 +413,88 @@ mod unix {
             std::fs::remove_file(&trusted).unwrap();
             std::fs::remove_dir_all(root).unwrap();
         }
+
+        #[test]
+        fn removes_only_matching_worktree_and_git_admin_directories() {
+            let root = fixture("worktree-admin");
+            let worktree = root.join("storage/worker");
+            let admin = root.join("repo/.git/worktrees/worker");
+            let outside = root.join("outside");
+            std::fs::create_dir_all(&worktree).unwrap();
+            std::fs::create_dir_all(&admin).unwrap();
+            std::fs::create_dir(&outside).unwrap();
+            std::fs::write(
+                worktree.join(".git"),
+                format!("gitdir: {}\n", admin.display()),
+            )
+            .unwrap();
+            std::fs::write(
+                admin.join("gitdir"),
+                format!("{}\n", worktree.join(".git").display()),
+            )
+            .unwrap();
+            std::fs::write(worktree.join("tracked"), b"merged").unwrap();
+            std::fs::write(outside.join("sentinel"), b"keep").unwrap();
+            symlink(&outside, worktree.join("redirect")).unwrap();
+            let worktree_stat = std::fs::metadata(&worktree).unwrap();
+            let admin_stat = std::fs::metadata(&admin).unwrap();
+
+            remove_verified_worktree_and_admin(
+                &worktree,
+                worktree_stat.dev(),
+                worktree_stat.ino(),
+                &admin,
+                admin_stat.dev(),
+                admin_stat.ino(),
+            )
+            .unwrap();
+
+            assert!(!worktree.exists());
+            assert!(!admin.exists());
+            assert!(outside.join("sentinel").exists());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[test]
+        fn refuses_forged_clean_backlink_through_swapped_worktree_symlink() {
+            let root = fixture("forged-backlink");
+            let worktree = root.join("storage/worker");
+            let admin = root.join("repo/.git/worktrees/worker");
+            let outside = root.join("outside");
+            std::fs::create_dir_all(&worktree).unwrap();
+            std::fs::create_dir_all(&admin).unwrap();
+            std::fs::create_dir(&outside).unwrap();
+            let backlink = format!("gitdir: {}\n", admin.display());
+            std::fs::write(worktree.join(".git"), &backlink).unwrap();
+            std::fs::write(
+                admin.join("gitdir"),
+                format!("{}\n", worktree.join(".git").display()),
+            )
+            .unwrap();
+            std::fs::write(worktree.join("tracked"), b"merged").unwrap();
+            let worktree_stat = std::fs::metadata(&worktree).unwrap();
+            let admin_stat = std::fs::metadata(&admin).unwrap();
+
+            std::fs::write(outside.join(".git"), backlink).unwrap();
+            std::fs::write(outside.join("tracked"), b"keep").unwrap();
+            std::fs::remove_dir_all(&worktree).unwrap();
+            symlink(&outside, &worktree).unwrap();
+            assert!(
+                remove_verified_worktree_and_admin(
+                    &worktree,
+                    worktree_stat.dev(),
+                    worktree_stat.ino(),
+                    &admin,
+                    admin_stat.dev(),
+                    admin_stat.ino(),
+                )
+                .is_err()
+            );
+            assert_eq!(std::fs::read(outside.join("tracked")).unwrap(), b"keep");
+            assert!(admin.exists());
+            std::fs::remove_file(&worktree).unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 }
 
@@ -339,5 +516,39 @@ pub fn remove_verified_directory(
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "safe worktree removal is unavailable on this platform",
+    ))
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn remove_verified_worktree_and_admin(
+    worktree_path: &Path,
+    worktree_dev: u64,
+    worktree_ino: u64,
+    admin_path: &Path,
+    admin_dev: u64,
+    admin_ino: u64,
+) -> io::Result<()> {
+    unix::remove_verified_worktree_and_admin(
+        worktree_path,
+        worktree_dev,
+        worktree_ino,
+        admin_path,
+        admin_dev,
+        admin_ino,
+    )
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub fn remove_verified_worktree_and_admin(
+    _worktree_path: &Path,
+    _worktree_dev: u64,
+    _worktree_ino: u64,
+    _admin_path: &Path,
+    _admin_dev: u64,
+    _admin_ino: u64,
+) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "safe Git worktree removal is unavailable on this platform",
     ))
 }

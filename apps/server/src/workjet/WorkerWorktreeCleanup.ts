@@ -241,8 +241,6 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
     const local = yield* gitWorkflow
       .localStatus({ cwd: worktreePath })
       .pipe(Effect.orElseSucceed(() => null));
-    let verifiedCommitSha: string;
-    let mergedChangeRequestUrl: string;
     if (local?.isRepo) {
       if (local.refName !== workerRefName || local.hasWorkingTreeChanges) {
         return { status: "skipped", reason: "merge-unverified" } as const;
@@ -262,14 +260,12 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
       if (!head || !mergedUrl) {
         return { status: "skipped", reason: "merge-unverified" } as const;
       }
-      verifiedCommitSha = head.commitSha;
-      mergedChangeRequestUrl = mergedUrl;
       const receipt: VerifiedWorkerCleanup = {
         threadId,
         worktreePath,
         branchRef: workerRefName,
-        mergedHeadOid: verifiedCommitSha,
-        mergedChangeRequestUrl,
+        mergedHeadOid: head.commitSha,
+        mergedChangeRequestUrl: mergedUrl,
       };
       const recorded = yield* receipts
         .recordVerified(receipt)
@@ -302,14 +298,12 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
         ) {
           return { status: "skipped", reason: "merge-unverified" } as const;
         }
-        if (recorded.value.status === "verified") {
-          yield* receipts
-            .markComplete(recorded.value)
-            .pipe(
-              Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })),
-            );
-        }
-        return { status: "skipped", reason: "already-cleaned" } as const;
+        // A verified merge is not evidence that our remover ran. External
+        // disappearance of both the checkout and ref must never promote this
+        // receipt to complete or archive the deleted worker.
+        return recorded.value.status === "complete"
+          ? ({ status: "skipped", reason: "already-cleaned" } as const)
+          : ({ status: "skipped", reason: "safe-removal-unavailable" } as const);
       }
       // A ref can exist while rev-parse fails (corrupt repository, unreadable
       // object, transient Git failure). None of those proves branch deletion.
@@ -320,40 +314,22 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
       if (!mergedUrl) {
         return { status: "skipped", reason: "merge-unverified" } as const;
       }
-      verifiedCommitSha = branch.commitSha;
-      mergedChangeRequestUrl = mergedUrl;
       const recorded = yield* receipts
         .recordVerified({
           threadId,
           worktreePath,
           branchRef: workerRefName,
-          mergedHeadOid: verifiedCommitSha,
-          mergedChangeRequestUrl,
+          mergedHeadOid: branch.commitSha,
+          mergedChangeRequestUrl: mergedUrl,
         })
         .pipe(
           Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-verification" })),
         );
       if (!recorded) return { status: "skipped", reason: "merge-unverified" } as const;
+      // A missing checkout plus a merged ref still says nothing about who
+      // removed the checkout. Retain the ref and verified receipt for recovery.
+      return { status: "skipped", reason: "safe-removal-unavailable" } as const;
     }
-
-    // Git's expected-old-value check refuses deletion if the branch advanced
-    // after the provider/head verification. It also works when local HEAD has
-    // not fetched the merge yet.
-    yield* git
-      .deleteBranchAtCommit({ cwd, refName: workerRefName, expectedCommitSha: verifiedCommitSha })
-      .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "delete-branch" })));
-
-    yield* receipts
-      .markComplete({
-        threadId,
-        worktreePath,
-        branchRef: workerRefName,
-        mergedHeadOid: verifiedCommitSha,
-        mergedChangeRequestUrl,
-      })
-      .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })));
-
-    return { status: "cleaned", worktreePath, deletedRefName: workerRefName } as const;
   });
 
   return WorkerWorktreeCleanup.of({ cleanupDeletedThread });

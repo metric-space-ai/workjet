@@ -802,6 +802,61 @@ describe("worker worktree cleanup on thread.deleted", () => {
     });
   });
 
+  it.effect("does not complete a verified-only receipt when checkout and ref disappear", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [deletedEvent(workerThreadId)],
+      initialWorktreePresent: false,
+      initialBranchPresent: false,
+    });
+    harness.receipts.set(workerThreadId, {
+      threadId: workerThreadId,
+      worktreePath: workerWorktreePath,
+      branchRef: workerRefName,
+      mergedHeadOid: "a".repeat(40),
+      mergedChangeRequestUrl: "https://example.invalid/merged/1",
+      status: "verified",
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.run;
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      expect(harness.archives).toEqual([]);
+      expect(harness.removals).toEqual([]);
+      expect(harness.branchDeletions).toEqual([]);
+    });
+  });
+
+  it.effect("retains a merged worker ref when the checkout disappeared externally", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [deletedEvent(workerThreadId)],
+      initialWorktreePresent: false,
+      initialBranchPresent: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.run;
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      expect(harness.branchDeletions).toEqual([]);
+      expect(harness.archives).toEqual([]);
+    });
+  });
+
   it.effect("retains a branch that gained a unique commit after partial cleanup", () => {
     const harness = makeHarness({
       threads: {

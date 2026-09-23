@@ -1813,7 +1813,7 @@ export function useComputerConnections({
     sshConnectionError ?? (savedBackendMode === "ssh" ? desktopSshHosts.error : null);
   const catalogRecoveryAvailable =
     desktopBridge?.recoverConnectionCatalog !== undefined &&
-    [savedBackendError, discoveredSshHostsError].some(
+    [savedBackendError, sshConnectionError, desktopSshHosts.error].some(
       (message) =>
         message !== null &&
         (message.includes("decrypt-catalog") ||

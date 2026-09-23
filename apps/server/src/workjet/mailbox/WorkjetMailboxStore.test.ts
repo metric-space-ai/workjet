@@ -217,7 +217,7 @@ it.effect("rolls back a linked delegation when its relationship cannot be persis
     const original = delegation({
       id: delegationId("original"),
       envelope: envelopeId("original"),
-      state: "completed",
+      state: "changes-requested",
       at: T0,
       budgetExpiresAt: FAR_FUTURE,
     });
@@ -234,7 +234,7 @@ it.effect("rolls back a linked delegation when its relationship cannot be persis
       parent: {
         schemaVersion: 1 as const,
         delegationId: original.delegationId,
-        owner: original.target,
+        owner: original.source,
       },
     };
     const relationship = {
@@ -255,7 +255,7 @@ it.effect("rolls back a linked delegation when its relationship cannot be persis
     const mismatch = yield* store
       .enqueueOutbound(envelope, payload, {
         ...relationship,
-        to: { ...relationship.to, owner: SOURCE_ADDRESS },
+        to: { ...relationship.to, owner: TARGET_ADDRESS },
       })
       .pipe(Effect.exit);
     assert.equal(mismatch._tag, "Failure");
@@ -271,7 +271,7 @@ it.effect("rolls back a linked delegation when its relationship cannot be persis
     assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 0);
     assert.equal(
       Option.getOrThrow(yield* store.getDelegation(original.delegationId)).state,
-      "completed",
+      "changes-requested",
     );
 
     yield* sql`DROP TRIGGER reject_rework_edge`;
@@ -281,8 +281,36 @@ it.effect("rolls back a linked delegation when its relationship cannot be persis
     assert.equal(Option.getOrThrow(yield* store.getDelegation(task.delegationId)).state, "queued");
     assert.equal(
       Option.getOrThrow(yield* store.getDelegation(original.delegationId)).state,
-      "completed",
+      "changes-requested",
     );
+    yield* store.transitionDelegationState(
+      original.delegationId,
+      "changes-requested",
+      "cancelled",
+      T1,
+    );
+    const staleTask = {
+      ...task,
+      delegationId: delegationId("linked-stale"),
+      envelopeId: envelopeId("linked-stale"),
+    };
+    const staleEnvelope = routingEnvelope({
+      id: staleTask.envelopeId,
+      kind: "delegation",
+      createdAt: T1,
+      expiresAt: FAR_FUTURE,
+    });
+    const staleEdge = {
+      ...relationship,
+      from: { ...relationship.from, delegationId: staleTask.delegationId },
+    };
+    const stale = yield* store
+      .enqueueOutbound(staleEnvelope, { _tag: "delegation", delegation: staleTask }, staleEdge)
+      .pipe(Effect.result);
+    assert.equal(stale._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(staleEnvelope.envelopeId)));
+    assert.isTrue(Option.isNone(yield* store.getDelegation(staleTask.delegationId)));
+    assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 1);
   }).pipe(Effect.provide(testLayer)),
 );
 

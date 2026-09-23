@@ -820,6 +820,61 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     const now = yield* sources.nowIso;
     const expiresAt = yield* addSeconds(now, clampTtlSeconds(input.ttlSeconds));
     const budgetExpiresAt = yield* addSeconds(now, clampTtlSeconds(input.budget.ttlSeconds));
+    const parentRecord =
+      input.parentDelegationId === undefined
+        ? undefined
+        : Option.getOrUndefined(
+            yield* store
+              .getDelegation(input.parentDelegationId)
+              .pipe(Effect.mapError(boundStoreError)),
+          );
+    if (input.parentDelegationId !== undefined && !parentRecord) {
+      return yield* failure("unknown-target");
+    }
+    const parent = parentRecord?.delegation;
+    const relationshipKind =
+      parentRecord?.state === "changes-requested"
+        ? "revises"
+        : parentRecord?.state === "needs-input" || parentRecord?.state === "completed"
+          ? "follows-up"
+          : undefined;
+    if (parentRecord && !relationshipKind) {
+      return yield* failure("invalid-state-transition");
+    }
+    if (parent) {
+      const sameAddress = (left: WorkjetWorkerAddress, right: WorkjetWorkerAddress) =>
+        left.workspaceId === right.workspaceId &&
+        left.environmentId === right.environmentId &&
+        left.threadId === right.threadId;
+      if (
+        !sameAddress(parent.source, source) ||
+        (relationshipKind === "revises" && !sameAddress(parent.target, target))
+      ) {
+        return yield* failure("unauthorized");
+      }
+      const nextDepth = parent.depth + 1;
+      if (input.depth !== undefined && input.depth !== nextDepth) {
+        return yield* failure("malformed-envelope");
+      }
+      if (nextDepth > parent.budget.maxDepth || input.budget.maxDepth > parent.budget.maxDepth) {
+        return yield* failure("depth-exceeded");
+      }
+      if (input.budget.maxReviewRounds > parent.budget.maxReviewRounds) {
+        return yield* failure("review-rounds-exceeded");
+      }
+      const parentExpiry = Option.getOrUndefined(DateTime.make(parent.budget.expiresAt));
+      const childExpiry = Option.getOrUndefined(DateTime.make(budgetExpiresAt));
+      const envelopeExpiry = Option.getOrUndefined(DateTime.make(expiresAt));
+      if (!parentExpiry || !childExpiry || !envelopeExpiry) {
+        return yield* failure("malformed-envelope");
+      }
+      if (
+        DateTime.toEpochMillis(childExpiry) > DateTime.toEpochMillis(parentExpiry) ||
+        DateTime.toEpochMillis(envelopeExpiry) > DateTime.toEpochMillis(parentExpiry)
+      ) {
+        return yield* failure("delegation-expired");
+      }
+    }
     const id = yield* envelopeId;
     const delegationId = yield* delegationIdEffect;
 
@@ -842,7 +897,7 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       },
       state: "queued",
       stateChangedAt: now,
-      depth: input.depth ?? 0,
+      depth: parent ? parent.depth + 1 : (input.depth ?? 0),
       ...(input.parentDelegationId !== undefined
         ? {
             parent: {
@@ -872,9 +927,20 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       delegationId,
       owner: target,
     };
+    const relationship: WorkjetDelegationEdge | undefined =
+      parent && relationshipKind
+        ? {
+            schemaVersion: 1,
+            kind: relationshipKind,
+            from: ref,
+            to: { schemaVersion: 1, delegationId: parent.delegationId, owner: source },
+            createdAt: now,
+            depth: delegation.depth,
+          }
+        : undefined;
 
     const enqueued = yield* store
-      .enqueueOutbound(envelope, payload)
+      .enqueueOutbound(envelope, payload, relationship)
       .pipe(Effect.mapError(boundStoreError));
 
     // The store commits the envelope and delegation atomically. Replays leave

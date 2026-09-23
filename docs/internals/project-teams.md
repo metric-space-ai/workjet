@@ -63,6 +63,18 @@ Review, revise and follow-up state transitions now commit their graph edge in
 the same mailbox transaction. A failed edge insert rolls back the state and its
 history event. The review-request message is still enqueued separately; recovery
 if that enqueue fails remains open.
+An orchestrator can now submit a linked delegation after a `changes-requested`
+review. The delivery service derives a `revises` edge and depth, restricts the
+new task to the same worker and bounds its depth, review rounds, and expiry
+by the parent. The mailbox store rechecks parent state and ownership in the
+enqueue transaction. The existing executor starts the linked turn with a stable
+command identity after restart. A `needs-input` or completed parent may similarly
+be followed up.
+The review decision and creation of the linked delegation are still separate
+commands; recovery of an interrupted handoff between them remains open.
+Ordinary team workers currently finalize and deliver their result as terminal
+`completed`, bypassing `review-requested`; this means the normal worker-result
+path cannot yet enter `changes-requested` and trigger the linked rework flow.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
 removal protects dirty work and unmerged commits, but it is not merge proof.
@@ -80,7 +92,7 @@ locally; broad CI on the updated head remains pending. Real desktop/web/mobile
 acceptance has not run.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
-recovery of checkouts retained after unreadable receipts, rework,
+recovery of checkouts retained after unreadable receipts, review-to-rework handoff recovery,
 cleanup/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

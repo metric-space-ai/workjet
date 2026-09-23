@@ -533,6 +533,84 @@ it.effect("progresses a same-environment delegation from queued to delivered", (
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect("dispatches review rework as a linked delegation to the same worker", () =>
+  Effect.gen(function* () {
+    const { service } = makeHarness();
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const original = yield* delivery.delegateTask(invocation, delegateInput());
+    const id = original.delegation.delegationId;
+    yield* store.transitionDelegationState(id, "delivered", "accepted", NOW);
+    yield* store.transitionDelegationState(id, "accepted", "running", NOW);
+    yield* store.transitionDelegationState(id, "running", "review-requested", NOW);
+    yield* store.transitionDelegationState(id, "review-requested", "changes-requested", NOW);
+
+    const rework = yield* delivery.delegateTask(
+      invocation,
+      delegateInput({ parentDelegationId: id, depth: 1 }),
+    );
+    assert.equal(rework.delivery._tag, "acknowledged");
+    const child = Option.getOrThrow(yield* store.getDelegation(rework.delegation.delegationId));
+    assert.equal(child.delegation.depth, 1);
+    assert.equal(child.delegation.parent?.delegationId, id);
+    assert.deepEqual(child.delegation.parent?.owner, child.delegation.source);
+    const edges = yield* store.listDelegationEdges(id, 10);
+    assert.lengthOf(edges, 1);
+    assert.equal(edges[0]?.kind, "revises");
+    assert.equal(edges[0]?.from.delegationId, rework.delegation.delegationId);
+
+    const wrongWorker = yield* delivery
+      .delegateTask(
+        invocation,
+        delegateInput({
+          parentDelegationId: id,
+          targetEnvironmentId: REMOTE_ENVIRONMENT,
+        }),
+      )
+      .pipe(Effect.result);
+    assert.equal(wrongWorker._tag, "Failure");
+    if (wrongWorker._tag === "Failure") assert.equal(wrongWorker.failure.reason, "unauthorized");
+
+    const escalated = yield* delivery
+      .delegateTask(
+        invocation,
+        delegateInput({
+          parentDelegationId: id,
+          budget: { maxDepth: 5, maxReviewRounds: 2, ttlSeconds: 7_200 },
+        }),
+      )
+      .pipe(Effect.result);
+    assert.equal(escalated._tag, "Failure");
+    if (escalated._tag === "Failure") assert.equal(escalated.failure.reason, "depth-exceeded");
+    assert.lengthOf(yield* store.listDelegationEdges(id, 10), 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+for (const state of ["needs-input", "completed"] as const) {
+  it.effect(`links a follow-up to a ${state} delegation`, () =>
+    Effect.gen(function* () {
+      const { service } = makeHarness();
+      const delivery = yield* service;
+      const store = yield* WorkjetMailboxStore;
+      const original = yield* delivery.delegateTask(invocation, delegateInput());
+      const id = original.delegation.delegationId;
+      yield* store.transitionDelegationState(id, "delivered", "accepted", NOW);
+      yield* store.transitionDelegationState(id, "accepted", "running", NOW);
+      yield* store.transitionDelegationState(id, "running", state, NOW);
+
+      const followUp = yield* delivery.delegateTask(
+        invocation,
+        delegateInput({ parentDelegationId: id }),
+      );
+      const child = Option.getOrThrow(yield* store.getDelegation(followUp.delegation.delegationId));
+      assert.equal(child.delegation.depth, 1);
+      const edges = yield* store.listDelegationEdges(id, 10);
+      assert.lengthOf(edges, 1);
+      assert.equal(edges[0]?.kind, "follows-up");
+    }).pipe(Effect.provide(testLayer)),
+  );
+}
+
 it.effect("keeps a cross-environment delegation queued and pending", () =>
   Effect.gen(function* () {
     const { commands, service } = makeHarness();

@@ -1186,6 +1186,57 @@ export const make = Effect.gen(function* () {
       // Persist the lifecycle owner before the outbound work becomes visible.
       // Replays must not reset a delegation that has already advanced.
       if (inserted.length > 0 && payload._tag === "delegation") {
+        if (relationship !== undefined) {
+          const child = payload.delegation;
+          const parentRef = child.parent;
+          if (!parentRef) {
+            return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
+          }
+          const parentRows = yield* sql.unsafe(
+            `SELECT ${DELEGATION_COLUMNS} FROM workjet_delegations WHERE delegation_id = ?`,
+            [parentRef.delegationId],
+          );
+          if (parentRows[0] === undefined) {
+            return yield* new WorkjetMailboxError({ reason: "unknown-target" });
+          }
+          const parent = yield* decodeDelegation(parentRows[0], rowIdOf(parentRows[0]));
+          const sameOwner = (left: WorkjetWorkerAddress, right: WorkjetWorkerAddress) =>
+            left.workspaceId === right.workspaceId &&
+            left.environmentId === right.environmentId &&
+            left.threadId === right.threadId;
+          const validState =
+            relationship.kind === "revises"
+              ? parent.state === "changes-requested"
+              : relationship.kind === "follows-up" &&
+                (parent.state === "needs-input" || parent.state === "completed");
+          if (!validState) {
+            return yield* new WorkjetMailboxError({ reason: "invalid-state-transition" });
+          }
+          if (
+            !sameOwner(child.source, parent.delegation.source) ||
+            !sameOwner(parentRef.owner, parent.delegation.source) ||
+            (relationship.kind === "revises" && !sameOwner(child.target, parent.delegation.target))
+          ) {
+            return yield* new WorkjetMailboxError({ reason: "unauthorized" });
+          }
+          if (
+            child.depth !== parent.delegation.depth + 1 ||
+            child.depth > parent.delegation.budget.maxDepth ||
+            child.budget.maxDepth > parent.delegation.budget.maxDepth
+          ) {
+            return yield* new WorkjetMailboxError({ reason: "depth-exceeded" });
+          }
+          if (child.budget.maxReviewRounds > parent.delegation.budget.maxReviewRounds) {
+            return yield* new WorkjetMailboxError({ reason: "review-rounds-exceeded" });
+          }
+          const parentExpiry = yield* toEpochMillis(parent.delegation.budget.expiresAt);
+          if (
+            (yield* toEpochMillis(child.budget.expiresAt)) > parentExpiry ||
+            encoded.expiresAtMillis > parentExpiry
+          ) {
+            return yield* new WorkjetMailboxError({ reason: "delegation-expired" });
+          }
+        }
         yield* upsertDelegation(payload.delegation);
         if (relationship !== undefined) {
           yield* insertDelegationEdge(relationship);

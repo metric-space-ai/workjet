@@ -96,7 +96,7 @@ const delegationFixture = (input: {
   readonly requiresApproval?: boolean;
   readonly maxTokens?: number;
   readonly maxCostMicros?: number;
-  /** A review/revise chain link, whose `owner` is the parent's TARGET thread. */
+  /** A review/revise chain link, whose `owner` is the parent's SOURCE thread. */
   readonly parent?: WorkjetDelegationRef;
 }): WorkjetDelegation => ({
   schemaVersion: 1,
@@ -692,6 +692,62 @@ for (const checkpoint of ["outbox", "inbox", "delivered-marker", "invalid-signat
     }).pipe(Effect.provide(testLayer(`delegation-local-recovery-${checkpoint}`))),
   );
 }
+
+it.effect("starts a linked rework turn once after restart", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const store = yield* WorkjetMailboxStore;
+    const digest = yield* storePrompt(PROMPT_TEXT);
+    const original = delegationFixture({
+      id: "rework-original",
+      digest,
+      state: "changes-requested",
+    });
+    yield* store.upsertDelegation(original);
+    const childBase = delegationFixture({ id: "rework-child", digest, state: "queued" });
+    const child = {
+      ...childBase,
+      depth: 1,
+      parent: {
+        schemaVersion: 1 as const,
+        delegationId: original.delegationId,
+        owner: original.source,
+      },
+    };
+    const envelope = {
+      schemaVersion: 1 as const,
+      envelopeId: child.envelopeId,
+      kind: "delegation" as const,
+      sourceWorkspaceId: WORKSPACE,
+      sourceEnvironmentId: LOCAL_ENVIRONMENT,
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: LOCAL_ENVIRONMENT,
+      createdAt: NOW,
+      expiresAt: EXPIRES,
+      signature: "c2lnbmF0dXJlLXN0dWI",
+    };
+    const relationship = {
+      schemaVersion: 1 as const,
+      kind: "revises" as const,
+      from: { schemaVersion: 1 as const, delegationId: child.delegationId, owner: child.target },
+      to: child.parent,
+      createdAt: NOW,
+      depth: 1,
+    };
+    yield* store.enqueueOutbound(envelope, { _tag: "delegation", delegation: child }, relationship);
+
+    const restarted = yield* harness.executor;
+    yield* restarted.runCycle;
+    assert.equal(yield* stateOf(child), "running");
+    assert.equal(turnStarts(harness.commands).length, 1);
+    assert.equal(turnStarts(harness.commands)[0]?.threadId, child.target.threadId);
+    assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 1);
+
+    const again = yield* harness.executor;
+    yield* again.runCycle;
+    assert.equal(turnStarts(harness.commands).length, 1);
+  }).pipe(Effect.provide(testLayer("delegation-linked-rework-restart"))),
+);
 
 it.effect("holds a pending-approval delegation in delivered until it is approved", () =>
   Effect.gen(function* () {

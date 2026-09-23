@@ -39,13 +39,14 @@ describe("project team empirical selection", () => {
         observation,
         observation,
         { ...observation, selectionId: "two", difficulty: "hard" },
+        { ...observation, selectionId: "three", cause: "unknown" as const },
       ],
     });
     expect(result.winner).toBeNull();
     expect(result.rows[0]).toMatchObject({
-      assigned: 1,
+      assigned: 2,
       scored: 0,
-      unassessed: 1,
+      unassessed: 2,
       mean: null,
       low: 0,
       high: 10,

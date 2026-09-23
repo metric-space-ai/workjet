@@ -35,9 +35,7 @@ export function compareTeamCandidates(input: {
     seen.add(observation.selectionId);
     const score = observation.firstScore;
     const assessed =
-      observation.cause !== "task_spec" &&
-      observation.cause !== "quota" &&
-      observation.cause !== "transport" &&
+      observation.cause === "model" &&
       score !== null &&
       Number.isInteger(score) &&
       score >= 0 &&

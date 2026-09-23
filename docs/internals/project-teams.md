@@ -110,8 +110,11 @@ both continuations end without either action, the executor appends one durable
 error activity to the parent. The original remains `changes-requested` until a
 human or parent decision; automatic child generation is not implied.
 Source-owned review decisions now persist their round and bounded reasons on
-the transactional `reviews` edge. The learning service still does not record
-first/final scores or drive model selection from these verdicts.
+the transactional `reviews` edge. Migration 061 and `ProjectTeamLearningStore`
+provide immutable assignment and assessment rows, including an unassessed
+assignment until first delivery receives a score. The store is not yet called
+by worker dispatch or review decisions; actual provider execution identity,
+first/final scoring, and data-driven model selection remain unwired.
 
 On `thread.deleted`, worker worktree removal requires a clean checkout on the
 recorded worker branch and a direct provider query showing that a merged PR's
@@ -153,6 +156,7 @@ desktop/web/mobile acceptance remain pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
 recovery of checkouts retained after unreadable receipts, a dedicated fresh
-remote review-signal resend action, and durable review/selection wiring. The review
-contract and pure selection calculation are not a persisted learning service.
+remote review-signal resend action, and runtime review/selection wiring. The
+learning rows and pure calculation do not yet select a worker model or score a
+completed run.
 No deployment or end-to-end acceptance is claimed.

@@ -48,6 +48,20 @@ const ProjectCursor = Schema.Struct({
 const Cursor = Schema.Union([ModuleCursor, ProjectCursor]);
 const decodeCursor = Schema.decodeUnknownEffect(Cursor);
 const hash = (text: string) => NodeCrypto.createHash("sha256").update(text).digest("hex");
+const projectTitle = (input: string) => {
+  const firstLine = input.trim().split("\n")[0]!;
+  let title = "";
+  let bytes = 0;
+  let characters = 0;
+  for (const character of firstLine) {
+    const size = Buffer.byteLength(character, "utf8");
+    if (characters === 200 || bytes + size > 256) break;
+    title += character;
+    bytes += size;
+    characters += 1;
+  }
+  return title;
+};
 const turnIdFor = (commandId: string) => TurnId.make(`ctox_${hash(commandId)}`);
 const failure = (method: string, detail: string) =>
   new ProviderAdapterRequestError({ provider: "ctox", method, detail });
@@ -392,11 +406,13 @@ export const makeCtoxAdapter = (options: {
             !input.requestId ||
             !input.input?.trim() ||
             input.input.length > 16_000 ||
+            (entry.taskScope.project_id !== undefined &&
+              Buffer.byteLength(input.input, "utf8") > 16_000) ||
             (input.attachments?.length ?? 0) > 0
           )
             return yield* failure(
               "sendTurn",
-              "A native turn requires its persisted request id and text (up to 16000 characters); file transfer is not configured.",
+              "A native turn requires its persisted request id and text (up to 16000 UTF-8 bytes for a project); file transfer is not configured.",
             );
           if (input.modelSelection && input.modelSelection.model !== CTOX_NATIVE_MODEL)
             return yield* failure(
@@ -428,7 +444,7 @@ export const makeCtoxAdapter = (options: {
                 entry.taskScope.project_id !== undefined
                   ? {
                       project_id: entry.taskScope.project_id,
-                      title: input.input!.trim().split("\n")[0]!.slice(0, 200),
+                      title: projectTitle(input.input!),
                       instruction: input.input!,
                     }
                   : {

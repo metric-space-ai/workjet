@@ -5,8 +5,8 @@ import {
   WorkjetCtoxCrewRequest,
   WorkjetCtoxCrewReceipt,
   ProviderInstanceId,
-  type ThreadId,
-  type WorkjetConnectionId,
+  ThreadId,
+  WorkjetConnectionId,
 } from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -445,6 +445,62 @@ const make = Effect.gen(function* () {
     if (!row) return null;
     return { ...row, reference: yield* get({ ...scope, requestKey: row.requestKey }) };
   });
+  /**
+   * Page durable Crew intents for the startup reconciler. The event stream is
+   * hot, so a submitted native turn can outlive the Workjet process that sent
+   * it. This returns candidates, not a claim or permission to start a provider:
+   * recovery must re-read native status and obtain a fresh authorized offer.
+   */
+  const listCrewRecoveryCandidates = Effect.fn("CtoxNativeRequests.listCrewRecoveryCandidates")(
+    function* (afterSequence = 0, requestedLimit = 64) {
+      const cursor = Number.isSafeInteger(afterSequence) && afterSequence >= 0 ? afterSequence : 0;
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.max(1, Math.min(64, Math.trunc(requestedLimit)))
+        : 64;
+      const rows = yield* sql<{
+        readonly sequence: number;
+        readonly threadId: string;
+        readonly requestId: string;
+        readonly requestKey: string;
+        readonly connectionId: string;
+        readonly instanceId: string;
+        readonly intentJson: string;
+      }>`
+        SELECT t.sequence, t.thread_id AS "threadId",
+               t.request_id AS "requestId", t.request_key AS "requestKey",
+               r.connection_id AS "connectionId", r.instance_id AS "instanceId",
+               r.intent_json AS "intentJson"
+        FROM workjet_ctox_native_turns AS t
+        JOIN workjet_ctox_native_requests AS r
+          ON r.thread_id = t.thread_id AND r.request_key = t.request_key
+        WHERE t.sequence > ${cursor}
+        ORDER BY t.sequence LIMIT ${limit}
+      `.pipe(Effect.mapError(unavailable));
+      const candidates: Array<{
+        readonly sequence: number;
+        readonly requestId: string;
+        readonly identity: CtoxNativeRequestIdentity;
+      }> = [];
+      for (const row of rows) {
+        const intent = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
+        if (intent.request.operation !== "start_crew_execution") continue;
+        candidates.push({
+          sequence: row.sequence,
+          requestId: row.requestId,
+          identity: {
+            threadId: ThreadId.make(row.threadId),
+            connectionId: WorkjetConnectionId.make(row.connectionId),
+            instanceId: row.instanceId,
+            requestKey: row.requestKey,
+          },
+        });
+      }
+      return {
+        candidates,
+        nextSequence: rows.length === limit ? rows[rows.length - 1]!.sequence : null,
+      };
+    },
+  );
   return {
     prepare,
     verifyTarget,
@@ -456,6 +512,7 @@ const make = Effect.gen(function* () {
     bindCrewStartProvider,
     registerNativeTurn,
     latestNativeTurn,
+    listCrewRecoveryCandidates,
   };
 });
 

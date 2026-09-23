@@ -479,6 +479,11 @@ describe("DesktopConnectionCatalogStore", () => {
       assert.lengthOf(originalCatalog.credentials, 1);
       assert.isTrue(yield* store.set(original));
       const encryptedOriginal = yield* fileSystem.readFileString(catalogPath);
+      if (process.platform !== "win32") {
+        assert.equal((yield* fileSystem.stat(catalogPath)).mode & 0o777, 0o600);
+        // Simulate a catalog written by an older build with default umask.
+        yield* fileSystem.chmod(catalogPath, 0o644);
+      }
 
       yield* Ref.set(failDecrypt, true);
       const backupPath = yield* store.recover;
@@ -486,6 +491,10 @@ describe("DesktopConnectionCatalogStore", () => {
       if (backupPath === null) return;
       assert.equal(yield* fileSystem.readFileString(backupPath), encryptedOriginal);
       assert.notEqual(yield* fileSystem.readFileString(catalogPath), encryptedOriginal);
+      if (process.platform !== "win32") {
+        assert.equal((yield* fileSystem.stat(backupPath)).mode & 0o777, 0o600);
+        assert.equal((yield* fileSystem.stat(catalogPath)).mode & 0o777, 0o600);
+      }
 
       yield* Ref.set(failDecrypt, false);
       const recovered = yield* store.get;

@@ -52,8 +52,10 @@ const DesktopConnectionCatalogStoreWriteOperation = Schema.Literals([
   "encode-document",
   "create-directory",
   "write-temporary-file",
+  "protect-catalog-file",
   "replace-catalog-file",
   "backup-catalog-file",
+  "protect-backup-file",
 ]);
 
 const DesktopConnectionCatalogStoreMigrationOperation = Schema.Literals([
@@ -268,6 +270,18 @@ const writeDocument = Effect.fn("desktop.connectionCatalogStore.writeDocument")(
           }),
       ),
     );
+    if (process.platform !== "win32") {
+      yield* input.fileSystem.chmod(tempPath, 0o600).pipe(
+        Effect.mapError(
+          (cause) =>
+            new DesktopConnectionCatalogStoreWriteError({
+              operation: "protect-catalog-file",
+              path: tempPath,
+              cause,
+            }),
+        ),
+      );
+    }
     yield* input.fileSystem.rename(tempPath, input.catalogPath).pipe(
       Effect.mapError(
         (cause) =>
@@ -562,6 +576,18 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
+      if (process.platform !== "win32") {
+        yield* fileSystem.chmod(backupPath, 0o600).pipe(
+          Effect.mapError(
+            (cause) =>
+              new DesktopConnectionCatalogStoreWriteError({
+                operation: "protect-backup-file",
+                path: backupPath,
+                cause,
+              }),
+          ),
+        );
+      }
       const emptyCatalog = yield* encodeRuntimeConnectionCatalogDocumentJson({
         schemaVersion: 1,
         targets: [],

@@ -153,7 +153,10 @@ it("declares the review tools as orchestrator-only open-world writes with bounde
   expect(Context.get(ResendReviewSignalMcpTool.annotations, Tool.Idempotent)).toBe(true);
   expect(Context.get(ResendReviewSignalMcpTool.annotations, Tool.Readonly)).toBe(false);
   expect(Context.get(ResendReviewSignalMcpTool.annotations, Tool.OpenWorld)).toBe(true);
-  expect((Tool.getJsonSchema(ResendReviewSignalMcpTool) as { additionalProperties?: boolean }).additionalProperties).toBe(false);
+  expect(
+    (Tool.getJsonSchema(ResendReviewSignalMcpTool) as { additionalProperties?: boolean })
+      .additionalProperties,
+  ).toBe(false);
 });
 
 it.effect("rejects unknown keys, blank prose, and out-of-range bounds on every tool", () =>
@@ -341,7 +344,7 @@ it.effect("returns the stable fresh review signal identity without echoing its b
   const freshId = WorkjetEnvelopeId.make("wjm-review-resend-00000000-0000-4000-8000-000000000001");
   const resendReviewSignal = vi.fn(
     (
-      _invocation: McpInvocationContext.McpInvocationScope,
+      _invocation: WorkjetMailboxDelivery.WorkjetMailboxSenderScope,
       input: WorkjetMailboxDelivery.WorkjetMailboxResendReviewSignalInput,
     ) => {
       expect(input.originalEnvelopeId).toBe(envelopeId);

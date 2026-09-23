@@ -573,14 +573,19 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
     readonly summary: string;
     readonly payload: unknown;
     readonly createdAt: WorkjetMailboxTimestamp;
+    readonly idempotencyKey?: WorkjetEnvelopeId;
   }) =>
     Effect.gen(function* () {
       const command = {
         type: "thread.activity.append",
-        commandId: yield* commandId("workjet-mailbox-activity"),
+        commandId: input.idempotencyKey
+          ? CommandId.make(`server:workjet-mailbox-activity:${input.idempotencyKey}`)
+          : yield* commandId("workjet-mailbox-activity"),
         threadId: input.threadId,
         activity: {
-          id: yield* activityId,
+          id: input.idempotencyKey
+            ? EventId.make(`workjet-mailbox-activity:${input.idempotencyKey}`)
+            : yield* activityId,
           tone: "info",
           kind: input.kind,
           summary: input.summary,
@@ -1352,23 +1357,31 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
         source: auditAddress(oldMessage.source),
         target: auditAddress(oldMessage.target),
       });
-      yield* appendActivity({
-        threadId: oldMessage.source.threadId,
-        kind: WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
-        summary: "Remote Workjet review signal queued again",
-        payload: activityPayload({
-          envelopeId: id,
-          direction: "outbound",
-          source: oldMessage.source,
-          target: oldMessage.target,
-          bodyKind: oldMessage.body._tag,
-          delegationId,
-          createdAt: now,
-          expiresAt,
-        }),
-        createdAt: now,
-      });
     }
+    // The outbox is authoritative. If its commit succeeded but the activity
+    // append failed, an identical resend call repairs that visible trace with
+    // the same command/event identity and the persisted timestamps.
+    const saved = Option.getOrUndefined(
+      yield* store.getOutbound(id).pipe(Effect.mapError(boundStoreError)),
+    );
+    const savedMessage = saved?.payload._tag === "message" ? saved.payload.message : message;
+    yield* appendActivity({
+      threadId: oldMessage.source.threadId,
+      kind: WORKJET_MESSAGE_SENT_ACTIVITY_KIND,
+      summary: "Remote Workjet review signal queued again",
+      payload: activityPayload({
+        envelopeId: id,
+        direction: "outbound",
+        source: oldMessage.source,
+        target: oldMessage.target,
+        bodyKind: oldMessage.body._tag,
+        delegationId,
+        createdAt: savedMessage.createdAt,
+        expiresAt: savedMessage.expiresAt,
+      }),
+      createdAt: savedMessage.createdAt,
+      idempotencyKey: id,
+    });
     return {
       status: enqueued._tag === "enqueued" ? "queued" : "already-sent",
       originalEnvelopeId: input.originalEnvelopeId,

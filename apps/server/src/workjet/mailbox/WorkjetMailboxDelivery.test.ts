@@ -160,10 +160,12 @@ const makeHarness = (input?: {
   readonly target?: OrchestrationThread | undefined;
   readonly failCommands?: boolean;
   readonly failAudit?: boolean;
+  readonly failActivity?: (command: OrchestrationCommand) => boolean;
   readonly identity?: Effect.Effect<WorkjetMeshIdentity["Service"]>;
   readonly now?: () => string;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
+  const acceptedCommandIds = new Set<string>();
   const events: Array<WorkjetMailboxAuditEventInput> = [];
   let idIndex = 0;
   const sources: WorkjetMailboxDeliverySources = {
@@ -179,10 +181,15 @@ const makeHarness = (input?: {
   };
   const engine = {
     dispatch: (command: OrchestrationCommand) => {
+      if (acceptedCommandIds.has(command.commandId)) {
+        return Effect.succeed({ sequence: commands.length });
+      }
       commands.push(command);
-      return input?.failCommands
-        ? Effect.fail({ _tag: "DownstreamTestError", message: "downstream secret" } as const)
-        : Effect.succeed({ sequence: commands.length });
+      if (input?.failCommands || input?.failActivity?.(command)) {
+        return Effect.fail({ _tag: "DownstreamTestError", message: "downstream secret" } as const);
+      }
+      acceptedCommandIds.add(command.commandId);
+      return Effect.succeed({ sequence: commands.length });
     },
   } as unknown as OrchestrationEngineService["Service"];
   const query = {
@@ -808,7 +815,10 @@ it.effect("resends an expired remote review signal once with a fresh signed enve
       WHERE envelope_id = ${originalId}
     `;
     const wrongSource = yield* delivery
-      .resendReviewSignal({ ...invocation, threadId: TARGET_THREAD }, { originalEnvelopeId: originalId })
+      .resendReviewSignal(
+        { ...invocation, threadId: TARGET_THREAD },
+        { originalEnvelopeId: originalId },
+      )
       .pipe(Effect.flip);
     assert.equal(wrongSource.reason, "unauthorized");
 
@@ -867,6 +877,58 @@ it.effect("refuses a fresh resend while the original still has its in-place redr
       .resendReviewSignal(invocation, { originalEnvelopeId: original.delivery.envelopeId })
       .pipe(Effect.flip);
     assert.equal(error.reason, "invalid-state-transition");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("repairs a lost resend activity with the same command after a retry", () =>
+  Effect.gen(function* () {
+    let failResendActivity = false;
+    const { commands, service } = makeHarness({
+      failActivity: (command) =>
+        failResendActivity &&
+        command.type === "thread.activity.append" &&
+        command.activity.summary === "Remote Workjet review signal queued again",
+    });
+    const delivery = yield* service;
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const delegationId = yield* seedDelegation(delivery, store, RUNNING_PATH);
+    const original = yield* delivery.requestReview(invocation, {
+      targetWorkspaceId: WORKSPACE,
+      targetEnvironmentId: REMOTE_ENVIRONMENT,
+      targetThreadId: TARGET_THREAD,
+      delegationId,
+      round: 1,
+      body: sealedBody,
+    });
+    yield* sql`
+      UPDATE workjet_mailbox_outbox
+      SET state = 'dead', review_redrive_count = 1, dead_lettered_at_ms = ${Date.parse(NOW)}
+      WHERE envelope_id = ${original.delivery.envelopeId}
+    `;
+    failResendActivity = true;
+    const first = yield* delivery.resendReviewSignal(invocation, {
+      originalEnvelopeId: original.delivery.envelopeId,
+    });
+    failResendActivity = false;
+    const repeated = yield* delivery.resendReviewSignal(invocation, {
+      originalEnvelopeId: original.delivery.envelopeId,
+    });
+    assert.equal(first.status, "queued");
+    assert.equal(repeated.status, "already-sent");
+    const activityAttempts = commands.filter(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.summary === "Remote Workjet review signal queued again",
+    );
+    assert.lengthOf(activityAttempts, 2);
+    assert.equal(activityAttempts[0]?.commandId, activityAttempts[1]?.commandId);
+    if (
+      activityAttempts[0]?.type === "thread.activity.append" &&
+      activityAttempts[1]?.type === "thread.activity.append"
+    ) {
+      assert.equal(activityAttempts[0].activity.id, activityAttempts[1].activity.id);
+    }
   }).pipe(Effect.provide(testLayer)),
 );
 

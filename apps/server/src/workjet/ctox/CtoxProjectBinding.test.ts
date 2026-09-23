@@ -5,9 +5,16 @@ import {
   ProjectId,
   ThreadId,
   WorkjetConnectionId,
+  type OrchestrationThreadShell,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
+import {
+  ProjectionSnapshotQuery,
+  type ProjectionSnapshotQueryShape,
+} from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { runMigrations } from "../../persistence/Migrations.ts";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import { bindCtoxConnectionInstance } from "./CtoxConnectionBinding.ts";
@@ -33,10 +40,13 @@ const config = {
 };
 const input = {
   threadId,
-  projectId,
-  config,
   binding: { connectionId, instanceId },
 };
+const thread = { id: threadId, projectId, workjetConfig: config } as OrchestrationThreadShell;
+const projectedThread = (value: OrchestrationThreadShell | null) =>
+  Layer.succeed(ProjectionSnapshotQuery, {
+    getThreadShellById: () => Effect.succeed(Option.fromNullable(value)),
+  } as unknown as ProjectionSnapshotQueryShape);
 
 describe("resolveCtoxProjectBinding", () => {
   it.effect("returns the confirmed native ID only through the pinned connection", () =>
@@ -52,20 +62,33 @@ describe("resolveCtoxProjectBinding", () => {
       });
       expect(
         yield* Effect.flip(
-          resolveCtoxProjectBinding({ ...input, projectId: ProjectId.make("another-physical") }),
+          resolveCtoxProjectBinding(input).pipe(
+            Effect.provide(
+              projectedThread({ ...thread, projectId: ProjectId.make("another-physical") }),
+            ),
+          ),
         ),
       ).toMatchObject({ reason: "thread-project-mismatch" });
       expect(
         yield* Effect.flip(
-          resolveCtoxProjectBinding({
-            ...input,
-            config: {
-              ...config,
-              ctoxSession: { ...config.ctoxSession, sessionId: "foreign-session" },
-            },
-          }),
+          resolveCtoxProjectBinding(input).pipe(
+            Effect.provide(
+              projectedThread({
+                ...thread,
+                workjetConfig: {
+                  ...config,
+                  ctoxSession: { ...config.ctoxSession, sessionId: "foreign-session" },
+                },
+              }),
+            ),
+          ),
         ),
       ).toMatchObject({ reason: "session-mismatch" });
+      expect(
+        yield* Effect.flip(
+          resolveCtoxProjectBinding(input).pipe(Effect.provide(projectedThread(null))),
+        ),
+      ).toMatchObject({ reason: "thread-unavailable" });
       expect(
         yield* Effect.flip(
           resolveCtoxProjectBinding({
@@ -82,6 +105,9 @@ describe("resolveCtoxProjectBinding", () => {
           }),
         ),
       ).toMatchObject({ reason: "connection-unverified" });
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    }).pipe(
+      Effect.provide(projectedThread(thread)),
+      Effect.provide(NodeSqliteClient.layerMemory()),
+    ),
   );
 });

@@ -1,13 +1,13 @@
 import {
   normalizeWorkjetThreadConfig,
-  type ProjectId,
   type ThreadId,
   type WorkjetConnectionId,
-  type WorkjetThreadConfig,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { requireCtoxConnectionInstance } from "./CtoxConnectionBinding.ts";
 
 export class CtoxProjectBindingError extends Schema.TaggedErrorClass<CtoxProjectBindingError>()(
@@ -15,6 +15,8 @@ export class CtoxProjectBindingError extends Schema.TaggedErrorClass<CtoxProject
   {
     reason: Schema.Literals([
       "no-confirmed-project",
+      "thread-unavailable",
+      "thread-read-unavailable",
       "thread-project-mismatch",
       "session-mismatch",
       "no-thread-binding",
@@ -26,8 +28,6 @@ export class CtoxProjectBindingError extends Schema.TaggedErrorClass<CtoxProject
 
 export interface CtoxProjectBindingInput {
   readonly threadId: ThreadId;
-  readonly projectId: ProjectId;
-  readonly config: WorkjetThreadConfig;
   /** The explicit CTOX capability binding already resolved for this thread. */
   readonly binding:
     | { readonly connectionId: WorkjetConnectionId; readonly instanceId: string }
@@ -36,17 +36,28 @@ export interface CtoxProjectBindingInput {
 
 /** Resolve the persisted native project confirmed by guest session.create.
  * A physical Workjet project ID is never used as a fallback native ID.
- * CTOX still authorizes the project owner when the resulting operation runs.
+ * The physical project and configuration are read from the server's active
+ * thread projection. CTOX still authorizes the project owner on execution.
  */
 export const resolveCtoxProjectBinding = Effect.fn("ctox.resolveProjectBinding")(function* (
   input: CtoxProjectBindingInput,
 ) {
   const fail = (reason: CtoxProjectBindingError["reason"]) =>
     new CtoxProjectBindingError({ reason });
-  const config = normalizeWorkjetThreadConfig(input.config);
+  const query = yield* ProjectionSnapshotQuery;
+  const projected = yield* query
+    .getThreadShellById(input.threadId)
+    .pipe(Effect.mapError(() => fail("thread-read-unavailable")));
+  if (Option.isNone(projected)) return yield* fail("thread-unavailable");
+  const thread = projected.value;
+  const config = normalizeWorkjetThreadConfig(thread.workjetConfig);
   const project = config.ctoxProject;
   if (project === undefined) return yield* fail("no-confirmed-project");
-  if (project.codeThreadId !== input.threadId || project.codeProjectId !== input.projectId)
+  if (
+    thread.id !== input.threadId ||
+    project.codeThreadId !== thread.id ||
+    project.codeProjectId !== thread.projectId
+  )
     return yield* fail("thread-project-mismatch");
   const session = config.ctoxSession;
   if (

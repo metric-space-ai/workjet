@@ -641,7 +641,18 @@ export const make = Effect.gen(function* () {
           Option.isSome(profile) &&
           isSshConnectionProfile(profile.value)
         ) {
-          yield* ssh.disconnect(profile.value.target).pipe(
+          const sshTarget = profile.value.target;
+          const stillInUse = [...(yield* SubscriptionRef.get(entries)).values()].some(
+            (candidate) =>
+              candidate.target._tag === "SshConnectionTarget" &&
+              Option.isSome(candidate.profile) &&
+              isSshConnectionProfile(candidate.profile.value) &&
+              sameSshTarget(candidate.profile.value.target, sshTarget),
+          );
+          if (stillInUse) {
+            return;
+          }
+          yield* ssh.disconnect(sshTarget).pipe(
             Effect.tapError((error) =>
               Effect.logWarning("Could not disconnect the managed SSH environment.", {
                 environmentId,

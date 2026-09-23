@@ -695,6 +695,36 @@ describe("EnvironmentRegistry", () => {
     }),
   );
 
+  it.effect("does not disconnect a shared SSH target when removing one environment", () =>
+    Effect.gen(function* () {
+      const secondConnection = new SshConnectionTarget({
+        environmentId: EnvironmentId.make("environment-ssh-shared"),
+        connectionId: "ssh-connection-shared",
+        label: "Shared SSH environment",
+      });
+      const secondProfile = new SshConnectionProfile({
+        connectionId: secondConnection.connectionId,
+        environmentId: secondConnection.environmentId,
+        label: secondConnection.label,
+        target: SSH_TARGET,
+      });
+      const harness = yield* makeHarness(
+        [SSH_CONNECTION, secondConnection],
+        [SSH_PROFILE, secondProfile],
+      );
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* registry.remove(SSH_CONNECTION.environmentId);
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).has(secondConnection.environmentId),
+        ).toBe(true);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("moves durable streams to a replacement supervisor", () =>
     Effect.gen(function* () {
       const replacement = new RelayConnectionTarget({

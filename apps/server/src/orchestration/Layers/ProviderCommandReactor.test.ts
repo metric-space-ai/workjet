@@ -162,6 +162,7 @@ describe("ProviderCommandReactor", () => {
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
     readonly crewAdmission?: CtoxCrewTurnAdmission["Service"];
+    readonly initialProviderSession?: boolean;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -501,6 +502,34 @@ describe("ProviderCommandReactor", () => {
         }),
       );
     }
+    if (input?.initialProviderSession) {
+      await Effect.runPromise(
+        startSession(ThreadId.make("thread-1"), {
+          threadId: ThreadId.make("thread-1"),
+          providerInstanceId: modelSelection.instanceId,
+          modelSelection,
+          runtimeMode: "approval-required",
+        }),
+      );
+      await Effect.runPromise(
+        engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-previous-crew-session"),
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "ready",
+            providerName: ProviderDriverKind.make("codex"),
+            providerInstanceId: modelSelection.instanceId,
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
+          },
+          createdAt: now,
+        }),
+      );
+    }
 
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
@@ -660,6 +689,66 @@ describe("ProviderCommandReactor", () => {
     expect(
       harness.sendTurn.mock.calls.map(([request]) => (request as { input?: string }).input),
     ).toEqual(["native prompt attempt-1", "native prompt attempt-2"]);
+  });
+
+  it("replaces a resting provider route before dispatching a recovered Crew claim", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "turn-recovery-key",
+      },
+      requestId: "command:recovered-crew",
+    };
+    const recovered = vi.fn(() =>
+      Effect.succeed({
+        state: "ready" as const,
+        identity: candidate.identity,
+        claim: { attemptId: "recovered-attempt", prompt: "recovered native work" },
+        bootstrap: CtoxCrewSessionBootstrap.of({
+          binding,
+          nativeInstructions: "recovered native instructions",
+          capability: {
+            threadId,
+            providerInstanceId,
+            attemptId: "recovered-attempt",
+            refreshContext: () => Effect.die("unused"),
+            updatePlan: () => Effect.die("unused"),
+            report: () => Effect.die("unused"),
+          },
+        }),
+      }),
+    );
+    const bindProviderSession = vi.fn(() => Effect.void);
+    const admission = {
+      prepare: () => Effect.die("unused"),
+      recover: recovered,
+      bindProviderSession,
+      listRecoveryCandidates: () =>
+        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+      initialProviderSession: true,
+    });
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(recovered).toHaveBeenCalledTimes(1);
+    expect(harness.stopSession).toHaveBeenCalledTimes(1);
+    expect(harness.startSession).toHaveBeenCalledTimes(2);
+    expect(bindProviderSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      requestId: candidate.requestId,
+      input: "recovered native work",
+    });
   });
 
   it("passes the thread's current Workjet config on provider start and restart", async () => {

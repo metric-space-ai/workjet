@@ -993,7 +993,23 @@ export function shouldRenderCtoxShellUpdateStatus(
   instance: CtoxManagedInstance,
   mobileHost: boolean,
 ): boolean {
-  return !(mobileHost && instance.shellUpdate === undefined);
+  const status = instance.shellUpdate;
+  if (mobileHost && status === undefined) return false;
+  // The local fleet cannot inspect shell updates on a managed remote backend.
+  // Its synthetic blocked row does not describe the remote shell's health.
+  if (
+    instance.source !== "local_daemon" &&
+    instance.source !== "ssh_managed" &&
+    instance.status !== "offline" &&
+    status?.phase === "blocked" &&
+    !status.administrable &&
+    status.activeVersion === null &&
+    status.errorCode === null &&
+    status.pause === null
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isWorkjetMobileHostDocument(): boolean {

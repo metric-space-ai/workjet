@@ -892,6 +892,34 @@ describe("CtoxMainShell", () => {
     expect(shouldRenderCtoxShellUpdateStatus(withUpdate, true)).toBe(true);
   });
 
+  it("does not present a remote fleet placeholder as a failed shell update", () => {
+    const remote = instance({
+      id: "managed:welsch",
+      source: "ctox_dev",
+      displayName: "Welsch",
+      shellUpdate: {
+        activeVersion: null,
+        desiredVersion: null,
+        latestCompatibleVersion: null,
+        channel: "stable",
+        phase: "blocked",
+        health: "unknown",
+        administrable: false,
+        recoveryShell: true,
+        lastCheckedAt: null,
+        lastActivatedAt: null,
+        errorCode: null,
+        pause: null,
+      },
+    });
+
+    expect(shouldRenderCtoxShellUpdateStatus(remote, false)).toBe(false);
+    expect(shouldRenderCtoxShellUpdateStatus({ ...remote, source: "manual_pairing" }, false)).toBe(
+      false,
+    );
+    expect(shouldRenderCtoxShellUpdateStatus({ ...remote, status: "offline" }, false)).toBe(true);
+  });
+
   it("detaches the native guest before a host-owned overlay is revealed", async () => {
     const suspend = vi.fn(async () => ({ _tag: "completed" as const }));
 

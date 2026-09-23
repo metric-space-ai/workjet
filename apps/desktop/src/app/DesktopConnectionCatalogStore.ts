@@ -22,6 +22,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import * as DesktopSavedEnvironments from "../settings/DesktopSavedEnvironments.ts";
@@ -393,6 +394,7 @@ export const make = Effect.gen(function* () {
   const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
   const crypto = yield* Crypto.Crypto;
   const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
+  const lock = yield* Semaphore.make(1);
   const catalogPath = path.join(environment.stateDir, "connection-catalog.json");
   const encryptionAvailable = safeStorage.isEncryptionAvailable.pipe(
     Effect.mapError(
@@ -505,7 +507,7 @@ export const make = Effect.gen(function* () {
     return Option.some(decrypted);
   }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get"));
 
-  return DesktopConnectionCatalogStore.of({
+  const operations = DesktopConnectionCatalogStore.of({
     get: getCatalog,
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {
       if (!(yield* encryptionAvailable)) {
@@ -580,6 +582,13 @@ export const make = Effect.gen(function* () {
       yield* writeCatalog(emptyCatalog);
       return backupPath;
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.recover")),
+  });
+
+  return DesktopConnectionCatalogStore.of({
+    get: lock.withPermits(1)(operations.get),
+    set: (catalog) => lock.withPermits(1)(operations.set(catalog)),
+    clear: lock.withPermits(1)(operations.clear),
+    recover: lock.withPermits(1)(operations.recover),
   });
 });
 

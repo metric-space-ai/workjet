@@ -2,8 +2,11 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ConnectionCatalogDocument } from "@workjet/client-runtime/platform";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@workjet/contracts";
+import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
@@ -425,7 +428,56 @@ describe("DesktopConnectionCatalogStore", () => {
         Effect.provide(makeLayer(baseDir, true, failDecrypt)),
       );
       const catalogPath = `${baseDir}/userdata/connection-catalog.json`;
-      const original = '{"schemaVersion":1,"targets":[]}';
+      const original = JSON.stringify({
+        schemaVersion: 1,
+        targets: [
+          {
+            _tag: "SshConnectionTarget",
+            environmentId: "ssh-environment",
+            label: "SSH",
+            connectionId: "ssh:ssh-environment",
+          },
+          {
+            _tag: "BearerConnectionTarget",
+            environmentId: "bearer-environment",
+            label: "Bearer",
+            connectionId: "bearer:bearer-environment",
+          },
+        ],
+        profiles: [
+          {
+            _tag: "SshConnectionProfile",
+            connectionId: "ssh:ssh-environment",
+            environmentId: "ssh-environment",
+            label: "SSH",
+            target: {
+              alias: "fixture-ssh",
+              hostname: "ssh.example.test",
+              username: "ubuntu",
+              port: 22,
+            },
+          },
+          {
+            _tag: "BearerConnectionProfile",
+            connectionId: "bearer:bearer-environment",
+            environmentId: "bearer-environment",
+            label: "Bearer",
+            httpBaseUrl: "https://example.test/",
+            wsBaseUrl: "wss://example.test/",
+          },
+        ],
+        credentials: [
+          {
+            connectionId: "bearer:bearer-environment",
+            credential: { _tag: "BearerConnectionCredential", token: "fixture-token" },
+          },
+        ],
+        remoteDpopTokens: [],
+      });
+      const originalCatalog = yield* decodeConnectionCatalog(original);
+      assert.lengthOf(originalCatalog.targets, 2);
+      assert.lengthOf(originalCatalog.profiles, 2);
+      assert.lengthOf(originalCatalog.credentials, 1);
       assert.isTrue(yield* store.set(original));
       const encryptedOriginal = yield* fileSystem.readFileString(catalogPath);
 
@@ -446,6 +498,49 @@ describe("DesktopConnectionCatalogStore", () => {
       }
       assert.isNull(yield* store.recover);
       assert.equal(yield* fileSystem.readFileString(backupPath), encryptedOriginal);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("serializes recovery with a concurrent saved-connection write", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "workjet-desktop-connection-catalog-test-",
+      });
+      const failDecrypt = yield* Ref.make(false);
+      const copyStarted = yield* Deferred.make<void>();
+      const releaseCopy = yield* Deferred.make<void>();
+      const pausedCopy = Layer.succeed(FileSystem.FileSystem, {
+        ...fileSystem,
+        copyFile: (source, destination) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(copyStarted, undefined);
+            yield* Deferred.await(releaseCopy);
+            yield* fileSystem.copyFile(source, destination);
+          }),
+      });
+      const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(makeLayer(baseDir, true, failDecrypt, pausedCopy)),
+      );
+      const first = '{"schemaVersion":1,"targets":[]}';
+      const later =
+        '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":[],"remoteDpopTokens":[]}';
+      assert.isTrue(yield* store.set(first));
+      yield* Ref.set(failDecrypt, true);
+
+      const recovery = yield* Effect.fork(store.recover);
+      yield* Deferred.await(copyStarted);
+      const writer = yield* Effect.fork(store.set(later));
+      const writerBeforeRecovery = yield* Fiber.await(writer).pipe(
+        Effect.timeoutOption(Duration.seconds(2)),
+      );
+      assert.isTrue(Option.isNone(writerBeforeRecovery));
+      yield* Deferred.succeed(releaseCopy, undefined);
+      assert.isNotNull(yield* Fiber.join(recovery));
+      assert.isTrue(yield* Fiber.join(writer));
+
+      yield* Ref.set(failDecrypt, false);
+      assert.deepStrictEqual(yield* store.get, Option.some(later));
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 });

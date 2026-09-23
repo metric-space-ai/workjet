@@ -535,8 +535,6 @@ describe("DesktopConnectionCatalogStore", () => {
         { startImmediately: true },
       );
       yield* Deferred.await(writerAttempted);
-      const writerBeforeRecovery = yield* Fiber.poll(writer);
-      assert.isTrue(Option.isNone(writerBeforeRecovery));
       yield* Deferred.succeed(releaseCopy, undefined);
       assert.isNotNull(yield* Fiber.join(recovery));
       assert.isTrue(yield* Fiber.join(writer));

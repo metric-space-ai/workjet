@@ -177,6 +177,7 @@ export const parseTailscaleMagicDnsName = (
   );
 
 export function isTailscaleIpv4Address(address: string): boolean {
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(address)) return false;
   const parts = address.split(".");
   if (parts.length !== 4) {
     return false;
@@ -217,7 +218,7 @@ export const parseTailscaleStatus = (
     }),
   );
 
-export const readTailscaleStatus = Effect.gen(function* () {
+const readTailscaleStatusJson = Effect.gen(function* () {
   const args = ["status", "--json"];
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const hostPlatform = yield* HostProcessPlatform;
@@ -254,7 +255,7 @@ export const readTailscaleStatus = Effect.gen(function* () {
           : {}),
       });
     }
-    return yield* parseTailscaleStatus(stdout);
+    return stdout;
   }).pipe(
     Effect.scoped,
     Effect.timeout(TAILSCALE_STATUS_TIMEOUT),
@@ -270,6 +271,57 @@ export const readTailscaleStatus = Effect.gen(function* () {
     }),
   );
 });
+
+export const readTailscaleStatus = readTailscaleStatusJson.pipe(
+  Effect.flatMap(parseTailscaleStatus),
+);
+
+const TailscalePeerStatusJson = Schema.Struct({
+  BackendState: Schema.String,
+  Peer: Schema.optional(
+    Schema.NullOr(
+      Schema.Record(
+        Schema.String,
+        Schema.Struct({
+          HostName: Schema.optional(Schema.String),
+          DNSName: Schema.optional(Schema.String),
+          TailscaleIPs: Schema.optional(Schema.Array(Schema.String)),
+          Online: Schema.optional(Schema.Boolean),
+        }),
+      ),
+    ),
+  ),
+});
+
+const decodeTailscalePeersJson = Schema.decodeEffect(
+  Schema.fromJsonString(TailscalePeerStatusJson),
+);
+
+/** Only the current daemon's peers are candidates; local SSH aliases are never consulted. */
+export const parseTailscalePeers = (raw: string) =>
+  decodeTailscalePeersJson(raw).pipe(
+    Effect.mapError(
+      () => new TailscaleStatusParseError({ cause: "Invalid Tailscale peer status." }),
+    ),
+    Effect.map((status) => ({
+      status: status.BackendState === "Running" ? ("available" as const) : ("unavailable" as const),
+      peers:
+        status.BackendState !== "Running"
+          ? []
+          : Object.entries(status.Peer ?? {})
+              .flatMap(([id, peer]) => {
+                const hostname = peer.TailscaleIPs?.find(isTailscaleIpv4Address);
+                const name =
+                  peer.HostName?.trim() || peer.DNSName?.trim().replace(/\.$/u, "") || hostname;
+                return hostname && name
+                  ? [{ id, name, hostname, online: peer.Online === true }]
+                  : [];
+              })
+              .sort((a, b) => a.name.localeCompare(b.name)),
+    })),
+  );
+
+export const readTailscalePeers = readTailscaleStatusJson.pipe(Effect.flatMap(parseTailscalePeers));
 
 export function buildTailscaleHttpsBaseUrl(input: {
   readonly magicDnsName: string;

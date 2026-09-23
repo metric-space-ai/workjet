@@ -56,6 +56,7 @@ import {
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
+import { WorkjetHeaderContent } from "../WorkjetHeaderSlots";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -2048,7 +2049,7 @@ export function CtoxSidebarFooter() {
   );
 }
 
-export function CtoxSidebarShell() {
+export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: boolean }) {
   const { discovery, bridge, removePairedInstance, removeSshManagedInstance } = useCtoxMode();
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [mutationFeedback, setMutationFeedback] = useState<CtoxMutationOutcome | null>(null);
@@ -2073,7 +2074,7 @@ export function CtoxSidebarShell() {
 
   return (
     <>
-      <SidebarChromeHeader isElectron />
+      {showChrome ? <SidebarChromeHeader isElectron /> : null}
       <SidebarContent className="gap-0" data-ctox-sidebar-shell="">
         <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-4">
           <div className="mb-4 flex items-center justify-between gap-2 px-1">
@@ -2211,7 +2212,7 @@ export function CtoxSidebarShell() {
           )}
         </SidebarGroup>
       </SidebarContent>
-      <CtoxSidebarFooter />
+      {showChrome ? <CtoxSidebarFooter /> : null}
     </>
   );
 }
@@ -2457,7 +2458,7 @@ export function CtoxMainShell() {
         ? {
             title: "CTOX Backend nicht verfügbar",
             description:
-              "CTOX Backends konnten nicht geladen werden. Bitte aktualisieren Sie die Seitenleiste.",
+              "Instanzen konnten nicht geladen werden. Öffnen Sie Einstellungen → Business OS, um die Verbindung zu aktualisieren.",
           }
         : discovery === "loading"
           ? {
@@ -2474,7 +2475,7 @@ export function CtoxMainShell() {
       className="flex h-dvh min-h-0 flex-col overflow-hidden overscroll-y-none bg-background text-foreground"
       data-ctox-main-shell=""
     >
-      <header
+      <WorkjetHeaderContent
         data-ctox-main-chrome=""
         className={cn(
           "workspace-topbar drag-region flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
@@ -2482,11 +2483,9 @@ export function CtoxMainShell() {
         )}
       >
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">
-            {selected?.displayName ?? "Business OS"}
-          </p>
+          <p className="truncate text-sm font-medium text-foreground">Desktop</p>
           <p className="truncate text-[11px] text-muted-foreground">
-            {selected === undefined ? emptyState.title : "Business OS"}
+            {selected === undefined ? emptyState.title : null}
           </p>
         </div>
         {selected !== undefined &&
@@ -2508,7 +2507,7 @@ export function CtoxMainShell() {
             {connection === "ready" ? "Geöffnet" : "Wird geöffnet…"}
           </span>
         ) : null}
-      </header>
+      </WorkjetHeaderContent>
       {selected === undefined ? (
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">

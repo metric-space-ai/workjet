@@ -21,6 +21,7 @@ import {
   ProviderSessionStartInput,
   ThreadId,
   TurnId,
+  WorkjetConnectionId,
 } from "@workjet/contracts";
 import { createModelSelection } from "@workjet/shared/model";
 import { it, assert, vi } from "@effect/vitest";
@@ -56,6 +57,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import {
   makeSqlitePersistenceLive,
@@ -1049,6 +1051,111 @@ routing.layer("ProviderServiceLive routing", (it) => {
       }),
   );
 
+  it.effect("requires an authorized Crew bootstrap before starting the real provider path", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const mcp = makeCapturingMcpRegistry();
+      const threadId = asThreadId("thread-crew-bootstrap");
+      const binding = {
+        instanceId: "instance",
+        connectionId: WorkjetConnectionId.make("connection"),
+        chatId: "workjet_private_chat",
+      };
+      const input = {
+        threadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        runtimeMode: "full-access" as const,
+        workjetConfig: {
+          ...DEFAULT_WORKJET_THREAD_CONFIG,
+          ctoxCrewChat: binding,
+          managedInstructions: "LEGACY_WORKER_PERSONA",
+          enabledCapabilityIds: ["greppy"] as const,
+        },
+      };
+      const bootstrap = CtoxCrewSessionBootstrap.of({
+        binding,
+        nativeInstructions: "Canonical native Crew instructions",
+        capability: {
+          threadId,
+          providerInstanceId: codexInstanceId,
+          attemptId: "attempt",
+          refreshContext: () =>
+            Effect.succeed({
+              schema: "ctox.crew_context.v1" as const,
+              command_id: "command",
+              attempt_id: "attempt",
+              task_id: "task",
+              module_id: "ctox",
+              member_id: "crew",
+              member_name: "Native Crew",
+              persona: "CANONICAL_PERSONA",
+              memory_block: "NATIVE_KNOWLEDGE",
+              execution_plan: null,
+              context_version: "v2",
+            }),
+          updatePlan: () => Effect.die("unused"),
+          report: () => Effect.die("unused"),
+        },
+      });
+      const callsBefore = routing.codex.startSession.mock.calls.length;
+      yield* McpSessionRegistry.__testing.withActive(
+        mcp.registry,
+        Effect.gen(function* () {
+          const rejected = yield* Effect.flip(provider.startSession(threadId, input));
+          assert.equal(rejected._tag, "ProviderValidationError");
+          assert.equal(routing.codex.startSession.mock.calls.length, callsBefore);
+          assert.equal(mcp.requests.length, 0);
+          const foreign = yield* Effect.flip(
+            provider.startSession(threadId, input).pipe(
+              Effect.provideService(CtoxCrewSessionBootstrap, {
+                ...bootstrap,
+                capability: { ...bootstrap.capability, threadId: asThreadId("foreign-thread") },
+              }),
+            ),
+          );
+          assert.equal(foreign._tag, "ProviderValidationError");
+          assert.equal(routing.codex.startSession.mock.calls.length, callsBefore);
+          const foreignContext = yield* Effect.flip(
+            provider.startSession(threadId, input).pipe(
+              Effect.provideService(CtoxCrewSessionBootstrap, {
+                ...bootstrap,
+                capability: {
+                  ...bootstrap.capability,
+                  refreshContext: () =>
+                    bootstrap.capability
+                      .refreshContext()
+                      .pipe(
+                        Effect.map((context) => ({ ...context, attempt_id: "foreign-attempt" })),
+                      ),
+                },
+              }),
+            ),
+          );
+          assert.equal(foreignContext._tag, "ProviderValidationError");
+          assert.equal(routing.codex.startSession.mock.calls.length, callsBefore);
+          assert.equal(mcp.requests.length, 0);
+          yield* provider
+            .startSession(threadId, input)
+            .pipe(Effect.provideService(CtoxCrewSessionBootstrap, bootstrap));
+          assert.equal(routing.codex.startSession.mock.calls.length, callsBefore + 1);
+          assert.equal(mcp.requests.length, 1);
+          assert.equal(mcp.requests[0]?.ctoxCrewExecution, bootstrap.capability);
+          const prompt = mcp.requests[0]?.threadCapabilityContext.compiledManagedPrompt ?? "";
+          assert.include(prompt, bootstrap.nativeInstructions);
+          assert.include(prompt, "CANONICAL_PERSONA");
+          assert.include(prompt, "NATIVE_KNOWLEDGE");
+          assert.include(prompt, "## Capability: greppy@");
+          assert.notInclude(prompt, "LEGACY_WORKER_PERSONA");
+          assert.equal(
+            "ctoxCrewExecution" in (routing.codex.startSession.mock.calls.at(-1)?.[0] ?? {}),
+            false,
+          );
+        }),
+      );
+    }),
+  );
+
   it.effect("propagates effective cwd into fresh, resumed, and adopted MCP credentials", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
@@ -1431,6 +1538,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
       yield* provider.sendTurn({
         threadId: initial.threadId,
+        requestId: "command:original-turn-before-restart",
         input: "resume",
         attachments: [],
       });
@@ -1451,6 +1559,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.threadId, initial.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+      const resumedTurn = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.equal(resumedTurn.requestId, "command:original-turn-before-restart");
     }),
   );
 

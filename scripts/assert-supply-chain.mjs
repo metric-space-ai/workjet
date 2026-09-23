@@ -1,9 +1,11 @@
 import * as NodeFS from "node:fs";
+import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
 
 const root = NodePath.resolve(import.meta.dirname, "..");
+const reviewedImageSizeVersion = "2.0.4";
 const mobileProductionWorkflowPath = NodePath.join(
   root,
   ".github/workflows/mobile-eas-production.yml",
@@ -86,6 +88,19 @@ for (const [pod, version] of [
   if (!pattern.test(mobileAppConfig)) {
     fail(`apps/mobile/app.config.ts must pin ${pod} ${version} exactly`);
   }
+}
+
+const workspace = NodeFS.readFileSync(NodePath.join(root, "pnpm-workspace.yaml"), "utf8");
+if (!/^  image-size: 2\.0\.4$/m.test(workspace)) {
+  fail(`image-size must be overridden to reviewed ${reviewedImageSizeVersion}`);
+}
+if (!/^  image-size@2\.0\.4: patches\/image-size@2\.0\.4\.patch$/m.test(workspace)) {
+  fail("image-size@2.0.4 must use the reviewed Metro compatibility patch");
+}
+const imageSizePatch = NodeFS.readFileSync(NodePath.join(root, "patches/image-size@2.0.4.patch"));
+const imageSizePatchHash = NodeCrypto.createHash("sha256").update(imageSizePatch).digest("hex");
+if (imageSizePatchHash !== "c54eef7bb5043a964fc89d57b5a7c970dd60e97b4c11f2d0f0458e71a2783cf2") {
+  fail("image-size@2.0.4 Metro compatibility patch changed");
 }
 
 const audit = NodeChildProcess.spawnSync("pnpm", ["audit", "--prod", "--json"], {

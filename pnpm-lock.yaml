@@ -76,6 +76,7 @@ overrides:
   expo-sharing>@expo/config-plugins: 56.0.9
   expo-sharing>@expo/config-types: 56.0.6
   hono: 4.12.34
+  image-size: 2.0.4
   ip-address: 10.3.1
   js-yaml: 4.3.2
   nanoid: 3.3.18
@@ -104,6 +105,7 @@ patchedDependencies:
   '@react-navigation/native-stack@7.17.6': 0365b727005b3a830af80ccbd0b637666cc0338d33ddcb7a25b6de51a21ea027
   effect@4.0.0-beta.103: af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6
   expo-modules-jsi@56.0.10: 9170f8074ae4e35a0a086e756c8f815794fd3abe51eac67ca3ba02804225ec1f
+  image-size@2.0.4: c54eef7bb5043a964fc89d57b5a7c970dd60e97b4c11f2d0f0458e71a2783cf2
   react-native-gesture-handler@2.31.2: 808eb26f9e57cf4945efd3985af4d9c764da6f91f4c9764433cc868602bbf4d3
   react-native-keyboard-controller@1.21.13: 20be72c84d74253acdcfefbc6defe36dc396944f1a44cab2bdd0e3cd572ae008
   react-native-nitro-modules@0.35.9: 825622aae63a8fb5b904f3c77908a0e216261d727ea171709f2c0b6088422675
@@ -14940,7 +14942,7 @@ snapshots:
 
   ignore@7.0.5: {}
 
-  image-size@2.0.4: {}
+  image-size@2.0.4(patch_hash=c54eef7bb5043a964fc89d57b5a7c970dd60e97b4c11f2d0f0458e71a2783cf2): {}
 
   immediate@3.0.6: {}
 
@@ -15706,7 +15708,7 @@ snapshots:
       flow-enums-runtime: 0.0.6
       graceful-fs: 4.2.11
       hermes-parser: 0.35.0
-      image-size: 2.0.4
+      image-size: 2.0.4(patch_hash=c54eef7bb5043a964fc89d57b5a7c970dd60e97b4c11f2d0f0458e71a2783cf2)
       invariant: 2.2.4
       jest-worker: 29.7.0
       jsc-safe-url: 0.2.4

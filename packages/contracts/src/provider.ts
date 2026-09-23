@@ -74,6 +74,10 @@ export type ProviderSessionStartInput = Omit<DecodedProviderSessionStartInput, "
 
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
+  // Identity of the persisted turn-start intent, not an HTTP request or a new
+  // random id on each retry. Native task adapters require this for durable
+  // dispatch. Optional for existing direct callers and non-native harnesses.
+  requestId: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(512))),
   input: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
   ),

@@ -6,6 +6,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
+  retainWorkjetCtoxBinding,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -1012,11 +1013,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const retained = retainWorkjetCtoxBinding(thread.workjetConfig, command.workjetConfig);
+      if (retained.error !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: retained.error,
+        });
+      }
       yield* requireProjectTeamOwnership({
         commandType: command.type,
         threadId: command.threadId,
         projectId: thread.projectId,
-        config: command.workjetConfig,
+        config: retained.config,
         readModel,
         environmentId,
       });
@@ -1031,7 +1039,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.workjet-config-set",
         payload: {
           threadId: command.threadId,
-          workjetConfig: command.workjetConfig,
+          workjetConfig: retained.config,
           updatedAt: occurredAt,
         },
       };

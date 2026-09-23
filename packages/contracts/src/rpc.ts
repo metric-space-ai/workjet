@@ -260,6 +260,8 @@ import {
   WorkjetCrossModeListLinksRpcResult,
   WorkjetCrossModeOpenInCodeRpcInput,
   WorkjetCrossModeOpenInCodeRpcResult,
+  WorkjetCrossModeResolveBrowserOpsRpcInput,
+  WorkjetCrossModeResolveBrowserOpsRpcResult,
   WorkjetCrossModeSubmitRpcInput,
   WorkjetCrossModeSubmitRpcResult,
 } from "./workjetCrossMode.ts";
@@ -417,6 +419,7 @@ export const WS_METHODS = {
   // to the Business OS authority through the validated CTOX MCP command path.
   workjetCrossModeOpenInCode: "workjet.crossMode.openInCode",
   workjetCrossModeGetThreadLink: "workjet.crossMode.getThreadLink",
+  workjetCrossModeResolveBrowserOps: "workjet.crossMode.resolveBrowserOps",
   workjetCrossModeListLinks: "workjet.crossMode.listLinks",
   workjetCrossModeSubmit: "workjet.crossMode.submit",
 
@@ -926,6 +929,16 @@ export const WsWorkjetCrossModeGetThreadLinkRpc = Rpc.make(
   {
     payload: WorkjetCrossModeGetThreadLinkRpcInput,
     success: WorkjetCrossModeGetThreadLinkRpcResult,
+    error: WorkjetCrossModeRpcError,
+  },
+);
+
+/** Verify the selected Ops connection at click time; this is not a shell login or launch token. */
+export const WsWorkjetCrossModeResolveBrowserOpsRpc = Rpc.make(
+  WS_METHODS.workjetCrossModeResolveBrowserOps,
+  {
+    payload: WorkjetCrossModeResolveBrowserOpsRpcInput,
+    success: WorkjetCrossModeResolveBrowserOpsRpcResult,
     error: WorkjetCrossModeRpcError,
   },
 );
@@ -1616,6 +1629,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetMailboxAcceptHandoffRpc,
   WsWorkjetCrossModeOpenInCodeRpc,
   WsWorkjetCrossModeGetThreadLinkRpc,
+  WsWorkjetCrossModeResolveBrowserOpsRpc,
   WsWorkjetCrossModeListLinksRpc,
   WsWorkjetCrossModeSubmitRpc,
   WsWorkjetDecisionHubListConnectionsRpc,

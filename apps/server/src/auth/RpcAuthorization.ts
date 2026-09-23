@@ -101,12 +101,14 @@ export const RPC_REQUIRED_SCOPES = {
   // a turn on it, and `submit` sends a command across an authority boundary;
   // both are writes and carry the same two checks as every other thread-scoped
   // Workjet write — the transport scope here, and the caller-named thread plus
-  // the SERVER-verified CTOX authority inside the handler. The two reads return
-  // typed references and the bounded redacted title/subtitle only — never a
-  // Business OS record — so they take the read scope like the roster.
+  // the SERVER-verified CTOX authority inside the handler. The reads return
+  // typed references and bounded redacted metadata only — never a Business OS
+  // record. Browser Ops resolution additionally checks a live connection
+  // without persisting its status, so it keeps the read scope.
   [WS_METHODS.workjetCrossModeOpenInCode]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetCrossModeSubmit]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetCrossModeGetThreadLink]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetCrossModeResolveBrowserOps]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetCrossModeListLinks]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetDecisionHubListConnections]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetDecisionHubProvisionConnection]: AuthOrchestrationOperateScope,

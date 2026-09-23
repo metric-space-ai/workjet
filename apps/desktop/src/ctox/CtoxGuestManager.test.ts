@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { CommandId } from "@workjet/contracts";
+import { CommandId, ProjectId } from "@workjet/contracts";
 import * as NodeVM from "node:vm";
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
@@ -1757,6 +1757,53 @@ describe("CtoxGuestManager", () => {
         { _tag: "failed", code: "not_active" },
       );
       expect(harness.views).toHaveLength(1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("correlates native private chat creation before returning its ID", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
+      const request = {
+        action: "project.worker.add" as const,
+        commandId: CommandId.make("add-worker"),
+        projectId: ProjectId.make("project-one"),
+        workerProfileId: "worker-one",
+        createdAt: "2026-09-12T10:00:00.000Z",
+      };
+      const response = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        workerProfileId: request.workerProfileId,
+        chatId: "workjet_private_confirmed",
+      };
+      for (const change of [
+        { commandId: "different-command" },
+        { projectId: "different-project" },
+        { workerProfileId: "different-worker" },
+        { action: "project.chat.create" },
+        { chatId: "workjet_group_not_private" },
+      ]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValue({
+          status: "completed",
+          result: { ...response, ...change },
+        });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
+      }
+      harness.views[0]?.executeJavaScript.mockResolvedValue({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
     }).pipe(Effect.provide(harness.layer));
   });
 

@@ -62,6 +62,7 @@ export class CtoxNativeRequestError extends Schema.TaggedErrorClass<CtoxNativeRe
     ]),
   },
 ) {}
+const isCtoxNativeRequestError = Schema.is(CtoxNativeRequestError);
 const failure = (reason: CtoxNativeRequestError["reason"]) =>
   new CtoxNativeRequestError({ reason });
 const unavailable = () => failure("native-request-store-unavailable");
@@ -443,13 +444,15 @@ const make = Effect.gen(function* () {
     target: CtoxMcpTarget,
     requestId: string,
   ) {
-    return yield* sql.withTransaction(
-      Effect.gen(function* () {
-        const nativeKey = yield* prepare(identity, request, target);
-        yield* registerNativeTurn(identity, requestId);
-        return nativeKey;
-      }),
-    );
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const nativeKey = yield* prepare(identity, request, target);
+          yield* registerNativeTurn(identity, requestId);
+          return nativeKey;
+        }),
+      )
+      .pipe(Effect.mapError((error) => (isCtoxNativeRequestError(error) ? error : unavailable())));
   });
   const latestNativeTurn = Effect.fn("CtoxNativeRequests.latestNativeTurn")(function* (
     scope: Omit<CtoxNativeRequestIdentity, "requestKey">,

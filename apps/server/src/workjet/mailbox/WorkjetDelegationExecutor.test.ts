@@ -420,6 +420,22 @@ const makeHarness = (options?: {
         currentThread === undefined ? Option.none() : Option.some(currentThread),
       );
     },
+    isThreadTurnTerminal: (threadId: ThreadId, turnId: string) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const rows = yield* sql<{ readonly state: string; readonly completedAt: string | null }>`
+          SELECT state, completed_at AS "completedAt"
+          FROM projection_turns
+          WHERE thread_id = ${threadId} AND turn_id = ${turnId}
+          LIMIT 1
+        `;
+        const row = rows[0];
+        return (
+          row !== undefined &&
+          row.completedAt !== null &&
+          (row.state === "completed" || row.state === "error" || row.state === "interrupted")
+        );
+      }),
   } as unknown as ProjectionSnapshotQuery["Service"];
 
   return {
@@ -841,9 +857,19 @@ it.effect("returns a completed worker turn for review and runs approved rework",
     if (firstReminder?.type === "thread.turn.start") {
       assert.equal(firstReminder.threadId, SOURCE_THREAD);
     }
-    // A projected, completed first reminder with no child must produce a new
-    // command identity. Replaying its accepted receipt would never run again.
+    // A later parent turn is not evidence that the reminder itself finished.
+    // The durable turn row keeps this first reminder running for one scan,
+    // then its own terminal update unlocks exactly one distinct retry.
     const firstReminderTurn = "review-reminder-turn";
+    const interveningTurn = "intervening-parent-turn";
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      INSERT INTO projection_turns
+        (thread_id, turn_id, state, requested_at, started_at, completed_at, checkpoint_files_json)
+      VALUES
+        (${SOURCE_THREAD}, ${firstReminderTurn}, 'running', ${NOW}, ${NOW}, NULL, '[]'),
+        (${SOURCE_THREAD}, ${interveningTurn}, 'completed', ${LATER}, ${LATER}, ${LATER}, '[]')
+    `;
     harness.setThreadById(SOURCE_THREAD, {
       ...parent,
       messages: [
@@ -858,14 +884,22 @@ it.effect("returns a completed worker turn for review and runs approved rework",
         },
       ],
       latestTurn: {
-        turnId: firstReminderTurn,
+        turnId: interveningTurn,
         state: "completed",
-        requestedAt: NOW,
-        startedAt: NOW,
-        completedAt: NOW,
+        requestedAt: LATER,
+        startedAt: LATER,
+        completedAt: LATER,
         assistantMessageId: null,
       },
     } as unknown as OrchestrationThread);
+    const stillRunning = yield* harness.executor;
+    yield* stillRunning.runCycle;
+    assert.lengthOf(reworkReminders(), 1);
+    yield* sql`
+      UPDATE projection_turns
+      SET state = 'completed', completed_at = ${LATER}
+      WHERE thread_id = ${SOURCE_THREAD} AND turn_id = ${firstReminderTurn}
+    `;
     const replayedRecovery = yield* harness.executor;
     yield* replayedRecovery.runCycle;
     assert.lengthOf(reworkReminders(), 2);

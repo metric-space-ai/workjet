@@ -1875,8 +1875,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       const firstTurnFinished =
         firstTurnId !== null &&
         firstTurnId !== undefined &&
-        parent.latestTurn?.turnId === firstTurnId &&
-        parent.latestTurn.state !== "running";
+        (yield* query
+          .isThreadTurnTerminal(parent.id, firstTurnId)
+          .pipe(Effect.orElseSucceed(() => false)));
       if (firstMessage && !firstTurnFinished) continue;
       const retry = firstTurnFinished;
       const commandSuffix = retry ? ":retry" : "";

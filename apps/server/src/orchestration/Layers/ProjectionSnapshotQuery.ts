@@ -112,6 +112,10 @@ const ProjectionLatestTurnDbRowSchema = Schema.Struct({
   sourceProposedPlanThreadId: Schema.NullOr(ThreadId),
   sourceProposedPlanId: Schema.NullOr(OrchestrationProposedPlanId),
 });
+const ProjectionExactTurnStateRowSchema = Schema.Struct({
+  state: Schema.String,
+  completedAt: Schema.NullOr(IsoDateTime),
+});
 const ProjectionStateDbRowSchema = ProjectionState;
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
@@ -136,6 +140,10 @@ const ProjectIdLookupInput = Schema.Struct({
 });
 const ThreadIdLookupInput = Schema.Struct({
   threadId: ThreadId,
+});
+const ExactTurnLookupInput = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
 });
 // Windowed reads order turns by the stable keyset (anchor, turn key), where
 // anchor is requested_at and turn key is
@@ -1103,6 +1111,18 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE threads.thread_id = ${threadId}
           AND threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
+        LIMIT 1
+      `,
+  });
+
+  const getExactTurnStateRow = SqlSchema.findOneOption({
+    Request: ExactTurnLookupInput,
+    Result: ProjectionExactTurnStateRowSchema,
+    execute: ({ threadId, turnId }) =>
+      sql`
+        SELECT state, completed_at AS "completedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId} AND turn_id = ${turnId}
         LIMIT 1
       `,
   });
@@ -2586,6 +2606,27 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const getThreadDetailById: ProjectionSnapshotQueryShape["getThreadDetailById"] = (threadId) =>
     getThreadDetailByIdBounded(threadId, undefined);
 
+  const isThreadTurnTerminal: ProjectionSnapshotQueryShape["isThreadTurnTerminal"] = (
+    threadId,
+    turnId,
+  ) =>
+    getExactTurnStateRow({ threadId, turnId }).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.isThreadTurnTerminal:query",
+          "ProjectionSnapshotQuery.isThreadTurnTerminal:decodeRow",
+        ),
+      ),
+      Effect.map(
+        (row) =>
+          Option.isSome(row) &&
+          row.value.completedAt !== null &&
+          (row.value.state === "completed" ||
+            row.value.state === "error" ||
+            row.value.state === "interrupted"),
+      ),
+    );
+
   // Bounds pathological fan-out: one user turn that spawned hundreds of
   // subagent turns still pages in bounded chunks, at the cost of splitting the
   // fan-out group across pages (the cursor continues the same group). Also
@@ -2744,6 +2785,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getFullThreadDiffContext,
     getThreadShellById,
     getThreadDetailById,
+    isThreadTurnTerminal,
     getThreadDetailSnapshot,
   } satisfies ProjectionSnapshotQueryShape;
 });

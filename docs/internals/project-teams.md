@@ -83,8 +83,10 @@ The review decision and creation of the linked delegation are separate
 commands. The executor scans source-owned `changes-requested` rows with a stored
 result and no `revises` child. It dispatches a stable parent continuation after
 a crash or transient refusal. If that accepted turn ends without a child, it
-dispatches one further continuation under a distinct command identity; replaying
-the first accepted receipt cannot start another turn. A projected retry message
+checks the exact persisted turn row and dispatches one further continuation
+under a distinct command identity; a later parent turn becoming latest is not
+used as completion proof. Replaying the first accepted receipt cannot start
+another turn. A projected retry message
 stops further automatic turns. The child enqueue's atomic graph edge removes
 the row from the recovery set, and the store refuses a second `revises` child
 for the same rejected delegation. The parent still must create a revised task

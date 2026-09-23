@@ -21,6 +21,7 @@ import type {
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
+  TurnId,
   WorkjetThreadRole,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -198,6 +199,12 @@ export interface ProjectionSnapshotQueryShape {
   readonly getThreadDetailById: (
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<OrchestrationThread>, ProjectionRepositoryError>;
+
+  /** Whether this exact projected turn reached a terminal state. */
+  readonly isThreadTurnTerminal: (
+    threadId: ThreadId,
+    turnId: TurnId,
+  ) => Effect.Effect<boolean, ProjectionRepositoryError>;
 
   /**
    * Read a single active thread detail together with the projection snapshot

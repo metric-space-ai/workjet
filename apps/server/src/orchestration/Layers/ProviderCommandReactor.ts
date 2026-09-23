@@ -1652,6 +1652,16 @@ const make = Effect.gen(function* () {
           );
           const harness = nativeCrewHarness(providerInfo.driverKind);
           if (!harness) return;
+          const beforeRecovery = yield* providerService.listSessions().pipe(
+            Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
+          );
+          if (beforeRecovery?.status === "running" || beforeRecovery?.status === "connecting") {
+            yield* Effect.logWarning("native Crew recovery deferred while provider is active", {
+              threadId: thread.id,
+              providerStatus: beforeRecovery.status,
+            });
+            return;
+          }
           const prepared = yield* admission.recover({
             candidate,
             binding,
@@ -1659,6 +1669,28 @@ const make = Effect.gen(function* () {
             harness,
           });
           if (prepared.state === "ready") {
+            // Recovery is allowed to claim a new offer, but an old provider
+            // process may still hold another attempt's fixed MCP credential.
+            const priorSession = yield* providerService.listSessions().pipe(
+              Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
+            );
+            if (priorSession?.status === "running" || priorSession?.status === "connecting") {
+              yield* Effect.logWarning("native Crew recovery retained a claim while provider is active", {
+                threadId: thread.id,
+                attemptId: prepared.claim.attemptId,
+                providerStatus: priorSession.status,
+              });
+              return;
+            }
+            if (priorSession) {
+              const stopped = yield* providerService.stopSession({ threadId: thread.id });
+              if (stopped?.terminated !== true)
+                return yield* new ProviderAdapterRequestError({
+                  provider: "ctox",
+                  method: "thread.turn.start",
+                  detail: "The previous Crew provider session could not be stopped safely during recovery.",
+                });
+            }
             yield* runClaimedCrewTurn({
               admission,
               prepared,

@@ -592,7 +592,9 @@ describe("CTOX native guest bounds", () => {
   it("keeps one pending activation observable across a genuine bounds update", async () => {
     const pending = deferred<CtoxManagedGuestResult>();
     const activate = vi.fn(() => pending.promise);
-    const activatedKey = { current: 0 };
+    const activatedKey: {
+      current: { readonly activationKey: number; readonly instanceId: string } | null;
+    } = { current: null };
     const states: string[] = [];
     const bridge = inertBridge();
     const activation = {
@@ -605,7 +607,9 @@ describe("CTOX native guest bounds", () => {
     const currentActivation = activation;
     let bounds = { x: 12, y: 24, width: 800, height: 600 };
 
-    expect(claimCtoxGuestActivation(activatedKey, activation.activationKey)).toBe(true);
+    expect(
+      claimCtoxGuestActivation(activatedKey, activation.activationKey, activation.instanceId),
+    ).toBe(true);
     trackCtoxGuestActivation(
       activate(),
       () => isCurrentCtoxGuestActivation(true, currentActivation, activation),
@@ -614,7 +618,9 @@ describe("CTOX native guest bounds", () => {
 
     bounds = retainCtoxGuestBounds(bounds, { ...bounds, width: 960, height: 720 });
     expect(bounds).toEqual({ x: 12, y: 24, width: 960, height: 720 });
-    expect(claimCtoxGuestActivation(activatedKey, activation.activationKey)).toBe(false);
+    expect(
+      claimCtoxGuestActivation(activatedKey, activation.activationKey, activation.instanceId),
+    ).toBe(false);
     expect(activate).toHaveBeenCalledOnce();
 
     pending.resolve({ _tag: "ready", instanceId: "managed:alpha" });
@@ -622,6 +628,15 @@ describe("CTOX native guest bounds", () => {
     await Promise.resolve();
 
     expect(states).toEqual(["ready"]);
+  });
+
+  it("activates a new instance when host selection changes without a new numeric key", () => {
+    const activatedKey: {
+      current: { readonly activationKey: number; readonly instanceId: string } | null;
+    } = { current: null };
+    expect(claimCtoxGuestActivation(activatedKey, 1, "managed:alpha")).toBe(true);
+    expect(claimCtoxGuestActivation(activatedKey, 1, "managed:alpha")).toBe(false);
+    expect(claimCtoxGuestActivation(activatedKey, 1, "managed:beta")).toBe(true);
   });
 
   it("ignores pending results after unmount or activation identity changes", async () => {

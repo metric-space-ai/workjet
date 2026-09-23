@@ -2178,11 +2178,16 @@ export function retainCtoxGuestBounds(
 }
 
 export function claimCtoxGuestActivation(
-  activatedKey: { current: number },
+  activatedKey: { current: { readonly activationKey: number; readonly instanceId: string } | null },
   activationKey: number,
+  instanceId: string,
 ): boolean {
-  if (activatedKey.current === activationKey) return false;
-  activatedKey.current = activationKey;
+  if (
+    activatedKey.current?.activationKey === activationKey &&
+    activatedKey.current.instanceId === instanceId
+  )
+    return false;
+  activatedKey.current = { activationKey, instanceId };
   return true;
 }
 
@@ -2240,7 +2245,10 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
   } = useCtoxMode();
   const hostRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
-  const activatedKeyRef = useRef(0);
+  const activatedKeyRef = useRef<{
+    readonly activationKey: number;
+    readonly instanceId: string;
+  } | null>(null);
   const activationStateRef = useRef({
     activationKey,
     bridge,
@@ -2285,7 +2293,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       bounds.height === 0 ||
       !modeReady ||
       selectedId !== instance.id ||
-      !claimCtoxGuestActivation(activatedKeyRef, activationKey)
+      !claimCtoxGuestActivation(activatedKeyRef, activationKey, instance.id)
     )
       return;
     const expectedActivation = {

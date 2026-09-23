@@ -99,6 +99,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     const removals: Array<{ readonly cwd: string; readonly path: string }> = [];
     const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
     const retryPages: Array<ThreadId | null> = [];
+    const providerQueries: Array<{ readonly headSelector: string; readonly state: string }> = [];
     const gitFailure = { _tag: "GitCommandError", detail: "downstream git secret" } as const;
     const commitSha = "a".repeat(40);
     let mergeState = input.mergeState ?? "merged";
@@ -177,8 +178,12 @@ describe("worker worktree cleanup on thread.deleted", () => {
     const sourceControlLayer = Layer.succeed(SourceControlProviderRegistry, {
       resolve: () =>
         Effect.succeed({
-          listChangeRequests: () =>
-            input.failProviderLookup
+          listChangeRequests: (request: {
+            readonly headSelector: string;
+            readonly state: string;
+          }) => {
+            providerQueries.push({ headSelector: request.headSelector, state: request.state });
+            return input.failProviderLookup
               ? Effect.fail(gitFailure)
               : Effect.succeed([
                   {
@@ -187,7 +192,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
                     headCommitOid:
                       input.providerHead === undefined ? commitSha : input.providerHead,
                   },
-                ]),
+                ]);
+          },
         }),
     } as unknown as SourceControlProviderRegistry["Service"]);
     const gitDriverLayer = Layer.succeed(GitVcsDriver, {
@@ -236,6 +242,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
       reconcile,
       reconcileTwoCycles,
       retryPages,
+      providerQueries,
       setMergeState: (state: "open" | "merged") => {
         mergeState = state;
       },
@@ -263,6 +270,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
       yield* harness.run;
       expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
       expect(harness.branchDeletions).toEqual([{ cwd: workspaceRoot, refName: workerRefName }]);
+      expect(harness.providerQueries).toEqual([{ headSelector: workerRefName, state: "merged" }]);
     });
   });
 

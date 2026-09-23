@@ -12,8 +12,8 @@
  * snapshot refresh can be COUNTED; the reconciliation logic under test is
  * production's own.
  *
- * FIRST RUN STATUS: written while the host resource gate was closed, so their
- * first execution is CI's. Reported as pending rather than presented as passed.
+ * CI executes these cases, but the startup case below also needs a mutation
+ * check to prove that its second barrier depends on connection event delivery.
  */
 import { assert, it } from "@effect/vitest";
 import {
@@ -333,19 +333,11 @@ it.effect("keeps the instance across disconnect, because the binding outlives th
 );
 
 /**
- * NOT YET PROVEN — skipped deliberately rather than deleted or weakened.
- *
- * The window itself is now deterministic: `onSubscribed` publishes the
- * provision after both subscriptions exist and before the initial read, so this
- * no longer races. But the assertion still reports 0 instances where 1 is
- * expected, even though the provision wrote its binding before the initial
- * reconciliation ran. That symptom is not explained yet, and I will not weaken
- * the assertion to make it pass — a green test here would claim the startup
- * window is protected when nothing has shown that.
- *
- * The other five cases in this file pass, including the substantive ones: a
- * binding-read failure, a disconnect and a restart all leave the instance and
- * its scope intact.
+ * The case is active. `onSubscribed` publishes after both subscriptions are
+ * acquired and before the initial read. The test settings layer emits no
+ * change events, so the second settlement should depend on the connection
+ * event. A controlled mutation and restored positive run are still required
+ * to establish that sensitivity, rather than relying on a green run alone.
  */
 it.effect("loses no connection event published while the initial read is still running", () =>
   Effect.gen(function* () {

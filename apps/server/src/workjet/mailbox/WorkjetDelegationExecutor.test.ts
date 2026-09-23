@@ -2520,7 +2520,7 @@ it.effect("fails a source delegation whose outbound envelope dead-lettered", () 
   }).pipe(Effect.provide(testLayer("delegation-executor-deadletter"))),
 );
 
-it.effect("redrives a dead sealed review envelope once without changing its cryptographic id", () =>
+it.effect("redrives a dead review envelope once without changing its signed identity", () =>
   Effect.gen(function* () {
     const harness = makeHarness();
     const store = yield* WorkjetMailboxStore;

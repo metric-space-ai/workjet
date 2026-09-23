@@ -711,7 +711,7 @@ export interface WorkjetMailboxStoreShape {
     reconciledAt: WorkjetMailboxTimestamp,
   ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
 
-  /** Retry one unexpired dead review envelope in place; its sealed body is bound to this id. */
+  /** Give an unexpired dead review envelope one more attempt budget with the same identity. */
   readonly redriveDeadReviewSignal: (
     envelopeId: WorkjetEnvelopeId,
     now: WorkjetMailboxTimestamp,

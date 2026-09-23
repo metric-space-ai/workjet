@@ -2175,8 +2175,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      *
      * A dead remote review signal gets one more delivery budget while its
      * original signed envelope is unexpired and the delegation awaits review.
-     * Sealed message bytes are bound to the envelope id, so redrive must retain
-     * the same id, payload and signature.
+     * The transport seals the stored payload at send time. Keeping the signed
+     * id and expiry lets the receiver deduplicate a lost acknowledgement and
+     * prevents this retry from extending the review request's lifetime.
      *
      * The scan is restricted to rows without the migration-049
      * `reconciled_at_ms` marker. Transient lookup or redrive failures leave a

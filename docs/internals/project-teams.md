@@ -67,12 +67,14 @@ replays its thread activity after a failed dispatch or restart with a stable
 command identity. An unprocessed local review signal is retained past message
 TTL until that activity is marked processed. Remote signals use the outbox. A
 dead remote review signal gets one more delivery budget while its original
-envelope is unexpired and the delegation still awaits review. Its id, sealed
-payload, signed routing envelope and expiry remain unchanged: sealed bytes are
-cryptographically bound to that id. An atomic redrive counter prevents a second
-budget after restart. Transient lookup or redrive failures leave the row for
-retry. An expired or twice-dead letter stays queryable and is logged. If review
-is still pending, the executor appends one error activity to the source thread
+envelope is unexpired and the delegation still awaits review. Its id, stored
+payload, signed routing envelope and expiry remain unchanged. The transport
+seals the payload when sending; retaining the id deduplicates a lost
+acknowledgement and does not extend the request's lifetime. An atomic counter
+prevents a second budget after restart. Transient lookup or redrive failures
+leave the row for retry. An expired or twice-dead letter stays queryable and is
+logged. When review is still pending, the executor appends one error activity
+to the source thread
 with a stable command identity; a failed activity append retries after restart.
 The source must notify the reviewer again or resolve the delegation. A dedicated
 freshly sealed resend action remains to be implemented.

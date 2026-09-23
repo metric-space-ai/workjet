@@ -2,7 +2,7 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-/** A sealed review message may be retried only with its original envelope id. */
+/** Counts one in-place review redrive without extending the signed envelope's expiry. */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(workjet_mailbox_outbox)`;

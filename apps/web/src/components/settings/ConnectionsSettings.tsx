@@ -1790,6 +1790,7 @@ export function useComputerConnections({
       ? desktopSshHostsStateAtom
       : null,
   );
+  const refreshSshHosts = desktopSshHosts.refresh;
   const discoveredSshHosts = desktopSshHosts.data ?? EMPTY_DISCOVERED_SSH_HOSTS;
   const unsavedDiscoveredSshHosts = useMemo(
     () =>
@@ -1812,10 +1813,13 @@ export function useComputerConnections({
     sshConnectionError ?? (savedBackendMode === "ssh" ? desktopSshHosts.error : null);
   const catalogRecoveryAvailable =
     desktopBridge?.recoverConnectionCatalog !== undefined &&
-    savedBackendError !== null &&
-    (savedBackendError.includes("decrypt-catalog") ||
-      savedBackendError.includes("Failed to decode encryptedCatalog") ||
-      savedBackendError.includes("Failed to decode the desktop connection catalog document"));
+    [savedBackendError, discoveredSshHostsError].some(
+      (message) =>
+        message !== null &&
+        (message.includes("decrypt-catalog") ||
+          message.includes("Failed to decode encryptedCatalog") ||
+          message.includes("Failed to decode the desktop connection catalog document")),
+    );
   const handleRecoverConnectionCatalog = useCallback(async () => {
     if (desktopBridge?.recoverConnectionCatalog === undefined || isRecoveringCatalog) return;
     setIsRecoveringCatalog(true);
@@ -1823,6 +1827,8 @@ export function useComputerConnections({
     try {
       const backupPath = await desktopBridge.recoverConnectionCatalog();
       setSavedBackendError(null);
+      setSshConnectionError(null);
+      refreshSshHosts();
       setCatalogRecoveryMessage(
         backupPath === null
           ? "Saved connections are readable again. Retry the connection."
@@ -1833,7 +1839,7 @@ export function useComputerConnections({
     } finally {
       setIsRecoveringCatalog(false);
     }
-  }, [desktopBridge, isRecoveringCatalog]);
+  }, [desktopBridge, isRecoveringCatalog, refreshSshHosts]);
   const handleAddSavedBackend = useCallback(async () => {
     if (isAddingSavedBackend || isRecoveringCatalog || connectingSshHostAlias !== null) return;
     if (savedBackendMode === "ssh" || savedBackendMode === "tailscale") {

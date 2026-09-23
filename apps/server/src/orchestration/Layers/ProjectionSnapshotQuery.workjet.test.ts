@@ -26,6 +26,7 @@ const ACTIVE_THREAD_ID = ThreadId.make("thread-workjet-active");
 const ARCHIVED_THREAD_ID = ThreadId.make("thread-workjet-archived");
 const DELETED_WORKER_ID = ThreadId.make("thread-workjet-deleted-worker");
 const DELETED_UNARCHIVED_WORKER_ID = ThreadId.make("thread-workjet-deleted-unarchived-worker");
+const DELETED_MISMATCHED_WORKER_ID = ThreadId.make("thread-workjet-deleted-mismatched-worker");
 const DELETED_LEGACY_WORKER_ID = ThreadId.make("thread-workjet-deleted-legacy-worker");
 const DELETED_NON_WORKER_ID = ThreadId.make("thread-workjet-deleted-non-worker");
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
@@ -192,6 +193,13 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         deletedAt: "2026-08-14T00:00:01.000Z",
       });
       yield* insertThread({
+        threadId: DELETED_MISMATCHED_WORKER_ID,
+        title: "Worker with mismatched team identity",
+        workjetConfig: deletedTeamWorkerConfig,
+        archivedAt: "2026-08-14T00:00:05.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
         threadId: DELETED_LEGACY_WORKER_ID,
         title: "Deleted legacy worker",
         workjetConfig: workerConfig,
@@ -283,6 +291,52 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
       assert.isTrue(
         Option.isNone(
           yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_UNARCHIVED_WORKER_ID),
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_MISMATCHED_WORKER_ID),
+        ),
+      );
+
+      // A legacy row cannot become a team worker by carrying a stray `team`
+      // object in stored JSON; the archived list and detail query agree.
+      const legacyWithSpoofedTeam = JSON.stringify({
+        ...workerConfig,
+        team: {
+          role: "worker",
+          threadId: DELETED_LEGACY_WORKER_ID,
+          projectId: ProjectId.make("project-workjet-snapshot"),
+        },
+      });
+      yield* sql`
+        UPDATE projection_threads
+        SET workjet_config_json = ${legacyWithSpoofedTeam}
+        WHERE thread_id = ${DELETED_LEGACY_WORKER_ID}
+      `;
+      const guardedArchive = yield* snapshotQuery.getArchivedShellSnapshot();
+      assert.isFalse(
+        guardedArchive.threads.some((thread) => thread.id === DELETED_LEGACY_WORKER_ID),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_LEGACY_WORKER_ID),
+        ),
+      );
+      yield* sql`
+        UPDATE projection_threads
+        SET workjet_config_json = '{malformed'
+        WHERE thread_id = ${DELETED_LEGACY_WORKER_ID}
+      `;
+      const archiveWithCorruptDeletedRow = yield* snapshotQuery.getArchivedShellSnapshot();
+      assert.isFalse(
+        archiveWithCorruptDeletedRow.threads.some(
+          (thread) => thread.id === DELETED_LEGACY_WORKER_ID,
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_LEGACY_WORKER_ID),
         ),
       );
     }),

@@ -138,7 +138,8 @@ The archived shell snapshot includes these deleted worker records while
 excluding other deleted threads. Mobile Archive displays them as completed,
 read-only rows without unarchive or delete gestures. Opening one reads its
 retained messages and activities in pages through a separate read-scope RPC.
-That query requires the row to be a deleted, archived v2 team worker; ordinary
+That query requires a deleted, archived v2 team worker whose saved team identity
+matches the thread and project row; ordinary
 thread detail and command reads still reject deleted threads.
 
 ## Implementation checkpoint

@@ -116,6 +116,7 @@ export function requireProjectTeamLifecycle(input: {
   readonly thread: OrchestrationReadModel["threads"][number];
   readonly readModel: OrchestrationReadModel;
   readonly allowTeamTermination?: boolean;
+  readonly workerCleanupComplete?: boolean;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
   const { commandType, thread, readModel } = input;
   if (commandType === "thread.delete" && input.allowTeamTermination) return Effect.void;
@@ -127,6 +128,15 @@ export function requireProjectTeamLifecycle(input: {
       commandType === "thread.delete"
         ? "The project supervisor is retained until the project is deleted."
         : "The project supervisor remains available as the main contact.",
+    );
+  }
+  if (
+    commandType === "thread.archive" &&
+    team?.role === "worker" &&
+    (thread.deletedAt === null || !input.workerCleanupComplete)
+  ) {
+    return fail(
+      "A project worker can be archived only after its merged source was safely cleaned.",
     );
   }
   if (

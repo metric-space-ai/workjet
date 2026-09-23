@@ -235,9 +235,11 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   readModel,
   environmentId,
   allowTeamTermination = false,
+  workerCleanupComplete = false,
 }: {
   readonly command: OrchestrationCommand;
   readonly allowTeamTermination?: boolean;
+  readonly workerCleanupComplete?: boolean;
   readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
@@ -490,7 +492,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      yield* requireProjectTeamLifecycle({ commandType: command.type, thread, readModel });
+      yield* requireProjectTeamLifecycle({
+        commandType: command.type,
+        thread,
+        readModel,
+        workerCleanupComplete,
+      });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({

@@ -128,8 +128,11 @@ receipt and Git ref state agree. Missing, unreadable or changed Git evidence
 keeps the receipt pending and retains any remaining source. Deleted threads
 reject new turn commands. The engine now fences provider turn starts against
 thread deletion and forced project deletion through send acknowledgement, after
-asynchronous session startup. Archive must follow
-successful cleanup rather than hide a failed or skipped cleanup.
+asynchronous session startup. A project worker cannot be archived before its
+deletion fences new turns and a completed receipt matches its recorded checkout
+and branch. The deletion reactor archives after successful cleanup with a stable
+command identity; startup reconciliation retries the archival step after an
+interruption. A deleted, archived worker cannot be unarchived.
 
 ## Implementation checkpoint
 
@@ -143,7 +146,7 @@ APK and real desktop/web/mobile acceptance remain pending.
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
 recovery of checkouts retained after unreadable receipts, explicit handling when
 both parent rework continuations end without a linked child,
-cleanup/archive integration, a dedicated fresh remote review-signal resend action,
-and durable review/selection wiring. The review
+a dedicated fresh remote review-signal resend action, and durable review/selection
+wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

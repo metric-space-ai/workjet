@@ -119,6 +119,141 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("archives a deleted team worker only after exact completed cleanup evidence", async () => {
+    const environmentId = EnvironmentId.make("worker-cleanup-environment");
+    const system = await createOrchestrationSystem(environmentId);
+    const projectId = ProjectId.make("worker-cleanup-project");
+    const specialistId = ThreadId.make("worker-cleanup-specialist");
+    const workerId = ThreadId.make("worker-cleanup-worker");
+    const workerBranch = `workjet/worker/${workerId}`;
+    const workerPath = "/Volumes/tmp/worktrees/workjet/worker-cleanup-worker";
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("worker-cleanup-project-create"),
+          projectId,
+          title: "Worker cleanup",
+          workspaceRoot: "/fixture/worker-cleanup",
+          createdAt: now(),
+        }),
+      );
+      const supervisor = (await system.readModel()).threads[0]!;
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("worker-cleanup-specialist-create"),
+          threadId: specialistId,
+          projectId,
+          title: "Backend specialist",
+          modelSelection: supervisor.modelSelection,
+          runtimeMode: supervisor.runtimeMode,
+          interactionMode: supervisor.interactionMode,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            role: "orchestrator",
+            team: {
+              projectId,
+              threadId: specialistId,
+              role: "specialist",
+              parentThreadId: supervisor.id,
+              domain: "Backend",
+              goal: "Own backend work",
+              createdAt: now(),
+            },
+          },
+          branch: null,
+          worktreePath: null,
+          createdAt: now(),
+        }),
+      );
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("worker-cleanup-worker-create"),
+          threadId: workerId,
+          projectId,
+          title: "Worker",
+          modelSelection: supervisor.modelSelection,
+          runtimeMode: supervisor.runtimeMode,
+          interactionMode: supervisor.interactionMode,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            role: "worker",
+            parent: { environmentId, threadId: specialistId },
+            team: {
+              projectId,
+              threadId: workerId,
+              role: "worker",
+              parentThreadId: specialistId,
+              packageId: "worker-cleanup-package",
+              goal: "Finish reviewed source",
+              createdAt: now(),
+            },
+          },
+          branch: workerBranch,
+          worktreePath: workerPath,
+          createdAt: now(),
+        }),
+      );
+
+      const archive = (commandId: string) =>
+        system.run(
+          system.engine.dispatch({
+            type: "thread.archive",
+            commandId: CommandId.make(commandId),
+            threadId: workerId,
+          }),
+        );
+      await expect(archive("worker-cleanup-archive-active")).rejects.toThrow();
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.delete",
+          commandId: CommandId.make("worker-cleanup-worker-delete"),
+          threadId: workerId,
+        }),
+      );
+      await expect(archive("worker-cleanup-archive-no-receipt")).rejects.toThrow();
+
+      await system.run(system.sql`
+        INSERT INTO workjet_worker_cleanup_receipts (
+          thread_id, worktree_path, branch_ref, merged_head_oid,
+          merged_change_request_url, status, verified_at_ms, completed_at_ms
+        ) VALUES (
+          ${workerId}, ${workerPath}, ${workerBranch}, ${"a".repeat(40)},
+          ${"https://example.test/pull/1"}, 'verified', 1, NULL
+        )
+      `);
+      await expect(archive("worker-cleanup-archive-incomplete")).rejects.toThrow();
+      await system.run(system.sql`
+        UPDATE workjet_worker_cleanup_receipts
+        SET status = 'complete', completed_at_ms = 2, branch_ref = ${"workjet/worker/wrong"}
+        WHERE thread_id = ${workerId}
+      `);
+      await expect(archive("worker-cleanup-archive-wrong-ref")).rejects.toThrow();
+      await system.run(system.sql`
+        UPDATE workjet_worker_cleanup_receipts
+        SET branch_ref = ${workerBranch}
+        WHERE thread_id = ${workerId}
+      `);
+      await archive("worker-cleanup-archive-complete");
+      const worker = (await system.readModel()).threads.find((thread) => thread.id === workerId);
+      expect(worker?.deletedAt).not.toBeNull();
+      expect(worker?.archivedAt).not.toBeNull();
+      await expect(
+        system.run(
+          system.engine.dispatch({
+            type: "thread.unarchive",
+            commandId: CommandId.make("worker-cleanup-unarchive-deleted"),
+            threadId: workerId,
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("fences provider turn starts against thread and forced-project deletion", async () => {
     for (const deletion of ["thread", "project"] as const) {
       const system = await createOrchestrationSystem();

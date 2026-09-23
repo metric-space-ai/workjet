@@ -27,11 +27,13 @@ const create = {
 const apply = Effect.fn("test.applyTeamCommand")(function* (
   model: OrchestrationReadModel,
   command: OrchestrationCommand,
+  workerCleanupComplete = false,
 ) {
   const result = yield* decideOrchestrationCommand({
     readModel: model,
     command,
     environmentId: EnvironmentId.make("local"),
+    workerCleanupComplete,
   });
   const events = (Array.isArray(result) ? result : [result]) as ReadonlyArray<
     Omit<OrchestrationEvent, "sequence">
@@ -181,11 +183,31 @@ describe("durable project teams", () => {
         },
       });
       expect(localWorker.state.threads).toHaveLength(3);
-      const archivedWorker = yield* apply(localWorker.state, {
+      const archiveWorker = {
         type: "thread.archive",
         commandId: CommandId.make("archive-worker"),
         threadId: workerId,
+      } as const;
+      expect((yield* Effect.exit(apply(localWorker.state, archiveWorker)))._tag).toBe("Failure");
+      expect((yield* Effect.exit(apply(localWorker.state, archiveWorker, true)))._tag).toBe(
+        "Failure",
+      );
+      const deletedWorker = yield* apply(localWorker.state, {
+        type: "thread.delete",
+        commandId: CommandId.make("delete-worker"),
+        threadId: workerId,
       });
+      expect((yield* Effect.exit(apply(deletedWorker.state, archiveWorker)))._tag).toBe("Failure");
+      const archivedWorker = yield* apply(deletedWorker.state, archiveWorker, true);
+      expect(
+        (yield* Effect.exit(
+          apply(archivedWorker.state, {
+            type: "thread.unarchive",
+            commandId: CommandId.make("unarchive-deleted-worker"),
+            threadId: workerId,
+          }),
+        ))._tag,
+      ).toBe("Failure");
       const archivedParent = yield* apply(archivedWorker.state, {
         type: "thread.archive",
         commandId: CommandId.make("archive-specialist"),

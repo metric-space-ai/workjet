@@ -254,10 +254,42 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           }
         }
 
+        // A worker may be archived only after deletion has fenced new turns
+        // and the exact checkout/branch has a completed merge-cleanup receipt.
+        // A completed receipt is immutable and never inferred from missing Git files.
+        let workerCleanupComplete = false;
+        if (envelope.command.type === "thread.archive") {
+          const thread = commandReadModel.threads.find(
+            (item) => item.id === envelope.command.threadId,
+          );
+          if (
+            thread?.workjetConfig.schemaVersion === 2 &&
+            thread.workjetConfig.team?.role === "worker" &&
+            thread.deletedAt !== null &&
+            thread.worktreePath !== null &&
+            thread.branch !== null
+          ) {
+            const receipts = yield* sql<{
+              readonly worktreePath: string;
+              readonly branchRef: string;
+            }>`
+              SELECT worktree_path AS "worktreePath", branch_ref AS "branchRef"
+              FROM workjet_worker_cleanup_receipts
+              WHERE thread_id = ${thread.id} AND status = 'complete'
+              LIMIT 1
+            `;
+            workerCleanupComplete = receipts.some(
+              (receipt) =>
+                receipt.worktreePath === thread.worktreePath && receipt.branchRef === thread.branch,
+            );
+          }
+        }
+
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
           environmentId,
+          workerCleanupComplete,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>

@@ -60,6 +60,7 @@ export interface ProjectionThreadWorktreeCleanupContext {
   readonly workjetRole: WorkjetThreadRole;
   readonly branch: string | null;
   readonly worktreePath: string | null;
+  readonly archivedAt: string | null;
 }
 
 export interface ProjectionFullThreadDiffContext {

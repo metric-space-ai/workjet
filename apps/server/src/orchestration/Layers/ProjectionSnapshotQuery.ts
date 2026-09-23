@@ -192,6 +192,7 @@ const ProjectionThreadWorktreeCleanupRowSchema = Schema.Struct({
   workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
+  archivedAt: Schema.NullOr(Schema.String),
 });
 const DeletedWorkerWorktreeCleanupPageInput = Schema.Struct({
   afterThreadId: Schema.NullOr(ThreadId),
@@ -959,7 +960,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           projects.workspace_root AS "workspaceRoot",
           threads.workjet_config_json AS "workjetConfig",
           threads.branch,
-          threads.worktree_path AS "worktreePath"
+          threads.worktree_path AS "worktreePath",
+          threads.archived_at AS "archivedAt"
         FROM projection_threads AS threads
         INNER JOIN projection_projects AS projects
           ON projects.project_id = threads.project_id
@@ -2361,6 +2363,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             workjetRole: row.workjetConfig.role,
             branch: row.branch,
             worktreePath: row.worktreePath,
+            archivedAt: row.archivedAt,
           })),
         ),
       );

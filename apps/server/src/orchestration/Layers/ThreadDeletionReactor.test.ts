@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProjectId,
   ThreadId,
+  type OrchestrationCommand,
   type OrchestrationEvent,
   type WorkjetThreadRole,
 } from "@workjet/contracts";
@@ -104,6 +105,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly initialBranchPresent?: boolean;
     readonly advanceBranchAfterDeleteFailure?: boolean;
     readonly failStopProvider?: boolean;
+    readonly failArchiveOnce?: boolean;
     readonly failProviderLookup?: boolean;
     readonly failCleanupContextFor?: ThreadId;
     readonly mergeState?: "open" | "closed" | "merged";
@@ -112,6 +114,9 @@ describe("worker worktree cleanup on thread.deleted", () => {
   }) => {
     const removals: Array<{ readonly cwd: string; readonly path: string }> = [];
     const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
+    const archives: Array<{ readonly commandId: string; readonly threadId: ThreadId }> = [];
+    const archiveAttempts: Array<{ readonly commandId: string; readonly threadId: ThreadId }> = [];
+    const archived = new Set<ThreadId>();
     const retryPages: Array<ThreadId | null> = [];
     const providerQueries: Array<{ readonly headSelector: string; readonly state: string }> = [];
     const gitFailure = { _tag: "GitCommandError", detail: "downstream git secret" } as const;
@@ -136,6 +141,19 @@ describe("worker worktree cleanup on thread.deleted", () => {
       streamDomainEvents: Stream.fromArray(input.events).pipe(
         Stream.onEnd(Effect.sync(() => signalConsumed())),
       ),
+      dispatch: (command: OrchestrationCommand) =>
+        Effect.suspend(() => {
+          if (command.type === "thread.archive") {
+            const attempt = { commandId: command.commandId, threadId: command.threadId };
+            archiveAttempts.push(attempt);
+            if (input.failArchiveOnce && archiveAttempts.length === 1) {
+              return Effect.fail(new Error("archive dispatch interrupted"));
+            }
+            archives.push(attempt);
+            archived.add(command.threadId);
+          }
+          return Effect.succeed({ sequence: 1 });
+        }),
     } as unknown as OrchestrationEngineService["Service"]);
     const providerLayer = Layer.succeed(ProviderService, {
       stopSession: () =>
@@ -158,6 +176,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
                 workjetRole: fixture.workjetRole,
                 branch: fixture.branch,
                 worktreePath: fixture.worktreePath,
+                archivedAt: archived.has(threadId) ? "2026-08-18T00:00:01.000Z" : null,
               }),
         );
       },
@@ -332,6 +351,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
     return {
       removals,
       branchDeletions,
+      archives,
+      archiveAttempts,
       run,
       reconcile,
       reconcileTwoCycles,
@@ -367,6 +388,12 @@ describe("worker worktree cleanup on thread.deleted", () => {
       expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
       expect(harness.branchDeletions).toEqual([{ cwd: workspaceRoot, refName: workerRefName }]);
       expect(harness.providerQueries).toEqual([{ headSelector: workerRefName, state: "merged" }]);
+      expect(harness.archives).toEqual([
+        {
+          commandId: `workjet-worker-archive-${workerThreadId}`,
+          threadId: workerThreadId,
+        },
+      ]);
     });
   });
 
@@ -433,6 +460,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
         yield* harness.run;
         expect(harness.removals).toEqual([]);
         expect(harness.branchDeletions).toEqual([]);
+        expect(harness.archives).toEqual([]);
       }
     }),
   );
@@ -495,11 +523,41 @@ describe("worker worktree cleanup on thread.deleted", () => {
     return Effect.gen(function* () {
       yield* harness.reconcile;
       expect(harness.removals).toEqual([]);
+      expect(harness.archives).toEqual([]);
       harness.setMergeState("merged");
       yield* harness.reconcile;
       expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+      expect(harness.archives).toHaveLength(1);
       yield* harness.reconcile;
       expect(harness.removals).toHaveLength(1);
+      expect(harness.archives).toHaveLength(1);
+    });
+  });
+
+  it.effect("retries archival with the same command identity after interrupted dispatch", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [workerThreadId],
+      failArchiveOnce: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");
+      expect(harness.archives).toEqual([]);
+      yield* harness.reconcile;
+      expect(harness.archives).toHaveLength(1);
+      expect(harness.archiveAttempts).toEqual([
+        { commandId: `workjet-worker-archive-${workerThreadId}`, threadId: workerThreadId },
+        { commandId: `workjet-worker-archive-${workerThreadId}`, threadId: workerThreadId },
+      ]);
     });
   });
 
@@ -643,8 +701,10 @@ describe("worker worktree cleanup on thread.deleted", () => {
       return Effect.gen(function* () {
         yield* harness.reconcile;
         expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+        expect(harness.archives).toEqual([]);
         yield* harness.reconcile;
         expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");
+        expect(harness.archives).toHaveLength(1);
         expect(harness.removals).toHaveLength(1);
         expect(harness.branchDeletions).toHaveLength(1);
       });

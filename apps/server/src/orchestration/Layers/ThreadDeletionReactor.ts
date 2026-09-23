@@ -1,4 +1,4 @@
-import type { OrchestrationEvent, ThreadId } from "@workjet/contracts";
+import { CommandId, type OrchestrationEvent, type ThreadId } from "@workjet/contracts";
 import { makeDrainableWorker } from "@workjet/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -112,13 +112,40 @@ const make = Effect.gen(function* () {
       threadId,
     });
 
+  const archiveCleanedWorker = (threadId: ThreadId) =>
+    logCleanupCauseUnlessInterrupted({
+      effect: Effect.gen(function* () {
+        const receipt = yield* cleanupReceipts.get(threadId);
+        if (Option.isNone(receipt) || receipt.value.status !== "complete") return;
+        const context = yield* query.getThreadWorktreeCleanupContext(threadId);
+        if (
+          Option.isNone(context) ||
+          context.value.workjetRole !== "worker" ||
+          context.value.archivedAt !== null ||
+          context.value.worktreePath !== receipt.value.worktreePath ||
+          context.value.branch !== receipt.value.branchRef
+        )
+          return;
+        yield* orchestrationEngine.dispatch({
+          type: "thread.archive",
+          commandId: CommandId.make(`workjet-worker-archive-${threadId}`),
+          threadId,
+        });
+      }),
+      message: "verified worker cleanup could not archive its deleted thread",
+      threadId,
+    });
+
   const processThreadDeleted = (event: ThreadDeletedEvent) =>
     cleanupMutex.withPermit(
       Effect.gen(function* () {
         const { threadId } = event.payload;
         const providerStopped = yield* stopProviderSession(threadId);
         yield* closeThreadTerminals(threadId);
-        if (providerStopped) yield* removeWorkerWorktree(threadId);
+        if (providerStopped) {
+          yield* removeWorkerWorktree(threadId);
+          yield* archiveCleanedWorker(threadId);
+        }
       }),
     );
 
@@ -178,11 +205,18 @@ const make = Effect.gen(function* () {
                 }
                 if (!branchExists.value) {
                   const receipt = yield* cleanupReceipts.get(threadId);
-                  if (Option.isNone(receipt) || receipt.value.status === "complete") return;
+                  if (Option.isNone(receipt)) return;
+                  if (receipt.value.status === "complete") {
+                    yield* archiveCleanedWorker(threadId);
+                    return;
+                  }
                 }
               }
               const providerStopped = yield* stopProviderSession(threadId);
-              if (providerStopped) yield* removeWorkerWorktree(threadId);
+              if (providerStopped) {
+                yield* removeWorkerWorktree(threadId);
+                yield* archiveCleanedWorker(threadId);
+              }
             }),
           );
         }

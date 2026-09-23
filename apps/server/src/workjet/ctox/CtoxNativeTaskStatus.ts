@@ -4,6 +4,7 @@ import { CtoxNativeRequestError, type NativeTaskReference } from "./CtoxNativeRe
 
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 const Status = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
+const NativeProjectPayload = Schema.Struct({ project_id: Id });
 const CommandStatusResponse = Schema.Struct({
   ok: Schema.Literal(true),
   record: Schema.Struct({
@@ -16,6 +17,7 @@ const CommandStatusResponse = Schema.Struct({
       module: Schema.optionalKey(Id),
       record_id: Schema.optionalKey(Schema.NullOr(Id)),
       command_type: Schema.optionalKey(Id),
+      payload: Schema.optionalKey(Schema.Unknown),
       status: Status,
       task_status: Schema.optionalKey(Status),
       status_note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(16_000))),
@@ -68,15 +70,26 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
   // App development commands belong to the native Creator module; their
   // record_id identifies the app. General delegation belongs to its own module.
   const request = reference.request;
-  const nativeModule = request.operation === "delegate_task" ? request.module_id : "creator";
+  const nativeModule =
+    request.operation === "start_project_task"
+      ? "ctox"
+      : request.operation === "delegate_task"
+        ? request.module_id
+        : "creator";
   const commandType =
-    request.operation === "delegate_task"
-      ? "ctox.delegate_task"
-      : request.operation === "create_app"
-        ? "ctox.business_os.app.create"
-        : "ctox.business_os.app.modify";
+    request.operation === "start_project_task"
+      ? "business_os.chat.task"
+      : request.operation === "delegate_task"
+        ? "ctox.delegate_task"
+        : request.operation === "create_app"
+          ? "ctox.business_os.app.create"
+          : "ctox.business_os.app.modify";
   const recordId =
-    request.operation === "delegate_task" ? (request.record_id ?? null) : request.module_id;
+    request.operation === "start_project_task"
+      ? null
+      : request.operation === "delegate_task"
+        ? (request.record_id ?? null)
+        : request.module_id;
   if (
     !reference.commandId ||
     record.id !== reference.commandId ||
@@ -85,6 +98,11 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
     (record.data.module !== undefined && record.data.module !== nativeModule) ||
     (record.data.record_id !== undefined && record.data.record_id !== recordId) ||
     (record.data.command_type !== undefined && record.data.command_type !== commandType) ||
+    (request.operation === "start_project_task" &&
+      (record.data.module !== nativeModule ||
+        record.data.command_type !== commandType ||
+        !Schema.is(NativeProjectPayload)(record.data.payload) ||
+        record.data.payload.project_id !== request.project_id)) ||
     (record.status !== undefined && record.status !== record.data.status)
   ) {
     return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });

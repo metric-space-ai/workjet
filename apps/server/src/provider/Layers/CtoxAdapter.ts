@@ -26,12 +26,11 @@ export const CTOX_NATIVE_MODEL = "instance-default";
 const provider = ProviderDriverKind.make("ctox");
 type NativeClient = ReturnType<typeof makeCtoxNativeTaskClient>;
 type NativeTurn = NonNullable<Effect.Success<ReturnType<NativeClient["latestNativeTurn"]>>>;
-export interface CtoxTaskScope {
-  readonly module_id: string;
-  readonly record_id?: string;
-}
+export type CtoxTaskScope =
+  | { readonly module_id: string; readonly record_id?: string; readonly project_id?: never }
+  | { readonly project_id: string; readonly module_id?: never; readonly record_id?: never };
 const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
-const Cursor = Schema.Struct({
+const ModuleCursor = Schema.Struct({
   kind: Schema.Literal("ctox-native"),
   version: Schema.Literal(1),
   instanceId: Schema.String,
@@ -39,6 +38,14 @@ const Cursor = Schema.Struct({
   moduleId: Schema.String,
   recordId: Schema.NullOr(Schema.String),
 });
+const ProjectCursor = Schema.Struct({
+  kind: Schema.Literal("ctox-native-project"),
+  version: Schema.Literal(1),
+  instanceId: Schema.String,
+  connectionId: Schema.String,
+  projectId: Schema.String,
+});
+const Cursor = Schema.Union([ModuleCursor, ProjectCursor]);
 const decodeCursor = Schema.decodeUnknownEffect(Cursor);
 const hash = (text: string) => NodeCrypto.createHash("sha256").update(text).digest("hex");
 const turnIdFor = (commandId: string) => TurnId.make(`ctox_${hash(commandId)}`);
@@ -97,14 +104,29 @@ export const makeCtoxAdapter = (options: {
       connectionId: options.connectionId,
       instanceId: options.ctoxInstanceId,
     });
-    const cursorFor = (task: CtoxTaskScope) => ({
-      kind: "ctox-native" as const,
-      version: 1 as const,
-      instanceId: options.ctoxInstanceId,
-      connectionId: options.connectionId,
-      moduleId: task.module_id,
-      recordId: task.record_id ?? null,
-    });
+    const cursorFor = (task: CtoxTaskScope) =>
+      task.project_id !== undefined
+        ? {
+            kind: "ctox-native-project" as const,
+            version: 1 as const,
+            instanceId: options.ctoxInstanceId,
+            connectionId: options.connectionId,
+            projectId: task.project_id,
+          }
+        : {
+            kind: "ctox-native" as const,
+            version: 1 as const,
+            instanceId: options.ctoxInstanceId,
+            connectionId: options.connectionId,
+            moduleId: task.module_id,
+            recordId: task.record_id ?? null,
+          };
+    const sameScope = (left: CtoxTaskScope, right: CtoxTaskScope) =>
+      left.project_id !== undefined
+        ? right.project_id === left.project_id
+        : right.project_id === undefined &&
+          right.module_id === left.module_id &&
+          (right.record_id ?? null) === (left.record_id ?? null);
     const emit = (threadId: ThreadId, body: EventBody) =>
       Effect.gen(function* () {
         const encoded = yield* encode(body).pipe(Effect.orDie);
@@ -127,11 +149,14 @@ export const makeCtoxAdapter = (options: {
     };
     const checkScope = (entry: Entry, turn: NativeTurn) => {
       const request = turn.reference.request;
-      return request.operation === "delegate_task" &&
-        request.module_id === entry.taskScope.module_id &&
-        (request.record_id ?? null) === (entry.taskScope.record_id ?? null)
+      return (request.operation === "start_project_task" &&
+        request.project_id === entry.taskScope.project_id) ||
+        (request.operation === "delegate_task" &&
+          entry.taskScope.project_id === undefined &&
+          request.module_id === entry.taskScope.module_id &&
+          (request.record_id ?? null) === (entry.taskScope.record_id ?? null))
         ? Effect.void
-        : Effect.fail(failure("resume", "The native turn belongs to another module or record."));
+        : Effect.fail(failure("resume", "The native turn belongs to another project or object."));
     };
     const observe = (threadId: ThreadId, entry: Entry, turn: NativeTurn) =>
       Effect.gen(function* () {
@@ -298,20 +323,22 @@ export const makeCtoxAdapter = (options: {
             if (
               resumed.instanceId !== cursor.instanceId ||
               resumed.connectionId !== cursor.connectionId ||
-              resumed.moduleId !== cursor.moduleId ||
-              resumed.recordId !== cursor.recordId
+              resumed.kind !== cursor.kind ||
+              (resumed.kind === "ctox-native" &&
+                cursor.kind === "ctox-native" &&
+                (resumed.moduleId !== cursor.moduleId || resumed.recordId !== cursor.recordId)) ||
+              (resumed.kind === "ctox-native-project" &&
+                cursor.kind === "ctox-native-project" &&
+                resumed.projectId !== cursor.projectId)
             )
               return yield* failure(
                 "resume",
-                "The native session cannot move to another instance, module or record.",
+                "The native session cannot move to another instance, project or object.",
               );
           }
           const existing = sessions.get(input.threadId);
           if (existing) {
-            if (
-              existing.taskScope.module_id !== taskScope.module_id ||
-              (existing.taskScope.record_id ?? null) !== (taskScope.record_id ?? null)
-            )
+            if (!sameScope(existing.taskScope, taskScope))
               return yield* failure(
                 "startSession",
                 "An open native session cannot change its task scope.",
@@ -395,11 +422,24 @@ export const makeCtoxAdapter = (options: {
               }
             }
             const submitted = yield* options.client
-              .submitTurn(scopeFor(input.threadId), input.requestId!, {
-                ...entry.taskScope,
-                title: input.input!.trim().split("\n")[0]!.slice(0, 200),
-                objective: input.input!,
-              })
+              .submitTurn(
+                scopeFor(input.threadId),
+                input.requestId!,
+                entry.taskScope.project_id !== undefined
+                  ? {
+                      project_id: entry.taskScope.project_id,
+                      title: input.input!.trim().split("\n")[0]!.slice(0, 200),
+                      instruction: input.input!,
+                    }
+                  : {
+                      module_id: entry.taskScope.module_id,
+                      ...(entry.taskScope.record_id === undefined
+                        ? {}
+                        : { record_id: entry.taskScope.record_id }),
+                      title: input.input!.trim().split("\n")[0]!.slice(0, 200),
+                      objective: input.input!,
+                    },
+              )
               .pipe(Effect.mapError(mapFailure("sendTurn")));
             const native = yield* options.client
               .latestNativeTurn(scopeFor(input.threadId))

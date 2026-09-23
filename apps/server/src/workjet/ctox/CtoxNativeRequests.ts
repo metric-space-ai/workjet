@@ -13,10 +13,18 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type { CtoxMcpTarget } from "./CtoxMcpTransport.ts";
 
-export type NativeTaskRequest = Extract<
+type ExistingNativeTaskRequest = Extract<
   WorkjetCtoxBusinessOsInput["request"],
   { readonly operation: "create_app" | "modify_app" | "delegate_task" }
 > & { readonly idempotency_key: string };
+const NativeProjectTaskRequest = Schema.Struct({
+  operation: Schema.Literal("start_project_task"),
+  project_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  instruction: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16_000)),
+  idempotency_key: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/)),
+});
+export type NativeTaskRequest = ExistingNativeTaskRequest | typeof NativeProjectTaskRequest.Type;
 
 export interface CtoxNativeRequestIdentity {
   readonly threadId: ThreadId;
@@ -51,7 +59,9 @@ export class CtoxNativeRequestError extends Schema.TaggedErrorClass<CtoxNativeRe
 const failure = (reason: CtoxNativeRequestError["reason"]) =>
   new CtoxNativeRequestError({ reason });
 const unavailable = () => failure("native-request-store-unavailable");
-const IntentCodec = Schema.fromJsonString(WorkjetCtoxBusinessOsInput);
+const IntentCodec = Schema.fromJsonString(
+  Schema.Union([WorkjetCtoxBusinessOsInput, Schema.Struct({ request: NativeProjectTaskRequest })]),
+);
 const encodeIntent = Schema.encodeEffect(IntentCodec);
 const decodeIntent = Schema.decodeUnknownEffect(IntentCodec);
 const Rows = Schema.Array(
@@ -67,7 +77,7 @@ const Rows = Schema.Array(
     receivedAt: Schema.NullOr(Schema.Number),
   }),
 );
-const Receipt = Schema.Struct({
+const ExistingReceipt = Schema.Struct({
   module_id: Schema.String,
   command_type: Schema.String,
   command_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
@@ -75,6 +85,13 @@ const Receipt = Schema.Struct({
     Schema.NullOr(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
   ),
 });
+const NativeProjectReceipt = Schema.Struct({
+  schema: Schema.Literal("ctox.native_project_task.v1"),
+  project_id: Schema.String,
+  command_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  task_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+});
+const Receipt = Schema.Union([ExistingReceipt, NativeProjectReceipt]);
 
 const NativeTurns = Schema.Array(
   Schema.Struct({ requestId: Schema.String, requestKey: Schema.String }),
@@ -144,17 +161,25 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => failure("native-response-invalid")),
     );
     if (
-      (request.operation !== "create_app" &&
-        request.operation !== "modify_app" &&
-        request.operation !== "delegate_task") ||
-      receipt.module_id !== request.module_id ||
-      receipt.command_type !==
-        (request.operation === "create_app"
-          ? "ctox.business_os.app.create"
-          : request.operation === "modify_app"
-            ? "ctox.business_os.app.modify"
-            : "ctox.delegate_task")
+      request.operation !== "create_app" &&
+      request.operation !== "modify_app" &&
+      request.operation !== "delegate_task" &&
+      request.operation !== "start_project_task"
     ) {
+      return yield* failure("native-response-invalid");
+    }
+    const validReceipt =
+      request.operation === "start_project_task"
+        ? "project_id" in receipt && receipt.project_id === request.project_id
+        : "module_id" in receipt &&
+          receipt.module_id === request.module_id &&
+          receipt.command_type ===
+            (request.operation === "create_app"
+              ? "ctox.business_os.app.create"
+              : request.operation === "modify_app"
+                ? "ctox.business_os.app.modify"
+                : "ctox.delegate_task");
+    if (!validReceipt) {
       return yield* failure("native-response-invalid");
     }
     const now = yield* Clock.currentTimeMillis;
@@ -177,7 +202,8 @@ const make = Effect.gen(function* () {
     if (
       (request.operation !== "create_app" &&
         request.operation !== "modify_app" &&
-        request.operation !== "delegate_task") ||
+        request.operation !== "delegate_task" &&
+        request.operation !== "start_project_task") ||
       !request.idempotency_key
     )
       return yield* unavailable();

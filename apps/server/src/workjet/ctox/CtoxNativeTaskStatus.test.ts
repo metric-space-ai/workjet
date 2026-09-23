@@ -103,6 +103,43 @@ it.effect("reads Creator-owned app commands using the app record identity", () =
   }),
 );
 
+it.effect("accepts only the bound native project's CTOX chat command status", () =>
+  Effect.gen(function* () {
+    const projectReference: NativeTaskReference = {
+      ...reference,
+      request: {
+        operation: "start_project_task",
+        project_id: "logical-project-a",
+        title: "Native project work",
+        instruction: "Review this project",
+        idempotency_key: "request-project",
+      },
+    };
+    const data = {
+      module: "ctox",
+      command_type: "business_os.chat.task",
+      record_id: null,
+      payload: { project_id: "logical-project-a" },
+    };
+    expect(
+      (yield* decodeCtoxNativeTaskStatus(projectReference, response("running", data))).state,
+    ).toBe("running");
+    for (const wrong of [
+      { ...data, module: "inventory" },
+      { ...data, command_type: "ctox.delegate_task" },
+      { ...data, record_id: "other-record" },
+      { ...data, payload: { project_id: "logical-project-b" } },
+      { ...data, payload: null },
+    ]) {
+      expect(
+        yield* Effect.flip(
+          decodeCtoxNativeTaskStatus(projectReference, response("running", wrong)),
+        ),
+      ).toMatchObject({ reason: "native-response-invalid" });
+    }
+  }),
+);
+
 it.effect("refuses status from another command, task, module or collection", () =>
   Effect.gen(function* () {
     const good = response("completed");

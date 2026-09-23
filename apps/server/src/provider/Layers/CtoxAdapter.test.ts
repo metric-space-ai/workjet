@@ -18,7 +18,7 @@ import {
   type makeCtoxMcpTransport,
 } from "../../workjet/ctox/CtoxMcpTransport.ts";
 import { makeCtoxNativeTaskClient } from "../../workjet/ctox/CtoxNativeTaskClient.ts";
-import { CTOX_NATIVE_MODEL, makeCtoxAdapter } from "./CtoxAdapter.ts";
+import { CTOX_NATIVE_MODEL, makeCtoxAdapter, type CtoxTaskScope } from "./CtoxAdapter.ts";
 
 const threadId = ThreadId.make("native-thread");
 const instanceId = ProviderInstanceId.make("ctox-office");
@@ -27,6 +27,8 @@ const scope = { threadId, connectionId, instanceId: "instance-office" };
 const target = { endpoint: "https://mcp.ctox.dev/mcp/instance-office", token: "test-token" };
 const TaskArgs = Schema.Struct({ idempotency_key: Schema.String, module_id: Schema.String });
 const decodeArgs = Schema.decodeUnknownEffect(TaskArgs);
+const ProjectArgs = Schema.Struct({ idempotency_key: Schema.String, project_id: Schema.String });
+const decodeProjectArgs = Schema.decodeUnknownEffect(ProjectArgs);
 const startInput = {
   threadId,
   providerInstanceId: instanceId,
@@ -35,7 +37,7 @@ const startInput = {
 };
 const turnInput = { threadId, requestId: "command:turn-1", input: "Review inventory" };
 
-const fixture = (loseFirstWrite = false) =>
+const fixture = (loseFirstWrite = false, taskScope: CtoxTaskScope = { module_id: "inventory" }) =>
   Effect.gen(function* () {
     yield* migration60;
     yield* migration61;
@@ -50,27 +52,36 @@ const fixture = (loseFirstWrite = false) =>
     };
     const tasks = new Map<
       string,
-      { module_id: string; command_type: string; command_id: string; task_id: string }
+      {
+        module_id: string;
+        command_type: string;
+        command_id: string;
+        task_id: string;
+        project_id?: string;
+      }
     >();
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
       probe: () => Effect.succeed(undefined),
       callTool: (_, name, args) =>
         Effect.gen(function* () {
-          if (name === "business_os.execute_action") {
+          if (name === "business_os.execute_action" || name === "business_os.start_project_task") {
             state.writes += 1;
             if (state.duringWrite) {
               const during = state.duringWrite;
               state.duringWrite = undefined;
               yield* during;
             }
-            const data = yield* decodeArgs(args).pipe(Effect.orDie);
+            const data = yield* (
+              name === "business_os.start_project_task" ? decodeProjectArgs(args) : decodeArgs(args)
+            ).pipe(Effect.orDie);
             let task = tasks.get(data.idempotency_key);
             if (!task) {
               task = {
-                module_id: data.module_id,
-                command_type: "ctox.delegate_task",
+                module_id: "project_id" in data ? "ctox" : data.module_id,
+                command_type: "project_id" in data ? "business_os.chat.task" : "ctox.delegate_task",
                 command_id: `cmd-${tasks.size}`,
                 task_id: `task-${tasks.size}`,
+                ...("project_id" in data ? { project_id: data.project_id } : {}),
               };
               tasks.set(data.idempotency_key, task);
             }
@@ -78,7 +89,16 @@ const fixture = (loseFirstWrite = false) =>
               state.loseFirstWrite = false;
               return yield* new CtoxMcpTransportError({ reason: "connection-unavailable" });
             }
-            return { structuredContent: task };
+            return {
+              structuredContent: task.project_id
+                ? {
+                    schema: "ctox.native_project_task.v1",
+                    project_id: task.project_id,
+                    command_id: task.command_id,
+                    task_id: task.task_id,
+                  }
+                : task,
+            };
           }
           expect(name).toBe("business_os.get_command_status");
           const task = [...tasks.values()].find((task) => task.command_id === args.command_id);
@@ -94,6 +114,8 @@ const fixture = (loseFirstWrite = false) =>
                   command_id: task.command_id,
                   task_id: task.task_id,
                   module: task.module_id,
+                  command_type: task.command_type,
+                  ...(task.project_id ? { payload: { project_id: task.project_id } } : {}),
                   status: state.status,
                   ...(state.status === "completed" ? { result: "Native review completed" } : {}),
                 },
@@ -114,7 +136,7 @@ const fixture = (loseFirstWrite = false) =>
         ctoxInstanceId: scope.instanceId,
         connectionId,
         client,
-        resolveTaskScope: () => Effect.succeed({ module_id: "inventory" }),
+        resolveTaskScope: () => Effect.succeed(taskScope),
       });
       return { adapter, client };
     });
@@ -191,6 +213,51 @@ it.effect("recovers the accepted task after a lost response without creating a s
     });
     yield* second.adapter.stopAll();
   }).pipe(Effect.scoped, Effect.provide(NodeSqliteClient.layerMemory())),
+);
+
+it.effect(
+  "keeps a native project scope through lost-response recovery and refuses retargeting",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture(true, { project_id: "logical-project-a" });
+      const first = yield* test.open;
+      const session = yield* first.adapter.startSession(startInput);
+      expect(session.resumeCursor).toMatchObject({
+        kind: "ctox-native-project",
+        projectId: "logical-project-a",
+      });
+      expect(yield* Effect.flip(first.adapter.sendTurn(turnInput))).toMatchObject({
+        _tag: "ProviderAdapterRequestError",
+      });
+      expect(test.tasks.size).toBe(1);
+      expect((yield* first.client.latestNativeTurn(scope))?.reference.request).toMatchObject({
+        operation: "start_project_task",
+        project_id: "logical-project-a",
+      });
+      yield* first.adapter.stopAll();
+      const second = yield* test.open;
+      yield* second.adapter.startSession({ ...startInput, resumeCursor: session.resumeCursor });
+      expect(test.state.writes).toBe(2);
+      expect(test.tasks.size).toBe(1);
+      expect(yield* second.client.latestNativeTurn(scope)).toMatchObject({
+        reference: { commandId: "cmd-0", taskId: "task-0" },
+      });
+      expect(
+        yield* Effect.flip(
+          second.adapter.startSession({
+            ...startInput,
+            resumeCursor: {
+              kind: "ctox-native-project",
+              version: 1,
+              instanceId: scope.instanceId,
+              connectionId,
+              projectId: "logical-project-b",
+            },
+          }),
+        ),
+      ).toMatchObject({ _tag: "ProviderAdapterRequestError" });
+      yield* second.adapter.stopAll();
+    }).pipe(Effect.scoped, Effect.provide(NodeSqliteClient.layerMemory())),
 );
 
 it.effect(

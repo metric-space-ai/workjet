@@ -29,6 +29,49 @@ const receipt = {
 const open = CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
 
 describe("durable native CTOX request identity", () => {
+  it.effect("pins a native project task and accepts only that project's receipt", () =>
+    Effect.gen(function* () {
+      yield* migration60;
+      const requests = yield* open;
+      const project: NativeTaskRequest = {
+        operation: "start_project_task",
+        project_id: "logical-project-a",
+        title: "Native project work",
+        instruction: "Review this project",
+        idempotency_key: identity.requestKey,
+      };
+      const nativeKey = yield* requests.prepare(identity, project, target);
+      const restarted = yield* open;
+      expect((yield* restarted.get(identity)).request).toEqual(project);
+      expect(yield* restarted.prepare(identity, project, target)).toBe(nativeKey);
+      const projectReceipt = {
+        schema: "ctox.native_project_task.v1",
+        project_id: project.project_id,
+        command_id: "cmd-project-a",
+        task_id: "task-project-a",
+      };
+      expect(yield* Effect.flip(restarted.recordReceipt(identity, receipt))).toMatchObject({
+        reason: "native-response-invalid",
+      });
+      expect(
+        yield* Effect.flip(
+          restarted.recordReceipt(identity, { ...projectReceipt, project_id: "logical-project-b" }),
+        ),
+      ).toMatchObject({ reason: "native-response-invalid" });
+      yield* restarted.recordReceipt(identity, projectReceipt);
+      expect(yield* restarted.get(identity)).toMatchObject({
+        request: project,
+        commandId: projectReceipt.command_id,
+        taskId: projectReceipt.task_id,
+      });
+      expect(
+        yield* Effect.flip(
+          restarted.prepare(identity, { ...project, instruction: "Different work" }, target),
+        ),
+      ).toMatchObject({ reason: "native-request-conflict" });
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
   it.effect("recovers general native delegation and rejects an app-command receipt", () =>
     Effect.gen(function* () {
       yield* migration60;

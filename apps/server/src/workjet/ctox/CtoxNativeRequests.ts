@@ -198,6 +198,13 @@ const make = Effect.gen(function* () {
   ) {
     const row = yield* load(identity);
     const { request } = yield* decodeIntent(row.intentJson).pipe(Effect.mapError(unavailable));
+    if (
+      request.operation !== "create_app" &&
+      request.operation !== "modify_app" &&
+      request.operation !== "delegate_task" &&
+      request.operation !== "start_project_task" &&
+      request.operation !== "start_crew_execution"
+    ) return yield* failure("native-response-invalid");
     const receipt =
       request.operation === "start_crew_execution"
         ? yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(value).pipe(

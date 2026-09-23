@@ -393,9 +393,51 @@ export function makeCtoxNativeTaskClient(dependencies: {
     );
   });
 
+  /** Reissue the native capability for an already claimed, durably routed
+   * attempt. This does not start or replay a provider turn. The controller
+   * must separately prove the saved provider cursor before resuming it.
+   */
+  const reissueClaimedProjectOffer = Effect.fn(
+    "CtoxNativeTaskClient.reissueClaimedProjectOffer",
+  )(function* (identity: CtoxNativeRequestIdentity, attemptId: string) {
+    const reservation = yield* dependencies.requests.readCrewStart(identity, attemptId);
+    if (!reservation || !reservation.providerInstanceId || !reservation.providerThreadId)
+      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+    const reference = yield* dependencies.requests.get(identity);
+    if (
+      reference.request.operation !== "start_crew_execution" ||
+      reference.commandId !== reservation.commandId ||
+      reference.taskId !== reservation.taskId
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+    const observed = yield* readStatus(identity);
+    if (
+      observed.state === "completed" ||
+      observed.state === "failed" ||
+      observed.state === "cancelled" ||
+      observed.reference.taskId !== reservation.taskId
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+    const discovered = yield* discoverProjectOffers(identity, reservation.executorId);
+    const offer = discovered.offers.find((value) => value.attempt_id === attemptId);
+    if (
+      offer?.state !== "claimed" ||
+      offer.harness !== reference.request.harness ||
+      offer.deadline_ms <= (yield* Clock.currentTimeMillis)
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+    // CTOX's claim endpoint re-signs the same live claimed attempt. A changed
+    // actor, lease, command or Crew member fails in the native decoder below.
+    const claim = yield* claimProjectOffer(identity, reservation.executorId, attemptId);
+    if (claim.context.member_id !== reservation.memberId)
+      return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
+    return { identity, reservation, claim };
+  });
+
   return {
     prepareProjectExecution,
     prepareRecoveredProjectExecution,
+    reissueClaimedProjectOffer,
     submit,
     submitTurn,
     submitProjectTurn,

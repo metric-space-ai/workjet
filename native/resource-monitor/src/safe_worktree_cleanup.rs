@@ -147,11 +147,40 @@ mod unix {
         }
     }
 
-    fn remove_contents(fd: &OwnedFd) -> io::Result<()> {
+    fn require_same_device(fd: &OwnedFd, expected_dev: u64) -> io::Result<()> {
+        if identity(fd)?.0 != expected_dev {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "directory crosses a filesystem boundary",
+            ));
+        }
+        Ok(())
+    }
+
+    fn require_named_identity(
+        parent: &OwnedFd,
+        name: &CStr,
+        expected: (u64, u64),
+    ) -> io::Result<()> {
+        let named = open_dir_at(parent, name)?;
+        if identity(&named)? != expected {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "directory entry changed during removal",
+            ));
+        }
+        Ok(())
+    }
+
+    fn remove_contents(fd: &OwnedFd, expected_dev: u64) -> io::Result<()> {
+        require_same_device(fd, expected_dev)?;
         for name in entries(fd)? {
             match open_dir_at(fd, &name) {
                 Ok(child) => {
-                    remove_contents(&child)?;
+                    require_same_device(&child, expected_dev)?;
+                    let child_identity = identity(&child)?;
+                    remove_contents(&child, expected_dev)?;
+                    require_named_identity(fd, &name, child_identity)?;
                     unlink_at(fd, &name, libc::AT_REMOVEDIR)?;
                 }
                 Err(error) if matches!(error.raw_os_error(), Some(libc::ENOTDIR | libc::ELOOP)) => {
@@ -171,14 +200,16 @@ mod unix {
     ) -> io::Result<()> {
         let (parent, name) = parent_and_name(path)?;
         let target = open_dir_at(&parent, &name)?;
-        if identity(&target)? != (expected_dev, expected_ino) {
+        let expected = (expected_dev, expected_ino);
+        if identity(&target)? != expected {
             return Err(io::Error::new(
                 io::ErrorKind::PermissionDenied,
                 "directory identity changed",
             ));
         }
         before_contents();
-        remove_contents(&target)?;
+        remove_contents(&target, expected_dev)?;
+        require_named_identity(&parent, &name, expected)?;
         unlink_at(&parent, &name, libc::AT_REMOVEDIR)
     }
 
@@ -243,6 +274,24 @@ mod unix {
             assert!(outside.join("sentinel").exists());
             assert!(moved.exists());
             std::fs::remove_file(&target).unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[test]
+        fn swapped_checkout_directory_never_removes_replacement() {
+            let root = fixture("replacement");
+            let target = root.join("worker");
+            let moved = root.join("moved-worker");
+            std::fs::create_dir(&target).unwrap();
+            std::fs::write(target.join("owned"), b"merged").unwrap();
+            let metadata = std::fs::metadata(&target).unwrap();
+            let result = remove_with_hook(&target, metadata.dev(), metadata.ino(), || {
+                std::fs::rename(&target, &moved).unwrap();
+                std::fs::create_dir(&target).unwrap();
+            });
+            assert!(result.is_err());
+            assert!(target.is_dir());
+            assert!(moved.is_dir());
             std::fs::remove_dir_all(root).unwrap();
         }
 

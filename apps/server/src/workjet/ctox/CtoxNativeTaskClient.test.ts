@@ -145,3 +145,97 @@ it.effect(
       ).toMatchObject({ reason: "native-request-conflict" });
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );
+
+it.effect("replays a project task through the same native key after a lost response", () =>
+  Effect.gen(function* () {
+    yield* migration60;
+    yield* migration61;
+    const sent: string[] = [];
+    let loseResponse = true;
+    const projectTask = {
+      project_id: "logical-project-a",
+      title: "Project work",
+      instruction: "Review the project",
+    };
+    const receipt = {
+      schema: "ctox.native_project_task.v1",
+      project_id: projectTask.project_id,
+      command_id: "cmd-project-a",
+      task_id: "task-project-a",
+    };
+    const requests = yield* openRequests;
+    const transport: ReturnType<typeof makeCtoxMcpTransport> = {
+      probe: (_, tools, fields) =>
+        Effect.gen(function* () {
+          expect(tools).toEqual(["business_os.start_project_task"]);
+          expect(fields).toEqual({ "business_os.start_project_task": ["idempotency_key"] });
+          // The intent and turn link must survive even if discovery fails here.
+          expect(yield* requests.latestNativeTurn(scope).pipe(Effect.orDie)).toMatchObject({
+            requestId: "command:project-turn",
+            reference: {
+              commandId: null,
+              request: { operation: "start_project_task", project_id: projectTask.project_id },
+            },
+          });
+          return undefined;
+        }),
+      callTool: (_, name, args) =>
+        Effect.gen(function* () {
+          expect(name).toBe("business_os.start_project_task");
+          const key = yield* Schema.decodeUnknownEffect(
+            Schema.Struct({
+              project_id: Schema.Literal(projectTask.project_id),
+              idempotency_key: Schema.String,
+            }),
+          )(args).pipe(Effect.orDie);
+          sent.push(key.idempotency_key);
+          if (loseResponse) {
+            loseResponse = false;
+            return yield* new CtoxMcpTransportError({ reason: "connection-unavailable" });
+          }
+          return { structuredContent: receipt };
+        }),
+    };
+    const connections = {
+      resolveReadyTarget: (connection: WorkjetConnectionId, instance?: string) => {
+        if (connection !== scope.connectionId || instance !== scope.instanceId)
+          return Effect.fail(
+            new WorkjetDecisionHubConnectionError({ reason: "connection-instance-mismatch" }),
+          );
+        return Effect.succeed(target);
+      },
+    };
+    const first = makeCtoxNativeTaskClient({
+      requests,
+      connections,
+      transport,
+    });
+    expect(
+      yield* Effect.flip(first.submitTurn(scope, "command:project-turn", projectTask)),
+    ).toMatchObject({
+      reason: "connection-unavailable",
+    });
+    const restarted = makeCtoxNativeTaskClient({
+      requests: yield* openRequests,
+      connections,
+      transport,
+    });
+    const recovered = yield* restarted.submitTurn(scope, "command:project-turn", projectTask);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toBe(sent[0]);
+    expect(recovered.reference).toMatchObject({
+      request: { operation: "start_project_task", project_id: projectTask.project_id },
+      commandId: receipt.command_id,
+      taskId: receipt.task_id,
+    });
+    expect(
+      yield* Effect.flip(
+        restarted.submitTurn(scope, "command:project-turn", {
+          ...projectTask,
+          instruction: "Different work",
+        }),
+      ),
+    ).toMatchObject({ reason: "native-request-conflict" });
+    expect(sent).toHaveLength(2);
+  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+);

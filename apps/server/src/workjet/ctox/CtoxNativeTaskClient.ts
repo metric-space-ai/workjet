@@ -40,10 +40,10 @@ export function makeCtoxNativeTaskClient(dependencies: {
     const { operation, ...arguments_ } = request;
     const name =
       operation === "delegate_task" ? "business_os.execute_action" : `business_os.${operation}`;
-    yield* dependencies.transport.probe(target, [name], { [name]: ["idempotency_key"] });
     const nativeKey = yield* dependencies.requests.prepare(identity, request, target);
     if (nativeRequestId !== undefined)
       yield* dependencies.requests.registerNativeTurn(identity, nativeRequestId);
+    yield* dependencies.transport.probe(target, [name], { [name]: ["idempotency_key"] });
     const result = yield* dependencies.transport.callTool(target, name, {
       ...arguments_,
       ...(operation === "delegate_task" ? { action_id: "ctox.delegate_task" } : {}),
@@ -62,10 +62,15 @@ export function makeCtoxNativeTaskClient(dependencies: {
   const submitTurn = Effect.fn("CtoxNativeTaskClient.submitTurn")(function* (
     scope: Omit<CtoxNativeRequestIdentity, "requestKey">,
     requestId: string,
-    task: Omit<
-      Extract<NativeTaskRequest, { readonly operation: "delegate_task" }>,
-      "operation" | "idempotency_key"
-    >,
+    task:
+      | Omit<
+          Extract<NativeTaskRequest, { readonly operation: "delegate_task" }>,
+          "operation" | "idempotency_key"
+        >
+      | Omit<
+          Extract<NativeTaskRequest, { readonly operation: "start_project_task" }>,
+          "operation" | "idempotency_key"
+        >,
   ) {
     if (!requestId.trim() || requestId.length > 512)
       return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
@@ -73,15 +78,11 @@ export function makeCtoxNativeTaskClient(dependencies: {
     // that identity keeps retries stable and still detects changed task intent
     // in the ledger. Identical text in distinct commands remains distinct work.
     const requestKey = `turn_${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
-    return yield* submit(
-      { ...scope, requestKey },
-      {
-        ...task,
-        operation: "delegate_task",
-        idempotency_key: requestKey,
-      },
-      requestId,
-    );
+    const request: NativeTaskRequest =
+      "project_id" in task
+        ? { ...task, operation: "start_project_task", idempotency_key: requestKey }
+        : { ...task, operation: "delegate_task", idempotency_key: requestKey };
+    return yield* submit({ ...scope, requestKey }, request, requestId);
   });
 
   const submitProjectTurn = Effect.fn("CtoxNativeTaskClient.submitProjectTurn")(function* (

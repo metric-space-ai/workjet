@@ -73,6 +73,11 @@ export interface DecisionHubConnectionRegistryShape {
     connectionId: WorkjetConnectionId,
     expectedInstanceId?: string,
   ) => Effect.Effect<DecisionHubMcpTarget, WorkjetDecisionHubConnectionError>;
+  /** Read-only liveness check for an already ready, identity-pinned connection. */
+  readonly verifyReadyTarget: (
+    connectionId: WorkjetConnectionId,
+    expectedInstanceId: string,
+  ) => Effect.Effect<void, WorkjetDecisionHubConnectionError>;
   /**
    * Emits after a mutation completes — provision, probe, disconnect — so a
    * consumer can re-read `list` instead of polling it. A no-op disconnect emits
@@ -301,6 +306,14 @@ const make = Effect.gen(function* () {
       return yield* readTarget(connectionId);
     });
 
+  const verifyReadyTarget: DecisionHubConnectionRegistryShape["verifyReadyTarget"] = (
+    connectionId,
+    expectedInstanceId,
+  ) =>
+    resolveReadyTarget(connectionId, expectedInstanceId).pipe(
+      Effect.flatMap((target) => client.probe(target, [])),
+    );
+
   return DecisionHubConnectionRegistry.of({
     changes: Stream.fromPubSub(changesPubSub),
     subscribeChanges: PubSub.subscribe(changesPubSub).pipe(
@@ -311,6 +324,7 @@ const make = Effect.gen(function* () {
     probe,
     disconnect,
     resolveReadyTarget,
+    verifyReadyTarget,
   });
 });
 

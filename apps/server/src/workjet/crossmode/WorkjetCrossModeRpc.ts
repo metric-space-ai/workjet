@@ -5,6 +5,7 @@ import {
   type EnvironmentId,
   type OrchestrationThread,
   type ThreadId,
+  type WorkjetConnectionId,
   type WorkjetCrossModeActivityPayload,
   type WorkjetCrossModeGetThreadLinkRpcInput,
   type WorkjetCrossModeGetThreadLinkRpcResult,
@@ -13,6 +14,8 @@ import {
   type WorkjetCrossModeListLinksRpcResult,
   type WorkjetCrossModeOpenInCodeRpcInput,
   type WorkjetCrossModeOpenInCodeRpcResult,
+  type WorkjetCrossModeResolveBrowserOpsRpcInput,
+  type WorkjetCrossModeResolveBrowserOpsRpcResult,
   type WorkjetCrossModeSubmitRpcInput,
   type WorkjetCrossModeSubmitRpcResult,
 } from "@workjet/contracts";
@@ -49,9 +52,10 @@ import {
  *   stored link whose `code.environmentId` is not this server's is refused with
  *   `unauthorized` rather than acted on — a database file carried between
  *   machines cannot make this server act as another one.
- * - The CTOX authority is re-verified on EVERY operation through
- *   {@link requireVerifiedCtoxAuthority}. The caller names an instance; the port
- *   confirms or refuses it. A renderer-invented instance id is
+ * - The CTOX authority is re-verified for command operations through
+ *   {@link requireVerifiedCtoxAuthority}. Browser Ops resolution checks its
+ *   selected instance against the server-held connection binding and live
+ *   endpoint instead. A renderer-invented instance id is
  *   `unverified-authority`, always, and never becomes a durable link.
  *
  * The thread-level rule mirrors the mailbox's: the caller-named thread must
@@ -118,6 +122,11 @@ export interface WorkjetCrossModeRpcDependencies {
   /** Injected so a link's timestamps and id are deterministic under test. */
   readonly nowIso: Effect.Effect<string>;
   readonly randomUUID: Effect.Effect<string>;
+  /** Fresh connection/instance check. Absent means browser Ops remains closed. */
+  readonly verifyBrowserOpsConnection?: (
+    connectionId: WorkjetConnectionId,
+    instanceId: WorkjetCrossModeLink["ctox"]["instanceId"],
+  ) => Effect.Effect<void, WorkjetCrossModeError>;
 }
 
 export interface WorkjetCrossModeRpcHandlers {
@@ -127,6 +136,9 @@ export interface WorkjetCrossModeRpcHandlers {
   readonly getThreadLink: (
     input: WorkjetCrossModeGetThreadLinkRpcInput,
   ) => Effect.Effect<WorkjetCrossModeGetThreadLinkRpcResult, WorkjetCrossModeError>;
+  readonly resolveBrowserOps: (
+    input: WorkjetCrossModeResolveBrowserOpsRpcInput,
+  ) => Effect.Effect<WorkjetCrossModeResolveBrowserOpsRpcResult, WorkjetCrossModeError>;
   readonly listLinks: (
     input: WorkjetCrossModeListLinksRpcInput,
   ) => Effect.Effect<WorkjetCrossModeListLinksRpcResult, WorkjetCrossModeError>;
@@ -349,6 +361,48 @@ export const makeWorkjetCrossModeRpcHandlers = (
     });
   });
 
+  // This verifies the Workjet environment's connection and optional Code link.
+  // The CTOX shell issuer must still authorize its own user and tenant.
+  const resolveBrowserOps: WorkjetCrossModeRpcHandlers["resolveBrowserOps"] = Effect.fn(
+    "WorkjetCrossModeRpc.resolveBrowserOps",
+  )(function* (input) {
+    const verify = dependencies.verifyBrowserOpsConnection;
+    if (verify === undefined) return yield* failure("unverified-authority");
+    if (input.threadId === undefined) {
+      yield* verify(input.connectionId, input.selectedInstanceId);
+      return {
+        _tag: "instance",
+        schemaVersion: 1,
+        connectionId: input.connectionId,
+        instanceId: input.selectedInstanceId,
+      } as const;
+    }
+    yield* requireLiveThread(input.threadId);
+    const record = yield* dependencies.links
+      .getByThread(input.threadId)
+      .pipe(Effect.mapError(boundCrossModeStoreError));
+    if (Option.isNone(record)) return yield* failure("unknown-link");
+    const link = record.value.link;
+    if (link.code.environmentId !== dependencies.environmentId) {
+      return yield* failure("unauthorized");
+    }
+    if (link.ctox.instanceId !== input.selectedInstanceId) {
+      return yield* failure("unverified-authority");
+    }
+    if (isExpired(record.value, yield* nowMillis)) {
+      return yield* failure("link-expired");
+    }
+    yield* verify(input.connectionId, link.ctox.instanceId);
+    return {
+      _tag: "linked-object",
+      schemaVersion: 1,
+      connectionId: input.connectionId,
+      instanceId: link.ctox.instanceId,
+      linkId: link.linkId,
+      ctox: link.ctox,
+    } as const;
+  });
+
   const listLinks: WorkjetCrossModeRpcHandlers["listLinks"] = Effect.fn(
     "WorkjetCrossModeRpc.listLinks",
   )(function* (input) {
@@ -436,5 +490,5 @@ export const makeWorkjetCrossModeRpcHandlers = (
     },
   );
 
-  return { openInCode, getThreadLink, listLinks, submit };
+  return { openInCode, getThreadLink, resolveBrowserOps, listLinks, submit };
 };

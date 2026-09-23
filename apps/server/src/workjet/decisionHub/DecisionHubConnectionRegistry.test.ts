@@ -1,5 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import { WorkjetConnectionId, type WorkjetDecisionHubProvisionInput } from "@workjet/contracts";
+import {
+  WorkjetConnectionId,
+  WorkjetDecisionHubConnectionError,
+  type WorkjetDecisionHubProvisionInput,
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
@@ -24,6 +28,8 @@ const fixture = Effect.gen(function* () {
   yield* migration59;
   const secrets = new Map<string, Uint8Array>();
   let writes = 0;
+  let probes = 0;
+  let reachable = true;
   const secretStore = ServerSecretStore.of({
     get: (name) =>
       Effect.sync(() => {
@@ -43,7 +49,15 @@ const fixture = Effect.gen(function* () {
     getOrCreateRandom: () => Effect.die("Not used by the connection registry"),
   });
   const client = DecisionHubMcpClient.of({
-    probe: () => Effect.void,
+    probe: () =>
+      Effect.suspend(() => {
+        probes++;
+        return reachable
+          ? Effect.void
+          : Effect.fail(
+              new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" }),
+            );
+      }),
     requestDecision: () => Effect.die("Not used by the connection registry"),
     getDecision: () => Effect.die("Not used by the connection registry"),
   });
@@ -52,7 +66,14 @@ const fixture = Effect.gen(function* () {
     Effect.provideService(ServerSecretStore, secretStore),
     Effect.provideService(DecisionHubMcpClient, client),
   );
-  return { open, writes: () => writes };
+  return {
+    open,
+    writes: () => writes,
+    probes: () => probes,
+    setReachable: (value: boolean) => {
+      reachable = value;
+    },
+  };
 });
 
 const otherInstance = {
@@ -63,12 +84,38 @@ const otherInstance = {
 };
 
 describe("durable CTOX connection identity", () => {
+  it.effect("checks ready connection liveness without mutating its persisted status", () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      const registry = yield* test.open;
+      yield* registry.provision(input);
+      const baselineProbes = test.probes();
+      yield* registry.verifyReadyTarget(input.connectionId, input.instanceId);
+      expect(test.probes()).toBe(baselineProbes + 1);
+      expect(
+        yield* Effect.flip(registry.verifyReadyTarget(input.connectionId, "instance-b")),
+      ).toMatchObject({ reason: "connection-instance-mismatch" });
+      expect(test.probes()).toBe(baselineProbes + 1);
+      test.setReachable(false);
+      expect(
+        yield* Effect.flip(registry.verifyReadyTarget(input.connectionId, input.instanceId)),
+      ).toMatchObject({ reason: "connection-unavailable" });
+      expect((yield* registry.list)[0]?.status).toBe("ready");
+      expect(test.writes()).toBe(1);
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
   it.effect("rejects a managed endpoint naming another instance before storing credentials", () =>
     Effect.gen(function* () {
       const test = yield* fixture;
       const registry = yield* test.open;
       expect(
         yield* Effect.flip(registry.provision({ ...input, endpoint: otherInstance.endpoint })),
+      ).toMatchObject({ reason: "connection-instance-mismatch" });
+      // The bare managed relay can target a configured upstream unrelated to
+      // the claimed instance; only /mcp/<instance-id> pins that route.
+      expect(
+        yield* Effect.flip(registry.provision({ ...input, endpoint: "https://mcp.ctox.dev/mcp" })),
       ).toMatchObject({ reason: "connection-instance-mismatch" });
       expect(test.writes()).toBe(0);
       expect(yield* registry.list).toEqual([]);

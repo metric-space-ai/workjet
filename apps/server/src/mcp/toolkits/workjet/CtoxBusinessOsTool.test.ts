@@ -135,6 +135,7 @@ function fixture(retrySupport = false, loseDelegationResponse = false) {
     list: Effect.succeed([]),
     provision: () => Effect.die("unused"),
     probe: () => Effect.die("unused"),
+    verifyReadyTarget: () => Effect.die("unused"),
     disconnect: () => Effect.die("unused"),
     resolveReadyTarget: (id, instanceId) =>
       Effect.gen(function* () {

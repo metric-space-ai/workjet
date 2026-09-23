@@ -16,12 +16,21 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type { CtoxMcpTarget } from "./CtoxMcpTransport.ts";
 
+type ExistingNativeTaskRequest = Extract<
+  WorkjetCtoxBusinessOsInput["request"],
+  { readonly operation: "create_app" | "modify_app" | "delegate_task" }
+> & { readonly idempotency_key: string };
+const NativeProjectTaskRequest = Schema.Struct({
+  operation: Schema.Literal("start_project_task"),
+  project_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  title: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  instruction: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16_000)),
+  idempotency_key: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/)),
+});
 export type NativeTaskRequest =
-  | WorkjetCtoxCrewRequest
-  | (Extract<
-      WorkjetCtoxBusinessOsInput["request"],
-      { readonly operation: "create_app" | "modify_app" | "delegate_task" }
-    > & { readonly idempotency_key: string });
+  | ExistingNativeTaskRequest
+  | typeof NativeProjectTaskRequest.Type
+  | WorkjetCtoxCrewRequest;
 
 export interface CtoxNativeRequestIdentity {
   readonly threadId: ThreadId;
@@ -56,12 +65,14 @@ export class CtoxNativeRequestError extends Schema.TaggedErrorClass<CtoxNativeRe
 const failure = (reason: CtoxNativeRequestError["reason"]) =>
   new CtoxNativeRequestError({ reason });
 const unavailable = () => failure("native-request-store-unavailable");
+const ProjectIntent = Schema.Struct({ request: NativeProjectTaskRequest });
+const CrewIntent = Schema.Struct({ request: WorkjetCtoxCrewRequest });
 const IntentCodec = Schema.fromJsonString(
-  Schema.Struct({
-    request: Schema.Union([WorkjetCtoxBusinessOsInput.fields.request, WorkjetCtoxCrewRequest]),
-  }),
+  Schema.Union([WorkjetCtoxBusinessOsInput, ProjectIntent, CrewIntent]),
 );
-const encodeIntent = Schema.encodeEffect(IntentCodec);
+const encodeExistingIntent = Schema.encodeEffect(Schema.fromJsonString(WorkjetCtoxBusinessOsInput));
+const encodeProjectIntent = Schema.encodeEffect(Schema.fromJsonString(ProjectIntent));
+const encodeCrewIntent = Schema.encodeEffect(Schema.fromJsonString(CrewIntent));
 const decodeIntent = Schema.decodeUnknownEffect(IntentCodec);
 const Rows = Schema.Array(
   Schema.Struct({
@@ -76,13 +87,19 @@ const Rows = Schema.Array(
     receivedAt: Schema.NullOr(Schema.Number),
   }),
 );
-const Receipt = Schema.Struct({
+const ExistingReceipt = Schema.Struct({
   module_id: Schema.String,
   command_type: Schema.String,
   command_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
   task_id: Schema.optionalKey(
     Schema.NullOr(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))),
   ),
+});
+const NativeProjectReceipt = Schema.Struct({
+  schema: Schema.Literal("ctox.native_project_task.v1"),
+  project_id: Schema.String,
+  command_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  task_id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
 });
 
 const NativeTurns = Schema.Array(
@@ -132,7 +149,13 @@ const make = Effect.gen(function* () {
   ) {
     if (request.idempotency_key !== identity.requestKey)
       return yield* failure("native-request-conflict");
-    const intentJson = yield* encodeIntent({ request }).pipe(Effect.mapError(unavailable));
+    const intentJson = yield* (
+      request.operation === "start_project_task"
+        ? encodeProjectIntent({ request })
+        : request.operation === "start_crew_execution"
+          ? encodeCrewIntent({ request })
+          : encodeExistingIntent({ request })
+    ).pipe(Effect.mapError(unavailable));
     // Until CTOX exposes a durable authenticated-principal identity, a changed
     // credential may denote another actor (and thus another remote retry scope).
     // Keep retries pinned rather than accidentally creating a task.
@@ -180,17 +203,21 @@ const make = Effect.gen(function* () {
         ? yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(value).pipe(
             Effect.mapError(() => failure("native-response-invalid")),
           )
-        : yield* Schema.decodeUnknownEffect(Receipt)(value).pipe(
-            Effect.mapError(() => failure("native-response-invalid")),
-          );
+        : request.operation === "start_project_task"
+          ? yield* Schema.decodeUnknownEffect(NativeProjectReceipt)(value).pipe(
+              Effect.mapError(() => failure("native-response-invalid")),
+            )
+          : yield* Schema.decodeUnknownEffect(ExistingReceipt)(value).pipe(
+              Effect.mapError(() => failure("native-response-invalid")),
+            );
     if (request.operation === "start_crew_execution") {
       if (!("thread_id" in receipt) || receipt.thread_id !== request.thread_id)
         return yield* failure("native-response-invalid");
+    } else if (request.operation === "start_project_task") {
+      if (!("project_id" in receipt) || receipt.project_id !== request.project_id)
+        return yield* failure("native-response-invalid");
     } else if (
       !("module_id" in receipt) ||
-      (request.operation !== "create_app" &&
-        request.operation !== "modify_app" &&
-        request.operation !== "delegate_task") ||
       receipt.module_id !== request.module_id ||
       receipt.command_type !==
         (request.operation === "create_app"
@@ -221,7 +248,7 @@ const make = Effect.gen(function* () {
     commandId: string,
     taskId: string,
   ) {
-    yield* Schema.decodeUnknownEffect(Receipt.fields.command_id)(taskId).pipe(
+    yield* Schema.decodeUnknownEffect(CrewStartId)(taskId).pipe(
       Effect.mapError(() => failure("native-response-invalid")),
     );
     const row = yield* load(identity);
@@ -243,7 +270,8 @@ const make = Effect.gen(function* () {
       (request.operation !== "create_app" &&
         request.operation !== "modify_app" &&
         request.operation !== "delegate_task" &&
-        request.operation !== "start_crew_execution") ||
+        request.operation !== "start_crew_execution" &&
+        request.operation !== "start_project_task") ||
       !request.idempotency_key
     )
       return yield* unavailable();

@@ -1431,6 +1431,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
 
       yield* provider.sendTurn({
         threadId: initial.threadId,
+        requestId: "command:original-turn-before-restart",
         input: "resume",
         attachments: [],
       });
@@ -1451,6 +1452,8 @@ routing.layer("ProviderServiceLive routing", (it) => {
         assert.equal(startPayload.threadId, initial.threadId);
       }
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+      const resumedTurn = routing.codex.sendTurn.mock.calls[0]?.[0] as ProviderSendTurnInput;
+      assert.equal(resumedTurn.requestId, "command:original-turn-before-restart");
     }),
   );
 

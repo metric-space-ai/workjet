@@ -63,6 +63,7 @@ import {
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
   WorkjetDecisionHubConnectionError,
+  WorkjetCrossModeError,
   WORKJET_MESH_OVERVIEW_MAX_PEERS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
@@ -610,6 +611,12 @@ const makeWsRpcLayer = (
         environmentId: yield* serverEnvironment.getEnvironmentId,
         nowIso,
         randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
+        verifyBrowserOpsConnection: (connectionId, instanceId) =>
+          withDecisionHubConnections((registry) =>
+            registry.verifyReadyTarget(connectionId, instanceId),
+          ).pipe(
+            Effect.mapError(() => new WorkjetCrossModeError({ reason: "unverified-authority" })),
+          ),
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -2048,6 +2055,12 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.workjetCrossModeGetThreadLink,
             workjetCrossMode.getThreadLink(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeResolveBrowserOps]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeResolveBrowserOps,
+            workjetCrossMode.resolveBrowserOps(input),
             { "rpc.aggregate": "workjet-crossmode" },
           ),
         [WS_METHODS.workjetCrossModeListLinks]: (input) =>

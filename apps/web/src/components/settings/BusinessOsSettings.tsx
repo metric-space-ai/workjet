@@ -18,14 +18,14 @@ import {
   RefreshCwIcon,
   SmartphoneIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { CtoxInstanceSelectOption } from "../ctox/CtoxInstanceSelectOption";
-import { useCtoxMode } from "../ctox/CtoxModeShell";
+import { CtoxSidebarShell, useCtoxMode } from "../ctox/CtoxModeShell";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -359,6 +359,7 @@ export function BusinessOsSettingsView({
   onRevokeInvite,
   onLoadManualConnection,
   revokingInvite = false,
+  connectionManagement,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
@@ -382,6 +383,7 @@ export function BusinessOsSettingsView({
   readonly onRevokeInvite?: () => void;
   readonly onLoadManualConnection?: () => Promise<WorkjetManagedDeviceInviteManualConnectionResult>;
   readonly revokingInvite?: boolean;
+  readonly connectionManagement?: ReactNode;
 }) {
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const selectedDisplayName = selected === null ? null : ctoxInstanceDisplayTitle(selected);
@@ -583,6 +585,7 @@ export function BusinessOsSettingsView({
         </div>
       </SettingsSection>
 
+      {connectionManagement}
       <DevicePairingDialog
         instanceName={selectedDisplayName}
         invite={activeInvite}
@@ -816,6 +819,14 @@ export function BusinessOsSettings() {
             onLoadManualConnection: async () => activeInvite.manualConnection,
           })}
       revokingInvite={revokingInvite}
+      connectionManagement={
+        <details data-workjet-instance-management="">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+            Instanzverbindungen verwalten
+          </summary>
+          <CtoxSidebarShell showChrome={false} />
+        </details>
+      }
     />
   );
 }

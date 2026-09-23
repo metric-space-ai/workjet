@@ -1,0 +1,26 @@
+diff --git a/dist/cjs/lookup.js b/dist/cjs/lookup.js
+--- a/dist/cjs/lookup.js
++++ b/dist/cjs/lookup.js
+@@ -7,6 +7,9 @@ const globalOptions = {
+     disabledTypes: [],
+ };
+ function imageSize(input) {
++    if (Array.isArray(input)) {
++        input = Uint8Array.from(input);
++    }
+     const type = (0, detector_1.detector)(input);
+     if (typeof type !== 'undefined') {
+         if (globalOptions.disabledTypes.indexOf(type) > -1) {
+diff --git a/dist/esm/lookup.js b/dist/esm/lookup.js
+--- a/dist/esm/lookup.js
++++ b/dist/esm/lookup.js
+@@ -3,6 +3,9 @@ const globalOptions = {
+     disabledTypes: [],
+ };
+ export function imageSize(input) {
++    if (Array.isArray(input)) {
++        input = Uint8Array.from(input);
++    }
+     const type = detector(input);
+     if (typeof type !== 'undefined') {
+         if (globalOptions.disabledTypes.indexOf(type) > -1) {

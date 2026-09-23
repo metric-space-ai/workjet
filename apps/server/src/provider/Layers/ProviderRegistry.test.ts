@@ -38,6 +38,7 @@ import * as OpenCodeRuntime from "../opencodeRuntime.ts";
 import { stoppedProviderGatewayTestLayer } from "../testUtils/providerGatewayTestLayer.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./ProviderInstanceRegistryHydration.ts";
+import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import {
   haveProvidersChanged,
   mergeProviderSnapshot,
@@ -1489,6 +1490,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            // The real hydration layer reads the CTOX binding table, so a
+            // fixture that builds it needs a database. Added here rather
+            // than made optional in the layer: the requirement is genuine.
+            Layer.provideMerge(NodeSqliteClient.layerMemory()),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -1583,6 +1588,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            // The real hydration layer reads the CTOX binding table, so a
+            // fixture that builds it needs a database. Added here rather
+            // than made optional in the layer: the requirement is genuine.
+            Layer.provideMerge(NodeSqliteClient.layerMemory()),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -1706,6 +1715,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+            // The real hydration layer reads the CTOX binding table, so a
+            // fixture that builds it needs a database. Added here rather
+            // than made optional in the layer: the requirement is genuine.
+            Layer.provideMerge(NodeSqliteClient.layerMemory()),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -1769,6 +1782,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
             const providerRegistryLayer = ProviderRegistryLive.pipe(
               Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+              // The real hydration layer reads the CTOX binding table, so a
+              // fixture that builds it needs a database. Added here rather than
+              // made optional in the layer: the requirement is genuine.
+              Layer.provideMerge(NodeSqliteClient.layerMemory()),
               Layer.provideMerge(
                 Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
               ),

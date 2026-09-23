@@ -70,6 +70,9 @@ import Migration0055 from "./Migrations/055_WorkjetDecisionHub.ts";
 import Migration0056 from "./Migrations/056_WorkjetSessionImports.ts";
 import Migration0057 from "./Migrations/057_WorkjetBusinessOsComputerOwnership.ts";
 import Migration0058 from "./Migrations/058_WorkjetDevicePairing.ts";
+import Migration0059 from "./Migrations/059_WorkjetCtoxConnectionBindings.ts";
+import Migration0060 from "./Migrations/060_WorkjetCtoxNativeRequests.ts";
+import Migration0061 from "./Migrations/061_WorkjetCtoxNativeTurns.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -140,6 +143,9 @@ export const migrationEntries = [
   [56, "WorkjetSessionImports", Migration0056],
   [57, "WorkjetBusinessOsComputerOwnership", Migration0057],
   [58, "WorkjetDevicePairing", Migration0058],
+  [59, "WorkjetCtoxConnectionBindings", Migration0059],
+  [60, "WorkjetCtoxNativeRequests", Migration0060],
+  [61, "WorkjetCtoxNativeTurns", Migration0061],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

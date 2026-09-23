@@ -3,6 +3,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeURL from "node:url";
 
 const root = NodePath.resolve(import.meta.dirname, "..");
 const reviewedImageSizeVersion = "2.0.4";
@@ -148,20 +149,65 @@ if (dimensions?.width !== 1 || dimensions?.height !== 1) {
   fail("Metro image-size buffer compatibility probe returned incorrect PNG dimensions");
 }
 const probes = [
-  ["icns", Buffer.concat([Buffer.from("icns"), Buffer.alloc(20)])],
-  ["jxl", Buffer.from("00000018667479706a786c20000000006a786c2000000000000000006a786c63", "hex")],
-  ["heif", Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypheic"), Buffer.alloc(12)])],
+  ["icns", Buffer.from([0x69, 0x63, 0x6e, 0x73, 0, 0, 0, 16, 0x69, 0x63, 0x30, 0x37, 0, 0, 0])],
+  ["jxl", Buffer.from([0, 0, 0, 0, 0x4a, 0x58, 0x4c, 0x20])],
+  ["heif", Buffer.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66])],
 ];
-for (const [name, bytes] of probes) {
-  const startedAt = performance.now();
-  let rejected = false;
-  try {
-    imageSize(bytes);
-  } catch {
-    rejected = true;
+const virtualStore = NodePath.join(root, "node_modules", ".pnpm");
+if (!NodeFS.existsSync(virtualStore)) fail("node_modules is missing; run pnpm install first");
+const imageSizeEntry = NodeFS.readdirSync(virtualStore).find((name) =>
+  name.startsWith(`image-size@${reviewedImageSizeVersion}`),
+);
+if (!imageSizeEntry) fail(`image-size@${reviewedImageSizeVersion} installation is missing`);
+const imageSizeRoot = NodePath.join(virtualStore, imageSizeEntry, "node_modules", "image-size");
+const imageSizeEsmPath = NodePath.join(imageSizeRoot, "dist/esm/index.js");
+const parserProbe = NodeChildProcess.spawnSync(
+  process.execPath,
+  [
+    "-e",
+    [
+      "async function run() {",
+      "  const cjs = require(process.argv[1]).default;",
+      "  const esm = (await import(require('node:url').pathToFileURL(process.argv[2]).href)).default;",
+      "  for (const [format, parse] of [['CommonJS', cjs], ['ESM', esm]]) {",
+      "    for (const [name, bytes] of JSON.parse(process.argv[3])) {",
+      "      for (const input of [Buffer.from(bytes), bytes]) {",
+      "        let rejected = false;",
+      "        try { parse(input); } catch { rejected = true; }",
+      "        if (!rejected) { console.error(format + ' ' + name + ' malformed input was accepted'); process.exit(2); }",
+      "      }",
+      "    }",
+      "  }",
+      "}",
+      "run().catch((error) => { console.error(error); process.exit(1); });",
+    ].join("\n"),
+    imageSizeRoot,
+    imageSizeEsmPath,
+    JSON.stringify(probes.map(([name, bytes]) => [name, Array.from(bytes)])),
+  ],
+  { encoding: "utf8", timeout: 3_000, maxBuffer: 1024 * 1024 },
+);
+if (parserProbe.error)
+  fail("image-size malformed-input probe failed or timed out: " + parserProbe.error);
+if (parserProbe.status !== 0)
+  fail("image-size malformed-input probe failed: " + parserProbe.stderr);
+const imageSizeEsm = (await import(NodeURL.pathToFileURL(imageSizeEsmPath).href)).default;
+if (typeof imageSizeEsm !== "function") fail("Metro's ESM image-size import is not callable");
+for (const [format, parse] of [
+  ["CommonJS", imageSize],
+  ["ESM", imageSizeEsm],
+]) {
+  const arrayPng = parse(Array.from(png));
+  if (arrayPng.width !== 1 || arrayPng.height !== 1) {
+    fail(format + " image-size cannot parse Metro's plain-array PNG input");
   }
-  if (!rejected) fail(`${name} negative parser probe was accepted`);
-  if (performance.now() - startedAt > 100) fail(`${name} negative parser probe exceeded 100 ms`);
+  for (const asset of ["assets/ctox/ctox-app-icon.png", "assets/nightly/nightly-ios-1024.png"]) {
+    const bytes = NodeFS.readFileSync(NodePath.join(root, asset));
+    const size = parse(Array.from(bytes));
+    if (!(size.width > 0 && size.height > 0)) {
+      fail(format + " image-size cannot parse Metro asset " + asset);
+    }
+  }
 }
 
 console.log(

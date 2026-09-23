@@ -2,6 +2,7 @@
 import { ThreadId } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -19,7 +20,7 @@ const evidence = {
 
 const withDatabase = <A, E>(
   effect: Effect.Effect<A, E, WorkerCleanupReceiptStore | SqlClient.SqlClient>,
-) => effect.pipe(Effect.provide(layer), Effect.provide(NodeSqliteClient.layerMemory()));
+) => effect.pipe(Effect.provide(layer.pipe(Layer.provideMerge(NodeSqliteClient.layerMemory()))));
 
 describe("WorkerCleanupReceiptStore", () => {
   it.effect("records merge evidence before cleanup and persists completion", () =>

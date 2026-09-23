@@ -7,6 +7,7 @@ import { takePendingDeepLinks } from "./methods/deepLinks.ts";
 import {
   clearConnectionCatalog,
   getConnectionCatalog,
+  recoverConnectionCatalog,
   setConnectionCatalog,
 } from "./methods/connectionCatalog.ts";
 import {
@@ -76,6 +77,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(getConnectionCatalog);
   yield* ipc.handle(setConnectionCatalog);
   yield* ipc.handle(clearConnectionCatalog);
+  yield* ipc.handle(recoverConnectionCatalog);
 
   yield* ipc.handle(discoverSshHosts);
   yield* ipc.handle(discoverTailscalePeers);

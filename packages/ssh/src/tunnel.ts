@@ -148,6 +148,9 @@ export interface SshEnvironmentManagerShape {
   readonly disconnectEnvironment: (
     target: DesktopSshEnvironmentTarget,
   ) => Effect.Effect<void, SshEnvironmentEffectError, SshEnvironmentEffectContext>;
+  readonly releaseEnvironment: (
+    target: DesktopSshEnvironmentTarget,
+  ) => Effect.Effect<void, SshEnvironmentEffectError, SshEnvironmentEffectContext>;
 }
 
 const RemoteLaunchResult = Schema.Struct({
@@ -1072,6 +1075,25 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     });
   });
 
+  const releaseTunnelEntry = Effect.fn("ssh/tunnel.releaseTunnelEntry")(function* (
+    entry: SshTunnelEntry,
+  ) {
+    if (tunnels.get(entry.key) !== entry) {
+      return;
+    }
+    // The normal scope finalizer also stops the remote server. A replacement
+    // only retires this local forward, and the new profile may use that server.
+    tunnels.delete(entry.key);
+    yield* entry.process
+      .kill({
+        killSignal: "SIGTERM",
+        forceKillAfter: TUNNEL_SHUTDOWN_TIMEOUT_MS,
+      })
+      .pipe(Effect.ignore);
+    yield* Scope.close(entry.scope, Exit.void).pipe(Effect.ignore);
+    authSecrets.delete(entry.key);
+  });
+
   const cancelPendingTunnelEntry = Effect.fn("ssh/tunnel.cancelPendingTunnelEntry")(function* (
     key: string,
     target: DesktopSshEnvironmentTarget,
@@ -1381,11 +1403,15 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
         }),
       ),
       Effect.onExit((exit) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
+          if (pendingTunnelEntries.get(key) !== deferred && Exit.isSuccess(exit)) {
+            yield* releaseTunnelEntry(exit.value);
+          }
           if (pendingTunnelEntries.get(key) === deferred) {
             pendingTunnelEntries.delete(key);
           }
-        }).pipe(Effect.andThen(Deferred.done(deferred, exit))),
+          yield* Deferred.done(deferred, exit);
+        }),
       ),
     );
   });
@@ -1498,7 +1524,28 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
     });
   });
 
-  return SshEnvironmentManager.of({ ensureEnvironment, disconnectEnvironment });
+  const releaseEnvironment = Effect.fn("ssh/tunnel.releaseEnvironment")(function* (
+    target: DesktopSshEnvironmentTarget,
+  ): Effect.fn.Return<void, SshEnvironmentEffectError, SshEnvironmentEffectContext> {
+    const key = targetConnectionKey(target);
+    const entry = tunnels.get(key);
+    yield* Effect.logInfo("ssh.environment.release.start", {
+      ...sshTargetLogFields(target),
+      key,
+      hasTunnel: entry !== undefined,
+    });
+    yield* cancelPendingTunnelEntry(key, target);
+    if (entry !== undefined) {
+      yield* releaseTunnelEntry(entry);
+    }
+    authSecrets.delete(key);
+    yield* Effect.logInfo("ssh.environment.release.succeeded", {
+      ...sshTargetLogFields(target),
+      key,
+    });
+  });
+
+  return SshEnvironmentManager.of({ ensureEnvironment, disconnectEnvironment, releaseEnvironment });
 });
 
 /**

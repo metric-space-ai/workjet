@@ -233,7 +233,12 @@ describe("OrchestrationEngine", () => {
         Effect.scoped(
           Effect.gen(function* () {
             const failed = yield* system.engine
-              .runTurnStartIfActive(threadId, Effect.fail(new Error("send failed")))
+              .runTurnStartIfActive(
+                threadId,
+                Effect.fail(
+                  new PersistenceSqlError({ operation: "test.sendTurn", detail: "send failed" }),
+                ),
+              )
               .pipe(Effect.catch(() => Effect.succeed(false)));
             expect(failed).toBe(false);
 

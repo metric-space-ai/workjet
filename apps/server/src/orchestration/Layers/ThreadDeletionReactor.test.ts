@@ -19,6 +19,11 @@ import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import { WORKER_REF_PREFIX } from "../../workjet/WorkerDispatch.ts";
+import {
+  WorkerCleanupReceiptStore,
+  type WorkerCleanupReceipt,
+  type VerifiedWorkerCleanup,
+} from "../../workjet/WorkerCleanupReceiptStore.ts";
 import { layer as workerWorktreeCleanupLayer } from "../../workjet/WorkerWorktreeCleanup.ts";
 import { layerTest as worktreeStorageLayerTest } from "../../worktree/WorktreeStorage.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -90,6 +95,10 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly failRemoveWorktree?: boolean;
     readonly failDeleteBranch?: boolean;
     readonly failDeleteBranchOnce?: boolean;
+    readonly failMarkCompleteOnce?: boolean;
+    readonly failRecordVerified?: boolean;
+    readonly initialWorktreePresent?: boolean;
+    readonly initialBranchPresent?: boolean;
     readonly advanceBranchAfterDeleteFailure?: boolean;
     readonly failStopProvider?: boolean;
     readonly failProviderLookup?: boolean;
@@ -105,9 +114,11 @@ describe("worker worktree cleanup on thread.deleted", () => {
     const gitFailure = { _tag: "GitCommandError", detail: "downstream git secret" } as const;
     const commitSha = "a".repeat(40);
     let mergeState = input.mergeState ?? "merged";
-    let worktreePresent = true;
-    let branchPresent = true;
+    let worktreePresent = input.initialWorktreePresent ?? true;
+    let branchPresent = input.initialBranchPresent ?? true;
     let branchCommitSha = commitSha;
+    let completionAttempts = 0;
+    const receipts = new Map<ThreadId, WorkerCleanupReceipt>();
 
     // `start()` forks stream consumption, so `drain` alone would race the
     // enqueues. Signalling on stream end makes the test deterministic: every
@@ -189,6 +200,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
                   {
                     state: mergeState,
                     headRefName: workerRefName,
+                    url: "https://example.test/pull/7",
                     headCommitOid:
                       input.providerHead === undefined ? commitSha : input.providerHead,
                   },
@@ -223,6 +235,31 @@ describe("worker worktree cleanup on thread.deleted", () => {
         return Effect.void;
       },
     } as unknown as GitVcsDriver["Service"]);
+    const receiptLayer = Layer.succeed(WorkerCleanupReceiptStore, {
+      get: (threadId: ThreadId) => Effect.succeed(Option.fromNullishOr(receipts.get(threadId))),
+      recordVerified: (receipt: VerifiedWorkerCleanup) => {
+        if (input.failRecordVerified) return Effect.fail(new Error("database write failed"));
+        const existing = receipts.get(receipt.threadId);
+        if (existing !== undefined) {
+          return Effect.succeed(
+            existing.worktreePath === receipt.worktreePath &&
+              existing.branchRef === receipt.branchRef &&
+              existing.mergedHeadOid === receipt.mergedHeadOid &&
+              existing.mergedChangeRequestUrl === receipt.mergedChangeRequestUrl,
+          );
+        }
+        receipts.set(receipt.threadId, { ...receipt, status: "verified" });
+        return Effect.succeed(true);
+      },
+      markComplete: (receipt: VerifiedWorkerCleanup) => {
+        completionAttempts += 1;
+        if (input.failMarkCompleteOnce && completionAttempts === 1) {
+          return Effect.fail(new Error("database write interrupted"));
+        }
+        receipts.set(receipt.threadId, { ...receipt, status: "complete" });
+        return Effect.void;
+      },
+    } as WorkerCleanupReceiptStore["Service"]);
 
     const reactorLayer = ThreadDeletionReactorLive.pipe(
       Layer.provide(workerWorktreeCleanupLayer),
@@ -235,6 +272,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           gitLayer,
           sourceControlLayer,
           gitDriverLayer,
+          receiptLayer,
           worktreeStorageLayerTest({ trustedRoots: [worktreeRoot] }),
           NodeServices.layer,
         ),
@@ -275,6 +313,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
       reconcileThreeCycles,
       retryPages,
       providerQueries,
+      receipts,
       setMergeState: (state: "open" | "merged") => {
         mergeState = state;
       },
@@ -393,6 +432,27 @@ describe("worker worktree cleanup on thread.deleted", () => {
     });
   });
 
+  it.effect("retains both Git sources if merge evidence cannot be persisted", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [deletedEvent(workerThreadId)],
+      failRecordVerified: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.receipts.size).toBe(0);
+      expect(harness.removals).toHaveLength(0);
+      expect(harness.branchDeletions).toHaveLength(0);
+    });
+  });
+
   it.effect("retries retained source after a later merge and skips it after cleanup", () => {
     const harness = makeHarness({
       threads: {
@@ -483,6 +543,55 @@ describe("worker worktree cleanup on thread.deleted", () => {
         { cwd: workspaceRoot, refName: workerRefName },
         { cwd: workspaceRoot, refName: workerRefName },
       ]);
+    });
+  });
+
+  it.effect(
+    "finishes a verified cleanup after branch deletion but before the completion write",
+    () => {
+      const harness = makeHarness({
+        threads: {
+          [workerThreadId]: {
+            workjetRole: "worker",
+            branch: workerRefName,
+            worktreePath: workerWorktreePath,
+          },
+        },
+        events: [],
+        retainedThreadIds: [workerThreadId],
+        failMarkCompleteOnce: true,
+      });
+
+      return Effect.gen(function* () {
+        yield* harness.reconcile;
+        expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+        yield* harness.reconcile;
+        expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");
+        expect(harness.removals).toHaveLength(1);
+        expect(harness.branchDeletions).toHaveLength(1);
+      });
+    },
+  );
+
+  it.effect("does not infer a completed cleanup from absent source without a receipt", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [deletedEvent(workerThreadId)],
+      initialWorktreePresent: false,
+      initialBranchPresent: false,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.run;
+      expect(harness.receipts.size).toBe(0);
+      expect(harness.removals).toHaveLength(0);
+      expect(harness.branchDeletions).toHaveLength(0);
     });
   });
 

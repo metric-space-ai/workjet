@@ -60,6 +60,7 @@ import * as WorkjetMailboxTransport from "./workjet/mailbox/WorkjetMailboxTransp
 import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
+import * as WorkerCleanupReceiptStore from "./workjet/WorkerCleanupReceiptStore.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -267,7 +268,10 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(
     // Worker worktree release is a thread-deletion reaction, so its service is
     // provided directly to the reactor that consumes `thread.deleted`.
-    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
+    ThreadDeletionReactorLive.pipe(
+      Layer.provide(WorkerWorktreeCleanup.layer),
+      Layer.provide(WorkerCleanupReceiptStore.layer),
+    ),
   ),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),

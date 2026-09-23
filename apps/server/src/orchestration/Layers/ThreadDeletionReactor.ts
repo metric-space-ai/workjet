@@ -13,6 +13,7 @@ import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import { WorkerWorktreeCleanup } from "../../workjet/WorkerWorktreeCleanup.ts";
+import { WorkerCleanupReceiptStore } from "../../workjet/WorkerCleanupReceiptStore.ts";
 import { WORKER_REF_PREFIX } from "../../workjet/WorkerDispatch.ts";
 import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
@@ -53,6 +54,7 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const terminalManager = yield* TerminalManager.TerminalManager;
   const workerWorktreeCleanup = yield* WorkerWorktreeCleanup;
+  const cleanupReceipts = yield* WorkerCleanupReceiptStore;
   const query = yield* ProjectionSnapshotQuery;
   const gitWorkflow = yield* GitWorkflowService;
   const git = yield* GitVcsDriver;
@@ -160,9 +162,9 @@ const make = Effect.gen(function* () {
               if (worktree.branch !== `${WORKER_REF_PREFIX}${threadId}`) return;
               const worktreePath = worktree.worktreePath;
               if (!worktreePath) return;
-              // The projection keeps deleted rows. Retry a missing checkout
-              // only while its owned branch still exists; branch deletion may
-              // have failed after the worktree was already removed.
+              // The projection keeps deleted rows. A verified receipt also
+              // needs a retry if deletion succeeded but the final SQL write
+              // was interrupted before it could mark completion.
               const local = yield* gitWorkflow
                 .localStatus({ cwd: worktreePath })
                 .pipe(Effect.orElseSucceed(() => null));
@@ -173,7 +175,10 @@ const make = Effect.gen(function* () {
                     revision: `refs/heads/${worktree.branch}`,
                   })
                   .pipe(Effect.orElseSucceed(() => null));
-                if (!branch) return;
+                if (!branch) {
+                  const receipt = yield* cleanupReceipts.get(threadId);
+                  if (Option.isNone(receipt) || receipt.value.status === "complete") return;
+                }
               }
               const providerStopped = yield* stopProviderSession(threadId);
               if (providerStopped) yield* removeWorkerWorktree(threadId);

@@ -39,6 +39,10 @@ import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSna
 import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
+import {
+  WorkerCleanupReceiptStore,
+  type VerifiedWorkerCleanup,
+} from "./WorkerCleanupReceiptStore.ts";
 import { WORKER_REF_PREFIX } from "./WorkerDispatch.ts";
 
 /**
@@ -61,7 +65,12 @@ export type WorkerWorktreeCleanupOutcome =
       readonly deletedRefName: string;
     };
 
-export type WorkerWorktreeCleanupFailureStep = "read-thread" | "remove-worktree" | "delete-branch";
+export type WorkerWorktreeCleanupFailureStep =
+  | "read-thread"
+  | "record-verification"
+  | "remove-worktree"
+  | "delete-branch"
+  | "record-completion";
 
 /**
  * Bounded, redaction-safe failure. Downstream Git and SQL detail is
@@ -70,17 +79,27 @@ export type WorkerWorktreeCleanupFailureStep = "read-thread" | "remove-worktree"
 export class WorkerWorktreeCleanupError extends Schema.TaggedErrorClass<WorkerWorktreeCleanupError>()(
   "WorkerWorktreeCleanupError",
   {
-    step: Schema.Literals(["read-thread", "remove-worktree", "delete-branch"]),
+    step: Schema.Literals([
+      "read-thread",
+      "record-verification",
+      "remove-worktree",
+      "delete-branch",
+      "record-completion",
+    ]),
   },
 ) {
   override get message(): string {
     switch (this.step) {
       case "read-thread":
         return "The deleted thread's worker worktree context could not be read.";
+      case "record-verification":
+        return "The verified worker merge could not be recorded.";
       case "remove-worktree":
         return "The isolated worker worktree could not be removed.";
       case "delete-branch":
         return "The isolated worker branch ref could not be deleted.";
+      case "record-completion":
+        return "The completed worker cleanup could not be recorded.";
     }
   }
 }
@@ -114,6 +133,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
   const worktreeStorage = yield* WorktreeStorage;
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
+  const receipts = yield* WorkerCleanupReceiptStore;
 
   const cleanupDeletedThread: WorkerWorktreeCleanupShape["cleanupDeletedThread"] = Effect.fn(
     "WorkerWorktreeCleanup.cleanupDeletedThread",
@@ -159,13 +179,16 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
           state: "merged",
           limit: 100,
         });
-        return merged.some(
-          (pr) =>
-            pr.state === "merged" &&
-            pr.headRefName === workerRefName &&
-            pr.headCommitOid?.toLowerCase() === commitSha.toLowerCase(),
+        return (
+          merged.find(
+            (pr) =>
+              pr.state === "merged" &&
+              pr.headRefName === workerRefName &&
+              pr.headCommitOid?.toLowerCase() === commitSha.toLowerCase() &&
+              pr.url.length > 0,
+          )?.url ?? null
         );
-      }).pipe(Effect.orElseSucceed(() => false));
+      }).pipe(Effect.orElseSucceed(() => null));
 
     const cwd = context.workspaceRoot;
     yield* gitWorkflow.invalidateLocalStatus(worktreePath);
@@ -173,6 +196,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       .localStatus({ cwd: worktreePath })
       .pipe(Effect.orElseSucceed(() => null));
     let verifiedCommitSha: string;
+    let mergedChangeRequestUrl: string;
     if (local?.isRepo) {
       if (local.refName !== workerRefName || local.hasWorkingTreeChanges) {
         return { status: "skipped", reason: "merge-unverified" } as const;
@@ -180,10 +204,25 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       const head = yield* git
         .resolveCommit({ cwd: worktreePath, revision: "HEAD" })
         .pipe(Effect.orElseSucceed(() => null));
-      if (!head || !(yield* mergedAtCommit(worktreePath, head.commitSha))) {
+      const mergedUrl = head ? yield* mergedAtCommit(worktreePath, head.commitSha) : null;
+      if (!head || !mergedUrl) {
         return { status: "skipped", reason: "merge-unverified" } as const;
       }
       verifiedCommitSha = head.commitSha;
+      mergedChangeRequestUrl = mergedUrl;
+      const receipt: VerifiedWorkerCleanup = {
+        threadId,
+        worktreePath,
+        branchRef: workerRefName,
+        mergedHeadOid: verifiedCommitSha,
+        mergedChangeRequestUrl,
+      };
+      const recorded = yield* receipts
+        .recordVerified(receipt)
+        .pipe(
+          Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-verification" })),
+        );
+      if (!recorded) return { status: "skipped", reason: "merge-unverified" } as const;
       // The project workspace root is the surviving checkout. Never force a
       // dirty worktree removal, even when its HEAD is already merged.
       yield* gitWorkflow
@@ -200,11 +239,44 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
           revision: `refs/heads/${workerRefName}`,
         })
         .pipe(Effect.orElseSucceed(() => null));
-      if (!branch) return { status: "skipped", reason: "already-cleaned" } as const;
-      if (!(yield* mergedAtCommit(cwd, branch.commitSha))) {
+      if (!branch) {
+        const recorded = yield* receipts
+          .get(threadId)
+          .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+        if (
+          Option.isNone(recorded) ||
+          recorded.value.worktreePath !== worktreePath ||
+          recorded.value.branchRef !== workerRefName
+        ) {
+          return { status: "skipped", reason: "merge-unverified" } as const;
+        }
+        if (recorded.value.status === "verified") {
+          yield* receipts
+            .markComplete(recorded.value)
+            .pipe(
+              Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })),
+            );
+        }
+        return { status: "skipped", reason: "already-cleaned" } as const;
+      }
+      const mergedUrl = yield* mergedAtCommit(cwd, branch.commitSha);
+      if (!mergedUrl) {
         return { status: "skipped", reason: "merge-unverified" } as const;
       }
       verifiedCommitSha = branch.commitSha;
+      mergedChangeRequestUrl = mergedUrl;
+      const recorded = yield* receipts
+        .recordVerified({
+          threadId,
+          worktreePath,
+          branchRef: workerRefName,
+          mergedHeadOid: verifiedCommitSha,
+          mergedChangeRequestUrl,
+        })
+        .pipe(
+          Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-verification" })),
+        );
+      if (!recorded) return { status: "skipped", reason: "merge-unverified" } as const;
     }
 
     // Git's expected-old-value check refuses deletion if the branch advanced
@@ -213,6 +285,16 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
     yield* git
       .deleteBranchAtCommit({ cwd, refName: workerRefName, expectedCommitSha: verifiedCommitSha })
       .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "delete-branch" })));
+
+    yield* receipts
+      .markComplete({
+        threadId,
+        worktreePath,
+        branchRef: workerRefName,
+        mergedHeadOid: verifiedCommitSha,
+        mergedChangeRequestUrl,
+      })
+      .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })));
 
     return { status: "cleaned", worktreePath, deletedRefName: workerRefName } as const;
   });

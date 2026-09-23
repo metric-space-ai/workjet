@@ -133,7 +133,8 @@ const imageSizeEntry = NodeFS.readdirSync(virtualStore).find((name) =>
 if (!imageSizeEntry) fail(`image-size@${reviewedImageSizeVersion} installation is missing`);
 const imageSizeRoot = NodePath.join(virtualStore, imageSizeEntry, "node_modules", "image-size");
 const imported = NodeModule.createRequire(import.meta.url)(imageSizeRoot);
-if (typeof imported.default !== "function") fail("Metro's default image-size import is not callable");
+if (typeof imported.default !== "function")
+  fail("Metro's default image-size import is not callable");
 const imageSize = imported.default;
 const probes = [
   ["icns", Buffer.from([0x69, 0x63, 0x6e, 0x73, 0, 0, 0, 16, 0x69, 0x63, 0x30, 0x37, 0, 0, 0, 0])],
@@ -166,11 +167,13 @@ const parserProbe = NodeChildProcess.spawnSync(
   ],
   { encoding: "utf8", timeout: 3_000, maxBuffer: 1024 * 1024 },
 );
-if (parserProbe.error) fail("image-size malformed-input probe failed or timed out: " + parserProbe.error);
-if (parserProbe.status !== 0) fail("image-size malformed-input probe failed: " + parserProbe.stderr);
+if (parserProbe.error)
+  fail("image-size malformed-input probe failed or timed out: " + parserProbe.error);
+if (parserProbe.status !== 0)
+  fail("image-size malformed-input probe failed: " + parserProbe.stderr);
 const png = Buffer.from([
-  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
-  0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0, 0, 0, 0,
+  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0,
+  0, 0, 0, 0, 0,
 ]);
 const dimensions = imageSize(png);
 if (dimensions.width !== 1 || dimensions.height !== 1) {
@@ -180,15 +183,15 @@ const imageSizeEsm = (
   await import(NodeURL.pathToFileURL(NodePath.join(imageSizeRoot, "dist/esm/index.js")).href)
 ).default;
 if (typeof imageSizeEsm !== "function") fail("Metro's ESM image-size import is not callable");
-for (const [format, parse] of [["CommonJS", imageSize], ["ESM", imageSizeEsm]]) {
+for (const [format, parse] of [
+  ["CommonJS", imageSize],
+  ["ESM", imageSizeEsm],
+]) {
   const arrayPng = parse(Array.from(png));
   if (arrayPng.width !== 1 || arrayPng.height !== 1) {
     fail(format + " image-size cannot parse Metro's plain-array PNG input");
   }
-  for (const asset of [
-    "assets/ctox/ctox-app-icon.png",
-    "assets/nightly/nightly-ios-1024.png",
-  ]) {
+  for (const asset of ["assets/ctox/ctox-app-icon.png", "assets/nightly/nightly-ios-1024.png"]) {
     const bytes = NodeFS.readFileSync(NodePath.join(root, asset));
     const size = parse(Array.from(bytes));
     if (!(size.width > 0 && size.height > 0)) {

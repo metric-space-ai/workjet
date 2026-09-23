@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+
+class WorkerCleanupMigrationOrderError extends Schema.TaggedErrorClass<WorkerCleanupMigrationOrderError>()(
+  "WorkerCleanupMigrationOrderError",
+  { detail: Schema.String },
+) {}
 
 /** A verified merge must be durable before removing either local source ref. */
 export default Effect.gen(function* () {
@@ -26,9 +32,9 @@ export default Effect.gen(function* () {
         migration.migration_id !== 59 + index || migration.name !== required[index],
     )
   ) {
-    return yield* Effect.fail(
-      new Error("Project-team migrations require CTOX native migrations 59-63 first."),
-    );
+    return yield* new WorkerCleanupMigrationOrderError({
+      detail: "Project-team migrations require CTOX native migrations 59-63 first.",
+    });
   }
   yield* sql`
     CREATE TABLE IF NOT EXISTS workjet_worker_cleanup_receipts (

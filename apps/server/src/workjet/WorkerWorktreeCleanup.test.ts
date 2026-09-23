@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Test-only symlink fixture exercises real host filesystem behavior.
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";

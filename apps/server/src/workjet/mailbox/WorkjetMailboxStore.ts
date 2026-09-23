@@ -33,6 +33,8 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
 /**
  * Durable, transactional Workjet mailbox store (docs/workjet-plan.md →
  * "Distributed worker mailbox and delegation graph").
@@ -1942,12 +1944,12 @@ export const make = Effect.gen(function* () {
               existing.payload._tag !== "message" ||
               existing.payload.message.envelopeId !== expectedId ||
               existing.payload.message.inReplyTo !== input.payload.message.inReplyTo ||
-              JSON.stringify(existing.payload.message.source) !==
-                JSON.stringify(input.payload.message.source) ||
-              JSON.stringify(existing.payload.message.target) !==
-                JSON.stringify(input.payload.message.target) ||
-              JSON.stringify(existing.payload.message.body) !==
-                JSON.stringify(input.payload.message.body)
+              encodeUnknownJson(existing.payload.message.source) !==
+                encodeUnknownJson(input.payload.message.source) ||
+              encodeUnknownJson(existing.payload.message.target) !==
+                encodeUnknownJson(input.payload.message.target) ||
+              encodeUnknownJson(existing.payload.message.body) !==
+                encodeUnknownJson(input.payload.message.body)
             ) {
               return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
             }
@@ -1997,9 +1999,11 @@ export const make = Effect.gen(function* () {
             input.envelope.sourceEnvironmentId !== oldMessage.source.environmentId ||
             input.envelope.targetWorkspaceId !== oldMessage.target.workspaceId ||
             input.envelope.targetEnvironmentId !== oldMessage.target.environmentId ||
-            JSON.stringify(input.payload.message.source) !== JSON.stringify(oldMessage.source) ||
-            JSON.stringify(input.payload.message.target) !== JSON.stringify(oldMessage.target) ||
-            JSON.stringify(input.payload.message.body) !== JSON.stringify(oldMessage.body)
+            encodeUnknownJson(input.payload.message.source) !==
+              encodeUnknownJson(oldMessage.source) ||
+            encodeUnknownJson(input.payload.message.target) !==
+              encodeUnknownJson(oldMessage.target) ||
+            encodeUnknownJson(input.payload.message.body) !== encodeUnknownJson(oldMessage.body)
           ) {
             return yield* new WorkjetMailboxError({ reason: "malformed-envelope" });
           }

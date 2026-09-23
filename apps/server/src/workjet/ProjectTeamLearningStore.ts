@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { ThreadId, WorkjetTeamReview } from "@workjet/contracts";
+import {
+  WorkjetTeamExecutionIdentity,
+  type ThreadId,
+  type WorkjetTeamReview,
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -163,7 +167,11 @@ export const make = Effect.gen(function* () {
       ) {
         return yield* evidenceError("Actual execution differs from the selected model candidate");
       }
-      const executionJson = JSON.stringify(review.execution);
+      const executionJson = yield* Schema.encodeEffect(
+        Schema.fromJsonString(WorkjetTeamExecutionIdentity),
+      )(review.execution).pipe(
+        Effect.mapError(() => evidenceError("Invalid team execution identity")),
+      );
       const recordedAtMillis = Date.parse(review.recordedAt);
       if (!Number.isSafeInteger(recordedAtMillis) || recordedAtMillis < 0) {
         return yield* evidenceError("Invalid team review timestamp");

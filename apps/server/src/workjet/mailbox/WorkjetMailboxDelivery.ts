@@ -1320,9 +1320,11 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
       return yield* failure("delegation-expired");
     }
     const ordinaryExpiry = yield* addSeconds(now, WORKJET_MAILBOX_DEFAULT_TTL_SECONDS);
-    const expiresAt = new Date(
-      Math.min(Date.parse(ordinaryExpiry), Date.parse(delegation.delegation.budget.expiresAt)),
-    ).toISOString() as WorkjetMailboxTimestamp;
+    const expiresAt = DateTime.formatIso(
+      DateTime.makeUnsafe(
+        Math.min(Date.parse(ordinaryExpiry), Date.parse(delegation.delegation.budget.expiresAt)),
+      ),
+    ) as WorkjetMailboxTimestamp;
     const message: WorkjetWorkerMessage = {
       ...oldMessage,
       envelopeId: id,

@@ -35,8 +35,7 @@ describe("durable native CTOX request identity", () => {
       yield* migration60;
       yield* migration61;
       const requests = yield* open;
-      yield* requests.prepare(identity, request, target);
-      yield* requests.registerNativeTurn(identity, "event-non-crew");
+      yield* requests.prepareTurn(identity, request, target, "event-non-crew");
       const crewIdentity = {
         ...identity,
         threadId: ThreadId.make("thread-crew"),
@@ -51,8 +50,7 @@ describe("durable native CTOX request identity", () => {
         timeout_seconds: 60,
         idempotency_key: crewIdentity.requestKey,
       };
-      yield* requests.prepare(crewIdentity, crew, target);
-      yield* requests.registerNativeTurn(crewIdentity, "event-crew");
+      yield* requests.prepareTurn(crewIdentity, crew, target, "event-crew");
       const restarted = yield* open;
       const first = yield* restarted.listCrewRecoveryCandidates(0, 1);
       expect(first.candidates).toEqual([]);
@@ -65,6 +63,25 @@ describe("durable native CTOX request identity", () => {
       expect((yield* restarted.listCrewRecoveryCandidates(second.nextSequence!, 1)).candidates).toEqual(
         [],
       );
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
+  it.effect("rolls back a newly prepared intent when its turn identity conflicts", () =>
+    Effect.gen(function* () {
+      yield* migration60;
+      yield* migration61;
+      const requests = yield* open;
+      yield* requests.prepareTurn(identity, request, target, "event-shared");
+      const conflictingIdentity = { ...identity, requestKey: "request-b" };
+      const conflictingRequest = { ...request, idempotency_key: conflictingIdentity.requestKey };
+      expect(
+        yield* Effect.flip(
+          requests.prepareTurn(conflictingIdentity, conflictingRequest, target, "event-shared"),
+        ),
+      ).toMatchObject({ reason: "native-request-conflict" });
+      expect(yield* Effect.flip(requests.get(conflictingIdentity))).toMatchObject({
+        reason: "native-request-not-found",
+      });
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 

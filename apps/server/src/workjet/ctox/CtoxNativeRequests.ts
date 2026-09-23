@@ -433,6 +433,24 @@ const make = Effect.gen(function* () {
     if (rows[0]?.requestKey !== identity.requestKey)
       return yield* failure("native-request-conflict");
   });
+  /** Commit the native intent and its recovery cursor together, before transport.
+   * Otherwise a process exit after prepare but before turn registration leaves
+   * an unreachable intent that cannot be enumerated on startup.
+   */
+  const prepareTurn = Effect.fn("CtoxNativeRequests.prepareTurn")(function* (
+    identity: CtoxNativeRequestIdentity,
+    request: NativeTaskRequest,
+    target: CtoxMcpTarget,
+    requestId: string,
+  ) {
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const nativeKey = yield* prepare(identity, request, target);
+        yield* registerNativeTurn(identity, requestId);
+        return nativeKey;
+      }),
+    );
+  });
   const latestNativeTurn = Effect.fn("CtoxNativeRequests.latestNativeTurn")(function* (
     scope: Omit<CtoxNativeRequestIdentity, "requestKey">,
   ) {
@@ -511,6 +529,7 @@ const make = Effect.gen(function* () {
     reserveCrewStart,
     bindCrewStartProvider,
     registerNativeTurn,
+    prepareTurn,
     latestNativeTurn,
     listCrewRecoveryCandidates,
   };

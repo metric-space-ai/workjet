@@ -40,9 +40,10 @@ export function makeCtoxNativeTaskClient(dependencies: {
     const { operation, ...arguments_ } = request;
     const name =
       operation === "delegate_task" ? "business_os.execute_action" : `business_os.${operation}`;
-    const nativeKey = yield* dependencies.requests.prepare(identity, request, target);
-    if (nativeRequestId !== undefined)
-      yield* dependencies.requests.registerNativeTurn(identity, nativeRequestId);
+    const nativeKey =
+      nativeRequestId === undefined
+        ? yield* dependencies.requests.prepare(identity, request, target)
+        : yield* dependencies.requests.prepareTurn(identity, request, target, nativeRequestId);
     yield* dependencies.transport.probe(target, [name], { [name]: ["idempotency_key"] });
     const result = yield* dependencies.transport.callTool(target, name, {
       ...arguments_,

@@ -1,4 +1,8 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG, type WorkjetThreadConfig } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  WorkjetConnectionId,
+  type WorkjetThreadConfig,
+} from "@workjet/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -64,6 +68,8 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
+import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -155,6 +161,7 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
+    readonly crewAdmission?: CtoxCrewTurnAdmission["Service"];
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -247,12 +254,13 @@ describe("ProviderCommandReactor", () => {
             ? (input as { threadId?: ThreadId }).threadId
             : undefined;
         if (!threadId) {
-          return;
+          return { terminated: false as const, method: "cooperative" as const, pids: [] };
         }
         const index = runtimeSessions.findIndex((session) => session.threadId === threadId);
         if (index >= 0) {
           runtimeSessions.splice(index, 1);
         }
+        return { terminated: true as const, method: "cooperative" as const, pids: [] };
       }),
     );
     const renameBranch = vi.fn((input: unknown) =>
@@ -394,6 +402,11 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(reactorOrchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
+      Layer.provideMerge(
+        input?.crewAdmission
+          ? Layer.succeed(CtoxCrewTurnAdmission, input.crewAdmission)
+          : Layer.empty,
+      ),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -556,6 +569,98 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("starts a fresh provider session for each claimed Crew turn", async () => {
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    let nextAttempt = 0;
+    const bindProviderSession = vi.fn(() => Effect.void);
+    const admission = {
+      prepare: ({
+        threadId,
+        requestId,
+        providerInstanceId,
+      }: {
+        threadId: ThreadId;
+        requestId: string;
+        providerInstanceId: ProviderInstanceId;
+      }) => {
+        const attemptId = `attempt-${++nextAttempt}`;
+        return Effect.succeed({
+          state: "ready" as const,
+          identity: {
+            threadId,
+            connectionId: binding.connectionId,
+            instanceId: binding.instanceId,
+            requestKey: requestId,
+          },
+          claim: { attemptId, prompt: `native prompt ${attemptId}` },
+          bootstrap: CtoxCrewSessionBootstrap.of({
+            binding,
+            nativeInstructions: `native instructions ${attemptId}`,
+            capability: {
+              threadId,
+              providerInstanceId,
+              attemptId,
+              refreshContext: () => Effect.die("unused"),
+              updatePlan: () => Effect.die("unused"),
+              report: () => Effect.die("unused"),
+            },
+          }),
+        });
+      },
+      recover: () => Effect.die("unused"),
+      bindProviderSession,
+      listRecoveryCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+    });
+    for (const turn of [1, 2]) {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-crew-turn-${turn}`),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(`crew-message-${turn}`),
+            role: "user",
+            text: `do Crew work ${turn}`,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: `2026-01-01T00:00:0${turn}.000Z`,
+        }),
+      );
+      await waitFor(() => harness.sendTurn.mock.calls.length === turn, 3_000).catch(
+        async (cause: unknown) => {
+          const thread = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          throw new Error(
+            `Crew turn ${turn} stalled: ${JSON.stringify({
+              starts: harness.startSession.mock.calls.length,
+              stops: harness.stopSession.mock.calls.length,
+              admissions: nextAttempt,
+              activities: thread?.activities,
+            })}`,
+            { cause },
+          );
+        },
+      );
+    }
+    expect(harness.startSession).toHaveBeenCalledTimes(2);
+    expect(harness.stopSession).toHaveBeenCalledTimes(1);
+    expect(bindProviderSession).toHaveBeenCalledTimes(2);
+    expect(
+      harness.sendTurn.mock.calls.map(([request]) => (request as { input?: string }).input),
+    ).toEqual(["native prompt attempt-1", "native prompt attempt-2"]);
   });
 
   it("passes the thread's current Workjet config on provider start and restart", async () => {

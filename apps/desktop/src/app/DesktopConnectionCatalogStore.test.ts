@@ -529,8 +529,12 @@ describe("DesktopConnectionCatalogStore", () => {
 
       const recovery = yield* Effect.forkChild(store.recover, { startImmediately: true });
       yield* Deferred.await(copyStarted);
-      const writer = yield* Effect.forkChild(store.set(later), { startImmediately: true });
-      yield* Effect.yieldNow();
+      const writerAttempted = yield* Deferred.make<void>();
+      const writer = yield* Effect.forkChild(
+        Deferred.succeed(writerAttempted, undefined).pipe(Effect.andThen(store.set(later))),
+        { startImmediately: true },
+      );
+      yield* Deferred.await(writerAttempted);
       const writerBeforeRecovery = yield* Fiber.poll(writer);
       assert.isTrue(Option.isNone(writerBeforeRecovery));
       yield* Deferred.succeed(releaseCopy, undefined);

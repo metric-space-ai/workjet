@@ -23,7 +23,7 @@ type CrewTask = Omit<WorkjetCtoxCrewRequest, "operation" | "idempotency_key">;
 const make = Effect.gen(function* () {
   const requests = yield* CtoxNativeRequests;
   const connections = yield* DecisionHubConnectionRegistry;
-  const transport = makeCtoxMcpTransport(yield* HttpClient);
+  const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
   const native = makeCtoxNativeTaskClient({ requests, connections, transport });
 
   const prepare = Effect.fn("CtoxCrewTurnAdmission.prepare")(function* (input: {

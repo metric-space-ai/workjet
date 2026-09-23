@@ -141,13 +141,13 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
 
 export const disconnectSshEnvironment = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL,
-  payload: Schema.Union(
+  payload: Schema.Union([
     DesktopSshEnvironmentTargetSchema,
     Schema.Struct({
       target: DesktopSshEnvironmentTargetSchema,
       releaseOnly: Schema.Literal(true),
     }),
-  ),
+  ]),
   result: Schema.Void,
   handler: Effect.fn("desktop.ipc.sshEnvironment.disconnectEnvironment")(function* (input) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;

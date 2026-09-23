@@ -1,17 +1,17 @@
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
 import * as NodeSqliteClient from "../NodeSqliteClient.ts";
 import Migration0064 from "./064_WorkjetWorkerCleanupReceipts.ts";
 
-const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
+const withDatabase = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+  effect.pipe(Effect.provide(NodeSqliteClient.layerMemory()));
 
-layer("064_WorkjetWorkerCleanupReceipts", (it) => {
+describe("064_WorkjetWorkerCleanupReceipts", () => {
   it.effect("applies native CTOX and project-team migrations in order on a fresh database", () =>
-    Effect.gen(function* () {
+    withDatabase(Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 66 });
 
@@ -39,11 +39,11 @@ layer("064_WorkjetWorkerCleanupReceipts", (it) => {
         { name: "workjet_team_reviews" },
         { name: "workjet_worker_cleanup_receipts" },
       ]);
-    }),
+    })),
   );
 
   it.effect("refuses direct project-team migration before native CTOX migrations", () =>
-    Effect.gen(function* () {
+    withDatabase(Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 58 });
 
@@ -57,11 +57,11 @@ layer("064_WorkjetWorkerCleanupReceipts", (it) => {
         SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workjet_worker_cleanup_receipts'
       `;
       assert.deepStrictEqual(tables, []);
-    }),
+    })),
   );
 
   it.effect("accepts the exact applied native CTOX 59-63 migration history", () =>
-    Effect.gen(function* () {
+    withDatabase(Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 58 });
       for (const [id, name] of [
@@ -85,11 +85,11 @@ layer("064_WorkjetWorkerCleanupReceipts", (it) => {
         SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workjet_worker_cleanup_receipts'
       `;
       assert.deepStrictEqual(tables, [{ name: "workjet_worker_cleanup_receipts" }]);
-    }),
+    })),
   );
 
   it.effect("refuses a reused native migration ID with a different name", () =>
-    Effect.gen(function* () {
+    withDatabase(Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* runMigrations({ toMigrationInclusive: 58 });
       for (const [id, name] of [
@@ -110,6 +110,6 @@ layer("064_WorkjetWorkerCleanupReceipts", (it) => {
         SELECT migration_id FROM effect_sql_migrations WHERE migration_id = 64
       `;
       assert.deepStrictEqual(applied, []);
-    }),
+    })),
   );
 });

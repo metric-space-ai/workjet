@@ -336,7 +336,42 @@ function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1
   if (typeof control !== "function") return { status: "unsupported" };
   try {
     const result = await control(${JSON.stringify(request)});
-    return { status: "completed", result };
+    const action = ${JSON.stringify(request.action)};
+    // The native response also contains fields for CTOX's own UI. Keep the
+    // strict Desktop IPC contract and never forward duplicate QR secrets.
+    if (action === "binding.list") {
+      if (!Array.isArray(result?.bindings) || result.bindings.length > 1000) {
+        return { status: "failed", code: "guest_failed" };
+      }
+      return {
+        status: "completed",
+        result: {
+          schema: result.schema,
+          bindings: result.bindings.map((binding) => ({
+            id: binding?.id,
+            deviceId: binding?.deviceId,
+            displayName: binding?.displayName,
+            createdAtMs: binding?.createdAtMs,
+            pairedAtMs: binding?.pairedAtMs,
+          })),
+        },
+      };
+    }
+    if (action === "invite.create") {
+      return {
+        status: "completed",
+        result: {
+          businessOsInstanceId: result?.businessOsInstanceId,
+          deviceId: result?.deviceId,
+          proofKeyThumbprint: result?.proofKeyThumbprint,
+          grantId: result?.grantId,
+          inviteId: result?.inviteId,
+          invite: result?.invite,
+          expiresAt: result?.expiresAt,
+        },
+      };
+    }
+    return { status: "completed", result: { revoked: result?.revoked } };
   } catch (error) {
     // Never return guest exception text: it can contain credentials.
     const code = typeof error?.code === "string" ? error.code : "";

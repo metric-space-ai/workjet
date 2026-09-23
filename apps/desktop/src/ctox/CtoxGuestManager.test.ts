@@ -1579,6 +1579,85 @@ describe("CtoxGuestManager", () => {
           response: { schema: "ctox.workjet-device-bindings.v1", bindings: [] },
         },
       );
+      const nativeBindings = vi.fn().mockResolvedValue({
+        schema: "ctox.workjet-device-bindings.v1",
+        bindings: [
+          {
+            inviteIdHash: "native-only-hash",
+            id: "binding-a",
+            deviceId: "device-a",
+            displayName: "Laptop",
+            createdAtMs: 1,
+            pairedAtMs: null,
+          },
+        ],
+      });
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+        NodeVM.runInNewContext(expression, { workjetBusinessOsDeviceControl: nativeBindings }),
+      );
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        {
+          _tag: "completed",
+          response: {
+            schema: "ctox.workjet-device-bindings.v1",
+            bindings: [
+              {
+                id: "binding-a",
+                deviceId: "device-a",
+                displayName: "Laptop",
+                createdAtMs: 1,
+                pairedAtMs: null,
+              },
+            ],
+          },
+        },
+      );
+      nativeBindings.mockResolvedValueOnce({
+        businessOsInstanceId: "instance-a",
+        deviceId: null,
+        proofKeyThumbprint: null,
+        grantId: "grant-a",
+        inviteId: "invite-a",
+        invite: {
+          type: "ctox-business-os-invite",
+          version: 1,
+          display_name: "Operations",
+          instance_id: "instance-a",
+          sync_room: "ctox-business-os:instance-a",
+          native_peer_id: "native-a",
+          signaling_urls: ["wss://signal.example.test/socket"],
+          signaling_auth_version: "ctox-role-bound-v1",
+          signaling_browser_token: "synthetic-browser-token",
+          signaling_browser_token_hash: "a".repeat(64),
+          signaling_native_token_hash: "b".repeat(64),
+          transport: "webrtc",
+          expires_at: "2026-09-24T17:05:00Z",
+          data_plane: "rxdb-webrtc",
+          http_bridge_available: false,
+          session: {
+            authenticated: true,
+            source: "mobile_invite",
+            capability_token: "synthetic-capability-token",
+            capability_expires_at_ms: Date.parse("2026-09-24T17:05:00Z"),
+            user: {
+              id: "mobile-a",
+              display_name: "Mobile pairing",
+              role: "user",
+              is_admin: false,
+            },
+          },
+        },
+        expiresAt: "2026-09-24T17:05:00Z",
+        pairingUri: "native-only-qr-secret",
+        qrSvg: "<svg>native-only-qr-secret</svg>",
+      });
+      const created = yield* manager.requestDeviceControl(descriptor.id, {
+        action: "invite.create",
+        ttlSeconds: 300,
+      });
+      expect(created._tag).toBe("completed");
+      expect(JSON.stringify(created)).not.toContain("native-only-qr-secret");
       assert.deepEqual(
         yield* manager.requestDeviceControl("managed:other", { action: "binding.list" }),
         { _tag: "failed", code: "not_active" },

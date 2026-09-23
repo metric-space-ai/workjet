@@ -59,10 +59,12 @@ export class CtoxNativeRequestError extends Schema.TaggedErrorClass<CtoxNativeRe
 const failure = (reason: CtoxNativeRequestError["reason"]) =>
   new CtoxNativeRequestError({ reason });
 const unavailable = () => failure("native-request-store-unavailable");
+const ProjectIntent = Schema.Struct({ request: NativeProjectTaskRequest });
 const IntentCodec = Schema.fromJsonString(
-  Schema.Union([WorkjetCtoxBusinessOsInput, Schema.Struct({ request: NativeProjectTaskRequest })]),
+  Schema.Union([WorkjetCtoxBusinessOsInput, ProjectIntent]),
 );
-const encodeIntent = Schema.encodeEffect(IntentCodec);
+const encodeExistingIntent = Schema.encodeEffect(Schema.fromJsonString(WorkjetCtoxBusinessOsInput));
+const encodeProjectIntent = Schema.encodeEffect(Schema.fromJsonString(ProjectIntent));
 const decodeIntent = Schema.decodeUnknownEffect(IntentCodec);
 const Rows = Schema.Array(
   Schema.Struct({
@@ -126,7 +128,11 @@ const make = Effect.gen(function* () {
   ) {
     if (request.idempotency_key !== identity.requestKey)
       return yield* failure("native-request-conflict");
-    const intentJson = yield* encodeIntent({ request }).pipe(Effect.mapError(unavailable));
+    const intentJson = yield* (
+      request.operation === "start_project_task"
+        ? encodeProjectIntent({ request })
+        : encodeExistingIntent({ request })
+    ).pipe(Effect.mapError(unavailable));
     // Until CTOX exposes a durable authenticated-principal identity, a changed
     // credential may denote another actor (and thus another remote retry scope).
     // Keep retries pinned rather than accidentally creating a task.

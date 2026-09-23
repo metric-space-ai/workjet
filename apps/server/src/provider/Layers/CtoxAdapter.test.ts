@@ -71,9 +71,10 @@ const fixture = (loseFirstWrite = false, taskScope: CtoxTaskScope = { module_id:
               state.duringWrite = undefined;
               yield* during;
             }
-            const data = yield* (
-              name === "business_os.start_project_task" ? decodeProjectArgs(args) : decodeArgs(args)
-            ).pipe(Effect.orDie);
+            const data =
+              name === "business_os.start_project_task"
+                ? yield* decodeProjectArgs(args).pipe(Effect.orDie)
+                : yield* decodeArgs(args).pipe(Effect.orDie);
             let task = tasks.get(data.idempotency_key);
             if (!task) {
               task = {

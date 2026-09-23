@@ -170,7 +170,7 @@ it.effect("replays a project task through the same native key after a lost respo
           expect(tools).toEqual(["business_os.start_project_task"]);
           expect(fields).toEqual({ "business_os.start_project_task": ["idempotency_key"] });
           // The intent and turn link must survive even if discovery fails here.
-          expect(yield* requests.latestNativeTurn(scope)).toMatchObject({
+          expect(yield* requests.latestNativeTurn(scope).pipe(Effect.orDie)).toMatchObject({
             requestId: "command:project-turn",
             reference: {
               commandId: null,

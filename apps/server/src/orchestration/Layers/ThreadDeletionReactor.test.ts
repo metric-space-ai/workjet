@@ -86,18 +86,23 @@ describe("worker worktree cleanup on thread.deleted", () => {
   const makeHarness = (input: {
     readonly threads: Readonly<Record<string, ThreadFixture>>;
     readonly events: ReadonlyArray<OrchestrationEvent>;
+    readonly retainedThreadIds?: ReadonlyArray<ThreadId>;
     readonly failRemoveWorktree?: boolean;
     readonly failDeleteBranch?: boolean;
     readonly failStopProvider?: boolean;
     readonly failProviderLookup?: boolean;
+    readonly failCleanupContextFor?: ThreadId;
     readonly mergeState?: "open" | "closed" | "merged";
     readonly providerHead?: string | null;
     readonly dirty?: boolean;
   }) => {
     const removals: Array<{ readonly cwd: string; readonly path: string }> = [];
     const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
+    const retryPages: Array<ThreadId | null> = [];
     const gitFailure = { _tag: "GitCommandError", detail: "downstream git secret" } as const;
     const commitSha = "a".repeat(40);
+    let mergeState = input.mergeState ?? "merged";
+    let worktreePresent = true;
 
     // `start()` forks stream consumption, so `drain` alone would race the
     // enqueues. Signalling on stream end makes the test deterministic: every
@@ -120,6 +125,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     } as unknown as TerminalManager.TerminalManager["Service"]);
     const queryLayer = Layer.succeed(ProjectionSnapshotQuery, {
       getThreadWorktreeCleanupContext: (threadId: ThreadId) => {
+        if (threadId === input.failCleanupContextFor) return Effect.fail("context decode failed");
         const fixture = input.threads[threadId];
         return Effect.succeed(
           fixture === undefined
@@ -134,18 +140,34 @@ describe("worker worktree cleanup on thread.deleted", () => {
               }),
         );
       },
+      listDeletedWorkerWorktreeCleanupThreadIds: ({
+        afterThreadId,
+        limit,
+      }: {
+        readonly afterThreadId: ThreadId | null;
+        readonly limit: number;
+      }) => {
+        retryPages.push(afterThreadId);
+        return Effect.succeed(
+          (input.retainedThreadIds ?? [])
+            .filter((id) => afterThreadId === null || id > afterThreadId)
+            .slice(0, limit),
+        );
+      },
     } as unknown as ProjectionSnapshotQuery["Service"]);
     const gitLayer = Layer.succeed(GitWorkflowService, {
       invalidateLocalStatus: () => Effect.void,
       localStatus: () =>
         Effect.succeed({
-          isRepo: true,
+          isRepo: worktreePresent,
           refName: workerRefName,
           hasWorkingTreeChanges: input.dirty ?? false,
         }),
       removeWorktree: (removeInput: { readonly cwd: string; readonly path: string }) => {
         removals.push({ cwd: removeInput.cwd, path: removeInput.path });
-        return input.failRemoveWorktree ? Effect.fail(gitFailure) : Effect.void;
+        if (input.failRemoveWorktree) return Effect.fail(gitFailure);
+        worktreePresent = false;
+        return Effect.void;
       },
       deleteBranch: (deleteInput: { readonly cwd: string; readonly refName: string }) => {
         branchDeletions.push({ cwd: deleteInput.cwd, refName: deleteInput.refName });
@@ -160,7 +182,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
               ? Effect.fail(gitFailure)
               : Effect.succeed([
                   {
-                    state: input.mergeState ?? "merged",
+                    state: mergeState,
                     headRefName: workerRefName,
                     headCommitOid:
                       input.providerHead === undefined ? commitSha : input.providerHead,
@@ -196,7 +218,28 @@ describe("worker worktree cleanup on thread.deleted", () => {
       yield* reactor.drain;
     }).pipe(Effect.scoped, Effect.provide(reactorLayer));
 
-    return { removals, branchDeletions, run };
+    const reconcile = Effect.gen(function* () {
+      const reactor = yield* ThreadDeletionReactor;
+      yield* reactor.reconcileRetainedWorkerWorktrees;
+    }).pipe(Effect.scoped, Effect.provide(reactorLayer));
+
+    const reconcileTwoCycles = Effect.gen(function* () {
+      const reactor = yield* ThreadDeletionReactor;
+      yield* reactor.reconcileRetainedWorkerWorktrees;
+      yield* reactor.reconcileRetainedWorkerWorktrees;
+    }).pipe(Effect.scoped, Effect.provide(reactorLayer));
+
+    return {
+      removals,
+      branchDeletions,
+      run,
+      reconcile,
+      reconcileTwoCycles,
+      retryPages,
+      setMergeState: (state: "open" | "merged") => {
+        mergeState = state;
+      },
+    };
   };
 
   it.effect("removes the worker worktree and its branch, and leaves other threads alone", () => {
@@ -307,6 +350,75 @@ describe("worker worktree cleanup on thread.deleted", () => {
       yield* harness.run;
       expect(harness.removals).toEqual([]);
       expect(harness.branchDeletions).toEqual([]);
+    });
+  });
+
+  it.effect("retries retained source after a later merge and skips it after cleanup", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [workerThreadId],
+      mergeState: "open",
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcile;
+      expect(harness.removals).toEqual([]);
+      harness.setMergeState("merged");
+      yield* harness.reconcile;
+      expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+      yield* harness.reconcile;
+      expect(harness.removals).toHaveLength(1);
+    });
+  });
+
+  it.effect("continues past an unreadable retained thread", () => {
+    const unreadable = ThreadId.make("00000000-0000-4000-8000-000000000001");
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [unreadable, workerThreadId],
+      failCleanupContextFor: unreadable,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcile;
+      expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+    });
+  });
+
+  it.effect("bounds each retry cycle to one page and advances its cursor", () => {
+    const earlier = Array.from({ length: 64 }, (_, index) =>
+      ThreadId.make(`00000000-0000-4000-7000-${String(index).padStart(12, "0")}`),
+    );
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [...earlier, workerThreadId],
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcileTwoCycles;
+      expect(harness.retryPages).toEqual([null, earlier[63]]);
+      expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
     });
   });
 

@@ -101,11 +101,14 @@ On `thread.deleted`, worker worktree removal now requires a clean checkout on
 the recorded worker branch and a direct provider query showing that a merged
 PR's head equals local HEAD. This still works after a merged PR's remote branch
 is deleted. Missing or mismatched evidence retains the checkout and logs
-the skip. This prevents deletion of unmerged source, but it does not yet provide
-a retry after later merge, durable proof that the provider session stopped,
-serialization against new execution, or a completed
-archive transition. Archive must follow successful cleanup rather than hide a
-failed or skipped cleanup.
+the skip. At server start and every 15 minutes, a serialized retry checks at
+most 64 deleted worker checkouts from the projection and advances its cursor
+between cycles; it skips missing
+checkouts and reattempts provider session stop before removal. This prevents
+deletion of unmerged source and recovers after a later merge. A durable cleanup
+receipt, proof against concurrent new execution, and completed archive transition
+are still absent. Archive must follow successful cleanup rather than hide a failed
+or skipped cleanup.
 
 ## Implementation checkpoint
 
@@ -117,6 +120,6 @@ changes remain pending.
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
 recovery of checkouts retained after unreadable receipts, explicit handling when
 both parent rework continuations end without a linked child,
-cleanup retry/archive integration, and durable review/selection wiring. The review
+cleanup receipt/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

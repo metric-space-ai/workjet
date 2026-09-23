@@ -248,4 +248,89 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
       );
     }),
   );
+
+  it.effect("pages deleted worker checkouts for later cleanup retries", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, default_model_selection_json,
+          scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          'project-worker-cleanup', 'Worker cleanup', '/tmp/worker-cleanup',
+          ${encodeModelSelection({
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.4",
+          })}, '[]', ${NOW}, ${NOW}, NULL
+        )
+      `;
+
+      for (const item of [
+        {
+          id: "cleanup-a",
+          deletedAt: NOW,
+          path: "/tmp/worker-a",
+          branch: "workjet/worker/cleanup-a",
+        },
+        {
+          id: "cleanup-b",
+          deletedAt: NOW,
+          path: "/tmp/worker-b",
+          branch: "workjet/worker/cleanup-b",
+        },
+        {
+          id: "cleanup-active",
+          deletedAt: null,
+          path: "/tmp/worker-active",
+          branch: "workjet/worker/cleanup-active",
+        },
+        {
+          id: "cleanup-no-path",
+          deletedAt: NOW,
+          path: null,
+          branch: "workjet/worker/cleanup-no-path",
+        },
+        {
+          id: "cleanup-other-branch",
+          deletedAt: NOW,
+          path: "/tmp/worker-other",
+          branch: "feature/other",
+        },
+      ]) {
+        yield* sql`
+          INSERT INTO projection_threads (
+            thread_id, project_id, title, model_selection_json, runtime_mode,
+            interaction_mode, workjet_config_json, branch, worktree_path,
+            latest_turn_id, created_at, updated_at, archived_at, deleted_at
+          ) VALUES (
+            ${item.id}, 'project-worker-cleanup', ${item.id},
+            ${encodeModelSelection({
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.4",
+            })}, 'full-access', 'default', ${encodeWorkjetThreadConfig(workerConfig)},
+            ${item.branch}, ${item.path}, NULL, ${NOW}, ${NOW}, NULL, ${item.deletedAt}
+          )
+        `;
+      }
+
+      const first = yield* snapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds({
+        afterThreadId: null,
+        limit: 1,
+      });
+      assert.deepEqual(first, [ThreadId.make("cleanup-a")]);
+      const second = yield* snapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds({
+        afterThreadId: first[0] ?? null,
+        limit: 1,
+      });
+      assert.deepEqual(second, [ThreadId.make("cleanup-b")]);
+      const third = yield* snapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds({
+        afterThreadId: second[0] ?? null,
+        limit: 1,
+      });
+      assert.deepEqual(third, []);
+      const context = yield* snapshotQuery.getThreadWorktreeCleanupContext(first[0]!);
+      assert.equal(Option.getOrNull(context)?.workjetRole, "worker");
+    }),
+  );
 });

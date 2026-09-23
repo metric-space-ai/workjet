@@ -177,6 +177,12 @@ export interface ProjectionSnapshotQueryShape {
     ProjectionRepositoryError
   >;
 
+  /** Page deleted worker ids whose recorded checkout may still need cleanup. */
+  readonly listDeletedWorkerWorktreeCleanupThreadIds: (input: {
+    readonly afterThreadId: ThreadId | null;
+    readonly limit: number;
+  }) => Effect.Effect<ReadonlyArray<ThreadId>, ProjectionRepositoryError>;
+
   /**
    * Read only the narrow context needed to compute a full-thread diff from
    * checkpoint 0 to a specific turn count.

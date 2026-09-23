@@ -97,12 +97,13 @@ Source-owned review decisions now persist their round and bounded reasons on
 the transactional `reviews` edge. The learning service still does not record
 first/final scores or drive model selection from these verdicts.
 
-Git/provider contracts retain the provider's PR head evidence. Non-force worktree
-removal protects dirty work and unmerged commits, but it is not merge proof.
-Destructive completion requires both verified repository/head/merged-PR evidence
-and serialization against new worker execution. Until that common lifecycle fence
-exists, an inactive snapshot is insufficient and automatic cleanup stays pending.
-Archive must follow successful cleanup rather than hide a failed cleanup.
+On `thread.deleted`, worker worktree removal now requires a clean checkout on
+the recorded worker branch and fresh provider evidence that a merged PR's head
+equals local HEAD. Missing or mismatched evidence retains the checkout and logs
+the skip. This prevents deletion of unmerged source, but it does not yet provide
+a retry after later merge, serialization against new execution, or a completed
+archive transition. Archive must follow successful cleanup rather than hide a
+failed or skipped cleanup.
 
 ## Implementation checkpoint
 
@@ -114,6 +115,6 @@ changes remain pending.
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
 recovery of checkouts retained after unreadable receipts, explicit handling when
 both parent rework continuations end without a linked child,
-cleanup/archive integration, and durable review/selection wiring. The review
+cleanup retry/archive integration, and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

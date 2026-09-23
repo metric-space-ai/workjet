@@ -14,6 +14,7 @@ import * as Stream from "effect/Stream";
 import { describe, expect, it } from "@effect/vitest";
 
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import { WORKER_REF_PREFIX } from "../../workjet/WorkerDispatch.ts";
@@ -86,10 +87,14 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly events: ReadonlyArray<OrchestrationEvent>;
     readonly failRemoveWorktree?: boolean;
     readonly failDeleteBranch?: boolean;
+    readonly mergeState?: "open" | "closed" | "merged";
+    readonly providerHead?: string | null;
+    readonly dirty?: boolean;
   }) => {
     const removals: Array<{ readonly cwd: string; readonly path: string }> = [];
     const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
     const gitFailure = { _tag: "GitCommandError", detail: "downstream git secret" } as const;
+    const commitSha = "a".repeat(40);
 
     // `start()` forks stream consumption, so `drain` alone would race the
     // enqueues. Signalling on stream end makes the test deterministic: every
@@ -127,6 +132,26 @@ describe("worker worktree cleanup on thread.deleted", () => {
       },
     } as unknown as ProjectionSnapshotQuery["Service"]);
     const gitLayer = Layer.succeed(GitWorkflowService, {
+      invalidateStatus: () => Effect.void,
+      status: () =>
+        Effect.succeed({
+          isRepo: true,
+          refName: workerRefName,
+          hasWorkingTreeChanges: input.dirty ?? false,
+          pr: {
+            number: 42,
+            headRef: workerRefName,
+            state: input.mergeState ?? "merged",
+          },
+        }),
+      resolvePullRequest: () =>
+        Effect.succeed({
+          pullRequest: {
+            state: input.mergeState ?? "merged",
+            headBranch: workerRefName,
+            headCommitOid: input.providerHead === undefined ? commitSha : input.providerHead,
+          },
+        }),
       removeWorktree: (removeInput: { readonly cwd: string; readonly path: string }) => {
         removals.push({ cwd: removeInput.cwd, path: removeInput.path });
         return input.failRemoveWorktree ? Effect.fail(gitFailure) : Effect.void;
@@ -136,6 +161,9 @@ describe("worker worktree cleanup on thread.deleted", () => {
         return input.failDeleteBranch ? Effect.fail(gitFailure) : Effect.void;
       },
     } as unknown as GitWorkflowService["Service"]);
+    const gitDriverLayer = Layer.succeed(GitVcsDriver, {
+      resolveCommit: () => Effect.succeed({ commitSha }),
+    } as unknown as GitVcsDriver["Service"]);
 
     const reactorLayer = ThreadDeletionReactorLive.pipe(
       Layer.provide(workerWorktreeCleanupLayer),
@@ -146,6 +174,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           terminalLayer,
           queryLayer,
           gitLayer,
+          gitDriverLayer,
           worktreeStorageLayerTest({ trustedRoots: [worktreeRoot] }),
           NodeServices.layer,
         ),
@@ -205,7 +234,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     });
   });
 
-  it.effect("only deletes this thread's own worker ref", () => {
+  it.effect("retains a checkout attached to a different worker ref", () => {
     const harness = makeHarness({
       threads: {
         [workerThreadId]: {
@@ -220,10 +249,37 @@ describe("worker worktree cleanup on thread.deleted", () => {
 
     return Effect.gen(function* () {
       yield* harness.run;
-      expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+      expect(harness.removals).toEqual([]);
       expect(harness.branchDeletions).toEqual([]);
     });
   });
+
+  it.effect("retains worker source until a matching merged PR head is verified", () =>
+    Effect.gen(function* () {
+      for (const evidence of [
+        { mergeState: "open" as const },
+        { mergeState: "closed" as const },
+        { providerHead: "b".repeat(40) },
+        { providerHead: null },
+        { dirty: true },
+      ]) {
+        const harness = makeHarness({
+          threads: {
+            [workerThreadId]: {
+              workjetRole: "worker",
+              branch: workerRefName,
+              worktreePath: workerWorktreePath,
+            },
+          },
+          events: [deletedEvent(workerThreadId)],
+          ...evidence,
+        });
+        yield* harness.run;
+        expect(harness.removals).toEqual([]);
+        expect(harness.branchDeletions).toEqual([]);
+      }
+    }),
+  );
 
   it.effect("does not fail the deletion reaction when cleanup fails", () =>
     Effect.gen(function* () {

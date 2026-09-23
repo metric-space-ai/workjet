@@ -16,6 +16,7 @@
  *    worktree storage root (never the project workspace root, never a root
  *    itself);
  *  - only the branch ref named exactly `workjet/worker/<threadId>`;
+ *  - only after the provider confirms that this exact local HEAD was merged;
  *  - never force removal: Git must retain dirty worktrees and unmerged refs.
  *
  * Every outcome is a value, so the reaction is observable, and the caller can
@@ -34,6 +35,7 @@ import * as Schema from "effect/Schema";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
+import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { WORKER_REF_PREFIX } from "./WorkerDispatch.ts";
 
 /**
@@ -44,7 +46,8 @@ export type WorkerWorktreeCleanupSkipReason =
   | "thread-unavailable"
   | "not-a-worker"
   | "no-worktree-path"
-  | "outside-storage-root";
+  | "outside-storage-root"
+  | "merge-unverified";
 
 export type WorkerWorktreeCleanupOutcome =
   | { readonly status: "skipped"; readonly reason: WorkerWorktreeCleanupSkipReason }
@@ -104,6 +107,7 @@ const isStrictlyWithin = (path: Path.Path, candidate: string, root: string): boo
 export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
   const query = yield* ProjectionSnapshotQuery;
   const gitWorkflow = yield* GitWorkflowService;
+  const git = yield* GitVcsDriver;
   const worktreeStorage = yield* WorktreeStorage;
   const path = yield* Path.Path;
 
@@ -137,6 +141,42 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       return { status: "skipped", reason: "outside-storage-root" } as const;
     }
 
+    const workerRefName = `${WORKER_REF_PREFIX}${threadId}`;
+    if (context.branch !== workerRefName) {
+      return { status: "skipped", reason: "merge-unverified" } as const;
+    }
+
+    // A clean checkout alone does not prove that its commits are durable.
+    // Resolve the provider's merged PR and compare its reported head with the
+    // exact commit still checked out here. Any missing/stale evidence retains
+    // the worktree and branch for recovery.
+    const verifiedMerge = yield* Effect.gen(function* () {
+      yield* gitWorkflow.invalidateStatus(worktreePath);
+      const status = yield* gitWorkflow.status({ cwd: worktreePath });
+      if (
+        !status.isRepo ||
+        status.refName !== workerRefName ||
+        status.hasWorkingTreeChanges ||
+        status.pr?.state !== "merged" ||
+        status.pr.headRef !== workerRefName
+      ) {
+        return false;
+      }
+      const resolved = yield* gitWorkflow.resolvePullRequest({
+        cwd: worktreePath,
+        reference: String(status.pr.number),
+      });
+      const pr = resolved.pullRequest;
+      if (pr.state !== "merged" || pr.headBranch !== workerRefName || !pr.headCommitOid) {
+        return false;
+      }
+      const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
+      return pr.headCommitOid.toLowerCase() === head.commitSha.toLowerCase();
+    }).pipe(Effect.orElseSucceed(() => false));
+    if (!verifiedMerge) {
+      return { status: "skipped", reason: "merge-unverified" } as const;
+    }
+
     // The project workspace root is the one checkout guaranteed not to be the
     // worktree being removed; `git worktree remove` refuses to remove the tree
     // it is executed from.
@@ -147,10 +187,6 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
 
     // `git worktree remove` leaves the branch behind. Only this worker's own
     // namespaced ref may be deleted.
-    const workerRefName = `${WORKER_REF_PREFIX}${threadId}`;
-    if (context.branch !== workerRefName) {
-      return { status: "cleaned", worktreePath, deletedRefName: null } as const;
-    }
     yield* gitWorkflow
       .deleteBranch({ cwd, refName: workerRefName, force: false })
       .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "delete-branch" })));

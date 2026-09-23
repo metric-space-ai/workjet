@@ -60,9 +60,9 @@ const make = Effect.gen(function* () {
 
   /**
    * Durable end of a dispatched worker's life: `thread.deleted` is the only
-   * boundary that survives a restart, so the isolated worker checkout and its
-   * throwaway `workjet/worker/<threadId>` branch are released here. Failure is
-   * logged, never fatal — the thread stays deleted either way.
+   * boundary that survives a restart. The isolated worker checkout and its
+   * branch are released only after the provider verifies a matching merged PR.
+   * Unverified source stays on disk and is logged for later recovery.
    */
   const removeWorkerWorktree = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     logCleanupCauseUnlessInterrupted({
@@ -74,7 +74,9 @@ const make = Effect.gen(function* () {
                 worktreePath: outcome.worktreePath,
                 deletedRefName: outcome.deletedRefName,
               })
-            : Effect.void,
+            : outcome.reason === "merge-unverified"
+              ? Effect.logWarning("thread deletion retained unverified worker source", { threadId })
+              : Effect.void,
         ),
         Effect.asVoid,
       ),

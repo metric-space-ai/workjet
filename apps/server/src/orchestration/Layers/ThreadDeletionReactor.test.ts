@@ -108,6 +108,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly initialBranchPresent?: boolean;
     readonly advanceBranchAfterDeleteFailure?: boolean;
     readonly failStopProvider?: boolean;
+    readonly providerStopTerminated?: boolean;
     readonly failArchiveOnce?: boolean;
     readonly failProviderLookup?: boolean;
     readonly failCleanupContextFor?: ThreadId;
@@ -162,7 +163,13 @@ describe("worker worktree cleanup on thread.deleted", () => {
     } as unknown as OrchestrationEngineService["Service"]);
     const providerLayer = Layer.succeed(ProviderService, {
       stopSession: () =>
-        input.failStopProvider ? Effect.fail("provider stop failed") : Effect.void,
+        input.failStopProvider
+          ? Effect.fail("provider stop failed")
+          : Effect.succeed({
+              terminated: input.providerStopTerminated ?? true,
+              method: "cooperative" as const,
+              pids: [],
+            }),
     } as unknown as ProviderService["Service"]);
     const terminalLayer = Layer.succeed(TerminalManager.TerminalManager, {
       close: () => Effect.void,
@@ -521,6 +528,31 @@ describe("worker worktree cleanup on thread.deleted", () => {
       expect(harness.branchDeletions).toEqual([]);
     });
   });
+
+  it.effect("retains worker source when a successful stop reports a live provider", () =>
+    Effect.gen(function* () {
+      for (const retained of [false, true]) {
+        const harness = makeHarness({
+          threads: {
+            [workerThreadId]: {
+              workjetRole: "worker",
+              branch: workerRefName,
+              worktreePath: workerWorktreePath,
+            },
+          },
+          events: retained ? [] : [deletedEvent(workerThreadId)],
+          retainedThreadIds: retained ? [workerThreadId] : [],
+          providerStopTerminated: false,
+        });
+        if (retained) yield* harness.reconcile;
+        else yield* harness.run;
+        expect(harness.removals).toEqual([]);
+        expect(harness.branchDeletions).toEqual([]);
+        expect(harness.archives).toEqual([]);
+        expect(harness.receipts.size).toBe(0);
+      }
+    }),
+  );
 
   it.effect("retains both Git sources if merge evidence cannot be persisted", () => {
     const harness = makeHarness({

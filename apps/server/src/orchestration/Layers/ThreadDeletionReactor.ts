@@ -64,7 +64,14 @@ const make = Effect.gen(function* () {
 
   const stopProviderSession = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     providerService.stopSession({ threadId }).pipe(
-      Effect.as(true),
+      Effect.map((result) => result !== undefined && result.terminated === true),
+      Effect.tap((terminated) =>
+        terminated
+          ? Effect.void
+          : Effect.logWarning("thread deletion retained worktree after provider remained active", {
+              threadId,
+            }),
+      ),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.failCause(cause);

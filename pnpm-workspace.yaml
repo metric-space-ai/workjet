@@ -155,6 +155,7 @@ patchedDependencies:
   effect@4.0.0-beta.103: patches/effect@4.0.0-beta.103.patch
   expo-modules-jsi@56.0.10: patches/expo-modules-jsi@56.0.10.patch
   image-size@2.0.4: patches/image-size@2.0.4.patch
+  metro@0.84.4: patches/metro@0.84.4.patch
   react-native-gesture-handler@2.31.2: patches/react-native-gesture-handler@2.31.2.patch
   react-native-keyboard-controller@1.21.13: patches/react-native-keyboard-controller@1.21.13.patch
   react-native-nitro-modules@0.35.9: patches/react-native-nitro-modules@0.35.9.patch

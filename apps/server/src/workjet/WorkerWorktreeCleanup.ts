@@ -16,8 +16,9 @@
  *    worktree storage root (never the project workspace root, never a root
  *    itself);
  *  - only the branch ref named exactly `workjet/worker/<threadId>`;
- *  - only after the provider confirms that this exact local HEAD was merged;
- *  - never force removal: Git must retain dirty worktrees and unmerged refs.
+ *  - only after the provider confirms the exact local HEAD or retained branch
+ *    commit was merged;
+ *  - never force worktree removal; branch deletion compares the expected commit.
  *
  * Every outcome is a value, so the reaction is observable, and the caller can
  * log a failure without ever failing the thread deletion it reacts to.
@@ -27,6 +28,7 @@
 import type { ThreadId } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -48,15 +50,15 @@ export type WorkerWorktreeCleanupSkipReason =
   | "not-a-worker"
   | "no-worktree-path"
   | "outside-storage-root"
-  | "merge-unverified";
+  | "merge-unverified"
+  | "already-cleaned";
 
 export type WorkerWorktreeCleanupOutcome =
   | { readonly status: "skipped"; readonly reason: WorkerWorktreeCleanupSkipReason }
   | {
       readonly status: "cleaned";
       readonly worktreePath: string;
-      /** `null` when the thread's branch was not this worker's own ref. */
-      readonly deletedRefName: string | null;
+      readonly deletedRefName: string;
     };
 
 export type WorkerWorktreeCleanupFailureStep = "read-thread" | "remove-worktree" | "delete-branch";
@@ -85,9 +87,8 @@ export class WorkerWorktreeCleanupError extends Schema.TaggedErrorClass<WorkerWo
 
 export interface WorkerWorktreeCleanupShape {
   /**
-   * Idempotent. Re-running after a successful cleanup simply reports the
-   * removal attempt again; Git failures on already-removed paths surface as a
-   * bounded error the caller logs.
+   * Idempotent. A missing checkout with an owned branch retries branch cleanup;
+   * when both are gone the operation reports an already-cleaned skip.
    */
   readonly cleanupDeletedThread: (
     threadId: ThreadId,
@@ -112,6 +113,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
   const sourceControlProviders = yield* SourceControlProviderRegistry;
   const worktreeStorage = yield* WorktreeStorage;
   const path = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
 
   const cleanupDeletedThread: WorkerWorktreeCleanupShape["cleanupDeletedThread"] = Effect.fn(
     "WorkerWorktreeCleanup.cleanupDeletedThread",
@@ -148,47 +150,68 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       return { status: "skipped", reason: "merge-unverified" } as const;
     }
 
-    // A clean checkout alone does not prove that its commits are durable.
-    // Resolve the provider's merged PR and compare its reported head with the
-    // exact commit still checked out here. Any missing/stale evidence retains
-    // the worktree and branch for recovery.
-    const verifiedMerge = yield* Effect.gen(function* () {
-      yield* gitWorkflow.invalidateLocalStatus(worktreePath);
-      const status = yield* gitWorkflow.localStatus({ cwd: worktreePath });
-      if (!status.isRepo || status.refName !== workerRefName || status.hasWorkingTreeChanges) {
-        return false;
+    const mergedAtCommit = (cwd: string, commitSha: string) =>
+      Effect.gen(function* () {
+        const provider = yield* sourceControlProviders.resolve({ cwd });
+        const merged = yield* provider.listChangeRequests({
+          cwd,
+          headSelector: workerRefName,
+          state: "merged",
+          limit: 100,
+        });
+        return merged.some(
+          (pr) =>
+            pr.state === "merged" &&
+            pr.headRefName === workerRefName &&
+            pr.headCommitOid?.toLowerCase() === commitSha.toLowerCase(),
+        );
+      }).pipe(Effect.orElseSucceed(() => false));
+
+    const cwd = context.workspaceRoot;
+    yield* gitWorkflow.invalidateLocalStatus(worktreePath);
+    const local = yield* gitWorkflow
+      .localStatus({ cwd: worktreePath })
+      .pipe(Effect.orElseSucceed(() => null));
+    let verifiedCommitSha: string;
+    if (local?.isRepo) {
+      if (local.refName !== workerRefName || local.hasWorkingTreeChanges) {
+        return { status: "skipped", reason: "merge-unverified" } as const;
       }
-      const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
-      const provider = yield* sourceControlProviders.resolve({ cwd: worktreePath });
-      const merged = yield* provider.listChangeRequests({
-        cwd: worktreePath,
-        headSelector: workerRefName,
-        state: "merged",
-        limit: 100,
-      });
-      return merged.some(
-        (pr) =>
-          pr.state === "merged" &&
-          pr.headRefName === workerRefName &&
-          pr.headCommitOid?.toLowerCase() === head.commitSha.toLowerCase(),
-      );
-    }).pipe(Effect.orElseSucceed(() => false));
-    if (!verifiedMerge) {
-      return { status: "skipped", reason: "merge-unverified" } as const;
+      const head = yield* git
+        .resolveCommit({ cwd: worktreePath, revision: "HEAD" })
+        .pipe(Effect.orElseSucceed(() => null));
+      if (!head || !(yield* mergedAtCommit(worktreePath, head.commitSha))) {
+        return { status: "skipped", reason: "merge-unverified" } as const;
+      }
+      verifiedCommitSha = head.commitSha;
+      // The project workspace root is the surviving checkout. Never force a
+      // dirty worktree removal, even when its HEAD is already merged.
+      yield* gitWorkflow
+        .removeWorktree({ cwd, path: worktreePath, force: false })
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
+    } else {
+      // A prior removal may have succeeded while branch deletion failed. If a
+      // path still exists but is no longer a Git worktree, retain its files.
+      const pathExists = yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
+      if (pathExists) return { status: "skipped", reason: "merge-unverified" } as const;
+      const branch = yield* git
+        .resolveCommit({
+          cwd,
+          revision: `refs/heads/${workerRefName}`,
+        })
+        .pipe(Effect.orElseSucceed(() => null));
+      if (!branch) return { status: "skipped", reason: "already-cleaned" } as const;
+      if (!(yield* mergedAtCommit(cwd, branch.commitSha))) {
+        return { status: "skipped", reason: "merge-unverified" } as const;
+      }
+      verifiedCommitSha = branch.commitSha;
     }
 
-    // The project workspace root is the one checkout guaranteed not to be the
-    // worktree being removed; `git worktree remove` refuses to remove the tree
-    // it is executed from.
-    const cwd = context.workspaceRoot;
-    yield* gitWorkflow
-      .removeWorktree({ cwd, path: worktreePath, force: false })
-      .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
-
-    // `git worktree remove` leaves the branch behind. Only this worker's own
-    // namespaced ref may be deleted.
-    yield* gitWorkflow
-      .deleteBranch({ cwd, refName: workerRefName, force: false })
+    // Git's expected-old-value check refuses deletion if the branch advanced
+    // after the provider/head verification. It also works when local HEAD has
+    // not fetched the merge yet.
+    yield* git
+      .deleteBranchAtCommit({ cwd, refName: workerRefName, expectedCommitSha: verifiedCommitSha })
       .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "delete-branch" })));
 
     return { status: "cleaned", worktreePath, deletedRefName: workerRefName } as const;

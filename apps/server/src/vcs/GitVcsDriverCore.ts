@@ -3022,6 +3022,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     });
   });
 
+  const deleteBranchAtCommit: GitVcsDriver.GitVcsDriver["Service"]["deleteBranchAtCommit"] =
+    Effect.fn("deleteBranchAtCommit")(function* (input) {
+      const refs = yield* listRefs({ cwd: input.cwd, refresh: true });
+      const branch = refs.refs.find((ref) => !ref.isRemote && ref.name === input.refName);
+      if (!branch || branch.worktreePath !== null) {
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.deleteBranchAtCommit",
+          command: "git update-ref",
+          cwd: input.cwd,
+          detail: "The branch is missing or still checked out in a worktree.",
+        });
+      }
+      yield* executeGit(
+        "GitVcsDriver.deleteBranchAtCommit",
+        input.cwd,
+        ["update-ref", "-d", `refs/heads/${input.refName}`, input.expectedCommitSha],
+        { timeoutMs: 10_000, fallbackErrorDetail: "git compare-and-delete branch failed" },
+      );
+    });
+
   const renameBranch: GitVcsDriver.GitVcsDriver["Service"]["renameBranch"] = Effect.fn(
     "renameBranch",
   )(function* (input) {
@@ -3228,6 +3248,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     removeWorktree: (input) => withListRefsInvalidation(input.cwd, removeWorktree(input)),
     renameBranch: (input) => withListRefsInvalidation(input.cwd, renameBranch(input)),
     deleteBranch: (input) => withListRefsInvalidation(input.cwd, deleteBranch(input)),
+    deleteBranchAtCommit: (input) =>
+      withListRefsInvalidation(input.cwd, deleteBranchAtCommit(input)),
     createRef: (input) => withListRefsInvalidation(input.cwd, createRef(input)),
     switchRef: (input) => withListRefsInvalidation(input.cwd, switchRef(input)),
     initRepo: initRepoWithListRefsInvalidation,

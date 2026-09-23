@@ -13,6 +13,8 @@ import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import { WorkerWorktreeCleanup } from "../../workjet/WorkerWorktreeCleanup.ts";
+import { WORKER_REF_PREFIX } from "../../workjet/WorkerDispatch.ts";
+import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
@@ -53,6 +55,7 @@ const make = Effect.gen(function* () {
   const workerWorktreeCleanup = yield* WorkerWorktreeCleanup;
   const query = yield* ProjectionSnapshotQuery;
   const gitWorkflow = yield* GitWorkflowService;
+  const git = yield* GitVcsDriver;
   const cleanupMutex = yield* Semaphore.make(1);
   const reconcileMutex = yield* Semaphore.make(1);
   let retryCursor: ThreadId | null = null;
@@ -154,14 +157,24 @@ const make = Effect.gen(function* () {
               );
               const worktree = Option.getOrUndefined(context);
               if (worktree?.workjetRole !== "worker") return;
+              if (worktree.branch !== `${WORKER_REF_PREFIX}${threadId}`) return;
               const worktreePath = worktree.worktreePath;
               if (!worktreePath) return;
-              // A successful earlier cleanup leaves the projection history intact.
-              // Missing checkouts are already settled; do not poll their PR again.
+              // The projection keeps deleted rows. Retry a missing checkout
+              // only while its owned branch still exists; branch deletion may
+              // have failed after the worktree was already removed.
               const local = yield* gitWorkflow
                 .localStatus({ cwd: worktreePath })
                 .pipe(Effect.orElseSucceed(() => null));
-              if (!local?.isRepo) return;
+              if (!local?.isRepo) {
+                const branch = yield* git
+                  .resolveCommit({
+                    cwd: worktree.workspaceRoot,
+                    revision: `refs/heads/${worktree.branch}`,
+                  })
+                  .pipe(Effect.orElseSucceed(() => null));
+                if (!branch) return;
+              }
               const providerStopped = yield* stopProviderSession(threadId);
               if (providerStopped) yield* removeWorkerWorktree(threadId);
             }),

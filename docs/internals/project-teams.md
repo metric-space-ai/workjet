@@ -97,18 +97,18 @@ Source-owned review decisions now persist their round and bounded reasons on
 the transactional `reviews` edge. The learning service still does not record
 first/final scores or drive model selection from these verdicts.
 
-On `thread.deleted`, worker worktree removal now requires a clean checkout on
-the recorded worker branch and a direct provider query showing that a merged
-PR's head equals local HEAD. This still works after a merged PR's remote branch
-is deleted. Missing or mismatched evidence retains the checkout and logs
-the skip. At server start and every 15 minutes, a serialized retry checks at
-most 64 deleted worker checkouts from the projection and advances its cursor
-between cycles; it skips missing
-checkouts and reattempts provider session stop before removal. This prevents
-deletion of unmerged source and recovers after a later merge. A durable cleanup
-receipt, proof against concurrent new execution, and completed archive transition
-are still absent. Archive must follow successful cleanup rather than hide a failed
-or skipped cleanup.
+On `thread.deleted`, worker worktree removal requires a clean checkout on the
+recorded worker branch and a direct provider query showing that a merged PR's
+head equals local HEAD. This still works after a merged PR's remote branch is
+deleted. At server start and every 15 minutes, a serialized retry checks at most
+64 deleted worker checkouts from the projection and advances its cursor between
+cycles. If a prior attempt removed the worktree but failed to delete its branch,
+the retry checks the branch commit against a merged PR and deletes that ref only
+with Git's expected-old-commit check. A branch with new unique commits stays.
+Missing or mismatched merge evidence retains source. Provider session stop is
+retried before removal. A durable cleanup receipt, proof against concurrent new
+execution, and completed archive transition are still absent. Archive must follow
+successful cleanup rather than hide a failed or skipped cleanup.
 
 ## Implementation checkpoint
 

@@ -89,6 +89,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly retainedThreadIds?: ReadonlyArray<ThreadId>;
     readonly failRemoveWorktree?: boolean;
     readonly failDeleteBranch?: boolean;
+    readonly failDeleteBranchOnce?: boolean;
+    readonly advanceBranchAfterDeleteFailure?: boolean;
     readonly failStopProvider?: boolean;
     readonly failProviderLookup?: boolean;
     readonly failCleanupContextFor?: ThreadId;
@@ -104,6 +106,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
     const commitSha = "a".repeat(40);
     let mergeState = input.mergeState ?? "merged";
     let worktreePresent = true;
+    let branchPresent = true;
+    let branchCommitSha = commitSha;
 
     // `start()` forks stream consumption, so `drain` alone would race the
     // enqueues. Signalling on stream end makes the test deterministic: every
@@ -170,10 +174,6 @@ describe("worker worktree cleanup on thread.deleted", () => {
         worktreePresent = false;
         return Effect.void;
       },
-      deleteBranch: (deleteInput: { readonly cwd: string; readonly refName: string }) => {
-        branchDeletions.push({ cwd: deleteInput.cwd, refName: deleteInput.refName });
-        return input.failDeleteBranch ? Effect.fail(gitFailure) : Effect.void;
-      },
     } as unknown as GitWorkflowService["Service"]);
     const sourceControlLayer = Layer.succeed(SourceControlProviderRegistry, {
       resolve: () =>
@@ -197,7 +197,31 @@ describe("worker worktree cleanup on thread.deleted", () => {
         }),
     } as unknown as SourceControlProviderRegistry["Service"]);
     const gitDriverLayer = Layer.succeed(GitVcsDriver, {
-      resolveCommit: () => Effect.succeed({ commitSha }),
+      resolveCommit: (resolveInput: { readonly revision: string }) =>
+        resolveInput.revision.startsWith("refs/heads/")
+          ? branchPresent
+            ? Effect.succeed({ commitSha: branchCommitSha })
+            : Effect.fail(gitFailure)
+          : Effect.succeed({ commitSha }),
+      deleteBranchAtCommit: (deleteInput: {
+        readonly cwd: string;
+        readonly refName: string;
+        readonly expectedCommitSha: string;
+      }) => {
+        branchDeletions.push({ cwd: deleteInput.cwd, refName: deleteInput.refName });
+        if (
+          input.failDeleteBranch ||
+          (input.failDeleteBranchOnce && branchDeletions.length === 1)
+        ) {
+          if (input.advanceBranchAfterDeleteFailure) branchCommitSha = "b".repeat(40);
+          return Effect.fail(gitFailure);
+        }
+        if (!branchPresent || deleteInput.expectedCommitSha !== branchCommitSha) {
+          return Effect.fail(gitFailure);
+        }
+        branchPresent = false;
+        return Effect.void;
+      },
     } as unknown as GitVcsDriver["Service"]);
 
     const reactorLayer = ThreadDeletionReactorLive.pipe(
@@ -235,12 +259,20 @@ describe("worker worktree cleanup on thread.deleted", () => {
       yield* reactor.reconcileRetainedWorkerWorktrees;
     }).pipe(Effect.scoped, Effect.provide(reactorLayer));
 
+    const reconcileThreeCycles = Effect.gen(function* () {
+      const reactor = yield* ThreadDeletionReactor;
+      yield* reactor.reconcileRetainedWorkerWorktrees;
+      yield* reactor.reconcileRetainedWorkerWorktrees;
+      yield* reactor.reconcileRetainedWorkerWorktrees;
+    }).pipe(Effect.scoped, Effect.provide(reactorLayer));
+
     return {
       removals,
       branchDeletions,
       run,
       reconcile,
       reconcileTwoCycles,
+      reconcileThreeCycles,
       retryPages,
       providerQueries,
       setMergeState: (state: "open" | "merged") => {
@@ -427,6 +459,52 @@ describe("worker worktree cleanup on thread.deleted", () => {
       yield* harness.reconcileTwoCycles;
       expect(harness.retryPages).toEqual([null, earlier[63]]);
       expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+    });
+  });
+
+  it.effect("recovers branch deletion after worktree removal already succeeded", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [workerThreadId],
+      failDeleteBranchOnce: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcileThreeCycles;
+      expect(harness.removals).toEqual([{ cwd: workspaceRoot, path: workerWorktreePath }]);
+      expect(harness.branchDeletions).toEqual([
+        { cwd: workspaceRoot, refName: workerRefName },
+        { cwd: workspaceRoot, refName: workerRefName },
+      ]);
+    });
+  });
+
+  it.effect("retains a branch that gained a unique commit after partial cleanup", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [workerThreadId],
+      failDeleteBranchOnce: true,
+      advanceBranchAfterDeleteFailure: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcileThreeCycles;
+      expect(harness.removals).toHaveLength(1);
+      expect(harness.branchDeletions).toHaveLength(1);
     });
   });
 

@@ -31,6 +31,7 @@ const DELETED_LEGACY_WORKER_ID = ThreadId.make("thread-workjet-deleted-legacy-wo
 const DELETED_NON_WORKER_ID = ThreadId.make("thread-workjet-deleted-non-worker");
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 const encodeWorkjetThreadConfig = Schema.encodeSync(Schema.fromJsonString(WorkjetThreadConfig));
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const orchestratorConfig = {
   schemaVersion: 1,
@@ -301,7 +302,7 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
 
       // A legacy row cannot become a team worker by carrying a stray `team`
       // object in stored JSON; the archived list and detail query agree.
-      const legacyWithSpoofedTeam = JSON.stringify({
+      const legacyWithSpoofedTeam = encodeUnknownJson({
         ...workerConfig,
         team: {
           role: "worker",

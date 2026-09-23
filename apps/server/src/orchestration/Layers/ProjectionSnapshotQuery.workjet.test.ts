@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   ModelSelection,
+  ProjectId,
   ProviderInstanceId,
   ThreadId,
   WorkjetThreadConfig,
@@ -24,6 +25,7 @@ const NOW = "2026-08-14T00:00:00.000Z";
 const ACTIVE_THREAD_ID = ThreadId.make("thread-workjet-active");
 const ARCHIVED_THREAD_ID = ThreadId.make("thread-workjet-archived");
 const DELETED_WORKER_ID = ThreadId.make("thread-workjet-deleted-worker");
+const DELETED_LEGACY_WORKER_ID = ThreadId.make("thread-workjet-deleted-legacy-worker");
 const DELETED_NON_WORKER_ID = ThreadId.make("thread-workjet-deleted-non-worker");
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 const encodeWorkjetThreadConfig = Schema.encodeSync(Schema.fromJsonString(WorkjetThreadConfig));
@@ -45,6 +47,27 @@ const workerConfig = {
   },
   managedInstructions: "Implement snapshot work.",
   enabledCapabilityIds: ["web-search"],
+} as const satisfies WorkjetThreadConfig;
+
+const deletedTeamWorkerConfig = {
+  schemaVersion: 2,
+  role: "worker",
+  parent: {
+    environmentId: EnvironmentId.make("environment-snapshot"),
+    threadId: ACTIVE_THREAD_ID,
+  },
+  managedInstructions: "Implement snapshot work.",
+  enabledCapabilityIds: [],
+  capabilityBindings: [],
+  team: {
+    role: "worker",
+    projectId: ProjectId.make("project-workjet-snapshot"),
+    threadId: DELETED_WORKER_ID,
+    parentThreadId: ACTIVE_THREAD_ID,
+    packageId: "snapshot-package",
+    goal: "Complete snapshot work",
+    createdAt: NOW,
+  },
 } as const satisfies WorkjetThreadConfig;
 
 const layer = it.layer(
@@ -153,8 +176,15 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
       yield* insertThread({
         threadId: DELETED_WORKER_ID,
         title: "Completed worker",
-        workjetConfig: workerConfig,
+        workjetConfig: deletedTeamWorkerConfig,
         archivedAt: "2026-08-14T00:00:02.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
+        threadId: DELETED_LEGACY_WORKER_ID,
+        title: "Deleted legacy worker",
+        workjetConfig: workerConfig,
+        archivedAt: "2026-08-14T00:00:04.000Z",
         deletedAt: "2026-08-14T00:00:01.000Z",
       });
       yield* insertThread({

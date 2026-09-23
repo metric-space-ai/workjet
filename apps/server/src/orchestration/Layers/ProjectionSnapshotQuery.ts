@@ -539,7 +539,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE archived_at IS NOT NULL
           AND (
             deleted_at IS NULL
-            OR json_extract(workjet_config_json, '$.role') = 'worker'
+            OR json_extract(workjet_config_json, '$.team.role') = 'worker'
           )
         ORDER BY project_id ASC, archived_at DESC, thread_id DESC
       `,
@@ -676,7 +676,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE threads.archived_at IS NOT NULL
           AND (
             threads.deleted_at IS NULL
-            OR json_extract(threads.workjet_config_json, '$.role') = 'worker'
+            OR json_extract(threads.workjet_config_json, '$.team.role') = 'worker'
           )
         ORDER BY sessions.thread_id ASC
       `,
@@ -774,7 +774,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE threads.archived_at IS NOT NULL
           AND (
             threads.deleted_at IS NULL
-            OR json_extract(threads.workjet_config_json, '$.role') = 'worker'
+            OR json_extract(threads.workjet_config_json, '$.team.role') = 'worker'
           )
           AND threads.latest_turn_id IS NOT NULL
         ORDER BY turns.thread_id ASC

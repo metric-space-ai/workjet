@@ -2847,6 +2847,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return { commitSha };
   });
 
+  const localBranchRefExists: GitVcsDriver.GitVcsDriver["Service"]["localBranchRefExists"] =
+    Effect.fn("localBranchRefExists")(function* (input) {
+      const args = ["show-ref", "--verify", "--quiet", `refs/heads/${input.refName}`];
+      const result = yield* executeGit("GitVcsDriver.localBranchRefExists", input.cwd, args, {
+        allowNonZeroExit: true,
+        timeoutMs: 5_000,
+      });
+      if (result.exitCode === 0) return true;
+      if (result.exitCode === 1) return false;
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.localBranchRefExists",
+          cwd: input.cwd,
+          args,
+        }),
+        detail: "Could not determine whether the local branch exists.",
+        ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+        stdoutLength: result.stdout.length,
+        stderrLength: result.stderr.length,
+      });
+    });
+
   const fetchPullRequestHeadCommit: GitVcsDriver.GitVcsDriver["Service"]["fetchPullRequestHeadCommit"] =
     Effect.fn("fetchPullRequestHeadCommit")(function* (input) {
       const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
@@ -3234,6 +3256,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       withListRefsInvalidation(input.cwd, fetchPullRequestBranch(input)),
     fetchPullRequestHeadCommit,
     resolveCommit,
+    localBranchRefExists,
     refreshCheckedOutBranch: (input) =>
       withListRefsInvalidation(input.cwd, refreshCheckedOutBranch(input)),
     ensureRemote: (input) => withListRefsInvalidation(input.cwd, ensureRemote(input)),

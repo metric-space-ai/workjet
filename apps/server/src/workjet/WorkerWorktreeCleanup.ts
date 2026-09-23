@@ -233,13 +233,10 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
       // path still exists but is no longer a Git worktree, retain its files.
       const pathExists = yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
       if (pathExists) return { status: "skipped", reason: "merge-unverified" } as const;
-      const branch = yield* git
-        .resolveCommit({
-          cwd,
-          revision: `refs/heads/${workerRefName}`,
-        })
-        .pipe(Effect.orElseSucceed(() => null));
-      if (!branch) {
+      const branchExists = yield* git
+        .localBranchRefExists({ cwd, refName: workerRefName })
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+      if (!branchExists) {
         const recorded = yield* receipts
           .get(threadId)
           .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
@@ -259,6 +256,11 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* () {
         }
         return { status: "skipped", reason: "already-cleaned" } as const;
       }
+      // A ref can exist while rev-parse fails (corrupt repository, unreadable
+      // object, transient Git failure). None of those proves branch deletion.
+      const branch = yield* git
+        .resolveCommit({ cwd, revision: `refs/heads/${workerRefName}` })
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
       const mergedUrl = yield* mergedAtCommit(cwd, branch.commitSha);
       if (!mergedUrl) {
         return { status: "skipped", reason: "merge-unverified" } as const;

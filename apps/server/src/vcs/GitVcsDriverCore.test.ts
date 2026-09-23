@@ -1538,6 +1538,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         const worktreePath = pathService.join(yield* makeTmpDir("git-worker-cleanup-"), "worker");
         const driver = yield* GitVcsDriver.GitVcsDriver;
         const refName = "workjet/worker/verified";
+        assert.equal(yield* driver.localBranchRefExists({ cwd, refName }), false);
         yield* driver.createWorktree({
           cwd,
           path: worktreePath,
@@ -1545,6 +1546,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           newRefName: refName,
         });
         const original = yield* driver.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
+        assert.equal(yield* driver.localBranchRefExists({ cwd, refName }), true);
         yield* Effect.flip(
           driver.deleteBranchAtCommit({
             cwd,
@@ -1566,7 +1568,16 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         );
         assert.equal(yield* git(cwd, ["rev-parse", `refs/heads/${refName}`]), advanced.commitSha);
         yield* driver.deleteBranchAtCommit({ cwd, refName, expectedCommitSha: advanced.commitSha });
+        assert.equal(yield* driver.localBranchRefExists({ cwd, refName }), false);
         yield* Effect.flip(driver.resolveCommit({ cwd, revision: `refs/heads/${refName}` }));
+      }),
+    );
+
+    it.effect("does not classify a repository error as a missing branch", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir("git-missing-repository-");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* Effect.flip(driver.localBranchRefExists({ cwd, refName: "workjet/worker/a" }));
       }),
     );
   });

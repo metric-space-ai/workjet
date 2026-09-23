@@ -169,13 +169,14 @@ const make = Effect.gen(function* () {
                 .localStatus({ cwd: worktreePath })
                 .pipe(Effect.orElseSucceed(() => null));
               if (!local?.isRepo) {
-                const branch = yield* git
-                  .resolveCommit({
-                    cwd: worktree.workspaceRoot,
-                    revision: `refs/heads/${worktree.branch}`,
-                  })
-                  .pipe(Effect.orElseSucceed(() => null));
-                if (!branch) {
+                const branchExists = yield* git
+                  .localBranchRefExists({ cwd: worktree.workspaceRoot, refName: worktree.branch })
+                  .pipe(Effect.option);
+                if (Option.isNone(branchExists)) {
+                  yield* Effect.logWarning("retained worker branch lookup failed", { threadId });
+                  return;
+                }
+                if (!branchExists.value) {
                   const receipt = yield* cleanupReceipts.get(threadId);
                   if (Option.isNone(receipt) || receipt.value.status === "complete") return;
                 }

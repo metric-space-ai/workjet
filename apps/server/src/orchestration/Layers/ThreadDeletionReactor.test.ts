@@ -95,6 +95,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly failRemoveWorktree?: boolean;
     readonly failDeleteBranch?: boolean;
     readonly failDeleteBranchOnce?: boolean;
+    readonly failBranchResolveOnce?: boolean;
+    readonly failBranchRefLookupOnce?: boolean;
     readonly failMarkCompleteOnce?: boolean;
     readonly failRecordVerified?: boolean;
     readonly initialWorktreePresent?: boolean;
@@ -117,6 +119,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
     let worktreePresent = input.initialWorktreePresent ?? true;
     let branchPresent = input.initialBranchPresent ?? true;
     let branchCommitSha = commitSha;
+    let branchResolveAttempts = 0;
+    let branchRefLookupAttempts = 0;
     let completionAttempts = 0;
     const receipts = new Map<ThreadId, WorkerCleanupReceipt>();
 
@@ -209,12 +213,21 @@ describe("worker worktree cleanup on thread.deleted", () => {
         }),
     } as unknown as SourceControlProviderRegistry["Service"]);
     const gitDriverLayer = Layer.succeed(GitVcsDriver, {
-      resolveCommit: (resolveInput: { readonly revision: string }) =>
-        resolveInput.revision.startsWith("refs/heads/")
-          ? branchPresent
-            ? Effect.succeed({ commitSha: branchCommitSha })
-            : Effect.fail(gitFailure)
-          : Effect.succeed({ commitSha }),
+      resolveCommit: (resolveInput: { readonly revision: string }) => {
+        if (!resolveInput.revision.startsWith("refs/heads/")) {
+          return Effect.succeed({ commitSha });
+        }
+        branchResolveAttempts += 1;
+        return branchPresent && !(input.failBranchResolveOnce && branchResolveAttempts === 1)
+          ? Effect.succeed({ commitSha: branchCommitSha })
+          : Effect.fail(gitFailure);
+      },
+      localBranchRefExists: () => {
+        branchRefLookupAttempts += 1;
+        return input.failBranchRefLookupOnce && branchRefLookupAttempts === 1
+          ? Effect.fail(gitFailure)
+          : Effect.succeed(branchPresent);
+      },
       deleteBranchAtCommit: (deleteInput: {
         readonly cwd: string;
         readonly refName: string;
@@ -543,6 +556,59 @@ describe("worker worktree cleanup on thread.deleted", () => {
         { cwd: workspaceRoot, refName: workerRefName },
         { cwd: workspaceRoot, refName: workerRefName },
       ]);
+    });
+  });
+
+  it.effect("never records cleanup complete when an existing branch cannot be resolved", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [workerThreadId],
+      failDeleteBranchOnce: true,
+      failBranchResolveOnce: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      expect(harness.branchDeletions).toHaveLength(1);
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");
+      expect(harness.branchDeletions).toHaveLength(2);
+    });
+  });
+
+  it.effect("retains a verified receipt when branch-existence lookup fails", () => {
+    const harness = makeHarness({
+      threads: {
+        [workerThreadId]: {
+          workjetRole: "worker",
+          branch: workerRefName,
+          worktreePath: workerWorktreePath,
+        },
+      },
+      events: [],
+      retainedThreadIds: [workerThreadId],
+      failDeleteBranchOnce: true,
+      failBranchRefLookupOnce: true,
+    });
+
+    return Effect.gen(function* () {
+      yield* harness.reconcile;
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      expect(harness.branchDeletions).toHaveLength(1);
+      yield* harness.reconcile;
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");
+      expect(harness.branchDeletions).toHaveLength(2);
     });
   });
 

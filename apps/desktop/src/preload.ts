@@ -146,6 +146,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   setConnectionCatalog: (catalog) =>
     ipcRenderer.invoke(IpcChannels.SET_CONNECTION_CATALOG_CHANNEL, catalog),
   clearConnectionCatalog: () => ipcRenderer.invoke(IpcChannels.CLEAR_CONNECTION_CATALOG_CHANNEL),
+  recoverConnectionCatalog: () =>
+    ipcRenderer.invoke(IpcChannels.RECOVER_CONNECTION_CATALOG_CHANNEL),
   discoverSshHosts: () => ipcRenderer.invoke(IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL),
   discoverTailscalePeers: () => ipcRenderer.invoke(IpcChannels.DISCOVER_TAILSCALE_PEERS_CHANNEL),
   ensureSshEnvironment: async (target, options) =>

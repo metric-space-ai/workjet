@@ -413,4 +413,39 @@ describe("DesktopConnectionCatalogStore", () => {
       assert.deepStrictEqual(yield* store.get, Option.some('{"schemaVersion":1,"targets":[]}'));
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
+
+  it.effect("backs up an unreadable catalog before resetting saved connections", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "workjet-desktop-connection-catalog-test-",
+      });
+      const failDecrypt = yield* Ref.make(false);
+      const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(makeLayer(baseDir, true, failDecrypt)),
+      );
+      const catalogPath = `${baseDir}/userdata/connection-catalog.json`;
+      const original = '{"schemaVersion":1,"targets":[]}';
+      assert.isTrue(yield* store.set(original));
+      const encryptedOriginal = yield* fileSystem.readFileString(catalogPath);
+
+      yield* Ref.set(failDecrypt, true);
+      const backupPath = yield* store.recover;
+      assert.isNotNull(backupPath);
+      if (backupPath === null) return;
+      assert.equal(yield* fileSystem.readFileString(backupPath), encryptedOriginal);
+      assert.notEqual(yield* fileSystem.readFileString(catalogPath), encryptedOriginal);
+
+      yield* Ref.set(failDecrypt, false);
+      const recovered = yield* store.get;
+      assert.isTrue(Option.isSome(recovered));
+      if (Option.isSome(recovered)) {
+        const catalog = yield* decodeConnectionCatalog(recovered.value);
+        assert.deepEqual(catalog.targets, []);
+        assert.deepEqual(catalog.profiles, []);
+      }
+      assert.isNull(yield* store.recover);
+      assert.equal(yield* fileSystem.readFileString(backupPath), encryptedOriginal);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
 });

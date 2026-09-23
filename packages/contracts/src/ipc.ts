@@ -1124,6 +1124,7 @@ export interface DesktopBridge {
   getConnectionCatalog?: () => Promise<string | null>;
   setConnectionCatalog?: (catalog: string) => Promise<boolean>;
   clearConnectionCatalog?: () => Promise<void>;
+  recoverConnectionCatalog?: () => Promise<string | null>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
   discoverTailscalePeers: () => Promise<DesktopTailscalePeers>;
   ensureSshEnvironment: (

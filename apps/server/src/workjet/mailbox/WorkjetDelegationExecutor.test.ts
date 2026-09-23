@@ -835,9 +835,19 @@ it.effect("returns a completed worker turn for review and runs approved rework",
     const actor = { environmentId: LOCAL_ENVIRONMENT, threadId: SOURCE_THREAD };
     const review = yield* delivery.updateDelegation(actor, {
       delegationId: original.delegationId,
-      update: { _tag: "review", decision: "changes-requested", round: 1 },
+      update: {
+        _tag: "review",
+        decision: "changes-requested",
+        round: 1,
+        reasons: ["missing acceptance proof"],
+      },
     });
     assert.equal(review.state, "changes-requested");
+    assert.deepEqual((yield* store.listDelegationEdges(original.delegationId, 10))[0]?.review, {
+      decision: "changes-requested",
+      round: 1,
+      reasons: ["missing acceptance proof"],
+    });
 
     harness.failNextTurnStarts(1, { _tag: "OrchestrationCommandDeferredError" });
     const recovery = yield* harness.executor;

@@ -836,10 +836,16 @@ it.effect("submits an approve verdict: review-requested→completed with a revie
     });
     assert.equal(outcome.state, "completed");
     assert.equal(outcome.edgeKind, "reviews");
+    const reviewEdges = yield* store.listDelegationEdges(id, 32);
     assert.deepEqual(
-      (yield* store.listDelegationEdges(id, 32)).map((edge) => edge.kind),
+      reviewEdges.map((edge) => edge.kind),
       ["reviews"],
     );
+    assert.deepEqual(reviewEdges[0]?.review, {
+      decision: "approve",
+      round: 1,
+      reasons: ["looks correct"],
+    });
     assert.equal(events.filter((event) => event._tag === "delegation-completed").length, 1);
   }).pipe(Effect.provide(testLayer)),
 );

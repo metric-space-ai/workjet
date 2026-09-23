@@ -1212,11 +1212,14 @@ export const makeWorkjetMailboxDeliveryWithSources = Effect.fn(
         }
         const to: WorkjetDelegationState =
           input.update.decision === "approve" ? "completed" : "changes-requested";
-        const result = yield* transition(
-          "review-requested",
-          to,
-          relationship("reviews", actorRef, reviewedRef, delegation.depth),
-        );
+        const result = yield* transition("review-requested", to, {
+          ...relationship("reviews", actorRef, reviewedRef, delegation.depth),
+          review: {
+            decision: input.update.decision,
+            round: input.update.round,
+            reasons: input.update.reasons ?? [],
+          },
+        });
         if (to === "completed") {
           yield* emit({
             _tag: "delegation-completed",

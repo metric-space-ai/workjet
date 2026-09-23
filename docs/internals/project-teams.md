@@ -93,7 +93,9 @@ for the same rejected delegation. The parent still must create a revised task
 with its chosen prompt and scope, or explicitly cancel the rejected task. If
 both continuations end without either action, the original stays visibly
 `changes-requested`; automatic child generation is not implied.
-Review reasons and round verdicts are not yet persisted as learning evidence.
+Source-owned review decisions now persist their round and bounded reasons on
+the transactional `reviews` edge. The learning service still does not record
+first/final scores or drive model selection from these verdicts.
 
 Git/provider contracts retain the provider's PR head evidence. Non-force worktree
 removal protects dirty work and unmerged commits, but it is not merge proof.

@@ -1589,6 +1589,35 @@ describe("CtoxGuestManager", () => {
         yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
         { _tag: "failed", code: "unsupported" },
       );
+
+      const control = vi.fn();
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+        NodeVM.runInNewContext(expression, { workjetBusinessOsDeviceControl: control }),
+      );
+      control.mockRejectedValueOnce(
+        Object.assign(new Error("private credential"), {
+          code: "CTOX_WEBRTC_CAPABILITY_MISSING",
+        }),
+      );
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "unsupported" },
+      );
+      control.mockRejectedValueOnce(new Error("Native WebRTC peer is not connected"));
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "sync_unavailable" },
+      );
+      control.mockRejectedValueOnce(new Error("workjet device management is not allowed"));
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "forbidden" },
+      );
+      control.mockRejectedValueOnce(new Error("private credential"));
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "guest_failed" },
+      );
     }).pipe(Effect.provide(harness.layer));
   });
 

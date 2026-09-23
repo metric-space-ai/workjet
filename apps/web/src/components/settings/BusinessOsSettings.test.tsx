@@ -19,6 +19,7 @@ import {
   resolveActiveBusinessOsInstanceId,
   visibleBusinessOsInstances,
 } from "./BusinessOsSettings";
+import { businessOsDeviceControlErrorMessage } from "./businessOsDeviceControl";
 
 function instance(
   id: string,
@@ -40,6 +41,22 @@ function instance(
 }
 
 describe("Business OS settings scope", () => {
+  it("explains safe device-control failures without showing guest exception text", () => {
+    const fallback = "Geräteanfrage fehlgeschlagen.";
+    expect(businessOsDeviceControlErrorMessage(new Error("unsupported"), fallback)).toContain(
+      "Backend",
+    );
+    expect(
+      businessOsDeviceControlErrorMessage(new Error("sync_unavailable"), fallback),
+    ).toContain("CTOX Sync");
+    expect(businessOsDeviceControlErrorMessage(new Error("forbidden"), fallback)).toContain(
+      "darf Geräte",
+    );
+    expect(
+      businessOsDeviceControlErrorMessage(new Error("private credential"), fallback),
+    ).toBe(fallback);
+  });
+
   it("activates an imported backend through the shared selector before refreshing discovery", async () => {
     const backend = instance("paired:backend-alpha", "Lab");
     const events: string[] = [];

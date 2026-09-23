@@ -39,6 +39,7 @@ import {
 import { QRCodeSvg } from "../ui/qr-code";
 import { Spinner } from "../ui/spinner";
 import {
+  businessOsDeviceControlErrorMessage,
   createBusinessOsDeviceInvite,
   type BusinessOsWebRtcDeviceInvite,
   listBusinessOsDevices,
@@ -658,11 +659,14 @@ export function BusinessOsSettings() {
         setDevicesError(null);
         setDevicesLoading(false);
       },
-      () => {
+      (error) => {
         if (cancelled) return;
         setDevices([]);
         setDevicesError(
-          "Die Geräteverbindung ist noch nicht verfügbar. Prüfe die Verbindung und versuche es erneut.",
+          businessOsDeviceControlErrorMessage(
+            error,
+            "Die Geräteverbindung ist noch nicht verfügbar. Prüfe die Verbindung und versuche es erneut.",
+          ),
         );
         setDevicesLoading(false);
       },
@@ -692,9 +696,12 @@ export function BusinessOsSettings() {
           ctoxInstanceDisplayTitle(selected),
         ),
       );
-    } catch {
+    } catch (error) {
       setDevicesError(
-        "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
+        ),
       );
     } finally {
       setAddingDevice(false);
@@ -707,8 +714,13 @@ export function BusinessOsSettings() {
     try {
       await revokeBusinessOsDeviceInvite(bridge, activeInstanceId, activeInvite.inviteId);
       setActiveInvite(null);
-    } catch {
-      setDevicesError("Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.");
+    } catch (error) {
+      setDevicesError(
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.",
+        ),
+      );
     } finally {
       setRevokingInvite(false);
     }
@@ -746,8 +758,13 @@ export function BusinessOsSettings() {
           ctoxInstanceDisplayTitle(selected),
         ),
       );
-    } catch {
-      setDevicesError("Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.");
+    } catch (error) {
+      setDevicesError(
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.",
+        ),
+      );
     } finally {
       setRevokingInvite(false);
     }
@@ -759,8 +776,13 @@ export function BusinessOsSettings() {
     try {
       await revokeBusinessOsDevice(bridge, activeInstanceId, devicePairingId);
       setDeviceRefreshKey((key) => key + 1);
-    } catch {
-      setDevicesError("Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.");
+    } catch (error) {
+      setDevicesError(
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.",
+        ),
+      );
     } finally {
       setRevokingDeviceId(null);
     }

@@ -334,8 +334,29 @@ function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1
   return `(async () => {
   const control = globalThis.workjetBusinessOsDeviceControl;
   if (typeof control !== "function") return { status: "unsupported" };
-  const result = await control(${JSON.stringify(request)});
-  return { status: "completed", result };
+  try {
+    const result = await control(${JSON.stringify(request)});
+    return { status: "completed", result };
+  } catch (error) {
+    // Never return guest exception text: it can contain credentials.
+    const code = typeof error?.code === "string" ? error.code : "";
+    const message = typeof error?.message === "string" ? error.message : "";
+    if (code === "CTOX_WEBRTC_CAPABILITY_MISSING" || code === "ctox_webrtc_unavailable") {
+      return { status: "failed", code: "unsupported" };
+    }
+    if (message === "workjet device management is not allowed") {
+      return { status: "failed", code: "forbidden" };
+    }
+    if (
+      code === "peer_connect_timeout" ||
+      code === "PEER_UNAVAILABLE" ||
+      message === "Native WebRTC peer is not connected" ||
+      message.startsWith("Native request ctox.workjet.device.v1 exceeded ")
+    ) {
+      return { status: "failed", code: "sync_unavailable" };
+    }
+    return { status: "failed", code: "guest_failed" };
+  }
 })()`;
 }
 
@@ -1587,12 +1608,20 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "not_active" };
         }
         const raw = pending.value;
-        if (
-          typeof raw === "object" &&
-          raw !== null &&
-          (raw as { readonly status?: unknown }).status === "unsupported"
-        ) {
-          return { _tag: "failed", code: "unsupported" };
+        if (typeof raw === "object" && raw !== null) {
+          const guestStatus = (raw as { readonly status?: unknown }).status;
+          const guestCode = (raw as { readonly code?: unknown }).code;
+          if (guestStatus === "unsupported") return { _tag: "failed", code: "unsupported" };
+          if (guestStatus === "failed") {
+            if (
+              guestCode === "unsupported" ||
+              guestCode === "sync_unavailable" ||
+              guestCode === "forbidden"
+            ) {
+              return { _tag: "failed", code: guestCode };
+            }
+            return { _tag: "failed", code: "guest_failed" };
+          }
         }
         if (
           typeof raw !== "object" ||

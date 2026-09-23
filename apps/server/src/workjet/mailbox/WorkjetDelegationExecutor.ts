@@ -128,6 +128,7 @@ const WORKJET_DELEGATION_EXECUTOR_CYCLE_TIMEOUT = Duration.seconds(60);
 /** Thread-visible activity kinds appended by the executor. */
 export const WORKJET_DELEGATION_STARTED_ACTIVITY_KIND = "workjet.delegation.started";
 export const WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND = "workjet.delegation.refused";
+export const WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND = "workjet.review.delivery-failed";
 /**
  * Appended to the SOURCE thread when a delegation's result returns to it.
  *
@@ -2198,13 +2199,6 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         outbox.payload._tag === "message" &&
         outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX)
       ) {
-        if (outbox.reviewRedriveCount > 0) {
-          yield* Effect.logWarning("remote review signal exhausted its redrive", {
-            envelopeId: outbox.envelopeId,
-          });
-          yield* markReconciled;
-          continue;
-        }
         const original = outbox.payload.message;
         const lookup = yield* Effect.result(
           original.inReplyTo
@@ -2229,12 +2223,16 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         }
         const awaiting =
           record?._tag === "Success" ? Option.getOrUndefined(record.success) : undefined;
+        if (awaiting?.state !== "review-requested") {
+          yield* markReconciled;
+          continue;
+        }
         const nowInstant = Option.getOrUndefined(DateTime.make(now));
-        const budgetEnd = awaiting
-          ? Option.getOrUndefined(DateTime.make(awaiting.delegation.budget.expiresAt))
-          : undefined;
+        const budgetEnd = Option.getOrUndefined(
+          DateTime.make(awaiting.delegation.budget.expiresAt),
+        );
         if (
-          awaiting?.state === "review-requested" &&
+          outbox.reviewRedriveCount === 0 &&
           nowInstant &&
           budgetEnd &&
           DateTime.toEpochMillis(budgetEnd) > DateTime.toEpochMillis(nowInstant) &&
@@ -2252,9 +2250,45 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           }
           if (redrive.success) continue;
         }
-        yield* Effect.logWarning("remote review signal cannot be redriven", {
+        yield* Effect.logWarning("remote review signal delivery ended without review", {
           envelopeId: outbox.envelopeId,
         });
+        const sourceThreadId = awaiting.delegation.source.threadId;
+        const sourceRead = yield* Effect.result(query.getThreadDetailById(sourceThreadId));
+        if (sourceRead._tag === "Failure") {
+          yield* Effect.logWarning("dead review signal source lookup deferred", {
+            envelopeId: outbox.envelopeId,
+            cause: sourceRead.failure,
+          });
+          continue;
+        }
+        const sourceThread = Option.getOrUndefined(sourceRead.success);
+        if (!sourceThread || sourceThread.deletedAt !== null) {
+          yield* markReconciled;
+          continue;
+        }
+        const alerted = yield* appendActivity({
+          threadId: sourceThreadId,
+          delegationId: awaiting.delegationId,
+          suffix: `review-delivery-failed:${outbox.envelopeId}`,
+          kind: WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
+          tone: "error",
+          summary:
+            "Remote review request was not delivered. Notify the reviewer again or resolve the delegation.",
+          payload: {
+            schemaVersion: 1,
+            delegationId: awaiting.delegationId,
+            envelopeId: outbox.envelopeId,
+            state: "dead",
+          },
+          createdAt: now,
+        });
+        if (!alerted) {
+          yield* Effect.logWarning("dead review signal activity deferred", {
+            envelopeId: outbox.envelopeId,
+          });
+          continue;
+        }
         yield* markReconciled;
         continue;
       }

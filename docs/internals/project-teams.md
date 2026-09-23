@@ -71,9 +71,11 @@ envelope is unexpired and the delegation still awaits review. Its id, sealed
 payload, signed routing envelope and expiry remain unchanged: sealed bytes are
 cryptographically bound to that id. An atomic redrive counter prevents a second
 budget after restart. Transient lookup or redrive failures leave the row for
-retry. An expired or twice-dead letter stays queryable and is logged.
-User-visible escalation or a fresh review request with newly sealed content
-remains to be implemented.
+retry. An expired or twice-dead letter stays queryable and is logged. If review
+is still pending, the executor appends one error activity to the source thread
+with a stable command identity; a failed activity append retries after restart.
+The source must notify the reviewer again or resolve the delegation. A dedicated
+freshly sealed resend action remains to be implemented.
 An orchestrator can now submit a linked delegation after a `changes-requested`
 review. The delivery service derives a `revises` edge and depth, restricts the
 new task to the same worker and bounds its depth, review rounds, and expiry
@@ -139,7 +141,7 @@ APK and real desktop/web/mobile acceptance remain pending.
 Remaining work includes full acceptance of atomic dispatch and parent continuation,
 recovery of checkouts retained after unreadable receipts, explicit handling when
 both parent rework continuations end without a linked child,
-cleanup/archive integration, final remote review-signal escalation,
+cleanup/archive integration, a dedicated fresh remote review-signal resend action,
 and durable review/selection wiring. The review
 contract and pure selection calculation are not a persisted learning service.
 No deployment or end-to-end acceptance is claimed.

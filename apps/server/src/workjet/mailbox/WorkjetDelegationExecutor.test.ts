@@ -51,6 +51,7 @@ import {
   WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND,
   WORKJET_DELEGATION_RESULT_ACTIVITY_KIND,
   WORKJET_DELEGATION_STARTED_ACTIVITY_KIND,
+  WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
   type WorkjetDelegationExecutorShape,
   type WorkjetDelegationExecutorSources,
 } from "./WorkjetDelegationExecutor.ts";
@@ -412,7 +413,8 @@ const makeHarness = (options?: {
       }
       if (
         command.type === "thread.activity.append" &&
-        command.activity.kind === WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND &&
+        (command.activity.kind === WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND ||
+          command.activity.kind === WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND) &&
         reviewActivityFailures > 0
       ) {
         reviewActivityFailures -= 1;
@@ -2583,8 +2585,40 @@ it.effect("redrives a dead sealed review envelope once without changing its cryp
       () => store.recordAttempt(originalId, NOW),
       { discard: true },
     );
+    harness.failNextReviewActivities(1);
     yield* restarted.runCycle;
     assert.equal(Option.getOrThrow(yield* store.getOutbound(originalId)).reviewRedriveCount, 1);
+    assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 1);
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
+      ),
+      0,
+    );
+    const afterRestart = yield* harness.executor;
+    yield* afterRestart.runCycle;
+    const alerts = harness.commands.filter(
+      (command) =>
+        command.type === "thread.activity.append" &&
+        command.activity.kind === WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
+    );
+    assert.lengthOf(alerts, 1);
+    if (alerts[0]?.type === "thread.activity.append") {
+      assert.equal(alerts[0].threadId, SOURCE_THREAD);
+      assert.include(alerts[0].activity.summary, "not delivered");
+      assert.isFalse(JSON.stringify(alerts[0].activity).includes("c2VhbGVkLXJldmlldy1wYXlsb2Fk"));
+    }
+    yield* afterRestart.runCycle;
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
+      ),
+      1,
+    );
     assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 0);
     assert.lengthOf(yield* store.listOutboundByState("pending", 10), 0);
   }).pipe(Effect.provide(testLayer("delegation-review-deadletter"))),
@@ -2628,6 +2662,14 @@ it.effect("does not redrive a review envelope after its signed expiry", () =>
     assert.equal(outbox.state, "dead");
     assert.equal(outbox.reviewRedriveCount, 0);
     assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 0);
+    assert.lengthOf(
+      harness.commands.filter(
+        (command) =>
+          command.type === "thread.activity.append" &&
+          command.activity.kind === WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
+      ),
+      1,
+    );
   }).pipe(Effect.provide(testLayer("delegation-expired-review"))),
 );
 

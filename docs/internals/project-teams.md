@@ -130,9 +130,11 @@ deleted. At server start and every 15 minutes, a serialized retry checks at most
 cycles. If a prior attempt removed the worktree but failed to delete its branch,
 the retry checks the branch commit against a merged PR and deletes that ref only
 with Git's expected-old-commit check. A branch with new unique commits stays.
-Missing or mismatched merge evidence retains source. Provider session stop is
-retried before removal. A durable receipt records the matching merged PR URL
-and commit before checkout or branch removal and records completion afterward.
+Missing or mismatched merge evidence retains source. Both deletion and startup
+retry require a provider stop result with `terminated: true`; a successful stop
+call that reports a live process retains the checkout. A durable receipt records
+the matching merged PR URL and commit before checkout or branch removal and
+records completion afterward.
 Restart reconciliation finishes an interrupted completion only when the exact
 receipt and Git ref state agree. Missing, unreadable or changed Git evidence
 keeps the receipt pending and retains any remaining source. Deleted threads
@@ -155,9 +157,12 @@ thread detail and command reads still reject deleted threads.
 
 This branch is not production-ready. Receipt reconciliation, atomic review
 signals and edges, result-to-rework, bounded rework reminders, guarded cleanup,
-and one bounded remote review-signal redrive have focused tests. The archive
-history read is protected by a typed RPC and a query boundary, but still needs
-exact-head CI and real Mobile acceptance. Android preview APK and real
+and one bounded remote review-signal redrive have focused tests. Worktree
+cleanup still needs a no-follow deletion or an enforceable process boundary:
+the current canonical path check cannot exclude a concurrent same-user symlink
+swap before Git removes the worktree. Do not merge on a cleanup-safety claim yet.
+The archive history read is protected by a typed RPC and a query boundary, but
+still needs exact-head CI and real Mobile acceptance. Android preview APK and real
 desktop/web/mobile acceptance remain pending.
 
 Remaining work includes full acceptance of atomic dispatch and parent continuation,

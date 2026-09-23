@@ -4,7 +4,6 @@ import {
   applyDeliveredDelegation,
   makeWorkjetMailboxDeliveryWithSources,
   WORKJET_MESSAGE_RECEIVED_ACTIVITY_KIND,
-  WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX,
   type WorkjetMailboxDeliveryShape,
 } from "./WorkjetMailboxDelivery.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -320,7 +319,7 @@ interface Harness {
    */
   readonly failNextEnqueues: (count: number, kind: "transient" | "permanent") => void;
   readonly failNextReviewLookups: (count: number) => void;
-  readonly failNextOutboundReconciles: (count: number) => void;
+  readonly failNextReviewRedrives: (count: number, afterCommit: boolean) => void;
   /** Every `enqueueOutbound` call the executor made, failures included. */
   readonly enqueueAttempts: () => number;
   readonly executor: Effect.Effect<
@@ -373,7 +372,8 @@ const makeHarness = (options?: {
   let enqueueFailureKind: "transient" | "permanent" = "transient";
   let enqueueCalls = 0;
   let reviewLookupFailures = 0;
-  let outboundReconcileFailures = 0;
+  let reviewRedriveFailures = 0;
+  let reviewRedriveAfterCommit = false;
   let nowIndex = 0;
   let deliveryUuidIndex = 0;
   const nowValues = options?.nowValues ?? [NOW];
@@ -490,8 +490,9 @@ const makeHarness = (options?: {
     failNextReviewLookups: (count) => {
       reviewLookupFailures = count;
     },
-    failNextOutboundReconciles: (count) => {
-      outboundReconcileFailures = count;
+    failNextReviewRedrives: (count, afterCommit) => {
+      reviewRedriveFailures = count;
+      reviewRedriveAfterCommit = afterCommit;
     },
     enqueueAttempts: () => enqueueCalls,
     delivery: makeWorkjetMailboxDeliveryWithSources({
@@ -551,14 +552,23 @@ const makeHarness = (options?: {
           }
           return real.enqueueOutbound(envelope, payload);
         },
-        markOutboundReconciled: (
-          ...args: Parameters<WorkjetMailboxStore["Service"]["markOutboundReconciled"]>
+        redriveDeadReviewSignal: (
+          ...args: Parameters<WorkjetMailboxStore["Service"]["redriveDeadReviewSignal"]>
         ) => {
-          if (outboundReconcileFailures > 0) {
-            outboundReconcileFailures -= 1;
+          if (reviewRedriveFailures > 0) {
+            reviewRedriveFailures -= 1;
+            if (reviewRedriveAfterCommit) {
+              return real
+                .redriveDeadReviewSignal(...args)
+                .pipe(
+                  Effect.flatMap(() =>
+                    Effect.fail(retryableEngineError as unknown as WorkjetMailboxError),
+                  ),
+                );
+            }
             return Effect.fail(retryableEngineError as unknown as WorkjetMailboxError);
           }
-          return real.markOutboundReconciled(...args);
+          return real.redriveDeadReviewSignal(...args);
         },
         findDelegationIdByEnvelopeId: (
           ...args: Parameters<WorkjetMailboxStore["Service"]["findDelegationIdByEnvelopeId"]>
@@ -2508,7 +2518,7 @@ it.effect("fails a source delegation whose outbound envelope dead-lettered", () 
   }).pipe(Effect.provide(testLayer("delegation-executor-deadletter"))),
 );
 
-it.effect("reissues a dead remote review signal once with a stable envelope after restart", () =>
+it.effect("redrives a dead sealed review envelope once without changing its cryptographic id", () =>
   Effect.gen(function* () {
     const harness = makeHarness();
     const store = yield* WorkjetMailboxStore;
@@ -2538,52 +2548,87 @@ it.effect("reissues a dead remote review signal once with a stable envelope afte
     );
     assert.equal(review.delivery._tag, "queued");
     const originalId = review.delivery.envelopeId;
+    const original = Option.getOrThrow(yield* store.getOutbound(originalId));
     yield* Effect.forEach(
       Array.from({ length: WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS }),
       () => store.recordAttempt(originalId, NOW),
       { discard: true },
     );
-    const replacementId = WorkjetEnvelopeId.make(
-      `wjm-review-reissue-${originalId.slice(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX.length)}`,
-    );
 
     harness.failNextReviewLookups(1);
     yield* (yield* harness.executor).runCycle;
-    assert.isTrue(Option.isNone(yield* store.getOutbound(replacementId)));
+    assert.equal(Option.getOrThrow(yield* store.getOutbound(originalId)).state, "dead");
     assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 1);
 
-    harness.failNextEnqueues(1, "transient");
+    harness.failNextReviewRedrives(1, false);
     yield* (yield* harness.executor).runCycle;
-    assert.isTrue(Option.isNone(yield* store.getOutbound(replacementId)));
+    assert.equal(Option.getOrThrow(yield* store.getOutbound(originalId)).state, "dead");
     assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 1);
 
-    harness.failNextOutboundReconciles(1);
+    harness.failNextReviewRedrives(1, true);
     const restarted = yield* harness.executor;
     yield* restarted.runCycle;
-    const replacement = Option.getOrThrow(yield* store.getOutbound(replacementId));
-    assert.equal(replacement.state, "pending");
-    assert.equal(replacement.payload._tag, "message");
-    if (replacement.payload._tag === "message") {
-      assert.equal(replacement.payload.message.inReplyTo, delegation.envelopeId);
-      assert.equal(replacement.payload.message.envelopeId, replacementId);
-    }
-    assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 1);
-    yield* restarted.runCycle;
-    assert.equal(harness.enqueueAttempts(), 3);
+    const redriven = Option.getOrThrow(yield* store.getOutbound(originalId));
+    assert.equal(redriven.state, "pending");
+    assert.equal(redriven.reviewRedriveCount, 1);
+    assert.equal(redriven.attemptCount, 0);
+    assert.deepEqual(redriven.envelope, original.envelope);
+    assert.deepEqual(redriven.payload, original.payload);
     assert.lengthOf(yield* store.listOutboundByState("pending", 10), 1);
-    assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 0);
     yield* restarted.runCycle;
-    assert.equal(harness.enqueueAttempts(), 3);
+    assert.equal(Option.getOrThrow(yield* store.getOutbound(originalId)).reviewRedriveCount, 1);
 
     yield* Effect.forEach(
       Array.from({ length: WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS }),
-      () => store.recordAttempt(replacementId, NOW),
+      () => store.recordAttempt(originalId, NOW),
       { discard: true },
     );
     yield* restarted.runCycle;
+    assert.equal(Option.getOrThrow(yield* store.getOutbound(originalId)).reviewRedriveCount, 1);
     assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 0);
     assert.lengthOf(yield* store.listOutboundByState("pending", 10), 0);
   }).pipe(Effect.provide(testLayer("delegation-review-deadletter"))),
+);
+
+it.effect("does not redrive a review envelope after its signed expiry", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ nowValues: ["2026-08-19T13:00:01.000Z"] });
+    const store = yield* WorkjetMailboxStore;
+    const delegation = yield* seed(
+      delegationFixture({
+        id: "expired-review",
+        digest: yield* storePrompt(PROMPT_TEXT),
+        state: "running",
+        maxReviewRounds: 2,
+      }),
+    );
+    const delivery = yield* harness.delivery;
+    const review = yield* delivery.requestReview(
+      { environmentId: LOCAL_ENVIRONMENT, threadId: SOURCE_THREAD },
+      {
+        targetWorkspaceId: WORKSPACE,
+        targetEnvironmentId: REMOTE_ENVIRONMENT,
+        targetThreadId: TARGET_THREAD,
+        delegationId: delegation.delegationId,
+        round: 1,
+        body: {
+          _tag: "sealed",
+          payloadRef: WorkjetSealedPayloadRef.make("c2VhbGVkLXJldmlldy1wYXlsb2Fk"),
+          byteLength: 24,
+        },
+      },
+    );
+    yield* Effect.forEach(
+      Array.from({ length: WORKJET_MAILBOX_MAX_DELIVERY_ATTEMPTS }),
+      () => store.recordAttempt(review.delivery.envelopeId, NOW),
+      { discard: true },
+    );
+    yield* (yield* harness.executor).runCycle;
+    const outbox = Option.getOrThrow(yield* store.getOutbound(review.delivery.envelopeId));
+    assert.equal(outbox.state, "dead");
+    assert.equal(outbox.reviewRedriveCount, 0);
+    assert.lengthOf(yield* store.listUnreconciledOutboundByState("dead", 10), 0);
+  }).pipe(Effect.provide(testLayer("delegation-expired-review"))),
 );
 
 // ===============================

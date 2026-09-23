@@ -239,6 +239,7 @@ export interface WorkjetOutboxRecord {
   readonly payload: WorkjetMailboxPayload;
   readonly state: WorkjetOutboxState;
   readonly attemptCount: number;
+  readonly reviewRedriveCount: number;
   readonly nextAttemptAtMillis: number;
   readonly createdAtMillis: number;
   readonly expiresAtMillis: number;
@@ -461,6 +462,7 @@ const OutboxDbRow = Schema.Struct({
   payload: Schema.fromJsonString(WorkjetMailboxPayload),
   state: WorkjetOutboxState,
   attemptCount: Schema.Int,
+  reviewRedriveCount: Schema.Int,
   nextAttemptAtMillis: Schema.Int,
   createdAtMillis: Schema.Int,
   expiresAtMillis: Schema.Int,
@@ -595,6 +597,7 @@ const OUTBOX_COLUMNS = `
   payload_json AS "payload",
   state AS "state",
   attempt_count AS "attemptCount",
+  review_redrive_count AS "reviewRedriveCount",
   next_attempt_at_ms AS "nextAttemptAtMillis",
   created_at_ms AS "createdAtMillis",
   expires_at_ms AS "expiresAtMillis",
@@ -706,6 +709,12 @@ export interface WorkjetMailboxStoreShape {
   readonly markOutboundReconciled: (
     envelopeId: WorkjetEnvelopeId,
     reconciledAt: WorkjetMailboxTimestamp,
+  ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
+
+  /** Retry one unexpired dead review envelope in place; its sealed body is bound to this id. */
+  readonly redriveDeadReviewSignal: (
+    envelopeId: WorkjetEnvelopeId,
+    now: WorkjetMailboxTimestamp,
   ) => Effect.Effect<boolean, WorkjetMailboxStoreError>;
 
   readonly getOutbound: (
@@ -1488,6 +1497,28 @@ export const make = Effect.gen(function* () {
           AND reconciled_at_ms IS NULL
         RETURNING envelope_id AS "envelopeId"
       `.pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.markOutboundReconciled:update")));
+      return updated.length > 0;
+    });
+
+  const redriveDeadReviewSignal: WorkjetMailboxStoreShape["redriveDeadReviewSignal"] = (
+    envelopeId,
+    now,
+  ) =>
+    Effect.gen(function* () {
+      const nowMillis = yield* toEpochMillis(now);
+      const updated = yield* sql<{ readonly envelopeId: string }>`
+        UPDATE workjet_mailbox_outbox
+        SET state = 'pending',
+            attempt_count = 0,
+            review_redrive_count = 1,
+            next_attempt_at_ms = ${nowMillis},
+            dead_lettered_at_ms = NULL
+        WHERE envelope_id = ${envelopeId}
+          AND state = 'dead'
+          AND review_redrive_count = 0
+          AND expires_at_ms > ${nowMillis}
+        RETURNING envelope_id AS "envelopeId"
+      `.pipe(Effect.mapError(sqlFailure("WorkjetMailboxStore.redriveDeadReviewSignal:update")));
       return updated.length > 0;
     });
 
@@ -3055,6 +3086,7 @@ export const make = Effect.gen(function* () {
     listOutboundByState,
     listUnreconciledOutboundByState,
     markOutboundReconciled,
+    redriveDeadReviewSignal,
     getOutbound,
     markDelivered,
     recordAttempt,

@@ -66,11 +66,14 @@ message together. Local delivery also commits an inbox row; an executor cycle
 replays its thread activity after a failed dispatch or restart with a stable
 command identity. An unprocessed local review signal is retained past message
 TTL until that activity is marked processed. Remote signals use the outbox. A
-dead remote review signal is reissued once with a new signed envelope and a
-deterministic id while the delegation still awaits review; transient lookup or
-enqueue failures retry after restart without creating another replacement.
-A second dead letter stays queryable and is logged. User-visible escalation or
-manual reissue after that final failure remains to be implemented.
+dead remote review signal gets one more delivery budget while its original
+envelope is unexpired and the delegation still awaits review. Its id, sealed
+payload, signed routing envelope and expiry remain unchanged: sealed bytes are
+cryptographically bound to that id. An atomic redrive counter prevents a second
+budget after restart. Transient lookup or redrive failures leave the row for
+retry. An expired or twice-dead letter stays queryable and is logged.
+User-visible escalation or a fresh review request with newly sealed content
+remains to be implemented.
 An orchestrator can now submit a linked delegation after a `changes-requested`
 review. The delivery service derives a `revises` edge and depth, restricts the
 new task to the same worker and bounds its depth, review rounds, and expiry
@@ -128,7 +131,7 @@ successful cleanup rather than hide a failed or skipped cleanup.
 
 This branch is not production-ready. Receipt reconciliation, atomic review
 signals and edges, result-to-rework, bounded rework reminders, guarded cleanup,
-and one bounded remote review-signal reissue have focused local tests. The
+and one bounded remote review-signal redrive have focused local tests. The
 previous `fcf32e3bf` CI head passed Check, Test, Release Smoke and Mobile Native
 Static Analysis; the new head still requires exact-head CI. Android preview
 APK and real desktop/web/mobile acceptance remain pending.

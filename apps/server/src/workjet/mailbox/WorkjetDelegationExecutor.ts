@@ -124,8 +124,6 @@ export const WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE = 32;
 const WORKJET_ARTIFACT_PATHS_LIMIT = 256;
 
 const WORKJET_DELEGATION_EXECUTOR_CYCLE_TIMEOUT = Duration.seconds(60);
-const WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX = "wjm-review-reissue-";
-const WORKJET_REVIEW_SIGNAL_REISSUE_TTL_SECONDS = 3_600;
 
 /** Thread-visible activity kinds appended by the executor. */
 export const WORKJET_DELEGATION_STARTED_ACTIVITY_KIND = "workjet.delegation.started";
@@ -2174,14 +2172,15 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * delivered, which must not reopen or re-fail the finished delegation.
      * Idempotent: a delegation already terminal is skipped.
      *
-     * A dead remote review signal gets one new signed envelope while its
-     * delegation still awaits review. The replacement id is derived from the
-     * original, so a crash after enqueue cannot create another signal.
+     * A dead remote review signal gets one more delivery budget while its
+     * original signed envelope is unexpired and the delegation awaits review.
+     * Sealed message bytes are bound to the envelope id, so redrive must retain
+     * the same id, payload and signature.
      *
      * The scan is restricted to rows without the migration-049
-     * `reconciled_at_ms` marker. Transient lookup or enqueue failures leave a
-     * row unmarked; a repeated scan uses the same replacement id. Other rows
-     * are stamped after their disposition, so they do not recur forever.
+     * `reconciled_at_ms` marker. Transient lookup or redrive failures leave a
+     * row unmarked. The redrive count is changed atomically with `dead → pending`,
+     * so restart cannot grant another delivery budget. Terminal rows are stamped.
      */
     for (const outbox of yield* store
       .listUnreconciledOutboundByState("dead", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
@@ -2197,9 +2196,15 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         .pipe(Effect.ignore);
       if (
         outbox.payload._tag === "message" &&
-        outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX) &&
-        !outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX)
+        outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX)
       ) {
+        if (outbox.reviewRedriveCount > 0) {
+          yield* Effect.logWarning("remote review signal exhausted its redrive", {
+            envelopeId: outbox.envelopeId,
+          });
+          yield* markReconciled;
+          continue;
+        }
         const original = outbox.payload.message;
         const lookup = yield* Effect.result(
           original.inReplyTo
@@ -2232,62 +2237,26 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           awaiting?.state === "review-requested" &&
           nowInstant &&
           budgetEnd &&
-          DateTime.toEpochMillis(budgetEnd) > DateTime.toEpochMillis(nowInstant)
+          DateTime.toEpochMillis(budgetEnd) > DateTime.toEpochMillis(nowInstant) &&
+          outbox.expiresAtMillis > DateTime.toEpochMillis(nowInstant)
         ) {
-          const expiresAt = DateTime.formatIso(
-            DateTime.makeUnsafe(
-              Math.min(
-                DateTime.toEpochMillis(budgetEnd),
-                DateTime.toEpochMillis(nowInstant) +
-                  WORKJET_REVIEW_SIGNAL_REISSUE_TTL_SECONDS * 1_000,
-              ),
-            ),
-          ) as WorkjetMailboxTimestamp;
-          const envelopeId = WorkjetEnvelopeId.make(
-            `${WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX}${outbox.envelopeId.slice(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX.length)}`,
+          const redrive = yield* Effect.result(
+            store.redriveDeadReviewSignal(outbox.envelopeId, now as WorkjetMailboxTimestamp),
           );
-          const message = { ...original, envelopeId, createdAt: now, expiresAt } as const;
-          const unsigned: WorkjetUnsignedRoutingEnvelope = {
-            schemaVersion: 1,
-            envelopeId,
-            kind: "message",
-            sourceWorkspaceId: outbox.envelope.sourceWorkspaceId,
-            sourceEnvironmentId: outbox.envelope.sourceEnvironmentId,
-            targetWorkspaceId: outbox.envelope.targetWorkspaceId,
-            targetEnvironmentId: outbox.envelope.targetEnvironmentId,
-            createdAt: now,
-            expiresAt,
-          };
-          const reissued = yield* Effect.result(
-            identity
-              .signRoutingEnvelope(unsigned)
-              .pipe(
-                Effect.flatMap((envelope) =>
-                  store.enqueueOutbound(envelope, { _tag: "message", message }),
-                ),
-              ),
-          );
-          if (reissued._tag === "Failure") {
-            if (!isWorkjetMailboxError(reissued.failure)) {
-              yield* Effect.logWarning("dead review signal reissue deferred", {
-                envelopeId: outbox.envelopeId,
-                cause: reissued.failure,
-              });
-              continue;
-            }
-            yield* Effect.logWarning("dead review signal could not be reissued", {
+          if (redrive._tag === "Failure") {
+            yield* Effect.logWarning("dead review signal redrive deferred", {
               envelopeId: outbox.envelopeId,
-              cause: reissued.failure,
+              cause: redrive.failure,
             });
+            continue;
           }
+          if (redrive.success) continue;
         }
-        yield* markReconciled;
-        continue;
-      }
-      if (outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_REISSUE_PREFIX)) {
-        yield* Effect.logWarning("remote review signal exhausted its reissue", {
+        yield* Effect.logWarning("remote review signal cannot be redriven", {
           envelopeId: outbox.envelopeId,
         });
+        yield* markReconciled;
+        continue;
       }
       if (outbox.payload._tag !== "delegation") {
         yield* markReconciled;

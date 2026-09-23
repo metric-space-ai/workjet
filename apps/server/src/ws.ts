@@ -1543,7 +1543,7 @@ const makeWsRpcLayer = (
                   message: "Archived worker history was not found",
                 });
               }
-              return snapshot.value;
+              return projectThreadDetailSnapshot(snapshot.value);
             }),
             { "rpc.aggregate": "orchestration" },
           ),

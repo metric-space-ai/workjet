@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { PersistenceSqlError, toPersistenceSqlError } from "../persistence/Errors.ts";
-import type { TeamSelectionObservation } from "./ProjectTeamLearning.ts";
+import { teamExecutionCandidateKey, type TeamSelectionObservation } from "./ProjectTeamLearning.ts";
 
 export interface TeamSelectionRecord {
   readonly selectionId: string;
@@ -136,10 +136,12 @@ export const make = Effect.gen(function* () {
       const { review, selectionId, cause } = assessment;
       const selected = yield* sql<{
         readonly workerThreadId: string;
+        readonly candidate: string;
         readonly taskType: string;
         readonly difficulty: string;
       }>`
-        SELECT worker_thread_id AS "workerThreadId", task_type AS "taskType", difficulty
+        SELECT worker_thread_id AS "workerThreadId", candidate_key AS "candidate",
+               task_type AS "taskType", difficulty
         FROM workjet_team_selections WHERE selection_id = ${selectionId}
       `.pipe(
         Effect.mapError(toPersistenceSqlError("ProjectTeamLearningStore.assessmentSelection")),
@@ -154,6 +156,12 @@ export const make = Effect.gen(function* () {
         review.score > 10
       ) {
         return yield* evidenceError("Review does not match its selected worker");
+      }
+      if (
+        cause === "model" &&
+        selected[0]?.candidate !== teamExecutionCandidateKey(review.execution)
+      ) {
+        return yield* evidenceError("Actual execution differs from the selected model candidate");
       }
       const executionJson = JSON.stringify(review.execution);
       const recordedAtMillis = Date.parse(review.recordedAt);

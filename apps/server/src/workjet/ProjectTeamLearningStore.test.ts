@@ -122,6 +122,16 @@ describe("ProjectTeamLearningStore", () => {
           ))._tag,
           "Failure",
         );
+        assert.equal(
+          (yield* Effect.exit(
+            store.recordAssessment({
+              selectionId: selection.selectionId,
+              review: { ...review, execution: { ...review.execution, model: "other-model" } },
+              cause: "model",
+            }),
+          ))._tag,
+          "Failure",
+        );
         yield* store.recordAssessment({
           selectionId: selection.selectionId,
           review,

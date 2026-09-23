@@ -1,3 +1,17 @@
+import type { WorkjetTeamExecutionIdentity } from "@workjet/contracts";
+
+/** Keep distinct providers, models and harness versions in separate learning pools. */
+export function teamExecutionCandidateKey(execution: WorkjetTeamExecutionIdentity): string {
+  return [
+    execution.providerInstanceId,
+    execution.model,
+    execution.harness,
+    execution.harnessVersion ?? "",
+  ]
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+}
+
 /** Mirrors the existing proxy-model-workers empirical selection policy. */
 export interface TeamSelectionObservation {
   readonly selectionId: string;

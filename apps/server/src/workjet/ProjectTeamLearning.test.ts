@@ -1,7 +1,26 @@
 import { describe, expect, it } from "vite-plus/test";
-import { compareTeamCandidates, drawTeamCandidate } from "./ProjectTeamLearning.ts";
+import {
+  compareTeamCandidates,
+  drawTeamCandidate,
+  teamExecutionCandidateKey,
+} from "./ProjectTeamLearning.ts";
 
 describe("project team empirical selection", () => {
+  it("keeps execution identities with separators and missing versions in distinct pools", () => {
+    const execution = {
+      providerInstanceId: "provider/one",
+      model: "model",
+      harness: "harness",
+      harnessVersion: null,
+    };
+    expect(teamExecutionCandidateKey(execution)).toBe("provider%2Fone/model/harness/");
+    expect(teamExecutionCandidateKey(execution)).not.toBe(
+      teamExecutionCandidateKey({ ...execution, providerInstanceId: "provider", model: "one/model" }),
+    );
+    expect(teamExecutionCandidateKey(execution)).not.toBe(
+      teamExecutionCandidateKey({ ...execution, harnessVersion: "unknown" }),
+    );
+  });
   it("explores uniformly, uses 50/50 only with an available winner, and keeps no-candidate work pending", () => {
     expect(
       drawTeamCandidate({ available: ["a", "b", "c"], winner: null, draw: 0.4 })?.candidate,

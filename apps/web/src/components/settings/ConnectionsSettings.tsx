@@ -1835,7 +1835,9 @@ export function useComputerConnections({
           : `The encrypted connection catalog was backed up to ${backupPath}. Saved connections were reset; retry the connection.`,
       );
     } catch (error) {
-      setSavedBackendError(error instanceof Error ? error.message : "Could not recover saved connections.");
+      setSavedBackendError(
+        error instanceof Error ? error.message : "Could not recover saved connections.",
+      );
     } finally {
       setIsRecoveringCatalog(false);
     }
@@ -2243,9 +2245,9 @@ export function useComputerConnections({
         {catalogRecoveryAvailable ? (
           <div className="space-y-2 rounded-md border border-border/60 p-3 text-xs">
             <p>
-              Workjet cannot read its saved connections. Unlock your system credential store
-              and retry first. If the error persists, you can back up the encrypted catalog
-              and reset the saved connections.
+              Workjet cannot read its saved connections. Unlock your system credential store and
+              retry first. If the error persists, you can back up the encrypted catalog and reset
+              the saved connections.
             </p>
             <Button
               variant="outline"
@@ -2256,7 +2258,11 @@ export function useComputerConnections({
             </Button>
           </div>
         ) : null}
-        {catalogRecoveryMessage ? <p role="status" className="text-xs">{catalogRecoveryMessage}</p> : null}
+        {catalogRecoveryMessage ? (
+          <p role="status" className="text-xs">
+            {catalogRecoveryMessage}
+          </p>
+        ) : null}
         <Button
           variant="outline"
           className="w-full"

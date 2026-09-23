@@ -661,6 +661,49 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  effectIt.effect("does not send a delayed provider turn after thread deletion", () =>
+    Effect.gen(function* () {
+      const releaseStart = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          startSessionEffect: (session) => Deferred.await(releaseStart).pipe(Effect.as(session)),
+        }),
+      );
+      const threadId = ThreadId.make("thread-1");
+      const now = "2026-01-01T00:00:00.000Z";
+      yield* harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-before-delete"),
+        threadId,
+        message: {
+          messageId: asMessageId("message-before-delete"),
+          role: "user",
+          text: "start slowly",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      });
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+      yield* harness.engine.dispatch({
+        type: "thread.delete",
+        commandId: CommandId.make("cmd-delete-during-start"),
+        threadId,
+      });
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const model = await harness.readModel();
+          const thread = model.threads.find((entry) => entry.id === threadId);
+          return thread !== undefined && thread.deletedAt !== null;
+        }),
+      );
+      yield* Deferred.succeed(releaseStart, undefined);
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.sendTurn).not.toHaveBeenCalled();
+    }),
+  );
+
   effectIt.effect("settles a failed provider startup and allows a clean retry", () =>
     Effect.gen(function* () {
       let failStartup = true;

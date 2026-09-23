@@ -2,6 +2,7 @@ import {
   CommandId,
   DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
+  MessageId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -89,6 +90,32 @@ const workerConfig = {
 } as const satisfies WorkjetThreadConfig;
 
 it.layer(NodeServices.layer)("Workjet thread configuration decider", (it) => {
+  it.effect("refuses a new turn after the worker thread was deleted", () =>
+    Effect.gen(function* () {
+      const error = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-start-deleted-worker"),
+          threadId: THREAD_ID,
+          message: {
+            messageId: MessageId.make("message-after-delete"),
+            role: "user",
+            text: "Continue worker task",
+            attachments: [],
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdAt: NOW,
+        },
+        readModel: {
+          ...readModel,
+          threads: [{ ...readModel.threads[0]!, workjetConfig: workerConfig, deletedAt: NOW }],
+        },
+      }).pipe(Effect.flip);
+      expect(error.message).toContain("cannot start another turn");
+    }),
+  );
+
   it.effect("copies an explicit orchestrator configuration into thread.created", () =>
     Effect.gen(function* () {
       const result = yield* decideOrchestrationCommand({

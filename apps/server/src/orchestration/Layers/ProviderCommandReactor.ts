@@ -747,6 +747,7 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
+    if (thread.deletedAt !== null) return null;
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       pendingTurnStart: true,
@@ -1078,7 +1079,7 @@ const make = Effect.gen(function* () {
     }
 
     const thread = yield* resolveThread(event.payload.threadId);
-    if (!thread) {
+    if (!thread || thread.deletedAt !== null) {
       return;
     }
 
@@ -1172,13 +1173,18 @@ const make = Effect.gen(function* () {
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,
     }).pipe(
-      Effect.map(Option.some),
+      Effect.map(Option.fromNullishOr),
       Effect.catchCause((cause) => handleTurnStartFailure(cause).pipe(Effect.as(Option.none()))),
     );
 
     if (Option.isNone(sendTurnRequest)) {
       return;
     }
+
+    // Session startup can outlive deletion. Recheck after the asynchronous
+    // startup path so a delayed turn event cannot restart a deleted worker.
+    const latestThread = yield* resolveThread(event.payload.threadId);
+    if (!latestThread || latestThread.deletedAt !== null) return;
 
     yield* providerService
       .sendTurn(sendTurnRequest.value)

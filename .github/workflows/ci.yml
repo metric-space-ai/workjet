@@ -46,6 +46,7 @@ jobs:
         run: vp run --filter @workjet/desktop ensure:electron
 
       - name: Check
+        id: vp_check
         run: |
           check_log="${RUNNER_TEMP}/vp-check.log"
           if vp check >"${check_log}" 2>&1; then
@@ -54,6 +55,15 @@ jobs:
             tail -n 200 "${check_log}"
             exit 1
           fi
+
+      - name: Upload full check diagnostics
+        if: ${{ always() && steps.vp_check.outcome == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: vp-check-diagnostics
+          path: ${{ runner.temp }}/vp-check.log
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Typecheck
         run: vpr typecheck

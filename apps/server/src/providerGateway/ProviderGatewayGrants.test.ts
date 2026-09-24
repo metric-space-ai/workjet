@@ -29,16 +29,18 @@ const secondTarget = {
 };
 const catalog: WorkjetGatewayCatalog = {
   schemaVersion: 1,
-  accounts: [{
-    id: accountId,
-    label: "Primary Codex",
-    provider: "codex",
-    enabled: true,
-    priority: 0,
-    weight: 1,
-    modelIds: ["gpt-test"],
-    credentialSuffix: "1234",
-  }],
+  accounts: [
+    {
+      id: accountId,
+      label: "Primary Codex",
+      provider: "codex",
+      enabled: true,
+      priority: 0,
+      weight: 1,
+      modelIds: ["gpt-test"],
+      credentialSuffix: "1234",
+    },
+  ],
   pools: [],
   routes: [],
   models: [],
@@ -58,14 +60,18 @@ describe("ProviderGatewayGrants", () => {
       catalog,
     );
     const restored = decodeGatewayGrants(JSON.parse(JSON.stringify(granted.file)));
-    expect(scopeGatewayCatalog(catalog, restored, secondTarget, environmentId).accounts).toEqual([]);
+    expect(scopeGatewayCatalog(catalog, restored, secondTarget, environmentId).accounts).toEqual(
+      [],
+    );
     const visible = scopeGatewayCatalog(catalog, restored, firstTarget, environmentId);
-    expect(visible.accounts).toEqual([{
-      credentialRef: { environmentId, accountId },
-      providerRef: { environmentId, provider: "codex" },
-      label: "Primary Codex",
-      modelRefs: [{ environmentId, provider: "codex", modelId: "gpt-test" }],
-    }]);
+    expect(visible.accounts).toEqual([
+      {
+        credentialRef: { environmentId, accountId },
+        providerRef: { environmentId, provider: "codex" },
+        label: "Primary Codex",
+        modelRefs: [{ environmentId, provider: "codex", modelId: "gpt-test" }],
+      },
+    ]);
     expect(JSON.stringify(visible)).not.toContain("1234");
     expect(JSON.stringify(visible)).not.toContain("provider-secret");
 
@@ -74,19 +80,38 @@ describe("ProviderGatewayGrants", () => {
       { target: firstTarget, accountId, granted: false },
       catalog,
     );
-    expect(scopeGatewayCatalog(catalog, revoked.file, firstTarget, environmentId).accounts).toEqual([]);
+    expect(scopeGatewayCatalog(catalog, revoked.file, firstTarget, environmentId).accounts).toEqual(
+      [],
+    );
     expect(removeGatewayAccountGrants(restored, accountId).grants).toEqual([]);
   });
 
   it("rejects unknown accounts and malformed or duplicate persisted grants", () => {
-    expect(() => setGatewayGrant(emptyGatewayGrants(), {
-      target: firstTarget,
-      accountId: WorkjetGatewayAccountId.make("missing"),
-      granted: true,
-    }, catalog)).toThrow(WorkjetGatewayAccessError);
-    expect(() => decodeGatewayGrants({ schemaVersion: 1, grants: [{ target: firstTarget, accountId }, { target: firstTarget, accountId }] }))
-      .toThrow(WorkjetGatewayAccessError);
-    expect(() => decodeGatewayGrants({ schemaVersion: 1, grants: [{ target: firstTarget, accountId, secret: "leak" }] }))
-      .toThrow(WorkjetGatewayAccessError);
+    expect(() =>
+      setGatewayGrant(
+        emptyGatewayGrants(),
+        {
+          target: firstTarget,
+          accountId: WorkjetGatewayAccountId.make("missing"),
+          granted: true,
+        },
+        catalog,
+      ),
+    ).toThrow(WorkjetGatewayAccessError);
+    expect(() =>
+      decodeGatewayGrants({
+        schemaVersion: 1,
+        grants: [
+          { target: firstTarget, accountId },
+          { target: firstTarget, accountId },
+        ],
+      }),
+    ).toThrow(WorkjetGatewayAccessError);
+    expect(() =>
+      decodeGatewayGrants({
+        schemaVersion: 1,
+        grants: [{ target: firstTarget, accountId, secret: "leak" }],
+      }),
+    ).toThrow(WorkjetGatewayAccessError);
   });
 });

@@ -46,15 +46,15 @@ describe("Business OS settings scope", () => {
     expect(businessOsDeviceControlErrorMessage(new Error("unsupported"), fallback)).toContain(
       "Backend",
     );
-    expect(
-      businessOsDeviceControlErrorMessage(new Error("sync_unavailable"), fallback),
-    ).toContain("CTOX Sync");
+    expect(businessOsDeviceControlErrorMessage(new Error("sync_unavailable"), fallback)).toContain(
+      "CTOX Sync",
+    );
     expect(businessOsDeviceControlErrorMessage(new Error("forbidden"), fallback)).toContain(
       "darf Geräte",
     );
-    expect(
-      businessOsDeviceControlErrorMessage(new Error("private credential"), fallback),
-    ).toBe(fallback);
+    expect(businessOsDeviceControlErrorMessage(new Error("private credential"), fallback)).toBe(
+      fallback,
+    );
   });
 
   it("activates an imported backend through the shared selector before refreshing discovery", async () => {

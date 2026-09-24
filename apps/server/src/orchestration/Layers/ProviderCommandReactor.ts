@@ -391,6 +391,7 @@ const make = Effect.gen(function* () {
   const crewAdmission = yield* Effect.serviceOption(CtoxCrewTurnAdmission);
   const providerSessionDirectory = yield* Effect.serviceOption(ProviderSessionDirectory);
   const crewRecoveryMutex = yield* Semaphore.make(1);
+  const inFlightCrewFirstSends = new Set<ThreadId>();
   let pendingAdmissionCursor = 0;
   let startedRecoveryCursor = 0;
   let fullRecoveryCursor = 0;
@@ -922,13 +923,33 @@ const make = Effect.gen(function* () {
           method: "thread.turn.start",
           detail: "The claimed Crew session has no provider conversation to resume safely.",
         });
-      yield* input.admission.bindProviderSession({
-        identity: input.prepared.identity,
-        attemptId: input.prepared.claim.attemptId,
-        providerInstanceId: input.modelSelection.instanceId,
-        providerThreadId: activeSession.threadId,
-        codexResumeThreadId,
+      const alreadySending = yield* Effect.sync(() => {
+        if (inFlightCrewFirstSends.has(input.threadId)) return true;
+        inFlightCrewFirstSends.add(input.threadId);
+        return false;
       });
+      if (alreadySending)
+        return yield* new ProviderAdapterRequestError({
+          provider: "ctox",
+          method: "thread.turn.start",
+          detail: "The claimed Crew provider turn is still being submitted.",
+        });
+      const releaseFirstSend = Effect.sync(() => {
+        inFlightCrewFirstSends.delete(input.threadId);
+      });
+      yield* input.admission
+        .bindProviderSession({
+          identity: input.prepared.identity,
+          attemptId: input.prepared.claim.attemptId,
+          providerInstanceId: input.modelSelection.instanceId,
+          providerThreadId: activeSession.threadId,
+          codexResumeThreadId,
+        })
+        .pipe(
+          Effect.catchCause((cause) =>
+            releaseFirstSend.pipe(Effect.andThen(Effect.failCause(cause))),
+          ),
+        );
       yield* Effect.gen(function* () {
         const started = yield* providerService.sendTurn(sendTurnRequest);
         yield* input.admission.bindProviderTurn({
@@ -939,7 +960,13 @@ const make = Effect.gen(function* () {
           providerTurnId: started.turnId,
         });
         yield* reconcileCrewTerminalOutboxWithRetry(input.admission);
-      }).pipe(Effect.forkScoped);
+      }).pipe(
+        Effect.ensuring(releaseFirstSend),
+        Effect.forkScoped,
+        Effect.catchCause((cause) =>
+          releaseFirstSend.pipe(Effect.andThen(Effect.failCause(cause))),
+        ),
+      );
     }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap));
   });
 
@@ -1364,6 +1391,7 @@ const make = Effect.gen(function* () {
             Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
           );
         if (
+          inFlightCrewFirstSends.has(thread.id) ||
           thread.session?.status === "running" ||
           priorSession?.status === "running" ||
           priorSession?.status === "connecting"
@@ -1719,6 +1747,12 @@ const make = Effect.gen(function* () {
         yield* Effect.gen(function* () {
           const thread = yield* resolveThread(candidate.identity.threadId);
           if (!thread) return;
+          if (inFlightCrewFirstSends.has(thread.id)) {
+            yield* Effect.logInfo("native Crew recovery deferred during first provider send", {
+              threadId: thread.id,
+            });
+            return;
+          }
           const binding =
             thread.workjetConfig.schemaVersion === 2
               ? thread.workjetConfig.ctoxCrewChat
@@ -1747,6 +1781,7 @@ const make = Effect.gen(function* () {
             providerInstanceId: thread.modelSelection.instanceId,
             harness,
           });
+          if (inFlightCrewFirstSends.has(thread.id)) return;
           if (prepared.state === "native-terminal") {
             yield* admission.markAdmissionTerminal(candidate.identity, candidate.requestId);
             return;
@@ -1772,6 +1807,7 @@ const make = Effect.gen(function* () {
               );
               return;
             }
+            if (inFlightCrewFirstSends.has(thread.id)) return;
             if (priorSession) {
               const stopped = yield* providerService.stopSession({ threadId: thread.id });
               if (stopped?.terminated !== true)
@@ -1834,6 +1870,7 @@ const make = Effect.gen(function* () {
                   sessions.find((session) => session.threadId === thread.id),
                 ),
               );
+            if (inFlightCrewFirstSends.has(thread.id)) return;
             if (priorSession) {
               const stopped = yield* providerService.stopSession({ threadId: thread.id });
               if (stopped?.terminated !== true)

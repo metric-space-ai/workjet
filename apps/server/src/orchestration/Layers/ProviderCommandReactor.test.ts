@@ -1174,6 +1174,168 @@ describe("ProviderCommandReactor", () => {
     expect(harness.sendTurn).not.toHaveBeenCalled();
   });
 
+  it("does not take over a newly claimed Crew turn while its first provider send is in flight", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      sequence: 1,
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "slow-first-send",
+      },
+      requestId: "command:slow-first-send",
+    };
+    const changes = Effect.runSync(PubSub.unbounded<void>());
+    let offerReady = false;
+    let claimed = false;
+    const recover = vi.fn(() =>
+      Effect.sync(() => {
+        if (!offerReady)
+          return { state: "awaiting-native-offer" as const, identity: candidate.identity };
+        if (claimed)
+          return {
+            state: "resume-required" as const,
+            identity: candidate.identity,
+            attemptId: "slow-attempt",
+          };
+        claimed = true;
+        return {
+          state: "ready" as const,
+          identity: candidate.identity,
+          claim: {
+            attemptId: "slow-attempt",
+            prompt: "original native prompt",
+            harness: "codex" as const,
+          },
+          bootstrap: CtoxCrewSessionBootstrap.of({
+            binding,
+            nativeInstructions: "native rules",
+            capability: {
+              threadId,
+              providerInstanceId,
+              attemptId: "slow-attempt",
+              refreshContext: () => Effect.die("unused"),
+              updatePlan: () => Effect.die("unused"),
+              report: () => Effect.die("unused"),
+            },
+          }),
+        };
+      }),
+    );
+    const reissueClaimed = vi.fn(() =>
+      Effect.succeed({
+        claim: { attemptId: "slow-attempt" },
+        bootstrap: CtoxCrewSessionBootstrap.of({
+          binding,
+          nativeInstructions: "continue existing attempt",
+          capability: {
+            threadId,
+            providerInstanceId,
+            attemptId: "slow-attempt",
+            refreshContext: () => Effect.die("unused"),
+            updatePlan: () => Effect.die("unused"),
+            report: () => Effect.die("unused"),
+          },
+        }),
+      }),
+    );
+    const reserveContinuation = vi.fn(() =>
+      Effect.succeed({ state: "reserved" as const, requestId: "ctox-recovery:slow-attempt" }),
+    );
+    const bindProviderTurn = vi.fn(() => Effect.void);
+    const listStarted = vi.fn(() =>
+      Effect.succeed({ candidates: claimed ? [candidate] : [], nextSequence: null }),
+    );
+    const admission = {
+      recover,
+      reissueClaimed,
+      reserveContinuation,
+      bindProviderSession: () => Effect.void,
+      bindProviderTurn,
+      readTerminalState: () => Effect.succeed(null),
+      reconcileTerminalOutbox: () =>
+        Effect.succeed({ reported: 0, deferred: 0, pending: 0, truncated: false }),
+      subscribeConnectionChanges: PubSub.subscribe(changes).pipe(
+        Effect.map((subscription) => Stream.fromSubscription(subscription)),
+      ),
+      listRecoveryCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
+      listPendingAdmissionCandidates: () =>
+        Effect.succeed({ candidates: claimed ? [] : [candidate], nextSequence: null }),
+      listUnresolvedStartedCandidates: listStarted,
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+      providerBinding: {
+        threadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId,
+        resumeCursor: { threadId: "codex-crew-1" },
+      },
+    });
+    let releaseFirstSend!: () => void;
+    const firstSendGate = new Promise<void>((resolve) => {
+      releaseFirstSend = resolve;
+    });
+    let sends = 0;
+    harness.sendTurn.mockImplementation(() => {
+      sends += 1;
+      if (sends > 1) return Effect.succeed({ threadId, turnId: asTurnId("turn-2") });
+      return Effect.promise(() => firstSendGate).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            const index = harness.runtimeSessions.findIndex(
+              (session) => session.threadId === threadId,
+            );
+            if (index >= 0)
+              harness.runtimeSessions[index] = {
+                ...harness.runtimeSessions[index]!,
+                status: "running",
+              };
+          }),
+        ),
+        Effect.as({ threadId, turnId: asTurnId("turn-1") }),
+      );
+    });
+    offerReady = true;
+    await Effect.runPromise(PubSub.publish(changes, undefined));
+    try {
+      await waitFor(() => listStarted.mock.calls.length === 1);
+      expect(recover).toHaveBeenCalledTimes(1);
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      expect(harness.stopSession).not.toHaveBeenCalled();
+      expect(reserveContinuation).not.toHaveBeenCalled();
+    } finally {
+      releaseFirstSend();
+    }
+    await waitFor(() => bindProviderTurn.mock.calls.length === 1);
+    await Effect.runPromise(PubSub.publish(changes, undefined));
+    await waitFor(() => listStarted.mock.calls.length === 2);
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(harness.stopSession).not.toHaveBeenCalled();
+    const index = harness.runtimeSessions.findIndex((session) => session.threadId === threadId);
+    expect(index).toBeGreaterThanOrEqual(0);
+    harness.runtimeSessions[index] = { ...harness.runtimeSessions[index]!, status: "ready" };
+    await Effect.runPromise(PubSub.publish(changes, undefined));
+    await waitFor(() => bindProviderTurn.mock.calls.length === 2);
+    expect(recover).toHaveBeenCalledTimes(2);
+    expect(harness.stopSession).toHaveBeenCalledTimes(1);
+    expect(reserveContinuation).toHaveBeenCalledTimes(1);
+    expect(
+      harness.sendTurn.mock.calls.map(([request]) => (request as { input?: string }).input),
+    ).toEqual([
+      "original native prompt",
+      expect.stringContaining("Continue the existing CTOX Crew attempt slow-attempt"),
+    ]);
+  });
+
   it("passes the thread's current Workjet config on provider start and restart", async () => {
     const initialWorkjetConfig = {
       schemaVersion: 1,

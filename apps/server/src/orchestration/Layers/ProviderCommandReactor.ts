@@ -24,6 +24,8 @@ import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@workjet/shared/DrainableWorker";
 
@@ -66,6 +68,26 @@ export const reconcileCrewTerminalOutboxWithRetry = (admission: CtoxCrewTurnAdmi
       }).pipe(Effect.forkScoped);
     }
   });
+
+/** One server-scoped worker keeps retrying persisted terminal reports after transient outages. */
+export const repeatCrewTerminalOutbox = (
+  admission: CtoxCrewTurnAdmission["Service"],
+  interval: Duration.Duration = Duration.minutes(1),
+) =>
+  Effect.sleep(interval).pipe(
+    Effect.andThen(
+      admission.reconcileTerminalOutbox().pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("native Crew terminal redrive failed", {
+                cause: Cause.pretty(cause),
+              }),
+        ),
+        Effect.repeat(Schedule.spaced(interval)),
+      ),
+    ),
+  );
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -369,6 +391,8 @@ const make = Effect.gen(function* () {
   const serverSettingsService = yield* ServerSettingsService;
   const crewAdmission = yield* Effect.serviceOption(CtoxCrewTurnAdmission);
   const providerSessionDirectory = yield* Effect.serviceOption(ProviderSessionDirectory);
+  const crewRecoveryMutex = yield* Semaphore.make(1);
+  let pendingAdmissionCursor = 0;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -1668,14 +1692,17 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
-  const recoverCrewTurns = Effect.fn("recoverCrewTurns")(function* () {
+  const scanCrewTurns = Effect.fn("scanCrewTurns")(function* (pendingOnly = false) {
     const admission = Option.getOrUndefined(crewAdmission);
     if (!admission) return;
-    yield* reconcileCrewTerminalOutboxWithRetry(admission);
-    let afterSequence = 0;
+    if (!pendingOnly) yield* reconcileCrewTerminalOutboxWithRetry(admission);
+    let afterSequence = pendingOnly ? pendingAdmissionCursor : 0;
     // Finite startup scan: never let an unbounded ledger delay app activation.
-    for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
-      const page = yield* admission.listRecoveryCandidates(afterSequence);
+    for (let pageNumber = 0; pageNumber < (pendingOnly ? 4 : 16); pageNumber++) {
+      const pageEffect = pendingOnly
+        ? admission.listPendingAdmissionCandidates(afterSequence)
+        : admission.listRecoveryCandidates(afterSequence);
+      const page = yield* pageEffect;
       for (const candidate of page.candidates) {
         yield* Effect.gen(function* () {
           const thread = yield* resolveThread(candidate.identity.threadId);
@@ -1708,6 +1735,10 @@ const make = Effect.gen(function* () {
             providerInstanceId: thread.modelSelection.instanceId,
             harness,
           });
+          if (prepared.state === "native-terminal") {
+            yield* admission.markAdmissionTerminal(candidate.identity, candidate.requestId);
+            return;
+          }
           if (prepared.state === "ready") {
             // Recovery is allowed to claim a new offer, but an old provider
             // process may still hold another attempt's fixed MCP credential.
@@ -1748,6 +1779,7 @@ const make = Effect.gen(function* () {
               createdAt: DateTime.formatIso(yield* DateTime.now),
             });
           } else if (prepared.state === "resume-required") {
+            if (pendingOnly) return;
             const terminalState = yield* admission.readTerminalState(
               candidate.identity,
               prepared.attemptId,
@@ -1897,13 +1929,20 @@ const make = Effect.gen(function* () {
           ),
         );
       }
-      if (page.nextSequence === null) return;
+      if (page.nextSequence === null) {
+        if (pendingOnly) pendingAdmissionCursor = 0;
+        return;
+      }
       afterSequence = page.nextSequence;
+      if (pendingOnly) pendingAdmissionCursor = afterSequence;
     }
-    yield* Effect.logWarning("native Crew startup recovery scan reached its page limit", {
+    yield* Effect.logWarning("native Crew recovery scan reached its page limit", {
       afterSequence,
+      pendingOnly,
     });
   });
+  const recoverCrewTurns = (pendingOnly = false) =>
+    crewRecoveryMutex.withPermits(1)(scanCrewTurns(pendingOnly));
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
@@ -1932,6 +1971,45 @@ const make = Effect.gen(function* () {
     });
 
     yield* forkParked(Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent));
+    const admission = Option.getOrUndefined(crewAdmission);
+    if (admission?.subscribeConnectionChanges) {
+      // Subscribe before the initial ledger read so a connection restored in
+      // that window cannot strand a pending native offer or terminal report.
+      const connectionChanges = yield* admission.subscribeConnectionChanges;
+      yield* forkParked(
+        Stream.runForEach(connectionChanges, () =>
+          Effect.gen(function* () {
+            yield* admission.reconcileTerminalOutbox();
+            yield* recoverCrewTurns(true);
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logWarning("native Crew connection redrive failed", {
+                    cause: Cause.pretty(cause),
+                  }),
+            ),
+          ),
+        ),
+      );
+      yield* forkParked(
+        Effect.sleep(Duration.seconds(30)).pipe(
+          Effect.andThen(
+            recoverCrewTurns(true).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logWarning("native Crew admission redrive failed", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+              Effect.repeat(Schedule.spaced(Duration.minutes(1)).pipe(Schedule.jittered)),
+            ),
+          ),
+        ),
+      );
+      yield* forkParked(repeatCrewTerminalOutbox(admission));
+    }
     yield* forkParked(
       recoverCrewTurns().pipe(
         Effect.catchCause((cause) =>

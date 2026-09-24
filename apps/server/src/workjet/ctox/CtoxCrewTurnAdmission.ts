@@ -36,6 +36,7 @@ const make = Effect.gen(function* () {
   const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
   const native = makeCtoxNativeTaskClient({ requests, connections, transport });
   const terminalReportMutex = yield* Semaphore.make(1);
+  let terminalAfterSequence = 0;
 
   const prepare = Effect.fn("CtoxCrewTurnAdmission.prepare")(function* (input: {
     readonly threadId: ThreadId;
@@ -256,7 +257,7 @@ const make = Effect.gen(function* () {
     function* () {
       return yield* terminalReportMutex.withPermits(1)(
         Effect.gen(function* () {
-          let afterSequence = 0;
+          let afterSequence = terminalAfterSequence;
           let reported = 0;
           let deferred = 0;
           let pending = 0;
@@ -341,9 +342,12 @@ const make = Effect.gen(function* () {
                 ),
               );
             }
-            if (page.nextSequence === null)
+            if (page.nextSequence === null) {
+              terminalAfterSequence = 0;
               return { reported, deferred, pending, truncated: false };
+            }
             afterSequence = page.nextSequence;
+            terminalAfterSequence = afterSequence;
           }
           return { reported, deferred, pending, truncated: true };
         }),
@@ -362,6 +366,9 @@ const make = Effect.gen(function* () {
     readTerminalState: requests.readCrewTerminalState,
     reconcileTerminalOutbox,
     listRecoveryCandidates: requests.listCrewRecoveryCandidates,
+    listPendingAdmissionCandidates: requests.listPendingCrewAdmissionCandidates,
+    markAdmissionTerminal: requests.markCrewAdmissionTerminal,
+    subscribeConnectionChanges: connections.subscribeChanges,
   };
 });
 

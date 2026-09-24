@@ -733,7 +733,7 @@ const make = Effect.gen(function* () {
    * recovery must re-read native status and obtain a fresh authorized offer.
    */
   const listCrewRecoveryCandidates = Effect.fn("CtoxNativeRequests.listCrewRecoveryCandidates")(
-    function* (afterSequence = 0, requestedLimit = 64) {
+    function* (afterSequence = 0, requestedLimit = 64, pendingAdmissionOnly = false) {
       const cursor = Number.isSafeInteger(afterSequence) && afterSequence >= 0 ? afterSequence : 0;
       const limit = Number.isFinite(requestedLimit)
         ? Math.max(1, Math.min(64, Math.trunc(requestedLimit)))
@@ -755,6 +755,13 @@ const make = Effect.gen(function* () {
         JOIN workjet_ctox_native_requests AS r
           ON r.thread_id = t.thread_id AND r.request_key = t.request_key
         WHERE t.sequence > ${cursor}
+          AND (${pendingAdmissionOnly ? 1 : 0} = 0 OR (
+            t.admission_terminal_at_ms IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM workjet_ctox_crew_starts AS s
+              WHERE s.thread_id = t.thread_id AND s.request_key = t.request_key
+            )
+          ))
         ORDER BY t.sequence LIMIT ${limit}
       `.pipe(Effect.mapError(unavailable));
       const candidates: Array<{
@@ -782,6 +789,22 @@ const make = Effect.gen(function* () {
       };
     },
   );
+  const listPendingCrewAdmissionCandidates = (afterSequence = 0, requestedLimit = 64) =>
+    listCrewRecoveryCandidates(afterSequence, requestedLimit, true);
+
+  const markCrewAdmissionTerminal = Effect.fn("CtoxNativeRequests.markCrewAdmissionTerminal")(
+    function* (identity: CtoxNativeRequestIdentity, requestId: string) {
+      yield* load(identity);
+      const now = yield* Clock.currentTimeMillis;
+      const updated = yield* sql`
+        UPDATE workjet_ctox_native_turns SET admission_terminal_at_ms = ${now}
+        WHERE thread_id = ${identity.threadId} AND request_id = ${requestId}
+          AND request_key = ${identity.requestKey}
+        RETURNING sequence
+      `.pipe(Effect.mapError(unavailable));
+      if (updated.length !== 1) return yield* failure("native-request-conflict");
+    },
+  );
   return {
     prepare,
     verifyTarget,
@@ -801,6 +824,8 @@ const make = Effect.gen(function* () {
     prepareTurn,
     latestNativeTurn,
     listCrewRecoveryCandidates,
+    listPendingCrewAdmissionCandidates,
+    markCrewAdmissionTerminal,
   };
 });
 

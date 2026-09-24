@@ -67,6 +67,7 @@ import {
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
   reconcileCrewTerminalOutboxWithRetry,
+  repeatCrewTerminalOutbox,
 } from "./ProviderCommandReactor.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
@@ -127,6 +128,34 @@ describe("ProviderCommandReactor", () => {
         expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
         yield* Effect.yieldNow;
         yield* TestClock.adjust(Duration.seconds(29));
+        expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
+        yield* TestClock.adjust(Duration.seconds(1));
+        yield* Effect.yieldNow;
+        expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(2);
+      }),
+    ),
+  );
+  effectIt.effect("keeps retrying a persisted Crew terminal report after a transient outage", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let calls = 0;
+        const reconcileTerminalOutbox = vi.fn(() =>
+          Effect.suspend(() => {
+            calls += 1;
+            return calls === 1
+              ? Effect.fail(new Error("temporary native outage"))
+              : Effect.succeed({ reported: 1, deferred: 0, pending: 0, truncated: false });
+          }),
+        );
+        const admission = {
+          reconcileTerminalOutbox,
+        } as unknown as CtoxCrewTurnAdmission["Service"];
+        yield* Effect.forkScoped(repeatCrewTerminalOutbox(admission, Duration.seconds(1)));
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust(Duration.millis(999));
+        expect(reconcileTerminalOutbox).not.toHaveBeenCalled();
+        yield* TestClock.adjust(Duration.millis(1));
+        yield* Effect.yieldNow;
         expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
         yield* TestClock.adjust(Duration.seconds(1));
         yield* Effect.yieldNow;
@@ -960,6 +989,83 @@ describe("ProviderCommandReactor", () => {
     expect(reserveContinuation).not.toHaveBeenCalled();
     expect(harness.startSession).not.toHaveBeenCalled();
     expect(harness.sendTurn).not.toHaveBeenCalled();
+  });
+
+  it("redrives a pending native Crew offer after its CTOX connection changes", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "pending-offer-key",
+      },
+      requestId: "command:pending-offer",
+    };
+    const changes = Effect.runSync(PubSub.unbounded<void>());
+    let offerReady = false;
+    const recover = vi.fn(() =>
+      Effect.succeed(
+        offerReady
+          ? {
+              state: "ready" as const,
+              identity: candidate.identity,
+              claim: {
+                attemptId: "offered-attempt",
+                prompt: "native offer is ready",
+                harness: "codex" as const,
+              },
+              bootstrap: CtoxCrewSessionBootstrap.of({
+                binding,
+                nativeInstructions: "native rules",
+                capability: {
+                  threadId,
+                  providerInstanceId,
+                  attemptId: "offered-attempt",
+                  refreshContext: () => Effect.die("unused"),
+                  updatePlan: () => Effect.die("unused"),
+                  report: () => Effect.die("unused"),
+                },
+              }),
+            }
+          : { state: "awaiting-native-offer" as const, identity: candidate.identity },
+      ),
+    );
+    const bindProviderSession = vi.fn(() => Effect.void);
+    const admission = {
+      recover,
+      bindProviderSession,
+      bindProviderTurn: () => Effect.void,
+      reconcileTerminalOutbox: () =>
+        Effect.succeed({ reported: 0, deferred: 0, pending: 0, truncated: false }),
+      subscribeConnectionChanges: PubSub.subscribe(changes).pipe(
+        Effect.map((subscription) => Stream.fromSubscription(subscription)),
+      ),
+      listRecoveryCandidates: () =>
+        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+      listPendingAdmissionCandidates: () =>
+        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+    });
+    await waitFor(() => recover.mock.calls.length === 1);
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    offerReady = true;
+    await Effect.runPromise(PubSub.publish(changes, undefined));
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(bindProviderSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      requestId: candidate.requestId,
+      input: "native offer is ready",
+    });
   });
 
   it("passes the thread's current Workjet config on provider start and restart", async () => {

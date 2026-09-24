@@ -20,6 +20,7 @@ import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProvide
 import migration67 from "../../persistence/Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
 import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
 import migration69 from "../../persistence/Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
+import migration70 from "../../persistence/Migrations/070_WorkjetCtoxCrewAdmissionRedrive.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -33,6 +34,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     yield* migration67;
     yield* migration68;
     yield* migration69;
+    yield* migration70;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const sql = yield* SqlClient.SqlClient;
     const scope = {
@@ -223,6 +225,9 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       "original-codex-thread",
     );
     expect(assigned).toMatchObject({ providerInstanceId, providerThreadId });
+    expect((yield* restoredRequests.listPendingCrewAdmissionCandidates()).candidates).toHaveLength(
+      0,
+    );
     expect(
       yield* restoredRequests.recordCrewProviderTerminal({
         threadId: scope.threadId,

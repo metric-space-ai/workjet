@@ -81,6 +81,7 @@ import Migration0066 from "./Migrations/066_WorkjetProjectTeamLearning.ts";
 import Migration0067 from "./Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
 import Migration0068 from "./Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
 import Migration0069 from "./Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
+import Migration0070 from "./Migrations/070_WorkjetCtoxCrewAdmissionRedrive.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -162,6 +163,7 @@ export const migrationEntries = [
   [67, "WorkjetCtoxCrewRecoveryDispatch", Migration0067],
   [68, "WorkjetCtoxCrewTerminalOutbox", Migration0068],
   [69, "WorkjetCtoxCrewResumeCursor", Migration0069],
+  [70, "WorkjetCtoxCrewAdmissionRedrive", Migration0070],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

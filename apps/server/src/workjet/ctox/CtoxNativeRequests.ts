@@ -760,6 +760,7 @@ const make = Effect.gen(function* () {
             AND NOT EXISTS (
               SELECT 1 FROM workjet_ctox_crew_starts AS s
               WHERE s.thread_id = t.thread_id AND s.request_key = t.request_key
+                AND s.provider_reported_at_ms IS NULL
             )
           ))
         ORDER BY t.sequence LIMIT ${limit}

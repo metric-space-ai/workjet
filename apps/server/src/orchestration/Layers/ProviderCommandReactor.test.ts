@@ -841,6 +841,56 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("continues a claimed Crew recovery beyond the first sixteen startup pages", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      sequence: 1025,
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "claimed-after-page-sixteen",
+      },
+      requestId: "command:claimed-after-page-sixteen",
+    };
+    const listRecoveryCandidates = vi.fn((afterSequence: number) =>
+      Effect.succeed(
+        afterSequence < 1024
+          ? { candidates: [], nextSequence: afterSequence + 64 }
+          : { candidates: [candidate], nextSequence: null },
+      ),
+    );
+    const recover = vi.fn(() =>
+      Effect.succeed({
+        state: "resume-required" as const,
+        identity: candidate.identity,
+        attemptId: "existing-claimed-attempt",
+      }),
+    );
+    const admission = {
+      listRecoveryCandidates,
+      recover,
+      readTerminalState: () => Effect.succeed(null),
+      reconcileTerminalOutbox: () =>
+        Effect.succeed({ reported: 0, deferred: 0, pending: 0, truncated: false }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+    });
+    await waitFor(() => listRecoveryCandidates.mock.calls.length === 16);
+    expect(recover).not.toHaveBeenCalled();
+    await Effect.runPromise(Effect.sleep(Duration.seconds(31)));
+    await waitFor(() => recover.mock.calls.length === 1);
+    expect(listRecoveryCandidates.mock.calls.at(-1)?.[0]).toBe(1024);
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+  }, 40_000);
+
   it("continues a claimed Crew attempt once on its exact saved Codex thread", async () => {
     const threadId = ThreadId.make("thread-1");
     const providerInstanceId = ProviderInstanceId.make("codex");

@@ -24,7 +24,6 @@ import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@workjet/shared/DrainableWorker";
@@ -74,9 +73,10 @@ export const repeatCrewTerminalOutbox = (
   admission: CtoxCrewTurnAdmission["Service"],
   interval: Duration.Duration = Duration.minutes(1),
 ) =>
-  Effect.sleep(interval).pipe(
-    Effect.andThen(
-      admission.reconcileTerminalOutbox().pipe(
+  Effect.gen(function* () {
+    while (true) {
+      yield* Effect.sleep(interval);
+      yield* admission.reconcileTerminalOutbox().pipe(
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
             ? Effect.failCause(cause)
@@ -84,10 +84,9 @@ export const repeatCrewTerminalOutbox = (
                 cause: Cause.pretty(cause),
               }),
         ),
-        Effect.repeat(Schedule.spaced(interval)),
-      ),
-    ),
-  );
+      );
+    }
+  });
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -393,6 +392,7 @@ const make = Effect.gen(function* () {
   const providerSessionDirectory = yield* Effect.serviceOption(ProviderSessionDirectory);
   const crewRecoveryMutex = yield* Semaphore.make(1);
   let pendingAdmissionCursor = 0;
+  let fullRecoveryCursor = 0;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -1696,7 +1696,7 @@ const make = Effect.gen(function* () {
     const admission = Option.getOrUndefined(crewAdmission);
     if (!admission) return;
     if (!pendingOnly) yield* reconcileCrewTerminalOutboxWithRetry(admission);
-    let afterSequence = pendingOnly ? pendingAdmissionCursor : 0;
+    let afterSequence = pendingOnly ? pendingAdmissionCursor : fullRecoveryCursor;
     // Finite startup scan: never let an unbounded ledger delay app activation.
     for (let pageNumber = 0; pageNumber < (pendingOnly ? 4 : 16); pageNumber++) {
       const pageEffect = pendingOnly
@@ -1931,10 +1931,12 @@ const make = Effect.gen(function* () {
       }
       if (page.nextSequence === null) {
         if (pendingOnly) pendingAdmissionCursor = 0;
+        else fullRecoveryCursor = 0;
         return;
       }
       afterSequence = page.nextSequence;
       if (pendingOnly) pendingAdmissionCursor = afterSequence;
+      else fullRecoveryCursor = afterSequence;
     }
     yield* Effect.logWarning("native Crew recovery scan reached its page limit", {
       afterSequence,
@@ -1993,9 +1995,10 @@ const make = Effect.gen(function* () {
         ),
       );
       yield* forkParked(
-        Effect.sleep(Duration.seconds(30)).pipe(
-          Effect.andThen(
-            recoverCrewTurns(true).pipe(
+        Effect.gen(function* () {
+          yield* Effect.sleep(Duration.seconds(30));
+          while (true) {
+            yield* recoverCrewTurns(true).pipe(
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.failCause(cause)
@@ -2003,12 +2006,31 @@ const make = Effect.gen(function* () {
                       cause: Cause.pretty(cause),
                     }),
               ),
-              Effect.repeat(Schedule.spaced(Duration.minutes(1)).pipe(Schedule.jittered)),
-            ),
-          ),
-        ),
+            );
+            yield* Effect.sleep(Duration.minutes(1));
+          }
+        }),
       );
       yield* forkParked(repeatCrewTerminalOutbox(admission));
+    }
+    if (admission) {
+      yield* forkParked(
+        Effect.gen(function* () {
+          while (true) {
+            yield* Effect.sleep(Duration.seconds(30));
+            if (fullRecoveryCursor === 0) continue;
+            yield* recoverCrewTurns(false).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logWarning("native Crew full recovery continuation failed", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+            );
+          }
+        }),
+      );
     }
     yield* forkParked(
       recoverCrewTurns().pipe(

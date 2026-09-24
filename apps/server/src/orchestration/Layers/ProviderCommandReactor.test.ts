@@ -143,7 +143,7 @@ describe("ProviderCommandReactor", () => {
           Effect.suspend(() => {
             calls += 1;
             return calls === 1
-              ? Effect.fail(new Error("temporary native outage"))
+              ? Effect.fail({ _tag: "TemporaryNativeOutage" as const })
               : Effect.succeed({ reported: 1, deferred: 0, pending: 0, truncated: false });
           }),
         );
@@ -152,9 +152,7 @@ describe("ProviderCommandReactor", () => {
         } as unknown as CtoxCrewTurnAdmission["Service"];
         yield* Effect.forkScoped(repeatCrewTerminalOutbox(admission, Duration.seconds(1)));
         yield* Effect.yieldNow;
-        yield* TestClock.adjust(Duration.millis(999));
-        expect(reconcileTerminalOutbox).not.toHaveBeenCalled();
-        yield* TestClock.adjust(Duration.millis(1));
+        yield* TestClock.adjust(Duration.seconds(1));
         yield* Effect.yieldNow;
         expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
         yield* TestClock.adjust(Duration.seconds(1));

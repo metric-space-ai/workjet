@@ -334,8 +334,64 @@ function buildGuestDeviceControlExpression(request: WorkjetDeviceWebRtcRequestV1
   return `(async () => {
   const control = globalThis.workjetBusinessOsDeviceControl;
   if (typeof control !== "function") return { status: "unsupported" };
-  const result = await control(${JSON.stringify(request)});
-  return { status: "completed", result };
+  try {
+    const result = await control(${JSON.stringify(request)});
+    const action = ${JSON.stringify(request.action)};
+    // The native response also contains fields for CTOX's own UI. Keep the
+    // strict Desktop IPC contract and never forward duplicate QR secrets.
+    if (action === "binding.list") {
+      if (!Array.isArray(result?.bindings) || result.bindings.length > 1000) {
+        return { status: "failed", code: "guest_failed" };
+      }
+      return {
+        status: "completed",
+        result: {
+          schema: result.schema,
+          bindings: result.bindings.map((binding) => ({
+            id: binding?.id,
+            deviceId: binding?.deviceId,
+            displayName: binding?.displayName,
+            createdAtMs: binding?.createdAtMs,
+            pairedAtMs: binding?.pairedAtMs,
+          })),
+        },
+      };
+    }
+    if (action === "invite.create") {
+      return {
+        status: "completed",
+        result: {
+          businessOsInstanceId: result?.businessOsInstanceId,
+          deviceId: result?.deviceId,
+          proofKeyThumbprint: result?.proofKeyThumbprint,
+          grantId: result?.grantId,
+          inviteId: result?.inviteId,
+          invite: result?.invite,
+          expiresAt: result?.expiresAt,
+        },
+      };
+    }
+    return { status: "completed", result: { revoked: result?.revoked } };
+  } catch (error) {
+    // Never return guest exception text: it can contain credentials.
+    const code = typeof error?.code === "string" ? error.code : "";
+    const message = typeof error?.message === "string" ? error.message : "";
+    if (code === "CTOX_WEBRTC_CAPABILITY_MISSING" || code === "ctox_webrtc_unavailable") {
+      return { status: "failed", code: "unsupported" };
+    }
+    if (message === "workjet device management is not allowed") {
+      return { status: "failed", code: "forbidden" };
+    }
+    if (
+      code === "peer_connect_timeout" ||
+      code === "PEER_UNAVAILABLE" ||
+      message === "Native WebRTC peer is not connected" ||
+      message.startsWith("Native request ctox.workjet.device.v1 exceeded ")
+    ) {
+      return { status: "failed", code: "sync_unavailable" };
+    }
+    return { status: "failed", code: "guest_failed" };
+  }
 })()`;
 }
 
@@ -714,6 +770,7 @@ function waitForGuestNavigationCommit(
     try: () =>
       new Promise<boolean>((resolve) => {
         let settled = false;
+        let timeout: ReturnType<typeof setTimeout> | undefined;
         const removeListener = (event: string, listener: (...args: Array<never>) => void): void => {
           try {
             webContents.off(event as never, listener as never);
@@ -748,6 +805,7 @@ function waitForGuestNavigationCommit(
         };
         const onDestroyed = (): void => finish(false);
         cleanup = (): void => {
+          if (timeout !== undefined) clearTimeout(timeout);
           removeListener("did-frame-navigate", onDidFrameNavigate as never);
           removeListener("did-fail-load", onDidFailLoad as never);
           removeListener("will-navigate", onWillNavigate as never);
@@ -761,6 +819,9 @@ function waitForGuestNavigationCommit(
         };
 
         try {
+          // Electron navigation listeners own this timeout and clear it as soon as navigation settles.
+          // @effect-diagnostics-next-line globalTimers:off
+          timeout = setTimeout(() => finish(false), 30_000);
           webContents.on("did-frame-navigate", onDidFrameNavigate as never);
           webContents.on("did-fail-load", onDidFailLoad as never);
           webContents.on("will-navigate", onWillNavigate as never);
@@ -1584,12 +1645,20 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "not_active" };
         }
         const raw = pending.value;
-        if (
-          typeof raw === "object" &&
-          raw !== null &&
-          (raw as { readonly status?: unknown }).status === "unsupported"
-        ) {
-          return { _tag: "failed", code: "unsupported" };
+        if (typeof raw === "object" && raw !== null) {
+          const guestStatus = (raw as { readonly status?: unknown }).status;
+          const guestCode = (raw as { readonly code?: unknown }).code;
+          if (guestStatus === "unsupported") return { _tag: "failed", code: "unsupported" };
+          if (guestStatus === "failed") {
+            if (
+              guestCode === "unsupported" ||
+              guestCode === "sync_unavailable" ||
+              guestCode === "forbidden"
+            ) {
+              return { _tag: "failed", code: guestCode };
+            }
+            return { _tag: "failed", code: "guest_failed" };
+          }
         }
         if (
           typeof raw !== "object" ||

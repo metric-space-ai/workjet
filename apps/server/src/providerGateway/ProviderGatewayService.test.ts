@@ -1,4 +1,10 @@
-import { WorkjetGatewayAccountId, WorkjetGatewayOperationError } from "@workjet/contracts";
+import {
+  EnvironmentId,
+  WorkjetComputerId,
+  WorkjetConnectionId,
+  WorkjetGatewayAccountId,
+  WorkjetGatewayOperationError,
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -134,6 +140,85 @@ const readyHarness = () => {
 };
 
 describe("ProviderGatewayService", () => {
+  it("persists a scoped grant without copying credentials to another computer", async () => {
+    const files = new Map<string, string>([["/state/provider-gateway.json", configuration]]);
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      readText: async (path) => {
+        const content = files.get(path);
+        if (content !== undefined) return content;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      writePrivateText: async (path, content) => {
+        files.set(path, content);
+      },
+    };
+    const accountId = WorkjetGatewayAccountId.make("codex-primary");
+    const firstTarget = {
+      connectionId: WorkjetConnectionId.make("ctox-welsch"),
+      instanceId: "welsch",
+      computerId: WorkjetComputerId.make("gpu1-a6000"),
+    };
+    const secondTarget = {
+      ...firstTarget,
+      computerId: WorkjetComputerId.make("gpu3-a4500"),
+    };
+    const environmentId = EnvironmentId.make("gateway-host");
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toEqual([]);
+        yield* gateway.setGrant({ target: firstTarget, accountId, granted: true });
+        expect(
+          (yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts[0]?.credentialRef,
+        ).toEqual({ environmentId, accountId });
+        expect((yield* gateway.scopedCatalog(secondTarget, environmentId)).accounts).toEqual([]);
+      }),
+    );
+    expect(files.get("/state/provider-gateway-grants.json")).not.toContain("provider-secret");
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toHaveLength(1);
+        yield* gateway.setGrant({ target: firstTarget, accountId, granted: false });
+        expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toEqual([]);
+      }),
+    );
+  });
+
+  it("revokes persisted grants when their gateway account is removed", async () => {
+    const harness = readyHarness();
+    const files = new Map<string, string>([["/state/provider-gateway.json", configuration]]);
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      readText: async (path) => {
+        const content = files.get(path);
+        if (content !== undefined) return content;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      writePrivateText: async (path, content) => {
+        files.set(path, content);
+      },
+    };
+    const target = {
+      connectionId: WorkjetConnectionId.make("ctox-welsch"),
+      instanceId: "welsch",
+      computerId: WorkjetComputerId.make("gpu1-a6000"),
+    };
+    const accountId = WorkjetGatewayAccountId.make("codex-primary");
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.setGrant({ target, accountId, granted: true });
+        yield* gateway.removeAccount({ accountId });
+        expect(
+          (yield* gateway.scopedCatalog(target, EnvironmentId.make("gateway-host"))).accounts,
+        ).toEqual([]);
+      }),
+    );
+    expect(JSON.parse(files.get("/state/provider-gateway-grants.json") ?? "null")).toEqual({
+      schemaVersion: 1,
+      grants: [],
+    });
+  });
+
   it("single-flights start, publishes redacted state, and stops idempotently", async () => {
     const harness = readyHarness();
     await runGateway(harness.platform, (gateway) =>

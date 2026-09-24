@@ -251,6 +251,9 @@ function isUserFacingLiteral(literal, isMetadata) {
   // implementation value as UI copy.
   const nearbyBefore = literal.before.split("\n").slice(-3).join("\n");
   const currentLineBefore = literal.before.slice(literal.before.lastIndexOf("\n") + 1);
+  // A string compared with a transport error is code, even if a nearby
+  // `message` assignment would otherwise classify it as displayed copy.
+  if (/\bmessage(?:\s*===|\.startsWith\()\s*$/u.test(currentLineBefore)) return false;
   if (USER_FACING_KEY_PATTERN.test(nearbyBefore)) return true;
   if (USER_FACING_VARIABLE_PATTERN.test(nearbyBefore)) return true;
   if (USER_FACING_CALL_PATTERN.test(currentLineBefore)) {
@@ -286,6 +289,13 @@ export const TECHNICAL_CONTEXT_ALLOWLIST = Object.freeze([
       /Waiting for the native process monitor|label=["']?Native|Live native counters|Native process monitor|label=["']?Sidecar|Native counters identify/iu,
     allowUserFacing: true,
     reason: "The resource monitor is the explicit extended-diagnostics surface.",
+  },
+  {
+    path: "apps/desktop/src/ctox/CtoxGuestManager.ts",
+    context:
+      /message(?:\s*===|\.startsWith\()\s*Native (?:WebRTC peer is not connected|request ctox\.workjet\.device\.v1 exceeded )/u,
+    reason:
+      "Generated guest control compares exact native transport errors; it does not render them.",
   },
   {
     path: "apps/desktop/src/ctox/CtoxGuestManager.ts",
@@ -459,7 +469,32 @@ export function auditSourceText(source, relativePath, { metadata = false } = {})
   const normalizedPath = normalizeRelativePath(relativePath);
   const findings = [];
 
-  for (const literal of scanStringLiterals(source)) {
+  const literals = scanStringLiterals(source).flatMap((literal) => {
+    // This Desktop template contains executable guest-control JavaScript. Its
+    // comments and source tokens are not UI copy; inspect the quoted strings
+    // inside it individually so a future visible label still gets audited.
+    if (
+      normalizedPath !== "apps/desktop/src/ctox/CtoxGuestManager.ts" ||
+      source[literal.start] !== "`" ||
+      !source.slice(literal.start + 1, literal.start + 17).startsWith("(async () => {")
+    ) {
+      return [literal];
+    }
+    const body = source.slice(literal.start + 1, literal.end - 1);
+    return scanStringLiterals(body).map((nested) => {
+      const start = literal.start + 1 + nested.start;
+      const end = literal.start + 1 + nested.end;
+      return {
+        ...nested,
+        start,
+        end,
+        before: source.slice(Math.max(0, start - 260), start),
+        after: source.slice(end, Math.min(source.length, end + 120)),
+      };
+    });
+  });
+
+  for (const literal of literals) {
     const forbidden = findForbiddenTerms(literal.value);
     if (forbidden.length === 0) continue;
     const userFacing = isUserFacingLiteral(literal, metadata);

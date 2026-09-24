@@ -189,6 +189,7 @@ const capabilitiesLayer = Layer.effectContext(
               }),
             ),
           disconnect: () => Effect.void,
+          release: () => Effect.void,
         }),
       ),
     );

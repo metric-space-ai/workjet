@@ -2,8 +2,11 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ConnectionCatalogDocument } from "@workjet/client-runtime/platform";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@workjet/contracts";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
@@ -21,6 +24,7 @@ const textEncoder = new TextEncoder();
 const decodeConnectionCatalog = Schema.decodeEffect(
   Schema.fromJsonString(ConnectionCatalogDocument),
 );
+const encodeConnectionCatalog = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 function makeSafeStorageLayer(available: boolean, failDecrypt: Ref.Ref<boolean> | null = null) {
   return Layer.succeed(ElectronSafeStorage.ElectronSafeStorage, {
     isEncryptionAvailable: Effect.succeed(available),
@@ -411,6 +415,158 @@ describe("DesktopConnectionCatalogStore", () => {
       assert.notEqual(error.message, decryptError.message);
       yield* Ref.set(failDecrypt, false);
       assert.deepStrictEqual(yield* store.get, Option.some('{"schemaVersion":1,"targets":[]}'));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("backs up an unreadable catalog before resetting saved connections", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const platform = yield* HostProcessPlatform;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "workjet-desktop-connection-catalog-test-",
+      });
+      const failDecrypt = yield* Ref.make(false);
+      const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(makeLayer(baseDir, true, failDecrypt)),
+      );
+      const catalogPath = `${baseDir}/userdata/connection-catalog.json`;
+      const original = encodeConnectionCatalog({
+        schemaVersion: 1,
+        targets: [
+          {
+            _tag: "SshConnectionTarget",
+            environmentId: "ssh-environment",
+            label: "SSH",
+            connectionId: "ssh:ssh-environment",
+          },
+          {
+            _tag: "BearerConnectionTarget",
+            environmentId: "bearer-environment",
+            label: "Bearer",
+            connectionId: "bearer:bearer-environment",
+          },
+        ],
+        profiles: [
+          {
+            _tag: "SshConnectionProfile",
+            connectionId: "ssh:ssh-environment",
+            environmentId: "ssh-environment",
+            label: "SSH",
+            target: {
+              alias: "fixture-ssh",
+              hostname: "ssh.example.test",
+              username: "ubuntu",
+              port: 22,
+            },
+          },
+          {
+            _tag: "BearerConnectionProfile",
+            connectionId: "bearer:bearer-environment",
+            environmentId: "bearer-environment",
+            label: "Bearer",
+            httpBaseUrl: "https://example.test/",
+            wsBaseUrl: "wss://example.test/",
+          },
+        ],
+        credentials: [
+          {
+            connectionId: "bearer:bearer-environment",
+            credential: { _tag: "BearerConnectionCredential", token: "fixture-token" },
+          },
+        ],
+        remoteDpopTokens: [],
+      });
+      const originalCatalog = yield* decodeConnectionCatalog(original);
+      assert.lengthOf(originalCatalog.targets, 2);
+      assert.lengthOf(originalCatalog.profiles, 2);
+      assert.lengthOf(originalCatalog.credentials, 1);
+      assert.isTrue(yield* store.set(original));
+      const encryptedOriginal = yield* fileSystem.readFileString(catalogPath);
+      if (platform !== "win32") {
+        assert.equal((yield* fileSystem.stat(catalogPath)).mode & 0o777, 0o600);
+        // Simulate a catalog written by an older build with default umask.
+        yield* fileSystem.chmod(catalogPath, 0o644);
+      }
+
+      yield* Ref.set(failDecrypt, true);
+      const backupPath = yield* store.recover;
+      assert.isNotNull(backupPath);
+      if (backupPath === null) return;
+      assert.equal(yield* fileSystem.readFileString(backupPath), encryptedOriginal);
+      assert.notEqual(yield* fileSystem.readFileString(catalogPath), encryptedOriginal);
+      if (platform !== "win32") {
+        assert.equal((yield* fileSystem.stat(backupPath)).mode & 0o777, 0o600);
+        assert.equal((yield* fileSystem.stat(catalogPath)).mode & 0o777, 0o600);
+      }
+
+      yield* Ref.set(failDecrypt, false);
+      const recovered = yield* store.get;
+      assert.isTrue(Option.isSome(recovered));
+      if (Option.isSome(recovered)) {
+        const catalog = yield* decodeConnectionCatalog(recovered.value);
+        assert.deepEqual(catalog.targets, []);
+        assert.deepEqual(catalog.profiles, []);
+      }
+      assert.isNull(yield* store.recover);
+      assert.equal(yield* fileSystem.readFileString(backupPath), encryptedOriginal);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("serializes recovery with a concurrent saved-connection write", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "workjet-desktop-connection-catalog-test-",
+      });
+      const failDecrypt = yield* Ref.make(false);
+      const copyStarted = yield* Deferred.make<void>();
+      const releaseCopy = yield* Deferred.make<void>();
+      const backupPaused = yield* Ref.make(false);
+      const writeWhileBackupPaused = yield* Ref.make(false);
+      const pausedCopy = Layer.succeed(FileSystem.FileSystem, {
+        ...fileSystem,
+        copyFile: (source, destination) =>
+          Effect.gen(function* () {
+            yield* Ref.set(backupPaused, true);
+            yield* Deferred.succeed(copyStarted, undefined);
+            yield* Deferred.await(releaseCopy);
+            yield* Ref.set(backupPaused, false);
+            yield* fileSystem.copyFile(source, destination);
+          }),
+        makeDirectory: (path, options) =>
+          Effect.gen(function* () {
+            if (yield* Ref.get(backupPaused)) {
+              yield* Ref.set(writeWhileBackupPaused, true);
+            }
+            yield* fileSystem.makeDirectory(path, options);
+          }),
+      });
+      const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(makeLayer(baseDir, true, failDecrypt, pausedCopy)),
+      );
+      const first = '{"schemaVersion":1,"targets":[]}';
+      const later =
+        '{"schemaVersion":1,"targets":[],"profiles":[],"credentials":[],"remoteDpopTokens":[]}';
+      assert.isTrue(yield* store.set(first));
+      yield* Ref.set(failDecrypt, true);
+
+      const recovery = yield* Effect.forkChild(store.recover, { startImmediately: true });
+      yield* Deferred.await(copyStarted);
+      const writerAttempted = yield* Deferred.make<void>();
+      const writer = yield* Effect.forkChild(
+        Deferred.succeed(writerAttempted, undefined).pipe(Effect.andThen(store.set(later))),
+        { startImmediately: true },
+      );
+      yield* Deferred.await(writerAttempted);
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      assert.isUndefined(writer.pollUnsafe());
+      assert.isFalse(yield* Ref.get(writeWhileBackupPaused));
+      yield* Deferred.succeed(releaseCopy, undefined);
+      assert.isNotNull(yield* Fiber.join(recovery));
+      assert.isTrue(yield* Fiber.join(writer));
+
+      yield* Ref.set(failDecrypt, false);
+      assert.deepStrictEqual(yield* store.get, Option.some(later));
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 });

@@ -4,7 +4,8 @@ import type {
   DesktopCtoxBridge,
 } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { __resetActiveWorkjetScopeForTests } from "../../activeWorkjetScope";
 
 vi.mock("../sidebar/SidebarChrome", () => ({
   SidebarChromeFooter: () => null,
@@ -45,6 +46,7 @@ import {
   removeCtoxPairedInstance,
   resolveCtoxGuestBounds,
   retainCtoxGuestBounds,
+  scheduleCtoxGuestActivationDeadline,
   submitCtoxInvite,
   readCtoxRailCollapsed,
   submitCtoxManualPairing,
@@ -161,8 +163,18 @@ function deferred<T>(): {
   return { promise, resolve };
 }
 
+function selectInstanceForSidebar(id: string): void {
+  __resetActiveWorkjetScopeForTests({
+    mode: "ctox",
+    selectedInstanceId: id,
+    selectionRevision: 1,
+  });
+}
+
+afterEach(() => __resetActiveWorkjetScopeForTests());
+
 describe("CTOX instance presentation", () => {
-  it("renders deterministic source groups and renderer-safe bounded metadata", () => {
+  it("renders only the selected instance with renderer-safe bounded metadata", () => {
     const bridge = inertBridge();
     const instances = [
       instance({
@@ -208,6 +220,7 @@ describe("CTOX instance presentation", () => {
       ["SSH Lab"],
     ]);
 
+    selectInstanceForSidebar("managed:tenant-launch-token-must-not-render");
     const markup = renderToStaticMarkup(
       <CtoxModeProvider
         bridge={bridge}
@@ -219,19 +232,38 @@ describe("CTOX instance presentation", () => {
       </CtoxModeProvider>,
     );
 
-    expect(markup).toContain("CTOX Backend");
-    expect(markup).toContain("Verbundene Backends");
-    expect(markup).toContain("Lokale Backends");
-    expect(markup).toContain("SSH-Backends");
+    expect(markup).toContain("Aktives Backend");
+    expect(markup).toContain("Managed Alpha");
+    expect(markup).not.toContain("Paired Office");
+    expect(markup).not.toContain("Local Lab");
+    expect(markup).not.toContain("SSH Lab");
     expect(markup).toContain("CTOX Backend · owner · alpha.ctox.dev");
-    expect(markup).toContain("Manuell verbunden · member");
     expect(markup).toContain("Verfügbar · Synchronisierung bereit");
-    expect(markup).toContain("Verbunden · Synchronisierung nicht verfügbar");
     expect(markup).not.toContain("room-secret-must-not-render");
     expect(markup).not.toContain("tenant-launch-token-must-not-render");
     expect(markup).not.toContain("partition-must-not-render");
     expect(markup).not.toContain("launch-url-must-not-render");
     expect(markup).not.toContain("httpDataProxy");
+  });
+
+  it("keeps the sidebar empty until an instance is selected", () => {
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{
+          _tag: "ready",
+          managedState: "ready",
+          instances: [instance({ id: "managed:one", source: "ctox_dev", displayName: "Other" })],
+        }}
+      >
+        <SidebarProvider>
+          <CtoxSidebarShell />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+
+    expect(markup).toContain("Wähle ein Backend im Dropdown oben aus.");
+    expect(markup).not.toContain("Other");
   });
 
   it("renders reachable SSH instances as launchable and unreachable ones as inert", () => {
@@ -248,6 +280,7 @@ describe("CTOX instance presentation", () => {
       status: "offline",
       healthSummary: unavailable,
     });
+    selectInstanceForSidebar(reachable.id);
     const markup = renderToStaticMarkup(
       <CtoxModeProvider
         bridge={inertBridge()}
@@ -268,15 +301,12 @@ describe("CTOX instance presentation", () => {
     expect(canActivateCtoxInstance(reachable)).toBe(true);
     expect(canActivateCtoxInstance(unreachable)).toBe(false);
     expect(isRemovableCtoxInstance(reachable)).toBe(true);
-    expect(markup).toContain('id="ctox-ssh-heading"');
-    expect(markup).toContain("SSH-Backends");
+    expect(markup).toContain("Aktives Backend");
     expect(markup).toContain("SSH-Backend\nVerfügbar · Synchronisierung nicht verfügbar");
-    expect(markup).toContain(CTOX_SSH_LAUNCH_PENDING_HINT);
-    // Only the unreachable row is inert; both keep destructive actions out of
-    // the primary row and behind a compact context trigger.
-    expect(markup.match(/cursor-not-allowed/gu)?.length).toBe(1);
+    expect(markup).not.toContain(CTOX_SSH_LAUNCH_PENDING_HINT);
+    expect(markup).not.toContain("Quiet Box");
+    expect(markup).not.toContain("cursor-not-allowed");
     expect(markup).toContain("Aktionen für Build Box");
-    expect(markup).toContain("Aktionen für Quiet Box");
     expect(markup).not.toContain("Build Box entfernen");
   });
 
@@ -340,6 +370,7 @@ describe("CTOX instance presentation", () => {
       displayName: "Workshop Business OS",
       healthSummary: unavailable,
     });
+    selectInstanceForSidebar(local.id);
     const markup = renderToStaticMarkup(
       <CtoxModeProvider
         bridge={inertBridge()}
@@ -365,27 +396,24 @@ describe("CTOX instance presentation", () => {
     );
 
     expect(canActivateCtoxInstance(local)).toBe(true);
-    expect(markup).toContain('id="ctox-local-heading"');
-    expect(markup).toContain("Lokale Backends");
+    expect(markup).toContain("Aktives Backend");
     expect(markup).toContain("Workshop Business OS");
-    expect(markup).toContain("Stopped Daemon");
+    expect(markup).not.toContain("Stopped Daemon");
     // A running daemon carries no unavailability hint; a stopped one does.
     expect(markup).toContain("Lokales Backend\nVerfügbar · Synchronisierung nicht verfügbar");
     expect(markup).not.toContain(
       "Lokales Backend\nVerfügbar · Synchronisierung nicht verfügbar\nDieses lokale Backend läuft nicht.",
     );
-    expect(markup).toContain(
-      "Lokales Backend\nOffline · Synchronisierung nicht verfügbar\nDieses lokale Backend läuft nicht.",
-    );
-    // Same flat row style as Managed and Paired; only the stopped row is inert.
+    // Other discovered backends belong only in the dropdown.
     expect(markup).toContain('data-ctox-instance-source="local_daemon"');
     expect(markup).toContain("bg-sidebar-muted-foreground/50");
-    expect(markup.match(/data-ctox-instance-source="local_daemon"[^>]*disabled/g)).toHaveLength(1);
+    expect(markup.match(/data-ctox-instance-source="local_daemon"/g)).toHaveLength(1);
     // A local row offers no Remove control; only paired entries are removable.
     expect(markup).not.toContain("Remove Workshop Business OS");
   });
 
   it("keeps ctox.dev sign-in available beside paired results", () => {
+    selectInstanceForSidebar("paired:pairing_invite:stable");
     const markup = renderToStaticMarkup(
       <CtoxModeProvider
         bridge={inertBridge()}
@@ -416,6 +444,7 @@ describe("CTOX instance presentation", () => {
   });
 
   it("renders managed discovery failure without hiding paired results", () => {
+    selectInstanceForSidebar("paired:manual_pairing:stable");
     const markup = renderToStaticMarkup(
       <CtoxModeProvider
         bridge={inertBridge()}
@@ -564,7 +593,9 @@ describe("CTOX native guest bounds", () => {
   it("keeps one pending activation observable across a genuine bounds update", async () => {
     const pending = deferred<CtoxManagedGuestResult>();
     const activate = vi.fn(() => pending.promise);
-    const activatedKey = { current: 0 };
+    const activatedKey: {
+      current: { readonly activationKey: number; readonly instanceId: string } | null;
+    } = { current: null };
     const states: string[] = [];
     const bridge = inertBridge();
     const activation = {
@@ -577,7 +608,9 @@ describe("CTOX native guest bounds", () => {
     const currentActivation = activation;
     let bounds = { x: 12, y: 24, width: 800, height: 600 };
 
-    expect(claimCtoxGuestActivation(activatedKey, activation.activationKey)).toBe(true);
+    expect(
+      claimCtoxGuestActivation(activatedKey, activation.activationKey, activation.instanceId),
+    ).toBe(true);
     trackCtoxGuestActivation(
       activate(),
       () => isCurrentCtoxGuestActivation(true, currentActivation, activation),
@@ -586,7 +619,9 @@ describe("CTOX native guest bounds", () => {
 
     bounds = retainCtoxGuestBounds(bounds, { ...bounds, width: 960, height: 720 });
     expect(bounds).toEqual({ x: 12, y: 24, width: 960, height: 720 });
-    expect(claimCtoxGuestActivation(activatedKey, activation.activationKey)).toBe(false);
+    expect(
+      claimCtoxGuestActivation(activatedKey, activation.activationKey, activation.instanceId),
+    ).toBe(false);
     expect(activate).toHaveBeenCalledOnce();
 
     pending.resolve({ _tag: "ready", instanceId: "managed:alpha" });
@@ -594,6 +629,15 @@ describe("CTOX native guest bounds", () => {
     await Promise.resolve();
 
     expect(states).toEqual(["ready"]);
+  });
+
+  it("activates a new instance when host selection changes without a new numeric key", () => {
+    const activatedKey: {
+      current: { readonly activationKey: number; readonly instanceId: string } | null;
+    } = { current: null };
+    expect(claimCtoxGuestActivation(activatedKey, 1, "managed:alpha")).toBe(true);
+    expect(claimCtoxGuestActivation(activatedKey, 1, "managed:alpha")).toBe(false);
+    expect(claimCtoxGuestActivation(activatedKey, 1, "managed:beta")).toBe(true);
   });
 
   it("ignores pending results after unmount or activation identity changes", async () => {
@@ -633,6 +677,50 @@ describe("CTOX native guest bounds", () => {
     await Promise.resolve();
 
     expect(states).toEqual([]);
+  });
+
+  it("gives retries and instance switches a fresh deadline", () => {
+    vi.useFakeTimers();
+    try {
+      const bridge = inertBridge();
+      const first = {
+        activationKey: 1,
+        bridge,
+        instanceId: "managed:alpha",
+        modeReady: true,
+        selectedId: "managed:alpha",
+      };
+      let current = first;
+      const slow = vi.fn();
+      const timeout = vi.fn();
+      const schedule = (expected: typeof first) =>
+        scheduleCtoxGuestActivationDeadline(
+          expected,
+          () => current,
+          () => true,
+          slow,
+          timeout,
+        );
+      const cancelFirst = schedule(first);
+      vi.advanceTimersByTime(15_000);
+      expect(slow).toHaveBeenCalledTimes(1);
+
+      current = { ...first, activationKey: 2 };
+      const cancelRetry = schedule(current);
+      cancelFirst();
+      vi.advanceTimersByTime(15_000);
+      expect(timeout).not.toHaveBeenCalled();
+      expect(slow).toHaveBeenCalledTimes(2);
+
+      current = { ...current, instanceId: "managed:beta", selectedId: "managed:beta" };
+      const cancelSwitch = schedule(current);
+      vi.advanceTimersByTime(30_000);
+      expect(timeout).toHaveBeenCalledTimes(1);
+      cancelRetry();
+      cancelSwitch();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -804,6 +892,34 @@ describe("CtoxMainShell", () => {
     expect(shouldRenderCtoxShellUpdateStatus(withUpdate, true)).toBe(true);
   });
 
+  it("does not present a remote fleet placeholder as a failed shell update", () => {
+    const remote = instance({
+      id: "managed:welsch",
+      source: "ctox_dev",
+      displayName: "Welsch",
+      shellUpdate: {
+        activeVersion: null,
+        desiredVersion: null,
+        latestCompatibleVersion: null,
+        channel: "stable",
+        phase: "blocked",
+        health: "unknown",
+        administrable: false,
+        recoveryShell: true,
+        lastCheckedAt: null,
+        lastActivatedAt: null,
+        errorCode: null,
+        pause: null,
+      },
+    });
+
+    expect(shouldRenderCtoxShellUpdateStatus(remote, false)).toBe(false);
+    expect(shouldRenderCtoxShellUpdateStatus({ ...remote, source: "manual_pairing" }, false)).toBe(
+      false,
+    );
+    expect(shouldRenderCtoxShellUpdateStatus({ ...remote, status: "offline" }, false)).toBe(true);
+  });
+
   it("detaches the native guest before a host-owned overlay is revealed", async () => {
     const suspend = vi.fn(async () => ({ _tag: "completed" as const }));
 
@@ -865,8 +981,7 @@ describe("CtoxMainShell", () => {
     expect(textAndExposedAttributes).not.toMatch(
       /\b(?:guest|webcontentsview|sidecar|native|binary|room|signaling|rxdb|webrtc)\b/iu,
     );
-    expect(markup).toContain("CTOX Backend");
-    expect(markup).toContain("Verbundene Backends");
+    expect(markup).toContain("Aktives Backend");
     expect(ctoxModeShellSource).toContain("aria-label={`Business OS: ${instance.displayName}`}");
     expect(ctoxModeShellSource).toContain('error: "Business OS konnte nicht geöffnet werden."');
     for (const staleCopy of [
@@ -1211,6 +1326,7 @@ describe("CTOX guest lifecycle presentation", () => {
   });
 
   it("renders the guest state on the instance row without leaking identity", () => {
+    selectInstanceForSidebar(managed.id);
     const markup = renderToStaticMarkup(
       <CtoxModeProvider
         bridge={inertBridge()}

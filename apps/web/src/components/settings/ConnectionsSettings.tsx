@@ -122,6 +122,7 @@ import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { ServerUpdateAction, ServerUpdateProgress } from "../ServerUpdateAction";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
+import { TailscalePeerSuggestions } from "./TailscalePeerSuggestions";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -1780,19 +1781,23 @@ export function useComputerConnections({
   const [savedBackendSshPort, setSavedBackendSshPort] = useState("");
   const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
+  const [isRecoveringCatalog, setIsRecoveringCatalog] = useState(false);
+  const [catalogRecoveryMessage, setCatalogRecoveryMessage] = useState<string | null>(null);
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const desktopSshHosts = useEnvironmentQuery(
-    desktopBridge &&
-      (inline || addBackendDialogOpen) &&
-      (savedBackendMode === "ssh" || savedBackendMode === "tailscale")
+    desktopBridge && (inline || addBackendDialogOpen) && savedBackendMode === "ssh"
       ? desktopSshHostsStateAtom
       : null,
   );
+  const refreshSshHosts = desktopSshHosts.refresh;
   const discoveredSshHosts = desktopSshHosts.data ?? EMPTY_DISCOVERED_SSH_HOSTS;
   const unsavedDiscoveredSshHosts = useMemo(
     () =>
       discoveredSshHosts.filter((target) => {
+        // known_hosts is a record of past handshakes, not a list of computers
+        // the user intentionally configured or can still reach.
+        if (target.source !== "ssh-config") return false;
         const address = formatDesktopSshTarget(target);
         return (
           !savedDesktopSshEnvironmentKeys.has(target.alias) &&
@@ -1804,12 +1809,45 @@ export function useComputerConnections({
   const hasLoadedDiscoveredSshHosts =
     desktopSshHosts.data !== null || desktopSshHosts.error !== null;
   const isLoadingDiscoveredSshHosts = desktopSshHosts.isPending;
-  const discoveredSshHostsError = sshConnectionError ?? desktopSshHosts.error;
+  const discoveredSshHostsError =
+    sshConnectionError ?? (savedBackendMode === "ssh" ? desktopSshHosts.error : null);
+  const catalogRecoveryAvailable =
+    desktopBridge?.recoverConnectionCatalog !== undefined &&
+    [savedBackendError, sshConnectionError, desktopSshHosts.error].some(
+      (message) =>
+        message !== null &&
+        (message.includes("decrypt-catalog") ||
+          message.includes("Failed to decode encryptedCatalog") ||
+          message.includes("Failed to decode the desktop connection catalog document")),
+    );
+  const handleRecoverConnectionCatalog = useCallback(async () => {
+    if (desktopBridge?.recoverConnectionCatalog === undefined || isRecoveringCatalog) return;
+    setIsRecoveringCatalog(true);
+    setCatalogRecoveryMessage(null);
+    try {
+      const backupPath = await desktopBridge.recoverConnectionCatalog();
+      setSavedBackendError(null);
+      setSshConnectionError(null);
+      refreshSshHosts();
+      setCatalogRecoveryMessage(
+        backupPath === null
+          ? "Saved connections are readable again. Retry the connection."
+          : `The encrypted connection catalog was backed up to ${backupPath}. Saved connections were reset; retry the connection.`,
+      );
+    } catch (error) {
+      setSavedBackendError(
+        error instanceof Error ? error.message : "Could not recover saved connections.",
+      );
+    } finally {
+      setIsRecoveringCatalog(false);
+    }
+  }, [desktopBridge, isRecoveringCatalog, refreshSshHosts]);
   const handleAddSavedBackend = useCallback(async () => {
-    if (isAddingSavedBackend || connectingSshHostAlias !== null) return;
+    if (isAddingSavedBackend || isRecoveringCatalog || connectingSshHostAlias !== null) return;
     if (savedBackendMode === "ssh" || savedBackendMode === "tailscale") {
       setIsAddingSavedBackend(true);
       setSavedBackendError(null);
+      setCatalogRecoveryMessage(null);
       let target: DesktopSshEnvironmentTarget;
       try {
         target = parseManualDesktopSshTarget({
@@ -1912,6 +1950,7 @@ export function useComputerConnections({
     onConnected,
     computerName,
     isAddingSavedBackend,
+    isRecoveringCatalog,
     connectingSshHostAlias,
     connectPairing,
     connectSshEnvironment,
@@ -1986,8 +2025,9 @@ export function useComputerConnections({
   );
   const handleConnectSshHost = useCallback(
     async (target: DesktopSshEnvironmentTarget, label?: string) => {
-      if (isAddingSavedBackend || connectingSshHostAlias !== null) return;
+      if (isAddingSavedBackend || isRecoveringCatalog || connectingSshHostAlias !== null) return;
       setConnectingSshHostAlias(target.alias);
+      setCatalogRecoveryMessage(null);
       if (savedBackendMode === "ssh" || savedBackendMode === "tailscale") {
         setSavedBackendError(null);
       } else {
@@ -2036,6 +2076,7 @@ export function useComputerConnections({
       savedDesktopSshEnvironmentsByAlias,
       onConnected,
       isAddingSavedBackend,
+      isRecoveringCatalog,
       connectingSshHostAlias,
     ],
   );
@@ -2191,64 +2232,97 @@ export function useComputerConnections({
           </label>
         </div>
         <p className="text-xs text-muted-foreground">
-          Use an IP address, hostname, or saved SSH alias. If a password is required, Workjet asks
-          for it when connecting.
+          {savedBackendMode === "tailscale"
+            ? "Choose an online computer below or enter its Tailscale address, then enter its SSH username."
+            : "Use an IP address, hostname, or saved SSH alias."}{" "}
+          If a password is required, Workjet asks for it when connecting.
         </p>
         {savedBackendError || discoveredSshHostsError ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {savedBackendError ?? discoveredSshHostsError}
           </div>
         ) : null}
+        {catalogRecoveryAvailable ? (
+          <div className="space-y-2 rounded-md border border-border/60 p-3 text-xs">
+            <p>
+              Workjet cannot read its saved connections. Unlock your system credential store and
+              retry first. If the error persists, you can back up the encrypted catalog and reset
+              the saved connections.
+            </p>
+            <Button
+              variant="outline"
+              disabled={isRecoveringCatalog || isAddingSavedBackend}
+              onClick={() => void handleRecoverConnectionCatalog()}
+            >
+              {isRecoveringCatalog ? "Backing up…" : "Back up and reset saved connections"}
+            </Button>
+          </div>
+        ) : null}
+        {catalogRecoveryMessage ? (
+          <p role="status" className="text-xs">
+            {catalogRecoveryMessage}
+          </p>
+        ) : null}
         <Button
           variant="outline"
           className="w-full"
-          disabled={isAddingSavedBackend || connectingSshHostAlias !== null}
+          disabled={isAddingSavedBackend || isRecoveringCatalog || connectingSshHostAlias !== null}
           onClick={() => void handleAddSavedBackend()}
         >
           <PlusIcon className="size-3.5" />
           {isAddingSavedBackend ? "Adding…" : "Connect computer"}
         </Button>
       </div>
-      <div className="overflow-hidden rounded-lg border border-border/60">
-        <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-3 py-2">
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-foreground">Suggested hosts</p>
-            <p className="text-[11px] text-muted-foreground">From SSH config and known hosts</p>
+      {savedBackendMode === "tailscale" ? (
+        <TailscalePeerSuggestions
+          bridge={desktopBridge}
+          disabled={isAddingSavedBackend || isRecoveringCatalog || connectingSshHostAlias !== null}
+          onSelect={setSavedBackendSshHost}
+        />
+      ) : (
+        <div className="overflow-hidden rounded-lg border border-border/60">
+          <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-foreground">Saved SSH aliases</p>
+              <p className="text-[11px] text-muted-foreground">From your SSH config</p>
+            </div>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={isLoadingDiscoveredSshHosts}
+              onClick={desktopSshHosts.refresh}
+            >
+              {isLoadingDiscoveredSshHosts ? (
+                <RefreshCwIcon className="size-3 animate-spin" />
+              ) : (
+                <RefreshCwIcon className="size-3" />
+              )}
+              Refresh
+            </Button>
           </div>
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={isLoadingDiscoveredSshHosts}
-            onClick={desktopSshHosts.refresh}
-          >
-            {isLoadingDiscoveredSshHosts ? (
-              <RefreshCwIcon className="size-3 animate-spin" />
-            ) : (
-              <RefreshCwIcon className="size-3" />
-            )}
-            Refresh
-          </Button>
+          <ScrollArea scrollFade className="max-h-56">
+            <div>
+              {unsavedDiscoveredSshHosts.map((target) => (
+                <DesktopSshHostRow
+                  key={`${target.alias}:${target.hostname}:${target.port ?? ""}`}
+                  target={target}
+                  connectingHostAlias={connectingSshHostAlias}
+                  onConnect={(nextTarget) => void handleConnectSshHost(nextTarget)}
+                />
+              ))}
+              {hasLoadedDiscoveredSshHosts &&
+              !isLoadingDiscoveredSshHosts &&
+              unsavedDiscoveredSshHosts.length === 0 ? (
+                <div className={ITEM_ROW_CLASSNAME}>
+                  <p className="text-xs text-muted-foreground">
+                    No unsaved SSH aliases. Enter an IP address or hostname above.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </ScrollArea>
         </div>
-        <ScrollArea scrollFade className="max-h-56">
-          <div>
-            {unsavedDiscoveredSshHosts.map((target) => (
-              <DesktopSshHostRow
-                key={`${target.alias}:${target.hostname}:${target.port ?? ""}`}
-                target={target}
-                connectingHostAlias={connectingSshHostAlias}
-                onConnect={(nextTarget) => void handleConnectSshHost(nextTarget)}
-              />
-            ))}
-            {hasLoadedDiscoveredSshHosts &&
-            !isLoadingDiscoveredSshHosts &&
-            unsavedDiscoveredSshHosts.length === 0 ? (
-              <div className={ITEM_ROW_CLASSNAME}>
-                <p className="text-xs text-muted-foreground">No new SSH hosts were discovered.</p>
-              </div>
-            ) : null}
-          </div>
-        </ScrollArea>
-      </div>
+      )}
     </div>
   );
   const form = (

@@ -35,3 +35,13 @@ export const clearConnectionCatalog = DesktopIpc.makeIpcMethod({
     yield* store.clear;
   }),
 });
+
+export const recoverConnectionCatalog = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.RECOVER_CONNECTION_CATALOG_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.NullOr(Schema.String),
+  handler: Effect.fn("desktop.ipc.connectionCatalog.recover")(function* () {
+    const store = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore;
+    return yield* store.recover;
+  }),
+});

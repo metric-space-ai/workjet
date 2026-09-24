@@ -344,6 +344,18 @@ export const DesktopSshEnvironmentTargetSchema = Schema.Struct({
 export type DesktopSshEnvironmentTarget = typeof DesktopSshEnvironmentTargetSchema.Type;
 
 export type DesktopSshHostSource = "ssh-config" | "known-hosts";
+export const DesktopTailscalePeersSchema = Schema.Struct({
+  status: Schema.Literals(["available", "unavailable"]),
+  peers: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      hostname: Schema.String,
+      online: Schema.Boolean,
+    }),
+  ),
+});
+export type DesktopTailscalePeers = typeof DesktopTailscalePeersSchema.Type;
 export const DesktopSshHostSourceSchema = Schema.Literals(["ssh-config", "known-hosts"]);
 
 export interface DesktopDiscoveredSshHost extends DesktopSshEnvironmentTarget {
@@ -1112,12 +1124,17 @@ export interface DesktopBridge {
   getConnectionCatalog?: () => Promise<string | null>;
   setConnectionCatalog?: (catalog: string) => Promise<boolean>;
   clearConnectionCatalog?: () => Promise<void>;
+  recoverConnectionCatalog?: () => Promise<string | null>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
+  discoverTailscalePeers: () => Promise<DesktopTailscalePeers>;
   ensureSshEnvironment: (
     target: DesktopSshEnvironmentTarget,
     options?: { issuePairingToken?: boolean },
   ) => Promise<DesktopSshEnvironmentBootstrap>;
-  disconnectSshEnvironment: (target: DesktopSshEnvironmentTarget) => Promise<void>;
+  disconnectSshEnvironment: (
+    target: DesktopSshEnvironmentTarget,
+    options?: { releaseOnly?: boolean },
+  ) => Promise<void>;
   fetchSshEnvironmentDescriptor: (httpBaseUrl: string) => Promise<ExecutionEnvironmentDescriptor>;
   bootstrapSshBearerSession: (
     httpBaseUrl: string,

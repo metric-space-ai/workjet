@@ -231,6 +231,16 @@ export function canActivateCtoxInstance(instance: CtoxManagedInstance): boolean 
   return isPairedCtoxInstance(instance) && instance.status === "paired";
 }
 
+export function getCtoxSelectionDisposition(
+  discovery: CtoxDiscoveryResult,
+  selectedId: string | null,
+): "keep" | "unavailable" | "revoked" {
+  if (selectedId === null || discovery._tag !== "ready") return "keep";
+  const selected = discovery.instances.find((instance) => instance.id === selectedId);
+  if (selected === undefined) return "revoked";
+  return canActivateCtoxInstance(selected) ? "keep" : "unavailable";
+}
+
 export function getCtoxManagedState(discovery: "loading" | CtoxDiscoveryResult): CtoxManagedState {
   if (discovery === "loading") return "loading";
   if (discovery._tag !== "ready") return discovery._tag;
@@ -525,16 +535,15 @@ export function CtoxModeProvider({
     (next: CtoxDiscoveryResult) => {
       if (!mountedRef.current) return;
       setDiscovery(next);
-      const current = selectedIdRef.current;
-      if (current === null) return;
-      const currentInstance =
-        next._tag === "ready"
-          ? next.instances.find((instance) => instance.id === current)
-          : undefined;
-      if (currentInstance !== undefined && canActivateCtoxInstance(currentInstance)) return;
-      clearSelection("revoked");
+      const disposition = getCtoxSelectionDisposition(next, selectedIdRef.current);
+      if (disposition === "revoked") {
+        void clearSelection("revoked");
+      } else if (disposition === "unavailable") {
+        setConnection("error");
+        releaseCtoxGuest(bridge);
+      }
     },
-    [clearSelection],
+    [bridge, clearSelection],
   );
 
   const refresh = useCallback(() => {
@@ -2454,11 +2463,13 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
 export function CtoxMainShell() {
   const { discovery, selectedId, connection } = useCtoxMode();
   const navigate = useNavigate();
-  const selected =
+  const knownSelected =
     discovery !== "loading" && discovery._tag === "ready"
-      ? discovery.instances.find(
-          (instance) => instance.id === selectedId && canActivateCtoxInstance(instance),
-        )
+      ? discovery.instances.find((instance) => instance.id === selectedId)
+      : undefined;
+  const selected =
+    knownSelected !== undefined && canActivateCtoxInstance(knownSelected)
+      ? knownSelected
       : undefined;
 
   const emptyState =
@@ -2478,10 +2489,16 @@ export function CtoxMainShell() {
               title: "CTOX Backends werden geladen",
               description: "Die Backends werden noch geladen.",
             }
-          : {
-              title: "Kein Backend ausgewählt",
-              description: "Wählen Sie ein verfügbares Backend aus, um Business OS zu öffnen.",
-            };
+          : knownSelected !== undefined
+            ? {
+                title: "Backend derzeit nicht verfügbar",
+                description:
+                  "Die ausgewählte Instanz bleibt gespeichert. Aktualisieren Sie die Backends und versuchen Sie es erneut.",
+              }
+            : {
+                title: "Kein Backend ausgewählt",
+                description: "Wählen Sie ein verfügbares Backend aus, um Business OS zu öffnen.",
+              };
 
   return (
     <SidebarInset

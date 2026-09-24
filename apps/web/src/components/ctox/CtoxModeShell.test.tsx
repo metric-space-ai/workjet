@@ -37,6 +37,7 @@ import {
   CtoxModeProvider,
   CtoxSidebarShell,
   getCtoxManagedState,
+  getCtoxSelectionDisposition,
   groupCtoxInstances,
   groupCtoxRailApps,
   isCurrentCtoxGuestActivation,
@@ -121,6 +122,28 @@ function instance(
     ...input,
   };
 }
+
+it("keeps a selected backend through transient discovery failures and temporary unavailability", () => {
+  const selected = instance({
+    id: "managed:welsch",
+    source: "ctox_dev",
+    displayName: "Welsch",
+  });
+  const ready = { _tag: "ready" as const, managedState: "ready" as const, instances: [selected] };
+
+  expect(getCtoxSelectionDisposition(ready, selected.id)).toBe("keep");
+  expect(getCtoxSelectionDisposition({ _tag: "failed", code: "network_error" }, selected.id)).toBe(
+    "keep",
+  );
+  expect(getCtoxSelectionDisposition(ready, selected.id)).toBe("keep");
+  expect(
+    getCtoxSelectionDisposition(
+      { ...ready, instances: [{ ...selected, status: "offline" }] },
+      selected.id,
+    ),
+  ).toBe("unavailable");
+  expect(getCtoxSelectionDisposition({ ...ready, instances: [] }, selected.id)).toBe("revoked");
+});
 
 function inertBridge(overrides: Partial<DesktopCtoxBridge> = {}): DesktopCtoxBridge {
   return {

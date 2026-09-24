@@ -38,11 +38,10 @@ const make = Effect.gen(function* () {
       connectionId: input.binding.connectionId,
       instanceId: input.binding.instanceId,
     };
-    const result = yield* native.prepareProjectExecution(
-      scope,
-      input.requestId,
-      { ...input.task, thread_id: input.binding.chatId },
-    );
+    const result = yield* native.prepareProjectExecution(scope, input.requestId, {
+      ...input.task,
+      thread_id: input.binding.chatId,
+    });
     if (result.state !== "ready") return result;
     const claim = result.claim;
     return {
@@ -150,10 +149,7 @@ const make = Effect.gen(function* () {
       saved.providerThreadId !== input.providerThreadId
     )
       return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
-    const reissued = yield* native.reissueClaimedProjectOffer(
-      candidate.identity,
-      input.attemptId,
-    );
+    const reissued = yield* native.reissueClaimedProjectOffer(candidate.identity, input.attemptId);
     if (
       reissued.reservation.providerInstanceId !== input.providerInstanceId ||
       reissued.reservation.providerThreadId !== input.providerThreadId

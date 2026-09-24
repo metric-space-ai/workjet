@@ -205,7 +205,8 @@ const make = Effect.gen(function* () {
       request.operation !== "delegate_task" &&
       request.operation !== "start_project_task" &&
       request.operation !== "start_crew_execution"
-    ) return yield* failure("native-response-invalid");
+    )
+      return yield* failure("native-response-invalid");
     const receipt =
       request.operation === "start_crew_execution"
         ? yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(value).pipe(

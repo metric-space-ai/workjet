@@ -9,6 +9,7 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
@@ -246,9 +247,9 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(recoveryPage.candidates).toHaveLength(1);
     const recoveryCandidate = recoveryPage.candidates[0]!;
     expect(recoveryCandidate.requestId).toBe("persisted-event");
-    expect(
-      (yield* restored.prepareRecoveredProjectExecution(recoveryCandidate)).state,
-    ).toBe("resume-required");
+    expect((yield* restored.prepareRecoveredProjectExecution(recoveryCandidate)).state).toBe(
+      "resume-required",
+    );
     expect(
       yield* Effect.flip(
         restored.prepareRecoveredProjectExecution({
@@ -267,7 +268,8 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(reissued.claim.attemptId).toBe(attemptId);
     expect(reissued.claim.context.member_id).toBe("crew");
     expect(claims).toBe(2);
-    offers = [{ ...offered, state: "claimed", deadline_ms: (yield* Clock.currentTimeMillis) - 1 }];
+    yield* TestClock.setTime(1_000);
+    offers = [{ ...offered, state: "claimed", deadline_ms: 999 }];
     expect(
       yield* Effect.flip(restored.reissueClaimedProjectOffer(admitted.identity, attemptId)),
     ).toMatchObject({ reason: "native-task-reference-conflict" });

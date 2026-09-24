@@ -860,9 +860,11 @@ const make = Effect.gen(function* () {
           method: "thread.turn.start",
           detail: "The claimed Crew turn could not establish a provider session.",
         });
-      const activeSession = yield* providerService.listSessions().pipe(
-        Effect.map((sessions) => sessions.find((session) => session.threadId === input.threadId)),
-      );
+      const activeSession = yield* providerService
+        .listSessions()
+        .pipe(
+          Effect.map((sessions) => sessions.find((session) => session.threadId === input.threadId)),
+        );
       if (!activeSession || activeSession.providerInstanceId !== input.modelSelection.instanceId)
         return yield* new ProviderAdapterRequestError({
           provider: providerErrorLabelFromInstanceHint({
@@ -878,9 +880,7 @@ const make = Effect.gen(function* () {
         providerThreadId: activeSession.threadId,
       });
       yield* providerService.sendTurn(sendTurnRequest).pipe(Effect.forkScoped);
-    }).pipe(
-      Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap),
-    );
+    }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap));
   });
 
   const maybeGenerateAndRenameWorktreeBranchForFirstTurn = Effect.fn(
@@ -1640,9 +1640,11 @@ const make = Effect.gen(function* () {
           );
           const harness = nativeCrewHarness(providerInfo.driverKind);
           if (!harness) return;
-          const beforeRecovery = yield* providerService.listSessions().pipe(
-            Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
-          );
+          const beforeRecovery = yield* providerService
+            .listSessions()
+            .pipe(
+              Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
+            );
           if (beforeRecovery?.status === "running" || beforeRecovery?.status === "connecting") {
             yield* Effect.logWarning("native Crew recovery deferred while provider is active", {
               threadId: thread.id,
@@ -1659,15 +1661,22 @@ const make = Effect.gen(function* () {
           if (prepared.state === "ready") {
             // Recovery is allowed to claim a new offer, but an old provider
             // process may still hold another attempt's fixed MCP credential.
-            const priorSession = yield* providerService.listSessions().pipe(
-              Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
-            );
+            const priorSession = yield* providerService
+              .listSessions()
+              .pipe(
+                Effect.map((sessions) =>
+                  sessions.find((session) => session.threadId === thread.id),
+                ),
+              );
             if (priorSession?.status === "running" || priorSession?.status === "connecting") {
-              yield* Effect.logWarning("native Crew recovery retained a claim while provider is active", {
-                threadId: thread.id,
-                attemptId: prepared.claim.attemptId,
-                providerStatus: priorSession.status,
-              });
+              yield* Effect.logWarning(
+                "native Crew recovery retained a claim while provider is active",
+                {
+                  threadId: thread.id,
+                  attemptId: prepared.claim.attemptId,
+                  providerStatus: priorSession.status,
+                },
+              );
               return;
             }
             if (priorSession) {
@@ -1676,7 +1685,8 @@ const make = Effect.gen(function* () {
                 return yield* new ProviderAdapterRequestError({
                   provider: "ctox",
                   method: "thread.turn.start",
-                  detail: "The previous Crew provider session could not be stopped safely during recovery.",
+                  detail:
+                    "The previous Crew provider session could not be stopped safely during recovery.",
                 });
             }
             yield* runClaimedCrewTurn({
@@ -1698,23 +1708,31 @@ const make = Effect.gen(function* () {
               saved.providerInstanceId !== thread.modelSelection.instanceId ||
               !isCodexResumeCursor(saved.resumeCursor)
             ) {
-              yield* Effect.logWarning("native Crew claim retained without a verified provider cursor", {
-                threadId: thread.id,
-                attemptId: prepared.attemptId,
-                provider: providerInfo.driverKind,
-              });
+              yield* Effect.logWarning(
+                "native Crew claim retained without a verified provider cursor",
+                {
+                  threadId: thread.id,
+                  attemptId: prepared.attemptId,
+                  provider: providerInfo.driverKind,
+                },
+              );
               return;
             }
-            const priorSession = yield* providerService.listSessions().pipe(
-              Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
-            );
+            const priorSession = yield* providerService
+              .listSessions()
+              .pipe(
+                Effect.map((sessions) =>
+                  sessions.find((session) => session.threadId === thread.id),
+                ),
+              );
             if (priorSession) {
               const stopped = yield* providerService.stopSession({ threadId: thread.id });
               if (stopped?.terminated !== true)
                 return yield* new ProviderAdapterRequestError({
                   provider: "codex",
                   method: "thread.turn.start",
-                  detail: "The old Crew provider session could not be stopped before claim recovery.",
+                  detail:
+                    "The old Crew provider session could not be stopped before claim recovery.",
                 });
             }
             const reissued = yield* admission.reissueClaimed({
@@ -1730,16 +1748,18 @@ const make = Effect.gen(function* () {
               thread,
               projects: project ? [project] : [],
             });
-            const resumed = yield* providerService.startSession(thread.id, {
-              threadId: thread.id,
-              provider: "codex",
-              providerInstanceId: thread.modelSelection.instanceId,
-              ...(cwd ? { cwd } : {}),
-              modelSelection: thread.modelSelection,
-              resumeCursor: saved.resumeCursor,
-              runtimeMode: thread.runtimeMode,
-              workjetConfig: thread.workjetConfig,
-            }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap));
+            const resumed = yield* providerService
+              .startSession(thread.id, {
+                threadId: thread.id,
+                provider: "codex",
+                providerInstanceId: thread.modelSelection.instanceId,
+                ...(cwd ? { cwd } : {}),
+                modelSelection: thread.modelSelection,
+                resumeCursor: saved.resumeCursor,
+                runtimeMode: thread.runtimeMode,
+                workjetConfig: thread.workjetConfig,
+              })
+              .pipe(Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap));
             if (
               resumed.threadId !== thread.id ||
               resumed.providerInstanceId !== thread.modelSelection.instanceId ||

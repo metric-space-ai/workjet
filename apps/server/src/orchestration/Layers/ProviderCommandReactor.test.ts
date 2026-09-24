@@ -828,7 +828,7 @@ describe("ProviderCommandReactor", () => {
     expect(recover).toHaveBeenCalledTimes(1);
     expect(reissueClaimed).toHaveBeenCalledWith(
       expect.objectContaining({
-        candidate,
+        candidate: expect.objectContaining({ ...candidate, sequence: 1 }),
         binding,
         providerInstanceId,
         providerThreadId: threadId,

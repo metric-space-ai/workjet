@@ -289,9 +289,7 @@ const CtoxCrewTurnAdmissionLive = CtoxCrewTurnAdmission.layer.pipe(
 const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(OrchestrationReactorLive),
   Layer.provideMerge(ProviderRuntimeIngestionLive),
-  Layer.provideMerge(
-    ProviderCommandReactorLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive)),
-  ),
+  Layer.provideMerge(ProviderCommandReactorLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(
     // Worker worktree release is a thread-deletion reaction, so its service is

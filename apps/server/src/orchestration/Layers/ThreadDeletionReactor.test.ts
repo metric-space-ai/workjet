@@ -30,6 +30,10 @@ import {
   WorkerWorktreeCleanup,
   make as makeWorkerWorktreeCleanup,
 } from "../../workjet/WorkerWorktreeCleanup.ts";
+import {
+  NativeWorkerWorktreeRemover,
+  NativeWorkerWorktreeRemovalError,
+} from "../../workjet/NativeWorkerWorktreeRemover.ts";
 import { layerTest as worktreeStorageLayerTest } from "../../worktree/WorktreeStorage.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -215,13 +219,20 @@ describe("worker worktree cleanup on thread.deleted", () => {
           refName: workerRefName,
           hasWorkingTreeChanges: input.dirty ?? false,
         }),
-      removeWorktree: (removeInput: { readonly cwd: string; readonly path: string }) => {
-        removals.push({ cwd: removeInput.cwd, path: removeInput.path });
-        if (input.failRemoveWorktree) return Effect.fail(gitFailure);
+    } as unknown as GitWorkflowService["Service"]);
+    const nativeRemoverLayer = Layer.succeed(NativeWorkerWorktreeRemover, {
+      remove: (worktreePath: string) => {
+        if (input.rejectRemovalPathOnSecondCheck) {
+          return Effect.fail(new NativeWorkerWorktreeRemovalError({ reason: "identity" }));
+        }
+        removals.push({ cwd: workspaceRoot, path: worktreePath });
+        if (input.failRemoveWorktree) {
+          return Effect.fail(new NativeWorkerWorktreeRemovalError({ reason: "failed" }));
+        }
         worktreePresent = false;
         return Effect.void;
       },
-    } as unknown as GitWorkflowService["Service"]);
+    } as NativeWorkerWorktreeRemover["Service"]);
     const sourceControlLayer = Layer.succeed(SourceControlProviderRegistry, {
       resolve: () =>
         Effect.succeed({
@@ -315,6 +326,10 @@ describe("worker worktree cleanup on thread.deleted", () => {
         receipts.set(receipt.threadId, { ...receipt, status: "complete" });
         return Effect.void;
       },
+      markRemoved: (receipt: VerifiedWorkerCleanup) => {
+        receipts.set(receipt.threadId, { ...receipt, status: "removed" });
+        return Effect.void;
+      },
     } as WorkerCleanupReceiptStore["Service"]);
 
     const workerWorktreeCleanupLayer = Layer.effect(
@@ -340,6 +355,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           sourceControlLayer,
           gitDriverLayer,
           receiptLayer,
+          nativeRemoverLayer,
           worktreeStorageLayerTest({ trustedRoots: [worktreeRoot] }),
           NodeServices.layer,
         ),
@@ -715,9 +731,9 @@ describe("worker worktree cleanup on thread.deleted", () => {
 
     return Effect.gen(function* () {
       yield* harness.reconcile;
-      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("removed");
       yield* harness.reconcile;
-      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("removed");
       expect(harness.branchDeletions).toHaveLength(1);
       yield* harness.reconcile;
       expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");
@@ -725,7 +741,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     });
   });
 
-  it.effect("retains a verified receipt when branch-existence lookup fails", () => {
+  it.effect("retains a removed receipt when branch-existence lookup fails", () => {
     const harness = makeHarness({
       threads: {
         [workerThreadId]: {
@@ -743,7 +759,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
     return Effect.gen(function* () {
       yield* harness.reconcile;
       yield* harness.reconcile;
-      expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+      expect(harness.receipts.get(workerThreadId)?.status).toBe("removed");
       expect(harness.branchDeletions).toHaveLength(1);
       yield* harness.reconcile;
       expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");
@@ -752,7 +768,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
   });
 
   it.effect(
-    "finishes a verified cleanup after branch deletion but before the completion write",
+    "finishes a removed cleanup after branch deletion but before the completion write",
     () => {
       const harness = makeHarness({
         threads: {
@@ -769,7 +785,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
 
       return Effect.gen(function* () {
         yield* harness.reconcile;
-        expect(harness.receipts.get(workerThreadId)?.status).toBe("verified");
+        expect(harness.receipts.get(workerThreadId)?.status).toBe("removed");
         expect(harness.archives).toEqual([]);
         yield* harness.reconcile;
         expect(harness.receipts.get(workerThreadId)?.status).toBe("complete");

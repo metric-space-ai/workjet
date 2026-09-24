@@ -23,7 +23,7 @@ const withDatabase = <A, E>(
 ) => effect.pipe(Effect.provide(layer.pipe(Layer.provideMerge(NodeSqliteClient.layerMemory()))));
 
 describe("WorkerCleanupReceiptStore", () => {
-  it.effect("records merge evidence before cleanup and persists completion", () =>
+  it.effect("requires a recorded native removal before persisting completion", () =>
     withDatabase(
       Effect.gen(function* () {
         yield* runMigrations();
@@ -31,6 +31,11 @@ describe("WorkerCleanupReceiptStore", () => {
         assert.equal(yield* store.recordVerified(evidence), true);
         const verified = yield* store.get(evidence.threadId);
         assert.equal(Option.isSome(verified) && verified.value.status, "verified");
+        assert.equal((yield* Effect.result(store.markComplete(evidence)))._tag, "Failure");
+        yield* store.markRemoved(evidence);
+        yield* store.markRemoved(evidence);
+        const removed = yield* store.get(evidence.threadId);
+        assert.equal(Option.isSome(removed) && removed.value.status, "removed");
         yield* store.markComplete(evidence);
         const complete = yield* store.get(evidence.threadId);
         assert.equal(Option.isSome(complete) && complete.value.status, "complete");

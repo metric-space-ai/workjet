@@ -16,7 +16,7 @@ export interface WorkerCleanupReceipt {
   readonly branchRef: string;
   readonly mergedHeadOid: string;
   readonly mergedChangeRequestUrl: string;
-  readonly status: "verified" | "complete";
+  readonly status: "verified" | "removed" | "complete";
 }
 
 export type VerifiedWorkerCleanup = Omit<WorkerCleanupReceipt, "status">;
@@ -36,6 +36,9 @@ export interface WorkerCleanupReceiptStoreShape {
   readonly recordVerified: (
     receipt: VerifiedWorkerCleanup,
   ) => Effect.Effect<boolean, WorkerCleanupReceiptStoreError>;
+  readonly markRemoved: (
+    receipt: VerifiedWorkerCleanup,
+  ) => Effect.Effect<void, WorkerCleanupReceiptStoreError>;
   readonly markComplete: (
     receipt: VerifiedWorkerCleanup,
   ) => Effect.Effect<void, WorkerCleanupReceiptStoreError>;
@@ -63,7 +66,7 @@ export const make = Effect.gen(function* () {
       readonly branchRef: string;
       readonly mergedHeadOid: string;
       readonly mergedChangeRequestUrl: string;
-      readonly status: "verified" | "complete";
+      readonly status: "verified" | "removed" | "complete";
     }>`
       SELECT thread_id AS "threadId", worktree_path AS "worktreePath",
              branch_ref AS "branchRef", merged_head_oid AS "mergedHeadOid",
@@ -90,6 +93,31 @@ export const make = Effect.gen(function* () {
       return Option.isSome(recorded) && sameEvidence(recorded.value, receipt);
     });
 
+  const markRemoved: WorkerCleanupReceiptStoreShape["markRemoved"] = (receipt) =>
+    Effect.gen(function* () {
+      const recorded = yield* get(receipt.threadId);
+      if (Option.isNone(recorded) || !sameEvidence(recorded.value, receipt)) {
+        return yield* new WorkerCleanupEvidenceError({ detail: "Worker cleanup evidence changed" });
+      }
+      if (recorded.value.status === "removed" || recorded.value.status === "complete") return;
+      const now = yield* Clock.currentTimeMillis;
+      yield* sql`
+        UPDATE workjet_worker_cleanup_receipts
+        SET status = 'removed', removed_at_ms = ${now}
+        WHERE thread_id = ${receipt.threadId} AND status = 'verified'
+          AND worktree_path = ${receipt.worktreePath}
+          AND branch_ref = ${receipt.branchRef}
+          AND merged_head_oid = ${receipt.mergedHeadOid}
+          AND merged_change_request_url = ${receipt.mergedChangeRequestUrl}
+      `.pipe(Effect.mapError(toPersistenceSqlError("WorkerCleanupReceiptStore.markRemoved")));
+      const removed = yield* get(receipt.threadId);
+      if (Option.isNone(removed) || removed.value.status !== "removed") {
+        return yield* new WorkerCleanupEvidenceError({
+          detail: "Worker worktree removal was not persisted",
+        });
+      }
+    });
+
   const markComplete: WorkerCleanupReceiptStoreShape["markComplete"] = (receipt) =>
     Effect.gen(function* () {
       const recorded = yield* get(receipt.threadId);
@@ -97,11 +125,16 @@ export const make = Effect.gen(function* () {
         return yield* new WorkerCleanupEvidenceError({ detail: "Worker cleanup evidence changed" });
       }
       if (recorded.value.status === "complete") return;
+      if (recorded.value.status !== "removed") {
+        return yield* new WorkerCleanupEvidenceError({
+          detail: "Worker worktree removal is not verified",
+        });
+      }
       const now = yield* Clock.currentTimeMillis;
       yield* sql`
         UPDATE workjet_worker_cleanup_receipts
         SET status = 'complete', completed_at_ms = ${now}
-        WHERE thread_id = ${receipt.threadId} AND status = 'verified'
+        WHERE thread_id = ${receipt.threadId} AND status = 'removed'
           AND worktree_path = ${receipt.worktreePath}
           AND branch_ref = ${receipt.branchRef}
           AND merged_head_oid = ${receipt.mergedHeadOid}
@@ -115,7 +148,7 @@ export const make = Effect.gen(function* () {
       }
     });
 
-  return WorkerCleanupReceiptStore.of({ get, recordVerified, markComplete });
+  return WorkerCleanupReceiptStore.of({ get, recordVerified, markRemoved, markComplete });
 });
 
 export const layer = Layer.effect(WorkerCleanupReceiptStore, make);

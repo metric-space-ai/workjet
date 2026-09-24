@@ -39,6 +39,7 @@ import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSna
 import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
+import { NativeWorkerWorktreeRemover } from "./NativeWorkerWorktreeRemover.ts";
 import {
   WorkerCleanupReceiptStore,
   type VerifiedWorkerCleanup,
@@ -70,6 +71,7 @@ export type WorkerWorktreeCleanupFailureStep =
   | "read-thread"
   | "record-verification"
   | "remove-worktree"
+  | "record-removal"
   | "delete-branch"
   | "record-completion";
 
@@ -84,6 +86,7 @@ export class WorkerWorktreeCleanupError extends Schema.TaggedErrorClass<WorkerWo
       "read-thread",
       "record-verification",
       "remove-worktree",
+      "record-removal",
       "delete-branch",
       "record-completion",
     ]),
@@ -97,6 +100,8 @@ export class WorkerWorktreeCleanupError extends Schema.TaggedErrorClass<WorkerWo
         return "The verified worker merge could not be recorded.";
       case "remove-worktree":
         return "The isolated worker worktree could not be removed.";
+      case "record-removal":
+        return "The removed worker worktree could not be recorded.";
       case "delete-branch":
         return "The isolated worker branch ref could not be deleted.";
       case "record-completion":
@@ -175,6 +180,7 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
   const receipts = yield* WorkerCleanupReceiptStore;
+  const nativeRemover = yield* NativeWorkerWorktreeRemover;
   const validateRemovalPath = (input: Parameters<WorkerRemovalPathGuard>[0]) =>
     removalPathGuard(input).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
@@ -273,12 +279,28 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
           Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-verification" })),
         );
       if (!recorded) return { status: "skipped", reason: "merge-unverified" } as const;
-      // Git's pathname-based removal can follow a same-user replacement after
-      // either canonical check. A clean forged .git backlink was enough to
-      // delete a file outside the worker checkout in a disposable fixture.
-      // Retain the verified receipt and source until the no-follow remover and
-      // provider-process boundary are both available.
-      return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+      const stored = yield* receipts
+        .get(threadId)
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+      if (Option.isNone(stored) || stored.value.status !== "verified") {
+        return { status: "skipped", reason: "merge-unverified" } as const;
+      }
+      // The reactor has already stopped the exact provider session. The
+      // native helper pins directory identities, checks both Git backlinks,
+      // and never follows a pathname while removing the checkout and admin.
+      yield* nativeRemover
+        .remove(safeRemovalPath)
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
+      yield* receipts
+        .markRemoved(receipt)
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-removal" })));
+      yield* git
+        .deleteBranchAtCommit({ cwd, refName: workerRefName, expectedCommitSha: head.commitSha })
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "delete-branch" })));
+      yield* receipts
+        .markComplete(receipt)
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })));
+      return { status: "cleaned", worktreePath, deletedRefName: workerRefName } as const;
     } else {
       // A prior removal may have succeeded while branch deletion failed. If a
       // path still exists but is no longer a Git worktree, retain its files.
@@ -287,29 +309,59 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
       const branchExists = yield* git
         .localBranchRefExists({ cwd, refName: workerRefName })
         .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+      const stored = yield* receipts
+        .get(threadId)
+        .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+      const matchingReceipt =
+        Option.isSome(stored) &&
+        stored.value.worktreePath === worktreePath &&
+        stored.value.branchRef === workerRefName
+          ? stored.value
+          : null;
       if (!branchExists) {
-        const recorded = yield* receipts
-          .get(threadId)
-          .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
-        if (
-          Option.isNone(recorded) ||
-          recorded.value.worktreePath !== worktreePath ||
-          recorded.value.branchRef !== workerRefName
-        ) {
+        if (!matchingReceipt) {
           return { status: "skipped", reason: "merge-unverified" } as const;
         }
-        // A verified merge is not evidence that our remover ran. External
-        // disappearance of both the checkout and ref must never promote this
-        // receipt to complete or archive the deleted worker.
-        return recorded.value.status === "complete"
-          ? ({ status: "skipped", reason: "already-cleaned" } as const)
-          : ({ status: "skipped", reason: "safe-removal-unavailable" } as const);
+        if (matchingReceipt.status === "complete") {
+          return { status: "skipped", reason: "already-cleaned" } as const;
+        }
+        if (matchingReceipt.status !== "removed") {
+          // A verified merge alone does not prove our remover ran.
+          return { status: "skipped", reason: "safe-removal-unavailable" } as const;
+        }
+        yield* receipts
+          .markComplete(matchingReceipt)
+          .pipe(
+            Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })),
+          );
+        return { status: "cleaned", worktreePath, deletedRefName: workerRefName } as const;
       }
       // A ref can exist while rev-parse fails (corrupt repository, unreadable
       // object, transient Git failure). None of those proves branch deletion.
       const branch = yield* git
         .resolveCommit({ cwd, revision: `refs/heads/${workerRefName}` })
         .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "read-thread" })));
+      if (matchingReceipt?.status === "removed") {
+        if (matchingReceipt.mergedHeadOid.toLowerCase() !== branch.commitSha.toLowerCase()) {
+          return { status: "skipped", reason: "merge-unverified" } as const;
+        }
+        yield* git
+          .deleteBranchAtCommit({
+            cwd,
+            refName: workerRefName,
+            expectedCommitSha: matchingReceipt.mergedHeadOid,
+          })
+          .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "delete-branch" })));
+        yield* receipts
+          .markComplete(matchingReceipt)
+          .pipe(
+            Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "record-completion" })),
+          );
+        return { status: "cleaned", worktreePath, deletedRefName: workerRefName } as const;
+      }
+      if (matchingReceipt?.status === "complete") {
+        return { status: "skipped", reason: "merge-unverified" } as const;
+      }
       const mergedUrl = yield* mergedAtCommit(cwd, branch.commitSha);
       if (!mergedUrl) {
         return { status: "skipped", reason: "merge-unverified" } as const;

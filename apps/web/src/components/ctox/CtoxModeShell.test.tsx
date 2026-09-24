@@ -1000,6 +1000,33 @@ describe("CtoxMainShell", () => {
     expect(markup).not.toContain("webview");
   });
 
+  it("shows a saved selection as unavailable when its backend is offline", () => {
+    selectInstanceForSidebar("managed:welsch-offline");
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{
+          _tag: "ready",
+          managedState: "ready",
+          instances: [
+            instance({
+              id: "managed:welsch-offline",
+              source: "ctox_dev",
+              displayName: "Welsch",
+              status: "offline",
+            }),
+          ],
+        }}
+      >
+        <CtoxMainShell />
+      </CtoxModeProvider>,
+    );
+
+    expect(markup).toContain("Backend derzeit nicht verfügbar");
+    expect(markup).toContain("Die ausgewählte Instanz bleibt gespeichert");
+    expect(markup).not.toContain("Kein Backend ausgewählt");
+  });
+
   it("keeps exposed host copy in product language", () => {
     const markup = renderToStaticMarkup(
       <CtoxModeProvider

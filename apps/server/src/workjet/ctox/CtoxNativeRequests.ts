@@ -450,6 +450,121 @@ const make = Effect.gen(function* () {
     if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
   });
 
+  const recordCrewProviderTerminal = Effect.fn("CtoxNativeRequests.recordCrewProviderTerminal")(
+    function* (input: {
+      readonly threadId: ThreadId;
+      readonly providerInstanceId: typeof ProviderInstanceId.Type;
+      readonly providerTurnId: string;
+      readonly state: "completed" | "failed" | "interrupted" | "cancelled";
+    }) {
+      if (!input.providerTurnId.trim() || input.providerTurnId.length > 512)
+        return yield* failure("native-task-reference-conflict");
+      const now = yield* Clock.currentTimeMillis;
+      const updated = yield* sql<{ readonly attemptId: string }>`
+        UPDATE workjet_ctox_crew_starts
+        SET provider_terminal_state = ${input.state}, provider_terminal_at_ms = ${now}
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id = ${input.providerTurnId}
+          AND (provider_terminal_state IS NULL OR provider_terminal_state = ${input.state})
+        RETURNING attempt_id AS "attemptId"
+      `.pipe(Effect.mapError(unavailable));
+      if (updated.length === 1)
+        return { state: "recorded" as const, attemptId: updated[0]!.attemptId };
+      const existing = yield* sql<{ readonly terminalState: string | null }>`
+        SELECT provider_terminal_state AS "terminalState"
+        FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id = ${input.providerTurnId}
+      `.pipe(Effect.mapError(unavailable));
+      if (existing.length > 0) return yield* failure("native-task-reference-conflict");
+      return { state: "unbound" as const };
+    },
+  );
+
+  const readCrewTerminalState = Effect.fn("CtoxNativeRequests.readCrewTerminalState")(function* (
+    identity: CtoxNativeRequestIdentity,
+    attemptId: string,
+  ) {
+    yield* load(identity);
+    const rows = yield* sql<{
+      readonly terminalState: "completed" | "failed" | "interrupted" | "cancelled" | null;
+    }>`
+        SELECT provider_terminal_state AS "terminalState"
+        FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId}
+      `.pipe(Effect.mapError(unavailable));
+    return rows[0]?.terminalState ?? null;
+  });
+
+  const listCrewTerminalOutbox = Effect.fn("CtoxNativeRequests.listCrewTerminalOutbox")(function* (
+    afterSequence = 0,
+    requestedLimit = 64,
+  ) {
+    const cursor = Number.isSafeInteger(afterSequence) && afterSequence >= 0 ? afterSequence : 0;
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(64, Math.trunc(requestedLimit)))
+      : 64;
+    const rows = yield* sql<{
+      readonly sequence: number;
+      readonly threadId: string;
+      readonly requestKey: string;
+      readonly connectionId: string;
+      readonly instanceId: string;
+      readonly attemptId: string;
+      readonly providerInstanceId: string;
+      readonly providerTurnId: string;
+      readonly terminalState: "completed" | "failed" | "interrupted" | "cancelled";
+      readonly terminalAtMs: number;
+    }>`
+        SELECT s.rowid AS sequence, s.thread_id AS "threadId",
+               s.request_key AS "requestKey", r.connection_id AS "connectionId",
+               r.instance_id AS "instanceId", s.attempt_id AS "attemptId",
+               s.provider_instance_id AS "providerInstanceId",
+               s.provider_turn_id AS "providerTurnId",
+               s.provider_terminal_state AS "terminalState",
+               s.provider_terminal_at_ms AS "terminalAtMs"
+        FROM workjet_ctox_crew_starts AS s
+        JOIN workjet_ctox_native_requests AS r
+          ON r.thread_id = s.thread_id AND r.request_key = s.request_key
+        WHERE s.rowid > ${cursor} AND s.provider_terminal_state IS NOT NULL
+          AND s.provider_reported_at_ms IS NULL
+        ORDER BY s.rowid LIMIT ${limit}
+      `.pipe(Effect.mapError(unavailable));
+    return {
+      candidates: rows.map((row) => ({
+        sequence: row.sequence,
+        identity: {
+          threadId: ThreadId.make(row.threadId),
+          connectionId: WorkjetConnectionId.make(row.connectionId),
+          instanceId: row.instanceId,
+          requestKey: row.requestKey,
+        },
+        attemptId: row.attemptId,
+        providerInstanceId: ProviderInstanceId.make(row.providerInstanceId),
+        providerTurnId: row.providerTurnId,
+        terminalState: row.terminalState,
+        terminalAtMs: row.terminalAtMs,
+      })),
+      nextSequence: rows.length === limit ? rows[rows.length - 1]!.sequence : null,
+    };
+  });
+
+  const markCrewTerminalReported = Effect.fn("CtoxNativeRequests.markCrewTerminalReported")(
+    function* (identity: CtoxNativeRequestIdentity, attemptId: string) {
+      const now = yield* Clock.currentTimeMillis;
+      const updated = yield* sql`
+        UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = ${now}
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId} AND provider_terminal_state IS NOT NULL
+        RETURNING attempt_id
+      `.pipe(Effect.mapError(unavailable));
+      if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+    },
+  );
+
   /** Reserve BEFORE the remote claim. Only the inserting caller may start fresh.
    * An interrupted/ambiguous claim leaves the reservation intact for explicit
    * recovery; deleting it could cause two external harnesses for one attempt.
@@ -610,6 +725,10 @@ const make = Effect.gen(function* () {
     bindCrewStartProvider,
     reserveCrewRecoveryDispatch,
     bindCrewProviderTurn,
+    recordCrewProviderTerminal,
+    readCrewTerminalState,
+    listCrewTerminalOutbox,
+    markCrewTerminalReported,
     registerNativeTurn,
     prepareTurn,
     latestNativeTurn,

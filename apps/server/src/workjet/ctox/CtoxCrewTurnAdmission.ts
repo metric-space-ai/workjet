@@ -4,12 +4,17 @@ import type {
   WorkjetCtoxCrewRequest,
   WorkjetThreadCtoxCrewChat,
 } from "@workjet/contracts";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Semaphore from "effect/Semaphore";
 import { HttpClient } from "effect/unstable/http";
 
 import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
+import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { CtoxNativeRequestError, CtoxNativeRequests } from "./CtoxNativeRequests.ts";
@@ -22,9 +27,11 @@ type CrewTask = Omit<WorkjetCtoxCrewRequest, "operation" | "idempotency_key">;
  */
 const make = Effect.gen(function* () {
   const requests = yield* CtoxNativeRequests;
+  const projection = yield* ProjectionSnapshotQuery;
   const connections = yield* DecisionHubConnectionRegistry;
   const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
   const native = makeCtoxNativeTaskClient({ requests, connections, transport });
+  const terminalReportMutex = yield* Semaphore.make(1);
 
   const prepare = Effect.fn("CtoxCrewTurnAdmission.prepare")(function* (input: {
     readonly threadId: ThreadId;
@@ -225,6 +232,102 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const recordProviderTerminal = Effect.fn("CtoxCrewTurnAdmission.recordProviderTerminal")(
+    function* (input: {
+      readonly threadId: ThreadId;
+      readonly providerInstanceId: ProviderInstanceId;
+      readonly providerTurnId: string;
+      readonly state: "completed" | "failed" | "interrupted" | "cancelled";
+    }) {
+      return yield* requests.recordCrewProviderTerminal(input);
+    },
+  );
+
+  const reconcileTerminalOutbox = Effect.fn("CtoxCrewTurnAdmission.reconcileTerminalOutbox")(
+    function* () {
+      return yield* terminalReportMutex.withPermits(1)(
+        Effect.gen(function* () {
+          let afterSequence = 0;
+          let reported = 0;
+          for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
+            const page = yield* requests.listCrewTerminalOutbox(afterSequence);
+            for (const candidate of page.candidates) {
+              yield* Effect.gen(function* () {
+                const saved = yield* requests.readCrewStart(
+                  candidate.identity,
+                  candidate.attemptId,
+                );
+                if (
+                  !saved ||
+                  saved.providerInstanceId !== candidate.providerInstanceId ||
+                  saved.providerThreadId !== candidate.identity.threadId
+                )
+                  return yield* new CtoxNativeRequestError({
+                    reason: "native-task-reference-conflict",
+                  });
+                const detail = Option.getOrUndefined(
+                  yield* projection.getThreadDetailById(candidate.identity.threadId),
+                );
+                if (!detail) return;
+                const reply =
+                  detail.messages
+                    .filter(
+                      (message) =>
+                        message.role === "assistant" &&
+                        message.turnId === candidate.providerTurnId &&
+                        !message.streaming,
+                    )
+                    .at(-1)
+                    ?.text.trim() ?? "";
+                const now = yield* Clock.currentTimeMillis;
+                if (
+                  candidate.terminalState === "completed" &&
+                  reply.length === 0 &&
+                  now - candidate.terminalAtMs < 30_000
+                )
+                  return;
+                const result =
+                  candidate.terminalState === "completed" &&
+                  reply.length > 0 &&
+                  new TextEncoder().encode(JSON.stringify({ reply, error: null })).byteLength <=
+                    256 * 1024
+                    ? ({ reply } as const)
+                    : ({
+                        error:
+                          candidate.terminalState === "completed"
+                            ? reply.length > 0
+                              ? "Provider reply exceeded the native result size limit."
+                              : "Provider completed without a final assistant reply."
+                            : `Provider turn ${candidate.terminalState}.`,
+                      } as const);
+                yield* native.reportClaimedProviderResult(
+                  candidate.identity,
+                  candidate.attemptId,
+                  result,
+                );
+                yield* requests.markCrewTerminalReported(candidate.identity, candidate.attemptId);
+                reported += 1;
+              }).pipe(
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.failCause(cause)
+                    : Effect.logWarning("native Crew terminal report remains pending", {
+                        threadId: candidate.identity.threadId,
+                        attemptId: candidate.attemptId,
+                        cause: Cause.pretty(cause),
+                      }),
+                ),
+              );
+            }
+            if (page.nextSequence === null) return { reported, truncated: false };
+            afterSequence = page.nextSequence;
+          }
+          return { reported, truncated: true };
+        }),
+      );
+    },
+  );
+
   return {
     prepare,
     recover,
@@ -232,6 +335,9 @@ const make = Effect.gen(function* () {
     bindProviderSession,
     reserveContinuation,
     bindProviderTurn,
+    recordProviderTerminal,
+    readTerminalState: requests.readCrewTerminalState,
+    reconcileTerminalOutbox,
     listRecoveryCandidates: requests.listCrewRecoveryCandidates,
   };
 });

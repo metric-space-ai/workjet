@@ -16,6 +16,7 @@ import migration61 from "../../persistence/Migrations/061_WorkjetCtoxNativeTurns
 import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
 import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
 import migration67 from "../../persistence/Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
+import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -27,6 +28,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     yield* migration62;
     yield* migration63;
     yield* migration67;
+    yield* migration68;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const sql = yield* SqlClient.SqlClient;
     const scope = {
@@ -49,6 +51,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     let attemptId = "attempt";
     let loseClaimResponse = false;
     let claims = 0;
+    let reports = 0;
     const sentKeys: string[] = [];
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
       probe: () => Effect.succeed(undefined),
@@ -98,6 +101,16 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
                 command_id: "command",
                 executor_id: "computer",
                 offers,
+              },
+            };
+          }
+          if (name === "business_os.report_crew_execution") {
+            reports++;
+            return {
+              structuredContent: {
+                accepted: true,
+                attempt_id: attemptId,
+                review_status: "pending",
               },
             };
           }
@@ -372,6 +385,29 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     );
     expect(concurrentBindings.filter(Result.isSuccess)).toHaveLength(1);
     expect(concurrentBindings.filter(Result.isFailure)).toHaveLength(1);
+    expect(
+      yield* restoredRequests.recordCrewProviderTerminal({
+        threadId: scope.threadId,
+        providerInstanceId,
+        providerTurnId: "provider-turn",
+        state: "completed",
+      }),
+    ).toMatchObject({ state: "recorded", attemptId: "attempt" });
+    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toMatchObject([
+      { attemptId: "attempt", providerTurnId: "provider-turn", terminalState: "completed" },
+    ]);
+    expect(
+      yield* Effect.flip(
+        restoredRequests.recordCrewProviderTerminal({
+          threadId: scope.threadId,
+          providerInstanceId,
+          providerTurnId: "provider-turn",
+          state: "failed",
+        }),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    yield* restoredRequests.markCrewTerminalReported(admitted.identity, "attempt");
+    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toHaveLength(0);
     yield* sql`
       UPDATE workjet_ctox_crew_starts
       SET provider_instance_id = NULL
@@ -382,5 +418,17 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(
       yield* Effect.flip(restoredRequests.readCrewStart(admitted.identity, secondAttempt)),
     ).toMatchObject({ reason: "native-task-reference-conflict" });
+    attemptId = "attempt";
+    status = "accepted";
+    offers = [{ ...offered, state: "claimed" }];
+    expect(
+      yield* restored.reportClaimedProviderResult(admitted.identity, attemptId, { reply: "done" }),
+    ).toMatchObject({ state: "reported", receipt: { attempt_id: "attempt" } });
+    expect(reports).toBe(1);
+    offers = [{ ...offered, state: "reported" }];
+    expect(
+      yield* restored.reportClaimedProviderResult(admitted.identity, attemptId, { reply: "done" }),
+    ).toMatchObject({ state: "already-reported" });
+    expect(reports).toBe(1);
   }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );

@@ -658,6 +658,8 @@ describe("ProviderCommandReactor", () => {
       recover: () => Effect.die("unused"),
       bindProviderSession,
       bindProviderTurn: () => Effect.void,
+      reconcileTerminalOutbox: () => Effect.succeed({ reported: 0, truncated: false }),
+      readTerminalState: () => Effect.succeed(null),
       listRecoveryCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
     } as unknown as CtoxCrewTurnAdmission["Service"];
     const harness = await createHarness({
@@ -748,6 +750,8 @@ describe("ProviderCommandReactor", () => {
       recover: recovered,
       bindProviderSession,
       bindProviderTurn: () => Effect.void,
+      reconcileTerminalOutbox: () => Effect.succeed({ reported: 0, truncated: false }),
+      readTerminalState: () => Effect.succeed(null),
       listRecoveryCandidates: () =>
         Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
     } as unknown as CtoxCrewTurnAdmission["Service"];
@@ -820,6 +824,8 @@ describe("ProviderCommandReactor", () => {
       reserveContinuation,
       bindProviderSession: () => Effect.die("unused"),
       bindProviderTurn,
+      reconcileTerminalOutbox: () => Effect.succeed({ reported: 0, truncated: false }),
+      readTerminalState: () => Effect.succeed(null),
       listRecoveryCandidates: () =>
         Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
     } as unknown as CtoxCrewTurnAdmission["Service"];

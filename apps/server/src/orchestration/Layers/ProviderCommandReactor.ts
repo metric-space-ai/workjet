@@ -1647,6 +1647,7 @@ const make = Effect.gen(function* () {
   const recoverCrewTurns = Effect.fn("recoverCrewTurns")(function* () {
     const admission = Option.getOrUndefined(crewAdmission);
     if (!admission) return;
+    yield* admission.reconcileTerminalOutbox();
     let afterSequence = 0;
     // Finite startup scan: never let an unbounded ledger delay app activation.
     for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
@@ -1723,6 +1724,21 @@ const make = Effect.gen(function* () {
               createdAt: DateTime.formatIso(yield* DateTime.now),
             });
           } else if (prepared.state === "resume-required") {
+            const terminalState = yield* admission.readTerminalState(
+              candidate.identity,
+              prepared.attemptId,
+            );
+            if (terminalState !== null) {
+              yield* Effect.logInfo(
+                "native Crew provider turn already ended; report remains pending",
+                {
+                  threadId: thread.id,
+                  attemptId: prepared.attemptId,
+                  terminalState,
+                },
+              );
+              return;
+            }
             const directory = Option.getOrUndefined(providerSessionDirectory);
             const saved = directory
               ? Option.getOrUndefined(yield* directory.getBinding(thread.id))

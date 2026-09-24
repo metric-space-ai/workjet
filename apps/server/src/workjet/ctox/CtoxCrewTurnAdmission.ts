@@ -13,7 +13,7 @@ import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts"
 import { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
 import { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { CtoxNativeRequestError, CtoxNativeRequests } from "./CtoxNativeRequests.ts";
-import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
+import { makeCtoxNativeTaskClient, nativeTurnKeyForRequestId } from "./CtoxNativeTaskClient.ts";
 
 type CrewTask = Omit<WorkjetCtoxCrewRequest, "operation" | "idempotency_key">;
 
@@ -33,12 +33,13 @@ const make = Effect.gen(function* () {
     readonly providerInstanceId: ProviderInstanceId;
     readonly task: Omit<CrewTask, "thread_id">;
   }) {
+    const scope = {
+      threadId: input.threadId,
+      connectionId: input.binding.connectionId,
+      instanceId: input.binding.instanceId,
+    };
     const result = yield* native.prepareProjectExecution(
-      {
-        threadId: input.threadId,
-        connectionId: input.binding.connectionId,
-        instanceId: input.binding.instanceId,
-      },
+      scope,
       input.requestId,
       { ...input.task, thread_id: input.binding.chatId },
     );
@@ -108,6 +109,73 @@ const make = Effect.gen(function* () {
     };
   });
 
+  const reissueClaimed = Effect.fn("CtoxCrewTurnAdmission.reissueClaimed")(function* (input: {
+    readonly candidate: {
+      readonly identity: {
+        readonly threadId: ThreadId;
+        readonly connectionId: WorkjetThreadCtoxCrewChat["connectionId"];
+        readonly instanceId: string;
+        readonly requestKey: string;
+      };
+      readonly requestId: string;
+    };
+    readonly binding: WorkjetThreadCtoxCrewChat;
+    readonly providerInstanceId: ProviderInstanceId;
+    readonly providerThreadId: ThreadId;
+    readonly harness: WorkjetCtoxCrewRequest["harness"];
+    readonly attemptId: string;
+  }) {
+    const { candidate, binding } = input;
+    if (!candidate.requestId.trim() || candidate.requestId.length > 512)
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const requestKey = nativeTurnKeyForRequestId(candidate.requestId);
+    if (
+      candidate.identity.requestKey !== requestKey ||
+      candidate.identity.connectionId !== binding.connectionId ||
+      candidate.identity.instanceId !== binding.instanceId ||
+      candidate.identity.threadId !== input.providerThreadId
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const reference = yield* requests.get(candidate.identity);
+    if (
+      reference.request.operation !== "start_crew_execution" ||
+      reference.request.thread_id !== binding.chatId ||
+      reference.request.harness !== input.harness
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
+    const saved = yield* requests.readCrewStart(candidate.identity, input.attemptId);
+    if (
+      saved?.providerInstanceId !== input.providerInstanceId ||
+      saved.providerThreadId !== input.providerThreadId
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+    const reissued = yield* native.reissueClaimedProjectOffer(
+      candidate.identity,
+      input.attemptId,
+    );
+    if (
+      reissued.reservation.providerInstanceId !== input.providerInstanceId ||
+      reissued.reservation.providerThreadId !== input.providerThreadId
+    )
+      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+    const claim = reissued.claim;
+    return {
+      ...reissued,
+      bootstrap: CtoxCrewSessionBootstrap.of({
+        binding,
+        nativeInstructions: claim.instructions,
+        capability: {
+          threadId: candidate.identity.threadId,
+          providerInstanceId: input.providerInstanceId,
+          attemptId: claim.attemptId,
+          refreshContext: claim.refreshContext,
+          updatePlan: claim.updatePlan,
+          report: claim.report,
+        },
+      }),
+    };
+  });
+
   const bindProviderSession = Effect.fn("CtoxCrewTurnAdmission.bindProviderSession")(
     function* (input: {
       readonly identity: Parameters<typeof requests.readCrewStart>[0];
@@ -128,7 +196,13 @@ const make = Effect.gen(function* () {
     },
   );
 
-  return { prepare, recover, bindProviderSession, listRecoveryCandidates: requests.listCrewRecoveryCandidates };
+  return {
+    prepare,
+    recover,
+    reissueClaimed,
+    bindProviderSession,
+    listRecoveryCandidates: requests.listCrewRecoveryCandidates,
+  };
 });
 
 export class CtoxCrewTurnAdmission extends Context.Service<

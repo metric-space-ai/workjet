@@ -30,6 +30,7 @@ import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
@@ -47,6 +48,10 @@ import {
   ProviderService,
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
+import {
+  ProviderSessionDirectory,
+  type ProviderRuntimeBinding,
+} from "../../provider/Services/ProviderSessionDirectory.ts";
 import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
 import { TextGeneration, type TextGenerationShape } from "../../textGeneration/TextGeneration.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
@@ -163,6 +168,7 @@ describe("ProviderCommandReactor", () => {
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
     readonly crewAdmission?: CtoxCrewTurnAdmission["Service"];
     readonly initialProviderSession?: boolean;
+    readonly providerBinding?: ProviderRuntimeBinding;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -405,6 +411,13 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(
         input?.crewAdmission
           ? Layer.succeed(CtoxCrewTurnAdmission, input.crewAdmission)
+          : Layer.empty,
+      ),
+      Layer.provideMerge(
+        input?.providerBinding
+          ? Layer.succeed(ProviderSessionDirectory, {
+              getBinding: () => Effect.succeed(Option.some(input.providerBinding!)),
+            } as ProviderSessionDirectory["Service"])
           : Layer.empty,
       ),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
@@ -749,6 +762,81 @@ describe("ProviderCommandReactor", () => {
       requestId: candidate.requestId,
       input: "recovered native work",
     });
+  });
+
+  it("reopens a claimed Crew attempt on its exact saved Codex thread without replaying the prompt", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "turn-claimed-key",
+      },
+      requestId: "command:claimed-crew",
+    };
+    const resumeCursor = { threadId: "codex-saved-thread" };
+    const recover = vi.fn(() =>
+      Effect.succeed({
+        state: "resume-required" as const,
+        attemptId: "claimed-attempt",
+        identity: candidate.identity,
+      }),
+    );
+    const reissueClaimed = vi.fn(() =>
+      Effect.succeed({
+        claim: { attemptId: "claimed-attempt" },
+        bootstrap: CtoxCrewSessionBootstrap.of({
+          binding,
+          nativeInstructions: "continue this existing attempt",
+          capability: {
+            threadId,
+            providerInstanceId,
+            attemptId: "claimed-attempt",
+            refreshContext: () => Effect.die("unused"),
+            updatePlan: () => Effect.die("unused"),
+            report: () => Effect.die("unused"),
+          },
+        }),
+      }),
+    );
+    const admission = {
+      prepare: () => Effect.die("unused"),
+      recover,
+      reissueClaimed,
+      bindProviderSession: () => Effect.die("unused"),
+      listRecoveryCandidates: () =>
+        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+      providerBinding: {
+        threadId,
+        provider: "codex",
+        providerInstanceId,
+        resumeCursor,
+      },
+    });
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(reissueClaimed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidate,
+        binding,
+        providerInstanceId,
+        providerThreadId: threadId,
+        attemptId: "claimed-attempt",
+      }),
+    );
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ resumeCursor });
+    expect(harness.sendTurn).not.toHaveBeenCalled();
   });
 
   it("passes the thread's current Workjet config on provider start and restart", async () => {

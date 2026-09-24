@@ -171,6 +171,11 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(admitted.claim.context.member_id).toBe("crew");
     expect(admitted.observed.reference.taskId).toBe("task");
     expect(claims).toBe(1);
+    const submittedBeforeSecondTurn = sentKeys.length;
+    expect(
+      yield* Effect.flip(client.prepareProjectExecution(scope, "another-event", task)),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    expect(sentKeys).toHaveLength(submittedBeforeSecondTurn);
     const restoredRequests = yield* CtoxNativeRequests.pipe(
       Effect.provide(CtoxNativeRequests.layer),
     );
@@ -261,6 +266,15 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(reissued.reservation).toEqual(assigned);
     expect(reissued.claim.attemptId).toBe(attemptId);
     expect(reissued.claim.context.member_id).toBe("crew");
+    expect(claims).toBe(2);
+    offers = [{ ...offered, state: "claimed", deadline_ms: (yield* Clock.currentTimeMillis) - 1 }];
+    expect(
+      yield* Effect.flip(restored.reissueClaimedProjectOffer(admitted.identity, attemptId)),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    offers = [{ ...offered, state: "reported" }];
+    expect(
+      yield* Effect.flip(restored.reissueClaimedProjectOffer(admitted.identity, attemptId)),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
     expect(claims).toBe(2);
 
     // A different native attempt may be offered after native review/retry.

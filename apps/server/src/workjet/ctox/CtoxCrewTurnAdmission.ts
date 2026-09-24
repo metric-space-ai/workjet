@@ -270,9 +270,12 @@ const make = Effect.gen(function* () {
                 const detail = Option.getOrUndefined(
                   yield* projection.getThreadDetailById(candidate.identity.threadId),
                 );
-                if (!detail) return;
+                if (!detail && candidate.terminalState === "completed") {
+                  deferred += 1;
+                  return;
+                }
                 const reply =
-                  detail.messages
+                  detail?.messages
                     .filter(
                       (message) =>
                         message.role === "assistant" &&

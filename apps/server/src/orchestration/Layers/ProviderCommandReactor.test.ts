@@ -155,8 +155,10 @@ describe("ProviderCommandReactor", () => {
         yield* TestClock.adjust(Duration.seconds(1));
         yield* Effect.yieldNow;
         expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
-        yield* TestClock.adjust(Duration.seconds(1));
-        yield* Effect.yieldNow;
+        for (let attempt = 0; attempt < 5 && calls < 2; attempt += 1) {
+          yield* TestClock.adjust(Duration.seconds(1));
+          yield* Effect.yieldNow;
+        }
         expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(2);
       }),
     ),

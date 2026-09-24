@@ -336,6 +336,8 @@ const providerGatewayTestLayer = Layer.succeed(
   ProviderGateway.ProviderGatewayService.of({
     status: () => Effect.succeed(stoppedProviderGatewayStatus),
     catalog: () => Effect.succeed(stoppedProviderGatewayCatalog),
+    scopedCatalog: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    setGrant: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     start: () => Effect.succeed(stoppedProviderGatewayStatus),
     stop: () => Effect.succeed(stoppedProviderGatewayStatus),
     // The login and API-key surfaces are not exercised by these boot tests;

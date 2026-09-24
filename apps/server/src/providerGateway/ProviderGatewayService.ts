@@ -1,7 +1,13 @@
 import {
   WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
   WorkjetGatewayAccountId,
+  WorkjetGatewayAccessError,
   WorkjetGatewayOperationError,
+  type WorkjetGatewayGrantTarget,
+  type WorkjetGatewayScopedCatalog,
+  type WorkjetGatewaySetGrantInput,
+  type WorkjetGatewaySetGrantResult,
+  type EnvironmentId,
   type WorkjetGatewayCatalog,
   type WorkjetGatewayDiscoveredModel,
   type WorkjetGatewayFailureReason,
@@ -29,6 +35,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 
 import { ServerSecretStore } from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -53,6 +60,13 @@ import {
   decodeRuntimeStatus,
 } from "./ProviderGatewayManagement.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
+import {
+  decodeGatewayGrants,
+  emptyGatewayGrants,
+  removeGatewayAccountGrants,
+  scopeGatewayCatalog,
+  setGatewayGrant,
+} from "./ProviderGatewayGrants.ts";
 
 const CONFIG_MAX_BYTES = 256 * 1024;
 const READINESS_MAX_BYTES = 4 * 1024;
@@ -127,6 +141,13 @@ export interface ProviderGatewayPlatform {
 export interface ProviderGatewayServiceShape {
   readonly status: () => Effect.Effect<WorkjetGatewayStatus>;
   readonly catalog: () => Effect.Effect<WorkjetGatewayCatalog, WorkjetGatewayOperationError>;
+  readonly scopedCatalog: (
+    target: WorkjetGatewayGrantTarget,
+    environmentId: EnvironmentId,
+  ) => Effect.Effect<WorkjetGatewayScopedCatalog, WorkjetGatewayOperationError | WorkjetGatewayAccessError>;
+  readonly setGrant: (
+    input: WorkjetGatewaySetGrantInput,
+  ) => Effect.Effect<WorkjetGatewaySetGrantResult, WorkjetGatewayOperationError | WorkjetGatewayAccessError>;
   readonly start: () => Effect.Effect<WorkjetGatewayStatus, WorkjetGatewayOperationError>;
   readonly stop: () => Effect.Effect<WorkjetGatewayStatus, WorkjetGatewayOperationError>;
   /** Begin a provider OAuth login; the user opens the returned URL themselves. */
@@ -198,6 +219,7 @@ export interface ProviderGatewayServiceOptions {
 const safeError = (reason: WorkjetGatewayFailureReason) =>
   new WorkjetGatewayOperationError({ reason });
 const isGatewayOperationError = Schema.is(WorkjetGatewayOperationError);
+const isGatewayAccessError = Schema.is(WorkjetGatewayAccessError);
 
 const emptyStatus = (): WorkjetGatewayStatus => ({
   schemaVersion: 1,
@@ -341,6 +363,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       "provider-gateway-runtime.json",
     );
     const hostPidPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-host.pid.json");
+    const grantsPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-grants.json");
+    const grantsMutex = yield* Semaphore.make(1);
     const executable = options.executable ?? platform.defaultExecutable(serverConfig.stateDir);
     const startupTimeoutMs = options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     const shutdownTimeoutMs = options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
@@ -402,6 +426,27 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const configuration = decodeProviderGatewayConfiguration(parsed);
       if (configuration === undefined) throw safeError("invalid-configuration");
       return configuration;
+    };
+
+    const loadGrants = async () => {
+      let raw: string;
+      try {
+        raw = await platform.readText(grantsPath, CONFIG_MAX_BYTES);
+      } catch (error) {
+        if (isRecord(error) && error.code === "ENOENT") return emptyGatewayGrants();
+        throw new WorkjetGatewayAccessError({ reason: "grants-unavailable" });
+      }
+      try {
+        return decodeGatewayGrants(JSON.parse(raw));
+      } catch {
+        throw new WorkjetGatewayAccessError({ reason: "grants-unavailable" });
+      }
+    };
+
+    const writeGrants = async (file: ReturnType<typeof emptyGatewayGrants>) => {
+      await platform.writePrivateText(grantsPath, `${JSON.stringify(file, null, 2)}\n`).catch(() => {
+        throw new WorkjetGatewayAccessError({ reason: "grants-unavailable" });
+      });
     };
 
     const assertSecrets = async (configuration: ProviderGatewayConfiguration): Promise<void> => {
@@ -1154,6 +1199,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
       const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));
       if (decoded === undefined) throw safeError("invalid-configuration");
+      // Revoke first so a removed account's grant cannot revive if that id is reused.
+      const grants = await loadGrants();
+      await writeGrants(removeGatewayAccountGrants(grants, input.accountId));
       await platform
         .writePrivateText(configurationPath, `${JSON.stringify(candidate, null, 2)}\n`)
         .catch(() => {
@@ -1446,6 +1494,34 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
         }),
+      scopedCatalog: (target, environmentId) =>
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const [configuration, grants] = await Promise.all([loadConfiguration(), loadGrants()]);
+              return scopeGatewayCatalog(gatewayCatalog(configuration), grants, target, environmentId);
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) || isGatewayAccessError(error)
+                ? error
+                : safeError("invalid-configuration"),
+          }),
+        ),
+      setGrant: (input) =>
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const [configuration, grants] = await Promise.all([loadConfiguration(), loadGrants()]);
+              const next = setGatewayGrant(grants, input, gatewayCatalog(configuration));
+              await writeGrants(next.file);
+              return next.result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) || isGatewayAccessError(error)
+                ? error
+                : safeError("invalid-configuration"),
+          }),
+        ),
       start: () =>
         Effect.tryPromise({
           try: startSingleFlight,
@@ -1483,11 +1559,13 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
         }),
       removeAccount: (input) =>
-        Effect.tryPromise({
-          try: () => runRemoveAccount(input),
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: () => runRemoveAccount(input),
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          }),
+        ),
       health: () =>
         Effect.tryPromise({
           try: runHealth,

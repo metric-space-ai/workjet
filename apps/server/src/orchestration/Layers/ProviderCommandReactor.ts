@@ -391,6 +391,7 @@ const make = Effect.gen(function* () {
   const crewAdmission = yield* Effect.serviceOption(CtoxCrewTurnAdmission);
   const providerSessionDirectory = yield* Effect.serviceOption(ProviderSessionDirectory);
   const crewRecoveryMutex = yield* Semaphore.make(1);
+  const crewAdmissionInProgress = new Set<ThreadId>();
   const inFlightCrewFirstSends = new Set<ThreadId>();
   let pendingAdmissionCursor = 0;
   let startedRecoveryCursor = 0;
@@ -885,7 +886,24 @@ const make = Effect.gen(function* () {
     readonly createdAt: string;
     readonly interactionMode?: "default" | "plan";
   }) {
+    let ownsFirstSend = false;
+    const releaseFirstSend = Effect.sync(() => {
+      if (ownsFirstSend) inFlightCrewFirstSends.delete(input.threadId);
+      ownsFirstSend = false;
+    });
     return yield* Effect.gen(function* () {
+      const alreadySending = yield* Effect.sync(() => {
+        if (inFlightCrewFirstSends.has(input.threadId)) return true;
+        inFlightCrewFirstSends.add(input.threadId);
+        ownsFirstSend = true;
+        return false;
+      });
+      if (alreadySending)
+        return yield* new ProviderAdapterRequestError({
+          provider: "ctox",
+          method: "thread.turn.start",
+          detail: "The claimed Crew provider turn is still being submitted.",
+        });
       const sendTurnRequest = yield* buildSendTurnRequestForThread({
         threadId: input.threadId,
         requestId: input.requestId,
@@ -923,33 +941,13 @@ const make = Effect.gen(function* () {
           method: "thread.turn.start",
           detail: "The claimed Crew session has no provider conversation to resume safely.",
         });
-      const alreadySending = yield* Effect.sync(() => {
-        if (inFlightCrewFirstSends.has(input.threadId)) return true;
-        inFlightCrewFirstSends.add(input.threadId);
-        return false;
+      yield* input.admission.bindProviderSession({
+        identity: input.prepared.identity,
+        attemptId: input.prepared.claim.attemptId,
+        providerInstanceId: input.modelSelection.instanceId,
+        providerThreadId: activeSession.threadId,
+        codexResumeThreadId,
       });
-      if (alreadySending)
-        return yield* new ProviderAdapterRequestError({
-          provider: "ctox",
-          method: "thread.turn.start",
-          detail: "The claimed Crew provider turn is still being submitted.",
-        });
-      const releaseFirstSend = Effect.sync(() => {
-        inFlightCrewFirstSends.delete(input.threadId);
-      });
-      yield* input.admission
-        .bindProviderSession({
-          identity: input.prepared.identity,
-          attemptId: input.prepared.claim.attemptId,
-          providerInstanceId: input.modelSelection.instanceId,
-          providerThreadId: activeSession.threadId,
-          codexResumeThreadId,
-        })
-        .pipe(
-          Effect.catchCause((cause) =>
-            releaseFirstSend.pipe(Effect.andThen(Effect.failCause(cause))),
-          ),
-        );
       yield* Effect.gen(function* () {
         const started = yield* providerService.sendTurn(sendTurnRequest);
         yield* input.admission.bindProviderTurn({
@@ -960,14 +958,11 @@ const make = Effect.gen(function* () {
           providerTurnId: started.turnId,
         });
         yield* reconcileCrewTerminalOutboxWithRetry(input.admission);
-      }).pipe(
-        Effect.ensuring(releaseFirstSend),
-        Effect.forkScoped,
-        Effect.catchCause((cause) =>
-          releaseFirstSend.pipe(Effect.andThen(Effect.failCause(cause))),
-        ),
-      );
-    }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap));
+      }).pipe(Effect.ensuring(releaseFirstSend), Effect.forkScoped);
+    }).pipe(
+      Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap),
+      Effect.catchCause((cause) => releaseFirstSend.pipe(Effect.andThen(Effect.failCause(cause)))),
+    );
   });
 
   const maybeGenerateAndRenameWorktreeBranchForFirstTurn = Effect.fn(
@@ -1342,7 +1337,21 @@ const make = Effect.gen(function* () {
     const crewBinding =
       thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.ctoxCrewChat : undefined;
     if (crewBinding) {
+      let admissionGuardAcquired = false;
       yield* Effect.gen(function* () {
+        const alreadyDispatching = yield* Effect.sync(() => {
+          if (crewAdmissionInProgress.has(thread.id) || inFlightCrewFirstSends.has(thread.id))
+            return true;
+          crewAdmissionInProgress.add(thread.id);
+          admissionGuardAcquired = true;
+          return false;
+        });
+        if (alreadyDispatching)
+          return yield* new ProviderAdapterRequestError({
+            provider: "ctox",
+            method: "thread.turn.start",
+            detail: "A Crew turn is already being admitted or submitted on this thread.",
+          });
         if (Option.isNone(crewAdmission))
           return yield* new ProviderAdapterRequestError({
             provider: "ctox",
@@ -1468,7 +1477,14 @@ const make = Effect.gen(function* () {
           createdAt: event.payload.createdAt,
           interactionMode: event.payload.interactionMode,
         });
-      }).pipe(Effect.catchCause(recoverTurnStartFailure));
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (admissionGuardAcquired) crewAdmissionInProgress.delete(thread.id);
+          }),
+        ),
+        Effect.catchCause(recoverTurnStartFailure),
+      );
       return;
     }
 
@@ -1744,11 +1760,19 @@ const make = Effect.gen(function* () {
             : admission.listRecoveryCandidates(afterSequence);
       const page = yield* pageEffect;
       for (const candidate of page.candidates) {
+        let admissionGuardAcquired = false;
         yield* Effect.gen(function* () {
           const thread = yield* resolveThread(candidate.identity.threadId);
           if (!thread) return;
-          if (inFlightCrewFirstSends.has(thread.id)) {
-            yield* Effect.logInfo("native Crew recovery deferred during first provider send", {
+          const alreadyDispatching = yield* Effect.sync(() => {
+            if (crewAdmissionInProgress.has(thread.id) || inFlightCrewFirstSends.has(thread.id))
+              return true;
+            crewAdmissionInProgress.add(thread.id);
+            admissionGuardAcquired = true;
+            return false;
+          });
+          if (alreadyDispatching) {
+            yield* Effect.logInfo("native Crew recovery deferred during provider dispatch", {
               threadId: thread.id,
             });
             return;
@@ -1968,6 +1992,12 @@ const make = Effect.gen(function* () {
             );
           }
         }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (admissionGuardAcquired)
+                crewAdmissionInProgress.delete(candidate.identity.threadId);
+            }),
+          ),
           Effect.catchCause((cause) =>
             Cause.hasInterruptsOnly(cause)
               ? Effect.failCause(cause)

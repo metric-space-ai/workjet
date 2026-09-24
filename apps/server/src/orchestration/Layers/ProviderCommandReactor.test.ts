@@ -1336,6 +1336,126 @@ describe("ProviderCommandReactor", () => {
     ]);
   });
 
+  it("does not recover a hot Crew claim while its provider session is still starting", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      sequence: 1,
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "hot-claim",
+      },
+      requestId: "command:hot-claim",
+    };
+    const changes = Effect.runSync(PubSub.unbounded<void>());
+    let claimVisible = false;
+    let releaseSessionStart!: () => void;
+    const sessionStartGate = new Promise<void>((resolve) => {
+      releaseSessionStart = resolve;
+    });
+    const prepare = vi.fn(() =>
+      Effect.sync(() => {
+        claimVisible = true;
+        return {
+          state: "ready" as const,
+          identity: candidate.identity,
+          claim: {
+            attemptId: "hot-attempt",
+            prompt: "hot original prompt",
+            harness: "codex" as const,
+          },
+          bootstrap: CtoxCrewSessionBootstrap.of({
+            binding,
+            nativeInstructions: "native rules",
+            capability: {
+              threadId,
+              providerInstanceId,
+              attemptId: "hot-attempt",
+              refreshContext: () => Effect.die("unused"),
+              updatePlan: () => Effect.die("unused"),
+              report: () => Effect.die("unused"),
+            },
+          }),
+        };
+      }),
+    );
+    const recover = vi.fn(() =>
+      Effect.succeed({
+        state: "resume-required" as const,
+        identity: candidate.identity,
+        attemptId: "hot-attempt",
+      }),
+    );
+    const listStarted = vi.fn(() =>
+      Effect.succeed({ candidates: claimVisible ? [candidate] : [], nextSequence: null }),
+    );
+    const bindProviderTurn = vi.fn(() => Effect.void);
+    const admission = {
+      prepare,
+      recover,
+      bindProviderSession: () => Effect.void,
+      bindProviderTurn,
+      readTerminalState: () => Effect.succeed(null),
+      reconcileTerminalOutbox: () =>
+        Effect.succeed({ reported: 0, deferred: 0, pending: 0, truncated: false }),
+      subscribeConnectionChanges: PubSub.subscribe(changes).pipe(
+        Effect.map((subscription) => Stream.fromSubscription(subscription)),
+      ),
+      listRecoveryCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
+      listPendingAdmissionCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
+      listUnresolvedStartedCandidates: listStarted,
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+      providerBinding: {
+        threadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId,
+        resumeCursor: { threadId: "codex-crew-1" },
+      },
+      startSessionEffect: (session) =>
+        Effect.promise(() => sessionStartGate).pipe(Effect.as(session)),
+    });
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-hot-claim"),
+        threadId,
+        message: {
+          messageId: asMessageId("message-hot-claim"),
+          role: "user",
+          text: "Start the hot Crew claim",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      }),
+    );
+    try {
+      await waitFor(() => harness.startSession.mock.calls.length === 1);
+      expect(prepare).toHaveBeenCalledTimes(1);
+      await Effect.runPromise(PubSub.publish(changes, undefined));
+      await waitFor(() => listStarted.mock.calls.length === 1);
+      expect(recover).not.toHaveBeenCalled();
+      expect(harness.stopSession).not.toHaveBeenCalled();
+      expect(harness.sendTurn).not.toHaveBeenCalled();
+    } finally {
+      releaseSessionStart();
+    }
+    await waitFor(() => bindProviderTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: "hot original prompt" });
+    expect(harness.stopSession).not.toHaveBeenCalled();
+  });
+
   it("passes the thread's current Workjet config on provider start and restart", async () => {
     const initialWorkjetConfig = {
       schemaVersion: 1,

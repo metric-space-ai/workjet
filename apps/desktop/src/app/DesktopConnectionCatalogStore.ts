@@ -11,6 +11,7 @@ import {
   type ConnectionCatalogDocument as RuntimeConnectionCatalogDocumentType,
 } from "@workjet/client-runtime/platform";
 import type { PersistedSavedEnvironmentRecord } from "@workjet/contracts";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { fromLenientJson } from "@workjet/shared/schemaJson";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -235,6 +236,7 @@ const writeDocument = Effect.fn("desktop.connectionCatalogStore.writeDocument")(
   readonly path: Path.Path;
   readonly catalogPath: string;
   readonly document: EncryptedConnectionCatalogDocument;
+  readonly platform: NodeJS.Platform;
   readonly suffix: string;
 }): Effect.fn.Return<void, DesktopConnectionCatalogStoreWriteError> {
   const directory = input.path.dirname(input.catalogPath);
@@ -270,7 +272,7 @@ const writeDocument = Effect.fn("desktop.connectionCatalogStore.writeDocument")(
           }),
       ),
     );
-    if (process.platform !== "win32") {
+    if (input.platform !== "win32") {
       yield* input.fileSystem.chmod(tempPath, 0o600).pipe(
         Effect.mapError(
           (cause) =>
@@ -405,6 +407,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
+  const platform = yield* HostProcessPlatform;
   const crypto = yield* Crypto.Crypto;
   const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
   const lock = yield* Semaphore.make(1);
@@ -450,6 +453,7 @@ export const make = Effect.gen(function* () {
       path,
       catalogPath,
       document: { version: 1, encryptedCatalog },
+      platform,
       suffix,
     });
   });
@@ -576,7 +580,7 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-      if (process.platform !== "win32") {
+      if (platform !== "win32") {
         yield* fileSystem.chmod(backupPath, 0o600).pipe(
           Effect.mapError(
             (cause) =>

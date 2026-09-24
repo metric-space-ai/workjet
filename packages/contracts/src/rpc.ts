@@ -198,6 +198,11 @@ import {
   WorkjetGatewayRemoveAccountInput,
   WorkjetGatewayRemoveAccountResult,
   WorkjetGatewayCatalog,
+  WorkjetGatewayGrantTarget,
+  WorkjetGatewayScopedCatalog,
+  WorkjetGatewaySetGrantInput,
+  WorkjetGatewaySetGrantResult,
+  WorkjetGatewayAccessError,
   WorkjetGatewayHealth,
   WorkjetGatewayModelDiscovery,
   WorkjetGatewayOauthPollInput,
@@ -376,6 +381,8 @@ export const WS_METHODS = {
   // Environment-scoped Workjet provider gateway authority
   workjetGatewayStatus: "workjet.providerGateway.status",
   workjetGatewayCatalog: "workjet.providerGateway.catalog",
+  workjetGatewayScopedCatalog: "workjet.providerGateway.scopedCatalog",
+  workjetGatewaySetGrant: "workjet.providerGateway.setGrant",
   workjetGatewayStart: "workjet.providerGateway.start",
   workjetGatewayStop: "workjet.providerGateway.stop",
   workjetGatewayOauthStart: "workjet.providerGateway.oauthStart",
@@ -680,6 +687,18 @@ export const WsWorkjetGatewayCatalogRpc = Rpc.make(WS_METHODS.workjetGatewayCata
   payload: Schema.Struct({}),
   success: WorkjetGatewayCatalog,
   error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayScopedCatalogRpc = Rpc.make(WS_METHODS.workjetGatewayScopedCatalog, {
+  payload: Schema.Struct({ target: WorkjetGatewayGrantTarget }),
+  success: WorkjetGatewayScopedCatalog,
+  error: Schema.Union([WorkjetGatewayRpcError, WorkjetGatewayAccessError]),
+});
+
+export const WsWorkjetGatewaySetGrantRpc = Rpc.make(WS_METHODS.workjetGatewaySetGrant, {
+  payload: WorkjetGatewaySetGrantInput,
+  success: WorkjetGatewaySetGrantResult,
+  error: Schema.Union([WorkjetGatewayRpcError, WorkjetGatewayAccessError]),
 });
 
 export const WsWorkjetGatewayStartRpc = Rpc.make(WS_METHODS.workjetGatewayStart, {
@@ -1595,6 +1614,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetWorktreesInspectRpc,
   WsWorkjetGatewayStatusRpc,
   WsWorkjetGatewayCatalogRpc,
+  WsWorkjetGatewayScopedCatalogRpc,
+  WsWorkjetGatewaySetGrantRpc,
   WsWorkjetGatewayStartRpc,
   WsWorkjetGatewayStopRpc,
   WsWorkjetGatewayOauthStartRpc,

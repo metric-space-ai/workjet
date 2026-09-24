@@ -59,6 +59,8 @@ export const providerGatewayTestLayer = (
     ProviderGatewayService.of({
       status: () => Effect.succeed(status),
       catalog: () => (catalog === undefined ? unsupported() : Effect.succeed(catalog)),
+      scopedCatalog: () => unsupported(),
+      setGrant: () => unsupported(),
       start: () => unsupported(),
       stop: () => unsupported(),
       oauthStart: () => unsupported(),

@@ -2475,7 +2475,7 @@ export function CtoxMainShell() {
 
   return (
     <SidebarInset
-      className="flex h-dvh min-h-0 flex-col overflow-hidden overscroll-y-none bg-background text-foreground"
+      className="flex h-full min-h-0 flex-col overflow-hidden overscroll-y-none bg-background text-foreground"
       data-ctox-main-shell=""
     >
       <WorkjetHeaderContent

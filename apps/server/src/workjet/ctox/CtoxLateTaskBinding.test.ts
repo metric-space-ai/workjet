@@ -51,6 +51,7 @@ it.effect(
                       task_id: taskId,
                       module: "ctox",
                       command_type: "business_os.chat.task",
+                      payload: { thread_id: receipt.thread_id },
                       status: "accepted",
                     },
                   },

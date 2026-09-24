@@ -109,8 +109,6 @@ describe("resolveCtoxProjectBinding", () => {
           }),
         ),
       ).toMatchObject({ reason: "connection-unverified" });
-    }).pipe(
-      Effect.provide(Layer.merge(projectedThread(thread), NodeSqliteClient.layerMemory())),
-    ),
+    }).pipe(Effect.provide(Layer.merge(projectedThread(thread), NodeSqliteClient.layerMemory()))),
   );
 });

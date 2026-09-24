@@ -144,10 +144,16 @@ export interface ProviderGatewayServiceShape {
   readonly scopedCatalog: (
     target: WorkjetGatewayGrantTarget,
     environmentId: EnvironmentId,
-  ) => Effect.Effect<WorkjetGatewayScopedCatalog, WorkjetGatewayOperationError | WorkjetGatewayAccessError>;
+  ) => Effect.Effect<
+    WorkjetGatewayScopedCatalog,
+    WorkjetGatewayOperationError | WorkjetGatewayAccessError
+  >;
   readonly setGrant: (
     input: WorkjetGatewaySetGrantInput,
-  ) => Effect.Effect<WorkjetGatewaySetGrantResult, WorkjetGatewayOperationError | WorkjetGatewayAccessError>;
+  ) => Effect.Effect<
+    WorkjetGatewaySetGrantResult,
+    WorkjetGatewayOperationError | WorkjetGatewayAccessError
+  >;
   readonly start: () => Effect.Effect<WorkjetGatewayStatus, WorkjetGatewayOperationError>;
   readonly stop: () => Effect.Effect<WorkjetGatewayStatus, WorkjetGatewayOperationError>;
   /** Begin a provider OAuth login; the user opens the returned URL themselves. */
@@ -444,9 +450,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     };
 
     const writeGrants = async (file: ReturnType<typeof emptyGatewayGrants>) => {
-      await platform.writePrivateText(grantsPath, `${JSON.stringify(file, null, 2)}\n`).catch(() => {
-        throw new WorkjetGatewayAccessError({ reason: "grants-unavailable" });
-      });
+      await platform
+        .writePrivateText(grantsPath, `${JSON.stringify(file, null, 2)}\n`)
+        .catch(() => {
+          throw new WorkjetGatewayAccessError({ reason: "grants-unavailable" });
+        });
     };
 
     const assertSecrets = async (configuration: ProviderGatewayConfiguration): Promise<void> => {
@@ -1497,8 +1505,16 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
             try: async () => {
-              const [configuration, grants] = await Promise.all([loadConfiguration(), loadGrants()]);
-              return scopeGatewayCatalog(gatewayCatalog(configuration), grants, target, environmentId);
+              const [configuration, grants] = await Promise.all([
+                loadConfiguration(),
+                loadGrants(),
+              ]);
+              return scopeGatewayCatalog(
+                gatewayCatalog(configuration),
+                grants,
+                target,
+                environmentId,
+              );
             },
             catch: (error) =>
               isGatewayOperationError(error) || isGatewayAccessError(error)
@@ -1510,7 +1526,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
             try: async () => {
-              const [configuration, grants] = await Promise.all([loadConfiguration(), loadGrants()]);
+              const [configuration, grants] = await Promise.all([
+                loadConfiguration(),
+                loadGrants(),
+              ]);
               const next = setGatewayGrant(grants, input, gatewayCatalog(configuration));
               await writeGrants(next.file);
               return next.result;

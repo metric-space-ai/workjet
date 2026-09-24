@@ -119,6 +119,7 @@ const CrewStartBinding = Schema.Struct({
   ...CrewStartReservation.fields,
   providerInstanceId: Schema.NullOr(ProviderInstanceId),
   providerThreadId: Schema.NullOr(CrewStartId),
+  codexResumeThreadId: Schema.NullOr(CrewStartId),
 });
 
 const make = Effect.gen(function* () {
@@ -302,7 +303,8 @@ const make = Effect.gen(function* () {
     const rows = yield* sql`
       SELECT attempt_id AS "attemptId", command_id AS "commandId", task_id AS "taskId",
         executor_id AS "executorId", member_id AS "memberId",
-        provider_instance_id AS "providerInstanceId", provider_thread_id AS "providerThreadId"
+        provider_instance_id AS "providerInstanceId", provider_thread_id AS "providerThreadId",
+        codex_resume_thread_id AS "codexResumeThreadId"
       FROM workjet_ctox_crew_starts
       WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
         AND attempt_id = ${attemptId}
@@ -317,6 +319,8 @@ const make = Effect.gen(function* () {
     const row = rows[0] ?? null;
     if (row && (row.providerInstanceId === null) !== (row.providerThreadId === null))
       return yield* failure("native-task-reference-conflict");
+    if (row && row.providerThreadId === null && row.codexResumeThreadId !== null)
+      return yield* failure("native-task-reference-conflict");
     return row;
   });
 
@@ -330,6 +334,7 @@ const make = Effect.gen(function* () {
     requestedBinding: typeof CrewStartReservation.Type,
     providerInstanceId: typeof ProviderInstanceId.Type,
     providerThreadId: string,
+    codexResumeThreadId: string | null = null,
   ) {
     const identity = { ...requestIdentity };
     const binding = yield* Schema.decodeUnknownEffect(CrewStartReservation)({
@@ -341,6 +346,12 @@ const make = Effect.gen(function* () {
     const decodedProviderThreadId = yield* Schema.decodeUnknownEffect(CrewStartId)(
       providerThreadId,
     ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+    const decodedCodexResumeThreadId =
+      codexResumeThreadId === null
+        ? null
+        : yield* Schema.decodeUnknownEffect(CrewStartId)(codexResumeThreadId).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          );
     const reference = yield* get(identity);
     if (
       reference.request.operation !== "start_crew_execution" ||
@@ -351,15 +362,18 @@ const make = Effect.gen(function* () {
     const updated = yield* sql`
         UPDATE workjet_ctox_crew_starts
         SET provider_instance_id = ${decodedProviderInstanceId},
-            provider_thread_id = ${decodedProviderThreadId}
+            provider_thread_id = ${decodedProviderThreadId},
+            codex_resume_thread_id = ${decodedCodexResumeThreadId}
         WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
           AND attempt_id = ${binding.attemptId}
           AND command_id = ${binding.commandId} AND task_id = ${binding.taskId}
           AND executor_id = ${binding.executorId} AND member_id = ${binding.memberId}
           AND (
-            (provider_instance_id IS NULL AND provider_thread_id IS NULL)
+            (provider_instance_id IS NULL AND provider_thread_id IS NULL
+                AND codex_resume_thread_id IS NULL)
             OR (provider_instance_id = ${decodedProviderInstanceId}
-                AND provider_thread_id = ${decodedProviderThreadId})
+                AND provider_thread_id = ${decodedProviderThreadId}
+                AND codex_resume_thread_id IS ${decodedCodexResumeThreadId})
           )
         RETURNING attempt_id
       `.pipe(Effect.mapError(unavailable));
@@ -368,7 +382,8 @@ const make = Effect.gen(function* () {
     if (
       !saved ||
       saved.providerInstanceId !== decodedProviderInstanceId ||
-      saved.providerThreadId !== decodedProviderThreadId
+      saved.providerThreadId !== decodedProviderThreadId ||
+      saved.codexResumeThreadId !== decodedCodexResumeThreadId
     )
       return yield* failure("native-task-reference-conflict");
     return saved;

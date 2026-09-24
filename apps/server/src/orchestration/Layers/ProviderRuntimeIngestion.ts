@@ -1859,16 +1859,17 @@ const make = Effect.gen(function* () {
           });
 
           const admission = Option.getOrUndefined(crewAdmission);
+          const providerInstanceId = event.providerInstanceId;
           if (
             admission &&
-            event.providerInstanceId !== undefined &&
-            detailedThread?.workjetConfig.schemaVersion === 2 &&
-            detailedThread.workjetConfig.ctoxCrewChat !== undefined
+            providerInstanceId !== undefined &&
+            thread.workjetConfig.schemaVersion === 2 &&
+            thread.workjetConfig.ctoxCrewChat !== undefined
           ) {
             yield* Effect.gen(function* () {
               const recorded = yield* admission.recordProviderTerminal({
                 threadId: thread.id,
-                providerInstanceId: event.providerInstanceId,
+                providerInstanceId,
                 providerTurnId: turnId,
                 state: event.payload.state,
               });

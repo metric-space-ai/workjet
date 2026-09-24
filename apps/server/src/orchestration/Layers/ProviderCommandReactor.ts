@@ -875,11 +875,22 @@ const make = Effect.gen(function* () {
           method: "thread.turn.start",
           detail: "The claimed Crew provider session did not match the selected instance.",
         });
+      const codexResumeThreadId =
+        input.prepared.claim.harness === "codex" && isCodexResumeCursor(activeSession.resumeCursor)
+          ? activeSession.resumeCursor.threadId
+          : null;
+      if (input.prepared.claim.harness === "codex" && !codexResumeThreadId)
+        return yield* new ProviderAdapterRequestError({
+          provider: "codex",
+          method: "thread.turn.start",
+          detail: "The claimed Crew session has no provider conversation to resume safely.",
+        });
       yield* input.admission.bindProviderSession({
         identity: input.prepared.identity,
         attemptId: input.prepared.claim.attemptId,
         providerInstanceId: input.modelSelection.instanceId,
         providerThreadId: activeSession.threadId,
+        codexResumeThreadId,
       });
       yield* Effect.gen(function* () {
         const started = yield* providerService.sendTurn(sendTurnRequest);
@@ -890,7 +901,7 @@ const make = Effect.gen(function* () {
           providerThreadId: input.threadId,
           providerTurnId: started.turnId,
         });
-        yield* input.admission.reconcileTerminalOutbox();
+        yield* reconcileCrewTerminalOutboxWithRetry(input.admission);
       }).pipe(Effect.forkScoped);
     }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap));
   });
@@ -1645,16 +1656,21 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
+  const reconcileCrewTerminalOutboxWithRetry = (admission: CtoxCrewTurnAdmission["Service"]) =>
+    Effect.gen(function* () {
+      const terminal = yield* admission.reconcileTerminalOutbox();
+      if (terminal.deferred > 0 || terminal.pending > 0 || terminal.truncated) {
+        yield* Effect.gen(function* () {
+          yield* Effect.sleep(Duration.seconds(30));
+          yield* admission.reconcileTerminalOutbox();
+        }).pipe(Effect.forkScoped);
+      }
+    });
+
   const recoverCrewTurns = Effect.fn("recoverCrewTurns")(function* () {
     const admission = Option.getOrUndefined(crewAdmission);
     if (!admission) return;
-    const terminal = yield* admission.reconcileTerminalOutbox();
-    if (terminal.deferred > 0 || terminal.pending > 0 || terminal.truncated) {
-      yield* Effect.gen(function* () {
-        yield* Effect.sleep(Duration.seconds(30));
-        yield* admission.reconcileTerminalOutbox();
-      }).pipe(Effect.forkScoped);
-    }
+    yield* reconcileCrewTerminalOutboxWithRetry(admission);
     let afterSequence = 0;
     // Finite startup scan: never let an unbounded ledger delay app activation.
     for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
@@ -1790,6 +1806,7 @@ const make = Effect.gen(function* () {
               providerThreadId: thread.id,
               harness,
               attemptId: prepared.attemptId,
+              codexResumeThreadId: saved.resumeCursor.threadId,
             });
             const project = yield* resolveProject(thread.projectId);
             const cwd = resolveThreadWorkspaceCwd({
@@ -1799,7 +1816,7 @@ const make = Effect.gen(function* () {
             const resumed = yield* providerService
               .startSession(thread.id, {
                 threadId: thread.id,
-                provider: "codex",
+                provider: ProviderDriverKind.make("codex"),
                 providerInstanceId: thread.modelSelection.instanceId,
                 ...(cwd ? { cwd } : {}),
                 modelSelection: thread.modelSelection,
@@ -1862,7 +1879,7 @@ const make = Effect.gen(function* () {
                 providerThreadId: thread.id,
                 providerTurnId: started.turnId,
               });
-              yield* admission.reconcileTerminalOutbox();
+              yield* reconcileCrewTerminalOutboxWithRetry(admission);
             }).pipe(
               Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap),
               Effect.forkScoped,

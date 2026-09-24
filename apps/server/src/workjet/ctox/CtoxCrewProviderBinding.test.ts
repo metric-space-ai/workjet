@@ -6,6 +6,7 @@ import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
 import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
 import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
+import migration69 from "../../persistence/Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
 import { CtoxNativeRequests, type NativeTaskRequest } from "./CtoxNativeRequests.ts";
 
 const identity = {
@@ -65,10 +66,12 @@ describe("durable Crew provider assignment", () => {
           ${native.commandId}, ${native.taskId}, ${native.executorId}, ${native.memberId}, 123)
       `;
       yield* migration63;
+      yield* migration69;
       expect(yield* requests.readCrewStart(identity, native.attemptId)).toEqual({
         ...native,
         providerInstanceId: null,
         providerThreadId: null,
+        codexResumeThreadId: null,
       });
       expect((yield* requests.reserveCrewStart(identity, native)).state).toBe("existing");
       const assigned = yield* requests.bindCrewStartProvider(
@@ -98,6 +101,7 @@ describe("durable Crew provider assignment", () => {
     Effect.gen(function* () {
       const requests = yield* setup;
       yield* migration63;
+      yield* migration69;
       const original = (yield* requests.reserveCrewStart(identity, native)).binding;
       for (const changed of [
         { ...native, attemptId: "foreign" },
@@ -141,10 +145,51 @@ describe("durable Crew provider assignment", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 
+  it.effect("pins the original Codex conversation across retries", () =>
+    Effect.gen(function* () {
+      const requests = yield* setup;
+      yield* migration63;
+      yield* migration69;
+      const reservation = (yield* requests.reserveCrewStart(identity, native)).binding;
+      const original = yield* requests.bindCrewStartProvider(
+        identity,
+        reservation,
+        providerInstanceId,
+        providerThreadId,
+        "codex-original",
+      );
+      expect(original.codexResumeThreadId).toBe("codex-original");
+      expect(
+        yield* requests.bindCrewStartProvider(
+          identity,
+          reservation,
+          providerInstanceId,
+          providerThreadId,
+          "codex-original",
+        ),
+      ).toEqual(original);
+      for (const cursor of ["codex-other", null]) {
+        expect(
+          yield* Effect.flip(
+            requests.bindCrewStartProvider(
+              identity,
+              reservation,
+              providerInstanceId,
+              providerThreadId,
+              cursor,
+            ),
+          ),
+        ).toMatchObject({ reason: "native-task-reference-conflict" });
+        expect(yield* requests.readCrewStart(identity, native.attemptId)).toEqual(original);
+      }
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
   it.effect("rejects invalid values and either changed half of an assigned pair", () =>
     Effect.gen(function* () {
       const requests = yield* setup;
       yield* migration63;
+      yield* migration69;
       const original = (yield* requests.reserveCrewStart(identity, native)).binding;
       expect(
         yield* Effect.flip(
@@ -191,6 +236,7 @@ describe("durable Crew provider assignment", () => {
     Effect.gen(function* () {
       const requests = yield* setup;
       yield* migration63;
+      yield* migration69;
       yield* requests.reserveCrewStart(identity, native);
       const sql = yield* SqlClient.SqlClient;
       for (const pair of [

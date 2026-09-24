@@ -6,9 +6,11 @@ import {
   type WorkjetCtoxCrewOffers,
 } from "@workjet/contracts";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
@@ -17,6 +19,7 @@ import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.
 import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
 import migration67 from "../../persistence/Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
 import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
+import migration69 from "../../persistence/Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -29,6 +32,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     yield* migration63;
     yield* migration67;
     yield* migration68;
+    yield* migration69;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const sql = yield* SqlClient.SqlClient;
     const scope = {
@@ -203,6 +207,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       memberId: "crew",
       providerInstanceId: null,
       providerThreadId: null,
+      codexResumeThreadId: null,
     });
     if (!binding) return yield* Effect.die("Expected persisted start binding");
     expect(
@@ -215,6 +220,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       binding,
       providerInstanceId,
       providerThreadId,
+      "original-codex-thread",
     );
     expect(assigned).toMatchObject({ providerInstanceId, providerThreadId });
     expect(
@@ -272,6 +278,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
         binding,
         providerInstanceId,
         providerThreadId,
+        "original-codex-thread",
       ),
     ).toEqual(assigned);
     expect(
@@ -331,6 +338,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(reissued.claim.attemptId).toBe(attemptId);
     expect(reissued.claim.context.member_id).toBe("crew");
     expect(claims).toBe(2);
+    yield* TestClock.adjust(Duration.millis(2));
     offers = [{ ...offered, state: "claimed", deadline_ms: (yield* Clock.currentTimeMillis) - 1 }];
     expect(
       yield* Effect.flip(restored.reissueClaimedProjectOffer(admitted.identity, attemptId)),

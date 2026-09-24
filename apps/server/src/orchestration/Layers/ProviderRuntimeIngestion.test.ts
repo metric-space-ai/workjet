@@ -1,4 +1,8 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  WorkjetConnectionId,
+  type WorkjetThreadConfig,
+} from "@workjet/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -28,12 +32,13 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { it as effectIt } from "@effect/vitest";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -54,6 +59,7 @@ import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeInge
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 function makeTestServerSettingsLayer(overrides: Partial<ServerSettings> = {}) {
@@ -222,7 +228,12 @@ describe("ProviderRuntimeIngestion", () => {
     }
   });
 
-  async function createHarness(options?: { serverSettings?: Partial<ServerSettings> }) {
+  async function createHarness(options?: {
+    serverSettings?: Partial<ServerSettings>;
+    threadWorkjetConfig?: WorkjetThreadConfig;
+    hideThreadDetail?: boolean;
+    crewAdmission?: CtoxCrewTurnAdmission["Service"];
+  }) {
     const workspaceRoot = makeTempDir("workjet-provider-project-");
     NodeFS.mkdirSync(NodePath.join(workspaceRoot, ".git"));
     const provider = createProviderServiceHarness();
@@ -238,15 +249,29 @@ describe("ProviderRuntimeIngestion", () => {
       Layer.provide(RepositoryIdentityResolver.layer),
       Layer.provide(SqlitePersistenceMemory),
     );
+    const ingestionProjectionLayer = options?.hideThreadDetail
+      ? Layer.effect(
+          ProjectionSnapshotQuery,
+          Effect.gen(function* () {
+            const query = yield* ProjectionSnapshotQuery;
+            return { ...query, getThreadDetailById: () => Effect.succeed(Option.none()) };
+          }),
+        ).pipe(Layer.provide(projectionSnapshotLayer))
+      : projectionSnapshotLayer;
     const layer = ProviderRuntimeIngestionLive.pipe(
       Layer.provideMerge(orchestrationLayer),
-      Layer.provideMerge(projectionSnapshotLayer),
+      Layer.provideMerge(ingestionProjectionLayer),
       // Single shared liveness instance across ingestion (writer), the
       // engine, and the snapshot query (reader).
       Layer.provideMerge(ThreadBackgroundLiveness.layer),
       Layer.provideMerge(ThreadPlanProgress.layer),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
+      Layer.provideMerge(
+        options?.crewAdmission
+          ? Layer.succeed(CtoxCrewTurnAdmission, options.crewAdmission)
+          : Layer.empty,
+      ),
       Layer.provideMerge(makeTestServerSettingsLayer(options?.serverSettings)),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
       Layer.provideMerge(NodeServices.layer),
@@ -284,7 +309,7 @@ describe("ProviderRuntimeIngestion", () => {
         model: "gpt-5-codex",
       },
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+      workjetConfig: options?.threadWorkjetConfig ?? DEFAULT_WORKJET_THREAD_CONFIG,
       runtimeMode: "approval-required",
       branch: null,
       worktreePath: null,
@@ -323,6 +348,46 @@ describe("ProviderRuntimeIngestion", () => {
       drain,
     };
   }
+
+  it("persists a Crew terminal event when only the thread shell is available", async () => {
+    const recordProviderTerminal = vi.fn(() => Effect.succeed({ state: "recorded" as const }));
+    const reconcileTerminalOutbox = vi.fn(() =>
+      Effect.succeed({ reported: 0, deferred: 0, pending: 0, truncated: false }),
+    );
+    const harness = await createHarness({
+      hideThreadDetail: true,
+      threadWorkjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        ctoxCrewChat: {
+          connectionId: WorkjetConnectionId.make("connection"),
+          instanceId: "native-instance",
+          chatId: "workjet_private_chat",
+        },
+      },
+      crewAdmission: {
+        recordProviderTerminal,
+        reconcileTerminalOutbox,
+      } as unknown as CtoxCrewTurnAdmission["Service"],
+    });
+    harness.emit({
+      type: "turn.completed",
+      eventId: asEventId("evt-crew-terminal-shell-only"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("crew-turn"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      status: "failed",
+    });
+    await harness.drain();
+    expect(recordProviderTerminal).toHaveBeenCalledWith({
+      threadId: asThreadId("thread-1"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerTurnId: asTurnId("crew-turn"),
+      state: "failed",
+    });
+    expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
+  });
 
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();

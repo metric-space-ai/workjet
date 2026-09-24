@@ -233,7 +233,11 @@ describe("ProviderCommandReactor", () => {
           ? { model: inputModelSelection?.model ?? modelSelection.model }
           : {}),
         threadId,
-        resumeCursor: resumeCursor ?? { opaque: `resume-${sessionIndex}` },
+        resumeCursor:
+          resumeCursor ??
+          (input?.threadWorkjetConfig?.ctoxCrewChat && provider === "codex"
+            ? { threadId: `codex-crew-${sessionIndex}` }
+            : { opaque: `resume-${sessionIndex}` }),
         createdAt: now,
         updatedAt: now,
       };
@@ -416,9 +420,9 @@ describe("ProviderCommandReactor", () => {
       ),
       Layer.provideMerge(
         input?.providerBinding
-          ? Layer.succeed(ProviderSessionDirectory, {
+          ? Layer.mock(ProviderSessionDirectory)({
               getBinding: () => Effect.succeed(Option.some(input.providerBinding!)),
-            } as ProviderSessionDirectory["Service"])
+            })
           : Layer.empty,
       ),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
@@ -640,7 +644,7 @@ describe("ProviderCommandReactor", () => {
             instanceId: binding.instanceId,
             requestKey: requestId,
           },
-          claim: { attemptId, prompt: `native prompt ${attemptId}` },
+          claim: { attemptId, prompt: `native prompt ${attemptId}`, harness: "codex" },
           bootstrap: CtoxCrewSessionBootstrap.of({
             binding,
             nativeInstructions: `native instructions ${attemptId}`,
@@ -729,7 +733,11 @@ describe("ProviderCommandReactor", () => {
       Effect.succeed({
         state: "ready" as const,
         identity: candidate.identity,
-        claim: { attemptId: "recovered-attempt", prompt: "recovered native work" },
+        claim: {
+          attemptId: "recovered-attempt",
+          prompt: "recovered native work",
+          harness: "codex",
+        },
         bootstrap: CtoxCrewSessionBootstrap.of({
           binding,
           nativeInstructions: "recovered native instructions",
@@ -834,7 +842,7 @@ describe("ProviderCommandReactor", () => {
       crewAdmission: admission,
       providerBinding: {
         threadId,
-        provider: "codex",
+        provider: ProviderDriverKind.make("codex"),
         providerInstanceId,
         resumeCursor,
       },
@@ -843,7 +851,7 @@ describe("ProviderCommandReactor", () => {
     expect(recover).toHaveBeenCalledTimes(1);
     expect(reissueClaimed).toHaveBeenCalledWith(
       expect.objectContaining({
-        candidate,
+        candidate: expect.objectContaining(candidate),
         binding,
         providerInstanceId,
         providerThreadId: threadId,

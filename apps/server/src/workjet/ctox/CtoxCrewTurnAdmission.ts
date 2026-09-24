@@ -10,6 +10,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient } from "effect/unstable/http";
 
@@ -21,6 +22,9 @@ import { CtoxNativeRequestError, CtoxNativeRequests } from "./CtoxNativeRequests
 import { makeCtoxNativeTaskClient, nativeTurnKeyForRequestId } from "./CtoxNativeTaskClient.ts";
 
 type CrewTask = Omit<WorkjetCtoxCrewRequest, "operation" | "idempotency_key">;
+const encodeNativeReply = Schema.encodeSync(
+  Schema.fromJsonString(Schema.Struct({ reply: Schema.String, error: Schema.Null })),
+);
 
 /** Server-side handoff from a persisted Workjet turn to a native Crew offer.
  * The claim and command-session token never enter a renderer or persisted event.
@@ -130,6 +134,7 @@ const make = Effect.gen(function* () {
     readonly providerThreadId: ThreadId;
     readonly harness: WorkjetCtoxCrewRequest["harness"];
     readonly attemptId: string;
+    readonly codexResumeThreadId: string;
   }) {
     const { candidate, binding } = input;
     if (!candidate.requestId.trim() || candidate.requestId.length > 512)
@@ -153,13 +158,15 @@ const make = Effect.gen(function* () {
     if (
       !saved ||
       saved.providerInstanceId !== input.providerInstanceId ||
-      saved.providerThreadId !== input.providerThreadId
+      saved.providerThreadId !== input.providerThreadId ||
+      saved.codexResumeThreadId !== input.codexResumeThreadId
     )
       return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
     const reissued = yield* native.reissueClaimedProjectOffer(candidate.identity, input.attemptId);
     if (
       reissued.reservation.providerInstanceId !== input.providerInstanceId ||
-      reissued.reservation.providerThreadId !== input.providerThreadId
+      reissued.reservation.providerThreadId !== input.providerThreadId ||
+      reissued.reservation.codexResumeThreadId !== input.codexResumeThreadId
     )
       return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
     const claim = reissued.claim;
@@ -187,6 +194,7 @@ const make = Effect.gen(function* () {
       readonly providerInstanceId: ProviderInstanceId;
       /** Workjet's durable provider-session route, not an unverified external cursor. */
       readonly providerThreadId: ThreadId;
+      readonly codexResumeThreadId: string | null;
     }) {
       const reservation = yield* requests.readCrewStart(input.identity, input.attemptId);
       if (!reservation)
@@ -196,6 +204,7 @@ const make = Effect.gen(function* () {
         reservation,
         input.providerInstanceId,
         input.providerThreadId,
+        input.codexResumeThreadId,
       );
     },
   );
@@ -296,7 +305,7 @@ const make = Effect.gen(function* () {
                 const result =
                   candidate.terminalState === "completed" &&
                   reply.length > 0 &&
-                  new TextEncoder().encode(JSON.stringify({ reply, error: null })).byteLength <=
+                  new TextEncoder().encode(encodeNativeReply({ reply, error: null })).byteLength <=
                     256 * 1024
                     ? ({ reply } as const)
                     : ({

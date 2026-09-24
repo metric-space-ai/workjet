@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ConnectionCatalogDocument } from "@workjet/client-runtime/platform";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@workjet/contracts";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -419,6 +420,7 @@ describe("DesktopConnectionCatalogStore", () => {
   it.effect("backs up an unreadable catalog before resetting saved connections", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
+      const platform = yield* HostProcessPlatform;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "workjet-desktop-connection-catalog-test-",
       });
@@ -479,7 +481,7 @@ describe("DesktopConnectionCatalogStore", () => {
       assert.lengthOf(originalCatalog.credentials, 1);
       assert.isTrue(yield* store.set(original));
       const encryptedOriginal = yield* fileSystem.readFileString(catalogPath);
-      if (process.platform !== "win32") {
+      if (platform !== "win32") {
         assert.equal((yield* fileSystem.stat(catalogPath)).mode & 0o777, 0o600);
         // Simulate a catalog written by an older build with default umask.
         yield* fileSystem.chmod(catalogPath, 0o644);
@@ -491,7 +493,7 @@ describe("DesktopConnectionCatalogStore", () => {
       if (backupPath === null) return;
       assert.equal(yield* fileSystem.readFileString(backupPath), encryptedOriginal);
       assert.notEqual(yield* fileSystem.readFileString(catalogPath), encryptedOriginal);
-      if (process.platform !== "win32") {
+      if (platform !== "win32") {
         assert.equal((yield* fileSystem.stat(backupPath)).mode & 0o777, 0o600);
         assert.equal((yield* fileSystem.stat(catalogPath)).mode & 0o777, 0o600);
       }

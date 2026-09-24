@@ -2,8 +2,10 @@
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import type { Session } from "electron";
 import { vi } from "vite-plus/test";
 
@@ -136,9 +138,11 @@ describe("CtoxManagedLaunch", () => {
 
   it.effect("aborts a stalled managed launch request without retrying the POST", () => {
     let aborted = false;
+    const entered = Promise.withResolvers<void>();
     const fetchImpl = vi.fn(
       (_url: string, init: RequestInit): Promise<ReturnType<typeof response>> =>
         new Promise((_resolve, reject) => {
+          entered.resolve();
           init.signal?.addEventListener(
             "abort",
             () => {
@@ -152,11 +156,18 @@ describe("CtoxManagedLaunch", () => {
 
     return Effect.gen(function* () {
       const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
-      const error = yield* launches.launch(descriptor).pipe(Effect.flip);
+      const request = yield* Effect.forkChild(launches.launch(descriptor));
+      yield* Effect.promise(() => entered.promise);
+      yield* TestClock.adjust("10 millis");
+      const error = yield* Fiber.join(request).pipe(Effect.flip);
       assert.equal(error.operation, "launch-token");
       assert.equal(fetchImpl.mock.calls.length, 1);
       assert.isTrue(aborted);
-    }).pipe(Effect.provide(harness(fetchImpl, "https://ctox.dev", 10)));
+    }).pipe(
+      Effect.provide(
+        harness(fetchImpl, "https://ctox.dev", 10).pipe(Layer.provideMerge(TestClock.layer())),
+      ),
+    );
   });
 
   it.effect("resolves only the server-bound canonical authority id for WELSCH", () => {

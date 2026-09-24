@@ -209,7 +209,9 @@ describe("ProviderCommandReactor", () => {
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
     let nextSessionIndex = 1;
     const runtimeSessions: Array<ProviderSession> = [];
-    const crewBound = input?.threadWorkjetConfig?.ctoxCrewChat !== undefined;
+    const crewBound =
+      input?.threadWorkjetConfig?.schemaVersion === 2 &&
+      input.threadWorkjetConfig.ctoxCrewChat !== undefined;
     const modelSelection = input?.threadModelSelection ?? {
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt-5-codex",

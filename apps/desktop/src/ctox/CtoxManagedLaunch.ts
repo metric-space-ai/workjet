@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { BusinessOsInstanceId, type CtoxManagedInstance } from "@workjet/contracts";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -25,7 +26,10 @@ interface FetchResponse {
 
 export interface CtoxManagedLaunchOptions {
   readonly baseUrl?: string;
+  readonly requestTimeoutMs?: number;
 }
+
+const DEFAULT_CTOX_MANAGED_LAUNCH_REQUEST_TIMEOUT_MS = 12_000;
 
 export interface CtoxManagedLaunchConfig {
   /** Transient secret-bearing URL. This value must stay in the main process. */
@@ -231,6 +235,12 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
     }
     const controlOrigin = new URL(baseUrl).origin;
     const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;
+    const requestTimeoutMs =
+      options.requestTimeoutMs !== undefined &&
+      Number.isSafeInteger(options.requestTimeoutMs) &&
+      options.requestTimeoutMs > 0
+        ? options.requestTimeoutMs
+        : DEFAULT_CTOX_MANAGED_LAUNCH_REQUEST_TIMEOUT_MS;
 
     const launch = Effect.fn("CtoxManagedLaunch.launch")(function* (
       descriptor: CtoxManagedInstance,
@@ -243,8 +253,22 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         Effect.mapError(() => new CtoxManagedLaunchError({ operation: "account-session" })),
       );
 
-      const token = yield* Effect.promise(() =>
-        fetchJson(browserSession, `${baseUrl}/api/desktop/launch-token`, {
+      const request = (
+        url: string,
+        init: RequestInit,
+        operation: "launch-token" | "launch-config",
+      ) =>
+        Effect.tryPromise({
+          try: (signal) => fetchJson(browserSession, url, { ...init, signal }),
+          catch: () => new CtoxManagedLaunchError({ operation }),
+        }).pipe(
+          Effect.timeout(Duration.millis(requestTimeoutMs)),
+          Effect.mapError(() => new CtoxManagedLaunchError({ operation })),
+        );
+
+      const token = yield* request(
+        `${baseUrl}/api/desktop/launch-token`,
+        {
           method: "POST",
           credentials: "include",
           cache: "no-store",
@@ -253,7 +277,8 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
             "x-ctox-desktop-client": DESKTOP_CLIENT,
           },
           body: encodeUnknownJson({ tenantId }),
-        }),
+        },
+        "launch-token",
       );
       if (token === undefined || !token.response.ok || !isRecord(token.payload)) {
         return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
@@ -277,13 +302,15 @@ export const make = (options: CtoxManagedLaunchOptions = {}) =>
         return yield* new CtoxManagedLaunchError({ operation: "launch-token" });
       }
 
-      const exchange = yield* Effect.promise(() =>
-        fetchJson(browserSession, launchConfigUrl.href, {
+      const exchange = yield* request(
+        launchConfigUrl.href,
+        {
           method: "POST",
           credentials: "include",
           cache: "no-store",
           headers: { "x-ctox-desktop-client": DESKTOP_CLIENT },
-        }),
+        },
+        "launch-config",
       );
       if (exchange === undefined || !exchange.response.ok || !isRecord(exchange.payload)) {
         return yield* new CtoxManagedLaunchError({ operation: "launch-config" });

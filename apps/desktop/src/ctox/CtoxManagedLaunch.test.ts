@@ -48,14 +48,18 @@ function decodeConfig(launchUrl: string): Record<string, unknown> {
   >;
 }
 
-function harness(fetchImpl: ReturnType<typeof vi.fn>, baseUrl = "https://ctox.dev") {
+function harness(
+  fetchImpl: ReturnType<typeof vi.fn>,
+  baseUrl = "https://ctox.dev",
+  requestTimeoutMs?: number,
+) {
   const accountSession = { fetch: fetchImpl } as unknown as Session;
   const sessions = CtoxElectronSessions.CtoxElectronSessions.of({
     account: Effect.succeed(accountSession),
     instance: () => Effect.die("unused"),
     clearInstance: () => Effect.die("unused"),
   });
-  return CtoxManagedLaunch.layer({ baseUrl }).pipe(
+  return CtoxManagedLaunch.layer({ baseUrl, requestTimeoutMs }).pipe(
     Layer.provide(Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions)),
   );
 }
@@ -64,7 +68,9 @@ describe("CtoxManagedLaunch", () => {
   it.effect("posts the tenant launch handshake and loads the tenant URL the server names", () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
+      const { signal, ...requestInit } = init;
+      assert.instanceOf(signal, AbortSignal);
+      calls.push({ url, init: requestInit });
       if (url.endsWith("/api/desktop/launch-token")) {
         return response({ launchConfigUrl: "https://ctox.dev/api/desktop/launch/token_1" });
       }
@@ -125,6 +131,31 @@ describe("CtoxManagedLaunch", () => {
         },
       ]);
     }).pipe(Effect.provide(harness(fetchImpl)));
+  });
+
+  it.effect("aborts a stalled managed launch request without retrying the POST", () => {
+    let aborted = false;
+    const fetchImpl = vi.fn(
+      (_url: string, init: RequestInit): Promise<ReturnType<typeof response>> =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(new Error("request aborted"));
+            },
+            { once: true },
+          );
+        }),
+    );
+
+    return Effect.gen(function* () {
+      const launches = yield* CtoxManagedLaunch.CtoxManagedLaunch;
+      const error = yield* launches.launch(descriptor).pipe(Effect.flip);
+      assert.equal(error.operation, "launch-token");
+      assert.equal(fetchImpl.mock.calls.length, 1);
+      assert.isTrue(aborted);
+    }).pipe(Effect.provide(harness(fetchImpl, "https://ctox.dev", 10)));
   });
 
   it.effect("resolves only the server-bound canonical authority id for WELSCH", () => {

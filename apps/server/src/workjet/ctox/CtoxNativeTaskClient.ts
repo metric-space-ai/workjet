@@ -18,6 +18,9 @@ import {
   type NativeTaskRequest,
 } from "./CtoxNativeRequests.ts";
 
+export const nativeTurnKeyForRequestId = (requestId: string): string =>
+  `turn_${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
+
 /** Native harness and external MCP delegation share the same durable dispatch.
  * This client never owns the daemon or retries writes automatically. Closing
  * its caller leaves native work intact. The caller supplies a persisted intent
@@ -78,7 +81,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
     // Command/event ids are persisted before provider dispatch. Hashing only
     // that identity keeps retries stable and still detects changed task intent
     // in the ledger. Identical text in distinct commands remains distinct work.
-    const requestKey = `turn_${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
+    const requestKey = nativeTurnKeyForRequestId(requestId);
     const request: NativeTaskRequest =
       "project_id" in task
         ? { ...task, operation: "start_project_task", idempotency_key: requestKey }
@@ -96,7 +99,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
   ) {
     if (!requestId.trim() || requestId.length > 512)
       return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
-    const requestKey = `turn_${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
+    const requestKey = nativeTurnKeyForRequestId(requestId);
     // This uses the same durable turn/intent ledger as native delegation. A
     // request id cannot silently switch from a native to an external execution.
     return yield* submit(
@@ -296,6 +299,20 @@ export function makeCtoxNativeTaskClient(dependencies: {
       >,
     ) {
       const scope = { ...requestScope };
+      const latest = yield* dependencies.requests.latestNativeTurn(scope);
+      if (
+        latest &&
+        latest.requestId !== requestId &&
+        latest.reference.request.operation === "start_crew_execution"
+      ) {
+        const previous = yield* readStatus({ ...scope, requestKey: latest.requestKey });
+        if (
+          previous.state !== "completed" &&
+          previous.state !== "failed" &&
+          previous.state !== "cancelled"
+        )
+          return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      }
       const submitted = yield* submitProjectTurn(scope, requestId, { ...task });
       const receipt = yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(
         submitted.result,
@@ -375,7 +392,7 @@ export function makeCtoxNativeTaskClient(dependencies: {
     const { identity, requestId } = candidate;
     if (!requestId.trim() || requestId.length > 512)
       return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
-    const expectedKey = `turn_${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
+    const expectedKey = nativeTurnKeyForRequestId(requestId);
     if (identity.requestKey !== expectedKey)
       return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
     const reference = yield* dependencies.requests.get(identity);
@@ -397,42 +414,42 @@ export function makeCtoxNativeTaskClient(dependencies: {
    * attempt. This does not start or replay a provider turn. The controller
    * must separately prove the saved provider cursor before resuming it.
    */
-  const reissueClaimedProjectOffer = Effect.fn(
-    "CtoxNativeTaskClient.reissueClaimedProjectOffer",
-  )(function* (identity: CtoxNativeRequestIdentity, attemptId: string) {
-    const reservation = yield* dependencies.requests.readCrewStart(identity, attemptId);
-    if (!reservation || !reservation.providerInstanceId || !reservation.providerThreadId)
-      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
-    const reference = yield* dependencies.requests.get(identity);
-    if (
-      reference.request.operation !== "start_crew_execution" ||
-      reference.commandId !== reservation.commandId ||
-      reference.taskId !== reservation.taskId
-    )
-      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
-    const observed = yield* readStatus(identity);
-    if (
-      observed.state === "completed" ||
-      observed.state === "failed" ||
-      observed.state === "cancelled" ||
-      observed.reference.taskId !== reservation.taskId
-    )
-      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
-    const discovered = yield* discoverProjectOffers(identity, reservation.executorId);
-    const offer = discovered.offers.find((value) => value.attempt_id === attemptId);
-    if (
-      offer?.state !== "claimed" ||
-      offer.harness !== reference.request.harness ||
-      offer.deadline_ms <= (yield* Clock.currentTimeMillis)
-    )
-      return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
-    // CTOX's claim endpoint re-signs the same live claimed attempt. A changed
-    // actor, lease, command or Crew member fails in the native decoder below.
-    const claim = yield* claimProjectOffer(identity, reservation.executorId, attemptId);
-    if (claim.context.member_id !== reservation.memberId)
-      return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
-    return { identity, reservation, claim };
-  });
+  const reissueClaimedProjectOffer = Effect.fn("CtoxNativeTaskClient.reissueClaimedProjectOffer")(
+    function* (identity: CtoxNativeRequestIdentity, attemptId: string) {
+      const reservation = yield* dependencies.requests.readCrewStart(identity, attemptId);
+      if (!reservation || !reservation.providerInstanceId || !reservation.providerThreadId)
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      const reference = yield* dependencies.requests.get(identity);
+      if (
+        reference.request.operation !== "start_crew_execution" ||
+        reference.commandId !== reservation.commandId ||
+        reference.taskId !== reservation.taskId
+      )
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      const observed = yield* readStatus(identity);
+      if (
+        observed.state === "completed" ||
+        observed.state === "failed" ||
+        observed.state === "cancelled" ||
+        observed.reference.taskId !== reservation.taskId
+      )
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      const discovered = yield* discoverProjectOffers(identity, reservation.executorId);
+      const offer = discovered.offers.find((value) => value.attempt_id === attemptId);
+      if (
+        offer?.state !== "claimed" ||
+        offer.harness !== reference.request.harness ||
+        offer.deadline_ms <= (yield* Clock.currentTimeMillis)
+      )
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      // CTOX's claim endpoint re-signs the same live claimed attempt. A changed
+      // actor, lease, command or Crew member fails in the native decoder below.
+      const claim = yield* claimProjectOffer(identity, reservation.executorId, attemptId);
+      if (claim.context.member_id !== reservation.memberId)
+        return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
+      return { identity, reservation, claim };
+    },
+  );
 
   return {
     prepareProjectExecution,

@@ -177,6 +177,36 @@ describe("ProviderGatewayService", () => {
     }));
   });
 
+  it("revokes persisted grants when their gateway account is removed", async () => {
+    const harness = readyHarness();
+    const files = new Map<string, string>([["/state/provider-gateway.json", configuration]]);
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      readText: async (path) => {
+        const content = files.get(path);
+        if (content !== undefined) return content;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      writePrivateText: async (path, content) => { files.set(path, content); },
+    };
+    const target = {
+      connectionId: WorkjetConnectionId.make("ctox-welsch"),
+      instanceId: "welsch",
+      computerId: WorkjetComputerId.make("gpu1-a6000"),
+    };
+    const accountId = WorkjetGatewayAccountId.make("codex-primary");
+    await runGateway(platform, (gateway) => Effect.gen(function* () {
+      yield* gateway.setGrant({ target, accountId, granted: true });
+      yield* gateway.removeAccount({ accountId });
+      expect((yield* gateway.scopedCatalog(target, EnvironmentId.make("gateway-host"))).accounts)
+        .toEqual([]);
+    }));
+    expect(JSON.parse(files.get("/state/provider-gateway-grants.json") ?? "null")).toEqual({
+      schemaVersion: 1,
+      grants: [],
+    });
+  });
+
   it("single-flights start, publishes redacted state, and stops idempotently", async () => {
     const harness = readyHarness();
     await runGateway(harness.platform, (gateway) =>

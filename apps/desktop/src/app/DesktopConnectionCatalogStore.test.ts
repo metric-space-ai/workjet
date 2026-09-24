@@ -427,7 +427,7 @@ describe("DesktopConnectionCatalogStore", () => {
         Effect.provide(makeLayer(baseDir, true, failDecrypt)),
       );
       const catalogPath = `${baseDir}/userdata/connection-catalog.json`;
-      const original = JSON.stringify({
+      const original = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown))({
         schemaVersion: 1,
         targets: [
           {

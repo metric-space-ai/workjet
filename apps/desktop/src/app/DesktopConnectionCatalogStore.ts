@@ -545,14 +545,14 @@ export const make = Effect.gen(function* () {
       }
       const error = current.failure;
       if (
-        !(error instanceof DesktopConnectionCatalogStoreDocumentDecodeError) &&
-        !(error instanceof DesktopConnectionCatalogStoreDecodeError) &&
+        !Schema.is(DesktopConnectionCatalogStoreDocumentDecodeError)(error) &&
+        !Schema.is(DesktopConnectionCatalogStoreDecodeError)(error) &&
         !(
-          error instanceof DesktopConnectionCatalogStoreProtectionError &&
+          Schema.is(DesktopConnectionCatalogStoreProtectionError)(error) &&
           error.operation === "decrypt-catalog"
         )
       ) {
-        return yield* Effect.fail(error);
+        return yield* error;
       }
 
       const suffix = (yield* crypto.randomUUIDv4.pipe(

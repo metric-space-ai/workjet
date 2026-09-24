@@ -819,6 +819,9 @@ function waitForGuestNavigationCommit(
         };
 
         try {
+          // Electron navigation callbacks own this timer and clear it together
+          // with their listeners when navigation settles or the view dies.
+          // @effect-diagnostics-next-line globalTimers:off
           timeout = setTimeout(() => finish(false), 30_000);
           webContents.on("did-frame-navigate", onDidFrameNavigate as never);
           webContents.on("did-fail-load", onDidFailLoad as never);

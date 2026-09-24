@@ -443,6 +443,33 @@ describe("CTOX instance presentation", () => {
     expect(markup).not.toContain("Abmelden");
   });
 
+  it("warns when stored paired backends cannot be read without hiding the active backend", () => {
+    selectInstanceForSidebar("managed:welsch");
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{
+          _tag: "ready",
+          managedState: "ready",
+          pairedUnavailable: true,
+          instances: [
+            instance({ id: "managed:welsch", source: "ctox_dev", displayName: "Welsch" }),
+          ],
+        }}
+      >
+        <SidebarProvider>
+          <CtoxSidebarShell />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+
+    expect(markup).toContain(
+      "Gespeicherte Backend-Verbindungen sind teilweise oder vollständig nicht lesbar.",
+    );
+    expect(markup).toContain("Die gespeicherten Daten wurden nicht verändert.");
+    expect(markup).toContain("Welsch");
+  });
+
   it("renders managed discovery failure without hiding paired results", () => {
     selectInstanceForSidebar("paired:manual_pairing:stable");
     const markup = renderToStaticMarkup(

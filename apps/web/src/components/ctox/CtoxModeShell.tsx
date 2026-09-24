@@ -1478,6 +1478,9 @@ export function unavailableHint(instance: CtoxManagedInstance): string | undefin
   if (instance.source === "ssh_managed") {
     return instance.status === "available" ? undefined : CTOX_SSH_LAUNCH_PENDING_HINT;
   }
+  if (isPairedCtoxInstance(instance) && instance.status === "error") {
+    return "Gespeicherte Verbindung ist derzeit nicht lesbar.";
+  }
   return isPairedCtoxInstance(instance) ? "Diese Verbindung ist nicht verfügbar." : undefined;
 }
 
@@ -2122,6 +2125,13 @@ export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: 
           {bridge === undefined ? (
             <p className="mb-3 text-xs text-sidebar-muted-foreground" role="status">
               CTOX Backend-Dienste sind nicht verfügbar.
+            </p>
+          ) : null}
+          {discovery !== "loading" && discovery.pairedUnavailable === true ? (
+            <p className="mb-3 text-xs text-destructive" role="alert">
+              Gespeicherte Backend-Verbindungen sind teilweise oder vollständig nicht lesbar. Die
+              gespeicherten Daten wurden nicht verändert. Bitte den Schlüsselbundzugriff prüfen und
+              die Backends erneut aktualisieren.
             </p>
           ) : null}
 

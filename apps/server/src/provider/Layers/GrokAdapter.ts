@@ -696,6 +696,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
+            ...(input.resumePolicy === "require-existing" ? { requireLoadResponse: true } : {}),
             clientInfo: { name: "workjet", version: "0.0.0" },
             ...(mcpSession
               ? {

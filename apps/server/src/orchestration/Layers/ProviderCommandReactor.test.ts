@@ -28,6 +28,7 @@ import {
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -35,6 +36,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { it as effectIt } from "@effect/vitest";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -64,6 +66,7 @@ import {
   providerErrorLabel,
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
+  reconcileCrewTerminalOutboxWithRetry,
 } from "./ProviderCommandReactor.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
@@ -75,6 +78,7 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
+import { CtoxNativeRequestError } from "../../workjet/ctox/CtoxNativeRequests.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -104,6 +108,32 @@ async function waitFor(
 }
 
 describe("ProviderCommandReactor", () => {
+  effectIt.effect("retries a deferred Crew terminal report once after thirty seconds", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let calls = 0;
+        const reconcileTerminalOutbox = vi.fn(() =>
+          Effect.sync(() => {
+            calls += 1;
+            return calls === 1
+              ? { reported: 0, deferred: 1, pending: 0, truncated: false }
+              : { reported: 1, deferred: 0, pending: 0, truncated: false };
+          }),
+        );
+        const admission = {
+          reconcileTerminalOutbox,
+        } as unknown as CtoxCrewTurnAdmission["Service"];
+        yield* reconcileCrewTerminalOutboxWithRetry(admission);
+        expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust(Duration.seconds(29));
+        expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(1);
+        yield* TestClock.adjust(Duration.seconds(1));
+        yield* Effect.yieldNow;
+        expect(reconcileTerminalOutbox).toHaveBeenCalledTimes(2);
+      }),
+    ),
+  );
   let runtime: ManagedRuntime.ManagedRuntime<
     OrchestrationEngineService | ProviderCommandReactor | ProjectionSnapshotQuery,
     unknown
@@ -179,6 +209,7 @@ describe("ProviderCommandReactor", () => {
     const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
     let nextSessionIndex = 1;
     const runtimeSessions: Array<ProviderSession> = [];
+    const crewBound = input?.threadWorkjetConfig?.ctoxCrewChat !== undefined;
     const modelSelection = input?.threadModelSelection ?? {
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt-5-codex",
@@ -235,7 +266,7 @@ describe("ProviderCommandReactor", () => {
         threadId,
         resumeCursor:
           resumeCursor ??
-          (input?.threadWorkjetConfig?.ctoxCrewChat && provider === "codex"
+          (crewBound && provider === "codex"
             ? { threadId: `codex-crew-${sessionIndex}` }
             : { opaque: `resume-${sessionIndex}` }),
         createdAt: now,
@@ -856,6 +887,7 @@ describe("ProviderCommandReactor", () => {
         providerInstanceId,
         providerThreadId: threadId,
         attemptId: "claimed-attempt",
+        codexResumeThreadId: "codex-saved-thread",
       }),
     );
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ resumeCursor });
@@ -869,6 +901,63 @@ describe("ProviderCommandReactor", () => {
     expect(bindProviderTurn).toHaveBeenCalledWith(
       expect.objectContaining({ attemptId: "claimed-attempt", providerTurnId: asTurnId("turn-1") }),
     );
+  });
+
+  it("retains a claimed Crew attempt when the directory cursor changed", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "changed-cursor-key",
+      },
+      requestId: "command:changed-cursor",
+    };
+    const reissueClaimed = vi.fn(({ codexResumeThreadId }: { codexResumeThreadId: string }) =>
+      codexResumeThreadId === "original-codex-thread"
+        ? Effect.die("unexpected original cursor")
+        : Effect.fail(new CtoxNativeRequestError({ reason: "native-task-reference-conflict" })),
+    );
+    const reserveContinuation = vi.fn(() => Effect.die("changed cursor must not dispatch"));
+    const admission = {
+      recover: () =>
+        Effect.succeed({
+          state: "resume-required" as const,
+          attemptId: "claimed-attempt",
+          identity: candidate.identity,
+        }),
+      reissueClaimed,
+      reserveContinuation,
+      readTerminalState: () => Effect.succeed(null),
+      reconcileTerminalOutbox: () => Effect.succeed({ reported: 0, truncated: false }),
+      listRecoveryCandidates: () =>
+        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+      providerBinding: {
+        threadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId,
+        resumeCursor: { threadId: "changed-codex-thread" },
+      },
+    });
+    await waitFor(() => reissueClaimed.mock.calls.length === 1);
+    await Effect.runPromise(Effect.yieldNow);
+    expect(reissueClaimed).toHaveBeenCalledWith(
+      expect.objectContaining({ codexResumeThreadId: "changed-codex-thread" }),
+    );
+    expect(reserveContinuation).not.toHaveBeenCalled();
+    expect(harness.startSession).not.toHaveBeenCalled();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
   });
 
   it("passes the thread's current Workjet config on provider start and restart", async () => {

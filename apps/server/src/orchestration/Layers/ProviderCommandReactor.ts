@@ -55,6 +55,18 @@ const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isCodexResumeCursor = Schema.is(CodexResumeCursorSchema);
 
+/** Schedule one owned retry when a durable terminal report needs a later projection or native response. */
+export const reconcileCrewTerminalOutboxWithRetry = (admission: CtoxCrewTurnAdmission["Service"]) =>
+  Effect.gen(function* () {
+    const terminal = yield* admission.reconcileTerminalOutbox();
+    if (terminal.deferred > 0 || terminal.pending > 0 || terminal.truncated) {
+      yield* Effect.gen(function* () {
+        yield* Effect.sleep(Duration.seconds(30));
+        yield* admission.reconcileTerminalOutbox();
+      }).pipe(Effect.forkScoped);
+    }
+  });
+
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
   {
@@ -1655,17 +1667,6 @@ const make = Effect.gen(function* () {
     );
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
-
-  const reconcileCrewTerminalOutboxWithRetry = (admission: CtoxCrewTurnAdmission["Service"]) =>
-    Effect.gen(function* () {
-      const terminal = yield* admission.reconcileTerminalOutbox();
-      if (terminal.deferred > 0 || terminal.pending > 0 || terminal.truncated) {
-        yield* Effect.gen(function* () {
-          yield* Effect.sleep(Duration.seconds(30));
-          yield* admission.reconcileTerminalOutbox();
-        }).pipe(Effect.forkScoped);
-      }
-    });
 
   const recoverCrewTurns = Effect.fn("recoverCrewTurns")(function* () {
     const admission = Option.getOrUndefined(crewAdmission);

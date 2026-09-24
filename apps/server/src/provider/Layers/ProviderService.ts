@@ -245,8 +245,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     cwd?: string,
   ) =>
     Effect.gen(function* () {
-      const requiresDecisionHub = workjetConfig.enabledCapabilityIds.includes("decision-hub");
-      const summaries = requiresDecisionHub
+      const requiresCtoxConnection = workjetConfig.enabledCapabilityIds.some(
+        (id) => id === "decision-hub" || id === "ctox-business-os",
+      );
+      const summaries = requiresCtoxConnection
         ? yield* Option.match(decisionHubConnections, {
             onNone: () => Effect.succeed([]),
             onSome: (connections) => connections.list.pipe(Effect.orElseSucceed(() => [])),
@@ -269,8 +271,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const threadCapabilityContext = resolveThreadCapabilityContext(
         workjetConfig,
         undefined,
-        requiresDecisionHub
+        requiresCtoxConnection
           ? {
+              connectionInstances: new Map(
+                summaries.map(({ connectionId, instanceId }) => [connectionId, instanceId]),
+              ),
               knownConnectionIds: new Set(summaries.map(({ connectionId }) => connectionId)),
               reachableConnectionIds: new Set(
                 summaries
@@ -281,6 +286,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           : undefined,
         globalManagedInstructions,
       );
+      if (
+        workjetConfig.enabledCapabilityIds.includes("ctox-business-os") &&
+        !threadCapabilityContext.ctoxBusinessOsBinding
+      ) {
+        return yield* toValidationError(
+          "ProviderService.prepareMcpSession",
+          "CTOX Business OS requires a ready connection matching this thread's bound instance.",
+        );
+      }
       const credential = yield* McpSessionRegistry.issueActiveMcpCredential({
         threadId,
         providerInstanceId,

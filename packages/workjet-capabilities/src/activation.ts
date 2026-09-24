@@ -31,6 +31,7 @@ export function validateCapabilityActivation(input: {
   readonly config: WorkjetThreadConfig;
   readonly knownConnectionIds?: ReadonlySet<string>;
   readonly reachableConnectionIds?: ReadonlySet<string>;
+  readonly connectionInstances?: ReadonlyMap<string, string>;
   readonly registry?: CapabilityRegistry;
 }): CapabilityActivationValidation {
   const config = normalizeWorkjetThreadConfig(input.config);
@@ -62,6 +63,19 @@ export function validateCapabilityActivation(input: {
         issues.push({ capabilityId, code: "binding-duplicated" });
       } else {
         const connectionId = matching[0]!.target.connectionId;
+        if (capabilityId === "ctox-business-os") {
+          const instanceId = matching[0]!.target.instanceId;
+          if (!instanceId) {
+            issues.push({ capabilityId, code: "binding-required" });
+          } else if (config.ctoxSession && config.ctoxSession.instanceId !== instanceId) {
+            issues.push({ capabilityId, code: "binding-foreign" });
+          } else if (
+            input.connectionInstances &&
+            input.connectionInstances.get(connectionId) !== instanceId
+          ) {
+            issues.push({ capabilityId, code: "binding-foreign" });
+          }
+        }
         if (input.knownConnectionIds && !input.knownConnectionIds.has(connectionId)) {
           issues.push({ capabilityId, code: "binding-foreign" });
         } else if (

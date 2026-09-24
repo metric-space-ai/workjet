@@ -34,7 +34,7 @@ jobs:
           cache: true
           run-install: true
 
-      - name: Enforce dependency audit and bounded image parser exception
+      - name: Enforce dependency audit and reviewed image parser
         run: vp run guard:supply-chain
 
       - name: Setup Rust

@@ -18,6 +18,7 @@ export const WorkjetCapabilityId = Schema.Literals([
   "web-search",
   "web-stack-browser",
   "decision-hub",
+  "ctox-business-os",
 ]);
 export type WorkjetCapabilityId = typeof WorkjetCapabilityId.Type;
 
@@ -51,6 +52,7 @@ export type WorkjetConnectionSummary = typeof WorkjetConnectionSummary.Type;
 export const WorkjetCtoxConnectionBindingTarget = Schema.Struct({
   kind: Schema.Literal("ctox-connection"),
   connectionId: WorkjetConnectionId,
+  instanceId: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
 });
 export type WorkjetCtoxConnectionBindingTarget = typeof WorkjetCtoxConnectionBindingTarget.Type;
 

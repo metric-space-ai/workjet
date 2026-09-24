@@ -881,7 +881,16 @@ const make = Effect.gen(function* () {
         providerInstanceId: input.modelSelection.instanceId,
         providerThreadId: activeSession.threadId,
       });
-      yield* providerService.sendTurn(sendTurnRequest).pipe(Effect.forkScoped);
+      yield* Effect.gen(function* () {
+        const started = yield* providerService.sendTurn(sendTurnRequest);
+        yield* input.admission.bindProviderTurn({
+          identity: input.prepared.identity,
+          attemptId: input.prepared.claim.attemptId,
+          providerInstanceId: input.modelSelection.instanceId,
+          providerThreadId: input.threadId,
+          providerTurnId: started.turnId,
+        });
+      }).pipe(Effect.forkScoped);
     }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap));
   });
 
@@ -1787,13 +1796,53 @@ const make = Effect.gen(function* () {
                 method: "thread.turn.start",
                 detail: "Recovered Crew provider session did not retain the saved Codex thread.",
               });
-            // Reopening the exact provider thread restores the fixed MCP
-            // capability. It is not permission to replay the original prompt:
-            // the native claim remains pending until its result is reconciled.
-            yield* Effect.logInfo("native Crew claim restored on its saved provider thread", {
-              threadId: thread.id,
+            const dispatch = yield* admission.reserveContinuation({
+              identity: candidate.identity,
               attemptId: prepared.attemptId,
+              providerInstanceId: thread.modelSelection.instanceId,
+              providerThreadId: thread.id,
             });
+            if (dispatch.state === "existing") {
+              yield* Effect.logWarning("native Crew continuation was already reserved", {
+                threadId: thread.id,
+                attemptId: prepared.attemptId,
+              });
+              return;
+            }
+            const continuation = [
+              `Continue the existing CTOX Crew attempt ${prepared.attemptId} in this saved conversation.`,
+              "Inspect the prior conversation and current workspace before changing anything.",
+              "Do not repeat actions already completed before the restart.",
+              "When finished, report the result through the existing CTOX Crew MCP capability.",
+              "If prior work cannot be verified safely, report an error instead of guessing.",
+            ].join("\n");
+            yield* Effect.gen(function* () {
+              const sendTurnRequest = yield* buildSendTurnRequestForThread({
+                threadId: thread.id,
+                requestId: dispatch.requestId,
+                messageText: continuation,
+                modelSelection: thread.modelSelection,
+                createdAt: DateTime.formatIso(yield* DateTime.now),
+              });
+              if (sendTurnRequest === null)
+                return yield* new ProviderAdapterRequestError({
+                  provider: "codex",
+                  method: "thread.turn.start",
+                  detail:
+                    "The claimed Crew continuation could not use its restored provider session.",
+                });
+              const started = yield* providerService.sendTurn(sendTurnRequest);
+              yield* admission.bindProviderTurn({
+                identity: candidate.identity,
+                attemptId: prepared.attemptId,
+                providerInstanceId: thread.modelSelection.instanceId,
+                providerThreadId: thread.id,
+                providerTurnId: started.turnId,
+              });
+            }).pipe(
+              Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap),
+              Effect.forkScoped,
+            );
           }
         }).pipe(
           Effect.catchCause((cause) =>

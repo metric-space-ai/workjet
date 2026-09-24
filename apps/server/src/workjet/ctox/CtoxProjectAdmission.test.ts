@@ -15,6 +15,7 @@ import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeReque
 import migration61 from "../../persistence/Migrations/061_WorkjetCtoxNativeTurns.ts";
 import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
 import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
+import migration67 from "../../persistence/Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -25,6 +26,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     yield* migration61;
     yield* migration62;
     yield* migration63;
+    yield* migration67;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const sql = yield* SqlClient.SqlClient;
     const scope = {
@@ -202,6 +204,47 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       providerThreadId,
     );
     expect(assigned).toMatchObject({ providerInstanceId, providerThreadId });
+    expect(
+      yield* restoredRequests.reserveCrewRecoveryDispatch(
+        admitted.identity,
+        attemptId,
+        providerInstanceId,
+        providerThreadId,
+      ),
+    ).toMatchObject({ state: "reserved" });
+    expect(
+      yield* restoredRequests.reserveCrewRecoveryDispatch(
+        admitted.identity,
+        attemptId,
+        providerInstanceId,
+        providerThreadId,
+      ),
+    ).toMatchObject({ state: "existing" });
+    yield* restoredRequests.bindCrewProviderTurn(
+      admitted.identity,
+      attemptId,
+      providerInstanceId,
+      providerThreadId,
+      "provider-turn",
+    );
+    yield* restoredRequests.bindCrewProviderTurn(
+      admitted.identity,
+      attemptId,
+      providerInstanceId,
+      providerThreadId,
+      "provider-turn",
+    );
+    expect(
+      yield* Effect.flip(
+        restoredRequests.bindCrewProviderTurn(
+          admitted.identity,
+          attemptId,
+          providerInstanceId,
+          providerThreadId,
+          "another-provider-turn",
+        ),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
     expect(
       yield* restoredRequests.bindCrewStartProvider(
         admitted.identity,

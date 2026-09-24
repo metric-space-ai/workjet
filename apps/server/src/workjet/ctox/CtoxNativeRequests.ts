@@ -205,7 +205,8 @@ const make = Effect.gen(function* () {
       request.operation !== "delegate_task" &&
       request.operation !== "start_project_task" &&
       request.operation !== "start_crew_execution"
-    ) return yield* failure("native-response-invalid");
+    )
+      return yield* failure("native-response-invalid");
     const receipt =
       request.operation === "start_crew_execution"
         ? yield* Schema.decodeUnknownEffect(WorkjetCtoxCrewReceipt)(value).pipe(
@@ -373,6 +374,82 @@ const make = Effect.gen(function* () {
     return saved;
   });
 
+  /** Reserve one continuation turn for a claimed attempt before contacting a
+   * provider. A process crash after this write leaves the attempt pending for
+   * review; it must not silently dispatch the continuation a second time.
+   */
+  const reserveCrewRecoveryDispatch = Effect.fn("CtoxNativeRequests.reserveCrewRecoveryDispatch")(
+    function* (
+      requestIdentity: CtoxNativeRequestIdentity,
+      attemptId: string,
+      providerInstanceId: typeof ProviderInstanceId.Type,
+      providerThreadId: string,
+    ) {
+      const identity = { ...requestIdentity };
+      const saved = yield* readCrewStart(identity, attemptId);
+      if (
+        !saved ||
+        saved.providerInstanceId !== providerInstanceId ||
+        saved.providerThreadId !== providerThreadId
+      )
+        return yield* failure("native-task-reference-conflict");
+      const requestId = `ctox-recovery:${identity.requestKey}:${attemptId}`;
+      if (requestId.length > 512) return yield* failure("native-task-reference-conflict");
+      const now = yield* Clock.currentTimeMillis;
+      const inserted = yield* sql`
+        UPDATE workjet_ctox_crew_starts
+        SET recovery_request_id = ${requestId}, recovery_reserved_at_ms = ${now}
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId}
+          AND provider_instance_id = ${providerInstanceId}
+          AND provider_thread_id = ${providerThreadId}
+          AND recovery_request_id IS NULL
+        RETURNING recovery_request_id
+      `.pipe(Effect.mapError(unavailable));
+      if (inserted.length === 1) return { state: "reserved" as const, requestId };
+      const rows = yield* sql<{ readonly recoveryRequestId: string | null }>`
+        SELECT recovery_request_id AS "recoveryRequestId"
+        FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId}
+          AND provider_instance_id = ${providerInstanceId}
+          AND provider_thread_id = ${providerThreadId}
+      `.pipe(Effect.mapError(unavailable));
+      if (rows[0]?.recoveryRequestId !== requestId)
+        return yield* failure("native-task-reference-conflict");
+      return { state: "existing" as const, requestId };
+    },
+  );
+
+  const bindCrewProviderTurn = Effect.fn("CtoxNativeRequests.bindCrewProviderTurn")(function* (
+    requestIdentity: CtoxNativeRequestIdentity,
+    attemptId: string,
+    providerInstanceId: typeof ProviderInstanceId.Type,
+    providerThreadId: string,
+    providerTurnId: string,
+  ) {
+    const identity = { ...requestIdentity };
+    if (!providerTurnId.trim() || providerTurnId.length > 512)
+      return yield* failure("native-task-reference-conflict");
+    const saved = yield* readCrewStart(identity, attemptId);
+    if (
+      !saved ||
+      saved.providerInstanceId !== providerInstanceId ||
+      saved.providerThreadId !== providerThreadId
+    )
+      return yield* failure("native-task-reference-conflict");
+    const updated = yield* sql`
+      UPDATE workjet_ctox_crew_starts SET provider_turn_id = ${providerTurnId}
+      WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+        AND attempt_id = ${attemptId}
+        AND provider_instance_id = ${providerInstanceId}
+        AND provider_thread_id = ${providerThreadId}
+        AND (provider_turn_id IS NULL OR provider_turn_id = ${providerTurnId})
+      RETURNING provider_turn_id
+    `.pipe(Effect.mapError(unavailable));
+    if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+  });
+
   /** Reserve BEFORE the remote claim. Only the inserting caller may start fresh.
    * An interrupted/ambiguous claim leaves the reservation intact for explicit
    * recovery; deleting it could cause two external harnesses for one attempt.
@@ -531,6 +608,8 @@ const make = Effect.gen(function* () {
     readCrewStart,
     reserveCrewStart,
     bindCrewStartProvider,
+    reserveCrewRecoveryDispatch,
+    bindCrewProviderTurn,
     registerNativeTurn,
     prepareTurn,
     latestNativeTurn,

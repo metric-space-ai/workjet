@@ -657,6 +657,7 @@ describe("ProviderCommandReactor", () => {
       },
       recover: () => Effect.die("unused"),
       bindProviderSession,
+      bindProviderTurn: () => Effect.void,
       listRecoveryCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
     } as unknown as CtoxCrewTurnAdmission["Service"];
     const harness = await createHarness({
@@ -746,6 +747,7 @@ describe("ProviderCommandReactor", () => {
       prepare: () => Effect.die("unused"),
       recover: recovered,
       bindProviderSession,
+      bindProviderTurn: () => Effect.void,
       listRecoveryCandidates: () =>
         Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
     } as unknown as CtoxCrewTurnAdmission["Service"];
@@ -765,7 +767,7 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
-  it("reopens a claimed Crew attempt on its exact saved Codex thread without replaying the prompt", async () => {
+  it("continues a claimed Crew attempt once on its exact saved Codex thread", async () => {
     const threadId = ThreadId.make("thread-1");
     const providerInstanceId = ProviderInstanceId.make("codex");
     const binding = {
@@ -807,11 +809,17 @@ describe("ProviderCommandReactor", () => {
         }),
       }),
     );
+    const reserveContinuation = vi.fn(() =>
+      Effect.succeed({ state: "reserved" as const, requestId: "ctox-recovery:claimed-attempt" }),
+    );
+    const bindProviderTurn = vi.fn(() => Effect.void);
     const admission = {
       prepare: () => Effect.die("unused"),
       recover,
       reissueClaimed,
+      reserveContinuation,
       bindProviderSession: () => Effect.die("unused"),
+      bindProviderTurn,
       listRecoveryCandidates: () =>
         Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
     } as unknown as CtoxCrewTurnAdmission["Service"];
@@ -825,7 +833,7 @@ describe("ProviderCommandReactor", () => {
         resumeCursor,
       },
     });
-    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => bindProviderTurn.mock.calls.length === 1);
     expect(recover).toHaveBeenCalledTimes(1);
     expect(reissueClaimed).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -837,7 +845,16 @@ describe("ProviderCommandReactor", () => {
       }),
     );
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ resumeCursor });
-    expect(harness.sendTurn).not.toHaveBeenCalled();
+    expect(reserveContinuation).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      requestId: "ctox-recovery:claimed-attempt",
+    });
+    expect(String((harness.sendTurn.mock.calls[0]?.[0] as { input?: string }).input)).toContain(
+      "Continue the existing CTOX Crew attempt claimed-attempt",
+    );
+    expect(bindProviderTurn).toHaveBeenCalledWith(
+      expect.objectContaining({ attemptId: "claimed-attempt", providerTurnId: asTurnId("turn-1") }),
+    );
   });
 
   it("passes the thread's current Workjet config on provider start and restart", async () => {

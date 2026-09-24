@@ -193,11 +193,45 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const reserveContinuation = Effect.fn("CtoxCrewTurnAdmission.reserveContinuation")(
+    function* (input: {
+      readonly identity: Parameters<typeof requests.readCrewStart>[0];
+      readonly attemptId: string;
+      readonly providerInstanceId: ProviderInstanceId;
+      readonly providerThreadId: ThreadId;
+    }) {
+      return yield* requests.reserveCrewRecoveryDispatch(
+        input.identity,
+        input.attemptId,
+        input.providerInstanceId,
+        input.providerThreadId,
+      );
+    },
+  );
+
+  const bindProviderTurn = Effect.fn("CtoxCrewTurnAdmission.bindProviderTurn")(function* (input: {
+    readonly identity: Parameters<typeof requests.readCrewStart>[0];
+    readonly attemptId: string;
+    readonly providerInstanceId: ProviderInstanceId;
+    readonly providerThreadId: ThreadId;
+    readonly providerTurnId: string;
+  }) {
+    yield* requests.bindCrewProviderTurn(
+      input.identity,
+      input.attemptId,
+      input.providerInstanceId,
+      input.providerThreadId,
+      input.providerTurnId,
+    );
+  });
+
   return {
     prepare,
     recover,
     reissueClaimed,
     bindProviderSession,
+    reserveContinuation,
+    bindProviderTurn,
     listRecoveryCandidates: requests.listCrewRecoveryCandidates,
   };
 });

@@ -1873,7 +1873,23 @@ const make = Effect.gen(function* () {
                 state: event.payload.state,
               });
               if (recorded.state === "recorded") {
-                yield* admission.reconcileTerminalOutbox().pipe(Effect.forkScoped);
+                yield* Effect.gen(function* () {
+                  const result = yield* admission.reconcileTerminalOutbox();
+                  if (result.deferred > 0 || result.pending > 0 || result.truncated) {
+                    yield* Effect.sleep(Duration.seconds(30));
+                    yield* admission.reconcileTerminalOutbox();
+                  }
+                }).pipe(
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.failCause(cause)
+                      : Effect.logWarning("native Crew terminal outbox retry stopped", {
+                          threadId: thread.id,
+                          cause: Cause.pretty(cause),
+                        }),
+                  ),
+                  Effect.forkScoped,
+                );
               }
             }).pipe(
               Effect.catchCause((cause) =>

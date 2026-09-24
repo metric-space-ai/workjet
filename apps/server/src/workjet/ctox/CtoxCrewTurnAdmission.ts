@@ -249,6 +249,8 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           let afterSequence = 0;
           let reported = 0;
+          let deferred = 0;
+          let pending = 0;
           for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
             const page = yield* requests.listCrewTerminalOutbox(afterSequence);
             for (const candidate of page.candidates) {
@@ -284,8 +286,10 @@ const make = Effect.gen(function* () {
                   candidate.terminalState === "completed" &&
                   reply.length === 0 &&
                   now - candidate.terminalAtMs < 30_000
-                )
+                ) {
+                  deferred += 1;
                   return;
+                }
                 const result =
                   candidate.terminalState === "completed" &&
                   reply.length > 0 &&
@@ -311,18 +315,25 @@ const make = Effect.gen(function* () {
                 Effect.catchCause((cause) =>
                   Cause.hasInterruptsOnly(cause)
                     ? Effect.failCause(cause)
-                    : Effect.logWarning("native Crew terminal report remains pending", {
-                        threadId: candidate.identity.threadId,
-                        attemptId: candidate.attemptId,
-                        cause: Cause.pretty(cause),
-                      }),
+                    : Effect.sync(() => {
+                        pending += 1;
+                      }).pipe(
+                        Effect.andThen(
+                          Effect.logWarning("native Crew terminal report remains pending", {
+                            threadId: candidate.identity.threadId,
+                            attemptId: candidate.attemptId,
+                            cause: Cause.pretty(cause),
+                          }),
+                        ),
+                      ),
                 ),
               );
             }
-            if (page.nextSequence === null) return { reported, truncated: false };
+            if (page.nextSequence === null)
+              return { reported, deferred, pending, truncated: false };
             afterSequence = page.nextSequence;
           }
-          return { reported, truncated: true };
+          return { reported, deferred, pending, truncated: true };
         }),
       );
     },

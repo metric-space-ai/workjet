@@ -890,6 +890,7 @@ const make = Effect.gen(function* () {
           providerThreadId: input.threadId,
           providerTurnId: started.turnId,
         });
+        yield* input.admission.reconcileTerminalOutbox();
       }).pipe(Effect.forkScoped);
     }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap));
   });
@@ -1647,7 +1648,13 @@ const make = Effect.gen(function* () {
   const recoverCrewTurns = Effect.fn("recoverCrewTurns")(function* () {
     const admission = Option.getOrUndefined(crewAdmission);
     if (!admission) return;
-    yield* admission.reconcileTerminalOutbox();
+    const terminal = yield* admission.reconcileTerminalOutbox();
+    if (terminal.deferred > 0 || terminal.pending > 0 || terminal.truncated) {
+      yield* Effect.gen(function* () {
+        yield* Effect.sleep(Duration.seconds(30));
+        yield* admission.reconcileTerminalOutbox();
+      }).pipe(Effect.forkScoped);
+    }
     let afterSequence = 0;
     // Finite startup scan: never let an unbounded ledger delay app activation.
     for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
@@ -1855,6 +1862,7 @@ const make = Effect.gen(function* () {
                 providerThreadId: thread.id,
                 providerTurnId: started.turnId,
               });
+              yield* admission.reconcileTerminalOutbox();
             }).pipe(
               Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap),
               Effect.forkScoped,

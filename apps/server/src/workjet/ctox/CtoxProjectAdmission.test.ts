@@ -218,6 +218,14 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     );
     expect(assigned).toMatchObject({ providerInstanceId, providerThreadId });
     expect(
+      yield* restoredRequests.recordCrewProviderTerminal({
+        threadId: scope.threadId,
+        providerInstanceId,
+        providerTurnId: "provider-turn",
+        state: "completed",
+      }),
+    ).toMatchObject({ state: "buffered" });
+    expect(
       yield* restoredRequests.reserveCrewRecoveryDispatch(
         admitted.identity,
         attemptId,

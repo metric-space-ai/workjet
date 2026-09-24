@@ -438,8 +438,23 @@ const make = Effect.gen(function* () {
       saved.providerThreadId !== providerThreadId
     )
       return yield* failure("native-task-reference-conflict");
-    const updated = yield* sql`
-      UPDATE workjet_ctox_crew_starts SET provider_turn_id = ${providerTurnId}
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const updated = yield* sql`
+      UPDATE workjet_ctox_crew_starts SET
+        provider_turn_id = ${providerTurnId},
+        provider_terminal_state = COALESCE((
+          SELECT terminal_state FROM workjet_ctox_unbound_provider_terminals
+          WHERE thread_id = ${identity.threadId}
+            AND provider_instance_id = ${providerInstanceId}
+            AND provider_turn_id = ${providerTurnId}
+        ), provider_terminal_state),
+        provider_terminal_at_ms = COALESCE((
+          SELECT terminal_at_ms FROM workjet_ctox_unbound_provider_terminals
+          WHERE thread_id = ${identity.threadId}
+            AND provider_instance_id = ${providerInstanceId}
+            AND provider_turn_id = ${providerTurnId}
+        ), provider_terminal_at_ms)
       WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
         AND attempt_id = ${attemptId}
         AND provider_instance_id = ${providerInstanceId}
@@ -447,7 +462,15 @@ const make = Effect.gen(function* () {
         AND (provider_turn_id IS NULL OR provider_turn_id = ${providerTurnId})
       RETURNING provider_turn_id
     `.pipe(Effect.mapError(unavailable));
-    if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+        if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+        yield* sql`
+      DELETE FROM workjet_ctox_unbound_provider_terminals
+      WHERE thread_id = ${identity.threadId}
+        AND provider_instance_id = ${providerInstanceId}
+        AND provider_turn_id = ${providerTurnId}
+    `.pipe(Effect.mapError(unavailable));
+      }),
+    );
   });
 
   const recordCrewProviderTerminal = Effect.fn("CtoxNativeRequests.recordCrewProviderTerminal")(
@@ -460,7 +483,9 @@ const make = Effect.gen(function* () {
       if (!input.providerTurnId.trim() || input.providerTurnId.length > 512)
         return yield* failure("native-task-reference-conflict");
       const now = yield* Clock.currentTimeMillis;
-      const updated = yield* sql<{ readonly attemptId: string }>`
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const updated = yield* sql<{ readonly attemptId: string }>`
         UPDATE workjet_ctox_crew_starts
         SET provider_terminal_state = ${input.state}, provider_terminal_at_ms = ${now}
         WHERE thread_id = ${input.threadId}
@@ -469,17 +494,45 @@ const make = Effect.gen(function* () {
           AND (provider_terminal_state IS NULL OR provider_terminal_state = ${input.state})
         RETURNING attempt_id AS "attemptId"
       `.pipe(Effect.mapError(unavailable));
-      if (updated.length === 1)
-        return { state: "recorded" as const, attemptId: updated[0]!.attemptId };
-      const existing = yield* sql<{ readonly terminalState: string | null }>`
+          if (updated.length === 1)
+            return { state: "recorded" as const, attemptId: updated[0]!.attemptId };
+          const existing = yield* sql<{ readonly terminalState: string | null }>`
         SELECT provider_terminal_state AS "terminalState"
         FROM workjet_ctox_crew_starts
         WHERE thread_id = ${input.threadId}
           AND provider_instance_id = ${input.providerInstanceId}
           AND provider_turn_id = ${input.providerTurnId}
       `.pipe(Effect.mapError(unavailable));
-      if (existing.length > 0) return yield* failure("native-task-reference-conflict");
-      return { state: "unbound" as const };
+          if (existing.length > 0) return yield* failure("native-task-reference-conflict");
+          const pending = yield* sql`
+        SELECT 1 FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id IS NULL LIMIT 1
+      `.pipe(Effect.mapError(unavailable));
+          if (pending.length === 0) return { state: "unbound" as const };
+          yield* sql`
+        DELETE FROM workjet_ctox_unbound_provider_terminals
+        WHERE terminal_at_ms < ${now - 24 * 60 * 60 * 1000}
+      `.pipe(Effect.mapError(unavailable));
+          yield* sql`
+        INSERT OR IGNORE INTO workjet_ctox_unbound_provider_terminals
+          (thread_id, provider_instance_id, provider_turn_id, terminal_state, terminal_at_ms)
+        VALUES (${input.threadId}, ${input.providerInstanceId}, ${input.providerTurnId},
+                ${input.state}, ${now})
+      `.pipe(Effect.mapError(unavailable));
+          const buffered = yield* sql<{ readonly terminalState: string }>`
+        SELECT terminal_state AS "terminalState"
+        FROM workjet_ctox_unbound_provider_terminals
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id = ${input.providerTurnId}
+      `.pipe(Effect.mapError(unavailable));
+          if (buffered[0]?.terminalState !== input.state)
+            return yield* failure("native-task-reference-conflict");
+          return { state: "buffered" as const };
+        }),
+      );
     },
   );
 

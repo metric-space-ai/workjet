@@ -386,6 +386,14 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
           NodeAssert.equal(sessionRuntimeFactory.factory.mock.calls.length, calls);
           NodeAssert.equal(runtime.closeImpl.mock.calls.length, 0);
         }
+        const missing = yield* Effect.flip(
+          adapter.startSession({
+            ...input,
+            resumePolicy: "require-existing",
+          }),
+        );
+        NodeAssert.equal(missing._tag, "ProviderAdapterValidationError");
+        NodeAssert.equal(sessionRuntimeFactory.factory.mock.calls.length, calls);
         yield* adapter.startSession({
           ...input,
           threadId: asThreadId("ordinary-resume-policy"),

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProviderInstanceId, ThreadId, WorkjetConnectionId } from "@workjet/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  ThreadId,
+  WorkjetConnectionId,
+  type WorkjetCtoxCrewRequest,
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
@@ -8,6 +14,7 @@ import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.
 import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
 import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
 import migration69 from "../../persistence/Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
+import migration72 from "../../persistence/Migrations/072_WorkjetCtoxCrewProviderResumeIdentity.ts";
 import { CtoxNativeRequests, type NativeTaskRequest } from "./CtoxNativeRequests.ts";
 
 const identity = {
@@ -26,35 +33,37 @@ const native = {
 const providerInstanceId = ProviderInstanceId.make("codex_work");
 const providerThreadId = "provider-thread";
 const open = CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
-const setup = Effect.gen(function* () {
-  yield* migration60;
-  yield* migration62;
-  yield* migration68;
-  const requests = yield* open;
-  const request: NativeTaskRequest = {
-    operation: "start_crew_execution",
-    thread_id: "workjet_private_chat",
-    title: "Work",
-    instruction: "Work",
-    harness: "codex",
-    timeout_seconds: 60,
-    idempotency_key: identity.requestKey,
-  };
-  yield* requests.prepare(identity, request, {
-    endpoint: "https://ctox.example/mcp",
-    token: "test-token",
+const setupForHarness = (harness: WorkjetCtoxCrewRequest["harness"]) =>
+  Effect.gen(function* () {
+    yield* migration60;
+    yield* migration62;
+    yield* migration68;
+    const requests = yield* open;
+    const request: NativeTaskRequest = {
+      operation: "start_crew_execution",
+      thread_id: "workjet_private_chat",
+      title: "Work",
+      instruction: "Work",
+      harness,
+      timeout_seconds: 60,
+      idempotency_key: identity.requestKey,
+    };
+    yield* requests.prepare(identity, request, {
+      endpoint: "https://ctox.example/mcp",
+      token: "test-token",
+    });
+    yield* requests.recordReceipt(identity, {
+      schema: "ctox.project_crew_request.v1",
+      command_id: native.commandId,
+      task_id: native.taskId,
+      thread_id: request.thread_id,
+      crew_member_id: native.memberId,
+      executor_id: native.executorId,
+      status: "accepted",
+    });
+    return requests;
   });
-  yield* requests.recordReceipt(identity, {
-    schema: "ctox.project_crew_request.v1",
-    command_id: native.commandId,
-    task_id: native.taskId,
-    thread_id: request.thread_id,
-    crew_member_id: native.memberId,
-    executor_id: native.executorId,
-    status: "accepted",
-  });
-  return requests;
-});
+const setup = setupForHarness("codex");
 
 describe("durable Crew provider assignment", () => {
   it.effect("migrates a legacy reservation and retains assignment across reconstruction", () =>
@@ -69,11 +78,14 @@ describe("durable Crew provider assignment", () => {
       `;
       yield* migration63;
       yield* migration69;
+      yield* migration72;
       expect(yield* requests.readCrewStart(identity, native.attemptId)).toEqual({
         ...native,
         providerInstanceId: null,
         providerThreadId: null,
         codexResumeThreadId: null,
+        providerDriverKind: null,
+        providerResumeIdentity: null,
       });
       expect((yield* requests.reserveCrewStart(identity, native)).state).toBe("existing");
       const assigned = yield* requests.bindCrewStartProvider(
@@ -104,6 +116,7 @@ describe("durable Crew provider assignment", () => {
       const requests = yield* setup;
       yield* migration63;
       yield* migration69;
+      yield* migration72;
       const original = (yield* requests.reserveCrewStart(identity, native)).binding;
       for (const changed of [
         { ...native, attemptId: "foreign" },
@@ -152,6 +165,7 @@ describe("durable Crew provider assignment", () => {
       const requests = yield* setup;
       yield* migration63;
       yield* migration69;
+      yield* migration72;
       const reservation = (yield* requests.reserveCrewStart(identity, native)).binding;
       const original = yield* requests.bindCrewStartProvider(
         identity,
@@ -187,11 +201,56 @@ describe("durable Crew provider assignment", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 
+  it.effect("pins a Grok conversation and rejects a changed driver or cursor", () =>
+    Effect.gen(function* () {
+      const requests = yield* setupForHarness("grok");
+      yield* migration63;
+      yield* migration69;
+      yield* migration72;
+      const reservation = (yield* requests.reserveCrewStart(identity, native)).binding;
+      const grok = ProviderDriverKind.make("grok");
+      const assigned = yield* requests.bindCrewStartProvider(
+        identity,
+        reservation,
+        ProviderInstanceId.make("grok_work"),
+        providerThreadId,
+        null,
+        grok,
+        "grok-session-1",
+      );
+      expect(assigned).toMatchObject({
+        providerDriverKind: grok,
+        providerResumeIdentity: "grok-session-1",
+        codexResumeThreadId: null,
+      });
+      for (const [driver, cursor] of [
+        [grok, "grok-session-2"],
+        [ProviderDriverKind.make("cursor"), "grok-session-1"],
+      ] as const) {
+        expect(
+          yield* Effect.flip(
+            requests.bindCrewStartProvider(
+              identity,
+              reservation,
+              ProviderInstanceId.make("grok_work"),
+              providerThreadId,
+              null,
+              driver,
+              cursor,
+            ),
+          ),
+        ).toMatchObject({ reason: "native-task-reference-conflict" });
+      }
+      expect(yield* requests.readCrewStart(identity, native.attemptId)).toEqual(assigned);
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
   it.effect("rejects invalid values and either changed half of an assigned pair", () =>
     Effect.gen(function* () {
       const requests = yield* setup;
       yield* migration63;
       yield* migration69;
+      yield* migration72;
       const original = (yield* requests.reserveCrewStart(identity, native)).binding;
       expect(
         yield* Effect.flip(
@@ -239,6 +298,7 @@ describe("durable Crew provider assignment", () => {
       const requests = yield* setup;
       yield* migration63;
       yield* migration69;
+      yield* migration72;
       yield* requests.reserveCrewStart(identity, native);
       const sql = yield* SqlClient.SqlClient;
       for (const pair of [

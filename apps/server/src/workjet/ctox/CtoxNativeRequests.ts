@@ -4,6 +4,7 @@ import {
   WorkjetCtoxBusinessOsInput,
   WorkjetCtoxCrewRequest,
   WorkjetCtoxCrewReceipt,
+  ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   WorkjetConnectionId,
@@ -120,6 +121,8 @@ const CrewStartBinding = Schema.Struct({
   providerInstanceId: Schema.NullOr(ProviderInstanceId),
   providerThreadId: Schema.NullOr(CrewStartId),
   codexResumeThreadId: Schema.NullOr(CrewStartId),
+  providerDriverKind: Schema.NullOr(ProviderDriverKind),
+  providerResumeIdentity: Schema.NullOr(CrewStartId),
 });
 
 const make = Effect.gen(function* () {
@@ -304,7 +307,9 @@ const make = Effect.gen(function* () {
       SELECT attempt_id AS "attemptId", command_id AS "commandId", task_id AS "taskId",
         executor_id AS "executorId", member_id AS "memberId",
         provider_instance_id AS "providerInstanceId", provider_thread_id AS "providerThreadId",
-        codex_resume_thread_id AS "codexResumeThreadId"
+        codex_resume_thread_id AS "codexResumeThreadId",
+        provider_driver_kind AS "providerDriverKind",
+        provider_resume_identity AS "providerResumeIdentity"
       FROM workjet_ctox_crew_starts
       WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
         AND attempt_id = ${attemptId}
@@ -319,7 +324,12 @@ const make = Effect.gen(function* () {
     const row = rows[0] ?? null;
     if (row && (row.providerInstanceId === null) !== (row.providerThreadId === null))
       return yield* failure("native-task-reference-conflict");
-    if (row && row.providerThreadId === null && row.codexResumeThreadId !== null)
+    if (
+      row &&
+      ((row.providerDriverKind === null) !== (row.providerResumeIdentity === null) ||
+        (row.providerThreadId === null &&
+          (row.codexResumeThreadId !== null || row.providerResumeIdentity !== null)))
+    )
       return yield* failure("native-task-reference-conflict");
     return row;
   });
@@ -348,6 +358,10 @@ const make = Effect.gen(function* () {
     providerInstanceId: typeof ProviderInstanceId.Type,
     providerThreadId: string,
     codexResumeThreadId: string | null = null,
+    providerDriverKind: typeof ProviderDriverKind.Type | null = codexResumeThreadId === null
+      ? null
+      : ProviderDriverKind.make("codex"),
+    providerResumeIdentity: string | null = codexResumeThreadId,
   ) {
     const identity = { ...requestIdentity };
     const binding = yield* Schema.decodeUnknownEffect(CrewStartReservation)({
@@ -365,28 +379,55 @@ const make = Effect.gen(function* () {
         : yield* Schema.decodeUnknownEffect(CrewStartId)(codexResumeThreadId).pipe(
             Effect.mapError(() => failure("native-response-invalid")),
           );
+    const decodedProviderDriverKind =
+      providerDriverKind === null
+        ? null
+        : yield* Schema.decodeUnknownEffect(ProviderDriverKind)(providerDriverKind).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          );
+    const decodedProviderResumeIdentity =
+      providerResumeIdentity === null
+        ? null
+        : yield* Schema.decodeUnknownEffect(CrewStartId)(providerResumeIdentity).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          );
+    if (
+      (decodedProviderDriverKind === null) !== (decodedProviderResumeIdentity === null) ||
+      (decodedProviderDriverKind === "codex" &&
+        decodedCodexResumeThreadId !== decodedProviderResumeIdentity) ||
+      (decodedProviderDriverKind !== "codex" && decodedCodexResumeThreadId !== null)
+    )
+      return yield* failure("native-task-reference-conflict");
     const reference = yield* get(identity);
     if (
       reference.request.operation !== "start_crew_execution" ||
       reference.commandId !== binding.commandId ||
-      reference.taskId !== binding.taskId
+      reference.taskId !== binding.taskId ||
+      (decodedProviderDriverKind !== null &&
+        reference.request.harness !==
+          (decodedProviderDriverKind === "claudeAgent" ? "claude" : decodedProviderDriverKind))
     )
       return yield* failure("native-task-reference-conflict");
     const updated = yield* sql`
         UPDATE workjet_ctox_crew_starts
         SET provider_instance_id = ${decodedProviderInstanceId},
             provider_thread_id = ${decodedProviderThreadId},
-            codex_resume_thread_id = ${decodedCodexResumeThreadId}
+            codex_resume_thread_id = ${decodedCodexResumeThreadId},
+            provider_driver_kind = ${decodedProviderDriverKind},
+            provider_resume_identity = ${decodedProviderResumeIdentity}
         WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
           AND attempt_id = ${binding.attemptId}
           AND command_id = ${binding.commandId} AND task_id = ${binding.taskId}
           AND executor_id = ${binding.executorId} AND member_id = ${binding.memberId}
           AND (
             (provider_instance_id IS NULL AND provider_thread_id IS NULL
-                AND codex_resume_thread_id IS NULL)
+                AND codex_resume_thread_id IS NULL
+                AND provider_driver_kind IS NULL AND provider_resume_identity IS NULL)
             OR (provider_instance_id = ${decodedProviderInstanceId}
                 AND provider_thread_id = ${decodedProviderThreadId}
-                AND codex_resume_thread_id IS ${decodedCodexResumeThreadId})
+                AND codex_resume_thread_id IS ${decodedCodexResumeThreadId}
+                AND provider_driver_kind IS ${decodedProviderDriverKind}
+                AND provider_resume_identity IS ${decodedProviderResumeIdentity})
           )
         RETURNING attempt_id
       `.pipe(Effect.mapError(unavailable));
@@ -396,7 +437,9 @@ const make = Effect.gen(function* () {
       !saved ||
       saved.providerInstanceId !== decodedProviderInstanceId ||
       saved.providerThreadId !== decodedProviderThreadId ||
-      saved.codexResumeThreadId !== decodedCodexResumeThreadId
+      saved.codexResumeThreadId !== decodedCodexResumeThreadId ||
+      saved.providerDriverKind !== decodedProviderDriverKind ||
+      saved.providerResumeIdentity !== decodedProviderResumeIdentity
     )
       return yield* failure("native-task-reference-conflict");
     return saved;

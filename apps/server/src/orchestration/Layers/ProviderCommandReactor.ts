@@ -35,7 +35,6 @@ import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
-import { CodexResumeCursorSchema } from "../../provider/Layers/CodexSessionRuntime.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -52,9 +51,9 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
+import { ctoxCrewResumeIdentity } from "../../workjet/ctox/CtoxCrewResumeIdentity.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
-const isCodexResumeCursor = Schema.is(CodexResumeCursorSchema);
 
 /** Schedule one owned retry when a durable terminal report needs a later projection or native response. */
 export const reconcileCrewTerminalOutboxWithRetry = (admission: CtoxCrewTurnAdmission["Service"]) =>
@@ -931,13 +930,16 @@ const make = Effect.gen(function* () {
           method: "thread.turn.start",
           detail: "The claimed Crew provider session did not match the selected instance.",
         });
-      const codexResumeThreadId =
-        input.prepared.claim.harness === "codex" && isCodexResumeCursor(activeSession.resumeCursor)
-          ? activeSession.resumeCursor.threadId
-          : null;
-      if (input.prepared.claim.harness === "codex" && !codexResumeThreadId)
+      const providerResumeIdentity = ctoxCrewResumeIdentity(
+        activeSession.provider,
+        activeSession.resumeCursor,
+      );
+      if (
+        !providerResumeIdentity ||
+        nativeCrewHarness(activeSession.provider) !== input.prepared.claim.harness
+      )
         return yield* new ProviderAdapterRequestError({
-          provider: "codex",
+          provider: activeSession.provider,
           method: "thread.turn.start",
           detail: "The claimed Crew session has no provider conversation to resume safely.",
         });
@@ -946,7 +948,9 @@ const make = Effect.gen(function* () {
         attemptId: input.prepared.claim.attemptId,
         providerInstanceId: input.modelSelection.instanceId,
         providerThreadId: activeSession.threadId,
-        codexResumeThreadId,
+        codexResumeThreadId: activeSession.provider === "codex" ? providerResumeIdentity : null,
+        providerDriverKind: activeSession.provider,
+        providerResumeIdentity,
       });
       yield* Effect.gen(function* () {
         const started = yield* providerService.sendTurn(sendTurnRequest);
@@ -1871,11 +1875,14 @@ const make = Effect.gen(function* () {
             const saved = directory
               ? Option.getOrUndefined(yield* directory.getBinding(thread.id))
               : undefined;
+            const savedResumeIdentity = saved
+              ? ctoxCrewResumeIdentity(saved.provider, saved.resumeCursor)
+              : null;
             if (
-              providerInfo.driverKind !== "codex" ||
-              saved?.provider !== "codex" ||
+              !saved ||
+              saved.provider !== providerInfo.driverKind ||
               saved.providerInstanceId !== thread.modelSelection.instanceId ||
-              !isCodexResumeCursor(saved.resumeCursor)
+              !savedResumeIdentity
             ) {
               yield* Effect.logWarning(
                 "native Crew claim retained without a verified provider cursor",
@@ -1884,6 +1891,16 @@ const make = Effect.gen(function* () {
                   attemptId: prepared.attemptId,
                   provider: providerInfo.driverKind,
                 },
+              );
+              return;
+            }
+            if (saved.provider === "claudeAgent") {
+              // Claude's SDK has no pre-send acknowledgement that `resume`
+              // reopened the prior session. Retain the claim instead of
+              // risking a second prompt in a fresh conversation.
+              yield* Effect.logWarning(
+                "native Crew claim retained until Claude resume can be verified",
+                { threadId: thread.id, attemptId: prepared.attemptId },
               );
               return;
             }
@@ -1899,7 +1916,7 @@ const make = Effect.gen(function* () {
               const stopped = yield* providerService.stopSession({ threadId: thread.id });
               if (stopped?.terminated !== true)
                 return yield* new ProviderAdapterRequestError({
-                  provider: "codex",
+                  provider: saved.provider,
                   method: "thread.turn.start",
                   detail:
                     "The old Crew provider session could not be stopped before claim recovery.",
@@ -1912,7 +1929,9 @@ const make = Effect.gen(function* () {
               providerThreadId: thread.id,
               harness,
               attemptId: prepared.attemptId,
-              codexResumeThreadId: saved.resumeCursor.threadId,
+              codexResumeThreadId: saved.provider === "codex" ? savedResumeIdentity : null,
+              providerDriverKind: saved.provider,
+              providerResumeIdentity: savedResumeIdentity,
             });
             const project = yield* resolveProject(thread.projectId);
             const cwd = resolveThreadWorkspaceCwd({
@@ -1922,25 +1941,26 @@ const make = Effect.gen(function* () {
             const resumed = yield* providerService
               .startSession(thread.id, {
                 threadId: thread.id,
-                provider: ProviderDriverKind.make("codex"),
+                provider: saved.provider,
                 providerInstanceId: thread.modelSelection.instanceId,
                 ...(cwd ? { cwd } : {}),
                 modelSelection: thread.modelSelection,
                 resumeCursor: saved.resumeCursor,
+                resumePolicy: "require-existing",
                 runtimeMode: thread.runtimeMode,
                 workjetConfig: thread.workjetConfig,
               })
               .pipe(Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap));
             if (
               resumed.threadId !== thread.id ||
+              resumed.provider !== saved.provider ||
               resumed.providerInstanceId !== thread.modelSelection.instanceId ||
-              !isCodexResumeCursor(resumed.resumeCursor) ||
-              resumed.resumeCursor.threadId !== saved.resumeCursor.threadId
+              ctoxCrewResumeIdentity(resumed.provider, resumed.resumeCursor) !== savedResumeIdentity
             )
               return yield* new ProviderAdapterRequestError({
-                provider: "codex",
+                provider: saved.provider,
                 method: "thread.turn.start",
-                detail: "Recovered Crew provider session did not retain the saved Codex thread.",
+                detail: "Recovered Crew provider session did not retain the saved conversation.",
               });
             const dispatch = yield* admission.reserveContinuation({
               identity: candidate.identity,
@@ -1972,7 +1992,7 @@ const make = Effect.gen(function* () {
               });
               if (sendTurnRequest === null)
                 return yield* new ProviderAdapterRequestError({
-                  provider: "codex",
+                  provider: saved.provider,
                   method: "thread.turn.start",
                   detail:
                     "The claimed Crew continuation could not use its restored provider session.",

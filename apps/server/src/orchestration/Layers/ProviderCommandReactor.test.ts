@@ -891,98 +891,113 @@ describe("ProviderCommandReactor", () => {
     expect(harness.sendTurn).not.toHaveBeenCalled();
   }, 40_000);
 
-  it("continues a claimed Crew attempt once on its exact saved Codex thread", async () => {
-    const threadId = ThreadId.make("thread-1");
-    const providerInstanceId = ProviderInstanceId.make("codex");
-    const binding = {
-      instanceId: "native-instance",
-      connectionId: WorkjetConnectionId.make("connection"),
-      chatId: "workjet_private_chat",
-    };
-    const candidate = {
-      identity: {
-        threadId,
-        connectionId: binding.connectionId,
-        instanceId: binding.instanceId,
-        requestKey: "turn-claimed-key",
-      },
-      requestId: "command:claimed-crew",
-    };
-    const resumeCursor = { threadId: "codex-saved-thread" };
-    const recover = vi.fn(() =>
-      Effect.succeed({
-        state: "resume-required" as const,
-        attemptId: "claimed-attempt",
-        identity: candidate.identity,
-      }),
-    );
-    const reissueClaimed = vi.fn(() =>
-      Effect.succeed({
-        claim: { attemptId: "claimed-attempt" },
-        bootstrap: CtoxCrewSessionBootstrap.of({
-          binding,
-          nativeInstructions: "continue this existing attempt",
-          capability: {
-            threadId,
-            providerInstanceId,
-            attemptId: "claimed-attempt",
-            refreshContext: () => Effect.die("unused"),
-            updatePlan: () => Effect.die("unused"),
-            report: () => Effect.die("unused"),
-          },
+  for (const driver of ["codex", "grok"] as const)
+    it(`continues a claimed Crew attempt once on its exact saved ${driver} conversation`, async () => {
+      const threadId = ThreadId.make("thread-1");
+      const providerInstanceId = ProviderInstanceId.make(driver);
+      const binding = {
+        instanceId: "native-instance",
+        connectionId: WorkjetConnectionId.make("connection"),
+        chatId: "workjet_private_chat",
+      };
+      const candidate = {
+        identity: {
+          threadId,
+          connectionId: binding.connectionId,
+          instanceId: binding.instanceId,
+          requestKey: "turn-claimed-key",
+        },
+        requestId: "command:claimed-crew",
+      };
+      const resumeCursor =
+        driver === "codex"
+          ? { threadId: "codex-saved-thread" }
+          : { schemaVersion: 1, sessionId: "grok-saved-session" };
+      const providerResumeIdentity =
+        driver === "codex" ? "codex-saved-thread" : "grok-saved-session";
+      const recover = vi.fn(() =>
+        Effect.succeed({
+          state: "resume-required" as const,
+          attemptId: "claimed-attempt",
+          identity: candidate.identity,
         }),
-      }),
-    );
-    const reserveContinuation = vi.fn(() =>
-      Effect.succeed({ state: "reserved" as const, requestId: "ctox-recovery:claimed-attempt" }),
-    );
-    const bindProviderTurn = vi.fn(() => Effect.void);
-    const admission = {
-      prepare: () => Effect.die("unused"),
-      recover,
-      reissueClaimed,
-      reserveContinuation,
-      bindProviderSession: () => Effect.die("unused"),
-      bindProviderTurn,
-      reconcileTerminalOutbox: () => Effect.succeed({ reported: 0, truncated: false }),
-      readTerminalState: () => Effect.succeed(null),
-      listRecoveryCandidates: () =>
-        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
-    } as unknown as CtoxCrewTurnAdmission["Service"];
-    const harness = await createHarness({
-      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
-      crewAdmission: admission,
-      providerBinding: {
-        threadId,
-        provider: ProviderDriverKind.make("codex"),
-        providerInstanceId,
+      );
+      const reissueClaimed = vi.fn(() =>
+        Effect.succeed({
+          claim: { attemptId: "claimed-attempt" },
+          bootstrap: CtoxCrewSessionBootstrap.of({
+            binding,
+            nativeInstructions: "continue this existing attempt",
+            capability: {
+              threadId,
+              providerInstanceId,
+              attemptId: "claimed-attempt",
+              refreshContext: () => Effect.die("unused"),
+              updatePlan: () => Effect.die("unused"),
+              report: () => Effect.die("unused"),
+            },
+          }),
+        }),
+      );
+      const reserveContinuation = vi.fn(() =>
+        Effect.succeed({ state: "reserved" as const, requestId: "ctox-recovery:claimed-attempt" }),
+      );
+      const bindProviderTurn = vi.fn(() => Effect.void);
+      const admission = {
+        prepare: () => Effect.die("unused"),
+        recover,
+        reissueClaimed,
+        reserveContinuation,
+        bindProviderSession: () => Effect.die("unused"),
+        bindProviderTurn,
+        reconcileTerminalOutbox: () => Effect.succeed({ reported: 0, truncated: false }),
+        readTerminalState: () => Effect.succeed(null),
+        listRecoveryCandidates: () =>
+          Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+      } as unknown as CtoxCrewTurnAdmission["Service"];
+      const harness = await createHarness({
+        threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+        threadModelSelection: { instanceId: providerInstanceId, model: "test-model" },
+        crewAdmission: admission,
+        providerBinding: {
+          threadId,
+          provider: ProviderDriverKind.make(driver),
+          providerInstanceId,
+          resumeCursor,
+        },
+      });
+      await waitFor(() => bindProviderTurn.mock.calls.length === 1);
+      expect(recover).toHaveBeenCalledTimes(1);
+      expect(reissueClaimed).toHaveBeenCalledWith(
+        expect.objectContaining({
+          candidate: expect.objectContaining(candidate),
+          binding,
+          providerInstanceId,
+          providerThreadId: threadId,
+          attemptId: "claimed-attempt",
+          codexResumeThreadId: driver === "codex" ? providerResumeIdentity : null,
+          providerDriverKind: ProviderDriverKind.make(driver),
+          providerResumeIdentity,
+        }),
+      );
+      expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
         resumeCursor,
-      },
+        resumePolicy: "require-existing",
+      });
+      expect(reserveContinuation).toHaveBeenCalledTimes(1);
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+        requestId: "ctox-recovery:claimed-attempt",
+      });
+      expect(String((harness.sendTurn.mock.calls[0]?.[0] as { input?: string }).input)).toContain(
+        "Continue the existing CTOX Crew attempt claimed-attempt",
+      );
+      expect(bindProviderTurn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attemptId: "claimed-attempt",
+          providerTurnId: asTurnId("turn-1"),
+        }),
+      );
     });
-    await waitFor(() => bindProviderTurn.mock.calls.length === 1);
-    expect(recover).toHaveBeenCalledTimes(1);
-    expect(reissueClaimed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        candidate: expect.objectContaining(candidate),
-        binding,
-        providerInstanceId,
-        providerThreadId: threadId,
-        attemptId: "claimed-attempt",
-        codexResumeThreadId: "codex-saved-thread",
-      }),
-    );
-    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ resumeCursor });
-    expect(reserveContinuation).toHaveBeenCalledTimes(1);
-    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
-      requestId: "ctox-recovery:claimed-attempt",
-    });
-    expect(String((harness.sendTurn.mock.calls[0]?.[0] as { input?: string }).input)).toContain(
-      "Continue the existing CTOX Crew attempt claimed-attempt",
-    );
-    expect(bindProviderTurn).toHaveBeenCalledWith(
-      expect.objectContaining({ attemptId: "claimed-attempt", providerTurnId: asTurnId("turn-1") }),
-    );
-  });
 
   it("retains a claimed Crew attempt when the directory cursor changed", async () => {
     const threadId = ThreadId.make("thread-1");

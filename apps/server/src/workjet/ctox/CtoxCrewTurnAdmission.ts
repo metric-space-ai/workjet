@@ -1,4 +1,5 @@
 import type {
+  ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   WorkjetCtoxCrewRequest,
@@ -135,7 +136,9 @@ const make = Effect.gen(function* () {
     readonly providerThreadId: ThreadId;
     readonly harness: WorkjetCtoxCrewRequest["harness"];
     readonly attemptId: string;
-    readonly codexResumeThreadId: string;
+    readonly codexResumeThreadId: string | null;
+    readonly providerDriverKind: ProviderDriverKind;
+    readonly providerResumeIdentity: string;
   }) {
     const { candidate, binding } = input;
     if (!candidate.requestId.trim() || candidate.requestId.length > 512)
@@ -160,14 +163,18 @@ const make = Effect.gen(function* () {
       !saved ||
       saved.providerInstanceId !== input.providerInstanceId ||
       saved.providerThreadId !== input.providerThreadId ||
-      saved.codexResumeThreadId !== input.codexResumeThreadId
+      saved.codexResumeThreadId !== input.codexResumeThreadId ||
+      saved.providerDriverKind !== input.providerDriverKind ||
+      saved.providerResumeIdentity !== input.providerResumeIdentity
     )
       return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
     const reissued = yield* native.reissueClaimedProjectOffer(candidate.identity, input.attemptId);
     if (
       reissued.reservation.providerInstanceId !== input.providerInstanceId ||
       reissued.reservation.providerThreadId !== input.providerThreadId ||
-      reissued.reservation.codexResumeThreadId !== input.codexResumeThreadId
+      reissued.reservation.codexResumeThreadId !== input.codexResumeThreadId ||
+      reissued.reservation.providerDriverKind !== input.providerDriverKind ||
+      reissued.reservation.providerResumeIdentity !== input.providerResumeIdentity
     )
       return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
     const claim = reissued.claim;
@@ -196,6 +203,8 @@ const make = Effect.gen(function* () {
       /** Workjet's durable provider-session route, not an unverified external cursor. */
       readonly providerThreadId: ThreadId;
       readonly codexResumeThreadId: string | null;
+      readonly providerDriverKind: ProviderDriverKind;
+      readonly providerResumeIdentity: string;
     }) {
       const reservation = yield* requests.readCrewStart(input.identity, input.attemptId);
       if (!reservation)
@@ -206,6 +215,8 @@ const make = Effect.gen(function* () {
         input.providerInstanceId,
         input.providerThreadId,
         input.codexResumeThreadId,
+        input.providerDriverKind,
+        input.providerResumeIdentity,
       );
     },
   );

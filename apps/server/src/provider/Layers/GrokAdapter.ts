@@ -637,6 +637,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           }
 
           const cwd = path.resolve(input.cwd.trim());
+          const resumeCursor = parseGrokResume(input.resumeCursor);
+          const resumeSessionId = resumeCursor?.sessionId;
+          if (input.resumePolicy === "require-existing" && !resumeSessionId) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Claimed Crew recovery requires a valid Grok session cursor.",
+            });
+          }
           const grokModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const existing = sessions.get(input.threadId);
@@ -653,8 +662,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
           );
 
-          const resumeCursor = parseGrokResume(input.resumeCursor);
-          const resumeSessionId = resumeCursor?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
             provider: PROVIDER,
@@ -847,6 +854,13 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", error),
             ),
           );
+          if (input.resumePolicy === "require-existing" && started.sessionId !== resumeSessionId) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Grok loaded a different session during claimed Crew recovery.",
+            });
+          }
 
           const requestedStartModelId = grokModelSelection?.model
             ? resolveGrokAcpBaseModelId(grokModelSelection.model)

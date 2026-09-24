@@ -20,6 +20,7 @@ import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProvide
 import migration67 from "../../persistence/Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
 import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
 import migration69 from "../../persistence/Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
+import migration72 from "../../persistence/Migrations/072_WorkjetCtoxCrewProviderResumeIdentity.ts";
 import migration70 from "../../persistence/Migrations/070_WorkjetCtoxCrewAdmissionRedrive.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
@@ -35,6 +36,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     yield* migration68;
     yield* migration69;
     yield* migration70;
+    yield* migration72;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const sql = yield* SqlClient.SqlClient;
     const scope = {
@@ -210,6 +212,8 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       providerInstanceId: null,
       providerThreadId: null,
       codexResumeThreadId: null,
+      providerDriverKind: null,
+      providerResumeIdentity: null,
     });
     if (!binding) return yield* Effect.die("Expected persisted start binding");
     expect(

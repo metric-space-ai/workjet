@@ -1155,10 +1155,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     };
 
     /**
-     * Removes one account. Order matters: the configuration is validated and
-     * written FIRST, so a failure never leaves references pointing at deleted
-     * secrets; the secret files go last and a failed delete only leaves an
-     * orphaned (unreferenced) secret behind.
+     * Removes one account. The grant is revoked before changing configuration
+     * so an interrupted removal cannot revive access if the id is reused.
+     * Secrets go last; a failed delete can only leave an unreferenced secret.
      */
     const runRemoveAccount = async (
       input: WorkjetGatewayRemoveAccountInput,

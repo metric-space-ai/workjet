@@ -30,6 +30,10 @@ import {
   ProviderInstanceId,
   ResolvedKeybindingRule,
   ThreadId,
+  WorkjetComputerId,
+  WorkjetConnectionId,
+  WorkjetGatewayAccountId,
+  WorkjetGatewayAccessError,
   WS_METHODS,
   WsRpcGroup,
   EditorId,
@@ -4097,6 +4101,60 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.auth.policy, "desktop-managed-local");
       assert.equal(response.shellResumeCompletionMarker, true);
       assert.equal(response.threadResumeCompletionMarker, true);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects gateway grants for unknown computers and unbound CTOX instances over websocket RPC", () =>
+    Effect.gen(function* () {
+      const firstComputerId = WorkjetComputerId.make("gateway-computer-a");
+      const secondComputerId = WorkjetComputerId.make("gateway-computer-b");
+      yield* buildAppUnderTest({
+        layers: {
+          serverSettings: {
+            getSettings: Effect.succeed({
+              ...DEFAULT_SERVER_SETTINGS,
+              workjet: {
+                ...DEFAULT_SERVER_SETTINGS.workjet,
+                computers: [firstComputerId, secondComputerId].map((id) => ({
+                  id,
+                  label: id,
+                  environmentId: testEnvironmentDescriptor.environmentId,
+                  presentationKind: "local" as const,
+                  harnesses: [],
+                })),
+              },
+            }),
+          },
+        },
+      });
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const boundTarget = {
+        connectionId: WorkjetConnectionId.make("unbound-gateway-connection"),
+        instanceId: "welsch",
+        computerId: firstComputerId,
+      };
+      for (const target of [
+        { ...boundTarget, computerId: WorkjetComputerId.make("unknown-computer") },
+        boundTarget,
+        { ...boundTarget, computerId: secondComputerId, instanceId: "another-instance" },
+      ]) {
+        const readError = yield* Effect.flip(Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.workjetGatewayScopedCatalog]({ target }),
+          ),
+        ));
+        assert.deepEqual(readError, new WorkjetGatewayAccessError({ reason: "target-unavailable" }));
+        const grantError = yield* Effect.flip(Effect.scoped(
+          withWsRpcClient(wsUrl, (client) =>
+            client[WS_METHODS.workjetGatewaySetGrant]({
+              target,
+              accountId: WorkjetGatewayAccountId.make("codex-primary"),
+              granted: true,
+            }),
+          ),
+        ));
+        assert.deepEqual(grantError, new WorkjetGatewayAccessError({ reason: "target-unavailable" }));
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

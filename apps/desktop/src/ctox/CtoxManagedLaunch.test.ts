@@ -59,9 +59,10 @@ function harness(
     instance: () => Effect.die("unused"),
     clearInstance: () => Effect.die("unused"),
   });
-  return CtoxManagedLaunch.layer({ baseUrl, requestTimeoutMs }).pipe(
-    Layer.provide(Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions)),
-  );
+  return CtoxManagedLaunch.layer({
+    baseUrl,
+    ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
+  }).pipe(Layer.provide(Layer.succeed(CtoxElectronSessions.CtoxElectronSessions, sessions)));
 }
 
 describe("CtoxManagedLaunch", () => {

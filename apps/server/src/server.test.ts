@@ -343,7 +343,8 @@ const providerGatewayTestLayer = Layer.succeed(
   ProviderGateway.ProviderGatewayService.of({
     status: () => Effect.succeed(stoppedProviderGatewayStatus),
     catalog: () => Effect.succeed(stoppedProviderGatewayCatalog),
-    scopedCatalog: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    scopedCatalog: () =>
+      Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     setGrant: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     start: () => Effect.succeed(stoppedProviderGatewayStatus),
     stop: () => Effect.succeed(stoppedProviderGatewayStatus),
@@ -4126,116 +4127,22 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("rejects gateway grants for unknown computers and unbound CTOX instances over websocket RPC", () =>
-    Effect.gen(function* () {
-      const firstComputerId = WorkjetComputerId.make("gateway-computer-a");
-      const secondComputerId = WorkjetComputerId.make("gateway-computer-b");
-      yield* buildAppUnderTest({
-        layers: {
-          serverSettings: {
-            getSettings: Effect.succeed({
-              ...DEFAULT_SERVER_SETTINGS,
-              workjet: {
-                ...DEFAULT_SERVER_SETTINGS.workjet,
-                computers: [firstComputerId, secondComputerId].map((id) => ({
-                  id,
-                  label: id,
-                  environmentId: testEnvironmentDescriptor.environmentId,
-                  presentationKind: "local" as const,
-                  harnesses: [],
-                })),
-              },
-            }),
-          },
-        },
-      });
-      const wsUrl = yield* getWsServerUrl("/ws");
-      const boundTarget = {
-        connectionId: WorkjetConnectionId.make("unbound-gateway-connection"),
-        instanceId: "welsch",
-        computerId: firstComputerId,
-      };
-      for (const target of [
-        { ...boundTarget, computerId: WorkjetComputerId.make("unknown-computer") },
-        boundTarget,
-        { ...boundTarget, computerId: secondComputerId, instanceId: "another-instance" },
-      ]) {
-        const readError = yield* Effect.flip(Effect.scoped(
-          withWsRpcClient(wsUrl, (client) =>
-            client[WS_METHODS.workjetGatewayScopedCatalog]({ target }),
-          ),
-        ));
-        assert.deepEqual(readError, new WorkjetGatewayAccessError({ reason: "target-unavailable" }));
-        const grantError = yield* Effect.flip(Effect.scoped(
-          withWsRpcClient(wsUrl, (client) =>
-            client[WS_METHODS.workjetGatewaySetGrant]({
-              target,
-              accountId: WorkjetGatewayAccountId.make("codex-primary"),
-              granted: true,
-            }),
-          ),
-        ));
-        assert.deepEqual(grantError, new WorkjetGatewayAccessError({ reason: "target-unavailable" }));
-      }
-    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
-  );
-
-  it.effect("persists WebSocket gateway grants for one of two bound CTOX instances without exposing secrets", () =>
-    Effect.gen(function* () {
-      const baseDir = yield* FileSystem.FileSystem.pipe(
-        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "workjet-gateway-rpc-" })),
-      );
-      const files = new Map<string, string>();
-      const platform: ProviderGateway.ProviderGatewayPlatform = {
-        ...nodeProviderGatewayPlatform,
-        readText: async (path) => {
-          const content = files.get(path);
-          if (content !== undefined) return content;
-          throw Object.assign(new Error("missing"), { code: "ENOENT" });
-        },
-        writePrivateText: async (path, content) => { files.set(path, content); },
-      };
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
-      const configuration = JSON.stringify({
-        schemaVersion: 1,
-        defaultProvider: "codex",
-        accounts: [{
-          id: "codex-primary",
-          label: "Primary Codex",
-          provider: "codex",
-          models: ["gpt-test"],
-          idTokenSecret: { scope: "workjet-provider-gateway", name: "private-id-token" },
-          accessTokenSecret: { scope: "workjet-provider-gateway", name: "private-access-token" },
-          refreshTokenSecret: { scope: "workjet-provider-gateway", name: "private-refresh-token" },
-        }],
-        pools: [],
-        routes: [],
-      });
-      const accountId = WorkjetGatewayAccountId.make("codex-primary");
-      const firstTarget = {
-        connectionId: WorkjetConnectionId.make("gateway-ctox-a"),
-        instanceId: "instance-a",
-        computerId: WorkjetComputerId.make("gateway-computer-a"),
-      };
-      const secondTarget = {
-        connectionId: WorkjetConnectionId.make("gateway-ctox-b"),
-        instanceId: "instance-b",
-        computerId: WorkjetComputerId.make("gateway-computer-b"),
-      };
-      const startBoundServer = () =>
-        buildAppUnderTest({
-          config: { baseDir },
-          gatewayOptions: { platform },
-          seedCtoxBindings: [firstTarget, secondTarget],
+  it.effect(
+    "rejects gateway grants for unknown computers and unbound CTOX instances over websocket RPC",
+    () =>
+      Effect.gen(function* () {
+        const firstComputerId = WorkjetComputerId.make("gateway-computer-a");
+        const secondComputerId = WorkjetComputerId.make("gateway-computer-b");
+        yield* buildAppUnderTest({
           layers: {
             serverSettings: {
               getSettings: Effect.succeed({
                 ...DEFAULT_SERVER_SETTINGS,
                 workjet: {
                   ...DEFAULT_SERVER_SETTINGS.workjet,
-                  computers: [firstTarget, secondTarget].map((target) => ({
-                    id: target.computerId,
-                    label: target.computerId,
+                  computers: [firstComputerId, secondComputerId].map((id) => ({
+                    id,
+                    label: id,
                     environmentId: testEnvironmentDescriptor.environmentId,
                     presentationKind: "local" as const,
                     harnesses: [],
@@ -4244,72 +4151,246 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               }),
             },
           },
-        }).pipe(Effect.tap((config) => Effect.sync(() => {
-          files.set(`${config.stateDir}/provider-gateway.json`, configuration);
-        })));
-
-      yield* Effect.scoped(Effect.gen(function* () {
-        yield* startBoundServer();
-        const wsUrl = yield* getWsServerUrl("/ws");
-        const before = yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget })));
-        assert.deepEqual(before.accounts, []);
-        yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewaySetGrant]({ target: firstTarget, accountId, granted: true })));
-        const first = yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget })));
-        const second = yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewayScopedCatalog]({ target: secondTarget })));
-        assert.equal(first.accounts.length, 1);
-        assert.deepEqual(first.accounts[0]?.credentialRef, {
-          environmentId: testEnvironmentDescriptor.environmentId,
-          accountId,
         });
-        assert.deepEqual(second.accounts, []);
+        const wsUrl = yield* getWsServerUrl("/ws");
+        const boundTarget = {
+          connectionId: WorkjetConnectionId.make("unbound-gateway-connection"),
+          instanceId: "welsch",
+          computerId: firstComputerId,
+        };
+        for (const target of [
+          { ...boundTarget, computerId: WorkjetComputerId.make("unknown-computer") },
+          boundTarget,
+          { ...boundTarget, computerId: secondComputerId, instanceId: "another-instance" },
+        ]) {
+          const readError = yield* Effect.flip(
+            Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target }),
+              ),
+            ),
+          );
+          assert.deepEqual(
+            readError,
+            new WorkjetGatewayAccessError({ reason: "target-unavailable" }),
+          );
+          const grantError = yield* Effect.flip(
+            Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewaySetGrant]({
+                  target,
+                  accountId: WorkjetGatewayAccountId.make("codex-primary"),
+                  granted: true,
+                }),
+              ),
+            ),
+          );
+          assert.deepEqual(
+            grantError,
+            new WorkjetGatewayAccessError({ reason: "target-unavailable" }),
+          );
+        }
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "persists WebSocket gateway grants for one of two bound CTOX instances without exposing secrets",
+    () =>
+      Effect.gen(function* () {
+        const baseDir = yield* FileSystem.FileSystem.pipe(
+          Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "workjet-gateway-rpc-" })),
+        );
+        const files = new Map<string, string>();
+        const platform: ProviderGateway.ProviderGatewayPlatform = {
+          ...nodeProviderGatewayPlatform,
+          readText: async (path) => {
+            const content = files.get(path);
+            if (content !== undefined) return content;
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          },
+          writePrivateText: async (path, content) => {
+            files.set(path, content);
+          },
+        };
         // @effect-diagnostics-next-line preferSchemaOverJson:off
-        const serialized = JSON.stringify(first);
-        for (const privateName of ["private-id-token", "private-access-token", "private-refresh-token"]) {
-          assert.notInclude(serialized, privateName);
-        }
-
-        const { response, body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
-          scope: "orchestration:read",
+        const configuration = JSON.stringify({
+          schemaVersion: 1,
+          defaultProvider: "codex",
+          accounts: [
+            {
+              id: "codex-primary",
+              label: "Primary Codex",
+              provider: "codex",
+              models: ["gpt-test"],
+              idTokenSecret: { scope: "workjet-provider-gateway", name: "private-id-token" },
+              accessTokenSecret: {
+                scope: "workjet-provider-gateway",
+                name: "private-access-token",
+              },
+              refreshTokenSecret: {
+                scope: "workjet-provider-gateway",
+                name: "private-refresh-token",
+              },
+            },
+          ],
+          pools: [],
+          routes: [],
         });
-        assert.equal(response.status, 200);
-        assert.equal(body.scope, "orchestration:read");
-        const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
-          headers: { authorization: `Bearer ${body.access_token ?? ""}` },
-        });
-        const ticket = (yield* ticketResponse.json) as { readonly ticket: string };
-        assert.equal(ticketResponse.status, 200);
-        const readOnlyWsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
-        const readOnlyCatalog = yield* Effect.scoped(withWsRpcClient(readOnlyWsUrl, (client) =>
-          client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget })));
-        assert.equal(readOnlyCatalog.accounts.length, 1);
-        const denied = yield* Effect.flip(Effect.scoped(withWsRpcClient(readOnlyWsUrl, (client) =>
-          client[WS_METHODS.workjetGatewaySetGrant]({ target: secondTarget, accountId, granted: true }))));
-        assert.equal(denied._tag, "EnvironmentAuthorizationError");
-        if (denied._tag === "EnvironmentAuthorizationError") {
-          assert.equal(denied.requiredScope, "orchestration:operate");
-        }
-      }).pipe(Effect.provide(NodeHttpServer.layerTest)));
+        const accountId = WorkjetGatewayAccountId.make("codex-primary");
+        const firstTarget = {
+          connectionId: WorkjetConnectionId.make("gateway-ctox-a"),
+          instanceId: "instance-a",
+          computerId: WorkjetComputerId.make("gateway-computer-a"),
+        };
+        const secondTarget = {
+          connectionId: WorkjetConnectionId.make("gateway-ctox-b"),
+          instanceId: "instance-b",
+          computerId: WorkjetComputerId.make("gateway-computer-b"),
+        };
+        const startBoundServer = () =>
+          buildAppUnderTest({
+            config: { baseDir },
+            gatewayOptions: { platform },
+            seedCtoxBindings: [firstTarget, secondTarget],
+            layers: {
+              serverSettings: {
+                getSettings: Effect.succeed({
+                  ...DEFAULT_SERVER_SETTINGS,
+                  workjet: {
+                    ...DEFAULT_SERVER_SETTINGS.workjet,
+                    computers: [firstTarget, secondTarget].map((target) => ({
+                      id: target.computerId,
+                      label: target.computerId,
+                      environmentId: testEnvironmentDescriptor.environmentId,
+                      presentationKind: "local" as const,
+                      harnesses: [],
+                    })),
+                  },
+                }),
+              },
+            },
+          }).pipe(
+            Effect.tap((config) =>
+              Effect.sync(() => {
+                files.set(`${config.stateDir}/provider-gateway.json`, configuration);
+              }),
+            ),
+          );
 
-      yield* Effect.scoped(Effect.gen(function* () {
-        yield* startBoundServer();
-        const wsUrl = yield* getWsServerUrl("/ws");
-        const persisted = yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget })));
-        const stillDenied = yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewayScopedCatalog]({ target: secondTarget })));
-        assert.equal(persisted.accounts.length, 1);
-        assert.deepEqual(stillDenied.accounts, []);
-        yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewaySetGrant]({ target: firstTarget, accountId, granted: false })));
-        const revoked = yield* Effect.scoped(withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget })));
-        assert.deepEqual(revoked.accounts, []);
-      }).pipe(Effect.provide(NodeHttpServer.layerTest)));
-    }),
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* startBoundServer();
+            const wsUrl = yield* getWsServerUrl("/ws");
+            const before = yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget }),
+              ),
+            );
+            assert.deepEqual(before.accounts, []);
+            yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewaySetGrant]({
+                  target: firstTarget,
+                  accountId,
+                  granted: true,
+                }),
+              ),
+            );
+            const first = yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget }),
+              ),
+            );
+            const second = yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target: secondTarget }),
+              ),
+            );
+            assert.equal(first.accounts.length, 1);
+            assert.deepEqual(first.accounts[0]?.credentialRef, {
+              environmentId: testEnvironmentDescriptor.environmentId,
+              accountId,
+            });
+            assert.deepEqual(second.accounts, []);
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            const serialized = JSON.stringify(first);
+            for (const privateName of [
+              "private-id-token",
+              "private-access-token",
+              "private-refresh-token",
+            ]) {
+              assert.notInclude(serialized, privateName);
+            }
+
+            const { response, body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+              scope: "orchestration:read",
+            });
+            assert.equal(response.status, 200);
+            assert.equal(body.scope, "orchestration:read");
+            const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+              headers: { authorization: `Bearer ${body.access_token ?? ""}` },
+            });
+            const ticket = (yield* ticketResponse.json) as { readonly ticket: string };
+            assert.equal(ticketResponse.status, 200);
+            const readOnlyWsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
+            const readOnlyCatalog = yield* Effect.scoped(
+              withWsRpcClient(readOnlyWsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget }),
+              ),
+            );
+            assert.equal(readOnlyCatalog.accounts.length, 1);
+            const denied = yield* Effect.flip(
+              Effect.scoped(
+                withWsRpcClient(readOnlyWsUrl, (client) =>
+                  client[WS_METHODS.workjetGatewaySetGrant]({
+                    target: secondTarget,
+                    accountId,
+                    granted: true,
+                  }),
+                ),
+              ),
+            );
+            assert.equal(denied._tag, "EnvironmentAuthorizationError");
+            if (denied._tag === "EnvironmentAuthorizationError") {
+              assert.equal(denied.requiredScope, "orchestration:operate");
+            }
+          }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+        );
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            yield* startBoundServer();
+            const wsUrl = yield* getWsServerUrl("/ws");
+            const persisted = yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget }),
+              ),
+            );
+            const stillDenied = yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target: secondTarget }),
+              ),
+            );
+            assert.equal(persisted.accounts.length, 1);
+            assert.deepEqual(stillDenied.accounts, []);
+            yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewaySetGrant]({
+                  target: firstTarget,
+                  accountId,
+                  granted: false,
+                }),
+              ),
+            );
+            const revoked = yield* Effect.scoped(
+              withWsRpcClient(wsUrl, (client) =>
+                client[WS_METHODS.workjetGatewayScopedCatalog]({ target: firstTarget }),
+              ),
+            );
+            assert.deepEqual(revoked.accounts, []);
+          }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+        );
+      }),
   );
 
   it.effect("does not block server config when editor discovery never resolves", () =>

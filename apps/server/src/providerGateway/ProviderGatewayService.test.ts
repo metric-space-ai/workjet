@@ -149,7 +149,9 @@ describe("ProviderGatewayService", () => {
         if (content !== undefined) return content;
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
       },
-      writePrivateText: async (path, content) => { files.set(path, content); },
+      writePrivateText: async (path, content) => {
+        files.set(path, content);
+      },
     };
     const accountId = WorkjetGatewayAccountId.make("codex-primary");
     const firstTarget = {
@@ -162,19 +164,24 @@ describe("ProviderGatewayService", () => {
       computerId: WorkjetComputerId.make("gpu3-a4500"),
     };
     const environmentId = EnvironmentId.make("gateway-host");
-    await runGateway(platform, (gateway) => Effect.gen(function* () {
-      expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toEqual([]);
-      yield* gateway.setGrant({ target: firstTarget, accountId, granted: true });
-      expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts[0]?.credentialRef)
-        .toEqual({ environmentId, accountId });
-      expect((yield* gateway.scopedCatalog(secondTarget, environmentId)).accounts).toEqual([]);
-    }));
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toEqual([]);
+        yield* gateway.setGrant({ target: firstTarget, accountId, granted: true });
+        expect(
+          (yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts[0]?.credentialRef,
+        ).toEqual({ environmentId, accountId });
+        expect((yield* gateway.scopedCatalog(secondTarget, environmentId)).accounts).toEqual([]);
+      }),
+    );
     expect(files.get("/state/provider-gateway-grants.json")).not.toContain("provider-secret");
-    await runGateway(platform, (gateway) => Effect.gen(function* () {
-      expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toHaveLength(1);
-      yield* gateway.setGrant({ target: firstTarget, accountId, granted: false });
-      expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toEqual([]);
-    }));
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toHaveLength(1);
+        yield* gateway.setGrant({ target: firstTarget, accountId, granted: false });
+        expect((yield* gateway.scopedCatalog(firstTarget, environmentId)).accounts).toEqual([]);
+      }),
+    );
   });
 
   it("revokes persisted grants when their gateway account is removed", async () => {
@@ -187,7 +194,9 @@ describe("ProviderGatewayService", () => {
         if (content !== undefined) return content;
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
       },
-      writePrivateText: async (path, content) => { files.set(path, content); },
+      writePrivateText: async (path, content) => {
+        files.set(path, content);
+      },
     };
     const target = {
       connectionId: WorkjetConnectionId.make("ctox-welsch"),
@@ -195,12 +204,15 @@ describe("ProviderGatewayService", () => {
       computerId: WorkjetComputerId.make("gpu1-a6000"),
     };
     const accountId = WorkjetGatewayAccountId.make("codex-primary");
-    await runGateway(platform, (gateway) => Effect.gen(function* () {
-      yield* gateway.setGrant({ target, accountId, granted: true });
-      yield* gateway.removeAccount({ accountId });
-      expect((yield* gateway.scopedCatalog(target, EnvironmentId.make("gateway-host"))).accounts)
-        .toEqual([]);
-    }));
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.setGrant({ target, accountId, granted: true });
+        yield* gateway.removeAccount({ accountId });
+        expect(
+          (yield* gateway.scopedCatalog(target, EnvironmentId.make("gateway-host"))).accounts,
+        ).toEqual([]);
+      }),
+    );
     expect(JSON.parse(files.get("/state/provider-gateway-grants.json") ?? "null")).toEqual({
       schemaVersion: 1,
       grants: [],

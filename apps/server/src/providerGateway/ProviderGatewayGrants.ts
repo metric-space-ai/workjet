@@ -24,7 +24,9 @@ type GrantsFile = typeof GrantsFile.Type;
 const emptyGrants: GrantsFile = { schemaVersion: 1, grants: [] };
 const MAX_GRANTS = 128;
 const onlyKeys = (value: unknown, keys: ReadonlyArray<string>): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value) &&
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
   Object.keys(value).every((key) => keys.includes(key));
 
 const sameTarget = (left: WorkjetGatewayGrantTarget, right: WorkjetGatewayGrantTarget) =>
@@ -38,8 +40,10 @@ export const decodeGatewayGrants = (input: unknown): GrantsFile => {
       throw new Error("invalid grant file");
     }
     for (const entry of input.grants) {
-      if (!onlyKeys(entry, ["target", "accountId"]) ||
-          !onlyKeys(entry.target, ["connectionId", "instanceId", "computerId"])) {
+      if (
+        !onlyKeys(entry, ["target", "accountId"]) ||
+        !onlyKeys(entry.target, ["connectionId", "instanceId", "computerId"])
+      ) {
         throw new Error("unexpected grant field");
       }
     }
@@ -48,7 +52,12 @@ export const decodeGatewayGrants = (input: unknown): GrantsFile => {
     const seen = new Set<string>();
     for (const grant of decoded.grants) {
       const target = grant.target;
-      const key = JSON.stringify([target.connectionId, target.instanceId, target.computerId, grant.accountId]);
+      const key = JSON.stringify([
+        target.connectionId,
+        target.instanceId,
+        target.computerId,
+        grant.accountId,
+      ]);
       if (seen.has(key)) throw new Error("duplicate grant");
       seen.add(key);
     }
@@ -67,7 +76,8 @@ export const scopeGatewayCatalog = (
   environmentId: EnvironmentId,
 ): WorkjetGatewayScopedCatalog => {
   const allowed = new Set(
-    grants.grants.filter((grant) => sameTarget(grant.target, target))
+    grants.grants
+      .filter((grant) => sameTarget(grant.target, target))
       .map((grant) => grant.accountId),
   );
   return {
@@ -110,11 +120,19 @@ export const setGatewayGrant = (
   }
   return {
     file: next,
-    result: { schemaVersion: 1, target: input.target, accountId: input.accountId, granted: input.granted },
+    result: {
+      schemaVersion: 1,
+      target: input.target,
+      accountId: input.accountId,
+      granted: input.granted,
+    },
   };
 };
 
-export const removeGatewayAccountGrants = (grants: GrantsFile, accountId: WorkjetGatewayAccountId): GrantsFile => ({
+export const removeGatewayAccountGrants = (
+  grants: GrantsFile,
+  accountId: WorkjetGatewayAccountId,
+): GrantsFile => ({
   schemaVersion: 1,
   grants: grants.grants.filter((grant) => grant.accountId !== accountId),
 });

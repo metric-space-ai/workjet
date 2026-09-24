@@ -4194,6 +4194,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
         writePrivateText: async (path, content) => { files.set(path, content); },
       };
+      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const configuration = JSON.stringify({
         schemaVersion: 1,
         defaultProvider: "codex",
@@ -4264,6 +4265,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           accountId,
         });
         assert.deepEqual(second.accounts, []);
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
         const serialized = JSON.stringify(first);
         for (const privateName of ["private-id-token", "private-access-token", "private-refresh-token"]) {
           assert.notInclude(serialized, privateName);

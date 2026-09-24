@@ -324,6 +324,19 @@ const make = Effect.gen(function* () {
     return row;
   });
 
+  const hasUnreportedCrewStart = Effect.fn("CtoxNativeRequests.hasUnreportedCrewStart")(function* (
+    identity: CtoxNativeRequestIdentity,
+  ) {
+    yield* load(identity);
+    const rows = yield* sql`
+        SELECT 1 FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND provider_reported_at_ms IS NULL
+        LIMIT 1
+      `.pipe(Effect.mapError(unavailable));
+    return rows.length > 0;
+  });
+
   /**
    * Pin an existing reservation to one provider instance and provider thread.
    * Legacy rows remain unassigned. Once assigned, the pair is immutable and
@@ -656,8 +669,15 @@ const make = Effect.gen(function* () {
     const inserted = yield* sql`
       INSERT INTO workjet_ctox_crew_starts
         (thread_id, request_key, attempt_id, command_id, task_id, executor_id, member_id, reserved_at_ms)
-      VALUES (${identity.threadId}, ${identity.requestKey}, ${binding.attemptId},
-        ${binding.commandId}, ${binding.taskId}, ${binding.executorId}, ${binding.memberId}, ${now})
+      SELECT ${identity.threadId}, ${identity.requestKey}, ${binding.attemptId},
+        ${binding.commandId}, ${binding.taskId}, ${binding.executorId}, ${binding.memberId}, ${now}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM workjet_ctox_crew_starts AS prior
+        WHERE prior.thread_id = ${identity.threadId}
+          AND prior.request_key = ${identity.requestKey}
+          AND prior.attempt_id <> ${binding.attemptId}
+          AND prior.provider_reported_at_ms IS NULL
+      )
       ON CONFLICT(thread_id, request_key, attempt_id) DO NOTHING
       RETURNING attempt_id
     `.pipe(Effect.mapError(unavailable));
@@ -733,7 +753,11 @@ const make = Effect.gen(function* () {
    * recovery must re-read native status and obtain a fresh authorized offer.
    */
   const listCrewRecoveryCandidates = Effect.fn("CtoxNativeRequests.listCrewRecoveryCandidates")(
-    function* (afterSequence = 0, requestedLimit = 64, pendingAdmissionOnly = false) {
+    function* (
+      afterSequence = 0,
+      requestedLimit = 64,
+      mode: "full" | "pending" | "started" = "full",
+    ) {
       const cursor = Number.isSafeInteger(afterSequence) && afterSequence >= 0 ? afterSequence : 0;
       const limit = Number.isFinite(requestedLimit)
         ? Math.max(1, Math.min(64, Math.trunc(requestedLimit)))
@@ -755,12 +779,21 @@ const make = Effect.gen(function* () {
         JOIN workjet_ctox_native_requests AS r
           ON r.thread_id = t.thread_id AND r.request_key = t.request_key
         WHERE t.sequence > ${cursor}
-          AND (${pendingAdmissionOnly ? 1 : 0} = 0 OR (
+          AND (${mode === "pending" ? 1 : 0} = 0 OR (
             t.admission_terminal_at_ms IS NULL
             AND NOT EXISTS (
               SELECT 1 FROM workjet_ctox_crew_starts AS s
               WHERE s.thread_id = t.thread_id AND s.request_key = t.request_key
                 AND s.provider_reported_at_ms IS NULL
+            )
+          ))
+          AND (${mode === "started" ? 1 : 0} = 0 OR (
+            t.admission_terminal_at_ms IS NULL
+            AND EXISTS (
+              SELECT 1 FROM workjet_ctox_crew_starts AS s
+              WHERE s.thread_id = t.thread_id AND s.request_key = t.request_key
+                AND s.provider_reported_at_ms IS NULL
+                AND s.provider_terminal_state IS NULL
             )
           ))
         ORDER BY t.sequence LIMIT ${limit}
@@ -791,7 +824,9 @@ const make = Effect.gen(function* () {
     },
   );
   const listPendingCrewAdmissionCandidates = (afterSequence = 0, requestedLimit = 64) =>
-    listCrewRecoveryCandidates(afterSequence, requestedLimit, true);
+    listCrewRecoveryCandidates(afterSequence, requestedLimit, "pending");
+  const listUnresolvedStartedCrewCandidates = (afterSequence = 0, requestedLimit = 64) =>
+    listCrewRecoveryCandidates(afterSequence, requestedLimit, "started");
 
   const markCrewAdmissionTerminal = Effect.fn("CtoxNativeRequests.markCrewAdmissionTerminal")(
     function* (identity: CtoxNativeRequestIdentity, requestId: string) {
@@ -813,6 +848,7 @@ const make = Effect.gen(function* () {
     recordObservedTask,
     get,
     readCrewStart,
+    hasUnreportedCrewStart,
     reserveCrewStart,
     bindCrewStartProvider,
     reserveCrewRecoveryDispatch,
@@ -826,6 +862,7 @@ const make = Effect.gen(function* () {
     latestNativeTurn,
     listCrewRecoveryCandidates,
     listPendingCrewAdmissionCandidates,
+    listUnresolvedStartedCrewCandidates,
     markCrewAdmissionTerminal,
   };
 });

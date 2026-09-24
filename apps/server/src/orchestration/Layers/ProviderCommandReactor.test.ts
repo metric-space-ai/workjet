@@ -1118,6 +1118,62 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("revisits a claimed Crew attempt that appears after startup without dispatching a duplicate", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      sequence: 2,
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "late-claimed-request",
+      },
+      requestId: "command:late-claimed",
+    };
+    const changes = Effect.runSync(PubSub.unbounded<void>());
+    let claimVisible = false;
+    const recover = vi.fn(() =>
+      Effect.succeed({
+        state: "resume-required" as const,
+        identity: candidate.identity,
+        attemptId: "late-claimed-attempt",
+      }),
+    );
+    const admission = {
+      recover,
+      readTerminalState: () => Effect.succeed(null),
+      reconcileTerminalOutbox: () =>
+        Effect.succeed({ reported: 0, deferred: 0, pending: 0, truncated: false }),
+      subscribeConnectionChanges: PubSub.subscribe(changes).pipe(
+        Effect.map((subscription) => Stream.fromSubscription(subscription)),
+      ),
+      listRecoveryCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
+      listPendingAdmissionCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
+      listUnresolvedStartedCandidates: () =>
+        Effect.succeed({
+          candidates: claimVisible ? [candidate] : [],
+          nextSequence: null,
+        }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+    });
+    expect(recover).not.toHaveBeenCalled();
+    claimVisible = true;
+    await Effect.runPromise(PubSub.publish(changes, undefined));
+    await waitFor(() => recover.mock.calls.length === 1);
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    await Effect.runPromise(PubSub.publish(changes, undefined));
+    await waitFor(() => recover.mock.calls.length === 2);
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+  });
+
   it("passes the thread's current Workjet config on provider start and restart", async () => {
     const initialWorkjetConfig = {
       schemaVersion: 1,

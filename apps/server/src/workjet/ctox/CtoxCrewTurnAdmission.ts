@@ -367,6 +367,7 @@ const make = Effect.gen(function* () {
     reconcileTerminalOutbox,
     listRecoveryCandidates: requests.listCrewRecoveryCandidates,
     listPendingAdmissionCandidates: requests.listPendingCrewAdmissionCandidates,
+    listUnresolvedStartedCandidates: requests.listUnresolvedStartedCrewCandidates,
     markAdmissionTerminal: requests.markCrewAdmissionTerminal,
     subscribeConnectionChanges: connections.subscribeChanges,
   };

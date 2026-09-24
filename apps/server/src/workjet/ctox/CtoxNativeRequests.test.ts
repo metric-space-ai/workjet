@@ -83,16 +83,22 @@ describe("durable native CTOX request identity", () => {
                   'prior-attempt', 'command-crew', 'task-crew',
                   'executor-crew', 'member-crew', 1)
         `;
+        expect(yield* restarted.hasUnreportedCrewStart(crewIdentity)).toBe(true);
         expect((yield* restarted.listPendingCrewAdmissionCandidates()).candidates).toEqual([]);
+        expect((yield* restarted.listUnresolvedStartedCrewCandidates()).candidates).toEqual([
+          { sequence: 2, requestId: "event-crew", identity: crewIdentity },
+        ]);
         yield* sql`
           UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = 2
           WHERE thread_id = ${crewIdentity.threadId}
             AND request_key = ${crewIdentity.requestKey}
             AND attempt_id = 'prior-attempt'
         `;
+        expect(yield* restarted.hasUnreportedCrewStart(crewIdentity)).toBe(false);
         expect((yield* restarted.listPendingCrewAdmissionCandidates()).candidates).toEqual([
           { sequence: 2, requestId: "event-crew", identity: crewIdentity },
         ]);
+        expect((yield* restarted.listUnresolvedStartedCrewCandidates()).candidates).toEqual([]);
         yield* restarted.markCrewAdmissionTerminal(crewIdentity, "event-crew");
         expect((yield* (yield* open).listPendingCrewAdmissionCandidates()).candidates).toEqual([]);
       }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),

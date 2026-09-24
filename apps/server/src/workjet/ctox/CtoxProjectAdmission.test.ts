@@ -357,10 +357,42 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     // A different native attempt may be offered after native review/retry.
     attemptId = "wrong-member";
     offers = [{ ...offered, attempt_id: attemptId }];
+    expect((yield* prepare()).state).toBe("awaiting-native-review");
+    expect(claims).toBe(2);
+    expect(
+      yield* restoredRequests.recordCrewProviderTerminal({
+        threadId: scope.threadId,
+        providerInstanceId,
+        providerTurnId: "provider-turn",
+        state: "completed",
+      }),
+    ).toMatchObject({ state: "recorded", attemptId: "attempt" });
+    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toMatchObject([
+      { attemptId: "attempt", providerTurnId: "provider-turn", terminalState: "completed" },
+    ]);
+    expect(
+      yield* Effect.flip(
+        restoredRequests.recordCrewProviderTerminal({
+          threadId: scope.threadId,
+          providerInstanceId,
+          providerTurnId: "provider-turn",
+          state: "failed",
+        }),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    yield* restoredRequests.markCrewTerminalReported(admitted.identity, "attempt");
+    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toHaveLength(0);
     memberId = "other-crew";
     expect(yield* Effect.flip(prepare())).toMatchObject({ reason: "native-response-invalid" });
     expect((yield* prepare()).state).toBe("resume-required");
     expect(claims).toBe(3);
+    // The rejected member claim is explicitly disposed before another offer.
+    yield* sql`
+      UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = 3
+      WHERE thread_id = ${admitted.identity.threadId}
+        AND request_key = ${admitted.identity.requestKey}
+        AND attempt_id = 'wrong-member'
+    `;
 
     attemptId = "ambiguous-claim";
     offers = [{ ...offered, attempt_id: attemptId }];
@@ -378,6 +410,22 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(new Set(sentKeys).size).toBe(1);
 
     const secondAttempt = "second-provider";
+    expect(
+      yield* Effect.flip(
+        restoredRequests.reserveCrewStart(admitted.identity, {
+          ...binding,
+          attemptId: secondAttempt,
+        }),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    // The lost-claim response also needs an explicit disposition.
+    yield* sql`
+      UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = 4
+      WHERE thread_id = ${admitted.identity.threadId}
+        AND request_key = ${admitted.identity.requestKey}
+        AND attempt_id = 'ambiguous-claim'
+    `;
+
     const secondReservation = yield* restoredRequests.reserveCrewStart(admitted.identity, {
       ...binding,
       attemptId: secondAttempt,
@@ -406,29 +454,6 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     );
     expect(concurrentBindings.filter(Result.isSuccess)).toHaveLength(1);
     expect(concurrentBindings.filter(Result.isFailure)).toHaveLength(1);
-    expect(
-      yield* restoredRequests.recordCrewProviderTerminal({
-        threadId: scope.threadId,
-        providerInstanceId,
-        providerTurnId: "provider-turn",
-        state: "completed",
-      }),
-    ).toMatchObject({ state: "recorded", attemptId: "attempt" });
-    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toMatchObject([
-      { attemptId: "attempt", providerTurnId: "provider-turn", terminalState: "completed" },
-    ]);
-    expect(
-      yield* Effect.flip(
-        restoredRequests.recordCrewProviderTerminal({
-          threadId: scope.threadId,
-          providerInstanceId,
-          providerTurnId: "provider-turn",
-          state: "failed",
-        }),
-      ),
-    ).toMatchObject({ reason: "native-task-reference-conflict" });
-    yield* restoredRequests.markCrewTerminalReported(admitted.identity, "attempt");
-    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toHaveLength(0);
     yield* sql`
       UPDATE workjet_ctox_crew_starts
       SET provider_instance_id = NULL

@@ -6,6 +6,7 @@ import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
 import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
 import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
+import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
 import migration69 from "../../persistence/Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
 import { CtoxNativeRequests, type NativeTaskRequest } from "./CtoxNativeRequests.ts";
 
@@ -28,6 +29,7 @@ const open = CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
 const setup = Effect.gen(function* () {
   yield* migration60;
   yield* migration62;
+  yield* migration68;
   const requests = yield* open;
   const request: NativeTaskRequest = {
     operation: "start_crew_execution",

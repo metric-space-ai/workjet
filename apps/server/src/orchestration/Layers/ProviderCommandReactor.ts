@@ -392,6 +392,7 @@ const make = Effect.gen(function* () {
   const providerSessionDirectory = yield* Effect.serviceOption(ProviderSessionDirectory);
   const crewRecoveryMutex = yield* Semaphore.make(1);
   let pendingAdmissionCursor = 0;
+  let startedRecoveryCursor = 0;
   let fullRecoveryCursor = 0;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
@@ -1692,16 +1693,27 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
-  const scanCrewTurns = Effect.fn("scanCrewTurns")(function* (pendingOnly = false) {
+  const scanCrewTurns = Effect.fn("scanCrewTurns")(function* (
+    mode: "full" | "pending" | "started" = "full",
+  ) {
     const admission = Option.getOrUndefined(crewAdmission);
     if (!admission) return;
-    if (!pendingOnly) yield* reconcileCrewTerminalOutboxWithRetry(admission);
-    let afterSequence = pendingOnly ? pendingAdmissionCursor : fullRecoveryCursor;
-    // Finite startup scan: never let an unbounded ledger delay app activation.
-    for (let pageNumber = 0; pageNumber < (pendingOnly ? 4 : 16); pageNumber++) {
-      const pageEffect = pendingOnly
-        ? admission.listPendingAdmissionCandidates(afterSequence)
-        : admission.listRecoveryCandidates(afterSequence);
+    const pendingOnly = mode === "pending";
+    if (mode === "full") yield* reconcileCrewTerminalOutboxWithRetry(admission);
+    let afterSequence =
+      mode === "pending"
+        ? pendingAdmissionCursor
+        : mode === "started"
+          ? startedRecoveryCursor
+          : fullRecoveryCursor;
+    // Finite per pass: a large ledger must not delay app activation.
+    for (let pageNumber = 0; pageNumber < (mode === "full" ? 16 : 4); pageNumber++) {
+      const pageEffect =
+        mode === "pending"
+          ? admission.listPendingAdmissionCandidates(afterSequence)
+          : mode === "started"
+            ? admission.listUnresolvedStartedCandidates(afterSequence)
+            : admission.listRecoveryCandidates(afterSequence);
       const page = yield* pageEffect;
       for (const candidate of page.candidates) {
         yield* Effect.gen(function* () {
@@ -1930,21 +1942,23 @@ const make = Effect.gen(function* () {
         );
       }
       if (page.nextSequence === null) {
-        if (pendingOnly) pendingAdmissionCursor = 0;
+        if (mode === "pending") pendingAdmissionCursor = 0;
+        else if (mode === "started") startedRecoveryCursor = 0;
         else fullRecoveryCursor = 0;
         return;
       }
       afterSequence = page.nextSequence;
-      if (pendingOnly) pendingAdmissionCursor = afterSequence;
+      if (mode === "pending") pendingAdmissionCursor = afterSequence;
+      else if (mode === "started") startedRecoveryCursor = afterSequence;
       else fullRecoveryCursor = afterSequence;
     }
     yield* Effect.logWarning("native Crew recovery scan reached its page limit", {
       afterSequence,
-      pendingOnly,
+      mode,
     });
   });
-  const recoverCrewTurns = (pendingOnly = false) =>
-    crewRecoveryMutex.withPermits(1)(scanCrewTurns(pendingOnly));
+  const recoverCrewTurns = (mode: "full" | "pending" | "started" = "full") =>
+    crewRecoveryMutex.withPermits(1)(scanCrewTurns(mode));
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
@@ -1982,7 +1996,8 @@ const make = Effect.gen(function* () {
         Stream.runForEach(connectionChanges, () =>
           Effect.gen(function* () {
             yield* admission.reconcileTerminalOutbox();
-            yield* recoverCrewTurns(true);
+            yield* recoverCrewTurns("pending");
+            yield* recoverCrewTurns("started");
           }).pipe(
             Effect.catchCause((cause) =>
               Cause.hasInterruptsOnly(cause)
@@ -1994,15 +2009,26 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
+    }
+    if (admission) {
       yield* forkParked(
         Effect.gen(function* () {
           yield* Effect.sleep(Duration.seconds(30));
           while (true) {
-            yield* recoverCrewTurns(true).pipe(
+            yield* recoverCrewTurns("pending").pipe(
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.failCause(cause)
                   : Effect.logWarning("native Crew admission redrive failed", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+            );
+            yield* recoverCrewTurns("started").pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logWarning("native Crew claimed redrive failed", {
                       cause: Cause.pretty(cause),
                     }),
               ),
@@ -2012,14 +2038,12 @@ const make = Effect.gen(function* () {
         }),
       );
       yield* forkParked(repeatCrewTerminalOutbox(admission));
-    }
-    if (admission) {
       yield* forkParked(
         Effect.gen(function* () {
           while (true) {
             yield* Effect.sleep(Duration.seconds(30));
             if (fullRecoveryCursor === 0) continue;
-            yield* recoverCrewTurns(false).pipe(
+            yield* recoverCrewTurns("full").pipe(
               Effect.catchCause((cause) =>
                 Cause.hasInterruptsOnly(cause)
                   ? Effect.failCause(cause)

@@ -358,6 +358,18 @@ export function makeCtoxNativeTaskClient(dependencies: {
           observed,
           attemptId: offer.attempt_id,
         };
+      if (yield* dependencies.requests.readCrewStart(identity, offer.attempt_id))
+        return {
+          state: "resume-required" as const,
+          identity,
+          observed,
+          attemptId: offer.attempt_id,
+        };
+      // A newer offered attempt cannot start while an earlier local claim or
+      // terminal report for this request is unresolved. The old attempt needs
+      // exact recovery or native/manual disposition first.
+      if (yield* dependencies.requests.hasUnreportedCrewStart(identity))
+        return { state: "awaiting-native-review" as const, identity, observed };
       const reservation = yield* dependencies.requests.reserveCrewStart(identity, {
         attemptId: offer.attempt_id,
         commandId: receipt.command_id,

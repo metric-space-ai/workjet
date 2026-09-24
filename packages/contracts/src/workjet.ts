@@ -1213,6 +1213,69 @@ export const WorkjetGatewayCatalog = Schema.Struct({
 });
 export type WorkjetGatewayCatalog = typeof WorkjetGatewayCatalog.Type;
 
+/** A catalog grant names one selected CTOX instance and one execution computer. */
+export const WorkjetGatewayGrantTarget = Schema.Struct({
+  connectionId: WorkjetConnectionId,
+  instanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  computerId: WorkjetComputerId.check(Schema.isMaxLength(256)),
+});
+export type WorkjetGatewayGrantTarget = typeof WorkjetGatewayGrantTarget.Type;
+
+/** Logical identities only: credential material and secret-store names never cross this boundary. */
+export const WorkjetGatewayProviderRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  provider: WorkjetGatewayProvider,
+});
+export type WorkjetGatewayProviderRef = typeof WorkjetGatewayProviderRef.Type;
+
+export const WorkjetGatewayModelRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  provider: WorkjetGatewayProvider,
+  modelId: TrimmedNonEmptyString,
+});
+export type WorkjetGatewayModelRef = typeof WorkjetGatewayModelRef.Type;
+
+export const WorkjetGatewayCredentialRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  accountId: WorkjetGatewayAccountId,
+});
+export type WorkjetGatewayCredentialRef = typeof WorkjetGatewayCredentialRef.Type;
+
+export const WorkjetGatewayScopedAccount = Schema.Struct({
+  credentialRef: WorkjetGatewayCredentialRef,
+  providerRef: WorkjetGatewayProviderRef,
+  label: TrimmedNonEmptyString,
+  modelRefs: Schema.Array(WorkjetGatewayModelRef),
+});
+export type WorkjetGatewayScopedAccount = typeof WorkjetGatewayScopedAccount.Type;
+
+export const WorkjetGatewayScopedCatalog = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  target: WorkjetGatewayGrantTarget,
+  accounts: Schema.Array(WorkjetGatewayScopedAccount),
+});
+export type WorkjetGatewayScopedCatalog = typeof WorkjetGatewayScopedCatalog.Type;
+
+export const WorkjetGatewaySetGrantInput = Schema.Struct({
+  target: WorkjetGatewayGrantTarget,
+  accountId: WorkjetGatewayAccountId,
+  granted: Schema.Boolean,
+});
+export type WorkjetGatewaySetGrantInput = typeof WorkjetGatewaySetGrantInput.Type;
+
+export const WorkjetGatewaySetGrantResult = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  target: WorkjetGatewayGrantTarget,
+  accountId: WorkjetGatewayAccountId,
+  granted: Schema.Boolean,
+});
+export type WorkjetGatewaySetGrantResult = typeof WorkjetGatewaySetGrantResult.Type;
+
+export class WorkjetGatewayAccessError extends Schema.TaggedErrorClass<WorkjetGatewayAccessError>()(
+  "WorkjetGatewayAccessError",
+  { reason: Schema.Literals(["target-unavailable", "account-unavailable", "grants-unavailable"]) },
+) {}
+
 /**
  * Whether a health dimension is something the gateway host reports at all.
  * Kept explicit rather than omitted so the surface can say "the host does not

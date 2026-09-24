@@ -24,6 +24,7 @@ const textEncoder = new TextEncoder();
 const decodeConnectionCatalog = Schema.decodeEffect(
   Schema.fromJsonString(ConnectionCatalogDocument),
 );
+const encodeConnectionCatalog = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 function makeSafeStorageLayer(available: boolean, failDecrypt: Ref.Ref<boolean> | null = null) {
   return Layer.succeed(ElectronSafeStorage.ElectronSafeStorage, {
     isEncryptionAvailable: Effect.succeed(available),
@@ -429,7 +430,7 @@ describe("DesktopConnectionCatalogStore", () => {
         Effect.provide(makeLayer(baseDir, true, failDecrypt)),
       );
       const catalogPath = `${baseDir}/userdata/connection-catalog.json`;
-      const original = JSON.stringify({
+      const original = encodeConnectionCatalog({
         schemaVersion: 1,
         targets: [
           {

@@ -1657,7 +1657,7 @@ describe("CtoxGuestManager", () => {
         ttlSeconds: 300,
       });
       expect(created._tag).toBe("completed");
-      expect(JSON.stringify(created)).not.toContain("native-only-qr-secret");
+      expect(encodeUnknownJson(created)).not.toContain("native-only-qr-secret");
       assert.deepEqual(
         yield* manager.requestDeviceControl("managed:other", { action: "binding.list" }),
         { _tag: "failed", code: "not_active" },

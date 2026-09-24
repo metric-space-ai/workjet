@@ -819,6 +819,8 @@ function waitForGuestNavigationCommit(
         };
 
         try {
+          // Electron navigation listeners own this timeout and clear it as soon as navigation settles.
+          // @effect-diagnostics-next-line globalTimers:off
           timeout = setTimeout(() => finish(false), 30_000);
           webContents.on("did-frame-navigate", onDidFrameNavigate as never);
           webContents.on("did-fail-load", onDidFailLoad as never);

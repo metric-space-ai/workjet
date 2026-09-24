@@ -144,7 +144,8 @@ const make = Effect.gen(function* () {
       return yield* new CtoxNativeRequestError({ reason: "native-request-conflict" });
     const saved = yield* requests.readCrewStart(candidate.identity, input.attemptId);
     if (
-      saved?.providerInstanceId !== input.providerInstanceId ||
+      !saved ||
+      saved.providerInstanceId !== input.providerInstanceId ||
       saved.providerThreadId !== input.providerThreadId
     )
       return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });

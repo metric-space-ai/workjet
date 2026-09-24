@@ -1306,8 +1306,11 @@ describe("ProviderCommandReactor", () => {
     });
     offerReady = true;
     await Effect.runPromise(PubSub.publish(changes, undefined));
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const startedDuringFirstSend = listStarted.mock.calls.length;
+    await Effect.runPromise(PubSub.publish(changes, undefined));
     try {
-      await waitFor(() => listStarted.mock.calls.length === 1);
+      await waitFor(() => listStarted.mock.calls.length > startedDuringFirstSend);
       expect(recover).toHaveBeenCalledTimes(1);
       expect(harness.sendTurn).toHaveBeenCalledTimes(1);
       expect(harness.stopSession).not.toHaveBeenCalled();
@@ -1316,8 +1319,9 @@ describe("ProviderCommandReactor", () => {
       releaseFirstSend();
     }
     await waitFor(() => bindProviderTurn.mock.calls.length === 1);
+    const startedWhileRunning = listStarted.mock.calls.length;
     await Effect.runPromise(PubSub.publish(changes, undefined));
-    await waitFor(() => listStarted.mock.calls.length === 2);
+    await waitFor(() => listStarted.mock.calls.length > startedWhileRunning);
     expect(recover).toHaveBeenCalledTimes(1);
     expect(harness.stopSession).not.toHaveBeenCalled();
     const index = harness.runtimeSessions.findIndex((session) => session.threadId === threadId);

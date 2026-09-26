@@ -46,6 +46,11 @@ lifecycle remains a separate contract.
    cancellation requires CTOX's acknowledged command, not UI exit. For updates,
    reuse launcher protocol 2's staged version and DB rollback path, and record
    whether the service is intentionally stopping or replacing its child.
+   A restored Workjet DB snapshot is not authoritative for native offers,
+   approvals, cancellation or terminal/outbox state. Before replaying any
+   command, reconcile against the current CTOX intent/run/attempt and terminal
+   state, and reject writes from stale service generations/controllers. A
+   native task completed during the outage must not be offered or run again.
 4. **Reconcile through existing durable authority.** UI attachment reads the
    existing server projection and native run/attempt records. It cannot create a
    new Crew offer or replay a prompt because a view reopened. Pending approvals,
@@ -72,7 +77,9 @@ Electron exited and work progressed through the runtime authority; relaunch the
 same isolated profile and see the same run/result with no second launch.
 External/native-only rows are additional coverage, not substitutes. Follow with
 pending approval, acknowledged cancel, connection loss, stale-controller fence,
-terminal replay, then service crash and host restart as distinct rows.
+terminal replay, then service crash and host restart as distinct rows. Include
+launcher rollback to an older Workjet DB while CTOX has a newer terminal or
+approval state: restored client records must not replay stale work or decisions.
 
 Do not use the installed UI runner's `restart` action for the survival proof: its
 `closeElectronProcessTree` captures descendants and terminates survivors after

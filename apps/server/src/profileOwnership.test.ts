@@ -73,6 +73,31 @@ it("admits live database clients together and excludes file restore through a sy
     }
   }));
 
+it("restores reader exclusion when an existing admission file was in WAL mode", () =>
+  withProfile(async (root) => {
+    const dbPath = NodePath.join(root, "state.sqlite");
+    const initial = await acquireDatabaseAccess(dbPath, "shared");
+    const lockPath = initial.lockPath;
+    initial.release();
+    const database =
+      process.versions.bun !== undefined
+        ? new (await import("bun:sqlite")).Database(lockPath, { create: true })
+        : new (await import("node:sqlite")).DatabaseSync(lockPath);
+    try {
+      database.exec("PRAGMA journal_mode = WAL;");
+    } finally {
+      database.close();
+    }
+    const reader = await acquireDatabaseAccess(dbPath, "shared");
+    try {
+      await expect(acquireDatabaseAccess(dbPath, "exclusive")).rejects.toBeInstanceOf(
+        ProfileOwnershipError,
+      );
+    } finally {
+      reader.release();
+    }
+  }));
+
 it("refuses a dangling database alias instead of changing lock identity after creation", () =>
   withProfile(async (root) => {
     const alias = NodePath.join(root, "alias.sqlite");

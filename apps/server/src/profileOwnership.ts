@@ -55,6 +55,9 @@ async function acquireOwnership(
         ? new (await import("bun:sqlite")).Database(lockPath, { create: true })
         : new (await import("node:sqlite")).DatabaseSync(lockPath);
     database.exec("PRAGMA busy_timeout = 0;");
+    // EXCLUSIVE must also exclude readers. WAL mode would not provide that
+    // guarantee for database snapshot/restore admission.
+    database.exec("PRAGMA journal_mode = DELETE;");
     database.exec(mode === "exclusive" ? "BEGIN EXCLUSIVE;" : "BEGIN;");
     if (mode === "shared") database.exec("SELECT name FROM sqlite_schema;");
     const ownedDatabase = database;

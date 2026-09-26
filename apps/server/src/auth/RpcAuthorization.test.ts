@@ -31,6 +31,15 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("requires operation scope for Desktop telemetry publication and control", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.subscribeDesktopTelemetryControl)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverPublishDesktopTelemetry)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("separates Greppy inspection from server-wide runtime operation", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGreppyInspect)).toBe(
       AuthOrchestrationReadScope,

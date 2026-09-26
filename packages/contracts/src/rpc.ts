@@ -173,6 +173,9 @@ import {
 } from "./server.ts";
 import {
   ResourceTelemetryHistory,
+  DesktopHostTelemetryMessage,
+  DesktopTelemetryControlMessage,
+  DesktopTelemetryAttachmentError,
   ResourceTelemetryHistoryInput,
   ResourceTelemetryRetryResult,
   ResourceTelemetrySnapshot,
@@ -485,6 +488,8 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  subscribeDesktopTelemetryControl: "subscribeDesktopTelemetryControl",
+  serverPublishDesktopTelemetry: "server.publishDesktopTelemetry",
   subscribeWorkjetMailboxAudit: "subscribeWorkjetMailboxAudit",
 } as const;
 
@@ -1582,6 +1587,31 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+const DesktopTelemetryAttachment = Schema.Struct({
+  attachmentId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  runtimeInstanceId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+});
+export const WsSubscribeDesktopTelemetryControlRpc = Rpc.make(
+  WS_METHODS.subscribeDesktopTelemetryControl,
+  {
+    payload: DesktopTelemetryAttachment,
+    success: DesktopTelemetryControlMessage,
+    error: Schema.Union([DesktopTelemetryAttachmentError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+export const WsServerPublishDesktopTelemetryRpc = Rpc.make(
+  WS_METHODS.serverPublishDesktopTelemetry,
+  {
+    payload: Schema.Struct({
+      ...DesktopTelemetryAttachment.fields,
+      message: DesktopHostTelemetryMessage,
+    }),
+    success: Schema.Void,
+    error: Schema.Union([DesktopTelemetryAttachmentError, EnvironmentAuthorizationError]),
+  },
+);
+
 /**
  * The bounded, redacted Workjet mailbox audit/observability event stream. Each
  * emitted value is a {@link WorkjetMailboxAuditEvent} carrying only ids,
@@ -1729,6 +1759,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeDesktopTelemetryControlRpc,
+  WsServerPublishDesktopTelemetryRpc,
   WsSubscribeWorkjetMailboxAuditRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetWorkflowScriptRpc,

@@ -14,6 +14,8 @@ import {
   type RunBackendProcessOptions,
 } from "./DesktopBackendManager.ts";
 import { DesktopLocalServiceSession, runLocalCli } from "./DesktopLocalServiceSession.ts";
+import { attachDesktopServiceTelemetry } from "./DesktopServiceTelemetry.ts";
+import * as Crypto from "effect/Crypto";
 
 export class LocalServiceAttachmentError extends Schema.TaggedErrorClass<LocalServiceAttachmentError>()(
   "LocalServiceAttachmentError",
@@ -125,6 +127,7 @@ export const layer = Layer.effect(
     const fs = yield* FileSystem.FileSystem;
     const sessions = yield* DesktopLocalServiceSession;
     const http = yield* HttpClient.HttpClient;
+    const crypto = yield* Crypto.Crypto;
     const cli = {
       executablePath: process.execPath,
       entryPath: environment.backendEntryPath,
@@ -226,7 +229,10 @@ export const layer = Layer.effect(
             makeError: () => blocked("The installed local service did not become reachable."),
           });
           // Readiness is published only after profile, generation, version and credential validation.
-          return yield* sessions.attach(input);
+          const session = yield* sessions.attach(input);
+          return yield* attachDesktopServiceTelemetry(session, input).pipe(
+            Effect.provideService(Crypto.Crypto, crypto),
+          );
         }).pipe(
           Effect.provideService(HttpClient.HttpClient, http),
           Effect.mapError((error) =>

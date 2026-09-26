@@ -3,8 +3,9 @@
 Status: implementation in progress on PR73 (2026-09-26), not a claim of
 delivered full-Quit behavior. Desktop now has a source-only attachment path for
 an explicitly installed, matching macOS service. New/unmanaged profiles still
-use the foreground backend. Automatic migration/installation and reconnectable
-telemetry remain missing; no normal-Quit runtime proof has been executed.
+use the foreground backend. Authenticated reconnectable telemetry is now wired
+in source. Automatic migration/installation and recovery remain missing; no
+normal-Quit runtime proof has been executed.
 
 ## Current ownership
 
@@ -198,7 +199,22 @@ explicit service stop/update/uninstall remain separate CLI operations. A newer
 app refuses an incompatible installed service until it is explicitly updated.
 The primary pool and auth IPC share one main-owned credential service. Attachment
 currently validates through a temporary RPC and then opens its lifetime RPC;
-both verify the expected generation. Reconnectable telemetry is still missing.
+both verify the expected generation. The service attachment also opens a scoped
+telemetry control subscription and publishes existing typed host/process samples
+over authenticated RPC. Both methods require operation scope and the current
+runtime generation. A server-generated connection identity owns the receiver;
+only one attachment can publish, and an ended connection cannot write through a
+new owner. Each connection permits one control attachment. Descriptor-owned and
+non-Desktop servers refuse this transport. Same-source replayed sequences are
+acknowledged without replacing newer samples. Controls replay current diagnostics
+demand and host-power intervals; a bounded stream carries complete control state
+so coalescing does not discard either setting. Desktop readiness waits for the
+first acknowledged snapshot. Losing either pump ends the attachment, allowing
+the existing connection retry to reauthenticate without restarting the service.
+Detach marks the last power sample stale and clears its Electron process metrics;
+the server and provider processes remain independently owned. The existing stale
+monitor also covers attached clients. These paths and authored focused tests
+remain unexecuted and do not prove actual macOS reconnect or full-Quit behavior.
 Absent services keep the legacy foreground path; retained state without a unit
 fails closed. Linux's global service unit is not treated as a profile-specific
 Desktop installation. No power-loss
@@ -233,8 +249,8 @@ An installed-but-unloaded job currently fails closed during repair/uninstall
 rather than interpreting an arbitrary launchctl error as proof of absence.
 Status compares installed artifacts; it is not a runtime health assertion.
 
-Next source block: automatic setup with a quiesced migration boundary, credential
-recovery, and authenticated reconnectable telemetry. The actual macOS lifecycle
+Next source block: automatic setup with a quiesced migration boundary and credential
+recovery. The actual macOS lifecycle
 and same-run proof remain dependent on an
 isolated exact build, admitted host capacity and the native contract above.
 

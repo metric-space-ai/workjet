@@ -170,6 +170,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeVcsStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeResourceTelemetry]: AuthOrchestrationReadScope,
+  [WS_METHODS.subscribeDesktopTelemetryControl]: AuthOrchestrationOperateScope,
+  [WS_METHODS.serverPublishDesktopTelemetry]: AuthOrchestrationOperateScope,
   // A read-only, redacted audit stream: the same orchestration-read scope the
   // other observability subscriptions require.
   [WS_METHODS.subscribeWorkjetMailboxAudit]: AuthOrchestrationReadScope,

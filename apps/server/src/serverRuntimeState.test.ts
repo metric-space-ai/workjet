@@ -44,7 +44,7 @@ describe("serverRuntimeState", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("persists the generation used by the running server descriptor", () =>
+  it.effect("roundtrips the supplied runtime generation through the state file", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;

@@ -137,11 +137,7 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
       bearerToken: credential.token,
     });
     return {
-      environmentId: authorized.environmentId,
-      label: authorized.label,
-      httpBaseUrl: authorized.httpBaseUrl,
-      socketUrl: authorized.socketUrl,
-      httpAuthorization: authorized.httpAuthorization,
+      ...authorized,
       target,
     } satisfies PreparedConnection;
   });
@@ -325,11 +321,7 @@ const makeRelayBroker = Effect.fn("clientRuntime.connection.broker.makeRelay")(f
         }).pipe(Effect.withSpan("relay.connection.bootstrap.obtain")),
       });
       return {
-        environmentId: authorized.environmentId,
-        label: authorized.label,
-        httpBaseUrl: authorized.httpBaseUrl,
-        socketUrl: authorized.socketUrl,
-        httpAuthorization: authorized.httpAuthorization,
+        ...authorized,
         target,
       } satisfies PreparedConnection;
     },
@@ -383,11 +375,7 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
       bearerToken: prepared.bearerToken,
     });
     return {
-      environmentId: authorized.environmentId,
-      label: authorized.label,
-      httpBaseUrl: authorized.httpBaseUrl,
-      socketUrl: authorized.socketUrl,
-      httpAuthorization: authorized.httpAuthorization,
+      ...authorized,
       target,
     } satisfies PreparedConnection;
   });

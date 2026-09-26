@@ -137,6 +137,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
       ((input) =>
         Effect.succeed({
           environmentId: input.expectedEnvironmentId,
+          runtimeInstanceId: "bearer-runtime",
           label: "Authorized bearer environment",
           httpBaseUrl: input.httpBaseUrl,
           socketUrl: "wss://authorized.example.test/ws?wsTicket=bearer",
@@ -293,6 +294,7 @@ describe("ConnectionResolver", () => {
           Ref.update(bearerInputs, (values) => [...values, input.bearerToken]).pipe(
             Effect.as({
               environmentId: input.expectedEnvironmentId,
+              runtimeInstanceId: "primary-runtime",
               label: "Primary",
               httpBaseUrl: input.httpBaseUrl,
               socketUrl: "ws://127.0.0.1:3777/ws?wsTicket=desktop",
@@ -313,6 +315,7 @@ describe("ConnectionResolver", () => {
 
       expect(yield* broker.prepare(catalogEntry(target))).toMatchObject({
         socketUrl: "ws://127.0.0.1:3777/ws?wsTicket=desktop",
+        runtimeInstanceId: "primary-runtime",
         httpAuthorization: { _tag: "Bearer", token: "desktop-bearer" },
         target,
       });
@@ -341,6 +344,7 @@ describe("ConnectionResolver", () => {
           Ref.update(bearerInputs, (values) => [...values, input.bearerToken]).pipe(
             Effect.as({
               environmentId: input.expectedEnvironmentId,
+              runtimeInstanceId: "saved-runtime",
               label: "Saved",
               httpBaseUrl: input.httpBaseUrl,
               socketUrl: "wss://environment.example.test/ws?wsTicket=ticket",
@@ -353,9 +357,9 @@ describe("ConnectionResolver", () => {
       });
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
 
-      expect(
-        (yield* broker.prepare(catalogEntry(target, Option.some(profile)))).socketUrl,
-      ).toContain("wsTicket=ticket");
+      const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
+      expect(prepared.socketUrl).toContain("wsTicket=ticket");
+      expect(prepared.runtimeInstanceId).toBe("saved-runtime");
       expect(yield* Ref.get(bearerInputs)).toEqual(["secret-bearer"]);
     }),
   );
@@ -398,6 +402,7 @@ describe("ConnectionResolver", () => {
             ),
             Effect.as({
               environmentId: input.expectedEnvironmentId,
+              runtimeInstanceId: "relay-runtime",
               label: "Cloud",
               httpBaseUrl: ENDPOINT.httpBaseUrl,
               socketUrl: "wss://environment.example.test/ws?wsTicket=dpop",
@@ -410,7 +415,9 @@ describe("ConnectionResolver", () => {
       });
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
 
-      expect((yield* broker.prepare(catalogEntry(target))).socketUrl).toContain("wsTicket=dpop");
+      const prepared = yield* broker.prepare(catalogEntry(target));
+      expect(prepared.socketUrl).toContain("wsTicket=dpop");
+      expect(prepared.runtimeInstanceId).toBe("relay-runtime");
       expect(yield* Ref.get(relayInputs)).toEqual([
         {
           clerkToken: "clerk-session",
@@ -748,9 +755,9 @@ describe("ConnectionResolver", () => {
       });
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
 
-      expect(
-        (yield* broker.prepare(catalogEntry(target, Option.some(profile)))).socketUrl,
-      ).toContain("wsTicket=bearer");
+      const prepared = yield* broker.prepare(catalogEntry(target, Option.some(profile)));
+      expect(prepared.socketUrl).toContain("wsTicket=bearer");
+      expect(prepared.runtimeInstanceId).toBe("bearer-runtime");
       expect(yield* Ref.get(preparedTargets)).toEqual([SSH_TARGET]);
     }),
   );

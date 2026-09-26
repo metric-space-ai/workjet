@@ -161,12 +161,29 @@ generation. Future durable Desktop attachment must require a generation rather
 than taking this legacy path. The new field is optional in the wire schema so
 existing web/mobile clients and older server descriptors remain decodable.
 
-These public comparisons detect stale discovery state; they are **not**
-authenticated attachment, native fencing or protection against a replacement
-between discovery and use. Those checks still belong in the live authenticated
-attach exchange, under exclusive profile ownership. Authored tests cover a live
-port with the same environment but a changed generation, one-sided legacy
-metadata, successful matching pairing and generation stability/renewal. They
-have not yet been executed.
+The shared connection path now retains a discovered generation through primary
+Desktop, saved bearer, SSH and relay preparation. Before `RpcSession.ready`
+succeeds or `initialConfig` is published, the configuration returned on the
+authenticated WebSocket must match the expected environment and, when present,
+the generation prepared for that attempt. A wrong environment blocks the
+connection; a changed or missing expected generation requires a fresh attempt.
+The supervisor withholds the prepared HTTP connection as well as the RPC session
+until readiness, so snapshot/session consumers cannot race the identity check.
+No generation is persisted as a pin for later reconnects. Modern bearer
+descriptors are reread per attempt rather than reused from the ten-second
+legacy cache; cached relay credentials obtain a current descriptor after their
+fresh WebSocket ticket. This adds one descriptor request on cached relay
+reconnects, without another relay bootstrap or token exchange.
+
+This rejects a different runtime between discovery and the initial RPC response.
+It still does not prove a trusted local service owner, native execution fencing,
+credential persistence across Desktop Quit or full authenticated Desktop
+reattachment. Legacy connections without a prepared generation validate only
+the environment ID; the durable Desktop attachment path must require a generation
+from trusted profile state. Authored tests cover live HTTP pairing mismatch,
+generation stability/renewal, token-cache reconnect preparation, propagation
+through all brokers, and WebSocket readiness refusal with scope cleanup. The
+runtime-state roundtrip test supplies a literal generation; it is not a running
+server descriptor/state integration test. These tests have not yet been executed.
 There is no measured completion date yet. A source patch, successful build or
 external-server demonstration alone cannot close this outcome.

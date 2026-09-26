@@ -116,6 +116,10 @@ export type PreparedHttpAuthorization =
 
 export interface PreparedConnection {
   readonly environmentId: EnvironmentId;
+  /** Generation observed while preparing this attempt. Validate it on the
+      authenticated socket before publishing the session; do not persist it
+      as the expected generation for future reconnects. */
+  readonly runtimeInstanceId?: string;
   readonly label: string;
   readonly httpBaseUrl: string;
   readonly socketUrl: string;

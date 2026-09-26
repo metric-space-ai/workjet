@@ -114,9 +114,11 @@ export interface PreflightFailure {
   readonly retryLimit?: number;
 }
 
-interface BackendProcessExit {
+export interface BackendProcessExit {
   readonly code: Option.Option<number>;
   readonly reason: string;
+  /** A blocked attachment needs user recovery, never a silent enrollment loop. */
+  readonly restart?: boolean;
 }
 
 const backendProcessContextSchema = {
@@ -217,7 +219,7 @@ export const BackendProcessError = Schema.Union([
 ]);
 export type BackendProcessError = typeof BackendProcessError.Type;
 
-interface RunBackendProcessOptions extends DesktopBackendStartConfig {
+export interface RunBackendProcessOptions extends DesktopBackendStartConfig {
   readonly desktopTelemetryStream: Stream.Stream<Uint8Array>;
   readonly onDesktopTelemetryControl?: (
     message: DesktopTelemetryControlMessageValue,
@@ -281,6 +283,9 @@ export interface DesktopBackendInstance {
 export interface BackendInstanceSpec {
   readonly id: BackendInstanceId;
   readonly label: Effect.Effect<string>;
+  /** Scoped attachment or foreground child. Closing the scope releases only what it owns. */
+  readonly run?: typeof runBackendProcess;
+  readonly onAttachmentBlocked?: (reason: string) => Effect.Effect<void>;
   // configResolve can now fail with PlatformError because the
   // bootstrap-token closure inside DesktopBackendConfiguration uses
   // crypto.randomBytes (Effect 4 beta.73 migration).
@@ -832,6 +837,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
         const finalizeRun = Effect.fn("desktop.backendInstance.finalizeRun")(function* (
           reason: string,
+          restart = true,
         ) {
           yield* mutex.withPermits(1)(
             Effect.gen(function* () {
@@ -868,6 +874,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
 
                     const next = {
                       ...latest,
+                      desiredRunning: latest.desiredRunning && restart,
                       active: Option.none<ActiveBackendRun>(),
                       ready: false,
                     };
@@ -904,11 +911,14 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               if (isCurrentRun && nextState.desiredRunning) {
                 yield* scheduleRestart(reason);
               }
+              if (isCurrentRun && !restart) {
+                yield* spec.onAttachmentBlocked?.(reason) ?? Effect.void;
+              }
             }),
           );
         });
 
-        const program = runBackendProcess({
+        const program = (spec.run ?? runBackendProcess)({
           ...config.value,
           desktopTelemetryStream: desktopTelemetryPublisher.encoded,
           onDesktopTelemetryControl: (message) =>
@@ -969,7 +979,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           Effect.ensuring(Scope.close(runScope, Exit.void).pipe(Effect.ignore)),
           Effect.matchEffect({
             onFailure: (error) => finalizeRun(error.message),
-            onSuccess: (exit) => finalizeRun(exit.reason),
+            onSuccess: (exit) => finalizeRun(exit.reason, exit.restart),
           }),
         );
 

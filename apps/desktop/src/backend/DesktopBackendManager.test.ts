@@ -115,6 +115,8 @@ function decodeBootstrap(raw: string) {
 }
 
 interface MakeInstanceInput {
+  readonly run?: DesktopBackendManager.BackendInstanceSpec["run"];
+  readonly onAttachmentBlocked?: DesktopBackendManager.BackendInstanceSpec["onAttachmentBlocked"];
   readonly spawnerLayer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>;
   readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
   readonly backendOutputLog?: Partial<DesktopObservability.DesktopBackendOutputLogShape>;
@@ -171,6 +173,10 @@ function makeTestInstance(input: MakeInstanceInput) {
 
   const instance = DesktopBackendManager.makeBackendInstance({
     id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
+    ...(input.run === undefined ? {} : { run: input.run }),
+    ...(input.onAttachmentBlocked === undefined
+      ? {}
+      : { onAttachmentBlocked: input.onAttachmentBlocked }),
     label: Effect.succeed("Windows"),
     configResolve: input.configResolve ?? Effect.succeed(input.config ?? baseConfig),
     ...(input.onReady ? { onReady: () => input.onReady! } : {}),
@@ -182,6 +188,34 @@ function makeTestInstance(input: MakeInstanceInput) {
 }
 
 describe("DesktopBackendManager", () => {
+  it.effect("halts a blocked service attachment without scheduling a foreground restart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const blocked = yield* Deferred.make<void>();
+        let attempts = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.die("A blocked service must not spawn a child.")),
+          ),
+          run: () =>
+            Effect.sync(() => {
+              attempts++;
+              return { code: Option.none(), reason: "credential needs recovery", restart: false };
+            }),
+          onAttachmentBlocked: () => Deferred.succeed(blocked, undefined).pipe(Effect.asVoid),
+        });
+        yield* instance.start;
+        yield* Deferred.await(blocked);
+        const state = yield* instance.snapshot;
+        assert.equal(state.desiredRunning, false);
+        assert.equal(state.ready, false);
+        assert.equal(state.restartScheduled, false);
+        assert.equal(attempts, 1);
+      }),
+    ),
+  );
+
   it.effect("spawns the backend with fd3 bootstrap and fd4 telemetry", () =>
     Effect.scoped(
       Effect.gen(function* () {

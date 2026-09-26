@@ -1,15 +1,19 @@
 # Desktop-independent provider execution
 
 Status: implementation in progress on PR73 (2026-09-26), not a claim of
-delivered full-Quit behavior. The macOS service adapter described below is
-source-only; Desktop still owns and stops its current backend processes.
+delivered full-Quit behavior. Desktop now has a source-only attachment path for
+an explicitly installed, matching macOS service. New/unmanaged profiles still
+use the foreground backend. Automatic migration/installation and reconnectable
+telemetry remain missing; no normal-Quit runtime proof has been executed.
 
 ## Current ownership
 
-`DesktopApp` stops every member of `DesktopBackendPool` on full application
-shutdown. `DesktopBackendManager.stop` closes its process scope, and
-`ProviderService` finalizes its owned provider sessions. Closing the last macOS
-window is different from quitting the application.
+`DesktopApp` releases every member of `DesktopBackendPool` on full application
+shutdown. `DesktopBackendManager.stop` closes the selected runner's scope. A
+foreground runner owns its child and therefore ends its provider sessions. The
+new service runner owns only an authenticated RPC attachment; launchd owns the
+service process. Closing the last macOS window is different from quitting the
+application. This distinction is implemented in source, not yet runtime-tested.
 
 `DesktopBackendConfiguration` currently launches the bundled server with
 Electron's executable in Node mode. It supplies a per-process bootstrap token
@@ -29,7 +33,8 @@ lifecycle remains a separate contract.
 1. **Move the local server under a service owner.** Extend the existing
    `cloud/bootService` and pinned runtime/launcher protocol instead of adding an
    independent job scheduler. BootService now has a macOS user LaunchAgent
-   adapter alongside Linux/systemd; Desktop integration is still missing.
+   adapter alongside Linux/systemd; Desktop can now select an existing matching
+   macOS installation. Automatic setup and safe migration remain missing.
    Windows needs an explicit supported
    service owner before advertising this guarantee there. Use a durable pinned
    runtime, not a mutable application-bundle executable or a temp worktree.
@@ -166,15 +171,15 @@ Windows and non-loopback bindings retain the process-bootstrap path; its in-memo
 cache is now scoped to the active configuration. This integration and its tests
 are unexecuted. RPC identity checks do not authenticate a malicious listener merely
 because it can echo public identity fields, and are not a native authority fence.
-Desktop still needs to select its matching shipped archive and invoke this path;
-the launcher now preserves an optional typed, non-secret Desktop endpoint in its
+Desktop now selects its matching shipped archive for an existing installation;
+the launcher preserves an optional typed, non-secret Desktop endpoint in its
 service state and forwards the explicit profile, loopback host, port and Tailscale
 Serve settings to each child, including update trials and rollback. It removes
 inherited UI descriptor/dev-proxy/Tailscale-enable overrides for that mode. CLI
 service install/update/status accept the corresponding Desktop options; status
 can return JSON and marks a differing requested endpoint as not current. Ordinary
-service repair preserves an existing Desktop endpoint. This is source-only and
-does not enable the Desktop service adapter yet. Configuration equality is not
+service repair preserves an existing Desktop endpoint. This is source-only.
+Configuration equality is not
 readiness or proof that a loaded service uses the current files.
 Explicit `service start` now reuses a current installation without replacing its
 files or terminating a running job (`launchctl kickstart` without `-k`, or
@@ -182,9 +187,21 @@ files or terminating a running job (`launchctl kickstart` without `-k`, or
 unit. Both attempts are bounded; failure does not launch a foreground fallback.
 `service stop` waits for the current service to stop while retaining installation,
 separate from uninstall. Start/stop command completion is not authenticated
-server readiness. These commands and tests remain unexecuted; Desktop still needs
-to call them and distinguish normal UI detach from explicit service control.
-Desktop currently continues to launch the old Electron-owned backend. No power-loss
+server readiness. These commands and tests remain unexecuted. Desktop resolves
+an existing installation before its free-port scan, verifies the app-shipped
+runtime receipt and saved endpoint, and calls start once per UI launch. An
+authenticated RPC attachment publishes readiness and observes disconnects;
+reconnecting never repeats service start. A failed attachment halts automatic
+retries and reports the recovery requirement instead of launching a foreground
+fallback. Full Quit and Desktop-app updates release this attachment only;
+explicit service stop/update/uninstall remain separate CLI operations. A newer
+app refuses an incompatible installed service until it is explicitly updated.
+The primary pool and auth IPC share one main-owned credential service. Attachment
+currently validates through a temporary RPC and then opens its lifetime RPC;
+both verify the expected generation. Reconnectable telemetry is still missing.
+Absent services keep the legacy foreground path; retained state without a unit
+fails closed. Linux's global service unit is not treated as a profile-specific
+Desktop installation. No power-loss
 durability or host-restart guarantee follows from an install sentinel.
 The subsequent ownership block uses separate, retained SQLite lock files under
 the canonical profile's `runtime/ownership`: the server holds `runtime` before
@@ -216,9 +233,9 @@ An installed-but-unloaded job currently fails closed during repair/uninstall
 rather than interpreting an arbitrary launchctl error as proof of absence.
 Status compares installed artifacts; it is not a runtime health assertion.
 
-Next source block: verify profile exclusion and add a durable,
-authenticated attach boundary, followed by Desktop's explicit attach/detach
-wiring. The actual macOS lifecycle and same-run proof remain dependent on an
+Next source block: automatic setup with a quiesced migration boundary, credential
+recovery, and authenticated reconnectable telemetry. The actual macOS lifecycle
+and same-run proof remain dependent on an
 isolated exact build, admitted host capacity and the native contract above.
 
 The existing CLI pairing discovery now compares the responding environment ID

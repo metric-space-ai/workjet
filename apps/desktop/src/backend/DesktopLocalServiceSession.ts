@@ -2,7 +2,7 @@ import * as NodeChildProcess from "node:child_process";
 import { EnvironmentId, AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
 import { resolveRemoteWebSocketConnectionUrl } from "@workjet/client-runtime/authorization";
 import { PrimaryConnectionTarget } from "@workjet/client-runtime/connection";
-import { RpcSessionFactory } from "@workjet/client-runtime/rpc";
+import { RpcSessionFactory, type RpcSession } from "@workjet/client-runtime/rpc";
 import { isLocalServiceOrigin, LocalServiceTarget } from "@workjet/shared/localServiceTarget";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -14,6 +14,7 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import type * as Scope from "effect/Scope";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 import * as Credential from "./DesktopLocalServiceCredential.ts";
@@ -65,7 +66,7 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
   const lock = yield* Semaphore.make(1);
   const stores = new Map<string, Store>();
   const uncertainEnrollments = new Set<string>();
-  const get = (config: DesktopBackendStartConfig) =>
+  const prepare = (config: DesktopBackendStartConfig) =>
     lock.withPermit(
       Effect.gen(function* () {
         const target = yield* dependencies.discover(config);
@@ -92,7 +93,7 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
           // A revoked token, changed identity or transport failure must not become
           // silent re-enrollment. Every request verifies the current generation.
           yield* dependencies.validate(target, saved.value);
-          return Redacted.value(saved.value.token);
+          return { target, credential: saved.value };
         }
         yield* store.requireProtection.pipe(Effect.mapError(() => fail("protect")));
         const credentialStore = store;
@@ -119,7 +120,7 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
                 return yield* fail("validate the expiry of");
               yield* dependencies.validate(target, credential);
               yield* credentialStore.save(credential).pipe(Effect.mapError(() => fail("save")));
-              return Redacted.value(credential.token);
+              return { target, credential };
             });
             const result = yield* Effect.exit(
               persist.pipe(Effect.timeout("30 seconds"), Effect.interruptible),
@@ -155,11 +156,21 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
         );
       }),
     );
-  return { get };
+  return {
+    prepare,
+    get: (config: DesktopBackendStartConfig) =>
+      prepare(config).pipe(Effect.map(({ credential }) => Redacted.value(credential.token))),
+  };
 });
 
 /** Captures CLI stdout only in memory. Neither command arguments nor diagnostics contain bearer tokens. */
-const runCli = (config: DesktopBackendStartConfig, args: ReadonlyArray<string>) =>
+export const runLocalCli = (
+  config: Pick<
+    DesktopBackendStartConfig,
+    "executablePath" | "entryPath" | "cwd" | "env" | "extendEnv"
+  >,
+  args: ReadonlyArray<string>,
+) =>
   Effect.tryPromise({
     try: (signal) =>
       new Promise<string>((resolve, reject) => {
@@ -196,6 +207,9 @@ export class DesktopLocalServiceSession extends Context.Service<
     readonly get: (
       config: DesktopBackendStartConfig,
     ) => Effect.Effect<string, LocalServiceSessionError>;
+    readonly attach: (
+      config: DesktopBackendStartConfig,
+    ) => Effect.Effect<RpcSession, LocalServiceSessionError, Scope.Scope>;
   }
 >()("@workjet/desktop/backend/DesktopLocalServiceSession") {}
 
@@ -204,7 +218,37 @@ export const make = Effect.gen(function* () {
   const http = yield* HttpClient.HttpClient;
   const rpc = yield* RpcSessionFactory;
   const storeContext = yield* Effect.context<Effect.Services<ReturnType<typeof Credential.make>>>();
-  return yield* makeSessionAccess({
+  const connect = (target: LocalServiceTarget, credential: Credential.LocalServiceCredential) =>
+    Effect.gen(function* () {
+      const wsBaseUrl = target.origin.replace(/^http:/, "ws:");
+      const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
+        httpBaseUrl: target.origin,
+        wsBaseUrl,
+        bearerToken: Redacted.value(credential.token),
+      });
+      const connectionTarget = new PrimaryConnectionTarget({
+        environmentId: EnvironmentId.make(target.environmentId),
+        label: "Workjet Desktop",
+        httpBaseUrl: target.origin,
+        wsBaseUrl,
+      });
+      const session = yield* rpc.connect({
+        ...connectionTarget,
+        runtimeInstanceId: target.runtimeInstanceId,
+        socketUrl,
+        httpAuthorization: null,
+        target: connectionTarget,
+      });
+      yield* session.ready;
+      if ((yield* session.initialConfig).environment.serverVersion !== target.serverVersion)
+        return yield* fail("verify the server version for");
+      return session;
+    }).pipe(
+      Effect.provideService(HttpClient.HttpClient, http),
+      Effect.timeout("20 seconds"),
+      Effect.mapError(() => fail("authenticate the current server generation for")),
+    );
+  const access = yield* makeSessionAccess({
     discover: (config) =>
       Effect.gen(function* () {
         if (config.localSession === undefined || !isLocalServiceOrigin(config.httpBaseUrl.href))
@@ -212,7 +256,7 @@ export const make = Effect.gen(function* () {
         const baseDir = yield* fs
           .realPath(config.localSession.baseDir)
           .pipe(Effect.mapError(() => fail("resolve the profile for")));
-        const target = yield* runCli(config, ["__desktop-target", "--base-dir", baseDir]).pipe(
+        const target = yield* runLocalCli(config, ["__desktop-target", "--base-dir", baseDir]).pipe(
           Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(LocalServiceTarget))),
           Effect.mapError(() => fail("discover")),
         );
@@ -231,7 +275,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(() => fail("open the protected store for")),
       ),
     issue: (config, target, enrollmentId) =>
-      runCli(config, [
+      runLocalCli(config, [
         "auth",
         "session",
         "issue",
@@ -246,40 +290,18 @@ export const make = Effect.gen(function* () {
         Effect.mapError(() => fail("enroll")),
       ),
     revoke: (config, target, sessionId) =>
-      runCli(config, ["auth", "session", "revoke", sessionId, ...identityArgs(target)]).pipe(
+      runLocalCli(config, ["auth", "session", "revoke", sessionId, ...identityArgs(target)]).pipe(
         Effect.asVoid,
       ),
     validate: (target, credential) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const wsBaseUrl = target.origin.replace(/^http:/, "ws:");
-          const socketUrl = yield* resolveRemoteWebSocketConnectionUrl({
-            httpBaseUrl: target.origin,
-            wsBaseUrl,
-            bearerToken: Redacted.value(credential.token),
-          });
-          const connectionTarget = new PrimaryConnectionTarget({
-            environmentId: EnvironmentId.make(target.environmentId),
-            label: "Workjet Desktop",
-            httpBaseUrl: target.origin,
-            wsBaseUrl,
-          });
-          const session = yield* rpc.connect({
-            ...connectionTarget,
-            runtimeInstanceId: target.runtimeInstanceId,
-            socketUrl,
-            httpAuthorization: null,
-            target: connectionTarget,
-          });
-          yield* session.ready;
-          if ((yield* session.initialConfig).environment.serverVersion !== target.serverVersion)
-            return yield* fail("verify the server version for");
-        }),
-      ).pipe(
-        Effect.provideService(HttpClient.HttpClient, http),
-        Effect.timeout("20 seconds"),
-        Effect.mapError(() => fail("authenticate the current server generation for")),
-      ),
+      Effect.scoped(connect(target, credential)).pipe(Effect.asVoid),
   });
+  return {
+    get: access.get,
+    attach: (config: DesktopBackendStartConfig) =>
+      access
+        .prepare(config)
+        .pipe(Effect.flatMap(({ target, credential }) => connect(target, credential))),
+  };
 });
 export const layer = Layer.effect(DesktopLocalServiceSession, make);

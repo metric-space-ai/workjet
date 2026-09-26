@@ -205,8 +205,7 @@ type UnregisterAction =
   | { readonly _tag: "Wait"; readonly done: Deferred.Deferred<void> }
   | { readonly _tag: "Close"; readonly entry: ActiveRegisteredInstance };
 
-export const layer = Layer.effect(
-  DesktopBackendPool,
+const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
   Effect.gen(function* () {
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
@@ -277,6 +276,9 @@ export const layer = Layer.effect(
 
     const primary = yield* DesktopBackendManager.makeBackendInstance({
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
+      ...(run === undefined ? {} : { run }),
+      onAttachmentBlocked: (reason) =>
+        electronDialog.showErrorBox("Workjet service needs attention", reason),
       // Keep this lazy. The pool layer is initialized before startup loads
       // persisted desktop settings, so resolving the primary label here would
       // permanently capture DEFAULT_DESKTOP_SETTINGS and mislabel WSL-only
@@ -438,8 +440,12 @@ export const layer = Layer.effect(
       register,
       unregister,
     });
-  }),
-);
+  });
+
+export const layerWithPrimaryRunner = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
+  Layer.effect(DesktopBackendPool, make(run));
+
+export const layer = layerWithPrimaryRunner();
 
 // Test layer for unit tests that want to assert against a known pool
 // composition without standing up the full manager. Each provided

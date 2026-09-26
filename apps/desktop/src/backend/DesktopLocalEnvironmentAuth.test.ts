@@ -59,6 +59,7 @@ describe("DesktopLocalEnvironmentAuth", () => {
             HttpClient.make(() => Effect.die("No bootstrap request is permitted.")),
           ),
           Effect.provideService(DesktopLocalServiceSession.DesktopLocalServiceSession, {
+            attach: () => Effect.die("Auth IPC must not own a persistent attachment."),
             get: () =>
               Effect.suspend(() => {
                 requests++;
@@ -122,6 +123,7 @@ describe("DesktopLocalEnvironmentAuth", () => {
             poolLayer,
             httpClientLayer,
             Layer.succeed(DesktopLocalServiceSession.DesktopLocalServiceSession, {
+              attach: () => Effect.die("Legacy bootstrap must not attach a service."),
               get: () => Effect.die("Legacy bootstrap must not enroll a local service session."),
             }),
           ),

@@ -1,7 +1,8 @@
 # Desktop-independent provider execution
 
-Status: implementation contract for the existing project-team work, not a claim
-of delivered runtime behavior. Source baseline: PR73 `214a99c55` (2026-09-26).
+Status: implementation in progress on PR73 (2026-09-26), not a claim of
+delivered full-Quit behavior. The macOS service adapter described below is
+source-only; Desktop still owns and stops its current backend processes.
 
 ## Current ownership
 
@@ -27,8 +28,9 @@ lifecycle remains a separate contract.
 
 1. **Move the local server under a service owner.** Extend the existing
    `cloud/bootService` and pinned runtime/launcher protocol instead of adding an
-   independent job scheduler. Existing boot-service support is Linux/systemd;
-   macOS needs a user LaunchAgent adapter. Windows needs an explicit supported
+   independent job scheduler. BootService now has a macOS user LaunchAgent
+   adapter alongside Linux/systemd; Desktop integration is still missing.
+   Windows needs an explicit supported
    service owner before advertising this guarantee there. Use a durable pinned
    runtime, not a mutable application-bundle executable or a temp worktree.
    The service owns provider child processes and logs. Desktop is its client.
@@ -97,5 +99,28 @@ are Workjet-owned source work and are not blocked by a general native
 architecture pause. Full control/recovery acceptance depends on the specific
 Crew contract above. Each block needs focused verification; the complete user
 journey needs admitted host capacity and an isolated exact-build runtime.
+The first source block adds a profile-specific macOS LaunchAgent to BootService:
+canonical profile paths determine stable labels, argv and XML values are
+escaped independently, the existing pinned runtime/launcher protocol is reused,
+and update/uninstall require a successful bounded `launchctl bootout --wait`.
+The adapter probes support for `--wait` before installation and fails closed
+on an unsupported or uncertain stop. Pending launcher updates survive repair.
+CLI status/onboarding explicitly limit its lifetime to the user's login session.
+
+This is a service-manager foundation, **not** desktop/runtime decoupling. It
+does not yet supply a pinned standalone Node executable for Desktop, a
+cross-process profile writer lock, authenticated attachment, reconnectable
+telemetry, or native reconciliation. A label alone cannot exclude a manually
+started server or concurrent administrative commands from the same database.
+No service is installed by this source change. Focused tests use a fake process
+runner and real isolated files; they cannot prove launchd or full-Quit behavior.
+An installed-but-unloaded job currently fails closed during repair/uninstall
+rather than interpreting an arbitrary launchctl error as proof of absence.
+Status compares installed artifacts; it is not a runtime health assertion.
+
+Next source block: canonical-profile exclusive runtime ownership and a durable,
+authenticated attach boundary, followed by Desktop's explicit attach/detach
+wiring. The actual macOS lifecycle and same-run proof remain dependent on an
+isolated exact build, admitted host capacity and the native contract above.
 There is no measured completion date yet. A source patch, successful build or
 external-server demonstration alone cannot close this outcome.

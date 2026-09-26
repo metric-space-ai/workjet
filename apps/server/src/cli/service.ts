@@ -48,7 +48,7 @@ export function formatServiceStatus(
   cliVersion: string,
 ): string {
   if (!status.supported) {
-    return "Workjet service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd";
+    return "Workjet service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd or macOS with a user login session";
   }
   if (!status.installed) {
     return "Workjet service\n  Status: not installed\n  Next: Run `workjet service install`.";
@@ -58,6 +58,9 @@ export function formatServiceStatus(
     `  Status: ${status.current ? `installed · workjet@${cliVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
+    ...(status.loginSessionOnly
+      ? ["  Lifetime: runs while you are logged in; stops at logout."]
+      : []),
     ...(status.current ? [] : ["  Next: Run `npx workjet@latest service update`."]),
   ].join("\n");
 }
@@ -144,7 +147,7 @@ const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
 
 export const offerServiceDuringOnboarding = Effect.gen(function* () {
   const service = yield* BootService.BootService;
-  const { supported, installed, current } = yield* service.status;
+  const { supported, installed, current, loginSessionOnly } = yield* service.status;
   if (!supported) {
     return false;
   }
@@ -156,8 +159,10 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
     Prompt.confirm({
       message: installed
         ? "The installed Workjet service needs an update or repair. Update it now?"
-        : "Run Workjet in the background whenever this machine boots? " +
-          "It stays reachable through Workjet Connect even after you log out.",
+        : loginSessionOnly
+          ? "Run Workjet in the background while you are logged in? It starts at login and stops at logout."
+          : "Run Workjet in the background whenever this machine boots? " +
+            "It stays reachable through Workjet Connect even after you log out.",
       initial: true,
     }),
   );

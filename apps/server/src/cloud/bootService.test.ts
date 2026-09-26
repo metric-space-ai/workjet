@@ -4,6 +4,7 @@ import {
   HostProcessArguments,
   HostProcessExecutablePath,
   HostProcessPlatform,
+  HostProcessUserId,
 } from "@workjet/shared/hostProcess";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
@@ -49,9 +50,29 @@ it("survives the kernel OOM-killing a greedy agent child", () => {
   expect(unit).toContain("OOMPolicy=continue");
 });
 
+it("renders launchd arguments as XML values and separates profile identities", () => {
+  const plan: BootService.BootServicePlan = {
+    nodePath: "/Applications/Node & Tools/node",
+    launcherPath: "/Users/me/Profile <one>/runtime/service-launcher.mjs",
+    baseDir: "/Users/me/Profile <one>",
+    logPath: '/Users/me/Profile <one>/logs/"boot".log',
+    unitPath: "/Users/me/Library/LaunchAgents/test.plist",
+  };
+  const plist = BootService.renderBootServiceLaunchAgent(plan);
+  expect(plist).toContain("<string>/Applications/Node &amp; Tools/node</string>");
+  expect(plist).toContain("Profile &lt;one&gt;/runtime/service-launcher.mjs</string>");
+  expect(plist).toContain("&quot;boot&quot;.log</string>");
+  expect(plist).toContain("<key>KeepAlive</key><true/>");
+  expect(plist).not.toContain("/bin/sh");
+  expect(BootService.bootServiceLaunchAgentLabel(plan.baseDir)).not.toBe(
+    BootService.bootServiceLaunchAgentLabel("/Users/me/Profile <two>"),
+  );
+});
+
 const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   platform: NodeJS.Platform = "linux",
   usePinnedLauncher = false,
+  aliasProfile = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -59,6 +80,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   const baseDir = path.join(home, ".workjet");
   const sourceLauncher = path.join(home, "service-launcher.mjs");
   const statePath = path.join(baseDir, "runtime", "service-state.json");
+  const profileAlias = path.join(home, "profile-alias");
   yield* fs.writeFileString(sourceLauncher, "export {};\n");
   const runtime = pinnedRuntimePaths(path, baseDir, "1.2.3");
   yield* fs.makeDirectory(path.dirname(runtime.entryPath), { recursive: true });
@@ -68,19 +90,33 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     "export const source = 'pinned runtime';\n",
   );
   yield* fs.writeFileString(runtime.sentinelPath, "1.2.3\n");
+  if (aliasProfile) yield* fs.symlink(baseDir, profileAlias);
 
   const commands: string[] = [];
-  const control: { failCommand: string | undefined } = { failCommand: undefined };
+  const control: {
+    failCommand: string | undefined;
+    timeoutCommand: string | undefined;
+    supportsWait: boolean;
+  } = {
+    failCommand: undefined,
+    timeoutCommand: undefined,
+    supportsWait: true,
+  };
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.sync(() => {
         const command = `${input.command} ${input.args.join(" ")}`;
         commands.push(command);
         return {
-          stdout: input.args[1] === "--version" ? "workjet v1.2.3\n" : "",
+          stdout:
+            input.args[1] === "--version"
+              ? "workjet v1.2.3\n"
+              : command === "/bin/launchctl help bootout" && control.supportsWait
+                ? "bootout [--wait] <service-target>"
+                : "",
           stderr: "",
           code: ChildProcessSpawner.ExitCode(command === control.failCommand ? 1 : 0),
-          timedOut: false,
+          timedOut: command === control.timeoutCommand,
           stdoutTruncated: false,
           stderrTruncated: false,
           stdoutInvalidUtf8: false,
@@ -89,7 +125,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       }),
   });
   const service = yield* BootService.make({
-    baseDir,
+    baseDir: aliasProfile ? profileAlias : baseDir,
     logsDir: path.join(baseDir, "userdata", "logs"),
     cliVersion: "1.2.3",
     host: {
@@ -101,13 +137,14 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     Effect.provide(
       Layer.mergeAll(
         Layer.succeed(HostProcessPlatform, platform),
+        Layer.succeed(HostProcessUserId, 501),
         Layer.succeed(HostProcessExecutablePath, "/usr/bin/node"),
         Layer.succeed(HostProcessArguments, ["/usr/bin/node", path.join(home, "bin.mjs")]),
         ConfigProvider.layer(ConfigProvider.fromEnv({ env: { HOME: home } })),
       ),
     ),
   );
-  return { service, fs, statePath, commands, control };
+  return { service, fs, statePath, commands, control, baseDir };
 });
 
 it.layer(NodeServices.layer)("boot service install", (it) => {
@@ -197,9 +234,111 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
     }),
   );
 
-  it.effect("fails closed off Linux", () =>
+  it.effect("installs, updates and removes a macOS login agent with a stable profile label", () =>
     Effect.gen(function* () {
-      const { service } = yield* makeHarness("darwin");
+      const { service, fs, commands } = yield* makeHarness("darwin");
+      const plan = yield* service.install;
+      const label = BootService.bootServiceLaunchAgentLabel(plan.baseDir);
+      const bootstrap = `/bin/launchctl bootstrap gui/501 ${plan.unitPath}`;
+      const bootout = `/bin/launchctl bootout --wait gui/501/${label}`;
+      expect(plan.unitPath).toContain(`/Library/LaunchAgents/${label}.plist`);
+      expect(yield* fs.readFileString(plan.unitPath)).toBe(
+        BootService.renderBootServiceLaunchAgent(plan),
+      );
+      expect(yield* service.status).toMatchObject({ current: true, loginSessionOnly: true });
+      yield* service.install;
+      expect(yield* service.uninstall).toBe(true);
+      expect((yield* service.status).installed).toBe(false);
+      expect(commands.filter((command) => !command.startsWith("/usr/bin/node "))).toEqual([
+        "/bin/launchctl help bootout",
+        bootstrap,
+        "/bin/launchctl help bootout",
+        bootout,
+        bootstrap,
+        "/bin/launchctl help bootout",
+        bootout,
+      ]);
+      expect(yield* fs.exists(plan.launcherPath)).toBe(true);
+    }),
+  );
+
+  it.effect("canonicalizes a macOS profile alias before selecting its service owner", () =>
+    Effect.gen(function* () {
+      const { service, fs, baseDir } = yield* makeHarness("darwin", false, true);
+      const plan = yield* service.install;
+      expect(plan.baseDir).toBe(yield* fs.realPath(baseDir));
+      expect(plan.unitPath).toContain(BootService.bootServiceLaunchAgentLabel(plan.baseDir));
+      expect(plan.launcherPath).toBe(`${plan.baseDir}/runtime/service-launcher.mjs`);
+    }),
+  );
+
+  it.effect("preserves macOS runtime files and avoids restart after an unconfirmed stop", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath, commands, control } = yield* makeHarness("darwin");
+      const plan = yield* service.install;
+      const originalState = yield* fs.readFileString(statePath);
+      const originalUnit = yield* fs.readFileString(plan.unitPath);
+      const bootout = `/bin/launchctl bootout --wait gui/501/${BootService.bootServiceLaunchAgentLabel(plan.baseDir)}`;
+      for (const mode of ["failCommand", "timeoutCommand"] as const) {
+        commands.length = 0;
+        control[mode] = bootout;
+        expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
+        expect(yield* fs.readFileString(statePath)).toBe(originalState);
+        expect(yield* fs.readFileString(plan.unitPath)).toBe(originalUnit);
+        expect(commands.filter((command) => command.startsWith("/bin/launchctl "))).toEqual([
+          "/bin/launchctl help bootout",
+          bootout,
+        ]);
+        expect((yield* service.uninstall.pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
+        expect(yield* fs.exists(plan.unitPath)).toBe(true);
+        control[mode] = undefined;
+      }
+    }),
+  );
+
+  it.effect("restores a stopped macOS job without overwriting a pending launcher update", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath, commands } = yield* makeHarness("darwin");
+      const plan = yield* service.install;
+      // @effect-diagnostics-next-line preferSchemaOverJson:off - launcher-owned test document.
+      const pending = JSON.stringify({
+        protocol: SERVICE_LAUNCHER_PROTOCOL,
+        activeVersion: "1.2.3",
+        update: {
+          id: "remote",
+          fromVersion: "1.2.3",
+          targetVersion: "1.2.4",
+          dbPath: "/test/state.sqlite",
+          status: "pending",
+        },
+      });
+      yield* fs.writeFileString(statePath, pending);
+      commands.length = 0;
+      expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceUpdatePendingError");
+      expect(yield* fs.readFileString(statePath)).toBe(pending);
+      expect(commands.filter((command) => command.startsWith("/bin/launchctl "))).toEqual([
+        "/bin/launchctl help bootout",
+        `/bin/launchctl bootout --wait gui/501/${BootService.bootServiceLaunchAgentLabel(plan.baseDir)}`,
+        `/bin/launchctl bootstrap gui/501 ${plan.unitPath}`,
+      ]);
+    }),
+  );
+
+  it.effect("refuses first install before writing a plist if launchctl cannot confirm a stop", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath, commands, control } = yield* makeHarness("darwin");
+      const status = yield* service.status;
+      control.supportsWait = false;
+      expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceCommandError");
+      expect(commands).toEqual(["/bin/launchctl help bootout"]);
+      expect(yield* fs.exists(status.unitPath)).toBe(false);
+      expect(yield* fs.exists(statePath)).toBe(false);
+    }),
+  );
+
+  it.effect("fails closed on unsupported platforms", () =>
+    Effect.gen(function* () {
+      const { service } = yield* makeHarness("win32");
       expect((yield* service.status).supported).toBe(false);
       expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceUnsupportedError");
     }),

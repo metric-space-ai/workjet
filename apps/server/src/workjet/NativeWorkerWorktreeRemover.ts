@@ -14,7 +14,11 @@ import { ResourceMonitorBinary } from "../resourceTelemetry/ResourceMonitorBinar
 
 export class NativeWorkerWorktreeRemovalError extends Schema.TaggedErrorClass<NativeWorkerWorktreeRemovalError>()(
   "NativeWorkerWorktreeRemovalError",
-  { reason: Schema.Literals(["identity", "backlink", "unavailable", "failed", "timeout"]) },
+  {
+    reason: Schema.Literals(["identity", "backlink", "unavailable", "failed", "timeout"]),
+    recoveryWorktreePath: Schema.optional(Schema.String),
+    recoveryAdminPath: Schema.optional(Schema.String),
+  },
 ) {}
 
 export interface CapturedWorkerWorktree {
@@ -32,6 +36,16 @@ export class NativeWorkerWorktreeRemover extends Context.Service<
     readonly capture: (
       worktreePath: string,
     ) => Effect.Effect<CapturedWorkerWorktree, NativeWorkerWorktreeRemovalError>;
+    readonly quarantineCaptured: (
+      captured: CapturedWorkerWorktree,
+      reference: { readonly headOid: string; readonly branchRef: string },
+    ) => Effect.Effect<
+      {
+        readonly recoveryWorktreePath: string;
+        readonly recoveryAdminPath: string;
+      },
+      NativeWorkerWorktreeRemovalError
+    >;
     readonly removeCaptured: (
       captured: CapturedWorkerWorktree,
     ) => Effect.Effect<void, NativeWorkerWorktreeRemovalError>;
@@ -97,22 +111,25 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
     };
   });
 
-  const removeCaptured: NativeWorkerWorktreeRemover["Service"]["removeCaptured"] = Effect.fn(
-    "NativeWorkerWorktreeRemover.removeCaptured",
-  )(function* (captured) {
+  const runCaptured = Effect.fn("NativeWorkerWorktreeRemover.runCaptured")(function* (
+    captured: CapturedWorkerWorktree,
+    mode: "remove" | "quarantine",
+    referenceArgs: ReadonlyArray<string> = [],
+  ) {
     const executable = yield* binary.resolve.pipe(
       Effect.mapError(() => removalError("unavailable")),
     );
     const command = ChildProcess.make(
       executable,
       [
-        "--remove-verified-worktree",
+        mode === "remove" ? "--remove-verified-worktree" : "--quarantine-rejected-worktree",
         captured.worktreePath,
         captured.worktreeDev,
         captured.worktreeIno,
         captured.adminPath,
         captured.adminDev,
         captured.adminIno,
+        ...referenceArgs,
       ],
       {
         stdout: "pipe",
@@ -137,15 +154,36 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
         Schema.is(NativeWorkerWorktreeRemovalError)(error) ? error : removalError("failed"),
       ),
     );
-    if (result.exitCode !== 0 || result.stdout.trim() !== '{"status":"removed"}') {
+    const expected = mode === "remove" ? '{"status":"removed"}' : '{"status":"quarantined"}';
+    if (result.exitCode !== 0 || result.stdout.trim() !== expected) {
       return yield* removalError("failed");
     }
   });
 
+  const removeCaptured: NativeWorkerWorktreeRemover["Service"]["removeCaptured"] = (captured) =>
+    runCaptured(captured, "remove");
+  const quarantineCaptured: NativeWorkerWorktreeRemover["Service"]["quarantineCaptured"] =
+    Effect.fn("NativeWorkerWorktreeRemover.quarantineCaptured")(function* (captured, reference) {
+      const recovery = {
+        recoveryWorktreePath: `${captured.worktreePath}.workjet-rejected-${captured.worktreeIno}`,
+        recoveryAdminPath: path.join(
+          path.dirname(path.dirname(captured.adminPath)),
+          "workjet-rejected",
+          `${path.basename(captured.adminPath)}-${captured.adminIno}`,
+        ),
+      };
+      yield* runCaptured(captured, "quarantine", [reference.headOid, reference.branchRef]).pipe(
+        Effect.mapError(
+          (error) => new NativeWorkerWorktreeRemovalError({ reason: error.reason, ...recovery }),
+        ),
+      );
+      return recovery;
+    });
+
   const remove: NativeWorkerWorktreeRemover["Service"]["remove"] = (worktreePath) =>
     capture(worktreePath).pipe(Effect.flatMap(removeCaptured));
 
-  return NativeWorkerWorktreeRemover.of({ capture, removeCaptured, remove });
+  return NativeWorkerWorktreeRemover.of({ capture, removeCaptured, quarantineCaptured, remove });
 });
 
 export const layer = Layer.effect(NativeWorkerWorktreeRemover, make());

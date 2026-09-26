@@ -405,7 +405,7 @@ it.effect(
 );
 
 it.effect(
-  "removes the worker worktree when the real engine rejects the worker thread",
+  "quarantines source and unregisters the worktree when the real engine rejects the worker thread",
   () =>
     withRealStack((fixture) =>
       Effect.gen(function* () {
@@ -446,25 +446,48 @@ it.effect(
         const workerDispatch = yield* makeWorkerDispatchWithSources(sources);
         const parentBefore = yield* checkoutState(fixture.repositoryRoot);
 
-        const outcome = yield* Effect.exit(
-          workerDispatch.dispatch(invocation, { task: "This dispatch must roll back." }),
-        );
-        assert.equal(outcome._tag, "Failure");
+        const error = yield* workerDispatch
+          .dispatch(invocation, { task: "This dispatch must roll back." })
+          .pipe(Effect.flip);
+        assert.equal(error.reason, "create-failed");
+        const recovery = error.recoveryWorktreePath;
+        const recoveryAdmin = error.recoveryAdminPath;
+        if (recovery === undefined || recoveryAdmin === undefined) {
+          return yield* Effect.die("Rejected dispatch did not return its recovery locations.");
+        }
 
-        // The rollback removed the worktree the dispatch had already created:
-        // nothing is left under the storage root, and Git no longer lists it.
+        // No active checkout or registration remains. Source is retained,
+        // including any writes racing the last status check (native regression).
         const workerRef = `${WORKER_REF_PREFIX}${collidingThreadId}`;
         const remaining = yield* fileSystem.readDirectory(fixture.worktreeRoot).pipe(
           Effect.flatMap((repositoryDirectories) =>
             Effect.forEach(repositoryDirectories, (directory) =>
               fileSystem
                 .readDirectory(`${fixture.worktreeRoot}/${directory}`)
-                .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>)),
+                .pipe(
+                  Effect.map((entries) =>
+                    entries.map((entry) => `${fixture.worktreeRoot}/${directory}/${entry}`),
+                  ),
+                ),
             ),
           ),
           Effect.map((entries) => entries.flat()),
         );
-        assert.deepStrictEqual(remaining, []);
+        assert.deepStrictEqual(remaining, [recovery]);
+        assert.equal(
+          yield* fileSystem.readFileString(`${recovery}/PLAN.md`),
+          "orchestrator plan\n",
+        );
+        const receipt = yield* fileSystem.readFileString(
+          `${recoveryAdmin}/workjet-rollback-receipt.json`,
+        );
+        assert.include(receipt, workerRef);
+        assert.include(receipt, yield* git(fixture.repositoryRoot, ["rev-parse", "HEAD"]));
+        assert.include(receipt, recovery);
+        const progress = yield* fileSystem.readFileString(
+          `${recoveryAdmin}/workjet-rollback-progress.jsonl`,
+        );
+        assert.include(progress, "checkout-and-admin-quarantined");
         const worktreeList = yield* git(fixture.repositoryRoot, [
           "worktree",
           "list",

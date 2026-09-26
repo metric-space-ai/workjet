@@ -304,6 +304,10 @@ const makeHarness = (input?: {
               if (input?.failBranchDelete) {
                 return yield* new WorkerDispatchRollbackError({ reason: "unavailable" });
               }
+              return {
+                recoveryWorktreePath: `${prepared.worktreePath}.workjet-rejected-2`,
+                recoveryAdminPath: "/repo/.git/workjet-rejected/worker-3",
+              };
             }),
           ),
       }),

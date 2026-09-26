@@ -95,6 +95,10 @@ export const isWorkerDispatchToolVisible = (
 
 const failureResult = (
   reason: WorkerDispatch.WorkerDispatchFailureReason,
+  recovery: {
+    readonly recoveryWorktreePath?: string;
+    readonly recoveryAdminPath?: string;
+  } = {},
 ): McpSchema.CallToolResult =>
   new McpSchema.CallToolResult({
     isError: true,
@@ -102,9 +106,25 @@ const failureResult = (
       error: {
         _tag: "WorkjetWorkerDispatchError",
         reason,
+        ...(recovery.recoveryWorktreePath || recovery.recoveryAdminPath
+          ? {
+              recovery: {
+                requiresPreservation: true,
+                ...recovery,
+              },
+            }
+          : {}),
       },
     },
-    content: [{ type: "text", text: "Workjet worker dispatch failed." }],
+    content: [
+      {
+        type: "text",
+        text:
+          recovery.recoveryWorktreePath || recovery.recoveryAdminPath
+            ? "Workjet worker dispatch failed. Recovery may be partial; preserve retained files before storage cleanup and inspect the recovery receipt."
+            : "Workjet worker dispatch failed.",
+      },
+    ],
   });
 
 const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")(function* () {
@@ -167,7 +187,17 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
           Effect.catchTags({
             WorkjetOrchestratorUnavailableError: () =>
               Effect.succeed(failureResult("role-not-authorized")),
-            WorkerDispatchError: (error) => Effect.succeed(failureResult(error.reason)),
+            WorkerDispatchError: (error) =>
+              Effect.succeed(
+                failureResult(error.reason, {
+                  ...(error.recoveryWorktreePath
+                    ? { recoveryWorktreePath: error.recoveryWorktreePath }
+                    : {}),
+                  ...(error.recoveryAdminPath
+                    ? { recoveryAdminPath: error.recoveryAdminPath }
+                    : {}),
+                }),
+              ),
           }),
         );
       }),

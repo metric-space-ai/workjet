@@ -29,7 +29,7 @@ import { OrchestrationCommandReceiptRepository } from "../persistence/Services/O
 import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
-import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
+import { WorkerDispatchRollback, type WorkerDispatchRecovery } from "./WorkerDispatchRollback.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
 
 export interface WorkerDispatchInput {
@@ -74,6 +74,8 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       "turn-start-failed",
       "rollback-failed",
     ]),
+    recoveryWorktreePath: Schema.optional(Schema.String),
+    recoveryAdminPath: Schema.optional(Schema.String),
   },
 ) {
   override get message(): string {
@@ -131,7 +133,8 @@ export const deriveWorkerTitle = (task: string): string => {
   return `${normalized.slice(0, DEFAULT_TITLE_MAX_LENGTH - 3).trimEnd()}...`;
 };
 
-const failure = (reason: WorkerDispatchFailureReason) => new WorkerDispatchError({ reason });
+const failure = (reason: WorkerDispatchFailureReason, recovery?: Partial<WorkerDispatchRecovery>) =>
+  new WorkerDispatchError({ reason, ...recovery });
 
 export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithSources")(function* (
   sources: WorkerDispatchSources,
@@ -333,7 +336,16 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             if (existing?.worktreePath === workerWorktree.path)
               return yield* failure("rollback-failed");
           }
-          yield* preparedRollback.value.pipe(Effect.mapError(() => failure("rollback-failed")));
+          return yield* preparedRollback.value.pipe(
+            Effect.mapError((error) =>
+              failure("rollback-failed", {
+                ...(error.recoveryWorktreePath
+                  ? { recoveryWorktreePath: error.recoveryWorktreePath }
+                  : {}),
+                ...(error.recoveryAdminPath ? { recoveryAdminPath: error.recoveryAdminPath } : {}),
+              }),
+            ),
+          );
         }).pipe(Effect.exit);
 
       const createCommand = {
@@ -409,9 +421,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                 }
                 if (receipt.status === "rejected") {
                   const cleanupExit = yield* removeWorkerWorktree(createCommandId);
-                  return yield* failure(
-                    cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed",
-                  );
+                  if (cleanupExit._tag === "Failure")
+                    return yield* Effect.failCause(cleanupExit.cause);
+                  return yield* failure("create-failed", cleanupExit.value);
                 }
               }
             }
@@ -470,7 +482,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           return yield* failure("rollback-failed");
         }
         const cleanupExit = yield* removeWorkerWorktree(createCommandId);
-        return yield* failure(cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed");
+        if (cleanupExit._tag === "Failure") return yield* Effect.failCause(cleanupExit.cause);
+        return yield* failure("create-failed", cleanupExit.value);
       }
 
       // Thread and queued delegation have one durable receipt. The existing
@@ -517,9 +530,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         // its checkout while that thread may still run or be retried.
         if (rollbackExit._tag === "Failure") return yield* failure("rollback-failed");
         const worktreeRollbackExit = yield* removeWorkerWorktree(turnStartCommandId);
-        return yield* failure(
-          worktreeRollbackExit._tag === "Failure" ? "rollback-failed" : "turn-start-failed",
-        );
+        if (worktreeRollbackExit._tag === "Failure")
+          return yield* Effect.failCause(worktreeRollbackExit.cause);
+        return yield* failure("turn-start-failed", worktreeRollbackExit.value);
       }
 
       return {

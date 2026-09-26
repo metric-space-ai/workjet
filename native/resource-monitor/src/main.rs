@@ -669,7 +669,11 @@ fn main() -> io::Result<()> {
     let mut args = std::env::args_os();
     let _program = args.next();
     if let Some(command) = args.next() {
-        if command != "--remove-verified-dir" && command != "--remove-verified-worktree" {
+        let quarantine = command == "--quarantine-rejected-worktree";
+        if command != "--remove-verified-dir"
+            && command != "--remove-verified-worktree"
+            && !quarantine
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unknown command",
@@ -686,7 +690,7 @@ fn main() -> io::Result<()> {
         };
         let expected_dev = parse_identity(args.next())?;
         let expected_ino = parse_identity(args.next())?;
-        if command == "--remove-verified-worktree" {
+        if command == "--remove-verified-worktree" || quarantine {
             let admin_path = PathBuf::from(args.next().ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -695,6 +699,36 @@ fn main() -> io::Result<()> {
             })?);
             let admin_dev = parse_identity(args.next())?;
             let admin_ino = parse_identity(args.next())?;
+            if quarantine {
+                let head_oid = args
+                    .next()
+                    .and_then(|value| value.into_string().ok())
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "missing original commit")
+                    })?;
+                let branch_ref = args
+                    .next()
+                    .and_then(|value| value.into_string().ok())
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "missing original ref")
+                    })?;
+                if args.next().is_some() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "unexpected argument",
+                    ));
+                }
+                safe_worktree_cleanup::quarantine_rejected_worktree(
+                    &path,
+                    (expected_dev, expected_ino),
+                    &admin_path,
+                    (admin_dev, admin_ino),
+                    &head_oid,
+                    &branch_ref,
+                )?;
+                println!("{{\"status\":\"quarantined\"}}");
+                return Ok(());
+            }
             if args.next().is_some() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,

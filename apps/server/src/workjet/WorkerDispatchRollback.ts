@@ -8,8 +8,17 @@ import { NativeWorkerWorktreeRemover } from "./NativeWorkerWorktreeRemover.ts";
 
 export class WorkerDispatchRollbackError extends Schema.TaggedErrorClass<WorkerDispatchRollbackError>()(
   "WorkerDispatchRollbackError",
-  { reason: Schema.Literals(["changed", "unavailable"]) },
+  {
+    reason: Schema.Literals(["changed", "unavailable"]),
+    recoveryWorktreePath: Schema.optional(Schema.String),
+    recoveryAdminPath: Schema.optional(Schema.String),
+  },
 ) {}
+
+export interface WorkerDispatchRecovery {
+  readonly recoveryWorktreePath: string;
+  readonly recoveryAdminPath: string;
+}
 
 export class WorkerDispatchRollback extends Context.Service<
   WorkerDispatchRollback,
@@ -20,7 +29,7 @@ export class WorkerDispatchRollback extends Context.Service<
       readonly worktreePath: string;
       readonly branchRef: string;
     }) => Effect.Effect<
-      Effect.Effect<void, WorkerDispatchRollbackError>,
+      Effect.Effect<WorkerDispatchRecovery, WorkerDispatchRollbackError>,
       WorkerDispatchRollbackError
     >;
   }
@@ -80,17 +89,37 @@ export const make = Effect.fn("WorkerDispatchRollback.make")(function* () {
 
     return Effect.gen(function* () {
       yield* verifyCheckout;
-      // Use the identities saved before thread creation, never fresh identities
-      // from a mutable pathname after a rejection. The native helper pins both
-      // directories and checks backlinks without following symlinks.
-      yield* remover.removeCaptured(captured).pipe(Effect.mapError(unavailable));
+      // Never recursively delete an unstarted checkout: a late editor write
+      // can race any clean-status check without changing the directory inode.
+      const recovery = yield* remover
+        .quarantineCaptured(captured, {
+          headOid: head.commitSha,
+          branchRef: input.branchRef,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new WorkerDispatchRollbackError({
+                reason: "unavailable",
+                ...(error.recoveryWorktreePath
+                  ? { recoveryWorktreePath: error.recoveryWorktreePath }
+                  : {}),
+                ...(error.recoveryAdminPath ? { recoveryAdminPath: error.recoveryAdminPath } : {}),
+              }),
+          ),
+        );
       yield* git
         .deleteBranchAtCommit({
           cwd: input.cwd,
           refName: input.branchRef,
           expectedCommitSha: head.commitSha,
         })
-        .pipe(Effect.mapError(unavailable));
+        .pipe(
+          Effect.mapError(
+            () => new WorkerDispatchRollbackError({ reason: "unavailable", ...recovery }),
+          ),
+        );
+      return recovery;
     });
   });
 

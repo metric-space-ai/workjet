@@ -1,4 +1,5 @@
 import { expect, it } from "@effect/vitest";
+import { GitCommandError } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/unstable/process";
@@ -29,6 +30,8 @@ const fixture = () => {
     status: "",
     truncated: false,
     rejectRemoval: false,
+    partialFailure: false,
+    failRefDelete: false,
   };
   const git = Layer.mock(GitVcsDriver)({
     resolveCommit: () => Effect.succeed({ commitSha: state.head }),
@@ -41,38 +44,56 @@ const fixture = () => {
         stdout: command.args[0] === "symbolic-ref" ? state.branch : state.status,
       }),
     deleteBranchAtCommit: (command) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         expect(command).toEqual({
           cwd: input.cwd,
           refName: input.branchRef,
           expectedCommitSha: "a".repeat(40),
         });
         calls.push("delete-ref");
+        if (state.failRefDelete)
+          return yield* new GitCommandError({
+            operation: "delete-ref",
+            command: "git",
+            cwd: input.cwd,
+            detail: "compare failed",
+          });
       }),
   });
   const remover = Layer.mock(NativeWorkerWorktreeRemover)({
     capture: () =>
       Effect.sync(() => ({ ...identity, worktreeIno: state.ino, adminIno: state.adminIno })),
-    removeCaptured: (captured) =>
+    quarantineCaptured: (captured) =>
       Effect.gen(function* () {
-        // The descriptor passed for deletion must be the original capture.
+        // Quarantine uses the original capture, not a post-rejection snapshot.
         expect(captured).toEqual(identity);
-        calls.push("remove-captured");
+        calls.push("quarantine-captured");
         if (state.rejectRemoval)
           return yield* new NativeWorkerWorktreeRemovalError({ reason: "identity" });
+        if (state.partialFailure)
+          return yield* new NativeWorkerWorktreeRemovalError({
+            reason: "failed",
+            recoveryWorktreePath: "/workers/one.workjet-rejected-2",
+            recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
+          });
+        return {
+          recoveryWorktreePath: "/workers/one.workjet-rejected-2",
+          recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
+        };
       }),
   });
   return { calls, state, service: make().pipe(Effect.provide(Layer.mergeAll(git, remover))) };
 };
 
-it.effect("removes only the unchanged checkout and compare-deletes its original ref", () =>
+it.effect("quarantines the checkout and compare-deletes only its original ref", () =>
   Effect.gen(function* () {
     const test = fixture();
     const service = yield* test.service;
     const rollback = yield* service.prepare(input);
     expect(test.calls).toEqual([]);
-    yield* rollback;
-    expect(test.calls).toEqual(["remove-captured", "delete-ref"]);
+    const recovery = yield* rollback;
+    expect(recovery.recoveryWorktreePath).toBe("/workers/one.workjet-rejected-2");
+    expect(test.calls).toEqual(["quarantine-captured", "delete-ref"]);
   }),
 );
 
@@ -117,6 +138,26 @@ it.effect("keeps the ref when the native helper rejects a late path replacement"
     const rollback = yield* service.prepare(input);
     test.state.rejectRemoval = true;
     yield* rollback.pipe(Effect.flip);
-    expect(test.calls).toEqual(["remove-captured"]);
+    expect(test.calls).toEqual(["quarantine-captured"]);
   }),
 );
+
+for (const failure of ["partialFailure", "failRefDelete"] as const) {
+  it.effect(`returns recovery locations without cleanup success after ${failure}`, () =>
+    Effect.gen(function* () {
+      const test = fixture();
+      const service = yield* test.service;
+      const rollback = yield* service.prepare(input);
+      test.state[failure] = true;
+      const error = yield* rollback.pipe(Effect.flip);
+      expect(error.reason).toBe("unavailable");
+      expect(error.recoveryWorktreePath).toBe("/workers/one.workjet-rejected-2");
+      expect(error.recoveryAdminPath).toBe("/repo/.git/workjet-rejected/one-3");
+      expect(test.calls).toEqual(
+        failure === "partialFailure"
+          ? ["quarantine-captured"]
+          : ["quarantine-captured", "delete-ref"],
+      );
+    }),
+  );
+}

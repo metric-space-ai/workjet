@@ -115,6 +115,9 @@ jobs:
       - name: Ensure Electron runtime is installed
         run: vp run --filter @workjet/desktop ensure:electron
 
+      - name: Build native worktree cleanup for real-stack tests
+        run: cargo build --locked --jobs 2 --manifest-path native/resource-monitor/Cargo.toml
+
       - name: Test
         env:
           WORKJET_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/workjet-transfer-budget.md

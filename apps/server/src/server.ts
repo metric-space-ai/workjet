@@ -66,6 +66,7 @@ import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as WorkerCleanupReceiptStore from "./workjet/WorkerCleanupReceiptStore.ts";
 import * as NativeWorkerWorktreeRemover from "./workjet/NativeWorkerWorktreeRemover.ts";
+import * as WorkerDispatchRollback from "./workjet/WorkerDispatchRollback.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -586,6 +587,13 @@ export const makeRoutesLayer = Layer.mergeAll(
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(
       WorkerDispatch.layer.pipe(
+        Layer.provide(
+          WorkerDispatchRollback.layer.pipe(
+            Layer.provide(
+              NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer)),
+            ),
+          ),
+        ),
         // Resolve a lost creation acknowledgement against the same durable
         // command-receipt store used by the orchestration engine.
         Layer.provide(OrchestrationCommandReceiptRepositoryLive),

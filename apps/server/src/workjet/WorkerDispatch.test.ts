@@ -26,6 +26,7 @@ import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { WorkerDispatchRollback, WorkerDispatchRollbackError } from "./WorkerDispatchRollback.ts";
 import {
   WorktreeStorage,
   layerTest as worktreeStorageLayerTest,
@@ -127,6 +128,7 @@ const makeHarness = (input?: {
   readonly failWorktreeCreate?: boolean;
   readonly failCreateAttempts?: number;
   readonly createReceiptStatus?: "accepted" | "rejected" | "missing" | "unavailable";
+  readonly turnReceiptStatus?: "accepted" | "rejected" | "missing";
   readonly committedDelegation?: boolean;
   readonly workerProjection?: "matching" | "mismatched";
   readonly failWorktreeRemove?: boolean;
@@ -202,18 +204,19 @@ const makeHarness = (input?: {
     getProjectShellById: () => Effect.succeed(Option.some({ workspaceRoot })),
   } as unknown as ProjectionSnapshotQuery["Service"];
   const receipts = {
-    getByCommandId: () => {
-      if (input?.createReceiptStatus === "unavailable") {
+    getByCommandId: ({ commandId }: { commandId: string }) => {
+      const status = commandId === ids[2] ? input?.turnReceiptStatus : input?.createReceiptStatus;
+      if (status === "unavailable") {
         return Effect.fail({ _tag: "ReceiptReadError" });
       }
-      if (!input?.createReceiptStatus || input.createReceiptStatus === "missing") {
+      if (!status || status === "missing") {
         return Effect.succeed(Option.none());
       }
       return Effect.succeed(
         Option.some({
           aggregateKind: "thread",
           aggregateId: ThreadId.make(ids[0]),
-          status: input.createReceiptStatus,
+          status,
         }),
       );
     },
@@ -289,6 +292,21 @@ const makeHarness = (input?: {
       Effect.provideService(WorkjetMailboxStore, mailbox),
       Effect.provideService(ProjectionSnapshotQuery, query),
       Effect.provideService(GitWorkflowService, gitWorkflow),
+      Effect.provideService(WorkerDispatchRollback, {
+        prepare: (prepared) =>
+          Effect.succeed(
+            Effect.gen(function* () {
+              worktreeRemovals.push({ cwd: prepared.cwd, path: prepared.worktreePath });
+              if (input?.failWorktreeRemove) {
+                return yield* new WorkerDispatchRollbackError({ reason: "changed" });
+              }
+              branchDeletions.push({ cwd: prepared.cwd, refName: prepared.branchRef });
+              if (input?.failBranchDelete) {
+                return yield* new WorkerDispatchRollbackError({ reason: "unavailable" });
+              }
+            }),
+          ),
+      }),
     );
   }).pipe(Effect.provide(worktreeStorageLayer));
   return { commands, dispatchOptions, service, worktreeCreates, worktreeRemovals, branchDeletions };
@@ -375,13 +393,23 @@ for (const receiptStatus of ["rejected", "missing", "unavailable"] as const) {
         const error = yield* service
           .dispatch(invocation, { task: "Retain or remove only with a durable receipt." })
           .pipe(Effect.flip);
-        expect(error.reason).toBe("rollback-failed");
+        expect(error.reason).toBe(
+          receiptStatus === "rejected" ? "create-failed" : "rollback-failed",
+        );
         expect(harness.commands.map((command) => command.type)).toEqual([
           "thread.create",
           "thread.create",
         ]);
-        expect(harness.worktreeRemovals).toEqual([]);
-        expect(harness.branchDeletions).toEqual([]);
+        expect(harness.worktreeRemovals).toEqual(
+          receiptStatus === "rejected"
+            ? [{ cwd: parent.worktreePath, path: workerPathFor(ids[0]) }]
+            : [],
+        );
+        expect(harness.branchDeletions).toEqual(
+          receiptStatus === "rejected"
+            ? [{ cwd: parent.worktreePath, refName: workerRefFor(ids[0]) }]
+            : [],
+        );
       }),
   );
 }
@@ -647,18 +675,13 @@ it.effect("retains a failed dispatch's source after bounded turn-start rollback"
     expect(turnFailure.commands.map(({ type }) => type)).toEqual([
       "thread.create",
       "thread.turn.start",
-      "thread.delete",
     ]);
-    expect(turnFailure.commands[2]).toEqual({
-      type: "thread.delete",
-      commandId: ids[4],
-      threadId: ids[0],
-    });
     expect(JSON.stringify(turnError)).not.toContain("downstream secret");
     expect(JSON.stringify(turnError)).not.toContain("Sensitive turn task");
 
     const rollbackFailure = makeHarness({
       failCommandTypes: ["thread.turn.start", "thread.delete"],
+      turnReceiptStatus: "rejected",
     });
     const rollbackService = yield* rollbackFailure.service;
     const rollbackError = yield* rollbackService
@@ -767,5 +790,70 @@ it.effect("retains checkout and ref when rollback cannot safely remove them", ()
     expect(createError.reason).toBe("rollback-failed");
     expect(createFailure.worktreeRemovals).toEqual([]);
     expect(createFailure.branchDeletions).toEqual([]);
+  }),
+);
+
+for (const stage of ["create", "turn"] as const) {
+  it.effect(`rolls back a durably rejected ${stage} before returning its bounded error`, () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        failCommandTypes: [stage === "create" ? "thread.create" : "thread.turn.start"],
+        createReceiptStatus: "rejected",
+        turnReceiptStatus: "rejected",
+      });
+      const service = yield* harness.service;
+      const error = yield* service
+        .dispatch(invocation, { task: "Rejected worker." })
+        .pipe(Effect.flip);
+      expect(error.reason).toBe(stage === "create" ? "create-failed" : "turn-start-failed");
+      expect(harness.worktreeRemovals).toEqual([
+        { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
+      ]);
+      expect(harness.branchDeletions).toEqual([
+        { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
+      ]);
+      expect(harness.commands.map(({ type }) => type)).toEqual(
+        stage === "create"
+          ? ["thread.create"]
+          : ["thread.create", "thread.turn.start", "thread.delete"],
+      );
+    }),
+  );
+}
+
+it.effect("keeps an accepted first turn after its acknowledgement is lost", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
+      failCommandTypes: ["thread.turn.start"],
+      turnReceiptStatus: "accepted",
+    });
+    const service = yield* harness.service;
+    const error = yield* service
+      .dispatch(invocation, { task: "Accepted, not acknowledged." })
+      .pipe(Effect.flip);
+    expect(error.reason).toBe("rollback-failed");
+    expect(harness.commands.map(({ type }) => type)).toEqual([
+      "thread.create",
+      "thread.turn.start",
+    ]);
+    expect(harness.worktreeRemovals).toEqual([]);
+    expect(harness.branchDeletions).toEqual([]);
+  }),
+);
+
+it.effect("keeps a checkout already owned by another projected thread", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
+      failCommandTypes: ["thread.create"],
+      createReceiptStatus: "rejected",
+      workerProjection: "matching",
+    });
+    const service = yield* harness.service;
+    const error = yield* service
+      .dispatch(invocation, { task: "Conflicting owner." })
+      .pipe(Effect.flip);
+    expect(error.reason).toBe("rollback-failed");
+    expect(harness.worktreeRemovals).toEqual([]);
+    expect(harness.branchDeletions).toEqual([]);
   }),
 );

@@ -29,6 +29,7 @@ import { OrchestrationCommandReceiptRepository } from "../persistence/Services/O
 import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
 import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
+import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
 import type { OrchestrationDispatchOptions } from "../orchestration/Services/OrchestrationEngine.ts";
 
 export interface WorkerDispatchInput {
@@ -142,6 +143,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const snapshotStore = yield* Effect.serviceOption(WorkjetSnapshotStore);
   const meshIdentity = yield* Effect.serviceOption(WorkjetMeshIdentity);
   const mailbox = yield* Effect.serviceOption(WorkjetMailboxStore);
+  const rollback = yield* WorkerDispatchRollback;
 
   const dispatch: WorkerDispatchShape["dispatch"] = Effect.fn("WorkerDispatch.dispatch")(
     function* (invocation, input) {
@@ -295,14 +297,44 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           Effect.map((created) => created.worktree),
           Effect.mapError(() => failure("worktree-failed")),
         );
-      // A rollback cannot hand this mutable pathname to Git: a same-user
-      // replacement can make even non-force removal delete files elsewhere.
-      // Retain both the checkout and ref until descriptor-bound removal can
-      // verify their identity. The failed dispatch remains observable by ID.
-      const removeWorkerWorktree = Effect.logWarning(
-        "worker dispatch rollback retained isolated checkout pending safe removal",
-        { threadId: workerThreadId, worktreePath: workerWorktree.path, branchRef: workerRefName },
-      ).pipe(Effect.andThen(Effect.fail(failure("rollback-failed"))), Effect.exit);
+      const preparedRollback = yield* rollback
+        .prepare({
+          cwd: gitCwd,
+          worktreePath: workerWorktree.path,
+          branchRef: workerRefName,
+        })
+        .pipe(Effect.option);
+      const requireRejected = Effect.fn("WorkerDispatch.requireRejected")(function* (
+        commandId: CommandId,
+      ) {
+        if (Option.isNone(receipts)) return yield* failure("rollback-failed");
+        const receipt = yield* receipts.value.getByCommandId({ commandId }).pipe(
+          Effect.mapError(() => failure("rollback-failed")),
+          Effect.map(Option.getOrUndefined),
+        );
+        if (
+          receipt?.aggregateKind !== "thread" ||
+          receipt.aggregateId !== workerThreadId ||
+          receipt.status !== "rejected"
+        ) {
+          return yield* failure("rollback-failed");
+        }
+      });
+      const removeWorkerWorktree = (commandId: CommandId) =>
+        Effect.gen(function* () {
+          yield* requireRejected(commandId);
+          if (Option.isNone(preparedRollback)) return yield* failure("rollback-failed");
+          if (commandId === createCommandId) {
+            const existing = yield* query.getThreadDetailById(workerThreadId).pipe(
+              Effect.mapError(() => failure("rollback-failed")),
+              Effect.map(Option.getOrUndefined),
+            );
+            // A collision must not remove a checkout another saved thread owns.
+            if (existing?.worktreePath === workerWorktree.path)
+              return yield* failure("rollback-failed");
+          }
+          yield* preparedRollback.value.pipe(Effect.mapError(() => failure("rollback-failed")));
+        }).pipe(Effect.exit);
 
       const createCommand = {
         type: "thread.create",
@@ -376,7 +408,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                   } as const;
                 }
                 if (receipt.status === "rejected") {
-                  const cleanupExit = yield* removeWorkerWorktree;
+                  const cleanupExit = yield* removeWorkerWorktree(createCommandId);
                   return yield* failure(
                     cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed",
                   );
@@ -437,7 +469,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           // checkout for recovery rather than risk deleting committed work.
           return yield* failure("rollback-failed");
         }
-        const cleanupExit = yield* removeWorkerWorktree;
+        const cleanupExit = yield* removeWorkerWorktree(createCommandId);
         return yield* failure(cleanupExit._tag === "Failure" ? "rollback-failed" : "create-failed");
       }
 
@@ -472,6 +504,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
 
       const turnStartExit = yield* Effect.exit(engine.dispatch(turnStartCommand));
       if (turnStartExit._tag === "Failure") {
+        // A lost acknowledgement is not a rejected start. Do not delete a
+        // worker whose accepted first turn may already be executing.
+        yield* requireRejected(turnStartCommandId);
         const rollbackCommand = {
           type: "thread.delete",
           commandId: CommandId.make(yield* sources.randomUUID),
@@ -481,7 +516,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         // A failed thread deletion leaves ownership unresolved. Never remove
         // its checkout while that thread may still run or be retried.
         if (rollbackExit._tag === "Failure") return yield* failure("rollback-failed");
-        const worktreeRollbackExit = yield* removeWorkerWorktree;
+        const worktreeRollbackExit = yield* removeWorkerWorktree(turnStartCommandId);
         return yield* failure(
           worktreeRollbackExit._tag === "Failure" ? "rollback-failed" : "turn-start-failed",
         );

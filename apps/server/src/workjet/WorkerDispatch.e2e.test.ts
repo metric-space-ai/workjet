@@ -65,6 +65,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+import * as ResourceMonitorBinary from "../resourceTelemetry/ResourceMonitorBinary.ts";
+import * as NativeWorkerWorktreeRemover from "./NativeWorkerWorktreeRemover.ts";
+import * as WorkerDispatchRollback from "./WorkerDispatchRollback.ts";
 import * as GitManager from "../git/GitManager.ts";
 import { GitWorkflowService, layer as gitWorkflowLayer } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
@@ -183,15 +186,25 @@ const makeRealStackLayer = (fixture: Fixture) => {
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
     Layer.provide(OrchestrationEventStoreLive),
-    Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+    Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
     Layer.provide(SqlitePersistenceMemory),
     Layer.provide(hostLayer),
   );
-  return Layer.mergeAll(orchestrationLayer, gitLayer, gitVcsDriverLayer, hostLayer);
+  const rollbackLayer = WorkerDispatchRollback.layer.pipe(
+    Layer.provide(gitVcsDriverLayer),
+    Layer.provide(
+      NativeWorkerWorktreeRemover.layer.pipe(
+        Layer.provide(ResourceMonitorBinary.layer),
+        Layer.provide(hostLayer),
+      ),
+    ),
+  );
+  return Layer.mergeAll(orchestrationLayer, gitLayer, gitVcsDriverLayer, hostLayer, rollbackLayer);
 };
 
 type RealStackServices =
+  | WorkerDispatchRollback.WorkerDispatchRollback
   | OrchestrationEngineService
   | ProjectionSnapshotQuery
   | GitWorkflowService

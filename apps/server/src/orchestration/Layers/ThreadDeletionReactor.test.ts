@@ -220,7 +220,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           hasWorkingTreeChanges: input.dirty ?? false,
         }),
     } as unknown as GitWorkflowService["Service"]);
-    const nativeRemoverLayer = Layer.succeed(NativeWorkerWorktreeRemover, {
+    const nativeRemoverLayer = Layer.mock(NativeWorkerWorktreeRemover)({
       remove: (worktreePath: string) => {
         if (input.rejectRemovalPathOnSecondCheck) {
           return Effect.fail(new NativeWorkerWorktreeRemovalError({ reason: "identity" }));
@@ -232,7 +232,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
         worktreePresent = false;
         return Effect.void;
       },
-    } as NativeWorkerWorktreeRemover["Service"]);
+    });
     const sourceControlLayer = Layer.succeed(SourceControlProviderRegistry, {
       resolve: () =>
         Effect.succeed({

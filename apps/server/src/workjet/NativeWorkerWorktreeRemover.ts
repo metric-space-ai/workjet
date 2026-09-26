@@ -17,9 +17,24 @@ export class NativeWorkerWorktreeRemovalError extends Schema.TaggedErrorClass<Na
   { reason: Schema.Literals(["identity", "backlink", "unavailable", "failed", "timeout"]) },
 ) {}
 
+export interface CapturedWorkerWorktree {
+  readonly worktreePath: string;
+  readonly worktreeDev: string;
+  readonly worktreeIno: string;
+  readonly adminPath: string;
+  readonly adminDev: string;
+  readonly adminIno: string;
+}
+
 export class NativeWorkerWorktreeRemover extends Context.Service<
   NativeWorkerWorktreeRemover,
   {
+    readonly capture: (
+      worktreePath: string,
+    ) => Effect.Effect<CapturedWorkerWorktree, NativeWorkerWorktreeRemovalError>;
+    readonly removeCaptured: (
+      captured: CapturedWorkerWorktree,
+    ) => Effect.Effect<void, NativeWorkerWorktreeRemovalError>;
     readonly remove: (
       worktreePath: string,
     ) => Effect.Effect<void, NativeWorkerWorktreeRemovalError>;
@@ -44,8 +59,8 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
   const binary = yield* ResourceMonitorBinary;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
-  const remove: NativeWorkerWorktreeRemover["Service"]["remove"] = Effect.fn(
-    "NativeWorkerWorktreeRemover.remove",
+  const capture: NativeWorkerWorktreeRemover["Service"]["capture"] = Effect.fn(
+    "NativeWorkerWorktreeRemover.capture",
   )(function* (worktreePath) {
     const backlink = yield* fs
       .readFileString(path.join(worktreePath, ".git"))
@@ -72,6 +87,19 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
       return yield* removalError("identity");
     }
 
+    return {
+      worktreePath,
+      worktreeDev: String(worktree.dev),
+      worktreeIno: String(worktreeIno),
+      adminPath,
+      adminDev: String(admin.dev),
+      adminIno: String(adminIno),
+    };
+  });
+
+  const removeCaptured: NativeWorkerWorktreeRemover["Service"]["removeCaptured"] = Effect.fn(
+    "NativeWorkerWorktreeRemover.removeCaptured",
+  )(function* (captured) {
     const executable = yield* binary.resolve.pipe(
       Effect.mapError(() => removalError("unavailable")),
     );
@@ -79,12 +107,12 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
       executable,
       [
         "--remove-verified-worktree",
-        worktreePath,
-        String(worktree.dev),
-        String(worktreeIno),
-        adminPath,
-        String(admin.dev),
-        String(adminIno),
+        captured.worktreePath,
+        captured.worktreeDev,
+        captured.worktreeIno,
+        captured.adminPath,
+        captured.adminDev,
+        captured.adminIno,
       ],
       {
         stdout: "pipe",
@@ -114,7 +142,10 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
     }
   });
 
-  return NativeWorkerWorktreeRemover.of({ remove });
+  const remove: NativeWorkerWorktreeRemover["Service"]["remove"] = (worktreePath) =>
+    capture(worktreePath).pipe(Effect.flatMap(removeCaptured));
+
+  return NativeWorkerWorktreeRemover.of({ capture, removeCaptured, remove });
 });
 
 export const layer = Layer.effect(NativeWorkerWorktreeRemover, make());

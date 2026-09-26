@@ -1,0 +1,94 @@
+# Desktop-independent provider execution
+
+Status: implementation contract for the existing project-team work, not a claim
+of delivered runtime behavior. Source baseline: PR73 `214a99c55` (2026-09-26).
+
+## Current ownership
+
+`DesktopApp` stops every member of `DesktopBackendPool` on full application
+shutdown. `DesktopBackendManager.stop` closes its process scope, and
+`ProviderService` finalizes its owned provider sessions. Closing the last macOS
+window is different from quitting the application.
+
+`DesktopBackendConfiguration` currently launches the bundled server with
+Electron's executable in Node mode. It supplies a per-process bootstrap token
+and telemetry channels through inherited descriptors 3, 4 and 5. The token is
+held in a `SynchronizedRef`, not an attachment credential that survives a new
+Electron process. Merely omitting `stop()` does not supply a stable process
+owner, safe upgrade, durable authentication or a reconnectable telemetry link.
+
+`CtoxAdapter.stopSession` ends only Workjet's observation of native work. CTOX
+owns the native intent, run, attempt, approvals, cancellation and result.
+External Workjet servers also have their own process owner. Neither case proves
+that a Desktop-owned provider survives full Quit. CTOX's bounded pi-sidecar
+lifecycle remains a separate contract.
+
+## Required implementation
+
+1. **Move the local server under a service owner.** Extend the existing
+   `cloud/bootService` and pinned runtime/launcher protocol instead of adding an
+   independent job scheduler. Existing boot-service support is Linux/systemd;
+   macOS needs a user LaunchAgent adapter. Windows needs an explicit supported
+   service owner before advertising this guarantee there. Use a durable pinned
+   runtime, not a mutable application-bundle executable or a temp worktree.
+   The service owns provider child processes and logs. Desktop is its client.
+2. **Attach to one authenticated server.** Scope service identity and the
+   exclusive owner lock to the canonical Workjet home/profile. Reopening must
+   authenticate and validate the same environment ID, protocol/source version
+   and service generation before attaching. A stale descriptor, port collision
+   or uncertain owner must never trigger a second server against the same DB.
+   Reuse protected server credentials and existing pairing/secret-store paths;
+   do not persist a raw desktop bootstrap token in a world-readable descriptor.
+   Replace inherited telemetry pipes with an authenticated reconnectable channel.
+3. **Separate detach from stop.** Normal full Quit releases UI observers and
+   client resources, while the service stays owned and observable. Explicit
+   service stop, update and uninstall remain distinct operations. Native work
+   cancellation requires CTOX's acknowledged command, not UI exit. For updates,
+   reuse launcher protocol 2's staged version and DB rollback path, and record
+   whether the service is intentionally stopping or replacing its child.
+4. **Reconcile through existing durable authority.** UI attachment reads the
+   existing server projection and native run/attempt records. It cannot create a
+   new Crew offer or replay a prompt because a view reopened. Pending approvals,
+   completion/outbox replay, cancel acknowledgements and controller fencing stay
+   tied to the actual attempt. CTOX is the durable authority; Workjet does not
+   mint a competing lease or declare native completion from process exit.
+
+No native architecture change is needed to implement the macOS service adapter,
+authenticated attachment boundary or detach/stop distinction. Native stale-
+controller rejection and approval/cancel/result reconciliation require Crew's
+exact command/attempt contract; until that is verified, those guarantees remain
+open. Service/host failure is not equivalent to UI disappearance and must have
+separate recovery evidence.
+
+## Verification and ownership
+
+Workjet owns implementation on the existing PR73. Crew owns the native control
+contract and paired tenant release; DevOps independently reviews the result.
+
+First proof must include the **desktop-originated, now service-owned** provider:
+record exact builds, service owner and runtime handle plus durable
+intent/run/attempt; start bounded work; normally Quit the isolated app; prove
+Electron exited and work progressed through the runtime authority; relaunch the
+same isolated profile and see the same run/result with no second launch.
+External/native-only rows are additional coverage, not substitutes. Follow with
+pending approval, acknowledged cancel, connection loss, stale-controller fence,
+terminal replay, then service crash and host restart as distinct rows.
+
+Do not use the installed UI runner's `restart` action for the survival proof: its
+`closeElectronProcessTree` captures descendants and terminates survivors after
+closing Electron. That cleanup can kill a correctly independent harness and
+confound the result. Use a visible normal Quit and independently owned runtime
+observation; clean up only recorded test-owned processes after evidence capture.
+Never perform this experiment on the user's protected live app/profile.
+
+## Effort and dependencies
+
+The remaining implementation comprises three separately reviewable blocks:
+service installation/upgrade/ownership, authenticated attach and telemetry,
+then client detach/reconciliation with focused lifecycle tests. The first two
+are Workjet-owned source work and are not blocked by a general native
+architecture pause. Full control/recovery acceptance depends on the specific
+Crew contract above. Each block needs focused verification; the complete user
+journey needs admitted host capacity and an isolated exact-build runtime.
+There is no measured completion date yet. A source patch, successful build or
+external-server demonstration alone cannot close this outcome.

@@ -100,6 +100,30 @@ it.layer(NodeServices.layer)("bundled pinned runtime import", (it) => {
       assert.equal(yield* fs.readFileString(installed.entryPath), "fixture\n");
     }),
   );
+  it.effect("rejects different content published by a nonparticipating writer during staging", () =>
+    Effect.gen(function* () {
+      const { input, fs, path, baseDir } = yield* fixture();
+      const final = pinnedRuntimePaths(path, baseDir, input.version);
+      yield* ensurePinnedRuntimeInstalled({
+        ...input,
+        validate: () =>
+          Effect.gen(function* () {
+            yield* fs.makeDirectory(path.dirname(final.entryPath), { recursive: true });
+            yield* fs.writeFileString(final.entryPath, "other build");
+            yield* fs.writeFileString(final.sentinelPath, `${input.version}\n`);
+            yield* fs.writeFileString(
+              path.join(final.versionDir, BUNDLED_RUNTIME_RECEIPT),
+              `${"b".repeat(64)}\n`,
+            );
+          }).pipe(Effect.orDie),
+      }).pipe(Effect.flip);
+      assert.equal(yield* fs.readFileString(final.entryPath), "other build");
+      assert.equal(
+        yield* fs.readFileString(path.join(final.versionDir, BUNDLED_RUNTIME_RECEIPT)),
+        `${"b".repeat(64)}\n`,
+      );
+    }),
+  );
   it.effect("does not replace an incomplete existing version", () =>
     Effect.gen(function* () {
       const { input, fs, path, baseDir } = yield* fixture();

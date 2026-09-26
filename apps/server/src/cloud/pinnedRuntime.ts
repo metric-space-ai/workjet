@@ -237,6 +237,9 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
         Effect.all([
           fs.exists(paths.entryPath),
           fs.readFileString(paths.sentinelPath).pipe(Effect.option),
+          fs
+            .readFileString(input.path.join(paths.versionDir, BUNDLED_RUNTIME_RECEIPT))
+            .pipe(Effect.option),
         ]).pipe(
           Effect.mapError(
             (checkCause) =>
@@ -245,10 +248,13 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
                 cause: checkCause,
               }),
           ),
-          Effect.flatMap(([publishedEntryExists, publishedSentinel]) =>
+          Effect.flatMap(([publishedEntryExists, publishedSentinel, publishedBundleReceipt]) =>
             publishedEntryExists &&
             Option.isSome(publishedSentinel) &&
-            publishedSentinel.value.trim() === input.version
+            publishedSentinel.value.trim() === input.version &&
+            (input.bundle === undefined ||
+              (Option.isSome(publishedBundleReceipt) &&
+                publishedBundleReceipt.value.trim() === input.bundle.sha256))
               ? Effect.succeed(false)
               : Effect.fail(
                   new PinnedRuntimeInstallError({

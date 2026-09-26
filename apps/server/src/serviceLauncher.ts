@@ -8,7 +8,11 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { acquireProfileOwnership, withProfileOwnership } from "./profileOwnership.ts";
+import {
+  acquireProfileOwnership,
+  withProfileOwnership,
+  withDatabaseAccess,
+} from "./profileOwnership.ts";
 
 import type {
   PendingServiceUpdate,
@@ -384,7 +388,7 @@ export class Launcher {
     // same profile. Hold runtime exclusion throughout the snapshot operation.
     try {
       await withProfileOwnership(this.#baseDir, "runtime", () =>
-        backupDatabaseOnce(this.#baseDir, pending),
+        withDatabaseAccess(pending.dbPath, () => backupDatabaseOnce(this.#baseDir, pending)),
       );
     } catch {
       await this.#returnToPrevious(pending, "failed", "db-backup-failed");
@@ -596,7 +600,7 @@ export class Launcher {
       await terminateChild(child.process);
     }
     await withProfileOwnership(this.#baseDir, "runtime", () =>
-      restoreDatabaseBackup(this.#baseDir, pending),
+      withDatabaseAccess(pending.dbPath, () => restoreDatabaseBackup(this.#baseDir, pending)),
     );
     const outcome = terminalUpdate({ pending, status, reason });
     const next: ServiceState = {

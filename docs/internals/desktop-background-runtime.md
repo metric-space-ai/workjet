@@ -122,6 +122,15 @@ These are process-lifetime locks, not CTOX authority leases or native fencing.
 They require participating binaries: migration from old unguarded processes
 must stop those processes before adopting the new runtime. Filesystems must
 support SQLite locking; shared network profile storage is not certified.
+The common persistent SQL layer takes shared admission on a separate lock keyed
+by the canonical database path, including CLI auth/pairing clients. The launcher
+requires exclusive admission while copying/restoring the database and sidecars.
+This closes the offline-CLI gap in runtime-only exclusion. In-memory databases
+do not need filesystem admission. Dangling database symlinks fail closed rather
+than changing lock identity when their target is created. External SQLite tools
+and old clients do not participate and require a quiesced maintenance window.
+The mechanism uses [SQLite transaction locking](https://www.sqlite.org/lang_transaction.html),
+not a heartbeat or timestamp-based lease; actual execution proof is still owed.
 No service is installed by this source change. Service adapter tests use a fake
 process runner and real isolated files. Ownership tests exercise real SQLite,
 profile aliases, independent profiles, failure release, a competing subprocess

@@ -7,6 +7,7 @@ import { once } from "node:events";
 import { expect, it } from "@effect/vitest";
 import {
   acquireProfileOwnership,
+  acquireDatabaseAccess,
   ProfileOwnershipError,
   withProfileOwnership,
 } from "./profileOwnership.ts";
@@ -40,6 +41,43 @@ it("excludes a second owner through a profile alias and reopens after release", 
     } finally {
       owner.release();
     }
+  }));
+
+it("admits live database clients together and excludes file restore through a symlink", () =>
+  withProfile(async (root) => {
+    const dbPath = NodePath.join(root, "state.sqlite");
+    await NodeFS.writeFile(dbPath, "");
+    const alias = NodePath.join(root, "alias.sqlite");
+    await NodeFS.symlink(dbPath, alias);
+    const reader = await acquireDatabaseAccess(dbPath, "shared");
+    try {
+      const second = await acquireDatabaseAccess(alias, "shared");
+      try {
+        expect(second.lockPath).toBe(reader.lockPath);
+        await expect(acquireDatabaseAccess(alias, "exclusive")).rejects.toBeInstanceOf(
+          ProfileOwnershipError,
+        );
+      } finally {
+        second.release();
+      }
+    } finally {
+      reader.release();
+    }
+    const restore = await acquireDatabaseAccess(alias, "exclusive");
+    try {
+      await expect(acquireDatabaseAccess(dbPath, "shared")).rejects.toBeInstanceOf(
+        ProfileOwnershipError,
+      );
+    } finally {
+      restore.release();
+    }
+  }));
+
+it("refuses a dangling database alias instead of changing lock identity after creation", () =>
+  withProfile(async (root) => {
+    const alias = NodePath.join(root, "alias.sqlite");
+    await NodeFS.symlink(NodePath.join(root, "missing.sqlite"), alias);
+    await expect(acquireDatabaseAccess(alias, "shared")).rejects.toThrow();
   }));
 
 it("keeps independent profiles and ownership domains separate", () =>
@@ -83,9 +121,10 @@ it("excludes another process and recovers kernel ownership after its abrupt exit
         "--eval",
         `
       const db = process.versions.bun !== undefined
-        ? new (await import('bun:sqlite')).Database(process.argv[1])
+        ? new (await import('bun:sqlite')).Database(process.argv[1], { create: true })
         : new (await import('node:sqlite')).DatabaseSync(process.argv[1]);
-      db.exec('PRAGMA busy_timeout=0; BEGIN EXCLUSIVE;');
+      db.exec('PRAGMA busy_timeout=0;');
+      db.exec('BEGIN EXCLUSIVE;');
       process.on('disconnect', () => process.exit(0));
       process.send('locked');
     `,

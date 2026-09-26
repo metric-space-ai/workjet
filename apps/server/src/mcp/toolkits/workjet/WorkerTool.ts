@@ -98,6 +98,9 @@ const failureResult = (
   recovery: {
     readonly recoveryWorktreePath?: string;
     readonly recoveryAdminPath?: string;
+    readonly originalWorktreePath?: string;
+    readonly originalAdminPath?: string;
+    readonly recoveryLocationStatus?: "candidate" | "verified";
   } = {},
 ): McpSchema.CallToolResult =>
   new McpSchema.CallToolResult({
@@ -121,7 +124,7 @@ const failureResult = (
         type: "text",
         text:
           recovery.recoveryWorktreePath || recovery.recoveryAdminPath
-            ? "Workjet worker dispatch failed. Recovery may be partial; preserve retained files before storage cleanup and inspect the recovery receipt."
+            ? "Workjet worker dispatch failed. Preserve recovery data before storage cleanup. For candidate locations, find your receipt at originalAdminPath; candidate directories may be absent or unrelated."
             : "Workjet worker dispatch failed.",
       },
     ],
@@ -190,6 +193,15 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
             WorkerDispatchError: (error) =>
               Effect.succeed(
                 failureResult(error.reason, {
+                  ...(error.originalWorktreePath
+                    ? { originalWorktreePath: error.originalWorktreePath }
+                    : {}),
+                  ...(error.originalAdminPath
+                    ? { originalAdminPath: error.originalAdminPath }
+                    : {}),
+                  ...(error.recoveryLocationStatus
+                    ? { recoveryLocationStatus: error.recoveryLocationStatus }
+                    : {}),
                   ...(error.recoveryWorktreePath
                     ? { recoveryWorktreePath: error.recoveryWorktreePath }
                     : {}),

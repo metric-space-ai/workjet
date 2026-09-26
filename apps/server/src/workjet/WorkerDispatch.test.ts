@@ -305,6 +305,9 @@ const makeHarness = (input?: {
                 return yield* new WorkerDispatchRollbackError({ reason: "unavailable" });
               }
               return {
+                originalWorktreePath: prepared.worktreePath,
+                originalAdminPath: "/repo/.git/worktrees/worker",
+                recoveryLocationStatus: "verified" as const,
                 recoveryWorktreePath: `${prepared.worktreePath}.workjet-rejected-2`,
                 recoveryAdminPath: "/repo/.git/workjet-rejected/worker-3",
               };

@@ -193,7 +193,7 @@ const makeRealStackLayer = (fixture: Fixture) => {
   );
   const rollbackLayer = WorkerDispatchRollback.layer.pipe(
     Layer.provide(gitVcsDriverLayer),
-    Layer.provide(
+    Layer.provideMerge(
       NativeWorkerWorktreeRemover.layer.pipe(
         Layer.provide(ResourceMonitorBinary.layer),
         Layer.provide(hostLayer),
@@ -205,6 +205,7 @@ const makeRealStackLayer = (fixture: Fixture) => {
 
 type RealStackServices =
   | WorkerDispatchRollback.WorkerDispatchRollback
+  | NativeWorkerWorktreeRemover.NativeWorkerWorktreeRemover
   | OrchestrationEngineService
   | ProjectionSnapshotQuery
   | GitWorkflowService
@@ -399,6 +400,80 @@ it.effect(
         assert.deepStrictEqual(parentAfter, parentBefore);
         assert.equal(parentAfter.branch, branch);
         assert.equal(parentAfter.status, "");
+      }),
+    ),
+  { timeout: 120_000 },
+);
+
+it.effect(
+  "reports the original receipt when the real native admin quarantine collides",
+  () =>
+    withRealStack((fixture) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const workflow = yield* GitWorkflowService;
+        const remover = yield* NativeWorkerWorktreeRemover.NativeWorkerWorktreeRemover;
+        const branch = yield* seedRepository(fixture.repositoryRoot);
+        const refName = "workjet/worker/partial-recovery";
+        const created = yield* workflow.createWorktree({
+          cwd: fixture.repositoryRoot,
+          path: null,
+          refName: branch,
+          newRefName: refName,
+        });
+        const captured = yield* remover.capture(created.worktree.path);
+        const candidateAdmin = path.join(
+          path.dirname(path.dirname(captured.adminPath)),
+          "workjet-rejected",
+          `${path.basename(captured.adminPath)}-${captured.adminIno}`,
+        );
+        yield* fs.makeDirectory(candidateAdmin, { recursive: true });
+        yield* fs.writeFileString(path.join(candidateAdmin, "foreign-sentinel"), "not our receipt");
+        const headOid = yield* git(fixture.repositoryRoot, ["rev-parse", "HEAD"]);
+        const error = yield* remover
+          .quarantineCaptured(captured, { headOid, branchRef: refName })
+          .pipe(Effect.flip);
+        assert.equal(error.recoveryLocationStatus, "candidate");
+        assert.equal(error.originalWorktreePath, captured.worktreePath);
+        assert.equal(error.originalAdminPath, captured.adminPath);
+        assert.equal(error.recoveryAdminPath, candidateAdmin);
+        if (error.originalAdminPath === undefined || error.recoveryWorktreePath === undefined) {
+          return yield* Effect.die("Partial recovery did not identify its original receipt.");
+        }
+        // Read our receipt at the ORIGINAL admin, never from the collided target.
+        const receipt = yield* fs.readFileString(
+          path.join(error.originalAdminPath, "workjet-rollback-receipt.json"),
+        );
+        assert.include(receipt, headOid);
+        assert.include(receipt, captured.worktreePath);
+        assert.include(receipt, refName);
+        assert.equal(
+          yield* fs.exists(path.join(candidateAdmin, "workjet-rollback-receipt.json")),
+          false,
+        );
+        assert.equal(
+          yield* fs.readFileString(path.join(candidateAdmin, "foreign-sentinel")),
+          "not our receipt",
+        );
+        assert.equal(yield* fs.exists(captured.worktreePath), false);
+        assert.equal(
+          yield* fs.readFileString(path.join(error.recoveryWorktreePath, "PLAN.md")),
+          "orchestrator plan\n",
+        );
+        const progress = yield* fs.readFileString(
+          path.join(error.originalAdminPath, "workjet-rollback-progress.jsonl"),
+        );
+        assert.include(progress, "checkout-quarantined");
+        assert.notInclude(progress, "checkout-and-admin-quarantined");
+        assert.include(
+          yield* git(fixture.repositoryRoot, [
+            "for-each-ref",
+            "--format=%(refname:short)",
+            `refs/heads/${refName}`,
+          ]),
+          refName,
+        );
       }),
     ),
   { timeout: 120_000 },

@@ -73,10 +73,16 @@ const fixture = () => {
         if (state.partialFailure)
           return yield* new NativeWorkerWorktreeRemovalError({
             reason: "failed",
+            originalWorktreePath: input.worktreePath,
+            originalAdminPath: identity.adminPath,
+            recoveryLocationStatus: "candidate",
             recoveryWorktreePath: "/workers/one.workjet-rejected-2",
             recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
           });
         return {
+          originalWorktreePath: input.worktreePath,
+          originalAdminPath: identity.adminPath,
+          recoveryLocationStatus: "verified" as const,
           recoveryWorktreePath: "/workers/one.workjet-rejected-2",
           recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
         };
@@ -153,6 +159,11 @@ for (const failure of ["partialFailure", "failRefDelete"] as const) {
       expect(error.reason).toBe("unavailable");
       expect(error.recoveryWorktreePath).toBe("/workers/one.workjet-rejected-2");
       expect(error.recoveryAdminPath).toBe("/repo/.git/workjet-rejected/one-3");
+      expect(error.originalAdminPath).toBe(identity.adminPath);
+      expect(error.originalWorktreePath).toBe(input.worktreePath);
+      expect(error.recoveryLocationStatus).toBe(
+        failure === "partialFailure" ? "candidate" : "verified",
+      );
       expect(test.calls).toEqual(
         failure === "partialFailure"
           ? ["quarantine-captured"]

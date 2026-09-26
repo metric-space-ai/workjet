@@ -76,6 +76,9 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
     ]),
     recoveryWorktreePath: Schema.optional(Schema.String),
     recoveryAdminPath: Schema.optional(Schema.String),
+    originalWorktreePath: Schema.optional(Schema.String),
+    originalAdminPath: Schema.optional(Schema.String),
+    recoveryLocationStatus: Schema.optional(Schema.Literals(["candidate", "verified"])),
   },
 ) {
   override get message(): string {
@@ -339,6 +342,13 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           return yield* preparedRollback.value.pipe(
             Effect.mapError((error) =>
               failure("rollback-failed", {
+                ...(error.originalWorktreePath
+                  ? { originalWorktreePath: error.originalWorktreePath }
+                  : {}),
+                ...(error.originalAdminPath ? { originalAdminPath: error.originalAdminPath } : {}),
+                ...(error.recoveryLocationStatus
+                  ? { recoveryLocationStatus: error.recoveryLocationStatus }
+                  : {}),
                 ...(error.recoveryWorktreePath
                   ? { recoveryWorktreePath: error.recoveryWorktreePath }
                   : {}),

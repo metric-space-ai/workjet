@@ -18,6 +18,9 @@ export class NativeWorkerWorktreeRemovalError extends Schema.TaggedErrorClass<Na
     reason: Schema.Literals(["identity", "backlink", "unavailable", "failed", "timeout"]),
     recoveryWorktreePath: Schema.optional(Schema.String),
     recoveryAdminPath: Schema.optional(Schema.String),
+    originalWorktreePath: Schema.optional(Schema.String),
+    originalAdminPath: Schema.optional(Schema.String),
+    recoveryLocationStatus: Schema.optional(Schema.Literals(["candidate", "verified"])),
   },
 ) {}
 
@@ -43,6 +46,9 @@ export class NativeWorkerWorktreeRemover extends Context.Service<
       {
         readonly recoveryWorktreePath: string;
         readonly recoveryAdminPath: string;
+        readonly originalWorktreePath: string;
+        readonly originalAdminPath: string;
+        readonly recoveryLocationStatus: "verified";
       },
       NativeWorkerWorktreeRemovalError
     >;
@@ -165,6 +171,9 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
   const quarantineCaptured: NativeWorkerWorktreeRemover["Service"]["quarantineCaptured"] =
     Effect.fn("NativeWorkerWorktreeRemover.quarantineCaptured")(function* (captured, reference) {
       const recovery = {
+        originalWorktreePath: captured.worktreePath,
+        originalAdminPath: captured.adminPath,
+        recoveryLocationStatus: "candidate" as const,
         recoveryWorktreePath: `${captured.worktreePath}.workjet-rejected-${captured.worktreeIno}`,
         recoveryAdminPath: path.join(
           path.dirname(path.dirname(captured.adminPath)),
@@ -177,7 +186,7 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
           (error) => new NativeWorkerWorktreeRemovalError({ reason: error.reason, ...recovery }),
         ),
       );
-      return recovery;
+      return { ...recovery, recoveryLocationStatus: "verified" as const };
     });
 
   const remove: NativeWorkerWorktreeRemover["Service"]["remove"] = (worktreePath) =>

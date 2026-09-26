@@ -12,12 +12,18 @@ export class WorkerDispatchRollbackError extends Schema.TaggedErrorClass<WorkerD
     reason: Schema.Literals(["changed", "unavailable"]),
     recoveryWorktreePath: Schema.optional(Schema.String),
     recoveryAdminPath: Schema.optional(Schema.String),
+    originalWorktreePath: Schema.optional(Schema.String),
+    originalAdminPath: Schema.optional(Schema.String),
+    recoveryLocationStatus: Schema.optional(Schema.Literals(["candidate", "verified"])),
   },
 ) {}
 
 export interface WorkerDispatchRecovery {
   readonly recoveryWorktreePath: string;
   readonly recoveryAdminPath: string;
+  readonly originalWorktreePath: string;
+  readonly originalAdminPath: string;
+  readonly recoveryLocationStatus: "candidate" | "verified";
 }
 
 export class WorkerDispatchRollback extends Context.Service<
@@ -101,6 +107,13 @@ export const make = Effect.fn("WorkerDispatchRollback.make")(function* () {
             (error) =>
               new WorkerDispatchRollbackError({
                 reason: "unavailable",
+                ...(error.originalWorktreePath
+                  ? { originalWorktreePath: error.originalWorktreePath }
+                  : {}),
+                ...(error.originalAdminPath ? { originalAdminPath: error.originalAdminPath } : {}),
+                ...(error.recoveryLocationStatus
+                  ? { recoveryLocationStatus: error.recoveryLocationStatus }
+                  : {}),
                 ...(error.recoveryWorktreePath
                   ? { recoveryWorktreePath: error.recoveryWorktreePath }
                   : {}),

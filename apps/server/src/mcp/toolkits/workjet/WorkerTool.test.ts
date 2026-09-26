@@ -207,6 +207,9 @@ it.effect("keeps dispatch failures bounded and redacted", () => {
     Effect.fail(
       new WorkerDispatch.WorkerDispatchError({
         reason: "rollback-failed",
+        originalWorktreePath: "/workers/one",
+        originalAdminPath: "/repo/.git/worktrees/one",
+        recoveryLocationStatus: "candidate",
         recoveryWorktreePath: "/workers/one.workjet-rejected-2",
         recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
       }),
@@ -232,6 +235,9 @@ it.effect("keeps dispatch failures bounded and redacted", () => {
           reason: "rollback-failed",
           recovery: {
             requiresPreservation: true,
+            originalWorktreePath: "/workers/one",
+            originalAdminPath: "/repo/.git/worktrees/one",
+            recoveryLocationStatus: "candidate",
             recoveryWorktreePath: "/workers/one.workjet-rejected-2",
             recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
           },

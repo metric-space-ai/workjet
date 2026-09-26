@@ -467,6 +467,7 @@ const makeBrowserOtlpPayload = (spanName: string) =>
   });
 
 const buildAppUnderTest = (options?: {
+  onAuthReady?: (auth: EnvironmentAuth.EnvironmentAuth["Service"]) => Effect.Effect<void>;
   config?: Partial<ServerConfig.ServerConfig["Service"]>;
   gatewayOptions?: ProviderGateway.ProviderGatewayServiceOptions;
   seedCtoxBindings?: ReadonlyArray<{
@@ -1057,6 +1058,8 @@ const buildAppUnderTest = (options?: {
     );
 
     const appContext = yield* Layer.build(appLayer);
+    if (options?.onAuthReady)
+      yield* options.onAuthReady(Context.get(appContext, EnvironmentAuth.EnvironmentAuth));
     if (options?.seedCtoxBindings) {
       const sql = Context.get(appContext, SqlClient.SqlClient);
       for (const binding of options.seedCtoxBindings) {
@@ -4981,6 +4984,143 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(Option.isSome(snapshot));
       assert.equal(snapshot.value.processes.length, 0);
       assert.equal(snapshot.value.groups.backend.processCount, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("refuses Desktop telemetry from an ordinary authenticated browser over RPC", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          desktopTelemetryReceiver: {
+            attach: () => Effect.die("Browser credentials must not claim the Desktop receiver."),
+            publish: () => Effect.die("Browser credentials must not publish Desktop telemetry."),
+          },
+        },
+      });
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const config = yield* client[WS_METHODS.serverGetConfig]({});
+            const binding = {
+              attachmentId: "browser-spoof",
+              runtimeInstanceId: config.environment.runtimeInstanceId ?? "fixture",
+            };
+            const subscribeError = yield* client[WS_METHODS.subscribeDesktopTelemetryControl](
+              binding,
+            ).pipe(Stream.runHead, Effect.flip);
+            assert.include(subscribeError.message, "locally enrolled session");
+            const publishError = yield* client[WS_METHODS.serverPublishDesktopTelemetry]({
+              ...binding,
+              message: { version: 1, type: "desktopTelemetryHello", electronPid: 42 },
+            }).pipe(Effect.flip);
+            assert.include(publishError.message, "locally enrolled session");
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("binds enrolled Desktop RPC telemetry to the current generation and connection", () =>
+    Effect.gen(function* () {
+      let auth: EnvironmentAuth.EnvironmentAuth["Service"] | undefined;
+      let receiver: DesktopTelemetryReceiver.DesktopTelemetryReceiver["Service"] | undefined;
+      const config = yield* buildAppUnderTest({
+        config: { mode: "desktop" },
+        onAuthReady: (service) =>
+          Effect.sync(() => {
+            auth = service;
+          }),
+        layers: {
+          desktopTelemetryReceiver: {
+            attach: (id) =>
+              Effect.suspend(() =>
+                receiver ? receiver.attach(id) : Effect.die("Receiver not initialized"),
+              ),
+            publish: (id, message) =>
+              Effect.suspend(() =>
+                receiver ? receiver.publish(id, message) : Effect.die("Receiver not initialized"),
+              ),
+          },
+        },
+      });
+      receiver = yield* DesktopTelemetryReceiver.make().pipe(
+        Effect.provideService(ServerConfig.ServerConfig, config),
+        Effect.provide(ServerSettings.layerTest()),
+      );
+      if (auth === undefined) return yield* Effect.die("Auth fixture missing");
+      const ordinaryUrl = yield* getWsServerUrl("/ws");
+      const descriptor = yield* Effect.scoped(
+        withWsRpcClient(ordinaryUrl, (client) =>
+          client[WS_METHODS.serverGetConfig]({}).pipe(Effect.map((value) => value.environment)),
+        ),
+      );
+      const issued = yield* auth.issueSession({
+        localDesktopEnvironmentId: descriptor.environmentId,
+      });
+      const ticketResponse = yield* fetchEffect(
+        yield* getHttpServerUrl("/api/auth/websocket-ticket"),
+        {
+          method: "POST",
+          headers: { authorization: `Bearer ${issued.token}` },
+        },
+      );
+      assert.equal(ticketResponse.status, 200);
+      const ticket = yield* responseJsonEffect<{ readonly ticket: string }>(ticketResponse);
+      const wsUrl = new URL(ordinaryUrl);
+      wsUrl.hash = "";
+      wsUrl.searchParams.set("wsTicket", ticket.ticket);
+      const binding = {
+        attachmentId: "desktop-a",
+        runtimeInstanceId: descriptor.runtimeInstanceId ?? "missing",
+      };
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl.toString(), (oldClient) =>
+          Effect.gen(function* () {
+            const wrongGeneration = yield* oldClient[WS_METHODS.subscribeDesktopTelemetryControl]({
+              ...binding,
+              runtimeInstanceId: "wrong-generation",
+            }).pipe(Stream.runHead, Effect.flip);
+            assert.include(wrongGeneration.message, "generation changed");
+            const healthSubscription = yield* receiver!.subscribeHealth;
+            // Wait for server-side release, while keeping the old socket alive.
+            yield* oldClient[WS_METHODS.subscribeDesktopTelemetryControl](binding).pipe(
+              Stream.runHead,
+            );
+            yield* healthSubscription.changes.pipe(
+              Stream.filter((health) => health.status === "stopped"),
+              Stream.runHead,
+            );
+            yield* Effect.scoped(
+              withWsRpcClient(wsUrl.toString(), (newClient) =>
+                Effect.gen(function* () {
+                  const attached = yield* Deferred.make<void>();
+                  yield* newClient[WS_METHODS.subscribeDesktopTelemetryControl]({
+                    ...binding,
+                    attachmentId: "desktop-b",
+                  }).pipe(
+                    Stream.runForEach(() =>
+                      Deferred.succeed(attached, undefined).pipe(Effect.asVoid),
+                    ),
+                    Effect.forkScoped,
+                  );
+                  yield* Deferred.await(attached);
+                  const stale = yield* oldClient[WS_METHODS.serverPublishDesktopTelemetry]({
+                    ...binding,
+                    message: { version: 1, type: "desktopTelemetryHello", electronPid: 41 },
+                  }).pipe(Effect.flip);
+                  assert.include(stale.message, "no longer current");
+                  yield* newClient[WS_METHODS.serverPublishDesktopTelemetry]({
+                    ...binding,
+                    attachmentId: "desktop-b",
+                    message: { version: 1, type: "desktopTelemetryHello", electronPid: 42 },
+                  });
+                }),
+              ),
+            );
+          }),
+        ),
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

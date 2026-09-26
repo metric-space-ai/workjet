@@ -59,6 +59,7 @@ export interface IssuedBearerSession {
 }
 
 export interface AuthenticatedSession {
+  readonly localDesktopEnvironmentId?: string;
   readonly sessionId: AuthSessionId;
   readonly subject: string;
   readonly method: ServerAuthSessionMethod;
@@ -452,6 +453,7 @@ export class EnvironmentAuth extends Context.Service<
     }) => Effect.Effect<ReadonlyArray<AuthPairingLink>, ServerAuthInternalError>;
     readonly revokePairingLink: (id: string) => Effect.Effect<boolean, ServerAuthInternalError>;
     readonly issueSession: (input?: {
+      readonly localDesktopEnvironmentId?: string;
       readonly ttl?: Duration.Duration;
       readonly subject?: string;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
@@ -484,7 +486,7 @@ export class EnvironmentAuth extends Context.Service<
       request: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError>;
     readonly issueWebSocketTicket: (
-      session: Pick<AuthenticatedSession, "sessionId">,
+      session: Pick<AuthenticatedSession, "sessionId" | "localDesktopEnvironmentId">,
     ) => Effect.Effect<AuthWebSocketTicketResult, ServerAuthInternalError>;
     readonly issueStartupPairingUrl: (
       baseUrl: string,
@@ -584,6 +586,9 @@ export const make = Effect.gen(function* () {
         method: session.method,
         scopes: session.scopes,
         ...(session.proofKeyThumbprint ? { proofKeyThumbprint: session.proofKeyThumbprint } : {}),
+        ...(session.localDesktopEnvironmentId === undefined
+          ? {}
+          : { localDesktopEnvironmentId: session.localDesktopEnvironmentId }),
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
       })),
       mapSessionVerificationErrors,
@@ -819,6 +824,9 @@ export const make = Effect.gen(function* () {
       .issue({
         subject: input?.subject ?? DEFAULT_SESSION_SUBJECT,
         method: "bearer-access-token",
+        ...(input?.localDesktopEnvironmentId === undefined
+          ? {}
+          : { localDesktopEnvironmentId: input.localDesktopEnvironmentId }),
         scopes: input?.scopes ?? AuthAdministrativeScopes,
         client: {
           ...(input?.label ? { label: input.label } : {}),
@@ -921,17 +929,23 @@ export const make = Effect.gen(function* () {
     );
 
   const issueWebSocketTicket: EnvironmentAuth["Service"]["issueWebSocketTicket"] = (session) =>
-    sessions.issueWebSocketToken(session.sessionId).pipe(
-      Effect.mapError((cause) => new ServerAuthWebSocketTokenIssueError({ cause })),
-      Effect.map(
-        (issued) =>
-          ({
-            ticket: issued.token,
-            expiresAt: DateTime.toUtc(issued.expiresAt),
-          }) satisfies AuthWebSocketTicketResult,
-      ),
-      Effect.withSpan("EnvironmentAuth.issueWebSocketTicket"),
-    );
+    sessions
+      .issueWebSocketToken(session.sessionId, {
+        ...(session.localDesktopEnvironmentId === undefined
+          ? {}
+          : { localDesktopEnvironmentId: session.localDesktopEnvironmentId }),
+      })
+      .pipe(
+        Effect.mapError((cause) => new ServerAuthWebSocketTokenIssueError({ cause })),
+        Effect.map(
+          (issued) =>
+            ({
+              ticket: issued.token,
+              expiresAt: DateTime.toUtc(issued.expiresAt),
+            }) satisfies AuthWebSocketTicketResult,
+        ),
+        Effect.withSpan("EnvironmentAuth.issueWebSocketTicket"),
+      );
 
   const authenticateHttpRequest: EnvironmentAuth["Service"]["authenticateHttpRequest"] = (
     request,
@@ -950,6 +964,9 @@ export const make = Effect.gen(function* () {
               subject: session.subject,
               method: session.method,
               scopes: session.scopes,
+              ...(session.localDesktopEnvironmentId === undefined
+                ? {}
+                : { localDesktopEnvironmentId: session.localDesktopEnvironmentId }),
               ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
             })),
             mapSessionVerificationErrors,

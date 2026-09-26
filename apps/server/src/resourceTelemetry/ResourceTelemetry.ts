@@ -158,12 +158,11 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
       (process) => process.pid === initialDesktop.value.electronPid,
     );
     yield* nativeClient
-      .setExternalProcesses([
-        {
-          pid: initialDesktop.value.electronPid,
-          ...(electronRoot === undefined ? {} : { startTimeMs: electronRoot.creationTimeMs }),
-        },
-      ])
+      .setExternalProcesses(
+        initialDesktop.value.power.stale || electronRoot === undefined
+          ? []
+          : [{ pid: initialDesktop.value.electronPid, startTimeMs: electronRoot.creationTimeMs }],
+      )
       .pipe(Effect.ignore);
     yield* nativeClient.setHostPowerState(initialDesktop.value.power).pipe(Effect.ignore);
   }
@@ -273,7 +272,9 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
         const electronRootPids = new Set(recordedElectronRoots.map((process) => process.pid));
         Option.match(desktopSnapshot, {
           onNone: () => undefined,
-          onSome: (desktop) => electronRootPids.add(desktop.electronPid),
+          onSome: (desktop) => {
+            if (!desktop.power.stale) electronRootPids.add(desktop.electronPid);
+          },
         });
         const electronRootStartTimes = new Map(
           recordedElectronRoots.flatMap((process) =>
@@ -338,12 +339,11 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
         (process) => process.pid === snapshot.electronPid,
       );
       yield* nativeClient
-        .setExternalProcesses([
-          {
-            pid: snapshot.electronPid,
-            ...(electronRoot === undefined ? {} : { startTimeMs: electronRoot.creationTimeMs }),
-          },
-        ])
+        .setExternalProcesses(
+          snapshot.power.stale || electronRoot === undefined
+            ? []
+            : [{ pid: snapshot.electronPid, startTimeMs: electronRoot.creationTimeMs }],
+        )
         .pipe(Effect.ignore);
       yield* nativeClient.setHostPowerState(snapshot.power).pipe(Effect.ignore);
       return yield* rebuild({

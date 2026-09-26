@@ -226,6 +226,10 @@ const sessionIssueCommand = Command.make("issue", {
         Effect.gen(function* () {
           const issued = yield* environmentAuth.issueSession({
             scopes: AuthAdministrativeScopes,
+            // Canonical profile and both identities were verified before this auth store was opened.
+            ...(Option.isSome(flags.localEnvironmentId)
+              ? { localDesktopEnvironmentId: flags.localEnvironmentId.value }
+              : {}),
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
             ...(Option.isSome(flags.subject) ? { subject: flags.subject.value } : {}),

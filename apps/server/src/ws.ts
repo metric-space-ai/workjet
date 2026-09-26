@@ -474,6 +474,10 @@ const makeWsRpcLayer = (
       const requireTelemetryGeneration = (runtimeInstanceId: string) =>
         Effect.gen(function* () {
           const descriptor = yield* serverEnvironment.getDescriptor;
+          if (currentSession.localDesktopEnvironmentId !== descriptor.environmentId)
+            return yield* new DesktopTelemetryAttachmentError({
+              reason: "Desktop telemetry requires a locally enrolled session for this environment.",
+            });
           if (descriptor.runtimeInstanceId !== runtimeInstanceId)
             return yield* new DesktopTelemetryAttachmentError({
               reason: "Desktop telemetry runtime generation changed.",

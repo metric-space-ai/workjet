@@ -15,6 +15,7 @@ import {
   PortSchema,
 } from "@workjet/contracts";
 import { resolveWorktreeWorkjetHome } from "@workjet/shared/devHome";
+import { isLocalServiceOrigin } from "@workjet/shared/localServiceTarget";
 import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
@@ -250,15 +251,16 @@ const isProcessAlive = (pid: number): boolean => {
   }
 };
 
-interface DiscoveredPairTarget {
+export interface DiscoveredPairTarget {
   readonly baseDir: string;
   readonly variant: PairStateVariant;
   readonly state: PersistedServerRuntimeState;
   readonly descriptor: ExecutionEnvironmentDescriptor;
 }
 
-const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
+export const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   explicitBaseDir: string | undefined,
+  localDesktop?: { readonly environmentId?: string; readonly runtimeInstanceId?: string },
 ) {
   const fs = yield* FileSystem.FileSystem;
   const bases: Array<string> = [];
@@ -278,7 +280,9 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
 
   const checkedStatePaths: Array<string> = [];
   for (const baseDir of new Set(bases)) {
-    for (const variant of ["userdata", "dev"] as const) {
+    for (const variant of localDesktop === undefined
+      ? (["userdata", "dev"] as const)
+      : (["userdata"] as const)) {
       const derivedPaths = yield* ServerConfig.deriveServerPaths(
         baseDir,
         variant === "dev" ? DEV_VARIANT_PLACEHOLDER_URL : undefined,
@@ -290,12 +294,24 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       if (Option.isNone(state)) {
         continue;
       }
+      if (
+        localDesktop !== undefined &&
+        (!state.value.runtimeInstanceId ||
+          state.value.devUrl !== undefined ||
+          !isLocalServiceOrigin(state.value.origin) ||
+          Number(new URL(state.value.origin).port || "80") !== state.value.port)
+      ) {
+        return yield* new PairTargetIdentityError({ statePath });
+      }
       // PID liveness is only a hint: both the PID and port may be reused.
       // The saved profile identity must also match before we create a grant.
       if (!isProcessAlive(state.value.pid)) {
         continue;
       }
-      const probed = yield* probeEnvironmentDescriptor(state.value.origin);
+      const probe = probeEnvironmentDescriptor(state.value.origin);
+      const probed = yield* localDesktop === undefined
+        ? probe
+        : probe.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }));
       if (probed._tag !== "descriptor") {
         continue;
       }
@@ -306,6 +322,10 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       if (
         Option.isNone(expectedId) ||
         expectedId.value === "" ||
+        (localDesktop?.environmentId !== undefined &&
+          expectedId.value !== localDesktop.environmentId) ||
+        (localDesktop?.runtimeInstanceId !== undefined &&
+          state.value.runtimeInstanceId !== localDesktop.runtimeInstanceId) ||
         probed.descriptor.environmentId !== expectedId.value ||
         // Both absent supports legacy pairing. If either side advertises a
         // generation, it must match: do not downgrade a partially modern pair.
@@ -333,7 +353,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
  * choice pinned to where the runtime state was actually found, independent of
  * ambient environment variables.
  */
-const makePairServerConfig = Effect.fn(function* (input: {
+export const makePairServerConfig = Effect.fn(function* (input: {
   readonly target: DiscoveredPairTarget;
   readonly logLevel: ServerConfig.ServerConfig["Service"]["logLevel"];
 }) {

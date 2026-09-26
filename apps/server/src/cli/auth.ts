@@ -5,10 +5,14 @@ import {
 } from "@workjet/contracts";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
+import * as Schema from "effect/Schema";
 import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli";
+import { FetchHttpClient } from "effect/unstable/http";
+import { discoverPairTarget, makePairServerConfig } from "./pair.ts";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 
@@ -26,8 +30,20 @@ import {
   resolveCliAuthConfig,
 } from "./config.ts";
 
+export class LocalDesktopAuthTargetError extends Schema.TaggedErrorClass<LocalDesktopAuthTargetError>()(
+  "LocalDesktopAuthTargetError",
+  {},
+) {
+  override get message(): string {
+    return "Local Desktop enrollment requires an explicit profile and both expected environment and runtime identities, without a dev URL.";
+  }
+}
+
 const runWithEnvironmentAuth = <A, E>(
-  flags: CliAuthLocationFlags,
+  flags: CliAuthLocationFlags & {
+    readonly localEnvironmentId?: Option.Option<string>;
+    readonly localRuntimeInstanceId?: Option.Option<string>;
+  },
   run: (environmentAuth: EnvironmentAuth.EnvironmentAuth["Service"]) => Effect.Effect<A, E>,
   options?: {
     readonly quietLogs?: boolean;
@@ -35,7 +51,36 @@ const runWithEnvironmentAuth = <A, E>(
 ) =>
   Effect.gen(function* () {
     const logLevel = yield* GlobalFlag.LogLevel;
-    const config = yield* resolveCliAuthConfig(flags, logLevel);
+    const environmentId = Option.getOrUndefined(flags.localEnvironmentId ?? Option.none());
+    const runtimeInstanceId = Option.getOrUndefined(flags.localRuntimeInstanceId ?? Option.none());
+    const localDesktop = environmentId !== undefined || runtimeInstanceId !== undefined;
+    const localIdentity =
+      environmentId !== undefined && runtimeInstanceId !== undefined
+        ? { environmentId, runtimeInstanceId }
+        : undefined;
+    if (
+      localDesktop &&
+      (!environmentId?.trim() ||
+        !runtimeInstanceId?.trim() ||
+        Option.isNone(flags.baseDir) ||
+        Option.isSome(flags.devUrl ?? Option.none()))
+    ) {
+      return yield* new LocalDesktopAuthTargetError();
+    }
+    // The strict Desktop branch pins the store to the verified userdata profile
+    // before constructing any auth/database layers. Ambient dev flags cannot redirect it.
+    const config =
+      localIdentity !== undefined
+        ? yield* Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            const baseDir = yield* fs.realPath(Option.getOrElse(flags.baseDir, () => ""));
+            const target = yield* discoverPairTarget(baseDir, localIdentity);
+            return yield* makePairServerConfig({
+              target,
+              logLevel: Option.getOrElse(logLevel, () => "Error" as const),
+            });
+          })
+        : yield* resolveCliAuthConfig(flags, logLevel);
     const minimumLogLevel = options?.quietLogs ? "Error" : config.logLevel;
     return yield* Effect.gen(function* () {
       const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -48,7 +93,7 @@ const runWithEnvironmentAuth = <A, E>(
         ),
       ),
     );
-  });
+  }).pipe(Effect.provide(FetchHttpClient.layer));
 
 const ttlFlag = Flag.string("ttl").pipe(
   Flag.withSchema(DurationFromString),
@@ -159,8 +204,14 @@ const pairingCommand = Command.make("pairing").pipe(
   Command.withSubcommands([pairingCreateCommand, pairingListCommand, pairingRevokeCommand]),
 );
 
+const localDesktopIdentityFlags = {
+  localEnvironmentId: Flag.string("local-environment-id").pipe(Flag.optional),
+  localRuntimeInstanceId: Flag.string("local-runtime-instance-id").pipe(Flag.optional),
+};
+
 const sessionIssueCommand = Command.make("issue", {
   ...authLocationFlags,
+  ...localDesktopIdentityFlags,
   ttl: ttlFlag,
   label: labelFlag,
   subject: subjectFlag,
@@ -215,6 +266,7 @@ const sessionListCommand = Command.make("list", {
 
 const sessionRevokeCommand = Command.make("revoke", {
   ...authLocationFlags,
+  ...localDesktopIdentityFlags,
   sessionId: Argument.string("session-id").pipe(
     Argument.withDescription("Session id to revoke."),
     Argument.withSchema(AuthSessionId),

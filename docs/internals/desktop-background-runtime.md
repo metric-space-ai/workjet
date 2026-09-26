@@ -126,6 +126,26 @@ self-update from another process. BootService selects the imported Node and
 launcher, never a caller's mutable launcher override for a bundled install.
 These paths and tests are source-only and unexecuted. The digest is a trusted
 release input, not authentication derived from an arbitrary adjacent checksum.
+The CLI now exposes hidden `__desktop-target --base-dir` JSON discovery restricted
+to a modern userdata profile and literal loopback HTTP origin, without creating
+an auth database. Existing `auth session issue --json` accepts paired
+`--local-environment-id` and `--local-runtime-instance-id` guards: the saved
+profile identity and current descriptor/generation must match before auth store
+initialization. Partial guards and explicit dev redirection fail closed; ordinary
+offline CLI auth retains its existing behavior. Session revocation accepts the
+same guards. Public discovery is still not
+authenticated readiness, and the probe-to-issuance interval is not a native fence.
+The main-local credential store uses existing Electron safeStorage with a
+redacted in-memory token and canonical-profile/environment binding. Atomic
+ciphertext replacement and fsync avoid plaintext files; keychain/decode/binding
+failures preserve the record instead of resetting it. Linux basic-text protection
+is refused and protection can be checked before issuing a session. Session removal requires the expected saved session ID and the caller
+must first revoke it on the server. Store tests use a cryptography double; no real
+keychain, enrollment or Desktop restart has been exercised. These are integration
+primitives: the Desktop caller still needs to select the archive, invoke guarded
+enrollment only when appropriate, reuse the credential and validate authenticated
+readiness against a fresh profile-bound target. It must distinguish missing,
+expired, revoked and unreadable credentials; none of those is a second-server trigger.
 Desktop still needs to select its matching shipped archive and invoke this path;
 it currently continues to launch the old Electron-owned backend. No power-loss
 durability or host-restart guarantee follows from an install sentinel.

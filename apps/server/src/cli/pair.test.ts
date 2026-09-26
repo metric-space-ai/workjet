@@ -142,6 +142,198 @@ const withDescriptorServer = <A, E, R>(
     (server) => Effect.sync(() => server.close()),
   );
 
+const withDesktopProfile = <A, E, R>(
+  run: (baseDir: string, origin: string) => Effect.Effect<A, E, R>,
+  runtime: { readonly runtimeInstanceId: string | undefined } = testDescriptor,
+) =>
+  withDescriptorServer(
+    (origin) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const baseDir = yield* fs.makeTempDirectoryScoped({
+            prefix: "workjet-desktop-enrollment-",
+          });
+          const stateDir = NodePath.join(baseDir, "userdata");
+          yield* persistServerRuntimeState({
+            path: NodePath.join(stateDir, "server-runtime.json"),
+            state: yield* makePersistedServerRuntimeState({
+              config: { host: "127.0.0.1", devUrl: undefined },
+              port: Number(new URL(origin).port),
+              runtimeInstanceId: runtime.runtimeInstanceId,
+            }),
+          });
+          yield* fs.writeFileString(
+            NodePath.join(stateDir, "environment-id"),
+            testDescriptor.environmentId,
+          );
+          return yield* run(baseDir, origin);
+        }),
+      ),
+    runtime,
+  ).pipe(Effect.provide(NodeServices.layer));
+
+describe("local Desktop enrollment", () => {
+  it.effect("describes the modern local target without creating an auth database", () =>
+    withDesktopProfile((baseDir, origin) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const output = yield* captureStdout(runCli(["__desktop-target", "--base-dir", baseDir]));
+        const target = JSON.parse(output);
+        assert.equal(target.baseDir, yield* fs.realPath(baseDir));
+        assert.equal(target.environmentId, testDescriptor.environmentId);
+        assert.equal(target.runtimeInstanceId, testDescriptor.runtimeInstanceId);
+        assert.equal(target.origin, origin);
+        assert.isUndefined(target.token);
+        assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+      }),
+    ),
+  );
+
+  it.effect("uses the existing auth store only after matching both expected identities", () =>
+    withDesktopProfile((baseDir) =>
+      Effect.gen(function* () {
+        const output = yield* captureStdout(
+          runCli([
+            "auth",
+            "session",
+            "issue",
+            "--base-dir",
+            baseDir,
+            "--json",
+            "--label",
+            "Workjet Desktop",
+            "--local-environment-id",
+            testDescriptor.environmentId,
+            "--local-runtime-instance-id",
+            testDescriptor.runtimeInstanceId,
+          ]),
+        );
+        const issued = JSON.parse(output);
+        assert.isString(issued.token);
+        assert.equal(issued.method, "bearer-access-token");
+        const sessions = JSON.parse(
+          yield* captureStdout(
+            runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
+          ),
+        );
+        assert.equal(sessions.length, 1);
+        assert.equal(sessions[0].sessionId, issued.sessionId);
+        yield* captureStdout(
+          runCli([
+            "auth",
+            "session",
+            "revoke",
+            issued.sessionId,
+            "--base-dir",
+            baseDir,
+            "--local-environment-id",
+            testDescriptor.environmentId,
+            "--local-runtime-instance-id",
+            testDescriptor.runtimeInstanceId,
+          ]),
+        );
+        const afterRevoke = JSON.parse(
+          yield* captureStdout(
+            runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
+          ),
+        );
+        assert.equal(afterRevoke.length, 0);
+      }),
+    ),
+  );
+
+  for (const expected of [
+    ["other-environment", testDescriptor.runtimeInstanceId],
+    [testDescriptor.environmentId, "previous-runtime"],
+  ]) {
+    it.effect(`refuses stale Desktop identity ${expected.join("/")} before opening the store`, () =>
+      withDesktopProfile((baseDir) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* provideCliTestLayers(
+            runCli([
+              "auth",
+              "session",
+              "issue",
+              "--base-dir",
+              baseDir,
+              "--json",
+              "--local-environment-id",
+              expected[0]!,
+              "--local-runtime-instance-id",
+              expected[1]!,
+            ]).pipe(Effect.flip),
+          );
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+        }),
+      ),
+    );
+  }
+  it.effect("rejects a non-loopback profile origin before probing or opening an auth store", () =>
+    withDesktopProfile((baseDir) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const statePath = NodePath.join(baseDir, "userdata/server-runtime.json");
+        const state = JSON.parse(yield* fs.readFileString(statePath));
+        yield* fs.writeFileString(
+          statePath,
+          JSON.stringify({ ...state, origin: "http://203.0.113.1:3773", port: 3773 }),
+        );
+        const error = yield* provideCliTestLayers(
+          runCli(["__desktop-target", "--base-dir", baseDir]).pipe(Effect.flip),
+        );
+        const rendered = String(
+          typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
+        );
+        assert.include(rendered, "runtime generation");
+        assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+      }),
+    ),
+  );
+  it.effect("does not downgrade Desktop discovery to a legacy generation", () =>
+    withDesktopProfile(
+      (baseDir) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* provideCliTestLayers(
+            runCli(["__desktop-target", "--base-dir", baseDir]).pipe(Effect.flip),
+          );
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+        }),
+      { runtimeInstanceId: undefined },
+    ),
+  );
+  it.effect(
+    "requires both identity arguments and rejects dev redirection before opening a store",
+    () =>
+      withDesktopProfile((baseDir) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          for (const extra of [
+            ["--local-environment-id", testDescriptor.environmentId],
+            [
+              "--local-environment-id",
+              testDescriptor.environmentId,
+              "--local-runtime-instance-id",
+              testDescriptor.runtimeInstanceId,
+              "--dev-url",
+              "http://localhost:5733",
+            ],
+          ]) {
+            yield* provideCliTestLayers(
+              runCli(["auth", "session", "issue", "--base-dir", baseDir, "--json", ...extra]).pipe(
+                Effect.flip,
+              ),
+            );
+          }
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "dev/state.sqlite")));
+        }),
+      ),
+  );
+});
+
 describe("workjet pair", () => {
   it.effect("mints a token and prints a QR pairing URL for a live server", () =>
     withDescriptorServer((origin) =>

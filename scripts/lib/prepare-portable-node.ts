@@ -5,10 +5,15 @@ import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as Effect from "effect/Effect";
+import * as Data from "effect/Data";
 import * as Stream from "effect/Stream";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import { managedNodeArchive } from "../../packages/ssh/src/remoteNode.ts";
+
+class PortableNodeDownloadError extends Data.TaggedError("PortableNodeDownloadError")<{
+  readonly message: string;
+}> {}
 
 /** Extract only after checking a trusted release pin; destination must be a new build stage. */
 export async function stageVerifiedNodeArchive(input: {
@@ -85,9 +90,9 @@ export async function preparePortableNode(input: {
         Effect.gen(function* () {
           const response = yield* HttpClient.get(pin.url);
           if (response.status < 200 || response.status >= 300)
-            return yield* Effect.fail(
-              new Error(`Portable Node download failed (${response.status}).`),
-            );
+            return yield* new PortableNodeDownloadError({
+              message: `Portable Node download failed (${response.status}).`,
+            });
           const file = yield* Effect.acquireRelease(
             Effect.tryPromise(() => fs.open(archivePath, "wx", 0o600)),
             (handle) => Effect.promise(() => handle.close()),
@@ -97,9 +102,9 @@ export async function preparePortableNode(input: {
             Effect.gen(function* () {
               size += chunk.byteLength;
               if (size > 100 * 1024 * 1024)
-                return yield* Effect.fail(
-                  new Error("Portable Node archive exceeds its size limit."),
-                );
+                return yield* new PortableNodeDownloadError({
+                  message: "Portable Node archive exceeds its size limit.",
+                });
               yield* Effect.tryPromise(() => file.writeFile(chunk));
             }),
           );

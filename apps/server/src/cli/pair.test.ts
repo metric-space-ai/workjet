@@ -180,7 +180,7 @@ describe("local Desktop enrollment", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const output = yield* captureStdout(runCli(["__desktop-target", "--base-dir", baseDir]));
-        const target = Schema.decodeUnknownSync(
+        const target = yield* Schema.decodeUnknownEffect(
           Schema.fromJsonString(
             Schema.Struct({
               baseDir: Schema.String,
@@ -220,7 +220,7 @@ describe("local Desktop enrollment", () => {
             testDescriptor.runtimeInstanceId,
           ]),
         );
-        const issued = Schema.decodeUnknownSync(
+        const issued = yield* Schema.decodeUnknownEffect(
           Schema.fromJsonString(
             Schema.Struct({
               token: Schema.String,
@@ -231,7 +231,7 @@ describe("local Desktop enrollment", () => {
         )(output);
         assert.isString(issued.token);
         assert.equal(issued.method, "bearer-access-token");
-        const sessions = Schema.decodeUnknownSync(
+        const sessions = yield* Schema.decodeUnknownEffect(
           Schema.fromJsonString(Schema.Array(Schema.Struct({ sessionId: Schema.String }))),
         )(
           yield* captureStdout(
@@ -239,7 +239,7 @@ describe("local Desktop enrollment", () => {
           ),
         );
         assert.equal(sessions.length, 1);
-        assert.equal(sessions[0].sessionId, issued.sessionId);
+        assert.equal(sessions[0]?.sessionId, issued.sessionId);
         yield* captureStdout(
           runCli([
             "auth",
@@ -254,7 +254,7 @@ describe("local Desktop enrollment", () => {
             testDescriptor.runtimeInstanceId,
           ]),
         );
-        const afterRevoke = Schema.decodeUnknownSync(
+        const afterRevoke = yield* Schema.decodeUnknownEffect(
           Schema.fromJsonString(Schema.Array(Schema.Struct({ sessionId: Schema.String }))),
         )(
           yield* captureStdout(
@@ -298,12 +298,12 @@ describe("local Desktop enrollment", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const statePath = NodePath.join(baseDir, "userdata/server-runtime.json");
-        const state = Schema.decodeUnknownSync(Schema.fromJsonString(PersistedServerRuntimeState))(
-          yield* fs.readFileString(statePath),
-        );
+        const state = yield* Schema.decodeUnknownEffect(
+          Schema.fromJsonString(PersistedServerRuntimeState),
+        )(yield* fs.readFileString(statePath));
         yield* fs.writeFileString(
           statePath,
-          Schema.encodeSync(Schema.fromJsonString(PersistedServerRuntimeState))({
+          yield* Schema.encodeEffect(Schema.fromJsonString(PersistedServerRuntimeState))({
             ...state,
             origin: "http://203.0.113.1:3773",
             port: 3773,

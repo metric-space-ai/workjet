@@ -251,7 +251,7 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
         expect(state?.desktop).toEqual(desktop);
         yield* fs.writeFileString(
           statePath,
-          Schema.encodeSync(Schema.UnknownFromJsonString)({
+          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
             ...state,
             desktop: { ...desktop, port: 4583 },
           }),
@@ -273,7 +273,7 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
       };
       yield* fs.writeFileString(
         statePath,
-        Schema.encodeSync(Schema.UnknownFromJsonString)({ ...state, desktop }),
+        yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({ ...state, desktop }),
       );
       yield* service.install;
       expect(parseServiceState(yield* fs.readFileString(statePath))?.desktop).toEqual(desktop);

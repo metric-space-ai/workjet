@@ -222,6 +222,15 @@ const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
+class DesktopTelemetryRpcTestError extends Data.TaggedError("DesktopTelemetryRpcTestError")<{
+  readonly stage: string;
+  readonly cause: unknown;
+}> {
+  override get message() {
+    return this.stage;
+  }
+}
+
 const testEnvironmentDescriptor = {
   environmentId: EnvironmentId.make("environment-test"),
   label: "Test environment",
@@ -5099,7 +5108,11 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 Stream.runHead,
                 Effect.timeout("5 seconds"),
                 Effect.mapError(
-                  (cause) => new Error("Initial Desktop control did not arrive", { cause }),
+                  (cause) =>
+                    new DesktopTelemetryRpcTestError({
+                      stage: "Initial Desktop control did not arrive",
+                      cause,
+                    }),
                 ),
               );
               yield* healthSubscription.changes.pipe(
@@ -5108,7 +5121,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                 Effect.timeout("5 seconds"),
                 Effect.mapError(
                   (cause) =>
-                    new Error("Server did not release the old control subscription", { cause }),
+                    new DesktopTelemetryRpcTestError({
+                      stage: "Server did not release the old control subscription",
+                      cause,
+                    }),
                 ),
               );
               yield* Effect.scoped(
@@ -5128,7 +5144,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                       Effect.timeout("5 seconds"),
                       Effect.mapError(
                         (cause) =>
-                          new Error("Replacement Desktop control did not arrive", { cause }),
+                          new DesktopTelemetryRpcTestError({
+                            stage: "Replacement Desktop control did not arrive",
+                            cause,
+                          }),
                       ),
                     );
                     const stale = yield* oldClient[WS_METHODS.serverPublishDesktopTelemetry]({

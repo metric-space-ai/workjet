@@ -8,6 +8,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@workjet/shared/Net";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/unstable/cli";
@@ -150,6 +151,10 @@ describe("workjet pair", () => {
           }),
         });
 
+        NodeFS.writeFileSync(
+          NodePath.join(baseDir, "userdata", "environment-id"),
+          `${testDescriptor.environmentId}\n`,
+        );
         const output = yield* captureStdout(runCli(["pair", "--base-dir", baseDir]));
 
         assert.include(output, `Pairing with pair-test (${origin})`);
@@ -189,6 +194,10 @@ describe("workjet pair", () => {
           }),
         });
 
+        NodeFS.writeFileSync(
+          NodePath.join(baseDir, "dev", "environment-id"),
+          `${testDescriptor.environmentId}\n`,
+        );
         const output = yield* captureStdout(runCli(["pair", "--base-dir", baseDir]));
 
         assert.include(output, "Pairing URL: http://localhost:5733/pair#token=");
@@ -211,6 +220,51 @@ describe("workjet pair", () => {
       assert.include(rendered, "npx workjet serve");
       assert.include(rendered, "npx workjet connect");
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "refuses a live reused port with a different or unverifiable profile identity before opening its store",
+    () =>
+      withDescriptorServer((origin) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            for (const identity of ["another-environment", "", undefined]) {
+              const baseDir = yield* fs.makeTempDirectoryScoped({
+                prefix: "workjet-pair-identity-",
+              });
+              const stateDir = NodePath.join(baseDir, "userdata");
+              yield* persistServerRuntimeState({
+                path: NodePath.join(stateDir, "server-runtime.json"),
+                state: yield* makePersistedServerRuntimeState({
+                  config: { host: "127.0.0.1", devUrl: undefined },
+                  port: Number(new URL(origin).port),
+                }),
+              });
+              if (identity !== undefined) {
+                yield* fs.writeFileString(NodePath.join(stateDir, "environment-id"), identity);
+              }
+              const before = (yield* fs.readDirectory(stateDir)).sort();
+              const error = yield* provideCliTestLayers(
+                runCli(["pair", "--base-dir", baseDir]).pipe(Effect.flip),
+              );
+              const rendered = String(
+                typeof error === "object" && error !== null && "cause" in error
+                  ? error.cause
+                  : error,
+              );
+              assert.include(rendered, "Pairing was refused; no credential was created.");
+              expect((yield* fs.readDirectory(stateDir)).sort()).toEqual(before);
+              const identityPath = NodePath.join(stateDir, "environment-id");
+              if (identity === undefined) {
+                expect(yield* fs.exists(identityPath)).toBe(false);
+              } else {
+                expect(yield* fs.readFileString(identityPath)).toBe(identity);
+              }
+            }
+          }),
+        ),
+      ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("ignores runtime state whose recorded pid is no longer alive", () =>

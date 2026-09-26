@@ -122,5 +122,15 @@ Next source block: canonical-profile exclusive runtime ownership and a durable,
 authenticated attach boundary, followed by Desktop's explicit attach/detach
 wiring. The actual macOS lifecycle and same-run proof remain dependent on an
 isolated exact build, admitted host capacity and the native contract above.
+
+The existing CLI pairing discovery now compares the responding environment ID
+with the saved profile ID before opening the pairing store. PID liveness and
+a valid public descriptor alone cannot distinguish a reused port/process from
+the intended profile. Missing, empty or conflicting identity fails explicitly
+without issuing a credential. This closes a prerequisite identity gap in the
+existing discovery path; a public descriptor comparison is **not** authenticated
+attachment, proof of the same process generation, or protection against a
+replacement between discovery and use. Those checks still belong in the live
+authenticated attach exchange, under exclusive profile ownership.
 There is no measured completion date yet. A source patch, successful build or
 external-server demonstration alone cannot close this outcome.

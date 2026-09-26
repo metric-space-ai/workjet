@@ -26,6 +26,7 @@ import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
@@ -63,6 +64,15 @@ const TAILSCALE_PROBE_ATTEMPTS = 5;
 const TAILSCALE_PROBE_RETRY_DELAY = Duration.seconds(1);
 
 export type PairStateVariant = "userdata" | "dev";
+
+export class PairTargetIdentityError extends Schema.TaggedErrorClass<PairTargetIdentityError>()(
+  "PairTargetIdentityError",
+  { statePath: Schema.String },
+) {
+  override get message(): string {
+    return `Cannot verify the running server against the saved environment identity at ${this.statePath}. Pairing was refused; no credential was created. Check that this profile points to the intended server.`;
+  }
+}
 
 // deriveServerPaths only checks devUrl for undefined-ness when picking the
 // dev-vs-userdata state directory; the value itself is not used.
@@ -250,6 +260,7 @@ interface DiscoveredPairTarget {
 const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   explicitBaseDir: string | undefined,
 ) {
+  const fs = yield* FileSystem.FileSystem;
   const bases: Array<string> = [];
   if (explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0) {
     bases.push(yield* resolveBaseDir(explicitBaseDir));
@@ -279,15 +290,25 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       if (Option.isNone(state)) {
         continue;
       }
-      // The pid check guards against a dead server's state file whose port
-      // was since reused by a different server: pairing would then mint a
-      // token in the old database while the QR code points at the new server.
+      // PID liveness is only a hint: both the PID and port may be reused.
+      // The saved profile identity must also match before we create a grant.
       if (!isProcessAlive(state.value.pid)) {
         continue;
       }
       const probed = yield* probeEnvironmentDescriptor(state.value.origin);
       if (probed._tag !== "descriptor") {
         continue;
+      }
+      const expectedId = yield* fs.readFileString(derivedPaths.environmentIdPath).pipe(
+        Effect.map((value) => value.trim()),
+        Effect.option,
+      );
+      if (
+        Option.isNone(expectedId) ||
+        expectedId.value === "" ||
+        probed.descriptor.environmentId !== expectedId.value
+      ) {
+        return yield* new PairTargetIdentityError({ statePath });
       }
       return {
         baseDir,

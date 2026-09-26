@@ -22,15 +22,14 @@ export interface ProfileOwnership {
 }
 
 export class ProfileOwnershipError extends Error {
-  constructor(
-    readonly kind: ProfileOwnershipKind,
-    options: { cause: unknown },
-  ) {
+  readonly kind: ProfileOwnershipKind;
+  constructor(kind: ProfileOwnershipKind, options: { cause: unknown }) {
     super(
       `Cannot acquire Workjet ${kind} ownership. Another process may own this profile; no automatic takeover was attempted.`,
       options,
     );
     this.name = "ProfileOwnershipError";
+    this.kind = kind;
   }
 }
 

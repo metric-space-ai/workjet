@@ -690,7 +690,7 @@ const buildAppUnderTest = (options?: {
         })
       : VcsStatusBroadcaster.layer.pipe(Layer.provide(gitWorkflowLayer));
     const resourceTelemetryLayer = ResourceTelemetry.layer.pipe(
-      Layer.provide(
+      Layer.provideMerge(
         Layer.mergeAll(
           NativeTelemetryClient.layerTest(options?.layers?.nativeTelemetryClient),
           DesktopTelemetryReceiver.layerTest(options?.layers?.desktopTelemetryReceiver),
@@ -5021,7 +5021,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("binds enrolled Desktop RPC telemetry to the current generation and connection", () =>
+  it.live("binds enrolled Desktop RPC telemetry to the current generation and connection", () =>
     Effect.gen(function* () {
       let auth: EnvironmentAuth.EnvironmentAuth["Service"] | undefined;
       let receiver: DesktopTelemetryReceiver.DesktopTelemetryReceiver["Service"] | undefined;
@@ -5092,10 +5092,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             // Wait for server-side release, while keeping the old socket alive.
             yield* oldClient[WS_METHODS.subscribeDesktopTelemetryControl](binding).pipe(
               Stream.runHead,
+              Effect.timeout("5 seconds"),
+              Effect.mapError(
+                (cause) => new Error("Initial Desktop control did not arrive", { cause }),
+              ),
             );
             yield* healthSubscription.changes.pipe(
               Stream.filter((health) => health.status === "stopped"),
               Stream.runHead,
+              Effect.timeout("5 seconds"),
+              Effect.mapError(
+                (cause) =>
+                  new Error("Server did not release the old control subscription", { cause }),
+              ),
             );
             yield* Effect.scoped(
               withWsRpcClient(wsUrl.toString(), (newClient) =>
@@ -5110,7 +5119,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     ),
                     Effect.forkScoped,
                   );
-                  yield* Deferred.await(attached);
+                  yield* Deferred.await(attached).pipe(
+                    Effect.timeout("5 seconds"),
+                    Effect.mapError(
+                      (cause) => new Error("Replacement Desktop control did not arrive", { cause }),
+                    ),
+                  );
                   const stale = yield* oldClient[WS_METHODS.serverPublishDesktopTelemetry]({
                     ...binding,
                     message: { version: 1, type: "desktopTelemetryHello", electronPid: 41 },

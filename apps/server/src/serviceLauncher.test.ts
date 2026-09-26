@@ -170,7 +170,8 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
       const launcher = new Launcher(root, state);
       const error = yield* Effect.tryPromise({
         try: () => launcher.run(),
-        catch: (cause) => cause,
+        catch: (cause) =>
+          cause instanceof Error ? cause : new Error("Launcher failed", { cause }),
       }).pipe(Effect.flip);
       assert.instanceOf(error, ProfileOwnershipError);
       assert.equal(yield* fs.readFileString(dbPath), "manual runtime's current data");

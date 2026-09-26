@@ -1,7 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -31,9 +32,11 @@ const fixture = Effect.fn("test.bundled_runtime.fixture")(function* () {
   }
   yield* fs.writeFileString(path.join(source, "package/package.json"), '{"version":"1.2.3"}');
   const archivePath = path.join(root, "bundle.tgz");
-  yield* Effect.try(() =>
-    execFileSync("tar", ["-czf", archivePath, "-C", source, "package"], { timeout: 30_000 }),
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const tarExit = yield* spawner.exitCode(
+    ChildProcess.make("tar", ["-czf", archivePath, "-C", source, "package"]),
   );
+  assert.equal(tarExit, 0);
   const sha256 = createHash("sha256")
     .update(yield* fs.readFile(archivePath))
     .digest("hex");

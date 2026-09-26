@@ -77,7 +77,7 @@ it.effect(
         yield* Scope.close(scopeA, Exit.void);
         assert.equal((yield* receiver.health).status, "stopped");
         assert.equal(Option.getOrThrow(yield* receiver.latest).power.stale, true);
-        yield* receiver.attach("connection-b");
+        yield* receiver.attach("connection-b").pipe(Effect.asVoid);
         assert.equal((yield* receiver.health).status, "starting");
         const stale = yield* receiver.publish("connection-a", sample(41, 8)).pipe(Effect.flip);
         assert.equal(stale._tag, "DesktopTelemetryAttachmentError");
@@ -161,12 +161,12 @@ it.effect(
           });
         const scopeA = yield* Scope.make();
         yield* Effect.addFinalizer(() => Scope.close(scopeA, Exit.void));
-        yield* receiver.attach("desktop-a").pipe(Scope.provide(scopeA));
+        yield* receiver.attach("desktop-a").pipe(Scope.provide(scopeA), Effect.asVoid);
         yield* publish("desktop-a", 41, 300);
         assert.deepEqual(yield* Queue.take(registrations), [{ pid: 41, startTimeMs: 300 }]);
         yield* Scope.close(scopeA, Exit.void);
         assert.deepEqual(yield* Queue.take(registrations), []);
-        yield* receiver.attach("desktop-b");
+        yield* receiver.attach("desktop-b").pipe(Effect.asVoid);
         yield* publish("desktop-b", 42, 400);
         assert.deepEqual(yield* Queue.take(registrations), [{ pid: 42, startTimeMs: 400 }]);
       }),

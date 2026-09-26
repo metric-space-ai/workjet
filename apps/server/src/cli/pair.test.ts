@@ -10,6 +10,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/unstable/cli";
 
@@ -17,7 +18,7 @@ import { cli } from "../bin.ts";
 import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
-  type PersistedServerRuntimeState,
+  PersistedServerRuntimeState,
 } from "../serverRuntimeState.ts";
 import {
   DevServerNotProxiableError,
@@ -179,7 +180,17 @@ describe("local Desktop enrollment", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const output = yield* captureStdout(runCli(["__desktop-target", "--base-dir", baseDir]));
-        const target = JSON.parse(output);
+        const target = Schema.decodeUnknownSync(
+          Schema.fromJsonString(
+            Schema.Struct({
+              baseDir: Schema.String,
+              environmentId: Schema.String,
+              runtimeInstanceId: Schema.String,
+              origin: Schema.String,
+              token: Schema.optionalKey(Schema.String),
+            }),
+          ),
+        )(output);
         assert.equal(target.baseDir, yield* fs.realPath(baseDir));
         assert.equal(target.environmentId, testDescriptor.environmentId);
         assert.equal(target.runtimeInstanceId, testDescriptor.runtimeInstanceId);
@@ -209,10 +220,20 @@ describe("local Desktop enrollment", () => {
             testDescriptor.runtimeInstanceId,
           ]),
         );
-        const issued = JSON.parse(output);
+        const issued = Schema.decodeUnknownSync(
+          Schema.fromJsonString(
+            Schema.Struct({
+              token: Schema.String,
+              method: Schema.String,
+              sessionId: Schema.String,
+            }),
+          ),
+        )(output);
         assert.isString(issued.token);
         assert.equal(issued.method, "bearer-access-token");
-        const sessions = JSON.parse(
+        const sessions = Schema.decodeUnknownSync(
+          Schema.fromJsonString(Schema.Array(Schema.Struct({ sessionId: Schema.String }))),
+        )(
           yield* captureStdout(
             runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
           ),
@@ -233,7 +254,9 @@ describe("local Desktop enrollment", () => {
             testDescriptor.runtimeInstanceId,
           ]),
         );
-        const afterRevoke = JSON.parse(
+        const afterRevoke = Schema.decodeUnknownSync(
+          Schema.fromJsonString(Schema.Array(Schema.Struct({ sessionId: Schema.String }))),
+        )(
           yield* captureStdout(
             runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
           ),
@@ -275,10 +298,16 @@ describe("local Desktop enrollment", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const statePath = NodePath.join(baseDir, "userdata/server-runtime.json");
-        const state = JSON.parse(yield* fs.readFileString(statePath));
+        const state = Schema.decodeUnknownSync(Schema.fromJsonString(PersistedServerRuntimeState))(
+          yield* fs.readFileString(statePath),
+        );
         yield* fs.writeFileString(
           statePath,
-          JSON.stringify({ ...state, origin: "http://203.0.113.1:3773", port: 3773 }),
+          Schema.encodeSync(Schema.fromJsonString(PersistedServerRuntimeState))({
+            ...state,
+            origin: "http://203.0.113.1:3773",
+            port: 3773,
+          }),
         );
         const error = yield* provideCliTestLayers(
           runCli(["__desktop-target", "--base-dir", baseDir]).pipe(Effect.flip),

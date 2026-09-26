@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as ProcessRunner from "../processRunner.ts";
@@ -250,7 +251,10 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
         expect(state?.desktop).toEqual(desktop);
         yield* fs.writeFileString(
           statePath,
-          JSON.stringify({ ...state, desktop: { ...desktop, port: 4583 } }),
+          Schema.encodeSync(Schema.UnknownFromJsonString)({
+            ...state,
+            desktop: { ...desktop, port: 4583 },
+          }),
         );
         expect((yield* service.status).current).toBe(false);
       }),
@@ -267,7 +271,10 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
         tailscaleServeEnabled: true,
         tailscaleServePort: 8443,
       };
-      yield* fs.writeFileString(statePath, JSON.stringify({ ...state, desktop }));
+      yield* fs.writeFileString(
+        statePath,
+        Schema.encodeSync(Schema.UnknownFromJsonString)({ ...state, desktop }),
+      );
       yield* service.install;
       expect(parseServiceState(yield* fs.readFileString(statePath))?.desktop).toEqual(desktop);
       expect((yield* service.status).desktop).toEqual(desktop);

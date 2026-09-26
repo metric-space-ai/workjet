@@ -1751,7 +1751,7 @@ const make = Effect.gen(function* () {
             const resumed = yield* providerService
               .startSession(thread.id, {
                 threadId: thread.id,
-                provider: "codex",
+                provider: ProviderDriverKind.make("codex"),
                 providerInstanceId: thread.modelSelection.instanceId,
                 ...(cwd ? { cwd } : {}),
                 modelSelection: thread.modelSelection,

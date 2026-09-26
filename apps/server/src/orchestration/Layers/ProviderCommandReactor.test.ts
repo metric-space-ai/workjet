@@ -415,9 +415,9 @@ describe("ProviderCommandReactor", () => {
       ),
       Layer.provideMerge(
         input?.providerBinding
-          ? Layer.succeed(ProviderSessionDirectory, {
+          ? Layer.mock(ProviderSessionDirectory)({
               getBinding: () => Effect.succeed(Option.some(input.providerBinding!)),
-            } as ProviderSessionDirectory["Service"])
+            })
           : Layer.empty,
       ),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
@@ -819,7 +819,7 @@ describe("ProviderCommandReactor", () => {
       crewAdmission: admission,
       providerBinding: {
         threadId,
-        provider: "codex",
+        provider: ProviderDriverKind.make("codex"),
         providerInstanceId,
         resumeCursor,
       },

@@ -1,4 +1,5 @@
 import { AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
+import { randomUUID } from "node:crypto";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -46,6 +47,13 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
     );
   const directory = path.join(baseDir, "runtime", "desktop-auth");
   const filePath = path.join(directory, "session.enc");
+  const pendingPath = path.join(directory, "enrollment-pending.json");
+  const PendingEnrollment = Schema.Struct({
+    version: Schema.Literal(1),
+    baseDir: TrimmedNonEmptyString,
+    environmentId: TrimmedNonEmptyString,
+    attemptId: TrimmedNonEmptyString,
+  });
   const lock = yield* Semaphore.make(1);
   const fail = (operation: string) => new LocalServiceCredentialError({ operation });
   const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(LocalServiceCredential));
@@ -128,8 +136,56 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
     yield* fs.remove(filePath).pipe(Effect.mapError(() => fail("remove")));
     return true;
   });
+  // The non-secret receipt records an UNKNOWN mutation outcome, not liveness.
+  // Never age it out: a CLI may have committed before losing its reply.
+  const assertEnrollmentSettled = Effect.gen(function* () {
+    if (yield* fs.exists(pendingPath)) return yield* fail("reconcile an incomplete enrollment for");
+  }).pipe(Effect.mapError(() => fail("reconcile an incomplete enrollment for")));
+  const beginEnrollment = Effect.scoped(
+    Effect.gen(function* () {
+      yield* assertEnrollmentSettled;
+      const attemptId = randomUUID();
+      const receipt = yield* Schema.encodeEffect(Schema.fromJsonString(PendingEnrollment))({
+        version: 1,
+        baseDir,
+        environmentId: input.environmentId,
+        attemptId,
+      });
+      yield* fs.makeDirectory(directory, { recursive: true });
+      if (platform !== "win32") yield* fs.chmod(directory, 0o700);
+      // Exclusive creation also excludes another Desktop process. A partial write
+      // is retained and blocks enrollment, rather than guessed to be abandoned.
+      yield* fs.writeFileString(pendingPath, receipt, { flag: "wx", mode: 0o600 });
+      yield* (yield* fs.open(pendingPath, { flag: "r" })).sync;
+      if (platform !== "win32") yield* (yield* fs.open(directory, { flag: "r" })).sync;
+      if (platform !== "win32")
+        yield* (yield* fs.open(path.dirname(directory), { flag: "r" })).sync;
+      return attemptId;
+    }),
+  ).pipe(Effect.mapError(() => fail("record enrollment intent for")));
+  const finishEnrollment = (attemptId: string) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const receipt = yield* fs
+          .readFileString(pendingPath)
+          .pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(PendingEnrollment))),
+          );
+        if (
+          receipt.attemptId !== attemptId ||
+          receipt.baseDir !== baseDir ||
+          receipt.environmentId !== input.environmentId
+        )
+          return yield* fail("settle a different enrollment for");
+        yield* fs.remove(pendingPath);
+        if (platform !== "win32") yield* (yield* fs.open(directory, { flag: "r" })).sync;
+      }),
+    ).pipe(Effect.mapError(() => fail("settle enrollment for")));
   return {
     filePath,
+    assertEnrollmentSettled: lock.withPermit(assertEnrollmentSettled),
+    beginEnrollment: lock.withPermit(beginEnrollment),
+    finishEnrollment: (attemptId: string) => lock.withPermit(finishEnrollment(attemptId)),
     // Check the keychain before minting a new durable server session.
     requireProtection,
     get: lock.withPermit(read),

@@ -66,6 +66,7 @@ const fixture = () => {
     denySave: false,
     denyValidation: false,
     stores: 0,
+    pending: false,
   };
   const denied = () => new LocalServiceCredentialError({ operation: "fixture-denied" });
   const dependencies: LocalSessionDependencies = {
@@ -75,6 +76,18 @@ const fixture = () => {
         state.stores++;
         return {
           filePath: "/profile/runtime/desktop-auth/session.enc",
+          assertEnrollmentSettled: Effect.suspend(() =>
+            state.pending ? Effect.fail(denied()) : Effect.void,
+          ),
+          beginEnrollment: Effect.suspend(() => {
+            if (state.pending) return Effect.fail(denied());
+            state.pending = true;
+            return Effect.succeed("attempt-a");
+          }),
+          finishEnrollment: () =>
+            Effect.sync(() => {
+              state.pending = false;
+            }),
           get: Effect.suspend(() =>
             state.denyRead ? Effect.fail(denied()) : Effect.succeed(state.saved),
           ),
@@ -166,6 +179,35 @@ it.effect("does not repeatedly mint after an uncertain revocation", () =>
     yield* access.get(config).pipe(Effect.flip);
     assert.equal(events.filter((event) => event === "issue").length, 1);
   }),
+);
+
+it.effect(
+  "retains unknown issuance before reply failure across caller and service recreation",
+  () =>
+    Effect.gen(function* () {
+      const { dependencies, events, state } = fixture();
+      const unknown = {
+        ...dependencies,
+        issue: (_config: DesktopBackendStartConfig, _target: typeof target, enrollmentId: string) =>
+          Effect.suspend(() => {
+            assert.isTrue(state.pending);
+            assert.equal(enrollmentId, "attempt-a");
+            events.push("server-session-committed");
+            return Effect.fail(
+              new LocalServiceSessionError({ operation: "receive a truncated issuance reply for" }),
+            );
+          }),
+      };
+      const first = yield* makeSessionAccess(unknown);
+      yield* first.get(config).pipe(Effect.flip);
+      yield* first.get(config).pipe(Effect.flip);
+      const reopened = yield* makeSessionAccess(unknown);
+      yield* reopened.get(config).pipe(Effect.flip);
+      assert.equal(events.filter((event) => event === "server-session-committed").length, 1);
+      assert.isTrue(state.pending);
+      assert.isTrue(Option.isNone(state.saved));
+      assert.notInclude(events, "revoke");
+    }),
 );
 
 for (const failure of ["denyRead", "denyProtection"] as const) {

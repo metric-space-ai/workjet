@@ -43,6 +43,7 @@ export interface LocalSessionDependencies {
   readonly issue: (
     config: DesktopBackendStartConfig,
     target: LocalServiceTarget,
+    enrollmentId: string,
   ) => Effect.Effect<typeof IssuedSession.Type, LocalServiceSessionError>;
   readonly revoke: (
     config: DesktopBackendStartConfig,
@@ -75,6 +76,9 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
           store = yield* dependencies.openStore(target);
           stores.set(target.baseDir, store);
         }
+        yield* store.assertEnrollmentSettled.pipe(
+          Effect.mapError(() => fail("reconcile an incomplete enrollment for")),
+        );
         const saved = yield* store.get.pipe(Effect.mapError(() => fail("read or unlock")));
         const now = yield* Clock.currentTimeMillis;
         if (Option.isSome(saved)) {
@@ -96,7 +100,11 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
         // remain interruptible and bounded, including a pending OS keychain dialog.
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
-            const issued = yield* dependencies.issue(config, target);
+            const enrollmentId = yield* credentialStore.beginEnrollment.pipe(
+              Effect.mapError(() => fail("record enrollment intent for")),
+            );
+            uncertainEnrollments.add(target.baseDir);
+            const issued = yield* dependencies.issue(config, target, enrollmentId);
             const credential: Credential.LocalServiceCredential = {
               version: 1,
               baseDir: target.baseDir,
@@ -116,7 +124,13 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
             const result = yield* Effect.exit(
               persist.pipe(Effect.timeout("30 seconds"), Effect.interruptible),
             );
-            if (Exit.isSuccess(result)) return result.value;
+            if (Exit.isSuccess(result)) {
+              yield* credentialStore
+                .finishEnrollment(enrollmentId)
+                .pipe(Effect.mapError(() => fail("settle enrollment for")));
+              uncertainEnrollments.delete(target.baseDir);
+              return result.value;
+            }
             yield* dependencies
               .revoke(config, target, issued.sessionId)
               .pipe(
@@ -132,6 +146,10 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
                   ),
                 ),
               );
+            yield* credentialStore
+              .finishEnrollment(enrollmentId)
+              .pipe(Effect.mapError(() => fail("settle enrollment for")));
+            uncertainEnrollments.delete(target.baseDir);
             return yield* fail("save or validate");
           }),
         );
@@ -212,7 +230,7 @@ export const make = Effect.gen(function* () {
         Effect.provide(storeContext),
         Effect.mapError(() => fail("open the protected store for")),
       ),
-    issue: (config, target) =>
+    issue: (config, target, enrollmentId) =>
       runCli(config, [
         "auth",
         "session",
@@ -220,6 +238,8 @@ export const make = Effect.gen(function* () {
         ...identityArgs(target),
         "--label",
         "Workjet Desktop",
+        "--subject",
+        `workjet-desktop-enrollment:${enrollmentId}`,
         "--json",
       ]).pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(IssuedSession))),

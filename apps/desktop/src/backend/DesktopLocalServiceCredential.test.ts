@@ -71,6 +71,27 @@ const fixture = Effect.fn("test.localServiceCredential.fixture")(function* () {
 
 it.layer(NodeServices.layer)("protected local service credential", (it) => {
   it.effect(
+    "retains incomplete enrollment across store recreation and refuses a different receipt",
+    () =>
+      Effect.gen(function* () {
+        const { fs, open, credential } = yield* fixture();
+        const first = yield* open();
+        yield* first.assertEnrollmentSettled;
+        const attemptId = yield* first.beginEnrollment;
+        const pendingPath = first.filePath.replace("session.enc", "enrollment-pending.json");
+        const before = yield* fs.readFileString(pendingPath);
+        assert.notInclude(before, Redacted.value(credential.token));
+        const reopened = yield* open();
+        yield* reopened.assertEnrollmentSettled.pipe(Effect.flip);
+        yield* reopened.beginEnrollment.pipe(Effect.flip);
+        yield* reopened.finishEnrollment("wrong-attempt").pipe(Effect.flip);
+        assert.equal(yield* fs.readFileString(pendingPath), before);
+        yield* reopened.finishEnrollment(attemptId);
+        yield* reopened.assertEnrollmentSettled;
+      }),
+  );
+
+  it.effect(
     "reopens an encrypted credential in a fresh store instance without plaintext on disk",
     () =>
       Effect.gen(function* () {

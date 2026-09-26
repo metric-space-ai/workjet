@@ -146,6 +146,13 @@ keychain, enrollment or Desktop restart has been exercised.
 packaged macOS/Linux native loopback backends. It discovers the canonical profile
 through the bundled CLI, checks the expected origin and server version, opens
 one protected store per profile, and enrolls only when no credential exists.
+Before issuing, it exclusively creates and fsyncs a non-secret profile-bound
+pending receipt. Its attempt ID becomes the session's administrative subject
+(`workjet-desktop-enrollment:<id>`), allowing explicit outcome reconciliation.
+A lost, truncated or timed-out issuance reply retains that receipt and blocks
+another issue, including after Desktop restart. The receipt is cleared only
+after the protected credential is saved or its known session is revoked; a
+different or malformed receipt is preserved. There is no age-based deletion.
 Every reuse obtains a fresh target and verifies its environment, runtime generation
 and version over the existing authenticated RPC session before releasing the token
 through the existing bearer IPC. Closing that temporary validation connection
@@ -153,7 +160,8 @@ does not close the backend. Enrollment is serialized across windows; failed
 validation/save attempts revoke the newly issued session, including interrupted
 or timed-out saves. Read/OS-protection failures, expired credentials and rejected
 existing sessions fail without silently creating replacement access. Explicit
-user recovery/re-enrollment UX is still owed before release. Development, WSL,
+user recovery/re-enrollment and pending-outcome reconciliation UX is still owed
+before release. Development, WSL,
 Windows and non-loopback bindings retain the process-bootstrap path; its in-memory
 cache is now scoped to the active configuration. This integration and its tests
 are unexecuted. RPC identity checks do not authenticate a malicious listener merely

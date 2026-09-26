@@ -4,6 +4,10 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import { managedNodeArchive } from "../../packages/ssh/src/remoteNode.ts";
 
 /** Extract only after checking a trusted release pin; destination must be a new build stage. */
@@ -74,31 +78,38 @@ export async function preparePortableNode(input: {
   await fs.mkdir(path.dirname(input.destination), { recursive: true });
   const download = await fs.mkdtemp(path.join(path.dirname(input.destination), ".node-download-"));
   try {
-    const response = await fetch(pin.url, {
-      signal: AbortSignal.timeout(180_000),
-      redirect: "error",
-    });
-    if (!response.ok || response.body === null)
-      throw new Error(`Portable Node download failed (${response.status}).`);
     const archivePath = path.join(download, "node.tar.gz");
     // Bound both the response body and on-disk temporary archive, including chunked responses.
-    const file = await fs.open(archivePath, "wx", 0o600);
-    const reader = response.body.getReader();
-    let size = 0;
-    try {
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        size += chunk.value.byteLength;
-        if (size > 100 * 1024 * 1024)
-          throw new Error("Portable Node archive exceeds its size limit.");
-        await file.writeFile(chunk.value);
-      }
-    } finally {
-      await reader.cancel().catch(() => undefined);
-      reader.releaseLock();
-      await file.close();
-    }
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const response = yield* HttpClient.get(pin.url);
+          if (response.status < 200 || response.status >= 300)
+            return yield* Effect.fail(
+              new Error(`Portable Node download failed (${response.status}).`),
+            );
+          const file = yield* Effect.acquireRelease(
+            Effect.tryPromise(() => fs.open(archivePath, "wx", 0o600)),
+            (handle) => Effect.promise(() => handle.close()),
+          );
+          let size = 0;
+          yield* Stream.runForEach(response.stream, (chunk) =>
+            Effect.gen(function* () {
+              size += chunk.byteLength;
+              if (size > 100 * 1024 * 1024)
+                return yield* Effect.fail(
+                  new Error("Portable Node archive exceeds its size limit."),
+                );
+              yield* Effect.tryPromise(() => file.writeFile(chunk));
+            }),
+          );
+        }),
+      ).pipe(
+        Effect.timeout("180 seconds"),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
+      ),
+    );
     return await stageVerifiedNodeArchive({ archivePath, destination: input.destination, pin });
   } finally {
     await fs.rm(download, { recursive: true, force: true });

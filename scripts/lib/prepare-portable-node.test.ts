@@ -112,6 +112,62 @@ describe.skipIf(process.platform === "win32")("portable standalone Node packagin
       ).rejects.toThrow("checksum verification failed");
       expect(await fs.readdir(root)).toEqual([]);
       expect(download).toHaveBeenCalledOnce();
+      expect(download.mock.calls[0]?.[1]?.redirect).toBe("error");
+    } finally {
+      download.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an unsuccessful HTTP response and cleans its download stage", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "workjet-node-http-test-"));
+    const download = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("unavailable", { status: 503 }));
+    try {
+      await expect(
+        preparePortableNode({
+          destination: path.join(root, "node"),
+          platform: process.platform,
+          arch: process.arch,
+        }),
+      ).rejects.toThrow("Portable Node download failed (503)");
+      expect(await fs.readdir(root)).toEqual([]);
+      expect(download.mock.calls[0]?.[1]?.redirect).toBe("error");
+    } finally {
+      download.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cancels an oversized streamed archive and removes the partial download", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "workjet-node-limit-test-"));
+    const chunk = new Uint8Array(1024 * 1024);
+    let cancelled = false;
+    let remainingChunks = 104;
+    const download = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            if (remainingChunks-- > 0) controller.enqueue(chunk);
+            else controller.close();
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+      ),
+    );
+    try {
+      await expect(
+        preparePortableNode({
+          destination: path.join(root, "node"),
+          platform: process.platform,
+          arch: process.arch,
+        }),
+      ).rejects.toThrow("size limit");
+      expect(cancelled).toBe(true);
+      expect(await fs.readdir(root)).toEqual([]);
     } finally {
       download.mockRestore();
       await fs.rm(root, { recursive: true, force: true });

@@ -17,6 +17,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as BootService from "./bootService.ts";
 import { acquireProfileOwnership } from "../profileOwnership.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
+import { BUNDLED_RUNTIME_RECEIPT, bundledRuntimeNodePath } from "./bundledRuntime.ts";
 import {
   parseServiceState,
   SERVICE_LAUNCHER_PROTOCOL,
@@ -74,6 +75,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   platform: NodeJS.Platform = "linux",
   usePinnedLauncher = false,
   aliasProfile = false,
+  bundled = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -91,6 +93,18 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     "export const source = 'pinned runtime';\n",
   );
   yield* fs.writeFileString(runtime.sentinelPath, "1.2.3\n");
+  const bundle = bundled
+    ? { archivePath: path.join(home, "shipped.tgz"), sha256: "a".repeat(64) }
+    : undefined;
+  if (bundle !== undefined) {
+    const nodePath = bundledRuntimeNodePath(runtime.entryPath);
+    yield* fs.makeDirectory(path.dirname(nodePath), { recursive: true });
+    yield* fs.writeFileString(nodePath, "fixture");
+    yield* fs.writeFileString(
+      path.join(runtime.versionDir, BUNDLED_RUNTIME_RECEIPT),
+      `${bundle.sha256}\n`,
+    );
+  }
   if (aliasProfile) yield* fs.symlink(baseDir, profileAlias);
 
   const commands: string[] = [];
@@ -131,6 +145,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     cliVersion: "1.2.3",
     host: {
       execPath: "/usr/bin/node",
+      ...(bundle === undefined ? {} : { bundle }),
       ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
     },
   }).pipe(
@@ -145,7 +160,54 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
       ),
     ),
   );
-  return { service, fs, statePath, commands, control, baseDir };
+  return { service, fs, statePath, commands, control, baseDir, runtime, path };
+});
+
+it.layer(NodeServices.layer)("bundled service executable", (it) => {
+  for (const platform of ["darwin", "linux"] as const) {
+    it.effect(
+      `pins ${platform} to imported Node and launcher, ignoring a mutable launcher override`,
+      () =>
+        Effect.gen(function* () {
+          const { service, fs, commands, runtime } = yield* makeHarness(
+            platform,
+            false,
+            false,
+            true,
+          );
+          const plan = yield* service.install;
+          expect(plan.nodePath).toBe(bundledRuntimeNodePath(runtime.entryPath));
+          expect(commands).toContain(`${plan.nodePath} ${runtime.entryPath} --version`);
+          expect(yield* fs.readFileString(plan.launcherPath)).toBe(
+            "export const source = 'pinned runtime';\n",
+          );
+          expect(yield* fs.readFileString(plan.unitPath)).toContain(plan.nodePath);
+          expect((yield* service.status).current).toBe(true);
+        }),
+    );
+  }
+  it.effect(
+    "reports different content as stale and refuses installation before stopping the existing service",
+    () =>
+      Effect.gen(function* () {
+        const { service, fs, commands, runtime, path } = yield* makeHarness(
+          "darwin",
+          false,
+          false,
+          true,
+        );
+        yield* service.install;
+        yield* fs.writeFileString(
+          path.join(runtime.versionDir, BUNDLED_RUNTIME_RECEIPT),
+          `${"b".repeat(64)}\n`,
+        );
+        expect((yield* service.status).current).toBe(false);
+        commands.length = 0;
+        yield* service.install.pipe(Effect.flip);
+        expect(commands.some((command) => command.includes("bootout --wait"))).toBe(false);
+        expect(commands.some((command) => command.includes(" bootstrap "))).toBe(false);
+      }),
+  );
 });
 
 it.layer(NodeServices.layer)("boot service install", (it) => {

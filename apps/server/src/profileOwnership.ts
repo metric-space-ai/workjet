@@ -3,7 +3,12 @@ import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 import { createHash } from "node:crypto";
 
-export type ProfileOwnershipKind = "runtime" | "launcher" | "administration" | "database";
+export type ProfileOwnershipKind =
+  | "runtime"
+  | "launcher"
+  | "administration"
+  | "installation"
+  | "database";
 
 interface LockDatabase {
   exec(sql: string): unknown;

@@ -7,6 +7,13 @@ import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { acquireProfileOwnership } from "../profileOwnership.ts";
+import {
+  BUNDLED_RUNTIME_RECEIPT,
+  stageBundledRuntime,
+  type BundledRuntimeSource,
+} from "./bundledRuntime.ts";
+import { isExactServiceVersion } from "./serviceProtocol.ts";
 
 /**
  * A pinned runtime is an exact `workjet@<version>` npm-installed into
@@ -80,6 +87,7 @@ export class PinnedRuntimePreflightBlockedError extends Schema.TaggedErrorClass<
 interface PinnedRuntimeInstallInput {
   readonly baseDir: string;
   readonly version: string;
+  readonly bundle?: BundledRuntimeSource;
   readonly fs: FileSystem.FileSystem;
   readonly path: Path.Path;
   readonly runner: ProcessRunner.ProcessRunner["Service"];
@@ -92,6 +100,12 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   input: PinnedRuntimeInstallInput,
 ) {
   const { fs, runner } = input;
+  if (!isExactServiceVersion(input.version)) {
+    return yield* new PinnedRuntimeInstallError({ step: "validating the exact runtime version" });
+  }
+  if (input.bundle !== undefined && !/^[a-f0-9]{64}$/.test(input.bundle.sha256)) {
+    return yield* new PinnedRuntimeInstallError({ step: "validating the trusted bundle checksum" });
+  }
   const paths = pinnedRuntimePaths(input.path, input.baseDir, input.version);
   const [versionDirExists, entryExists, sentinel] = yield* Effect.all([
     fs.exists(paths.versionDir),
@@ -105,10 +119,30 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   const alreadyPinned =
     entryExists && Option.isSome(sentinel) && sentinel.value.trim() === input.version;
   if (alreadyPinned) {
+    if (input.bundle !== undefined) {
+      const receipt = yield* fs
+        .readFileString(input.path.join(paths.versionDir, BUNDLED_RUNTIME_RECEIPT))
+        .pipe(Effect.option);
+      if (Option.isNone(receipt) || receipt.value.trim() !== input.bundle.sha256) {
+        return yield* new PinnedRuntimeInstallError({
+          step: "rejecting different bundled content at an existing version; publish a new version",
+        });
+      }
+    }
     yield* input.validate(paths);
     return paths;
   }
   if (versionDirExists) {
+    // A bundle must never repair/replace a version potentially referenced by a
+    // running service, including an npm install without our content receipt.
+    if (
+      input.bundle !== undefined ||
+      (yield* fs.exists(input.path.join(paths.versionDir, BUNDLED_RUNTIME_RECEIPT)))
+    ) {
+      return yield* new PinnedRuntimeInstallError({
+        step: "preserving an existing incomplete runtime; publish a new version",
+      });
+    }
     yield* fs.remove(paths.versionDir, { recursive: true, force: true }).pipe(
       Effect.mapError(
         (cause) =>
@@ -152,34 +186,42 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
 
   return yield* Effect.gen(function* () {
     const installStep = "installing the pinned workjet runtime (this can take a few minutes)";
-    yield* runner
-      .run({
-        command: "npm",
-        args: [
-          "install",
-          "--prefix",
-          stagingDir,
-          "--no-fund",
-          "--no-audit",
-          `workjet@${input.version}`,
-        ],
-        // Native dependencies may compile from source on slower machines.
-        timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
-      })
-      .pipe(
-        Effect.mapError((cause) => new PinnedRuntimeInstallError({ step: installStep, cause })),
-        Effect.filterOrFail(
-          (result) => result.code === 0,
-          (result) =>
-            new PinnedRuntimeInstallError({
-              step: installStep,
-              exitCode: Number(result.code),
-              stdoutLength: result.stdout.length,
-              stderrLength: result.stderr.length,
-            }),
-        ),
-      );
-
+    const bundle = input.bundle;
+    if (bundle !== undefined) {
+      yield* Effect.tryPromise({
+        try: () => stageBundledRuntime({ source: bundle, stagingDir, version: input.version }),
+        catch: (cause) =>
+          new PinnedRuntimeInstallError({ step: "staging the bundled runtime", cause }),
+      }).pipe(Effect.uninterruptible); // Wait for bounded tar/filesystem work before removing its stage or releasing ownership.
+    } else {
+      yield* runner
+        .run({
+          command: "npm",
+          args: [
+            "install",
+            "--prefix",
+            stagingDir,
+            "--no-fund",
+            "--no-audit",
+            `workjet@${input.version}`,
+          ],
+          // Native dependencies may compile from source on slower machines.
+          timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
+        })
+        .pipe(
+          Effect.mapError((cause) => new PinnedRuntimeInstallError({ step: installStep, cause })),
+          Effect.filterOrFail(
+            (result) => result.code === 0,
+            (result) =>
+              new PinnedRuntimeInstallError({
+                step: installStep,
+                exitCode: Number(result.code),
+                stdoutLength: result.stdout.length,
+                stderrLength: result.stderr.length,
+              }),
+          ),
+        );
+    }
     yield* input.validate(stagingPaths);
     yield* fs
       .writeFileString(stagingPaths.sentinelPath, `${input.version}\n`)
@@ -226,4 +268,23 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
 });
 
 export const ensurePinnedRuntimeInstalled = (input: PinnedRuntimeInstallInput) =>
-  pinnedRuntimeInstallLock.withPermit(installPinnedRuntime(input));
+  pinnedRuntimeInstallLock.withPermit(
+    Effect.scoped(
+      Effect.gen(function* () {
+        // Service administration and a running server's self-update are separate
+        // processes. Both must exclude publication/removal by the other installer.
+        yield* Effect.acquireRelease(
+          Effect.tryPromise({
+            try: () => acquireProfileOwnership(input.baseDir, "installation"),
+            catch: (cause) =>
+              new PinnedRuntimeInstallError({
+                step: "acquiring runtime installation ownership",
+                cause,
+              }),
+          }),
+          (ownership) => Effect.sync(() => ownership.release()),
+        );
+        return yield* installPinnedRuntime(input);
+      }),
+    ),
+  );

@@ -2,7 +2,9 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Terminal from "effect/Terminal";
-import { Command, GlobalFlag, Prompt } from "effect/unstable/cli";
+import * as Option from "effect/Option";
+import { HostProcessExecutablePath } from "@workjet/shared/hostProcess";
+import { Command, Flag, GlobalFlag, Prompt } from "effect/unstable/cli";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
@@ -10,11 +12,15 @@ import type * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 
-export const bootServiceLayer = (config: ServerConfig.ServerConfig["Service"]) =>
+export const bootServiceLayer = (
+  config: ServerConfig.ServerConfig["Service"],
+  host?: BootService.BootServiceHost,
+) =>
   BootService.layer({
     baseDir: config.baseDir,
     logsDir: config.logsDir,
     cliVersion: packageJson.version,
+    ...(host === undefined ? {} : { host }),
   }).pipe(Layer.provide(ProcessRunner.layer));
 
 export type ServiceReconcileResult =
@@ -66,15 +72,45 @@ export function formatServiceStatus(
 }
 
 const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
-  flags: { readonly baseDir: Parameters<typeof resolveCliAuthConfig>[0]["baseDir"] },
+  flags: {
+    readonly baseDir: Parameters<typeof resolveCliAuthConfig>[0]["baseDir"];
+    readonly bundleArchive?: Option.Option<string>;
+    readonly bundleSha256?: Option.Option<string>;
+  },
   run: Effect.Effect<A, E, BootService.BootService>,
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* resolveCliAuthConfig(flags, logLevel);
-  return yield* run.pipe(Effect.provide(bootServiceLayer(config)));
+  const archivePath = Option.getOrUndefined(flags.bundleArchive ?? Option.none());
+  const sha256 = Option.getOrUndefined(flags.bundleSha256 ?? Option.none());
+  if (
+    (archivePath === undefined) !== (sha256 === undefined) ||
+    (sha256 !== undefined && !/^[a-f0-9]{64}$/.test(sha256))
+  ) {
+    return yield* new BootService.BootServiceInstallError({
+      cause: "Supply both --bundle-archive and a trusted --bundle-sha256.",
+    });
+  }
+  const host =
+    archivePath !== undefined && sha256 !== undefined
+      ? { execPath: yield* HostProcessExecutablePath, bundle: { archivePath, sha256 } }
+      : undefined;
+  return yield* run.pipe(Effect.provide(bootServiceLayer(config, host)));
 });
 
-const serviceInstallCommand = Command.make("install", projectLocationFlags).pipe(
+const serviceArtifactFlags = {
+  ...projectLocationFlags,
+  bundleArchive: Flag.string("bundle-archive").pipe(
+    Flag.withDescription("Install the trusted portable archive shipped with this Desktop release."),
+    Flag.optional,
+  ),
+  bundleSha256: Flag.string("bundle-sha256").pipe(
+    Flag.withDescription("Expected SHA-256 from the trusted Desktop release."),
+    Flag.optional,
+  ),
+};
+
+const serviceInstallCommand = Command.make("install", serviceArtifactFlags).pipe(
   Command.withDescription("Install Workjet as a background service for this user."),
   Command.withHandler((flags) =>
     runServiceCommand(
@@ -95,7 +131,7 @@ const serviceInstallCommand = Command.make("install", projectLocationFlags).pipe
   ),
 );
 
-const serviceUpdateCommand = Command.make("update", projectLocationFlags).pipe(
+const serviceUpdateCommand = Command.make("update", serviceArtifactFlags).pipe(
   Command.withDescription(
     "Update or repair the background service using this CLI version. Use `npx workjet@latest service update` for the latest release.",
   ),
@@ -132,7 +168,7 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
   ),
 );
 
-const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
+const serviceStatusCommand = Command.make("status", serviceArtifactFlags).pipe(
   Command.withDescription("Show whether the Workjet background service is installed."),
   Command.withHandler((flags) =>
     runServiceCommand(

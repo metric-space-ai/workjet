@@ -18,6 +18,11 @@ import * as Schema from "effect/Schema";
 
 import * as ProcessRunner from "../processRunner.ts";
 import {
+  bundledRuntimeNodePath,
+  BUNDLED_RUNTIME_RECEIPT,
+  type BundledRuntimeSource,
+} from "./bundledRuntime.ts";
+import {
   acquireProfileOwnership,
   ProfileOwnershipError,
   type ProfileOwnershipKind,
@@ -202,6 +207,7 @@ export class BootService extends Context.Service<
 export interface BootServiceHost {
   readonly execPath: string;
   readonly launcherSourcePath?: string;
+  readonly bundle?: BundledRuntimeSource;
 }
 
 export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
@@ -253,8 +259,10 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   const statePath = path.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const runtimePaths = pinnedRuntimePaths(path, baseDir, input.cliVersion);
   const launcherSourcePath =
-    host.launcherSourcePath ??
-    path.join(path.dirname(runtimePaths.entryPath), SERVICE_LAUNCHER_FILE);
+    host.bundle !== undefined
+      ? path.join(path.dirname(runtimePaths.entryPath), SERVICE_LAUNCHER_FILE)
+      : (host.launcherSourcePath ??
+        path.join(path.dirname(runtimePaths.entryPath), SERVICE_LAUNCHER_FILE));
   const writeDurably = (filePath: string, contents: string) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -268,7 +276,8 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       }),
     ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
   const plan: BootServicePlan = {
-    nodePath: host.execPath,
+    nodePath:
+      host.bundle === undefined ? host.execPath : bundledRuntimeNodePath(runtimePaths.entryPath),
     launcherPath,
     baseDir,
     logPath,
@@ -386,10 +395,12 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       fs,
       path,
       runner,
+      ...(host.bundle === undefined ? {} : { bundle: host.bundle }),
       validate: (runtime) =>
         runner
           .run({
-            command: host.execPath,
+            command:
+              host.bundle === undefined ? host.execPath : bundledRuntimeNodePath(runtime.entryPath),
             args: [runtime.entryPath, "--version"],
             timeout: Duration.seconds(30),
           })
@@ -403,7 +414,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
             ),
             Effect.flatMap((result) => {
               const reportedVersion = /\bv(\S+)\s*$/.exec(result.stdout)?.[1];
-              return result.code === 0 && reportedVersion === input.cliVersion
+              return result.code === 0 && !result.timedOut && reportedVersion === input.cliVersion
                 ? Effect.void
                 : Effect.fail(
                     new PinnedRuntimeInstallError({
@@ -548,6 +559,13 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         fs.readFileString(statePath).pipe(Effect.option),
       ]);
     const state = Option.isSome(stateText) ? parseServiceState(stateText.value) : undefined;
+    const bundleReceipt =
+      host.bundle === undefined
+        ? undefined
+        : yield* fs
+            .readFileString(path.join(runtimePaths.versionDir, BUNDLED_RUNTIME_RECEIPT))
+            .pipe(Effect.option);
+    const nodeExists = host.bundle === undefined || (yield* fs.exists(plan.nodePath));
     return {
       supported: true,
       installed: true,
@@ -555,8 +573,13 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         unit === renderUnit() &&
         launcherExists &&
         runtimeEntryExists &&
+        nodeExists &&
         Option.isSome(runtimeSentinel) &&
         runtimeSentinel.value.trim() === input.cliVersion &&
+        (host.bundle === undefined ||
+          (bundleReceipt !== undefined &&
+            Option.isSome(bundleReceipt) &&
+            bundleReceipt.value.trim() === host.bundle.sha256)) &&
         state?.activeVersion === input.cliVersion &&
         state?.update?.status !== "pending",
       unitPath,

@@ -106,7 +106,7 @@ export const make = Effect.fn("NativeWorkerWorktreeRemover.make")(function* () {
       Effect.timeout(Duration.minutes(2)),
       Effect.catchTag("TimeoutError", () => Effect.fail(removalError("timeout"))),
       Effect.mapError((error) =>
-        error instanceof NativeWorkerWorktreeRemovalError ? error : removalError("failed"),
+        Schema.is(NativeWorkerWorktreeRemovalError)(error) ? error : removalError("failed"),
       ),
     );
     if (result.exitCode !== 0 || result.stdout.trim() !== '{"status":"removed"}') {

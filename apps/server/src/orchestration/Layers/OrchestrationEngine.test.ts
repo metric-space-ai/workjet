@@ -227,7 +227,8 @@ describe("OrchestrationEngine", () => {
       await expect(archive("worker-cleanup-archive-incomplete")).rejects.toThrow();
       await system.run(system.sql`
         UPDATE workjet_worker_cleanup_receipts
-        SET status = 'complete', completed_at_ms = 2, branch_ref = ${"workjet/worker/wrong"}
+        SET status = 'complete', removed_at_ms = 2, completed_at_ms = 3,
+          branch_ref = ${"workjet/worker/wrong"}
         WHERE thread_id = ${workerId}
       `);
       await expect(archive("worker-cleanup-archive-wrong-ref")).rejects.toThrow();

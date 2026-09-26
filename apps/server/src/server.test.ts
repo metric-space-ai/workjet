@@ -5032,6 +5032,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             auth = service;
           }),
         layers: {
+          serverEnvironment: {
+            getDescriptor: Effect.succeed({
+              ...testEnvironmentDescriptor,
+              runtimeInstanceId: "desktop-runtime-test",
+            }),
+          },
           desktopTelemetryReceiver: {
             attach: (id) =>
               Effect.suspend(() =>

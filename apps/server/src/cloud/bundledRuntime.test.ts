@@ -124,6 +124,29 @@ it.layer(NodeServices.layer)("bundled pinned runtime import", (it) => {
       );
     }),
   );
+  it.effect("adopts matching bundled content after publication contention and validates it", () =>
+    Effect.gen(function* () {
+      const { input, fs, path, baseDir } = yield* fixture();
+      const final = pinnedRuntimePaths(path, baseDir, input.version);
+      const validated: string[] = [];
+      const installed = yield* ensurePinnedRuntimeInstalled({
+        ...input,
+        validate: (candidate) =>
+          Effect.gen(function* () {
+            validated.push(candidate.versionDir);
+            if (candidate.versionDir !== final.versionDir) {
+              yield* fs.copy(candidate.versionDir, final.versionDir);
+              yield* fs.writeFileString(final.sentinelPath, `${input.version}\n`);
+            }
+            assert.isTrue(yield* fs.exists(bundledRuntimeNodePath(candidate.entryPath)));
+          }).pipe(Effect.orDie),
+      });
+      assert.deepEqual(installed, final);
+      assert.equal(validated.length, 2);
+      assert.equal(validated[1], final.versionDir);
+      assert.deepEqual(yield* fs.readDirectory(path.dirname(final.versionDir)), ["1.2.3"]);
+    }),
+  );
   it.effect("does not replace an incomplete existing version", () =>
     Effect.gen(function* () {
       const { input, fs, path, baseDir } = yield* fixture();

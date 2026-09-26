@@ -272,6 +272,15 @@ export const DesktopTelemetryControlMessage = Schema.Union([
 ]);
 export type DesktopTelemetryControlMessage = typeof DesktopTelemetryControlMessage.Type;
 
+export class DesktopTelemetryAttachmentError extends Schema.TaggedErrorClass<DesktopTelemetryAttachmentError>()(
+  "DesktopTelemetryAttachmentError",
+  { reason: Schema.String },
+) {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
 export const ResourceTelemetryProcess = Schema.Struct({
   identity: ResourceTelemetryProcessIdentity,
   ppid: NonNegativeInt,

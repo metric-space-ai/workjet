@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   ModelSelection,
+  ProjectId,
   ProviderInstanceId,
   ThreadId,
   WorkjetThreadConfig,
@@ -23,8 +24,14 @@ import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQu
 const NOW = "2026-08-14T00:00:00.000Z";
 const ACTIVE_THREAD_ID = ThreadId.make("thread-workjet-active");
 const ARCHIVED_THREAD_ID = ThreadId.make("thread-workjet-archived");
+const DELETED_WORKER_ID = ThreadId.make("thread-workjet-deleted-worker");
+const DELETED_UNARCHIVED_WORKER_ID = ThreadId.make("thread-workjet-deleted-unarchived-worker");
+const DELETED_MISMATCHED_WORKER_ID = ThreadId.make("thread-workjet-deleted-mismatched-worker");
+const DELETED_LEGACY_WORKER_ID = ThreadId.make("thread-workjet-deleted-legacy-worker");
+const DELETED_NON_WORKER_ID = ThreadId.make("thread-workjet-deleted-non-worker");
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 const encodeWorkjetThreadConfig = Schema.encodeSync(Schema.fromJsonString(WorkjetThreadConfig));
+const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const orchestratorConfig = {
   schemaVersion: 1,
@@ -43,6 +50,27 @@ const workerConfig = {
   },
   managedInstructions: "Implement snapshot work.",
   enabledCapabilityIds: ["web-search"],
+} as const satisfies WorkjetThreadConfig;
+
+const deletedTeamWorkerConfig = {
+  schemaVersion: 2,
+  role: "worker",
+  parent: {
+    environmentId: EnvironmentId.make("environment-snapshot"),
+    threadId: ACTIVE_THREAD_ID,
+  },
+  managedInstructions: "Implement snapshot work.",
+  enabledCapabilityIds: [],
+  capabilityBindings: [],
+  team: {
+    role: "worker",
+    projectId: ProjectId.make("project-workjet-snapshot"),
+    threadId: DELETED_WORKER_ID,
+    parentThreadId: ACTIVE_THREAD_ID,
+    packageId: "snapshot-package",
+    goal: "Complete snapshot work",
+    createdAt: NOW,
+  },
 } as const satisfies WorkjetThreadConfig;
 
 const layer = it.layer(
@@ -96,6 +124,7 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         readonly title: string;
         readonly workjetConfig: WorkjetThreadConfig;
         readonly archivedAt: string | null;
+        readonly deletedAt?: string | null;
       }) =>
         sql`
           INSERT INTO projection_threads (
@@ -131,7 +160,7 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
             ${NOW},
             ${NOW},
             ${input.archivedAt},
-            NULL
+            ${input.deletedAt ?? null}
           )
         `;
 
@@ -147,6 +176,53 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         workjetConfig: workerConfig,
         archivedAt: "2026-08-14T00:00:01.000Z",
       });
+      yield* insertThread({
+        threadId: DELETED_WORKER_ID,
+        title: "Completed worker",
+        workjetConfig: deletedTeamWorkerConfig,
+        archivedAt: "2026-08-14T00:00:02.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
+        threadId: DELETED_UNARCHIVED_WORKER_ID,
+        title: "Deleted worker awaiting cleanup",
+        workjetConfig: {
+          ...deletedTeamWorkerConfig,
+          team: { ...deletedTeamWorkerConfig.team, threadId: DELETED_UNARCHIVED_WORKER_ID },
+        },
+        archivedAt: null,
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
+        threadId: DELETED_MISMATCHED_WORKER_ID,
+        title: "Worker with mismatched team identity",
+        workjetConfig: deletedTeamWorkerConfig,
+        archivedAt: "2026-08-14T00:00:05.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
+        threadId: DELETED_LEGACY_WORKER_ID,
+        title: "Deleted legacy worker",
+        workjetConfig: workerConfig,
+        archivedAt: "2026-08-14T00:00:04.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+      yield* insertThread({
+        threadId: DELETED_NON_WORKER_ID,
+        title: "Deleted non-worker",
+        workjetConfig: orchestratorConfig,
+        archivedAt: "2026-08-14T00:00:03.000Z",
+        deletedAt: "2026-08-14T00:00:01.000Z",
+      });
+
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
+        ) VALUES (
+          'completed-worker-message', ${DELETED_WORKER_ID}, NULL, 'assistant',
+          'Completed the delegated work.', 0, ${NOW}, ${NOW}
+        )
+      `;
 
       const snapshot = yield* snapshotQuery.getSnapshot();
       assert.deepEqual(
@@ -176,8 +252,11 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
 
       const archivedShellSnapshot = yield* snapshotQuery.getArchivedShellSnapshot();
       assert.deepEqual(
-        archivedShellSnapshot.threads.map((thread) => thread.workjetConfig),
-        [workerConfig],
+        archivedShellSnapshot.threads.map((thread) => [thread.id, thread.deletedAt]),
+        [
+          [DELETED_WORKER_ID, "2026-08-14T00:00:01.000Z"],
+          [ARCHIVED_THREAD_ID, null],
+        ],
       );
 
       const threadShell = yield* snapshotQuery.getThreadShellById(ACTIVE_THREAD_ID);
@@ -190,6 +269,76 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
       assert.deepEqual(
         Option.getOrNull(threadDetailSnapshot)?.thread.workjetConfig,
         orchestratorConfig,
+      );
+
+      assert.isTrue(Option.isNone(yield* snapshotQuery.getThreadDetailSnapshot(DELETED_WORKER_ID)));
+      const archivedWorker =
+        yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_WORKER_ID);
+      assert.equal(Option.getOrNull(archivedWorker)?.thread.deletedAt, "2026-08-14T00:00:01.000Z");
+      assert.equal(
+        Option.getOrNull(archivedWorker)?.thread.messages[0]?.text,
+        "Completed the delegated work.",
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_LEGACY_WORKER_ID),
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_NON_WORKER_ID),
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_UNARCHIVED_WORKER_ID),
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_MISMATCHED_WORKER_ID),
+        ),
+      );
+
+      // A legacy row cannot become a team worker by carrying a stray `team`
+      // object in stored JSON; the archived list and detail query agree.
+      const legacyWithSpoofedTeam = encodeUnknownJson({
+        ...workerConfig,
+        team: {
+          role: "worker",
+          threadId: DELETED_LEGACY_WORKER_ID,
+          projectId: ProjectId.make("project-workjet-snapshot"),
+        },
+      });
+      yield* sql`
+        UPDATE projection_threads
+        SET workjet_config_json = ${legacyWithSpoofedTeam}
+        WHERE thread_id = ${DELETED_LEGACY_WORKER_ID}
+      `;
+      const guardedArchive = yield* snapshotQuery.getArchivedShellSnapshot();
+      assert.isFalse(
+        guardedArchive.threads.some((thread) => thread.id === DELETED_LEGACY_WORKER_ID),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_LEGACY_WORKER_ID),
+        ),
+      );
+      yield* sql`
+        UPDATE projection_threads
+        SET workjet_config_json = '{malformed'
+        WHERE thread_id = ${DELETED_LEGACY_WORKER_ID}
+      `;
+      const archiveWithCorruptDeletedRow = yield* snapshotQuery.getArchivedShellSnapshot();
+      assert.isFalse(
+        archiveWithCorruptDeletedRow.threads.some(
+          (thread) => thread.id === DELETED_LEGACY_WORKER_ID,
+        ),
+      );
+      assert.isTrue(
+        Option.isNone(
+          yield* snapshotQuery.getArchivedTeamWorkerDetailSnapshot(DELETED_LEGACY_WORKER_ID),
+        ),
       );
     }),
   );
@@ -246,6 +395,91 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         error.operation,
         "ProjectionSnapshotQuery.getThreadShellById:getThread:decodeRow",
       );
+    }),
+  );
+
+  it.effect("pages deleted worker checkouts for later cleanup retries", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, default_model_selection_json,
+          scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          'project-worker-cleanup', 'Worker cleanup', '/tmp/worker-cleanup',
+          ${encodeModelSelection({
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5.4",
+          })}, '[]', ${NOW}, ${NOW}, NULL
+        )
+      `;
+
+      for (const item of [
+        {
+          id: "cleanup-a",
+          deletedAt: NOW,
+          path: "/tmp/worker-a",
+          branch: "workjet/worker/cleanup-a",
+        },
+        {
+          id: "cleanup-b",
+          deletedAt: NOW,
+          path: "/tmp/worker-b",
+          branch: "workjet/worker/cleanup-b",
+        },
+        {
+          id: "cleanup-active",
+          deletedAt: null,
+          path: "/tmp/worker-active",
+          branch: "workjet/worker/cleanup-active",
+        },
+        {
+          id: "cleanup-no-path",
+          deletedAt: NOW,
+          path: null,
+          branch: "workjet/worker/cleanup-no-path",
+        },
+        {
+          id: "cleanup-other-branch",
+          deletedAt: NOW,
+          path: "/tmp/worker-other",
+          branch: "feature/other",
+        },
+      ]) {
+        yield* sql`
+          INSERT INTO projection_threads (
+            thread_id, project_id, title, model_selection_json, runtime_mode,
+            interaction_mode, workjet_config_json, branch, worktree_path,
+            latest_turn_id, created_at, updated_at, archived_at, deleted_at
+          ) VALUES (
+            ${item.id}, 'project-worker-cleanup', ${item.id},
+            ${encodeModelSelection({
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.4",
+            })}, 'full-access', 'default', ${encodeWorkjetThreadConfig(workerConfig)},
+            ${item.branch}, ${item.path}, NULL, ${NOW}, ${NOW}, NULL, ${item.deletedAt}
+          )
+        `;
+      }
+
+      const first = yield* snapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds({
+        afterThreadId: null,
+        limit: 1,
+      });
+      assert.deepEqual(first, [ThreadId.make("cleanup-a")]);
+      const second = yield* snapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds({
+        afterThreadId: first[0] ?? null,
+        limit: 1,
+      });
+      assert.deepEqual(second, [ThreadId.make("cleanup-b")]);
+      const third = yield* snapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds({
+        afterThreadId: second[0] ?? null,
+        limit: 1,
+      });
+      assert.deepEqual(third, []);
+      const context = yield* snapshotQuery.getThreadWorktreeCleanupContext(first[0]!);
+      assert.equal(Option.getOrNull(context)?.workjetRole, "worker");
     }),
   );
 });

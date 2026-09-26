@@ -10,6 +10,8 @@ import * as Semaphore from "effect/Semaphore";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
+import * as DesktopLocalServiceSession from "./DesktopLocalServiceSession.ts";
+import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 
 export class DesktopLocalEnvironmentAuthBackendNotConfiguredError extends Schema.TaggedErrorClass<DesktopLocalEnvironmentAuthBackendNotConfiguredError>()(
   "DesktopLocalEnvironmentAuthBackendNotConfiguredError",
@@ -32,6 +34,7 @@ export class DesktopLocalEnvironmentAuthSessionBootstrapError extends Schema.Tag
 export const DesktopLocalEnvironmentAuthError = Schema.Union([
   DesktopLocalEnvironmentAuthBackendNotConfiguredError,
   DesktopLocalEnvironmentAuthSessionBootstrapError,
+  DesktopLocalServiceSession.LocalServiceSessionError,
 ]);
 export type DesktopLocalEnvironmentAuthError = typeof DesktopLocalEnvironmentAuthError.Type;
 
@@ -45,17 +48,15 @@ export class DesktopLocalEnvironmentAuth extends Context.Service<
 export const make = Effect.gen(function* () {
   const pool = yield* DesktopBackendPool.DesktopBackendPool;
   const httpClient = yield* HttpClient.HttpClient;
-  const tokenRef = yield* Ref.make(Option.none<string>());
+  const localSession = yield* DesktopLocalServiceSession.DesktopLocalServiceSession;
+  const tokenRef = yield* Ref.make(
+    Option.none<{ config: DesktopBackendStartConfig; token: string }>(),
+  );
   const mutex = yield* Semaphore.make(1);
 
   const getBearerToken = mutex
     .withPermits(1)(
       Effect.gen(function* () {
-        const cached = yield* Ref.get(tokenRef);
-        if (Option.isSome(cached)) {
-          return cached.value;
-        }
-
         const instances = yield* pool.list;
         const primary = instances.find((instance) => instance.id === PRIMARY_LOCAL_ENVIRONMENT_ID);
         const configOption = primary === undefined ? Option.none() : yield* primary.currentConfig;
@@ -63,6 +64,13 @@ export const make = Effect.gen(function* () {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
         }
         const config = configOption.value;
+        if (config.localSession !== undefined) {
+          return yield* localSession.get(config);
+        }
+        const cached = yield* Ref.get(tokenRef);
+        if (Option.isSome(cached) && cached.value.config === config) {
+          return cached.value.token;
+        }
         const credential = config.bootstrap.desktopBootstrapToken;
         if (!credential) {
           return yield* new DesktopLocalEnvironmentAuthBackendNotConfiguredError();
@@ -83,7 +91,7 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
-        yield* Ref.set(tokenRef, Option.some(session.access_token));
+        yield* Ref.set(tokenRef, Option.some({ config, token: session.access_token }));
         return session.access_token;
       }),
     )

@@ -54,10 +54,7 @@ function makeThreadOpenResponse(
       createdAt: "2026-04-18T00:00:00.000Z",
       source: { session: "cli" },
       turns: [],
-      status: {
-        state: "idle",
-        activeFlags: [],
-      },
+      status: { type: "idle" },
     },
   } as unknown as CodexRpc.ClientRequestResponsesByMethod["thread/start"];
 }
@@ -519,6 +516,38 @@ describe("openCodexThread", () => {
           NodeAssert.ok(isCodexAppServerRequestError(result.failure));
           NodeAssert.match(result.failure.errorMessage, /different provider thread identity/);
         }
+      }
+    }),
+  );
+
+  it.effect("refuses a claimed Crew continuation until the exact provider thread is idle", () =>
+    Effect.gen(function* () {
+      for (const status of [
+        { type: "active" as const, activeFlags: [] },
+        { type: "notLoaded" as const },
+        { type: "systemError" as const },
+      ]) {
+        const response = makeThreadOpenResponse("owned-provider-thread");
+        const error = yield* Effect.flip(
+          openCodexThread({
+            client: {
+              request: () =>
+                Effect.succeed({
+                  ...response,
+                  thread: { ...response.thread, status },
+                }),
+            },
+            threadId: ThreadId.make("crew-thread"),
+            runtimeMode: "full-access",
+            cwd: "/workspace/crew",
+            requestedModel: undefined,
+            serviceTier: undefined,
+            resumeThreadId: "owned-provider-thread",
+            resumePolicy: "require-existing",
+          }),
+        );
+        NodeAssert.ok(isCodexAppServerRequestError(error));
+        NodeAssert.match(error.errorMessage, /idle provider thread/);
       }
     }),
   );

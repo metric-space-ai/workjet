@@ -75,6 +75,15 @@ import Migration0060 from "./Migrations/060_WorkjetCtoxNativeRequests.ts";
 import Migration0061 from "./Migrations/061_WorkjetCtoxNativeTurns.ts";
 import Migration0062 from "./Migrations/062_WorkjetCtoxCrewStarts.ts";
 import Migration0063 from "./Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
+import Migration0064 from "./Migrations/064_WorkjetWorkerCleanupReceipts.ts";
+import Migration0065 from "./Migrations/065_WorkjetMailboxReviewRedrive.ts";
+import Migration0066 from "./Migrations/066_WorkjetProjectTeamLearning.ts";
+import Migration0067 from "./Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
+import Migration0068 from "./Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
+import Migration0069 from "./Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
+import Migration0070 from "./Migrations/070_WorkjetCtoxCrewAdmissionRedrive.ts";
+import Migration0071 from "./Migrations/071_WorkjetWorkerCleanupRemoved.ts";
+import Migration0072 from "./Migrations/072_WorkjetCtoxCrewProviderResumeIdentity.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -150,6 +159,15 @@ export const migrationEntries = [
   [61, "WorkjetCtoxNativeTurns", Migration0061],
   [62, "WorkjetCtoxCrewStarts", Migration0062],
   [63, "WorkjetCtoxCrewProviderBinding", Migration0063],
+  [64, "WorkjetWorkerCleanupReceipts", Migration0064],
+  [65, "WorkjetMailboxReviewRedrive", Migration0065],
+  [66, "WorkjetProjectTeamLearning", Migration0066],
+  [67, "WorkjetCtoxCrewRecoveryDispatch", Migration0067],
+  [68, "WorkjetCtoxCrewTerminalOutbox", Migration0068],
+  [69, "WorkjetCtoxCrewResumeCursor", Migration0069],
+  [70, "WorkjetCtoxCrewAdmissionRedrive", Migration0070],
+  [71, "WorkjetWorkerCleanupRemoved", Migration0071],
+  [72, "WorkjetCtoxCrewProviderResumeIdentity", Migration0072],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

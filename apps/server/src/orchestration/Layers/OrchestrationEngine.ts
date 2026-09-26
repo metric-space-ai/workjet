@@ -5,6 +5,7 @@ import type {
   ThreadId,
 } from "@workjet/contracts";
 import { OrchestrationCommand } from "@workjet/contracts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -18,6 +19,7 @@ import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
+import * as Semaphore from "effect/Semaphore";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -29,21 +31,27 @@ import {
   orchestrationCommandDuration,
 } from "../../observability/Metrics.ts";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
+import {
+  WorkjetMailboxStore,
+  WorkjetMailboxStoreLive,
+} from "../../workjet/mailbox/WorkjetMailboxStore.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
 import {
+  OrchestrationCommandDeferredError,
   OrchestrationCommandInvariantError,
   OrchestrationCommandPreviouslyRejectedError,
   type OrchestrationDispatchError,
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
-import { decideOrchestrationCommand } from "../decider.ts";
+import { decideOrchestrationCommand, threadHasQueuedTurnStart } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
+  type OrchestrationDispatchOptions,
 } from "../Services/OrchestrationEngine.ts";
 const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
   OrchestrationCommandPreviouslyRejectedError,
@@ -54,6 +62,8 @@ interface CommandEnvelope {
   command: OrchestrationCommand;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
+  deferWhileBusy?: boolean | undefined;
+  workerDelegation?: OrchestrationDispatchOptions["workerDelegation"] | undefined;
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
@@ -78,17 +88,36 @@ function commandToAggregateRef(command: OrchestrationCommand): {
 
 const makeOrchestrationEngine = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const mailbox = yield* WorkjetMailboxStore.pipe(Effect.provide(WorkjetMailboxStoreLive));
   const eventStore = yield* OrchestrationEventStore;
   const commandReceiptRepository = yield* OrchestrationCommandReceiptRepository;
   const projectionPipeline = yield* OrchestrationProjectionPipeline;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
+  const environment = yield* Effect.serviceOption(ServerEnvironment);
+  const environmentId = Option.isSome(environment)
+    ? yield* environment.value.getEnvironmentId
+    : undefined;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   let commandReadModel = createEmptyReadModel(yield* nowIso);
 
   const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
   const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
+  const turnStartFence = yield* Semaphore.make(1);
+
+  const runTurnStartIfActive: OrchestrationEngineShape["runTurnStartIfActive"] = (
+    threadId,
+    start,
+  ) =>
+    turnStartFence.withPermits(1)(
+      Effect.gen(function* () {
+        const thread = commandReadModel.threads.find((item) => item.id === threadId);
+        if (!thread || thread.deletedAt !== null) return false;
+        yield* start;
+        return true;
+      }),
+    );
 
   const projectEventsOntoReadModel = (
     baseReadModel: OrchestrationReadModel,
@@ -150,9 +179,116 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           });
         }
 
+        // Check after receipt lookup: retrying an accepted command must return
+        // its receipt even when that command itself made the thread busy.
+        if (envelope.deferWhileBusy && envelope.command.type === "thread.turn.start") {
+          const threadId = envelope.command.threadId;
+          const thread = commandReadModel.threads.find((item) => item.id === threadId);
+          if (
+            thread &&
+            thread.deletedAt === null &&
+            thread.archivedAt === null &&
+            (thread.latestTurn?.state === "running" ||
+              (thread.session?.activeTurnId ?? null) !== null ||
+              thread.session?.status === "starting" ||
+              thread.session?.status === "running" ||
+              threadHasQueuedTurnStart(thread, yield* nowIso, Number.POSITIVE_INFINITY))
+          ) {
+            return yield* new OrchestrationCommandDeferredError({
+              commandId: envelope.command.commandId,
+              threadId: thread.id,
+            });
+          }
+        }
+
+        if (envelope.workerDelegation) {
+          const command = envelope.command;
+          const { delegation, envelope: routing } = envelope.workerDelegation;
+          const config = command.type === "thread.create" ? command.workjetConfig : undefined;
+          const parent = commandReadModel.threads.find(
+            (thread) => thread.id === delegation.source.threadId,
+          );
+          if (
+            command.type !== "thread.create" ||
+            config?.schemaVersion !== 2 ||
+            config.team?.role !== "worker" ||
+            config.role !== "worker" ||
+            !config.parent ||
+            !environmentId ||
+            config.parent.environmentId !== environmentId ||
+            delegation.source.environmentId !== environmentId ||
+            delegation.target.environmentId !== environmentId ||
+            delegation.source.threadId !== config.parent.threadId ||
+            delegation.target.threadId !== command.threadId ||
+            delegation.state !== "queued" ||
+            routing.kind !== "delegation" ||
+            routing.envelopeId !== delegation.envelopeId ||
+            routing.sourceEnvironmentId !== environmentId ||
+            routing.targetEnvironmentId !== environmentId ||
+            routing.sourceWorkspaceId !== delegation.source.workspaceId ||
+            routing.targetWorkspaceId !== delegation.target.workspaceId ||
+            delegation.source.workspaceId !== delegation.target.workspaceId ||
+            !parent ||
+            parent.deletedAt !== null ||
+            parent.archivedAt !== null ||
+            parent.projectId !== command.projectId ||
+            parent.workjetConfig.schemaVersion !== 2 ||
+            parent.workjetConfig.team?.role !== "specialist"
+          ) {
+            return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail:
+                "Worker creation and delegation must share an active local specialist parent.",
+            });
+          }
+          if (
+            config.enabledCapabilityIds.some(
+              (capability) =>
+                !parent.workjetConfig.enabledCapabilityIds.some((grant) => grant === capability),
+            )
+          ) {
+            return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type,
+              detail: "Worker capabilities exceed the specialist's current grants.",
+            });
+          }
+        }
+
+        // A worker may be archived only after deletion has fenced new turns
+        // and the exact checkout/branch has a completed merge-cleanup receipt.
+        // A completed receipt is immutable and never inferred from missing Git files.
+        let workerCleanupComplete = false;
+        if (envelope.command.type === "thread.archive") {
+          const { threadId } = envelope.command;
+          const thread = commandReadModel.threads.find((item) => item.id === threadId);
+          if (
+            thread?.workjetConfig.schemaVersion === 2 &&
+            thread.workjetConfig.team?.role === "worker" &&
+            thread.deletedAt !== null &&
+            thread.worktreePath !== null &&
+            thread.branch !== null
+          ) {
+            const receipts = yield* sql<{
+              readonly worktreePath: string;
+              readonly branchRef: string;
+            }>`
+              SELECT worktree_path AS "worktreePath", branch_ref AS "branchRef"
+              FROM workjet_worker_cleanup_receipts
+              WHERE thread_id = ${thread.id} AND status = 'complete'
+              LIMIT 1
+            `;
+            workerCleanupComplete = receipts.some(
+              (receipt) =>
+                receipt.worktreePath === thread.worktreePath && receipt.branchRef === thread.branch,
+            );
+          }
+        }
+
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
+          environmentId,
+          workerCleanupComplete,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>
@@ -177,6 +313,37 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 nextCommandReadModel = yield* projectEvent(nextCommandReadModel, savedEvent);
                 yield* projectionPipeline.projectEvent(savedEvent);
                 committedEvents.push(savedEvent);
+              }
+
+              if (envelope.workerDelegation) {
+                const prepared = envelope.workerDelegation;
+                const existing = yield* mailbox
+                  .getDelegation(prepared.delegation.delegationId)
+                  .pipe(
+                    Effect.mapError(
+                      toPersistenceSqlError("OrchestrationEngine.workerDelegation.lookup"),
+                    ),
+                  );
+                if (Option.isSome(existing)) {
+                  return yield* new OrchestrationCommandInvariantError({
+                    commandType: envelope.command.type,
+                    detail: "Worker delegation identity is already in use.",
+                  });
+                }
+                const enqueued = yield* mailbox
+                  .enqueueOutbound(prepared.envelope, {
+                    _tag: "delegation",
+                    delegation: prepared.delegation,
+                  })
+                  .pipe(
+                    Effect.mapError(toPersistenceSqlError("OrchestrationEngine.workerDelegation")),
+                  );
+                if (enqueued._tag !== "enqueued") {
+                  return yield* new OrchestrationCommandInvariantError({
+                    commandType: envelope.command.type,
+                    detail: "Worker delegation envelope identity is already in use.",
+                  });
+                }
               }
 
               const lastSavedEvent = committedEvents.at(-1) ?? null;
@@ -229,7 +396,11 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           }
         }
         return { sequence: committedCommand.lastSequence };
-      }).pipe(Effect.withSpan(`orchestration.command.${envelope.command.type}`)),
+      }).pipe(Effect.withSpan(`orchestration.command.${envelope.command.type}`), (effect) =>
+        envelope.command.type === "thread.delete" || envelope.command.type === "project.delete"
+          ? turnStartFence.withPermits(1)(effect)
+          : effect,
+      ),
     ).pipe(
       Effect.flatMap((exit) =>
         Effect.gen(function* () {
@@ -309,13 +480,15 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const readEvents: OrchestrationEngineShape["readEvents"] = (fromSequenceExclusive, limit) =>
     eventStore.readFromSequence(fromSequenceExclusive, limit);
 
-  const dispatch: OrchestrationEngineShape["dispatch"] = (command) =>
+  const dispatch: OrchestrationEngineShape["dispatch"] = (command, options) =>
     Effect.gen(function* () {
       const result = yield* Deferred.make<{ sequence: number }, OrchestrationDispatchError>();
       yield* Queue.offer(commandQueue, {
         command,
         result,
         startedAtMs: yield* Clock.currentTimeMillis,
+        deferWhileBusy: options?.deferWhileBusy,
+        workerDelegation: options?.workerDelegation,
       });
       return yield* Deferred.await(result);
     });
@@ -323,6 +496,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   return {
     readEvents,
     dispatch,
+    runTurnStartIfActive,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (wsServer, ProviderRuntimeIngestion, CheckpointReactor, etc.)
     // each independently receive all domain events.

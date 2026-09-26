@@ -56,6 +56,28 @@ describe("GitPreparePullRequestThreadInput", () => {
 });
 
 describe("GitResolvePullRequestResult", () => {
+  it.each([undefined, null, "a".repeat(40)])(
+    "retains optional provider head evidence (%s)",
+    (headCommitOid) => {
+      const parsed = decodeResolvePullRequestResult({
+        pullRequest: {
+          number: 42,
+          title: "Completed worker",
+          url: "https://github.com/owner/project/pull/42",
+          baseBranch: "main",
+          headBranch: "workjet/worker/42",
+          state: "merged",
+          ...(headCommitOid !== undefined ? { headCommitOid } : {}),
+          headRepositoryNameWithOwner: "fork/project",
+          headRepositoryOwnerLogin: "fork",
+        },
+      });
+      expect(parsed.pullRequest.headCommitOid).toBe(headCommitOid);
+      expect(parsed.pullRequest.headRepositoryNameWithOwner).toBe("fork/project");
+      expect(parsed.pullRequest.headRepositoryOwnerLogin).toBe("fork");
+    },
+  );
+
   it("decodes resolved pull request metadata", () => {
     const parsed = decodeResolvePullRequestResult({
       pullRequest: {

@@ -514,16 +514,26 @@ export const openCodexThread = (input: {
             cause: error,
           }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
       ),
-      Effect.flatMap((opened) =>
-        input.resumePolicy === "require-existing" && opened.thread.id !== resumeThreadId
-          ? Effect.fail(
-              new CodexErrors.CodexAppServerRequestError({
-                code: -32603,
-                errorMessage: "Crew recovery returned a different provider thread identity.",
-              }),
-            )
-          : Effect.succeed(opened),
-      ),
+      Effect.flatMap((opened) => {
+        if (input.resumePolicy !== "require-existing") return Effect.succeed(opened);
+        if (opened.thread.id !== resumeThreadId)
+          return Effect.fail(
+            new CodexErrors.CodexAppServerRequestError({
+              code: -32603,
+              errorMessage: "Crew recovery returned a different provider thread identity.",
+            }),
+          );
+        // A saved cursor proves identity, but not that its previous turn has
+        // stopped. Only an explicitly idle provider thread permits a new turn.
+        if (opened.thread.status.type !== "idle")
+          return Effect.fail(
+            new CodexErrors.CodexAppServerRequestError({
+              code: -32603,
+              errorMessage: "Crew recovery requires an idle provider thread before continuation.",
+            }),
+          );
+        return Effect.succeed(opened);
+      }),
     );
 };
 

@@ -6,6 +6,7 @@ import {
   type WorkjetCtoxCrewOffers,
 } from "@workjet/contracts";
 import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -16,6 +17,11 @@ import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeReque
 import migration61 from "../../persistence/Migrations/061_WorkjetCtoxNativeTurns.ts";
 import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
 import migration63 from "../../persistence/Migrations/063_WorkjetCtoxCrewProviderBinding.ts";
+import migration67 from "../../persistence/Migrations/067_WorkjetCtoxCrewRecoveryDispatch.ts";
+import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
+import migration69 from "../../persistence/Migrations/069_WorkjetCtoxCrewResumeCursor.ts";
+import migration72 from "../../persistence/Migrations/072_WorkjetCtoxCrewProviderResumeIdentity.ts";
+import migration70 from "../../persistence/Migrations/070_WorkjetCtoxCrewAdmissionRedrive.ts";
 import { CtoxNativeRequests } from "./CtoxNativeRequests.ts";
 import { makeCtoxNativeTaskClient } from "./CtoxNativeTaskClient.ts";
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
@@ -26,6 +32,11 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     yield* migration61;
     yield* migration62;
     yield* migration63;
+    yield* migration67;
+    yield* migration68;
+    yield* migration69;
+    yield* migration70;
+    yield* migration72;
     const requests = yield* CtoxNativeRequests.pipe(Effect.provide(CtoxNativeRequests.layer));
     const sql = yield* SqlClient.SqlClient;
     const scope = {
@@ -48,6 +59,7 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     let attemptId = "attempt";
     let loseClaimResponse = false;
     let claims = 0;
+    let reports = 0;
     const sentKeys: string[] = [];
     const transport: ReturnType<typeof makeCtoxMcpTransport> = {
       probe: () => Effect.succeed(undefined),
@@ -97,6 +109,16 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
                 command_id: "command",
                 executor_id: "computer",
                 offers,
+              },
+            };
+          }
+          if (name === "business_os.report_crew_execution") {
+            reports++;
+            return {
+              structuredContent: {
+                accepted: true,
+                attempt_id: attemptId,
+                review_status: "pending",
               },
             };
           }
@@ -189,6 +211,9 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       memberId: "crew",
       providerInstanceId: null,
       providerThreadId: null,
+      codexResumeThreadId: null,
+      providerDriverKind: null,
+      providerResumeIdentity: null,
     });
     if (!binding) return yield* Effect.die("Expected persisted start binding");
     expect(
@@ -201,14 +226,68 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
       binding,
       providerInstanceId,
       providerThreadId,
+      "original-codex-thread",
     );
     expect(assigned).toMatchObject({ providerInstanceId, providerThreadId });
+    expect((yield* restoredRequests.listPendingCrewAdmissionCandidates()).candidates).toHaveLength(
+      0,
+    );
+    expect(
+      yield* restoredRequests.recordCrewProviderTerminal({
+        threadId: scope.threadId,
+        providerInstanceId,
+        providerTurnId: "provider-turn",
+        state: "completed",
+      }),
+    ).toMatchObject({ state: "buffered" });
+    expect(
+      yield* restoredRequests.reserveCrewRecoveryDispatch(
+        admitted.identity,
+        attemptId,
+        providerInstanceId,
+        providerThreadId,
+      ),
+    ).toMatchObject({ state: "reserved" });
+    expect(
+      yield* restoredRequests.reserveCrewRecoveryDispatch(
+        admitted.identity,
+        attemptId,
+        providerInstanceId,
+        providerThreadId,
+      ),
+    ).toMatchObject({ state: "existing" });
+    yield* restoredRequests.bindCrewProviderTurn(
+      admitted.identity,
+      attemptId,
+      providerInstanceId,
+      providerThreadId,
+      "provider-turn",
+    );
+    yield* restoredRequests.bindCrewProviderTurn(
+      admitted.identity,
+      attemptId,
+      providerInstanceId,
+      providerThreadId,
+      "provider-turn",
+    );
+    expect(
+      yield* Effect.flip(
+        restoredRequests.bindCrewProviderTurn(
+          admitted.identity,
+          attemptId,
+          providerInstanceId,
+          providerThreadId,
+          "another-provider-turn",
+        ),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
     expect(
       yield* restoredRequests.bindCrewStartProvider(
         admitted.identity,
         binding,
         providerInstanceId,
         providerThreadId,
+        "original-codex-thread",
       ),
     ).toEqual(assigned);
     expect(
@@ -268,8 +347,8 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(reissued.claim.attemptId).toBe(attemptId);
     expect(reissued.claim.context.member_id).toBe("crew");
     expect(claims).toBe(2);
-    yield* TestClock.setTime(1_000);
-    offers = [{ ...offered, state: "claimed", deadline_ms: 999 }];
+    yield* TestClock.adjust(Duration.millis(2));
+    offers = [{ ...offered, state: "claimed", deadline_ms: (yield* Clock.currentTimeMillis) - 1 }];
     expect(
       yield* Effect.flip(restored.reissueClaimedProjectOffer(admitted.identity, attemptId)),
     ).toMatchObject({ reason: "native-task-reference-conflict" });
@@ -282,10 +361,42 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     // A different native attempt may be offered after native review/retry.
     attemptId = "wrong-member";
     offers = [{ ...offered, attempt_id: attemptId }];
+    expect((yield* prepare()).state).toBe("awaiting-native-review");
+    expect(claims).toBe(2);
+    expect(
+      yield* restoredRequests.recordCrewProviderTerminal({
+        threadId: scope.threadId,
+        providerInstanceId,
+        providerTurnId: "provider-turn",
+        state: "completed",
+      }),
+    ).toMatchObject({ state: "recorded", attemptId: "attempt" });
+    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toMatchObject([
+      { attemptId: "attempt", providerTurnId: "provider-turn", terminalState: "completed" },
+    ]);
+    expect(
+      yield* Effect.flip(
+        restoredRequests.recordCrewProviderTerminal({
+          threadId: scope.threadId,
+          providerInstanceId,
+          providerTurnId: "provider-turn",
+          state: "failed",
+        }),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    yield* restoredRequests.markCrewTerminalReported(admitted.identity, "attempt");
+    expect((yield* restoredRequests.listCrewTerminalOutbox()).candidates).toHaveLength(0);
     memberId = "other-crew";
     expect(yield* Effect.flip(prepare())).toMatchObject({ reason: "native-response-invalid" });
     expect((yield* prepare()).state).toBe("resume-required");
     expect(claims).toBe(3);
+    // The rejected member claim is explicitly disposed before another offer.
+    yield* sql`
+      UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = 3
+      WHERE thread_id = ${admitted.identity.threadId}
+        AND request_key = ${admitted.identity.requestKey}
+        AND attempt_id = 'wrong-member'
+    `;
 
     attemptId = "ambiguous-claim";
     offers = [{ ...offered, attempt_id: attemptId }];
@@ -303,6 +414,22 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(new Set(sentKeys).size).toBe(1);
 
     const secondAttempt = "second-provider";
+    expect(
+      yield* Effect.flip(
+        restoredRequests.reserveCrewStart(admitted.identity, {
+          ...binding,
+          attemptId: secondAttempt,
+        }),
+      ),
+    ).toMatchObject({ reason: "native-task-reference-conflict" });
+    // The lost-claim response also needs an explicit disposition.
+    yield* sql`
+      UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = 4
+      WHERE thread_id = ${admitted.identity.threadId}
+        AND request_key = ${admitted.identity.requestKey}
+        AND attempt_id = 'ambiguous-claim'
+    `;
+
     const secondReservation = yield* restoredRequests.reserveCrewStart(admitted.identity, {
       ...binding,
       attemptId: secondAttempt,
@@ -341,5 +468,17 @@ it.effect("keeps pending, review and resume separate and claims only one new nat
     expect(
       yield* Effect.flip(restoredRequests.readCrewStart(admitted.identity, secondAttempt)),
     ).toMatchObject({ reason: "native-task-reference-conflict" });
+    attemptId = "attempt";
+    status = "accepted";
+    offers = [{ ...offered, state: "claimed" }];
+    expect(
+      yield* restored.reportClaimedProviderResult(admitted.identity, attemptId, { reply: "done" }),
+    ).toMatchObject({ state: "reported", receipt: { attempt_id: "attempt" } });
+    expect(reports).toBe(1);
+    offers = [{ ...offered, state: "reported" }];
+    expect(
+      yield* restored.reportClaimedProviderResult(admitted.identity, attemptId, { reply: "done" }),
+    ).toMatchObject({ state: "already-reported" });
+    expect(reports).toBe(1);
   }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );

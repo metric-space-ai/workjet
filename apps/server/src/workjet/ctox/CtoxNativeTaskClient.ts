@@ -358,6 +358,18 @@ export function makeCtoxNativeTaskClient(dependencies: {
           observed,
           attemptId: offer.attempt_id,
         };
+      if (yield* dependencies.requests.readCrewStart(identity, offer.attempt_id))
+        return {
+          state: "resume-required" as const,
+          identity,
+          observed,
+          attemptId: offer.attempt_id,
+        };
+      // A newer offered attempt cannot start while an earlier local claim or
+      // terminal report for this request is unresolved. The old attempt needs
+      // exact recovery or native/manual disposition first.
+      if (yield* dependencies.requests.hasUnreportedCrewStart(identity))
+        return { state: "awaiting-native-review" as const, identity, observed };
       const reservation = yield* dependencies.requests.reserveCrewStart(identity, {
         attemptId: offer.attempt_id,
         commandId: receipt.command_id,
@@ -451,10 +463,43 @@ export function makeCtoxNativeTaskClient(dependencies: {
     },
   );
 
+  const reportClaimedProviderResult = Effect.fn("CtoxNativeTaskClient.reportClaimedProviderResult")(
+    function* (
+      identity: CtoxNativeRequestIdentity,
+      attemptId: string,
+      candidate: CtoxCrewResultCandidate,
+    ) {
+      const reservation = yield* dependencies.requests.readCrewStart(identity, attemptId);
+      if (!reservation || !reservation.providerInstanceId || !reservation.providerThreadId)
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      const reference = yield* dependencies.requests.get(identity);
+      if (
+        reference.request.operation !== "start_crew_execution" ||
+        reference.commandId !== reservation.commandId ||
+        reference.taskId !== reservation.taskId
+      )
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      const observed = yield* readStatus(identity);
+      if (observed.reference.taskId !== reservation.taskId)
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      const discovered = yield* discoverProjectOffers(identity, reservation.executorId);
+      const offer = discovered.offers.find((value) => value.attempt_id === attemptId);
+      if (!offer || offer.harness !== reference.request.harness)
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      if (offer.state === "reported") return { state: "already-reported" as const };
+      if (offer.state !== "claimed")
+        return yield* new CtoxNativeRequestError({ reason: "native-task-reference-conflict" });
+      const reissued = yield* reissueClaimedProjectOffer(identity, attemptId);
+      const receipt = yield* reissued.claim.report(candidate);
+      return { state: "reported" as const, receipt };
+    },
+  );
+
   return {
     prepareProjectExecution,
     prepareRecoveredProjectExecution,
     reissueClaimedProjectOffer,
+    reportClaimedProviderResult,
     submit,
     submitTurn,
     submitProjectTurn,

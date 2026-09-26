@@ -94,6 +94,10 @@ const GitResolvedPullRequest = Schema.Struct({
   baseBranch: TrimmedNonEmptyStringSchema,
   headBranch: TrimmedNonEmptyStringSchema,
   state: GitPullRequestState,
+  /** Provider-reported PR head; missing/null means unknown, never local HEAD. */
+  headCommitOid: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  headRepositoryNameWithOwner: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  headRepositoryOwnerLogin: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
 });
 export type GitResolvedPullRequest = typeof GitResolvedPullRequest.Type;
 

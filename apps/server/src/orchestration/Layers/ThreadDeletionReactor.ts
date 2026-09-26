@@ -1,14 +1,23 @@
-import type { OrchestrationEvent } from "@workjet/contracts";
+import { CommandId, type OrchestrationEvent, type ThreadId } from "@workjet/contracts";
 import { makeDrainableWorker } from "@workjet/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 import { WorkerWorktreeCleanup } from "../../workjet/WorkerWorktreeCleanup.ts";
+import { WorkerCleanupReceiptStore } from "../../workjet/WorkerCleanupReceiptStore.ts";
+import { WORKER_REF_PREFIX } from "../../workjet/WorkerDispatch.ts";
+import { GitVcsDriver } from "../../vcs/GitVcsDriver.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
+import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import {
   ThreadDeletionReactor,
   type ThreadDeletionReactorShape,
@@ -16,6 +25,8 @@ import {
 import { forkParked } from "../../serverActivation.ts";
 
 type ThreadDeletedEvent = Extract<OrchestrationEvent, { type: "thread.deleted" }>;
+const RETAINED_WORKTREE_PAGE_SIZE = 64;
+const RETAINED_WORKTREE_RETRY_INTERVAL = Duration.minutes(15);
 
 export const logCleanupCauseUnlessInterrupted = <R, E>({
   effect,
@@ -43,13 +54,37 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const terminalManager = yield* TerminalManager.TerminalManager;
   const workerWorktreeCleanup = yield* WorkerWorktreeCleanup;
+  const cleanupReceipts = yield* WorkerCleanupReceiptStore;
+  const query = yield* ProjectionSnapshotQuery;
+  const gitWorkflow = yield* GitWorkflowService;
+  const git = yield* GitVcsDriver;
+  const cleanupMutex = yield* Semaphore.make(1);
+  const reconcileMutex = yield* Semaphore.make(1);
+  let retryCursor: ThreadId | null = null;
 
   const stopProviderSession = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
-    logCleanupCauseUnlessInterrupted({
-      effect: providerService.stopSession({ threadId }),
-      message: "thread deletion cleanup skipped provider session stop",
-      threadId,
-    });
+    providerService.stopSession({ threadId }).pipe(
+      Effect.map((result) => result !== undefined && result.terminated === true),
+      Effect.tap((terminated) =>
+        terminated
+          ? Effect.void
+          : Effect.logWarning("thread deletion retained worktree after provider remained active", {
+              threadId,
+            }),
+      ),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) {
+          return Effect.failCause(cause);
+        }
+        return Effect.logWarning(
+          "thread deletion skipped worktree cleanup after provider stop failed",
+          {
+            threadId,
+            cause: Cause.pretty(cause),
+          },
+        ).pipe(Effect.as(false));
+      }),
+    );
 
   const closeThreadTerminals = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     logCleanupCauseUnlessInterrupted({
@@ -60,9 +95,9 @@ const make = Effect.gen(function* () {
 
   /**
    * Durable end of a dispatched worker's life: `thread.deleted` is the only
-   * boundary that survives a restart, so the isolated worker checkout and its
-   * throwaway `workjet/worker/<threadId>` branch are released here. Failure is
-   * logged, never fatal — the thread stays deleted either way.
+   * boundary that survives a restart. The isolated worker checkout and its
+   * branch are released only after the provider verifies a matching merged PR.
+   * Unverified source stays on disk and is logged for later recovery.
    */
   const removeWorkerWorktree = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     logCleanupCauseUnlessInterrupted({
@@ -74,7 +109,9 @@ const make = Effect.gen(function* () {
                 worktreePath: outcome.worktreePath,
                 deletedRefName: outcome.deletedRefName,
               })
-            : Effect.void,
+            : outcome.reason === "merge-unverified"
+              ? Effect.logWarning("thread deletion retained unverified worker source", { threadId })
+              : Effect.void,
         ),
         Effect.asVoid,
       ),
@@ -82,14 +119,42 @@ const make = Effect.gen(function* () {
       threadId,
     });
 
-  const processThreadDeleted = Effect.fn("processThreadDeleted")(function* (
-    event: ThreadDeletedEvent,
-  ) {
-    const { threadId } = event.payload;
-    yield* stopProviderSession(threadId);
-    yield* closeThreadTerminals(threadId);
-    yield* removeWorkerWorktree(threadId);
-  });
+  const archiveCleanedWorker = (threadId: ThreadId) =>
+    logCleanupCauseUnlessInterrupted({
+      effect: Effect.gen(function* () {
+        const receipt = yield* cleanupReceipts.get(threadId);
+        if (Option.isNone(receipt) || receipt.value.status !== "complete") return;
+        const context = yield* query.getThreadWorktreeCleanupContext(threadId);
+        if (
+          Option.isNone(context) ||
+          context.value.workjetRole !== "worker" ||
+          context.value.archivedAt !== null ||
+          context.value.worktreePath !== receipt.value.worktreePath ||
+          context.value.branch !== receipt.value.branchRef
+        )
+          return;
+        yield* orchestrationEngine.dispatch({
+          type: "thread.archive",
+          commandId: CommandId.make(`workjet-worker-archive-${threadId}`),
+          threadId,
+        });
+      }),
+      message: "verified worker cleanup could not archive its deleted thread",
+      threadId,
+    });
+
+  const processThreadDeleted = (event: ThreadDeletedEvent) =>
+    cleanupMutex.withPermit(
+      Effect.gen(function* () {
+        const { threadId } = event.payload;
+        const providerStopped = yield* stopProviderSession(threadId);
+        yield* closeThreadTerminals(threadId);
+        if (providerStopped) {
+          yield* removeWorkerWorktree(threadId);
+          yield* archiveCleanedWorker(threadId);
+        }
+      }),
+    );
 
   const processThreadDeletedSafely = (event: ThreadDeletedEvent) =>
     processThreadDeleted(event).pipe(
@@ -107,6 +172,77 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processThreadDeletedSafely);
 
+  const reconcileRetainedWorkerWorktrees: ThreadDeletionReactorShape["reconcileRetainedWorkerWorktrees"] =
+    reconcileMutex.withPermit(
+      Effect.gen(function* () {
+        const threadIds: ReadonlyArray<ThreadId> =
+          yield* query.listDeletedWorkerWorktreeCleanupThreadIds({
+            afterThreadId: retryCursor,
+            limit: RETAINED_WORKTREE_PAGE_SIZE,
+          });
+        for (const threadId of threadIds) {
+          yield* cleanupMutex.withPermit(
+            Effect.gen(function* () {
+              const context = yield* query.getThreadWorktreeCleanupContext(threadId).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("retained worker cleanup context unavailable", {
+                    threadId,
+                    cause,
+                  }).pipe(Effect.as(Option.none())),
+                ),
+              );
+              const worktree = Option.getOrUndefined(context);
+              if (worktree?.workjetRole !== "worker") return;
+              if (worktree.branch !== `${WORKER_REF_PREFIX}${threadId}`) return;
+              const worktreePath = worktree.worktreePath;
+              if (!worktreePath) return;
+              // The projection keeps deleted rows. A verified receipt also
+              // needs a retry if deletion succeeded but the final SQL write
+              // was interrupted before it could mark completion.
+              const local = yield* gitWorkflow
+                .localStatus({ cwd: worktreePath })
+                .pipe(Effect.orElseSucceed(() => null));
+              if (!local?.isRepo) {
+                const branchExists = yield* git
+                  .localBranchRefExists({ cwd: worktree.workspaceRoot, refName: worktree.branch })
+                  .pipe(Effect.option);
+                if (Option.isNone(branchExists)) {
+                  yield* Effect.logWarning("retained worker branch lookup failed", { threadId });
+                  return;
+                }
+                if (!branchExists.value) {
+                  const receipt = yield* cleanupReceipts.get(threadId);
+                  if (Option.isNone(receipt)) return;
+                  if (receipt.value.status === "complete") {
+                    yield* archiveCleanedWorker(threadId);
+                    return;
+                  }
+                }
+              }
+              const providerStopped = yield* stopProviderSession(threadId);
+              if (providerStopped) {
+                yield* removeWorkerWorktree(threadId);
+                yield* archiveCleanedWorker(threadId);
+              }
+            }),
+          );
+        }
+        const lastThreadId: ThreadId | undefined = threadIds[threadIds.length - 1];
+        retryCursor =
+          threadIds.length === RETAINED_WORKTREE_PAGE_SIZE && lastThreadId !== retryCursor
+            ? (lastThreadId ?? null)
+            : null;
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("retained worker worktree reconciliation failed", {
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      ),
+    );
+
   const start: ThreadDeletionReactorShape["start"] = Effect.fn("start")(function* () {
     yield* forkParked(
       Stream.runForEach(orchestrationEngine.streamDomainEvents, (event) => {
@@ -116,11 +252,17 @@ const make = Effect.gen(function* () {
         return worker.enqueue(event);
       }),
     );
+    yield* forkParked(
+      reconcileRetainedWorkerWorktrees.pipe(
+        Effect.repeat(Schedule.spaced(RETAINED_WORKTREE_RETRY_INTERVAL)),
+      ),
+    );
   });
 
   return {
     start,
     drain: worker.drain,
+    reconcileRetainedWorkerWorktrees,
   } satisfies ThreadDeletionReactorShape;
 });
 

@@ -17,6 +17,7 @@ import * as DesktopDeepLinkRouter from "./DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import * as DesktopLocalServiceAttachment from "../backend/DesktopLocalServiceAttachment.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
@@ -156,7 +157,11 @@ const bootstrap = Effect.gen(function* () {
     return yield* new DesktopDevelopmentBackendPortRequiredError();
   }
 
-  const backendPortSelection = yield* resolveDesktopBackendPort(environment.configuredBackendPort);
+  const serviceAttachment = yield* DesktopLocalServiceAttachment.DesktopLocalServiceAttachment;
+  const servicePort = yield* serviceAttachment.resolvePort;
+  const backendPortSelection = yield* resolveDesktopBackendPort(
+    Option.isSome(servicePort) ? servicePort : environment.configuredBackendPort,
+  );
   const backendPort = backendPortSelection.port;
   yield* logBootstrapInfo(
     backendPortSelection.selectedByScan
@@ -318,11 +323,9 @@ const scopedProgram = Effect.scoped(
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         const pool = yield* DesktopBackendPool.DesktopBackendPool;
-        // Stop every backend in the pool, not just the primary. The
-        // electronApp.quit() path can race ahead of the layer-scope
-        // cascade, so leaving the WSL instance for its parent scope
-        // finalizer means it gets hard-killed by the OS instead of
-        // receiving SIGTERM + grace. Stops run concurrently.
+        // Release every scoped runner. Foreground/WSL children receive
+        // SIGTERM; a service attachment closes only its authenticated RPC.
+        // launchd retains ownership of the independent service and its work.
         const instances = yield* pool.list;
         yield* Effect.forEach(instances, (instance) => instance.stop(), {
           concurrency: "unbounded",

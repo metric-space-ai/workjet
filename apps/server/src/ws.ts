@@ -139,6 +139,8 @@ import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
+import * as DesktopTelemetryReceiver from "./resourceTelemetry/DesktopTelemetryReceiver.ts";
+import { DesktopTelemetryAttachmentError } from "@workjet/contracts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -464,6 +466,19 @@ const makeWsRpcLayer = (
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
+      const desktopTelemetry = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;
+      const telemetryConnectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      let telemetryAttachmentId: string | undefined;
+      const telemetrySourceId = (attachmentId: string) =>
+        `${telemetryConnectionId}:${attachmentId}`;
+      const requireTelemetryGeneration = (runtimeInstanceId: string) =>
+        Effect.gen(function* () {
+          const descriptor = yield* serverEnvironment.getDescriptor;
+          if (descriptor.runtimeInstanceId !== runtimeInstanceId)
+            return yield* new DesktopTelemetryAttachmentError({
+              reason: "Desktop telemetry runtime generation changed.",
+            });
+        });
       const usage = yield* UsageService.UsageService;
       const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
       const providerGateway = yield* ProviderGateway.ProviderGatewayService;
@@ -1541,6 +1556,33 @@ const makeWsRpcLayer = (
                   }),
               ),
             ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getArchivedTeamWorkerDetail]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getArchivedTeamWorkerDetail,
+            Effect.gen(function* () {
+              const snapshot = yield* projectionSnapshotQuery
+                .getArchivedTeamWorkerDetailSnapshot(input.threadId, {
+                  turnLimit: input.turnLimit,
+                  ...(input.beforeCursor !== undefined ? { beforeCursor: input.beforeCursor } : {}),
+                })
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationGetSnapshotError({
+                        message: "Failed to load archived worker history",
+                        cause,
+                      }),
+                  ),
+                );
+              if (Option.isNone(snapshot)) {
+                return yield* new OrchestrationGetSnapshotError({
+                  message: "Archived worker history was not found",
+                });
+              }
+              return projectThreadDetailSnapshot(snapshot.value);
+            }),
             { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>
@@ -2894,6 +2936,35 @@ const makeWsRpcLayer = (
                 Stream.concat(Stream.make(latest), changes),
               ),
             ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.subscribeDesktopTelemetryControl]: (input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeDesktopTelemetryControl,
+            Stream.unwrap(
+              Effect.gen(function* () {
+                yield* requireTelemetryGeneration(input.runtimeInstanceId);
+                if (telemetryAttachmentId !== undefined)
+                  return yield* new DesktopTelemetryAttachmentError({
+                    reason: "A telemetry attachment was already requested on this connection.",
+                  });
+                telemetryAttachmentId = input.attachmentId;
+                return yield* desktopTelemetry.attach(telemetrySourceId(input.attachmentId));
+              }),
+            ),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverPublishDesktopTelemetry]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverPublishDesktopTelemetry,
+            Effect.gen(function* () {
+              yield* requireTelemetryGeneration(input.runtimeInstanceId);
+              if (telemetryAttachmentId !== input.attachmentId)
+                return yield* new DesktopTelemetryAttachmentError({
+                  reason: "Desktop telemetry control subscription is not attached.",
+                });
+              yield* desktopTelemetry.publish(telemetrySourceId(input.attachmentId), input.message);
+            }),
             { "rpc.aggregate": "server" },
           ),
         [WS_METHODS.subscribeWorkjetMailboxAudit]: (_input) =>

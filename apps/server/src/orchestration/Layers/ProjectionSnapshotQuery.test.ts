@@ -40,6 +40,36 @@ const projectionSnapshotLayer = it.layer(
 );
 
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
+  it.effect("reads completion of the requested turn even after another turn becomes latest", () =>
+    Effect.gen(function* () {
+      const query = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("rework-parent");
+      const reminderId = TurnId.make("rework-reminder-turn");
+      const laterId = TurnId.make("later-parent-turn");
+      const startedAt = "2026-09-23T01:00:00.000Z";
+      const endedAt = "2026-09-23T01:01:00.000Z";
+
+      assert.isFalse(yield* query.isThreadTurnTerminal(threadId, reminderId));
+      yield* sql`
+        INSERT INTO projection_turns
+          (thread_id, turn_id, state, requested_at, started_at, completed_at, checkpoint_files_json)
+        VALUES
+          (${threadId}, ${reminderId}, 'running', ${startedAt}, ${startedAt}, NULL, '[]'),
+          (${threadId}, ${laterId}, 'completed', ${endedAt}, ${endedAt}, ${endedAt}, '[]')
+      `;
+      assert.isFalse(yield* query.isThreadTurnTerminal(threadId, reminderId));
+      assert.isTrue(yield* query.isThreadTurnTerminal(threadId, laterId));
+
+      yield* sql`
+        UPDATE projection_turns
+        SET state = 'completed', completed_at = ${endedAt}
+        WHERE thread_id = ${threadId} AND turn_id = ${reminderId}
+      `;
+      assert.isTrue(yield* query.isThreadTurnTerminal(threadId, reminderId));
+    }),
+  );
+
   it.effect("hydrates read model from projection tables and computes snapshot sequence", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;

@@ -62,6 +62,7 @@ describe("OrchestrationReactor", () => {
               return Effect.void;
             },
             drain: Effect.void,
+            reconcileRetainedWorkerWorktrees: Effect.void,
           }),
         ),
         Layer.provideMerge(

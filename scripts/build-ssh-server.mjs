@@ -8,6 +8,7 @@ import * as NodeURL from "node:url";
 import * as NodeOS from "node:os";
 import { SSH_NODE_VERSION } from "../packages/ssh/src/remoteNode.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
+import { preparePortableNode } from "./lib/prepare-portable-node.ts";
 import * as Effect from "effect/Effect";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/hostProcess";
@@ -35,6 +36,11 @@ const program = Effect.gen(function* () {
     try {
       const destination = NodePath.join(stage, "package");
       await NodeFSP.mkdir(destination);
+      const portableNode = await preparePortableNode({
+        destination: NodePath.join(destination, "runtime", "node"),
+        platform: hostPlatform,
+        arch: hostArchitecture,
+      });
       await NodeFSP.cp(
         NodePath.join(root, "apps/server/dist"),
         NodePath.join(destination, "dist"),
@@ -115,9 +121,22 @@ const program = Effect.gen(function* () {
         ),
       );
       NodeChildProcess.execFileSync(
-        hostPlatform === "win32" ? "npm.cmd" : "npm",
-        ["install", "--omit=dev", "--no-audit", "--no-fund"],
-        { cwd: destination, stdio: "inherit" },
+        portableNode,
+        [
+          NodePath.join(destination, "runtime/node/lib/node_modules/npm/bin/npm-cli.js"),
+          "install",
+          "--omit=dev",
+          "--no-audit",
+          "--no-fund",
+        ],
+        {
+          cwd: destination,
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            PATH: `${NodePath.dirname(portableNode)}${NodePath.delimiter}${process.env.PATH ?? ""}`,
+          },
+        },
       );
       // node-pty 1.1.0 publishes Darwin's spawn-helper with mode 0644.
       // Preserve a working terminal in the archive (microsoft/node-pty#850).
@@ -127,8 +146,9 @@ const program = Effect.gen(function* () {
           0o755,
         );
       }
+      await NodeFSP.access(NodePath.join(destination, "dist/service-launcher.mjs"));
       NodeChildProcess.execFileSync(
-        process.execPath,
+        portableNode,
         [NodePath.join(destination, "dist/bin.mjs"), "--help"],
         {
           cwd: destination,
@@ -138,7 +158,7 @@ const program = Effect.gen(function* () {
       );
       // Loading the module alone is insufficient: prove the shipped PTY can spawn.
       NodeChildProcess.execFileSync(
-        process.execPath,
+        portableNode,
         [
           "--input-type=module",
           "-e",

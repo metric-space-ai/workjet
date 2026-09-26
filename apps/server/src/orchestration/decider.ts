@@ -1,9 +1,16 @@
 import {
   EventId,
+  ThreadId,
+  ProviderInstanceId,
+  DEFAULT_MODEL,
+  DEFAULT_RUNTIME_MODE,
+  DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   retainWorkjetCtoxBinding,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type EnvironmentId,
 } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
@@ -22,6 +29,10 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
+import {
+  requireProjectTeamLifecycle,
+  requireProjectTeamOwnership,
+} from "./projectTeamInvariants.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -105,7 +116,7 @@ function hasOpenBlockingRequest(thread: {
  * as long as the skew lasts, extending the block far past the intended two
  * minutes.
  */
-function threadHasQueuedTurnStart(
+export function threadHasQueuedTurnStart(
   thread: {
     readonly messages: ReadonlyArray<{ readonly role: string; readonly createdAt: string }>;
     readonly latestTurn: {
@@ -116,6 +127,7 @@ function threadHasQueuedTurnStart(
     readonly session: { readonly status: string } | null;
   },
   occurredAt: string,
+  graceMs = QUEUED_TURN_START_GRACE_MS,
 ): boolean {
   const latestUserMessageAtMs = thread.messages.reduce(
     (latest, message) =>
@@ -139,7 +151,7 @@ function threadHasQueuedTurnStart(
     thread.session?.status !== "error" &&
     Number.isFinite(latestUserMessageAtMs) &&
     latestUserMessageAtMs > latestTurnAtMs &&
-    Math.abs(queuedAgeMs) <= QUEUED_TURN_START_GRACE_MS
+    Math.abs(queuedAgeMs) <= graceMs
   );
 }
 
@@ -182,8 +194,12 @@ type DecideOrchestrationCommandResult =
 const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   commands,
   readModel,
+  environmentId,
+  allowTeamTermination = false,
 }: {
   readonly commands: ReadonlyArray<OrchestrationCommand>;
+  readonly allowTeamTermination?: boolean;
+  readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   ReadonlyArray<PlannedOrchestrationEvent>,
@@ -198,6 +214,8 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
     const decided = yield* decideOrchestrationCommand({
       command: nextCommand,
       readModel: nextReadModel,
+      environmentId,
+      allowTeamTermination,
     });
     const nextEvents = Array.isArray(decided) ? decided : [decided];
     for (const nextEvent of nextEvents) {
@@ -216,8 +234,14 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
   command,
   readModel,
+  environmentId,
+  allowTeamTermination = false,
+  workerCleanupComplete = false,
 }: {
   readonly command: OrchestrationCommand;
+  readonly allowTeamTermination?: boolean;
+  readonly workerCleanupComplete?: boolean;
+  readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
@@ -238,7 +262,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         exceptProjectId: command.projectId,
       });
 
-      return {
+      const projectEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
           aggregateKind: "project",
           aggregateId: command.projectId,
@@ -257,6 +281,46 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           updatedAt: command.createdAt,
         },
       };
+      const crypto = yield* Crypto.Crypto;
+      const supervisorId = ThreadId.make(yield* crypto.randomUUIDv4);
+      const supervisorEvent: PlannedOrchestrationEvent = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: supervisorId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.created",
+        payload: {
+          threadId: supervisorId,
+          projectId: command.projectId,
+          title: "Project supervisor",
+          modelSelection: command.defaultModelSelection ?? {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: DEFAULT_MODEL,
+          },
+          runtimeMode: DEFAULT_RUNTIME_MODE,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            role: "orchestrator",
+            team: {
+              role: "supervisor",
+              projectId: command.projectId,
+              threadId: supervisorId,
+              parentThreadId: null,
+              goal: `Coordinate the goals of ${command.title}`,
+              createdAt: command.createdAt,
+            },
+          },
+          branch: null,
+          worktreePath: null,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      // Creation and command receipt commit together; replay retains this identity.
+      return [projectEvent, supervisorEvent];
     }
 
     case "project.meta.update": {
@@ -317,6 +381,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (activeThreads.length > 0) {
         return yield* decideCommandSequence({
           readModel,
+          environmentId,
+          allowTeamTermination: true,
           commands: [
             ...activeThreads.map(
               (thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
@@ -351,6 +417,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.create": {
+      yield* requireProjectTeamOwnership({
+        commandType: command.type,
+        threadId: command.threadId,
+        projectId: command.projectId,
+        config: command.workjetConfig,
+        readModel,
+        environmentId,
+      });
       yield* requireProject({
         readModel,
         command,
@@ -386,10 +460,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.delete": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
+      });
+      yield* requireProjectTeamLifecycle({
+        commandType: command.type,
+        thread,
+        readModel,
+        allowTeamTermination,
       });
       const occurredAt = yield* nowIso;
       return {
@@ -408,10 +488,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.archive": {
-      yield* requireThreadNotArchived({
+      const thread = yield* requireThreadNotArchived({
         readModel,
         command,
         threadId: command.threadId,
+      });
+      yield* requireProjectTeamLifecycle({
+        commandType: command.type,
+        thread,
+        readModel,
+        workerCleanupComplete,
       });
       const occurredAt = yield* nowIso;
       return {
@@ -431,10 +517,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.unarchive": {
-      yield* requireThreadArchived({
+      const thread = yield* requireThreadArchived({
         readModel,
         command,
         threadId: command.threadId,
+      });
+      yield* requireProjectTeamOwnership({
+        commandType: command.type,
+        threadId: command.threadId,
+        projectId: thread.projectId,
+        config: thread.workjetConfig,
+        readModel,
+        environmentId,
       });
       const occurredAt = yield* nowIso;
       return {
@@ -926,6 +1020,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: retained.error,
         });
       }
+      yield* requireProjectTeamOwnership({
+        commandType: command.type,
+        threadId: command.threadId,
+        projectId: thread.projectId,
+        config: retained.config,
+        readModel,
+        environmentId,
+      });
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -949,6 +1051,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (targetThread.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Deleted thread '${command.threadId}' cannot start another turn.`,
+        });
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({

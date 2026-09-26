@@ -24,6 +24,7 @@ import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@workjet/shared/DrainableWorker";
 
@@ -34,7 +35,6 @@ import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessionDirectory.ts";
-import { CodexResumeCursorSchema } from "../../provider/Layers/CodexSessionRuntime.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -51,9 +51,41 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
 import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
+import { ctoxCrewResumeIdentity } from "../../workjet/ctox/CtoxCrewResumeIdentity.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
-const isCodexResumeCursor = Schema.is(CodexResumeCursorSchema);
+
+/** Schedule one owned retry when a durable terminal report needs a later projection or native response. */
+export const reconcileCrewTerminalOutboxWithRetry = (admission: CtoxCrewTurnAdmission["Service"]) =>
+  Effect.gen(function* () {
+    const terminal = yield* admission.reconcileTerminalOutbox();
+    if (terminal.deferred > 0 || terminal.pending > 0 || terminal.truncated) {
+      yield* Effect.gen(function* () {
+        yield* Effect.sleep(Duration.seconds(30));
+        yield* admission.reconcileTerminalOutbox();
+      }).pipe(Effect.forkScoped);
+    }
+  });
+
+/** One server-scoped worker keeps retrying persisted terminal reports after transient outages. */
+export const repeatCrewTerminalOutbox = (
+  admission: CtoxCrewTurnAdmission["Service"],
+  interval: Duration.Duration = Duration.minutes(1),
+) =>
+  Effect.gen(function* () {
+    while (true) {
+      yield* Effect.sleep(interval);
+      yield* admission.reconcileTerminalOutbox().pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("native Crew terminal redrive failed", {
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      );
+    }
+  });
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -97,6 +129,7 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+const PROVIDER_SEND_ACK_TIMEOUT = Duration.seconds(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const DEFAULT_THREAD_TITLE = "New thread";
 const MAX_REGENERATION_ATTACHMENTS = 4;
@@ -356,6 +389,12 @@ const make = Effect.gen(function* () {
   const serverSettingsService = yield* ServerSettingsService;
   const crewAdmission = yield* Effect.serviceOption(CtoxCrewTurnAdmission);
   const providerSessionDirectory = yield* Effect.serviceOption(ProviderSessionDirectory);
+  const crewRecoveryMutex = yield* Semaphore.make(1);
+  const crewAdmissionInProgress = new Set<ThreadId>();
+  const inFlightCrewFirstSends = new Set<ThreadId>();
+  let pendingAdmissionCursor = 0;
+  let startedRecoveryCursor = 0;
+  let fullRecoveryCursor = 0;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -784,6 +823,7 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
+    if (thread.deletedAt !== null) return null;
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       pendingTurnStart: true,
@@ -845,7 +885,24 @@ const make = Effect.gen(function* () {
     readonly createdAt: string;
     readonly interactionMode?: "default" | "plan";
   }) {
+    let ownsFirstSend = false;
+    const releaseFirstSend = Effect.sync(() => {
+      if (ownsFirstSend) inFlightCrewFirstSends.delete(input.threadId);
+      ownsFirstSend = false;
+    });
     return yield* Effect.gen(function* () {
+      const alreadySending = yield* Effect.sync(() => {
+        if (inFlightCrewFirstSends.has(input.threadId)) return true;
+        inFlightCrewFirstSends.add(input.threadId);
+        ownsFirstSend = true;
+        return false;
+      });
+      if (alreadySending)
+        return yield* new ProviderAdapterRequestError({
+          provider: "ctox",
+          method: "thread.turn.start",
+          detail: "The claimed Crew provider turn is still being submitted.",
+        });
       const sendTurnRequest = yield* buildSendTurnRequestForThread({
         threadId: input.threadId,
         requestId: input.requestId,
@@ -873,14 +930,43 @@ const make = Effect.gen(function* () {
           method: "thread.turn.start",
           detail: "The claimed Crew provider session did not match the selected instance.",
         });
+      const providerResumeIdentity = ctoxCrewResumeIdentity(
+        activeSession.provider,
+        activeSession.resumeCursor,
+      );
+      if (
+        !providerResumeIdentity ||
+        nativeCrewHarness(activeSession.provider) !== input.prepared.claim.harness
+      )
+        return yield* new ProviderAdapterRequestError({
+          provider: activeSession.provider,
+          method: "thread.turn.start",
+          detail: "The claimed Crew session has no provider conversation to resume safely.",
+        });
       yield* input.admission.bindProviderSession({
         identity: input.prepared.identity,
         attemptId: input.prepared.claim.attemptId,
         providerInstanceId: input.modelSelection.instanceId,
         providerThreadId: activeSession.threadId,
+        codexResumeThreadId: activeSession.provider === "codex" ? providerResumeIdentity : null,
+        providerDriverKind: activeSession.provider,
+        providerResumeIdentity,
       });
-      yield* providerService.sendTurn(sendTurnRequest).pipe(Effect.forkScoped);
-    }).pipe(Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap));
+      yield* Effect.gen(function* () {
+        const started = yield* providerService.sendTurn(sendTurnRequest);
+        yield* input.admission.bindProviderTurn({
+          identity: input.prepared.identity,
+          attemptId: input.prepared.claim.attemptId,
+          providerInstanceId: input.modelSelection.instanceId,
+          providerThreadId: input.threadId,
+          providerTurnId: started.turnId,
+        });
+        yield* reconcileCrewTerminalOutboxWithRetry(input.admission);
+      }).pipe(Effect.ensuring(releaseFirstSend), Effect.forkScoped);
+    }).pipe(
+      Effect.provideService(CtoxCrewSessionBootstrap, input.prepared.bootstrap),
+      Effect.catchCause((cause) => releaseFirstSend.pipe(Effect.andThen(Effect.failCause(cause)))),
+    );
   });
 
   const maybeGenerateAndRenameWorktreeBranchForFirstTurn = Effect.fn(
@@ -1168,7 +1254,7 @@ const make = Effect.gen(function* () {
     }
 
     const thread = yield* resolveThread(event.payload.threadId);
-    if (!thread) {
+    if (!thread || thread.deletedAt !== null) {
       return;
     }
 
@@ -1255,7 +1341,21 @@ const make = Effect.gen(function* () {
     const crewBinding =
       thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.ctoxCrewChat : undefined;
     if (crewBinding) {
+      let admissionGuardAcquired = false;
       yield* Effect.gen(function* () {
+        const alreadyDispatching = yield* Effect.sync(() => {
+          if (crewAdmissionInProgress.has(thread.id) || inFlightCrewFirstSends.has(thread.id))
+            return true;
+          crewAdmissionInProgress.add(thread.id);
+          admissionGuardAcquired = true;
+          return false;
+        });
+        if (alreadyDispatching)
+          return yield* new ProviderAdapterRequestError({
+            provider: "ctox",
+            method: "thread.turn.start",
+            detail: "A Crew turn is already being admitted or submitted on this thread.",
+          });
         if (Option.isNone(crewAdmission))
           return yield* new ProviderAdapterRequestError({
             provider: "ctox",
@@ -1304,6 +1404,7 @@ const make = Effect.gen(function* () {
             Effect.map((sessions) => sessions.find((session) => session.threadId === thread.id)),
           );
         if (
+          inFlightCrewFirstSends.has(thread.id) ||
           thread.session?.status === "running" ||
           priorSession?.status === "running" ||
           priorSession?.status === "connecting"
@@ -1380,7 +1481,14 @@ const make = Effect.gen(function* () {
           createdAt: event.payload.createdAt,
           interactionMode: event.payload.interactionMode,
         });
-      }).pipe(Effect.catchCause(recoverTurnStartFailure));
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (admissionGuardAcquired) crewAdmissionInProgress.delete(thread.id);
+          }),
+        ),
+        Effect.catchCause(recoverTurnStartFailure),
+      );
       return;
     }
 
@@ -1395,7 +1503,7 @@ const make = Effect.gen(function* () {
       interactionMode: event.payload.interactionMode,
       createdAt: event.payload.createdAt,
     }).pipe(
-      Effect.map(Option.some),
+      Effect.map(Option.fromNullishOr),
       Effect.catchCause((cause) => handleTurnStartFailure(cause).pipe(Effect.as(Option.none()))),
     );
 
@@ -1403,8 +1511,22 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
+    // Avoid starting a send fiber for a thread already deleted while its
+    // provider session was starting. The engine fence closes the final race
+    // after this projection check.
+    const latestThread = yield* resolveThread(event.payload.threadId);
+    if (!latestThread || latestThread.deletedAt !== null) return;
+
+    // Session startup can outlive deletion. The engine checks the authoritative
+    // thread state under the deletion fence and holds it until sendTurn has
+    // acknowledged the start. Fork the fenced operation, not the bare send.
+    yield* orchestrationEngine
+      .runTurnStartIfActive(
+        event.payload.threadId,
+        providerService
+          .sendTurn(sendTurnRequest.value)
+          .pipe(Effect.timeout(PROVIDER_SEND_ACK_TIMEOUT)),
+      )
       .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
   });
 
@@ -1619,17 +1741,46 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
-  const recoverCrewTurns = Effect.fn("recoverCrewTurns")(function* () {
+  const scanCrewTurns = Effect.fn("scanCrewTurns")(function* (
+    mode: "full" | "pending" | "started" = "full",
+  ) {
     const admission = Option.getOrUndefined(crewAdmission);
     if (!admission) return;
-    let afterSequence = 0;
-    // Finite startup scan: never let an unbounded ledger delay app activation.
-    for (let pageNumber = 0; pageNumber < 16; pageNumber++) {
-      const page = yield* admission.listRecoveryCandidates(afterSequence);
+    const pendingOnly = mode === "pending";
+    if (mode === "full") yield* reconcileCrewTerminalOutboxWithRetry(admission);
+    let afterSequence =
+      mode === "pending"
+        ? pendingAdmissionCursor
+        : mode === "started"
+          ? startedRecoveryCursor
+          : fullRecoveryCursor;
+    // Finite per pass: a large ledger must not delay app activation.
+    for (let pageNumber = 0; pageNumber < (mode === "full" ? 16 : 4); pageNumber++) {
+      const pageEffect =
+        mode === "pending"
+          ? admission.listPendingAdmissionCandidates(afterSequence)
+          : mode === "started"
+            ? admission.listUnresolvedStartedCandidates(afterSequence)
+            : admission.listRecoveryCandidates(afterSequence);
+      const page = yield* pageEffect;
       for (const candidate of page.candidates) {
+        let admissionGuardAcquired = false;
         yield* Effect.gen(function* () {
           const thread = yield* resolveThread(candidate.identity.threadId);
           if (!thread) return;
+          const alreadyDispatching = yield* Effect.sync(() => {
+            if (crewAdmissionInProgress.has(thread.id) || inFlightCrewFirstSends.has(thread.id))
+              return true;
+            crewAdmissionInProgress.add(thread.id);
+            admissionGuardAcquired = true;
+            return false;
+          });
+          if (alreadyDispatching) {
+            yield* Effect.logInfo("native Crew recovery deferred during provider dispatch", {
+              threadId: thread.id,
+            });
+            return;
+          }
           const binding =
             thread.workjetConfig.schemaVersion === 2
               ? thread.workjetConfig.ctoxCrewChat
@@ -1658,6 +1809,11 @@ const make = Effect.gen(function* () {
             providerInstanceId: thread.modelSelection.instanceId,
             harness,
           });
+          if (inFlightCrewFirstSends.has(thread.id)) return;
+          if (prepared.state === "native-terminal") {
+            yield* admission.markAdmissionTerminal(candidate.identity, candidate.requestId);
+            return;
+          }
           if (prepared.state === "ready") {
             // Recovery is allowed to claim a new offer, but an old provider
             // process may still hold another attempt's fixed MCP credential.
@@ -1679,6 +1835,7 @@ const make = Effect.gen(function* () {
               );
               return;
             }
+            if (inFlightCrewFirstSends.has(thread.id)) return;
             if (priorSession) {
               const stopped = yield* providerService.stopSession({ threadId: thread.id });
               if (stopped?.terminated !== true)
@@ -1698,15 +1855,34 @@ const make = Effect.gen(function* () {
               createdAt: DateTime.formatIso(yield* DateTime.now),
             });
           } else if (prepared.state === "resume-required") {
+            if (pendingOnly) return;
+            const terminalState = yield* admission.readTerminalState(
+              candidate.identity,
+              prepared.attemptId,
+            );
+            if (terminalState !== null) {
+              yield* Effect.logInfo(
+                "native Crew provider turn already ended; report remains pending",
+                {
+                  threadId: thread.id,
+                  attemptId: prepared.attemptId,
+                  terminalState,
+                },
+              );
+              return;
+            }
             const directory = Option.getOrUndefined(providerSessionDirectory);
             const saved = directory
               ? Option.getOrUndefined(yield* directory.getBinding(thread.id))
               : undefined;
+            const savedResumeIdentity = saved
+              ? ctoxCrewResumeIdentity(saved.provider, saved.resumeCursor)
+              : null;
             if (
-              providerInfo.driverKind !== "codex" ||
-              saved?.provider !== "codex" ||
+              !saved ||
+              saved.provider !== providerInfo.driverKind ||
               saved.providerInstanceId !== thread.modelSelection.instanceId ||
-              !isCodexResumeCursor(saved.resumeCursor)
+              !savedResumeIdentity
             ) {
               yield* Effect.logWarning(
                 "native Crew claim retained without a verified provider cursor",
@@ -1718,6 +1894,16 @@ const make = Effect.gen(function* () {
               );
               return;
             }
+            if (saved.provider === "claudeAgent") {
+              // Claude's SDK has no pre-send acknowledgement that `resume`
+              // reopened the prior session. Retain the claim instead of
+              // risking a second prompt in a fresh conversation.
+              yield* Effect.logWarning(
+                "native Crew claim retained until Claude resume can be verified",
+                { threadId: thread.id, attemptId: prepared.attemptId },
+              );
+              return;
+            }
             const priorSession = yield* providerService
               .listSessions()
               .pipe(
@@ -1725,11 +1911,12 @@ const make = Effect.gen(function* () {
                   sessions.find((session) => session.threadId === thread.id),
                 ),
               );
+            if (inFlightCrewFirstSends.has(thread.id)) return;
             if (priorSession) {
               const stopped = yield* providerService.stopSession({ threadId: thread.id });
               if (stopped?.terminated !== true)
                 return yield* new ProviderAdapterRequestError({
-                  provider: "codex",
+                  provider: saved.provider,
                   method: "thread.turn.start",
                   detail:
                     "The old Crew provider session could not be stopped before claim recovery.",
@@ -1742,6 +1929,9 @@ const make = Effect.gen(function* () {
               providerThreadId: thread.id,
               harness,
               attemptId: prepared.attemptId,
+              codexResumeThreadId: saved.provider === "codex" ? savedResumeIdentity : null,
+              providerDriverKind: saved.provider,
+              providerResumeIdentity: savedResumeIdentity,
             });
             const project = yield* resolveProject(thread.projectId);
             const cwd = resolveThreadWorkspaceCwd({
@@ -1751,35 +1941,83 @@ const make = Effect.gen(function* () {
             const resumed = yield* providerService
               .startSession(thread.id, {
                 threadId: thread.id,
-                provider: ProviderDriverKind.make("codex"),
+                provider: saved.provider,
                 providerInstanceId: thread.modelSelection.instanceId,
                 ...(cwd ? { cwd } : {}),
                 modelSelection: thread.modelSelection,
                 resumeCursor: saved.resumeCursor,
+                resumePolicy: "require-existing",
                 runtimeMode: thread.runtimeMode,
                 workjetConfig: thread.workjetConfig,
               })
               .pipe(Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap));
             if (
               resumed.threadId !== thread.id ||
+              resumed.provider !== saved.provider ||
               resumed.providerInstanceId !== thread.modelSelection.instanceId ||
-              !isCodexResumeCursor(resumed.resumeCursor) ||
-              resumed.resumeCursor.threadId !== saved.resumeCursor.threadId
+              ctoxCrewResumeIdentity(resumed.provider, resumed.resumeCursor) !== savedResumeIdentity
             )
               return yield* new ProviderAdapterRequestError({
-                provider: "codex",
+                provider: saved.provider,
                 method: "thread.turn.start",
-                detail: "Recovered Crew provider session did not retain the saved Codex thread.",
+                detail: "Recovered Crew provider session did not retain the saved conversation.",
               });
-            // Reopening the exact provider thread restores the fixed MCP
-            // capability. It is not permission to replay the original prompt:
-            // the native claim remains pending until its result is reconciled.
-            yield* Effect.logInfo("native Crew claim restored on its saved provider thread", {
-              threadId: thread.id,
+            const dispatch = yield* admission.reserveContinuation({
+              identity: candidate.identity,
               attemptId: prepared.attemptId,
+              providerInstanceId: thread.modelSelection.instanceId,
+              providerThreadId: thread.id,
             });
+            if (dispatch.state === "existing") {
+              yield* Effect.logWarning("native Crew continuation was already reserved", {
+                threadId: thread.id,
+                attemptId: prepared.attemptId,
+              });
+              return;
+            }
+            const continuation = [
+              `Continue the existing CTOX Crew attempt ${prepared.attemptId} in this saved conversation.`,
+              "Inspect the prior conversation and current workspace before changing anything.",
+              "Do not repeat actions already completed before the restart.",
+              "When finished, report the result through the existing CTOX Crew MCP capability.",
+              "If prior work cannot be verified safely, report an error instead of guessing.",
+            ].join("\n");
+            yield* Effect.gen(function* () {
+              const sendTurnRequest = yield* buildSendTurnRequestForThread({
+                threadId: thread.id,
+                requestId: dispatch.requestId,
+                messageText: continuation,
+                modelSelection: thread.modelSelection,
+                createdAt: DateTime.formatIso(yield* DateTime.now),
+              });
+              if (sendTurnRequest === null)
+                return yield* new ProviderAdapterRequestError({
+                  provider: saved.provider,
+                  method: "thread.turn.start",
+                  detail:
+                    "The claimed Crew continuation could not use its restored provider session.",
+                });
+              const started = yield* providerService.sendTurn(sendTurnRequest);
+              yield* admission.bindProviderTurn({
+                identity: candidate.identity,
+                attemptId: prepared.attemptId,
+                providerInstanceId: thread.modelSelection.instanceId,
+                providerThreadId: thread.id,
+                providerTurnId: started.turnId,
+              });
+              yield* reconcileCrewTerminalOutboxWithRetry(admission);
+            }).pipe(
+              Effect.provideService(CtoxCrewSessionBootstrap, reissued.bootstrap),
+              Effect.forkScoped,
+            );
           }
         }).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (admissionGuardAcquired)
+                crewAdmissionInProgress.delete(candidate.identity.threadId);
+            }),
+          ),
           Effect.catchCause((cause) =>
             Cause.hasInterruptsOnly(cause)
               ? Effect.failCause(cause)
@@ -1790,13 +2028,24 @@ const make = Effect.gen(function* () {
           ),
         );
       }
-      if (page.nextSequence === null) return;
+      if (page.nextSequence === null) {
+        if (mode === "pending") pendingAdmissionCursor = 0;
+        else if (mode === "started") startedRecoveryCursor = 0;
+        else fullRecoveryCursor = 0;
+        return;
+      }
       afterSequence = page.nextSequence;
+      if (mode === "pending") pendingAdmissionCursor = afterSequence;
+      else if (mode === "started") startedRecoveryCursor = afterSequence;
+      else fullRecoveryCursor = afterSequence;
     }
-    yield* Effect.logWarning("native Crew startup recovery scan reached its page limit", {
+    yield* Effect.logWarning("native Crew recovery scan reached its page limit", {
       afterSequence,
+      mode,
     });
   });
+  const recoverCrewTurns = (mode: "full" | "pending" | "started" = "full") =>
+    crewRecoveryMutex.withPermits(1)(scanCrewTurns(mode));
 
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const interruptedTitleRegenerations = yield* findInterruptedThreadTitleRegenerations().pipe(
@@ -1825,6 +2074,75 @@ const make = Effect.gen(function* () {
     });
 
     yield* forkParked(Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent));
+    const admission = Option.getOrUndefined(crewAdmission);
+    if (admission?.subscribeConnectionChanges) {
+      // Subscribe before the initial ledger read so a connection restored in
+      // that window cannot strand a pending native offer or terminal report.
+      const connectionChanges = yield* admission.subscribeConnectionChanges;
+      yield* forkParked(
+        Stream.runForEach(connectionChanges, () =>
+          Effect.gen(function* () {
+            yield* admission.reconcileTerminalOutbox();
+            yield* recoverCrewTurns("pending");
+            yield* recoverCrewTurns("started");
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.failCause(cause)
+                : Effect.logWarning("native Crew connection redrive failed", {
+                    cause: Cause.pretty(cause),
+                  }),
+            ),
+          ),
+        ),
+      );
+    }
+    if (admission) {
+      yield* forkParked(
+        Effect.gen(function* () {
+          yield* Effect.sleep(Duration.seconds(30));
+          while (true) {
+            yield* recoverCrewTurns("pending").pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logWarning("native Crew admission redrive failed", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+            );
+            yield* recoverCrewTurns("started").pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logWarning("native Crew claimed redrive failed", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+            );
+            yield* Effect.sleep(Duration.minutes(1));
+          }
+        }),
+      );
+      yield* forkParked(repeatCrewTerminalOutbox(admission));
+      yield* forkParked(
+        Effect.gen(function* () {
+          while (true) {
+            yield* Effect.sleep(Duration.seconds(30));
+            if (fullRecoveryCursor === 0) continue;
+            yield* recoverCrewTurns("full").pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logWarning("native Crew full recovery continuation failed", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+            );
+          }
+        }),
+      );
+    }
     yield* forkParked(
       recoverCrewTurns().pipe(
         Effect.catchCause((cause) =>

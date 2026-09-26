@@ -4,6 +4,7 @@ import {
   WorkjetCtoxBusinessOsInput,
   WorkjetCtoxCrewRequest,
   WorkjetCtoxCrewReceipt,
+  ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   WorkjetConnectionId,
@@ -119,6 +120,9 @@ const CrewStartBinding = Schema.Struct({
   ...CrewStartReservation.fields,
   providerInstanceId: Schema.NullOr(ProviderInstanceId),
   providerThreadId: Schema.NullOr(CrewStartId),
+  codexResumeThreadId: Schema.NullOr(CrewStartId),
+  providerDriverKind: Schema.NullOr(ProviderDriverKind),
+  providerResumeIdentity: Schema.NullOr(CrewStartId),
 });
 
 const make = Effect.gen(function* () {
@@ -302,7 +306,10 @@ const make = Effect.gen(function* () {
     const rows = yield* sql`
       SELECT attempt_id AS "attemptId", command_id AS "commandId", task_id AS "taskId",
         executor_id AS "executorId", member_id AS "memberId",
-        provider_instance_id AS "providerInstanceId", provider_thread_id AS "providerThreadId"
+        provider_instance_id AS "providerInstanceId", provider_thread_id AS "providerThreadId",
+        codex_resume_thread_id AS "codexResumeThreadId",
+        provider_driver_kind AS "providerDriverKind",
+        provider_resume_identity AS "providerResumeIdentity"
       FROM workjet_ctox_crew_starts
       WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
         AND attempt_id = ${attemptId}
@@ -317,7 +324,27 @@ const make = Effect.gen(function* () {
     const row = rows[0] ?? null;
     if (row && (row.providerInstanceId === null) !== (row.providerThreadId === null))
       return yield* failure("native-task-reference-conflict");
+    if (
+      row &&
+      ((row.providerDriverKind === null) !== (row.providerResumeIdentity === null) ||
+        (row.providerThreadId === null &&
+          (row.codexResumeThreadId !== null || row.providerResumeIdentity !== null)))
+    )
+      return yield* failure("native-task-reference-conflict");
     return row;
+  });
+
+  const hasUnreportedCrewStart = Effect.fn("CtoxNativeRequests.hasUnreportedCrewStart")(function* (
+    identity: CtoxNativeRequestIdentity,
+  ) {
+    yield* load(identity);
+    const rows = yield* sql`
+        SELECT 1 FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND provider_reported_at_ms IS NULL
+        LIMIT 1
+      `.pipe(Effect.mapError(unavailable));
+    return rows.length > 0;
   });
 
   /**
@@ -330,6 +357,11 @@ const make = Effect.gen(function* () {
     requestedBinding: typeof CrewStartReservation.Type,
     providerInstanceId: typeof ProviderInstanceId.Type,
     providerThreadId: string,
+    codexResumeThreadId: string | null = null,
+    providerDriverKind: typeof ProviderDriverKind.Type | null = codexResumeThreadId === null
+      ? null
+      : ProviderDriverKind.make("codex"),
+    providerResumeIdentity: string | null = codexResumeThreadId,
   ) {
     const identity = { ...requestIdentity };
     const binding = yield* Schema.decodeUnknownEffect(CrewStartReservation)({
@@ -341,25 +373,61 @@ const make = Effect.gen(function* () {
     const decodedProviderThreadId = yield* Schema.decodeUnknownEffect(CrewStartId)(
       providerThreadId,
     ).pipe(Effect.mapError(() => failure("native-response-invalid")));
+    const decodedCodexResumeThreadId =
+      codexResumeThreadId === null
+        ? null
+        : yield* Schema.decodeUnknownEffect(CrewStartId)(codexResumeThreadId).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          );
+    const decodedProviderDriverKind =
+      providerDriverKind === null
+        ? null
+        : yield* Schema.decodeUnknownEffect(ProviderDriverKind)(providerDriverKind).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          );
+    const decodedProviderResumeIdentity =
+      providerResumeIdentity === null
+        ? null
+        : yield* Schema.decodeUnknownEffect(CrewStartId)(providerResumeIdentity).pipe(
+            Effect.mapError(() => failure("native-response-invalid")),
+          );
+    if (
+      (decodedProviderDriverKind === null) !== (decodedProviderResumeIdentity === null) ||
+      (decodedProviderDriverKind === "codex" &&
+        decodedCodexResumeThreadId !== decodedProviderResumeIdentity) ||
+      (decodedProviderDriverKind !== "codex" && decodedCodexResumeThreadId !== null)
+    )
+      return yield* failure("native-task-reference-conflict");
     const reference = yield* get(identity);
     if (
       reference.request.operation !== "start_crew_execution" ||
       reference.commandId !== binding.commandId ||
-      reference.taskId !== binding.taskId
+      reference.taskId !== binding.taskId ||
+      (decodedProviderDriverKind !== null &&
+        reference.request.harness !==
+          (decodedProviderDriverKind === "claudeAgent" ? "claude" : decodedProviderDriverKind))
     )
       return yield* failure("native-task-reference-conflict");
     const updated = yield* sql`
         UPDATE workjet_ctox_crew_starts
         SET provider_instance_id = ${decodedProviderInstanceId},
-            provider_thread_id = ${decodedProviderThreadId}
+            provider_thread_id = ${decodedProviderThreadId},
+            codex_resume_thread_id = ${decodedCodexResumeThreadId},
+            provider_driver_kind = ${decodedProviderDriverKind},
+            provider_resume_identity = ${decodedProviderResumeIdentity}
         WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
           AND attempt_id = ${binding.attemptId}
           AND command_id = ${binding.commandId} AND task_id = ${binding.taskId}
           AND executor_id = ${binding.executorId} AND member_id = ${binding.memberId}
           AND (
-            (provider_instance_id IS NULL AND provider_thread_id IS NULL)
+            (provider_instance_id IS NULL AND provider_thread_id IS NULL
+                AND codex_resume_thread_id IS NULL
+                AND provider_driver_kind IS NULL AND provider_resume_identity IS NULL)
             OR (provider_instance_id = ${decodedProviderInstanceId}
-                AND provider_thread_id = ${decodedProviderThreadId})
+                AND provider_thread_id = ${decodedProviderThreadId}
+                AND codex_resume_thread_id IS ${decodedCodexResumeThreadId}
+                AND provider_driver_kind IS ${decodedProviderDriverKind}
+                AND provider_resume_identity IS ${decodedProviderResumeIdentity})
           )
         RETURNING attempt_id
       `.pipe(Effect.mapError(unavailable));
@@ -368,11 +436,258 @@ const make = Effect.gen(function* () {
     if (
       !saved ||
       saved.providerInstanceId !== decodedProviderInstanceId ||
-      saved.providerThreadId !== decodedProviderThreadId
+      saved.providerThreadId !== decodedProviderThreadId ||
+      saved.codexResumeThreadId !== decodedCodexResumeThreadId ||
+      saved.providerDriverKind !== decodedProviderDriverKind ||
+      saved.providerResumeIdentity !== decodedProviderResumeIdentity
     )
       return yield* failure("native-task-reference-conflict");
     return saved;
   });
+
+  /** Reserve one continuation turn for a claimed attempt before contacting a
+   * provider. A process crash after this write leaves the attempt pending for
+   * review; it must not silently dispatch the continuation a second time.
+   */
+  const reserveCrewRecoveryDispatch = Effect.fn("CtoxNativeRequests.reserveCrewRecoveryDispatch")(
+    function* (
+      requestIdentity: CtoxNativeRequestIdentity,
+      attemptId: string,
+      providerInstanceId: typeof ProviderInstanceId.Type,
+      providerThreadId: string,
+    ) {
+      const identity = { ...requestIdentity };
+      const saved = yield* readCrewStart(identity, attemptId);
+      if (
+        !saved ||
+        saved.providerInstanceId !== providerInstanceId ||
+        saved.providerThreadId !== providerThreadId
+      )
+        return yield* failure("native-task-reference-conflict");
+      const requestId = `ctox-recovery:${identity.requestKey}:${attemptId}`;
+      if (requestId.length > 512) return yield* failure("native-task-reference-conflict");
+      const now = yield* Clock.currentTimeMillis;
+      const inserted = yield* sql`
+        UPDATE workjet_ctox_crew_starts
+        SET recovery_request_id = ${requestId}, recovery_reserved_at_ms = ${now}
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId}
+          AND provider_instance_id = ${providerInstanceId}
+          AND provider_thread_id = ${providerThreadId}
+          AND recovery_request_id IS NULL
+        RETURNING recovery_request_id
+      `.pipe(Effect.mapError(unavailable));
+      if (inserted.length === 1) return { state: "reserved" as const, requestId };
+      const rows = yield* sql<{ readonly recoveryRequestId: string | null }>`
+        SELECT recovery_request_id AS "recoveryRequestId"
+        FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId}
+          AND provider_instance_id = ${providerInstanceId}
+          AND provider_thread_id = ${providerThreadId}
+      `.pipe(Effect.mapError(unavailable));
+      if (rows[0]?.recoveryRequestId !== requestId)
+        return yield* failure("native-task-reference-conflict");
+      return { state: "existing" as const, requestId };
+    },
+  );
+
+  const bindCrewProviderTurn = Effect.fn("CtoxNativeRequests.bindCrewProviderTurn")(function* (
+    requestIdentity: CtoxNativeRequestIdentity,
+    attemptId: string,
+    providerInstanceId: typeof ProviderInstanceId.Type,
+    providerThreadId: string,
+    providerTurnId: string,
+  ) {
+    const identity = { ...requestIdentity };
+    if (!providerTurnId.trim() || providerTurnId.length > 512)
+      return yield* failure("native-task-reference-conflict");
+    const saved = yield* readCrewStart(identity, attemptId);
+    if (
+      !saved ||
+      saved.providerInstanceId !== providerInstanceId ||
+      saved.providerThreadId !== providerThreadId
+    )
+      return yield* failure("native-task-reference-conflict");
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const updated = yield* sql`
+      UPDATE workjet_ctox_crew_starts SET
+        provider_turn_id = ${providerTurnId},
+        provider_terminal_state = COALESCE((
+          SELECT terminal_state FROM workjet_ctox_unbound_provider_terminals
+          WHERE thread_id = ${identity.threadId}
+            AND provider_instance_id = ${providerInstanceId}
+            AND provider_turn_id = ${providerTurnId}
+        ), provider_terminal_state),
+        provider_terminal_at_ms = COALESCE((
+          SELECT terminal_at_ms FROM workjet_ctox_unbound_provider_terminals
+          WHERE thread_id = ${identity.threadId}
+            AND provider_instance_id = ${providerInstanceId}
+            AND provider_turn_id = ${providerTurnId}
+        ), provider_terminal_at_ms)
+      WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+        AND attempt_id = ${attemptId}
+        AND provider_instance_id = ${providerInstanceId}
+        AND provider_thread_id = ${providerThreadId}
+        AND (provider_turn_id IS NULL OR provider_turn_id = ${providerTurnId})
+      RETURNING provider_turn_id
+    `.pipe(Effect.mapError(unavailable));
+        if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+        yield* sql`
+      DELETE FROM workjet_ctox_unbound_provider_terminals
+      WHERE thread_id = ${identity.threadId}
+        AND provider_instance_id = ${providerInstanceId}
+        AND provider_turn_id = ${providerTurnId}
+    `.pipe(Effect.mapError(unavailable));
+      }),
+    );
+  });
+
+  const recordCrewProviderTerminal = Effect.fn("CtoxNativeRequests.recordCrewProviderTerminal")(
+    function* (input: {
+      readonly threadId: ThreadId;
+      readonly providerInstanceId: typeof ProviderInstanceId.Type;
+      readonly providerTurnId: string;
+      readonly state: "completed" | "failed" | "interrupted" | "cancelled";
+    }) {
+      if (!input.providerTurnId.trim() || input.providerTurnId.length > 512)
+        return yield* failure("native-task-reference-conflict");
+      const now = yield* Clock.currentTimeMillis;
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const updated = yield* sql<{ readonly attemptId: string }>`
+        UPDATE workjet_ctox_crew_starts
+        SET provider_terminal_state = ${input.state}, provider_terminal_at_ms = ${now}
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id = ${input.providerTurnId}
+          AND (provider_terminal_state IS NULL OR provider_terminal_state = ${input.state})
+        RETURNING attempt_id AS "attemptId"
+      `.pipe(Effect.mapError(unavailable));
+          if (updated.length === 1)
+            return { state: "recorded" as const, attemptId: updated[0]!.attemptId };
+          const existing = yield* sql<{ readonly terminalState: string | null }>`
+        SELECT provider_terminal_state AS "terminalState"
+        FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id = ${input.providerTurnId}
+      `.pipe(Effect.mapError(unavailable));
+          if (existing.length > 0) return yield* failure("native-task-reference-conflict");
+          const pending = yield* sql`
+        SELECT 1 FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id IS NULL LIMIT 1
+      `.pipe(Effect.mapError(unavailable));
+          if (pending.length === 0) return { state: "unbound" as const };
+          yield* sql`
+        DELETE FROM workjet_ctox_unbound_provider_terminals
+        WHERE terminal_at_ms < ${now - 24 * 60 * 60 * 1000}
+      `.pipe(Effect.mapError(unavailable));
+          yield* sql`
+        INSERT OR IGNORE INTO workjet_ctox_unbound_provider_terminals
+          (thread_id, provider_instance_id, provider_turn_id, terminal_state, terminal_at_ms)
+        VALUES (${input.threadId}, ${input.providerInstanceId}, ${input.providerTurnId},
+                ${input.state}, ${now})
+      `.pipe(Effect.mapError(unavailable));
+          const buffered = yield* sql<{ readonly terminalState: string }>`
+        SELECT terminal_state AS "terminalState"
+        FROM workjet_ctox_unbound_provider_terminals
+        WHERE thread_id = ${input.threadId}
+          AND provider_instance_id = ${input.providerInstanceId}
+          AND provider_turn_id = ${input.providerTurnId}
+      `.pipe(Effect.mapError(unavailable));
+          if (buffered[0]?.terminalState !== input.state)
+            return yield* failure("native-task-reference-conflict");
+          return { state: "buffered" as const };
+        }),
+      );
+    },
+  );
+
+  const readCrewTerminalState = Effect.fn("CtoxNativeRequests.readCrewTerminalState")(function* (
+    identity: CtoxNativeRequestIdentity,
+    attemptId: string,
+  ) {
+    yield* load(identity);
+    const rows = yield* sql<{
+      readonly terminalState: "completed" | "failed" | "interrupted" | "cancelled" | null;
+    }>`
+        SELECT provider_terminal_state AS "terminalState"
+        FROM workjet_ctox_crew_starts
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId}
+      `.pipe(Effect.mapError(unavailable));
+    return rows[0]?.terminalState ?? null;
+  });
+
+  const listCrewTerminalOutbox = Effect.fn("CtoxNativeRequests.listCrewTerminalOutbox")(function* (
+    afterSequence = 0,
+    requestedLimit = 64,
+  ) {
+    const cursor = Number.isSafeInteger(afterSequence) && afterSequence >= 0 ? afterSequence : 0;
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(64, Math.trunc(requestedLimit)))
+      : 64;
+    const rows = yield* sql<{
+      readonly sequence: number;
+      readonly threadId: string;
+      readonly requestKey: string;
+      readonly connectionId: string;
+      readonly instanceId: string;
+      readonly attemptId: string;
+      readonly providerInstanceId: string;
+      readonly providerTurnId: string;
+      readonly terminalState: "completed" | "failed" | "interrupted" | "cancelled";
+      readonly terminalAtMs: number;
+    }>`
+        SELECT s.rowid AS sequence, s.thread_id AS "threadId",
+               s.request_key AS "requestKey", r.connection_id AS "connectionId",
+               r.instance_id AS "instanceId", s.attempt_id AS "attemptId",
+               s.provider_instance_id AS "providerInstanceId",
+               s.provider_turn_id AS "providerTurnId",
+               s.provider_terminal_state AS "terminalState",
+               s.provider_terminal_at_ms AS "terminalAtMs"
+        FROM workjet_ctox_crew_starts AS s
+        JOIN workjet_ctox_native_requests AS r
+          ON r.thread_id = s.thread_id AND r.request_key = s.request_key
+        WHERE s.rowid > ${cursor} AND s.provider_terminal_state IS NOT NULL
+          AND s.provider_reported_at_ms IS NULL
+        ORDER BY s.rowid LIMIT ${limit}
+      `.pipe(Effect.mapError(unavailable));
+    return {
+      candidates: rows.map((row) => ({
+        sequence: row.sequence,
+        identity: {
+          threadId: ThreadId.make(row.threadId),
+          connectionId: WorkjetConnectionId.make(row.connectionId),
+          instanceId: row.instanceId,
+          requestKey: row.requestKey,
+        },
+        attemptId: row.attemptId,
+        providerInstanceId: ProviderInstanceId.make(row.providerInstanceId),
+        providerTurnId: row.providerTurnId,
+        terminalState: row.terminalState,
+        terminalAtMs: row.terminalAtMs,
+      })),
+      nextSequence: rows.length === limit ? rows[rows.length - 1]!.sequence : null,
+    };
+  });
+
+  const markCrewTerminalReported = Effect.fn("CtoxNativeRequests.markCrewTerminalReported")(
+    function* (identity: CtoxNativeRequestIdentity, attemptId: string) {
+      const now = yield* Clock.currentTimeMillis;
+      const updated = yield* sql`
+        UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = ${now}
+        WHERE thread_id = ${identity.threadId} AND request_key = ${identity.requestKey}
+          AND attempt_id = ${attemptId} AND provider_terminal_state IS NOT NULL
+        RETURNING attempt_id
+      `.pipe(Effect.mapError(unavailable));
+      if (updated.length !== 1) return yield* failure("native-task-reference-conflict");
+    },
+  );
 
   /** Reserve BEFORE the remote claim. Only the inserting caller may start fresh.
    * An interrupted/ambiguous claim leaves the reservation intact for explicit
@@ -397,8 +712,15 @@ const make = Effect.gen(function* () {
     const inserted = yield* sql`
       INSERT INTO workjet_ctox_crew_starts
         (thread_id, request_key, attempt_id, command_id, task_id, executor_id, member_id, reserved_at_ms)
-      VALUES (${identity.threadId}, ${identity.requestKey}, ${binding.attemptId},
-        ${binding.commandId}, ${binding.taskId}, ${binding.executorId}, ${binding.memberId}, ${now})
+      SELECT ${identity.threadId}, ${identity.requestKey}, ${binding.attemptId},
+        ${binding.commandId}, ${binding.taskId}, ${binding.executorId}, ${binding.memberId}, ${now}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM workjet_ctox_crew_starts AS prior
+        WHERE prior.thread_id = ${identity.threadId}
+          AND prior.request_key = ${identity.requestKey}
+          AND prior.attempt_id <> ${binding.attemptId}
+          AND prior.provider_reported_at_ms IS NULL
+      )
       ON CONFLICT(thread_id, request_key, attempt_id) DO NOTHING
       RETURNING attempt_id
     `.pipe(Effect.mapError(unavailable));
@@ -474,7 +796,11 @@ const make = Effect.gen(function* () {
    * recovery must re-read native status and obtain a fresh authorized offer.
    */
   const listCrewRecoveryCandidates = Effect.fn("CtoxNativeRequests.listCrewRecoveryCandidates")(
-    function* (afterSequence = 0, requestedLimit = 64) {
+    function* (
+      afterSequence = 0,
+      requestedLimit = 64,
+      mode: "full" | "pending" | "started" = "full",
+    ) {
       const cursor = Number.isSafeInteger(afterSequence) && afterSequence >= 0 ? afterSequence : 0;
       const limit = Number.isFinite(requestedLimit)
         ? Math.max(1, Math.min(64, Math.trunc(requestedLimit)))
@@ -496,6 +822,23 @@ const make = Effect.gen(function* () {
         JOIN workjet_ctox_native_requests AS r
           ON r.thread_id = t.thread_id AND r.request_key = t.request_key
         WHERE t.sequence > ${cursor}
+          AND (${mode === "pending" ? 1 : 0} = 0 OR (
+            t.admission_terminal_at_ms IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM workjet_ctox_crew_starts AS s
+              WHERE s.thread_id = t.thread_id AND s.request_key = t.request_key
+                AND s.provider_reported_at_ms IS NULL
+            )
+          ))
+          AND (${mode === "started" ? 1 : 0} = 0 OR (
+            t.admission_terminal_at_ms IS NULL
+            AND EXISTS (
+              SELECT 1 FROM workjet_ctox_crew_starts AS s
+              WHERE s.thread_id = t.thread_id AND s.request_key = t.request_key
+                AND s.provider_reported_at_ms IS NULL
+                AND s.provider_terminal_state IS NULL
+            )
+          ))
         ORDER BY t.sequence LIMIT ${limit}
       `.pipe(Effect.mapError(unavailable));
       const candidates: Array<{
@@ -523,6 +866,24 @@ const make = Effect.gen(function* () {
       };
     },
   );
+  const listPendingCrewAdmissionCandidates = (afterSequence = 0, requestedLimit = 64) =>
+    listCrewRecoveryCandidates(afterSequence, requestedLimit, "pending");
+  const listUnresolvedStartedCrewCandidates = (afterSequence = 0, requestedLimit = 64) =>
+    listCrewRecoveryCandidates(afterSequence, requestedLimit, "started");
+
+  const markCrewAdmissionTerminal = Effect.fn("CtoxNativeRequests.markCrewAdmissionTerminal")(
+    function* (identity: CtoxNativeRequestIdentity, requestId: string) {
+      yield* load(identity);
+      const now = yield* Clock.currentTimeMillis;
+      const updated = yield* sql`
+        UPDATE workjet_ctox_native_turns SET admission_terminal_at_ms = ${now}
+        WHERE thread_id = ${identity.threadId} AND request_id = ${requestId}
+          AND request_key = ${identity.requestKey}
+        RETURNING sequence
+      `.pipe(Effect.mapError(unavailable));
+      if (updated.length !== 1) return yield* failure("native-request-conflict");
+    },
+  );
   return {
     prepare,
     verifyTarget,
@@ -530,12 +891,22 @@ const make = Effect.gen(function* () {
     recordObservedTask,
     get,
     readCrewStart,
+    hasUnreportedCrewStart,
     reserveCrewStart,
     bindCrewStartProvider,
+    reserveCrewRecoveryDispatch,
+    bindCrewProviderTurn,
+    recordCrewProviderTerminal,
+    readCrewTerminalState,
+    listCrewTerminalOutbox,
+    markCrewTerminalReported,
     registerNativeTurn,
     prepareTurn,
     latestNativeTurn,
     listCrewRecoveryCandidates,
+    listPendingCrewAdmissionCandidates,
+    listUnresolvedStartedCrewCandidates,
+    markCrewAdmissionTerminal,
   };
 });
 

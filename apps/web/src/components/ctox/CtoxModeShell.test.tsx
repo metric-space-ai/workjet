@@ -37,6 +37,7 @@ import {
   CtoxModeProvider,
   CtoxSidebarShell,
   getCtoxManagedState,
+  getCtoxSelectionDisposition,
   groupCtoxInstances,
   groupCtoxRailApps,
   isCurrentCtoxGuestActivation,
@@ -121,6 +122,28 @@ function instance(
     ...input,
   };
 }
+
+it("keeps a selected backend through transient discovery failures and temporary unavailability", () => {
+  const selected = instance({
+    id: "managed:welsch",
+    source: "ctox_dev",
+    displayName: "Welsch",
+  });
+  const ready = { _tag: "ready" as const, managedState: "ready" as const, instances: [selected] };
+
+  expect(getCtoxSelectionDisposition(ready, selected.id)).toBe("keep");
+  expect(getCtoxSelectionDisposition({ _tag: "failed", code: "network_error" }, selected.id)).toBe(
+    "keep",
+  );
+  expect(getCtoxSelectionDisposition(ready, selected.id)).toBe("keep");
+  expect(
+    getCtoxSelectionDisposition(
+      { ...ready, instances: [{ ...selected, status: "offline" }] },
+      selected.id,
+    ),
+  ).toBe("unavailable");
+  expect(getCtoxSelectionDisposition({ ...ready, instances: [] }, selected.id)).toBe("revoked");
+});
 
 function inertBridge(overrides: Partial<DesktopCtoxBridge> = {}): DesktopCtoxBridge {
   return {
@@ -441,6 +464,33 @@ describe("CTOX instance presentation", () => {
     expect(markup).toContain("Invited Office");
     expect(markup).toContain("Settings");
     expect(markup).not.toContain("Abmelden");
+  });
+
+  it("warns when stored paired backends cannot be read without hiding the active backend", () => {
+    selectInstanceForSidebar("managed:welsch");
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{
+          _tag: "ready",
+          managedState: "ready",
+          pairedUnavailable: true,
+          instances: [
+            instance({ id: "managed:welsch", source: "ctox_dev", displayName: "Welsch" }),
+          ],
+        }}
+      >
+        <SidebarProvider>
+          <CtoxSidebarShell />
+        </SidebarProvider>
+      </CtoxModeProvider>,
+    );
+
+    expect(markup).toContain(
+      "Gespeicherte Backend-Verbindungen sind teilweise oder vollständig nicht lesbar.",
+    );
+    expect(markup).toContain("Die gespeicherten Daten wurden nicht verändert.");
+    expect(markup).toContain("Welsch");
   });
 
   it("renders managed discovery failure without hiding paired results", () => {
@@ -948,6 +998,33 @@ describe("CtoxMainShell", () => {
     expect(ctoxModeShellSource).not.toContain("managed Business OS guest");
     expect(markup).not.toContain("iframe");
     expect(markup).not.toContain("webview");
+  });
+
+  it("shows a saved selection as unavailable when its backend is offline", () => {
+    selectInstanceForSidebar("managed:welsch-offline");
+    const markup = renderToStaticMarkup(
+      <CtoxModeProvider
+        bridge={inertBridge()}
+        initialDiscovery={{
+          _tag: "ready",
+          managedState: "ready",
+          instances: [
+            instance({
+              id: "managed:welsch-offline",
+              source: "ctox_dev",
+              displayName: "Welsch",
+              status: "offline",
+            }),
+          ],
+        }}
+      >
+        <CtoxMainShell />
+      </CtoxModeProvider>,
+    );
+
+    expect(markup).toContain("Backend derzeit nicht verfügbar");
+    expect(markup).toContain("Die ausgewählte Instanz bleibt gespeichert");
+    expect(markup).not.toContain("Kein Backend ausgewählt");
   });
 
   it("keeps exposed host copy in product language", () => {

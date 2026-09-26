@@ -8,6 +8,11 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import {
+  acquireProfileOwnership,
+  withProfileOwnership,
+  withDatabaseAccess,
+} from "./profileOwnership.ts";
 
 import type {
   PendingServiceUpdate,
@@ -22,6 +27,7 @@ import {
   decodeServiceLauncherChildMessage,
   isExactServiceVersion,
   parseServiceState,
+  serviceChildArguments,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STATE_FILE,
@@ -281,16 +287,22 @@ export class Launcher {
   }
 
   async run(): Promise<void> {
+    const ownership = await acquireProfileOwnership(this.#baseDir, "launcher");
     const onSigterm = () => void this.stop("SIGTERM");
     const onSigint = () => void this.stop("SIGINT");
     process.once("SIGTERM", onSigterm);
     process.once("SIGINT", onSigint);
     try {
+      if (this.#stopRequested) return;
+      // The constructor's snapshot may predate another launcher's exit.
+      this.#state = await readServiceState(this.#statePath);
+      if (this.#stopRequested) return;
       this.#enqueue(() => this.#recover());
       await this.#completion.promise;
     } finally {
       process.off("SIGTERM", onSigterm);
       process.off("SIGINT", onSigint);
+      ownership.release();
     }
   }
 
@@ -373,9 +385,12 @@ export class Launcher {
   }
 
   async #startTrial(pending: PendingServiceUpdate): Promise<void> {
-    // The previous child is dead here, so all three SQLite files are quiescent.
+    // The previous child is dead, but a manually started server could own the
+    // same profile. Hold runtime exclusion throughout the snapshot operation.
     try {
-      await backupDatabaseOnce(this.#baseDir, pending);
+      await withProfileOwnership(this.#baseDir, "runtime", () =>
+        withDatabaseAccess(pending.dbPath, () => backupDatabaseOnce(this.#baseDir, pending)),
+      );
     } catch {
       await this.#returnToPrevious(pending, "failed", "db-backup-failed");
       return;
@@ -399,10 +414,25 @@ export class Launcher {
       childVersion: version,
       ...(update === undefined ? {} : { update }),
     };
-    const child = NodeChildProcess.spawn(process.execPath, [paths.entryPath, "serve"], {
-      env: { ...process.env, [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context) },
-      stdio: ["inherit", "inherit", "inherit", "ipc"],
-    });
+    const childEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context),
+    };
+    if (this.#state.desktop !== undefined) {
+      // The service has no UI-owned descriptors or development proxy. Do not
+      // inherit these from a shell/launchd environment after Desktop exits.
+      delete childEnv.WORKJET_BOOTSTRAP_FD;
+      delete childEnv.VITE_DEV_SERVER_URL;
+      delete childEnv.WORKJET_TAILSCALE_SERVE;
+    }
+    const child = NodeChildProcess.spawn(
+      process.execPath,
+      [paths.entryPath, ...serviceChildArguments(this.#baseDir, this.#state.desktop)],
+      {
+        env: childEnv,
+        stdio: ["inherit", "inherit", "inherit", "ipc"],
+      },
+    );
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       child.once("error", onError);
@@ -585,7 +615,9 @@ export class Launcher {
       this.#child = null;
       await terminateChild(child.process);
     }
-    await restoreDatabaseBackup(this.#baseDir, pending);
+    await withProfileOwnership(this.#baseDir, "runtime", () =>
+      withDatabaseAccess(pending.dbPath, () => restoreDatabaseBackup(this.#baseDir, pending)),
+    );
     const outcome = terminalUpdate({ pending, status, reason });
     const next: ServiceState = {
       ...this.#state,

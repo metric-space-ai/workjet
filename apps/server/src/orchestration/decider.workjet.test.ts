@@ -2,6 +2,7 @@ import {
   CommandId,
   DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
+  MessageId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -90,6 +91,32 @@ const workerConfig = {
 } as const satisfies WorkjetThreadConfig;
 
 it.layer(NodeServices.layer)("Workjet thread configuration decider", (it) => {
+  it.effect("refuses a new turn after the worker thread was deleted", () =>
+    Effect.gen(function* () {
+      const error = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-start-deleted-worker"),
+          threadId: THREAD_ID,
+          message: {
+            messageId: MessageId.make("message-after-delete"),
+            role: "user",
+            text: "Continue worker task",
+            attachments: [],
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          createdAt: NOW,
+        },
+        readModel: {
+          ...readModel,
+          threads: [{ ...readModel.threads[0]!, workjetConfig: workerConfig, deletedAt: NOW }],
+        },
+      }).pipe(Effect.flip);
+      expect(error.message).toContain("cannot start another turn");
+    }),
+  );
+
   it.effect("copies an explicit orchestrator configuration into thread.created", () =>
     Effect.gen(function* () {
       const result = yield* decideOrchestrationCommand({
@@ -195,6 +222,72 @@ it.layer(NodeServices.layer)("Workjet thread configuration decider", (it) => {
         readModel: boundReadModel,
       }).pipe(Effect.flip);
       expect(error._tag).toBe("OrchestrationCommandInvariantError");
+    }),
+  );
+
+  it.effect("retains a private CTOX chat while enforcing project team ownership", () =>
+    Effect.gen(function* () {
+      const team = {
+        projectId: PROJECT_ID,
+        threadId: THREAD_ID,
+        role: "supervisor" as const,
+        parentThreadId: null,
+        goal: "Coordinate project work",
+        createdAt: NOW,
+      };
+      const chat = {
+        instanceId: "native-instance-a",
+        connectionId: WorkjetConnectionId.make("connection-a"),
+        chatId: "workjet_private_chat-a",
+      };
+      const current = {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        role: "orchestrator" as const,
+        team,
+        ctoxCrewChat: chat,
+      };
+      const boundReadModel: OrchestrationReadModel = {
+        ...readModel,
+        threads: readModel.threads.map((thread) => ({ ...thread, workjetConfig: current })),
+      };
+      const updated = {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        role: "orchestrator" as const,
+        team,
+        managedInstructions: "Coordinate this project",
+      };
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("cmd-update-team-chat"),
+          threadId: THREAD_ID,
+          workjetConfig: updated,
+          createdAt: NOW,
+        },
+        readModel: boundReadModel,
+      });
+      const event = result as Extract<OrchestrationEvent, { type: "thread.workjet-config-set" }>;
+      expect(event.payload.workjetConfig).toMatchObject({
+        team,
+        ctoxCrewChat: chat,
+        managedInstructions: "Coordinate this project",
+      });
+
+      const invalid = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("cmd-remove-team-chat"),
+          threadId: THREAD_ID,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            role: "orchestrator",
+            managedInstructions: "Coordinate this project",
+          },
+          createdAt: NOW,
+        },
+        readModel: boundReadModel,
+      }).pipe(Effect.flip);
+      expect(invalid._tag).toBe("OrchestrationCommandInvariantError");
     }),
   );
 

@@ -7,6 +7,7 @@ import type { SqlError } from "effect/unstable/sql/SqlError";
 
 import { runMigrations } from "../Migrations.ts";
 import { ServerConfig } from "../../config.ts";
+import { acquireDatabaseAccess } from "../../profileOwnership.ts";
 
 type RuntimeSqliteLayerConfig = {
   readonly filename: string;
@@ -45,6 +46,16 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   yield* fs.makeDirectory(path.dirname(dbPath), { recursive: true });
+
+  // All live SQL users, including offline auth/pairing commands, participate.
+  // Keep admission until SQLite clients close; the launcher needs exclusivity
+  // before copying/restoring the database and WAL sidecars as ordinary files.
+  if (dbPath !== ":memory:") {
+    yield* Effect.acquireRelease(
+      Effect.tryPromise(() => acquireDatabaseAccess(dbPath, "shared")),
+      (ownership) => Effect.sync(() => ownership.release()),
+    );
+  }
 
   return Layer.provideMerge(
     setup,

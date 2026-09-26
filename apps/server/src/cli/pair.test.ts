@@ -8,6 +8,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@workjet/shared/Net";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/unstable/cli";
@@ -105,19 +106,25 @@ const captureStdout = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 const testDescriptor = {
   environmentId: "pair-test-environment",
+  runtimeInstanceId: "pair-test-runtime",
   label: "pair-test",
   platform: { os: "linux", arch: "x64" },
   serverVersion: "0.0.1",
   capabilities: { repositoryIdentity: true },
 };
 
-const withDescriptorServer = <A, E, R>(run: (origin: string) => Effect.Effect<A, E, R>) =>
+const withDescriptorServer = <A, E, R>(
+  run: (origin: string) => Effect.Effect<A, E, R>,
+  runtime: { readonly runtimeInstanceId: string | undefined } = testDescriptor,
+) =>
   Effect.acquireUseRelease(
     Effect.callback<NodeHttp.Server>((resume) => {
       const server = NodeHttp.createServer((request, response) => {
         if (request.url === "/.well-known/workjet/environment") {
           response.writeHead(200, { "content-type": "application/json" });
-          response.end(JSON.stringify(testDescriptor));
+          response.end(
+            JSON.stringify({ ...testDescriptor, runtimeInstanceId: runtime.runtimeInstanceId }),
+          );
           return;
         }
         response.writeHead(404);
@@ -135,6 +142,198 @@ const withDescriptorServer = <A, E, R>(run: (origin: string) => Effect.Effect<A,
     (server) => Effect.sync(() => server.close()),
   );
 
+const withDesktopProfile = <A, E, R>(
+  run: (baseDir: string, origin: string) => Effect.Effect<A, E, R>,
+  runtime: { readonly runtimeInstanceId: string | undefined } = testDescriptor,
+) =>
+  withDescriptorServer(
+    (origin) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const baseDir = yield* fs.makeTempDirectoryScoped({
+            prefix: "workjet-desktop-enrollment-",
+          });
+          const stateDir = NodePath.join(baseDir, "userdata");
+          yield* persistServerRuntimeState({
+            path: NodePath.join(stateDir, "server-runtime.json"),
+            state: yield* makePersistedServerRuntimeState({
+              config: { host: "127.0.0.1", devUrl: undefined },
+              port: Number(new URL(origin).port),
+              runtimeInstanceId: runtime.runtimeInstanceId,
+            }),
+          });
+          yield* fs.writeFileString(
+            NodePath.join(stateDir, "environment-id"),
+            testDescriptor.environmentId,
+          );
+          return yield* run(baseDir, origin);
+        }),
+      ),
+    runtime,
+  ).pipe(Effect.provide(NodeServices.layer));
+
+describe("local Desktop enrollment", () => {
+  it.effect("describes the modern local target without creating an auth database", () =>
+    withDesktopProfile((baseDir, origin) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const output = yield* captureStdout(runCli(["__desktop-target", "--base-dir", baseDir]));
+        const target = JSON.parse(output);
+        assert.equal(target.baseDir, yield* fs.realPath(baseDir));
+        assert.equal(target.environmentId, testDescriptor.environmentId);
+        assert.equal(target.runtimeInstanceId, testDescriptor.runtimeInstanceId);
+        assert.equal(target.origin, origin);
+        assert.isUndefined(target.token);
+        assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+      }),
+    ),
+  );
+
+  it.effect("uses the existing auth store only after matching both expected identities", () =>
+    withDesktopProfile((baseDir) =>
+      Effect.gen(function* () {
+        const output = yield* captureStdout(
+          runCli([
+            "auth",
+            "session",
+            "issue",
+            "--base-dir",
+            baseDir,
+            "--json",
+            "--label",
+            "Workjet Desktop",
+            "--local-environment-id",
+            testDescriptor.environmentId,
+            "--local-runtime-instance-id",
+            testDescriptor.runtimeInstanceId,
+          ]),
+        );
+        const issued = JSON.parse(output);
+        assert.isString(issued.token);
+        assert.equal(issued.method, "bearer-access-token");
+        const sessions = JSON.parse(
+          yield* captureStdout(
+            runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
+          ),
+        );
+        assert.equal(sessions.length, 1);
+        assert.equal(sessions[0].sessionId, issued.sessionId);
+        yield* captureStdout(
+          runCli([
+            "auth",
+            "session",
+            "revoke",
+            issued.sessionId,
+            "--base-dir",
+            baseDir,
+            "--local-environment-id",
+            testDescriptor.environmentId,
+            "--local-runtime-instance-id",
+            testDescriptor.runtimeInstanceId,
+          ]),
+        );
+        const afterRevoke = JSON.parse(
+          yield* captureStdout(
+            runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
+          ),
+        );
+        assert.equal(afterRevoke.length, 0);
+      }),
+    ),
+  );
+
+  for (const expected of [
+    ["other-environment", testDescriptor.runtimeInstanceId],
+    [testDescriptor.environmentId, "previous-runtime"],
+  ]) {
+    it.effect(`refuses stale Desktop identity ${expected.join("/")} before opening the store`, () =>
+      withDesktopProfile((baseDir) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* provideCliTestLayers(
+            runCli([
+              "auth",
+              "session",
+              "issue",
+              "--base-dir",
+              baseDir,
+              "--json",
+              "--local-environment-id",
+              expected[0]!,
+              "--local-runtime-instance-id",
+              expected[1]!,
+            ]).pipe(Effect.flip),
+          );
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+        }),
+      ),
+    );
+  }
+  it.effect("rejects a non-loopback profile origin before probing or opening an auth store", () =>
+    withDesktopProfile((baseDir) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const statePath = NodePath.join(baseDir, "userdata/server-runtime.json");
+        const state = JSON.parse(yield* fs.readFileString(statePath));
+        yield* fs.writeFileString(
+          statePath,
+          JSON.stringify({ ...state, origin: "http://203.0.113.1:3773", port: 3773 }),
+        );
+        const error = yield* provideCliTestLayers(
+          runCli(["__desktop-target", "--base-dir", baseDir]).pipe(Effect.flip),
+        );
+        const rendered = String(
+          typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
+        );
+        assert.include(rendered, "runtime generation");
+        assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+      }),
+    ),
+  );
+  it.effect("does not downgrade Desktop discovery to a legacy generation", () =>
+    withDesktopProfile(
+      (baseDir) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* provideCliTestLayers(
+            runCli(["__desktop-target", "--base-dir", baseDir]).pipe(Effect.flip),
+          );
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+        }),
+      { runtimeInstanceId: undefined },
+    ),
+  );
+  it.effect(
+    "requires both identity arguments and rejects dev redirection before opening a store",
+    () =>
+      withDesktopProfile((baseDir) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          for (const extra of [
+            ["--local-environment-id", testDescriptor.environmentId],
+            [
+              "--local-environment-id",
+              testDescriptor.environmentId,
+              "--local-runtime-instance-id",
+              testDescriptor.runtimeInstanceId,
+              "--dev-url",
+              "http://localhost:5733",
+            ],
+          ]) {
+            yield* provideCliTestLayers(
+              runCli(["auth", "session", "issue", "--base-dir", baseDir, "--json", ...extra]).pipe(
+                Effect.flip,
+              ),
+            );
+          }
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "userdata/state.sqlite")));
+          assert.isFalse(yield* fs.exists(NodePath.join(baseDir, "dev/state.sqlite")));
+        }),
+      ),
+  );
+});
+
 describe("workjet pair", () => {
   it.effect("mints a token and prints a QR pairing URL for a live server", () =>
     withDescriptorServer((origin) =>
@@ -147,9 +346,14 @@ describe("workjet pair", () => {
           state: yield* makePersistedServerRuntimeState({
             config: { host: "127.0.0.1", devUrl: undefined },
             port,
+            runtimeInstanceId: testDescriptor.runtimeInstanceId,
           }),
         });
 
+        NodeFS.writeFileSync(
+          NodePath.join(baseDir, "userdata", "environment-id"),
+          `${testDescriptor.environmentId}\n`,
+        );
         const output = yield* captureStdout(runCli(["pair", "--base-dir", baseDir]));
 
         assert.include(output, `Pairing with pair-test (${origin})`);
@@ -173,26 +377,32 @@ describe("workjet pair", () => {
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("pairs through the recorded dev web URL for dev servers", () =>
-    withDescriptorServer((origin) =>
-      Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(
-          NodePath.join(NodeOS.tmpdir(), "workjet-pair-dev-test-"),
-        );
-        const port = Number(new URL(origin).port);
-        const statePath = NodePath.join(baseDir, "dev", "server-runtime.json");
-        yield* persistServerRuntimeState({
-          path: statePath,
-          state: yield* makePersistedServerRuntimeState({
-            config: { host: undefined, devUrl: new URL("http://localhost:5733") },
-            port,
-          }),
-        });
+  it.effect("pairs through the recorded dev web URL for legacy servers without a generation", () =>
+    withDescriptorServer(
+      (origin) =>
+        Effect.gen(function* () {
+          const baseDir = NodeFS.mkdtempSync(
+            NodePath.join(NodeOS.tmpdir(), "workjet-pair-dev-test-"),
+          );
+          const port = Number(new URL(origin).port);
+          const statePath = NodePath.join(baseDir, "dev", "server-runtime.json");
+          yield* persistServerRuntimeState({
+            path: statePath,
+            state: yield* makePersistedServerRuntimeState({
+              config: { host: undefined, devUrl: new URL("http://localhost:5733") },
+              port,
+            }),
+          });
 
-        const output = yield* captureStdout(runCli(["pair", "--base-dir", baseDir]));
+          NodeFS.writeFileSync(
+            NodePath.join(baseDir, "dev", "environment-id"),
+            `${testDescriptor.environmentId}\n`,
+          );
+          const output = yield* captureStdout(runCli(["pair", "--base-dir", baseDir]));
 
-        assert.include(output, "Pairing URL: http://localhost:5733/pair#token=");
-      }),
+          assert.include(output, "Pairing URL: http://localhost:5733/pair#token=");
+        }),
+      { runtimeInstanceId: undefined },
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
@@ -211,6 +421,102 @@ describe("workjet pair", () => {
       assert.include(rendered, "npx workjet serve");
       assert.include(rendered, "npx workjet connect");
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "refuses a live reused port with a different or unverifiable profile identity before opening its store",
+    () =>
+      withDescriptorServer((origin) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const fs = yield* FileSystem.FileSystem;
+            for (const identity of ["another-environment", "", undefined]) {
+              const baseDir = yield* fs.makeTempDirectoryScoped({
+                prefix: "workjet-pair-identity-",
+              });
+              const stateDir = NodePath.join(baseDir, "userdata");
+              yield* persistServerRuntimeState({
+                path: NodePath.join(stateDir, "server-runtime.json"),
+                state: yield* makePersistedServerRuntimeState({
+                  config: { host: "127.0.0.1", devUrl: undefined },
+                  port: Number(new URL(origin).port),
+                  runtimeInstanceId: testDescriptor.runtimeInstanceId,
+                }),
+              });
+              if (identity !== undefined) {
+                yield* fs.writeFileString(NodePath.join(stateDir, "environment-id"), identity);
+              }
+              const before = (yield* fs.readDirectory(stateDir)).sort();
+              const error = yield* provideCliTestLayers(
+                runCli(["pair", "--base-dir", baseDir]).pipe(Effect.flip),
+              );
+              const rendered = String(
+                typeof error === "object" && error !== null && "cause" in error
+                  ? error.cause
+                  : error,
+              );
+              assert.include(rendered, "Pairing was refused; no credential was created.");
+              expect((yield* fs.readDirectory(stateDir)).sort()).toEqual(before);
+              const identityPath = NodePath.join(stateDir, "environment-id");
+              if (identity === undefined) {
+                expect(yield* fs.exists(identityPath)).toBe(false);
+              } else {
+                expect(yield* fs.readFileString(identityPath)).toBe(identity);
+              }
+            }
+          }),
+        ),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
+    "refuses replaced or partially recorded runtime generations without creating a grant",
+    () =>
+      Effect.forEach(
+        [
+          { saved: "previous-runtime", live: testDescriptor.runtimeInstanceId },
+          { saved: testDescriptor.runtimeInstanceId, live: undefined },
+          { saved: undefined, live: testDescriptor.runtimeInstanceId },
+        ],
+        ({ saved, live }) =>
+          withDescriptorServer(
+            (origin) =>
+              Effect.scoped(
+                Effect.gen(function* () {
+                  const fs = yield* FileSystem.FileSystem;
+                  const baseDir = yield* fs.makeTempDirectoryScoped({
+                    prefix: "workjet-pair-generation-",
+                  });
+                  const stateDir = NodePath.join(baseDir, "userdata");
+                  yield* persistServerRuntimeState({
+                    path: NodePath.join(stateDir, "server-runtime.json"),
+                    state: yield* makePersistedServerRuntimeState({
+                      config: { host: "127.0.0.1", devUrl: undefined },
+                      port: Number(new URL(origin).port),
+                      runtimeInstanceId: saved,
+                    }),
+                  });
+                  const identityPath = NodePath.join(stateDir, "environment-id");
+                  yield* fs.writeFileString(identityPath, testDescriptor.environmentId);
+                  const before = (yield* fs.readDirectory(stateDir)).sort();
+                  const error = yield* provideCliTestLayers(
+                    runCli(["pair", "--base-dir", baseDir]).pipe(Effect.flip),
+                  );
+                  const rendered = String(
+                    typeof error === "object" && error !== null && "cause" in error
+                      ? error.cause
+                      : error,
+                  );
+                  assert.include(rendered, "runtime generation");
+                  assert.include(rendered, "Pairing was refused; no credential was created.");
+                  expect((yield* fs.readDirectory(stateDir)).sort()).toEqual(before);
+                  expect(yield* fs.readFileString(identityPath)).toBe(testDescriptor.environmentId);
+                }),
+              ),
+            { runtimeInstanceId: live },
+          ),
+        { discard: true },
+      ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("ignores runtime state whose recorded pid is no longer alive", () =>

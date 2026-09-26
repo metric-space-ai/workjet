@@ -573,6 +573,15 @@ export function makeCursorAdapter(
           }
 
           const cwd = path.resolve(input.cwd.trim());
+          const resumeCursor = parseCursorResume(input.resumeCursor);
+          const resumeSessionId = resumeCursor?.sessionId;
+          if (input.resumePolicy === "require-existing" && !resumeSessionId) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Claimed Crew recovery requires a valid Cursor session cursor.",
+            });
+          }
           const cursorModelSelection =
             input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
           const existing = sessions.get(input.threadId);
@@ -590,8 +599,6 @@ export function makeCursorAdapter(
           );
           let ctx!: CursorSessionContext;
 
-          const resumeCursor = parseCursorResume(input.resumeCursor);
-          const resumeSessionId = resumeCursor?.sessionId;
           const acpNativeLoggers = makeAcpNativeLoggers({
             nativeEventLogger,
             provider: PROVIDER,
@@ -633,6 +640,7 @@ export function makeCursorAdapter(
             onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
+            ...(input.resumePolicy === "require-existing" ? { requireLoadResponse: true } : {}),
             clientInfo: { name: "workjet", version: "0.0.0" },
             ...(mcpSession
               ? {
@@ -835,6 +843,13 @@ export function makeCursorAdapter(
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", error),
             ),
           );
+          if (input.resumePolicy === "require-existing" && started.sessionId !== resumeSessionId) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue: "Cursor loaded a different session during claimed Crew recovery.",
+            });
+          }
 
           yield* applyRequestedSessionConfiguration({
             runtime: acp,

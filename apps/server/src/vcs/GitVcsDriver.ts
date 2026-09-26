@@ -150,6 +150,14 @@ export interface GitDeleteBranchInput {
   force?: boolean;
 }
 
+export interface GitDeleteBranchAtCommitInput {
+  cwd: string;
+  /** Exact owned worker branch, without the refs/heads/ prefix. */
+  refName: string;
+  /** Git compare-and-delete refuses to remove a ref advanced after verification. */
+  expectedCommitSha: string;
+}
+
 export interface GitFetchPullRequestBranchInput {
   cwd: string;
   prNumber: number;
@@ -294,6 +302,11 @@ export class GitVcsDriver extends Context.Service<
     readonly resolveCommit: (
       input: GitResolveCommitInput,
     ) => Effect.Effect<GitResolveCommitResult, GitCommandError>;
+    /** A missing local ref is false; Git/repository failures remain errors. */
+    readonly localBranchRefExists: (input: {
+      readonly cwd: string;
+      readonly refName: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
     /** Moves the branch checked out in `cwd` onto `targetCommit`, from inside that worktree. */
     readonly refreshCheckedOutBranch: (
       input: GitRefreshCheckedOutBranchInput,
@@ -321,6 +334,9 @@ export class GitVcsDriver extends Context.Service<
       input: GitRenameBranchInput,
     ) => Effect.Effect<GitRenameBranchResult, GitCommandError>;
     readonly deleteBranch: (input: GitDeleteBranchInput) => Effect.Effect<void, GitCommandError>;
+    readonly deleteBranchAtCommit: (
+      input: GitDeleteBranchAtCommitInput,
+    ) => Effect.Effect<void, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;

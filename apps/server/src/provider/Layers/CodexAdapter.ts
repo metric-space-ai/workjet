@@ -1682,9 +1682,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           input.workjetConfig?.schemaVersion === 2 &&
           input.workjetConfig.ctoxCrewChat !== undefined;
         if (
-          crewBound &&
-          input.resumeCursor !== undefined &&
-          !isCodexResumeCursorSchema(input.resumeCursor)
+          (input.resumePolicy === "require-existing" &&
+            !isCodexResumeCursorSchema(input.resumeCursor)) ||
+          (crewBound &&
+            input.resumeCursor !== undefined &&
+            !isCodexResumeCursorSchema(input.resumeCursor))
         ) {
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
@@ -1722,7 +1724,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
             : {}),
-          ...(crewBound && input.resumeCursor !== undefined
+          ...((crewBound && input.resumeCursor !== undefined) ||
+          input.resumePolicy === "require-existing"
             ? { resumePolicy: "require-existing" as const }
             : {}),
           runtimeMode: input.runtimeMode,

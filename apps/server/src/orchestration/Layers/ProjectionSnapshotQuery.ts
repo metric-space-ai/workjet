@@ -21,6 +21,7 @@ import {
   type OrchestrationProject,
   type OrchestrationSession,
   type OrchestrationThreadActivity,
+  type OrchestrationThreadDetailWindow,
   type OrchestrationThreadShell,
   ModelSelection,
   ProjectId,
@@ -112,6 +113,10 @@ const ProjectionLatestTurnDbRowSchema = Schema.Struct({
   sourceProposedPlanThreadId: Schema.NullOr(ThreadId),
   sourceProposedPlanId: Schema.NullOr(OrchestrationProposedPlanId),
 });
+const ProjectionExactTurnStateRowSchema = Schema.Struct({
+  state: Schema.String,
+  completedAt: Schema.NullOr(IsoDateTime),
+});
 const ProjectionStateDbRowSchema = ProjectionState;
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
@@ -136,6 +141,10 @@ const ProjectIdLookupInput = Schema.Struct({
 });
 const ThreadIdLookupInput = Schema.Struct({
   threadId: ThreadId,
+});
+const ExactTurnLookupInput = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
 });
 // Windowed reads order turns by the stable keyset (anchor, turn key), where
 // anchor is requested_at and turn key is
@@ -184,6 +193,11 @@ const ProjectionThreadWorktreeCleanupRowSchema = Schema.Struct({
   workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
+  archivedAt: Schema.NullOr(Schema.String),
+});
+const DeletedWorkerWorktreeCleanupPageInput = Schema.Struct({
+  afterThreadId: Schema.NullOr(ThreadId),
+  limit: Schema.Int,
 });
 const FullThreadDiffContextLookupInput = Schema.Struct({
   threadId: ThreadId,
@@ -523,8 +537,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
           deleted_at AS "deletedAt"
         FROM projection_threads
-        WHERE deleted_at IS NULL
-          AND archived_at IS NOT NULL
+        WHERE archived_at IS NOT NULL
+          AND (
+            deleted_at IS NULL
+            OR CASE WHEN json_valid(workjet_config_json) THEN
+              json_extract(workjet_config_json, '$.schemaVersion') = 2
+              AND json_extract(workjet_config_json, '$.team.role') = 'worker'
+              AND json_extract(workjet_config_json, '$.team.threadId') = thread_id
+              AND json_extract(workjet_config_json, '$.team.projectId') = project_id
+            ELSE 0 END
+          )
         ORDER BY project_id ASC, archived_at DESC, thread_id DESC
       `,
   });
@@ -657,8 +679,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         FROM projection_thread_sessions sessions
         INNER JOIN projection_threads threads
           ON threads.thread_id = sessions.thread_id
-        WHERE threads.deleted_at IS NULL
-          AND threads.archived_at IS NOT NULL
+        WHERE threads.archived_at IS NOT NULL
+          AND (
+            threads.deleted_at IS NULL
+            OR json_extract(threads.workjet_config_json, '$.team.role') = 'worker'
+          )
         ORDER BY sessions.thread_id ASC
       `,
   });
@@ -752,8 +777,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         JOIN projection_turns turns
           ON turns.thread_id = threads.thread_id
           AND turns.turn_id = threads.latest_turn_id
-        WHERE threads.deleted_at IS NULL
-          AND threads.archived_at IS NOT NULL
+        WHERE threads.archived_at IS NOT NULL
+          AND (
+            threads.deleted_at IS NULL
+            OR json_extract(threads.workjet_config_json, '$.team.role') = 'worker'
+          )
           AND threads.latest_turn_id IS NOT NULL
         ORDER BY turns.thread_id ASC
       `,
@@ -947,12 +975,29 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           projects.workspace_root AS "workspaceRoot",
           threads.workjet_config_json AS "workjetConfig",
           threads.branch,
-          threads.worktree_path AS "worktreePath"
+          threads.worktree_path AS "worktreePath",
+          threads.archived_at AS "archivedAt"
         FROM projection_threads AS threads
         INNER JOIN projection_projects AS projects
           ON projects.project_id = threads.project_id
         WHERE threads.thread_id = ${threadId}
         LIMIT 1
+      `,
+  });
+
+  const listDeletedWorkerWorktreeCleanupRows = SqlSchema.findAll({
+    Request: DeletedWorkerWorktreeCleanupPageInput,
+    Result: ProjectionThreadIdLookupRowSchema,
+    execute: ({ afterThreadId, limit }) =>
+      sql`
+        SELECT thread_id AS "threadId"
+        FROM projection_threads
+        WHERE deleted_at IS NOT NULL
+          AND worktree_path IS NOT NULL
+          AND branch LIKE 'workjet/worker/%'
+          AND (${afterThreadId} IS NULL OR thread_id > ${afterThreadId})
+        ORDER BY thread_id ASC
+        LIMIT ${limit}
       `,
   });
 
@@ -992,6 +1037,52 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE thread_id = ${threadId}
           AND deleted_at IS NULL
           AND archived_at IS NULL
+        LIMIT 1
+      `,
+  });
+
+  const getArchivedTeamWorkerThreadRowById = SqlSchema.findOneOption({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadDbRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          thread_id AS "threadId",
+          project_id AS "projectId",
+          title,
+          model_selection_json AS "modelSelection",
+          runtime_mode AS "runtimeMode",
+          interaction_mode AS "interactionMode",
+          workjet_config_json AS "workjetConfig",
+          branch,
+          worktree_path AS "worktreePath",
+          latest_turn_id AS "latestTurnId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt",
+          archived_at AS "archivedAt",
+          settled_override AS "settledOverride",
+          settled_at AS "settledAt",
+          snoozed_until AS "snoozedUntil",
+          snoozed_at AS "snoozedAt",
+          pinned_at AS "pinnedAt",
+          pin_order_key AS "pinOrderKey",
+          title_regeneration_request_id AS "titleRegenerationRequestId",
+          title_regeneration_started_at AS "titleRegenerationStartedAt",
+          latest_user_message_at AS "latestUserMessageAt",
+          pending_approval_count AS "pendingApprovalCount",
+          pending_user_input_count AS "pendingUserInputCount",
+          has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          deleted_at AS "deletedAt"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+          AND deleted_at IS NOT NULL
+          AND archived_at IS NOT NULL
+          AND CASE WHEN json_valid(workjet_config_json) THEN
+            json_extract(workjet_config_json, '$.schemaVersion') = 2
+            AND json_extract(workjet_config_json, '$.team.role') = 'worker'
+            AND json_extract(workjet_config_json, '$.team.threadId') = thread_id
+            AND json_extract(workjet_config_json, '$.team.projectId') = project_id
+          ELSE 0 END
         LIMIT 1
       `,
   });
@@ -1103,6 +1194,18 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE threads.thread_id = ${threadId}
           AND threads.deleted_at IS NULL
           AND threads.archived_at IS NULL
+        LIMIT 1
+      `,
+  });
+
+  const getExactTurnStateRow = SqlSchema.findOneOption({
+    Request: ExactTurnLookupInput,
+    Result: ProjectionExactTurnStateRowSchema,
+    execute: ({ threadId, turnId }) =>
+      sql`
+        SELECT state, completed_at AS "completedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId} AND turn_id = ${turnId}
         LIMIT 1
       `,
   });
@@ -2100,6 +2203,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
+                  deletedAt: row.deletedAt,
                   settledOverride: row.settledOverride,
                   settledAt: row.settledAt,
                   snoozedUntil: row.snoozedUntil,
@@ -2321,8 +2425,21 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             workjetRole: row.workjetConfig.role,
             branch: row.branch,
             worktreePath: row.worktreePath,
+            archivedAt: row.archivedAt,
           })),
         ),
+      );
+
+  const listDeletedWorkerWorktreeCleanupThreadIds: ProjectionSnapshotQueryShape["listDeletedWorkerWorktreeCleanupThreadIds"] =
+    (input) =>
+      listDeletedWorkerWorktreeCleanupRows(input).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds:query",
+            "ProjectionSnapshotQuery.listDeletedWorkerWorktreeCleanupThreadIds:decodeRow",
+          ),
+        ),
+        Effect.map((rows) => rows.map((row) => row.threadId)),
       );
 
   const getFullThreadDiffContext: NonNullable<
@@ -2430,7 +2547,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     readonly beforeTurnKey: string;
   }
 
-  const getThreadDetailByIdBounded = (threadId: ThreadId, bounds: ThreadDetailBounds | undefined) =>
+  const getThreadDetailByIdBounded = (
+    threadId: ThreadId,
+    bounds: ThreadDetailBounds | undefined,
+    archivedTeamWorkerOnly = false,
+  ) =>
     Effect.gen(function* () {
       const [
         threadRow,
@@ -2441,7 +2562,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         latestTurnRow,
         sessionRow,
       ] = yield* Effect.all([
-        getActiveThreadRowById({ threadId }).pipe(
+        (archivedTeamWorkerOnly
+          ? getArchivedTeamWorkerThreadRowById({ threadId })
+          : getActiveThreadRowById({ threadId })
+        ).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(
               "ProjectionSnapshotQuery.getThreadDetailById:getThread:query",
@@ -2530,7 +2654,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         pinnedAt: threadRow.value.pinnedAt,
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
-        deletedAt: null,
+        deletedAt: threadRow.value.deletedAt,
         messages: messageRows.map((row) => {
           const message = {
             id: row.messageId,
@@ -2586,6 +2710,27 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const getThreadDetailById: ProjectionSnapshotQueryShape["getThreadDetailById"] = (threadId) =>
     getThreadDetailByIdBounded(threadId, undefined);
 
+  const isThreadTurnTerminal: ProjectionSnapshotQueryShape["isThreadTurnTerminal"] = (
+    threadId,
+    turnId,
+  ) =>
+    getExactTurnStateRow({ threadId, turnId }).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.isThreadTurnTerminal:query",
+          "ProjectionSnapshotQuery.isThreadTurnTerminal:decodeRow",
+        ),
+      ),
+      Effect.map(
+        (row) =>
+          Option.isSome(row) &&
+          row.value.completedAt !== null &&
+          (row.value.state === "completed" ||
+            row.value.state === "error" ||
+            row.value.state === "interrupted"),
+      ),
+    );
+
   // Bounds pathological fan-out: one user turn that spawned hundreds of
   // subagent turns still pages in bounded chunks, at the cost of splitting the
   // fan-out group across pages (the cursor continues the same group). Also
@@ -2594,9 +2739,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   // Sentinels for unbounded keyset ends; "~" sorts after any ISO timestamp.
   const ANCHOR_UNBOUNDED = "~";
 
-  const getThreadDetailSnapshot: ProjectionSnapshotQueryShape["getThreadDetailSnapshot"] = (
-    threadId,
-    window,
+  const getThreadDetailSnapshotFor = (
+    threadId: ThreadId,
+    window: OrchestrationThreadDetailWindow | undefined,
+    archivedTeamWorkerOnly: boolean,
   ) =>
     // Read the thread detail and the snapshot sequence within a single
     // transaction so the sequence is consistent with the returned state; a
@@ -2608,7 +2754,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           if (window?.turnLimit === undefined) {
-            const thread = yield* getThreadDetailById(threadId);
+            const thread = yield* getThreadDetailByIdBounded(
+              threadId,
+              undefined,
+              archivedTeamWorkerOnly,
+            );
             if (Option.isNone(thread)) {
               return Option.none<OrchestrationThreadDetailSnapshot>();
             }
@@ -2661,7 +2811,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ? { minAnchorAt: "", minTurnKey: "", beforeAnchorAt: "", beforeTurnKey: "" }
               : undefined;
 
-          const thread = yield* getThreadDetailByIdBounded(threadId, emptyBounds ?? bounds);
+          const thread = yield* getThreadDetailByIdBounded(
+            threadId,
+            emptyBounds ?? bounds,
+            archivedTeamWorkerOnly,
+          );
           if (Option.isNone(thread)) {
             return Option.none<OrchestrationThreadDetailSnapshot>();
           }
@@ -2728,6 +2882,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         ),
       );
 
+  const getThreadDetailSnapshot: ProjectionSnapshotQueryShape["getThreadDetailSnapshot"] = (
+    threadId,
+    window,
+  ) => getThreadDetailSnapshotFor(threadId, window, false);
+
+  const getArchivedTeamWorkerDetailSnapshot: ProjectionSnapshotQueryShape["getArchivedTeamWorkerDetailSnapshot"] =
+    (threadId, window) => getThreadDetailSnapshotFor(threadId, window, true);
+
   return {
     getCommandReadModel,
     getSnapshot,
@@ -2741,10 +2903,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getFirstActiveThreadIdByProjectId,
     getThreadCheckpointContext,
     getThreadWorktreeCleanupContext,
+    listDeletedWorkerWorktreeCleanupThreadIds,
     getFullThreadDiffContext,
     getThreadShellById,
     getThreadDetailById,
+    isThreadTurnTerminal,
     getThreadDetailSnapshot,
+    getArchivedTeamWorkerDetailSnapshot,
   } satisfies ProjectionSnapshotQueryShape;
 });
 

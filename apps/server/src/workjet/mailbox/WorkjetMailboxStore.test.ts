@@ -165,6 +165,155 @@ const testLayer = Layer.mergeAll(
 // Outbox
 // ===============================
 
+it.effect("commits outbound delegations atomically and preserves advanced state on replay", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = envelopeId("atomic-delegation");
+    const task = delegation({
+      id: delegationId("atomic-delegation"),
+      envelope: id,
+      state: "queued",
+      at: T0,
+      budgetExpiresAt: FAR_FUTURE,
+    });
+    const envelope = routingEnvelope({
+      id,
+      kind: "delegation",
+      createdAt: T0,
+      expiresAt: FAR_FUTURE,
+    });
+    const payload = { _tag: "delegation", delegation: task } as const;
+
+    // Fail the second write after the outbox insert has run.
+    yield* sql`CREATE TRIGGER reject_delegation_insert
+      BEFORE INSERT ON workjet_delegations
+      BEGIN SELECT RAISE(ABORT, 'injected delegation failure'); END`;
+    const failed = yield* store.enqueueOutbound(envelope, payload).pipe(Effect.exit);
+    assert.equal(failed._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(id)));
+    assert.isTrue(Option.isNone(yield* store.getDelegation(task.delegationId)));
+
+    yield* sql`DROP TRIGGER reject_delegation_insert`;
+    const retried = yield* store.enqueueOutbound(envelope, payload);
+    assert.equal(retried._tag, "enqueued");
+    assert.isTrue(Option.isSome(yield* store.getOutbound(id)));
+    const created = Option.getOrThrow(yield* store.getDelegation(task.delegationId));
+    assert.equal(created.state, "queued");
+
+    yield* store.transitionDelegationState(task.delegationId, "queued", "delivered", T1);
+    const replay = yield* store.enqueueOutbound(envelope, payload);
+    assert.equal(replay._tag, "duplicate");
+    const retained = Option.getOrThrow(yield* store.getDelegation(task.delegationId));
+    assert.equal(retained.state, "delivered");
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("rolls back a linked delegation when its relationship cannot be persisted", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = envelopeId("linked-rework");
+    const original = delegation({
+      id: delegationId("original"),
+      envelope: envelopeId("original"),
+      state: "changes-requested",
+      at: T0,
+      budgetExpiresAt: FAR_FUTURE,
+    });
+    yield* store.upsertDelegation(original);
+    const task = {
+      ...delegation({
+        id: delegationId("linked-rework"),
+        envelope: id,
+        state: "queued",
+        at: T1,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+      depth: 1,
+      parent: {
+        schemaVersion: 1 as const,
+        delegationId: original.delegationId,
+        owner: original.source,
+      },
+    };
+    const relationship = {
+      schemaVersion: 1 as const,
+      kind: "revises" as const,
+      from: { schemaVersion: 1 as const, delegationId: task.delegationId, owner: task.target },
+      to: task.parent,
+      depth: task.depth,
+      createdAt: T1,
+    };
+    const envelope = routingEnvelope({
+      id,
+      kind: "delegation",
+      createdAt: T1,
+      expiresAt: FAR_FUTURE,
+    });
+    const payload = { _tag: "delegation", delegation: task } as const;
+    const mismatch = yield* store
+      .enqueueOutbound(envelope, payload, {
+        ...relationship,
+        to: { ...relationship.to, owner: TARGET_ADDRESS },
+      })
+      .pipe(Effect.exit);
+    assert.equal(mismatch._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(id)));
+
+    yield* sql`CREATE TRIGGER reject_rework_edge
+      BEFORE INSERT ON workjet_delegation_edges
+      BEGIN SELECT RAISE(ABORT, 'injected relationship failure'); END`;
+    const failed = yield* store.enqueueOutbound(envelope, payload, relationship).pipe(Effect.exit);
+    assert.equal(failed._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(id)));
+    assert.isTrue(Option.isNone(yield* store.getDelegation(task.delegationId)));
+    assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 0);
+    assert.equal(
+      Option.getOrThrow(yield* store.getDelegation(original.delegationId)).state,
+      "changes-requested",
+    );
+
+    yield* sql`DROP TRIGGER reject_rework_edge`;
+    assert.equal((yield* store.enqueueOutbound(envelope, payload, relationship))._tag, "enqueued");
+    assert.equal((yield* store.enqueueOutbound(envelope, payload, relationship))._tag, "duplicate");
+    assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 1);
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(task.delegationId)).state, "queued");
+    assert.equal(
+      Option.getOrThrow(yield* store.getDelegation(original.delegationId)).state,
+      "changes-requested",
+    );
+    yield* store.transitionDelegationState(
+      original.delegationId,
+      "changes-requested",
+      "cancelled",
+      T1,
+    );
+    const staleTask = {
+      ...task,
+      delegationId: delegationId("linked-stale"),
+      envelopeId: envelopeId("linked-stale"),
+    };
+    const staleEnvelope = routingEnvelope({
+      id: staleTask.envelopeId,
+      kind: "delegation",
+      createdAt: T1,
+      expiresAt: FAR_FUTURE,
+    });
+    const staleEdge = {
+      ...relationship,
+      from: { ...relationship.from, delegationId: staleTask.delegationId },
+    };
+    const stale = yield* store
+      .enqueueOutbound(staleEnvelope, { _tag: "delegation", delegation: staleTask }, staleEdge)
+      .pipe(Effect.result);
+    assert.equal(stale._tag, "Failure");
+    assert.isTrue(Option.isNone(yield* store.getOutbound(staleEnvelope.envelopeId)));
+    assert.isTrue(Option.isNone(yield* store.getDelegation(staleTask.delegationId)));
+    assert.lengthOf(yield* store.listDelegationEdges(original.delegationId, 10), 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
 it.effect("enqueues an outbound envelope and reports a duplicate id without throwing", () =>
   Effect.gen(function* () {
     const store = yield* WorkjetMailboxStore;
@@ -337,6 +486,44 @@ it.effect("inserts an inbound envelope idempotently and rejects an expired one",
     );
     assert.equal(expired._tag, "expired");
     assert.isTrue(Option.isNone(yield* store.getInbound(expiredEnvelopeId)));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("filters local recovery before limiting and advances by delegation id", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const base = delegation({
+      id: delegationId("a-foreign"),
+      envelope: envelopeId("a-foreign"),
+      state: "queued",
+      at: T0,
+      budgetExpiresAt: FAR_FUTURE,
+    });
+    yield* store.upsertDelegation(base);
+    for (const suffix of ["b-local", "c-local", "a-corrupt"]) {
+      yield* store.upsertDelegation({
+        ...base,
+        delegationId: delegationId(suffix),
+        target: { ...base.target, environmentId: SOURCE_ENVIRONMENT },
+      });
+    }
+    yield* sql`UPDATE workjet_delegations SET delegation_json = 'invalid-json'
+      WHERE delegation_id = ${delegationId("a-corrupt")}`;
+    const filter = { environmentId: SOURCE_ENVIRONMENT, workspaceId: WORKSPACE };
+    const first = yield* store.listDelegationRowsByState("queued", 1, filter);
+    assert.equal(first.length, 1);
+    const entry = first[0];
+    assert.equal(entry?._tag, "record");
+    if (entry?._tag !== "record") return;
+    assert.equal(entry.record.delegationId, delegationId("b-local"));
+    const second = yield* store.listDelegationRowsByState("queued", 1, {
+      ...filter,
+      afterId: entry.record.delegationId,
+    });
+    assert.equal(second[0]?._tag, "record");
+    if (second[0]?._tag !== "record") return;
+    assert.equal(second[0].record.delegationId, delegationId("c-local"));
   }).pipe(Effect.provide(testLayer)),
 );
 
@@ -519,6 +706,83 @@ it.effect("writes NO event for a transition that was refused", () =>
     assert.equal(events[0]!.toState, "delivered");
   }).pipe(Effect.provide(testLayer)),
 );
+
+it.effect("rolls back a state transition when its review edge cannot be persisted", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const sql = yield* SqlClient.SqlClient;
+    const id = delegationId("atomic-review");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("atomic-review"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    yield* store.transitionDelegationState(id, "queued", "delivered", T1);
+    yield* store.transitionDelegationState(id, "delivered", "accepted", T1);
+    yield* store.transitionDelegationState(id, "accepted", "running", T1);
+    const edge = {
+      schemaVersion: 1 as const,
+      kind: "reviews" as const,
+      from: { schemaVersion: 1 as const, delegationId: id, owner: SOURCE_ADDRESS },
+      to: { schemaVersion: 1 as const, delegationId: id, owner: TARGET_ADDRESS },
+      createdAt: T1,
+      depth: 0,
+    };
+
+    yield* sql`CREATE TRIGGER reject_transition_edge
+      BEFORE INSERT ON workjet_delegation_edges
+      BEGIN SELECT RAISE(ABORT, 'injected transition edge failure'); END`;
+    const failed = yield* store
+      .transitionDelegationState(id, "running", "review-requested", T1, edge)
+      .pipe(Effect.result);
+    assert.equal(failed._tag, "Failure");
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(id)).state, "running");
+    assert.lengthOf(yield* store.listDelegationStateEvents(id), 3);
+    assert.lengthOf(yield* store.listDelegationEdges(id, 10), 0);
+
+    yield* sql`DROP TRIGGER reject_transition_edge`;
+    yield* store.transitionDelegationState(id, "running", "review-requested", T1, edge);
+    assert.equal(Option.getOrThrow(yield* store.getDelegation(id)).state, "review-requested");
+    assert.lengthOf(yield* store.listDelegationStateEvents(id), 4);
+    assert.lengthOf(yield* store.listDelegationEdges(id, 10), 1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+for (const state of ["completed", "failed", "cancelled", "expired"] as const) {
+  it.effect(`preserves the original ${state} delegation body against an upsert`, () =>
+    Effect.gen(function* () {
+      const store = yield* WorkjetMailboxStore;
+      const original = delegation({
+        id: delegationId(`immutable-${state}`),
+        envelope: envelopeId(`immutable-${state}`),
+        state,
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      });
+      yield* store.upsertDelegation(original);
+      const changed = yield* store
+        .upsertDelegation({
+          ...original,
+          stateChangedAt: T1,
+          prompt: { ...original.prompt, digest: WorkjetContentDigest.make("c".repeat(64)) },
+          completion: { ...original.completion, acceptance: "Altered after completion" },
+        })
+        .pipe(Effect.result);
+      assert.equal(changed._tag, "Failure");
+      if (changed._tag === "Failure") {
+        assertMailboxErrorReason(changed.failure, "invalid-state-transition");
+      }
+      assert.deepEqual(
+        Option.getOrThrow(yield* store.getDelegation(original.delegationId)).delegation,
+        original,
+      );
+    }).pipe(Effect.provide(testLayer)),
+  );
+}
 
 it.effect("rejects an illegal transition and keeps a terminal delegation immutable", () =>
   Effect.gen(function* () {
@@ -719,6 +983,88 @@ it.effect("queues an unreturned delegation result and stamps it exactly once", (
     assert.deepEqual([...(yield* store.listDelegationsPendingResultReturn(10))], []);
     // The durable result itself is untouched by either marker.
     assert.isTrue(Option.isSome(yield* store.getDelegationResult(abandoned)));
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("keeps an unreturned review result retryable after changes are requested", () =>
+  Effect.gen(function* () {
+    const store = yield* WorkjetMailboxStore;
+    const id = delegationId("review-return");
+    yield* store.upsertDelegation(
+      delegation({
+        id,
+        envelope: envelopeId("review-return"),
+        state: "queued",
+        at: T0,
+        budgetExpiresAt: FAR_FUTURE,
+      }),
+    );
+    yield* store.transitionDelegationState(id, "queued", "delivered", T0);
+    yield* store.transitionDelegationState(id, "delivered", "accepted", T0);
+    yield* store.transitionDelegationState(id, "accepted", "running", T0);
+    const result = delegationResult({
+      id,
+      envelope: envelopeId("review-result"),
+      outcome: "completed",
+    });
+    const finalized = yield* store.finalizeDelegationResult({
+      delegationId: id,
+      to: "review-requested",
+      result,
+      changedAt: T1,
+    });
+    assert.equal(finalized.record.state, "review-requested");
+    assert.isFalse(finalized.record.terminal);
+    assert.equal((yield* store.listDelegationsPendingResultReturn(10)).length, 1);
+    assert.deepEqual(
+      (yield* store.listDelegationStateEvents(id)).map((event) => event.toState),
+      ["delivered", "accepted", "running", "review-requested"],
+    );
+
+    yield* store.transitionDelegationState(id, "review-requested", "changes-requested", T2);
+    const awaiting = yield* store.listDelegationsAwaitingRework(
+      SOURCE_ENVIRONMENT,
+      WORKSPACE,
+      undefined,
+      10,
+    );
+    assert.deepEqual(
+      awaiting.map((row) => (row._tag === "record" ? row.record.delegationId : row.rowId)),
+      [id],
+    );
+    assert.lengthOf(
+      yield* store.listDelegationsAwaitingRework(TARGET_ENVIRONMENT, WORKSPACE, undefined, 10),
+      0,
+    );
+    const restarted = yield* store.listDelegationsPendingResultReturn(10);
+    assert.equal(restarted.length, 1);
+    assert.equal(restarted[0]?._tag, "record");
+    const replay = yield* store.finalizeDelegationResult({
+      delegationId: id,
+      to: "failed",
+      result: delegationResult({ id, envelope: envelopeId("review-late"), outcome: "failed" }),
+      changedAt: T2,
+    });
+    assert.equal(replay._tag, "already-finalized");
+    assert.deepEqual(replay.result, result);
+    yield* store.insertDelegationEdge({
+      schemaVersion: 1,
+      kind: "revises",
+      from: {
+        schemaVersion: 1,
+        delegationId: delegationId("review-child"),
+        owner: TARGET_ADDRESS,
+      },
+      to: { schemaVersion: 1, delegationId: id, owner: SOURCE_ADDRESS },
+      createdAt: T2,
+      depth: 1,
+    });
+    assert.lengthOf(
+      yield* store.listDelegationsAwaitingRework(SOURCE_ENVIRONMENT, WORKSPACE, undefined, 10),
+      0,
+    );
+    assert.isTrue(yield* store.markDelegationResultReturned(id, T2));
+    assert.equal((yield* store.listDelegationsPendingResultReturn(10)).length, 0);
   }).pipe(Effect.provide(testLayer)),
 );
 

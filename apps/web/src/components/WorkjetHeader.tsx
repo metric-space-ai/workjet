@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { SettingsIcon } from "lucide-react";
+import { ExternalLink, SettingsIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
@@ -46,7 +46,20 @@ export function WorkjetHeaderFrame({
               }}
             />
           ) : (
-            <span className="text-sm font-medium">Workjet</span>
+            <>
+              <span className="text-sm font-medium">Workjet</span>
+              <a
+                href="https://ctox.dev/workjet-pair"
+                target="_blank"
+                rel="noopener noreferrer"
+                referrerPolicy="no-referrer"
+                aria-label="Business OS in neuem Tab öffnen"
+                className="no-drag inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                Business OS
+                <ExternalLink className="size-3" aria-hidden />
+              </a>
+            </>
           )}
         </div>
         <div

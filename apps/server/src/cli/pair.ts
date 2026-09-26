@@ -15,6 +15,7 @@ import {
   PortSchema,
 } from "@workjet/contracts";
 import { resolveWorktreeWorkjetHome } from "@workjet/shared/devHome";
+import { isLocalServiceOrigin } from "@workjet/shared/localServiceTarget";
 import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
@@ -26,6 +27,7 @@ import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
@@ -63,6 +65,15 @@ const TAILSCALE_PROBE_ATTEMPTS = 5;
 const TAILSCALE_PROBE_RETRY_DELAY = Duration.seconds(1);
 
 export type PairStateVariant = "userdata" | "dev";
+
+export class PairTargetIdentityError extends Schema.TaggedErrorClass<PairTargetIdentityError>()(
+  "PairTargetIdentityError",
+  { statePath: Schema.String },
+) {
+  override get message(): string {
+    return `Cannot verify the running server against the saved environment identity and runtime generation at ${this.statePath}. Pairing was refused; no credential was created. Check that this profile points to the intended server.`;
+  }
+}
 
 // deriveServerPaths only checks devUrl for undefined-ness when picking the
 // dev-vs-userdata state directory; the value itself is not used.
@@ -240,16 +251,18 @@ const isProcessAlive = (pid: number): boolean => {
   }
 };
 
-interface DiscoveredPairTarget {
+export interface DiscoveredPairTarget {
   readonly baseDir: string;
   readonly variant: PairStateVariant;
   readonly state: PersistedServerRuntimeState;
   readonly descriptor: ExecutionEnvironmentDescriptor;
 }
 
-const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
+export const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   explicitBaseDir: string | undefined,
+  localDesktop?: { readonly environmentId?: string; readonly runtimeInstanceId?: string },
 ) {
+  const fs = yield* FileSystem.FileSystem;
   const bases: Array<string> = [];
   if (explicitBaseDir !== undefined && explicitBaseDir.trim().length > 0) {
     bases.push(yield* resolveBaseDir(explicitBaseDir));
@@ -267,7 +280,9 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
 
   const checkedStatePaths: Array<string> = [];
   for (const baseDir of new Set(bases)) {
-    for (const variant of ["userdata", "dev"] as const) {
+    for (const variant of localDesktop === undefined
+      ? (["userdata", "dev"] as const)
+      : (["userdata"] as const)) {
       const derivedPaths = yield* ServerConfig.deriveServerPaths(
         baseDir,
         variant === "dev" ? DEV_VARIANT_PLACEHOLDER_URL : undefined,
@@ -279,15 +294,46 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       if (Option.isNone(state)) {
         continue;
       }
-      // The pid check guards against a dead server's state file whose port
-      // was since reused by a different server: pairing would then mint a
-      // token in the old database while the QR code points at the new server.
+      if (
+        localDesktop !== undefined &&
+        (!state.value.runtimeInstanceId ||
+          state.value.devUrl !== undefined ||
+          !isLocalServiceOrigin(state.value.origin) ||
+          Number(new URL(state.value.origin).port || "80") !== state.value.port)
+      ) {
+        return yield* new PairTargetIdentityError({ statePath });
+      }
+      // PID liveness is only a hint: both the PID and port may be reused.
+      // The saved profile identity must also match before we create a grant.
       if (!isProcessAlive(state.value.pid)) {
         continue;
       }
-      const probed = yield* probeEnvironmentDescriptor(state.value.origin);
+      const probe = probeEnvironmentDescriptor(state.value.origin);
+      const probed = yield* localDesktop === undefined
+        ? probe
+        : probe.pipe(Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }));
       if (probed._tag !== "descriptor") {
         continue;
+      }
+      const expectedId = yield* fs.readFileString(derivedPaths.environmentIdPath).pipe(
+        Effect.map((value) => value.trim()),
+        Effect.option,
+      );
+      if (
+        Option.isNone(expectedId) ||
+        expectedId.value === "" ||
+        (localDesktop?.environmentId !== undefined &&
+          expectedId.value !== localDesktop.environmentId) ||
+        (localDesktop?.runtimeInstanceId !== undefined &&
+          state.value.runtimeInstanceId !== localDesktop.runtimeInstanceId) ||
+        probed.descriptor.environmentId !== expectedId.value ||
+        // Both absent supports legacy pairing. If either side advertises a
+        // generation, it must match: do not downgrade a partially modern pair.
+        // This comparison detects stale state, not a malicious server or a
+        // replacement between this probe and the subsequent grant creation.
+        probed.descriptor.runtimeInstanceId !== state.value.runtimeInstanceId
+      ) {
+        return yield* new PairTargetIdentityError({ statePath });
       }
       return {
         baseDir,
@@ -307,7 +353,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
  * choice pinned to where the runtime state was actually found, independent of
  * ambient environment variables.
  */
-const makePairServerConfig = Effect.fn(function* (input: {
+export const makePairServerConfig = Effect.fn(function* (input: {
   readonly target: DiscoveredPairTarget;
   readonly logLevel: ServerConfig.ServerConfig["Service"]["logLevel"];
 }) {

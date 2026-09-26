@@ -57,6 +57,8 @@ import * as DesktopAssets from "./app/DesktopAssets.ts";
 import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopLocalServiceSession from "./backend/DesktopLocalServiceSession.ts";
+import * as DesktopLocalServiceAttachment from "./backend/DesktopLocalServiceAttachment.ts";
 import * as DesktopNetworkInterfaces from "./backend/DesktopNetworkInterfaces.ts";
 import * as DesktopEnvironment from "./app/DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./app/DesktopLifecycle.ts";
@@ -184,12 +186,28 @@ const desktopWindowLayer = DesktopWindow.layer.pipe(
   Layer.provideMerge(desktopPreviewLayer),
 );
 
+const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
+  Layer.provide(Socket.layerWebSocketConstructorGlobal),
+);
+
+const desktopServiceAttachmentLayer = DesktopLocalServiceAttachment.layer.pipe(
+  Layer.provideMerge(
+    DesktopLocalServiceSession.layer.pipe(Layer.provideMerge(desktopRpcSessionLayer)),
+  ),
+);
+
 // Pool layer instantiates the backend factory once for the Windows
 // primary instance and exposes it via pool.primary. Consumers go through
 // the pool now; the legacy DesktopBackendManager service is gone. The
 // WSL second instance gets registered later in the migration. See
 // DesktopBackendPool.ts header for the full rollout plan.
-const desktopBackendLayer = DesktopBackendPool.layer.pipe(
+const desktopBackendLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const attachment = yield* DesktopLocalServiceAttachment.DesktopLocalServiceAttachment;
+    return DesktopBackendPool.layerWithPrimaryRunner(attachment.run);
+  }),
+).pipe(
+  Layer.provideMerge(desktopServiceAttachmentLayer),
   Layer.provideMerge(DesktopAppIdentity.layer),
   Layer.provideMerge(DesktopBackendConfiguration.layer),
   Layer.provideMerge(DesktopWslEnvironment.layer),
@@ -206,10 +224,6 @@ const desktopWslBackendLayer = DesktopWslBackend.layer.pipe(
 
 const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
-);
-
-const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
-  Layer.provide(Socket.layerWebSocketConstructorGlobal),
 );
 
 // The local-daemon launch service resolves its target through the one

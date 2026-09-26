@@ -556,7 +556,7 @@ export const make = Effect.gen(function* () {
           error.operation === "decrypt-catalog"
         )
       ) {
-        return yield* Effect.fail(error);
+        return yield* error;
       }
 
       const suffix = (yield* crypto.randomUUIDv4.pipe(

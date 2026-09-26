@@ -1290,6 +1290,13 @@ export function makeOpenCodeAdapter(
         const directory = input.cwd ?? serverConfig.cwd;
         const resumeCursor = parseOpenCodeResume(input.resumeCursor);
         const resumeSessionId = resumeCursor?.sessionId;
+        if (input.resumePolicy === "require-existing" && !resumeSessionId) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Claimed Crew recovery requires a valid OpenCode session cursor.",
+          });
+        }
         const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
         const managedPrompt = delimitManagedPrompt(mcpSession?.compiledManagedPrompt);
         const managedPromptFingerprint = managedPrompt
@@ -1374,6 +1381,13 @@ export function makeOpenCodeAdapter(
                   (!adopted.directory || (yield* sameDirectory(adopted.directory, directory)))
                     ? adopted
                     : undefined;
+                if (input.resumePolicy === "require-existing" && reusable?.id !== resumeSessionId) {
+                  return yield* new OpenCodeRuntimeError({
+                    operation: "session.get",
+                    detail:
+                      "Claimed Crew recovery could not confirm the saved OpenCode session in its original directory.",
+                  });
+                }
 
                 if (reusable) {
                   // Resume skips `session.create`, so re-assert the ruleset —

@@ -32,6 +32,7 @@ export interface RelayEnvironmentAuthorization {
 
 export interface AuthorizedRemoteEnvironment {
   readonly environmentId: EnvironmentId;
+  readonly runtimeInstanceId?: string;
   readonly label: string;
   readonly httpBaseUrl: string;
   readonly socketUrl: string;
@@ -105,6 +106,9 @@ export const make = Effect.gen(function* () {
       const cachedDescriptor = (yield* Ref.get(bearerDescriptors)).get(input.expectedEnvironmentId);
       const canReuseDescriptor =
         cachedDescriptor?.httpBaseUrl === input.httpBaseUrl &&
+        // Modern discovery pins this attempt to a runtime generation. Read it
+        // afresh so a normal service restart does not reuse a stale pin.
+        cachedDescriptor.descriptor.runtimeInstanceId === undefined &&
         cachedDescriptor.validatedAtEpochMs + BEARER_DESCRIPTOR_CACHE_TTL_MS > now;
       const descriptor = canReuseDescriptor
         ? cachedDescriptor.descriptor
@@ -138,6 +142,9 @@ export const make = Effect.gen(function* () {
       );
       return {
         environmentId: descriptor.environmentId,
+        ...(descriptor.runtimeInstanceId === undefined
+          ? {}
+          : { runtimeInstanceId: descriptor.runtimeInstanceId }),
         label: descriptor.label,
         httpBaseUrl: input.httpBaseUrl,
         socketUrl,
@@ -215,9 +222,23 @@ export const make = Effect.gen(function* () {
           CACHED_ENDPOINT_SOCKET_TIMEOUT_MS,
         ).pipe(Effect.result);
         if (Result.isSuccess(cachedSocket)) {
+          // A durable credential can survive the server that issued it. Its
+          // old label/endpoint is not evidence of the current runtime.
+          const descriptor = yield* fetchDescriptor(cached.value.endpoint.httpBaseUrl).pipe(
+            Effect.provideService(HttpClient.HttpClient, httpClient),
+          );
+          if (descriptor.environmentId !== input.expectedEnvironmentId) {
+            return yield* environmentMismatchError({
+              expected: input.expectedEnvironmentId,
+              actual: descriptor.environmentId,
+            });
+          }
           return {
             environmentId: cached.value.environmentId,
-            label: cached.value.label,
+            ...(descriptor.runtimeInstanceId === undefined
+              ? {}
+              : { runtimeInstanceId: descriptor.runtimeInstanceId }),
+            label: descriptor.label,
             httpBaseUrl: cached.value.endpoint.httpBaseUrl,
             socketUrl: cachedSocket.success,
             httpAuthorization: {
@@ -291,6 +312,9 @@ export const make = Effect.gen(function* () {
         .pipe(Effect.withSpan("environment.authorization.accessToken.persist"));
       return {
         environmentId: descriptor.environmentId,
+        ...(descriptor.runtimeInstanceId === undefined
+          ? {}
+          : { runtimeInstanceId: descriptor.runtimeInstanceId }),
         label: descriptor.label,
         httpBaseUrl: bootstrap.endpoint.httpBaseUrl,
         socketUrl,

@@ -2,7 +2,11 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Terminal from "effect/Terminal";
-import { Command, GlobalFlag, Prompt } from "effect/unstable/cli";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { PortSchema } from "@workjet/contracts";
+import { HostProcessExecutablePath } from "@workjet/shared/hostProcess";
+import { Command, Flag, GlobalFlag, Prompt } from "effect/unstable/cli";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../cloud/bootService.ts";
@@ -10,11 +14,15 @@ import type * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 
-export const bootServiceLayer = (config: ServerConfig.ServerConfig["Service"]) =>
+export const bootServiceLayer = (
+  config: ServerConfig.ServerConfig["Service"],
+  host?: BootService.BootServiceHost,
+) =>
   BootService.layer({
     baseDir: config.baseDir,
     logsDir: config.logsDir,
     cliVersion: packageJson.version,
+    ...(host === undefined ? {} : { host }),
   }).pipe(Layer.provide(ProcessRunner.layer));
 
 export type ServiceReconcileResult =
@@ -48,7 +56,7 @@ export function formatServiceStatus(
   cliVersion: string,
 ): string {
   if (!status.supported) {
-    return "Workjet service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd";
+    return "Workjet service\n  Status: unavailable on this machine\n  Supported on: Linux with systemd or macOS with a user login session";
   }
   if (!status.installed) {
     return "Workjet service\n  Status: not installed\n  Next: Run `workjet service install`.";
@@ -58,20 +66,90 @@ export function formatServiceStatus(
     `  Status: ${status.current ? `installed · workjet@${cliVersion}` : "needs an update or repair"}`,
     `  Unit: ${status.unitPath}`,
     `  Logs: ${status.logPath}`,
+    ...(status.loginSessionOnly
+      ? ["  Lifetime: runs while you are logged in; stops at logout."]
+      : []),
     ...(status.current ? [] : ["  Next: Run `npx workjet@latest service update`."]),
   ].join("\n");
 }
 
 const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
-  flags: { readonly baseDir: Parameters<typeof resolveCliAuthConfig>[0]["baseDir"] },
+  flags: {
+    readonly baseDir: Parameters<typeof resolveCliAuthConfig>[0]["baseDir"];
+    readonly bundleArchive?: Option.Option<string>;
+    readonly bundleSha256?: Option.Option<string>;
+    readonly desktopPort?: Option.Option<number>;
+    readonly desktopHost?: Option.Option<"127.0.0.1" | "::1">;
+    readonly desktopTailscaleServe?: boolean;
+    readonly desktopTailscaleServePort?: Option.Option<number>;
+  },
   run: Effect.Effect<A, E, BootService.BootService>,
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* resolveCliAuthConfig(flags, logLevel);
-  return yield* run.pipe(Effect.provide(bootServiceLayer(config)));
+  const archivePath = Option.getOrUndefined(flags.bundleArchive ?? Option.none());
+  const sha256 = Option.getOrUndefined(flags.bundleSha256 ?? Option.none());
+  if (
+    (archivePath === undefined) !== (sha256 === undefined) ||
+    (sha256 !== undefined && !/^[a-f0-9]{64}$/.test(sha256))
+  ) {
+    return yield* new BootService.BootServiceInstallError({
+      cause: "Supply both --bundle-archive and a trusted --bundle-sha256.",
+    });
+  }
+  const desktopPort = Option.getOrUndefined(flags.desktopPort ?? Option.none());
+  const desktopHost = Option.getOrUndefined(flags.desktopHost ?? Option.none());
+  const desktopTailscaleServePort = Option.getOrUndefined(
+    flags.desktopTailscaleServePort ?? Option.none(),
+  );
+  if (
+    desktopPort === undefined &&
+    (desktopHost !== undefined ||
+      desktopTailscaleServePort !== undefined ||
+      flags.desktopTailscaleServe === true)
+  )
+    return yield* new BootService.BootServiceInstallError({
+      cause: "Desktop service options require --desktop-port.",
+    });
+  const host: BootService.BootServiceHost = {
+    execPath: yield* HostProcessExecutablePath,
+    ...(archivePath !== undefined && sha256 !== undefined
+      ? { bundle: { archivePath, sha256 } }
+      : {}),
+    ...(desktopPort === undefined
+      ? {}
+      : {
+          desktop: {
+            port: desktopPort,
+            host: desktopHost ?? "127.0.0.1",
+            tailscaleServeEnabled: flags.desktopTailscaleServe ?? false,
+            tailscaleServePort: desktopTailscaleServePort ?? 443,
+          },
+        }),
+  };
+  return yield* run.pipe(Effect.provide(bootServiceLayer(config, host)));
 });
 
-const serviceInstallCommand = Command.make("install", projectLocationFlags).pipe(
+const serviceArtifactFlags = {
+  ...projectLocationFlags,
+  desktopPort: Flag.integer("desktop-port").pipe(Flag.withSchema(PortSchema), Flag.optional),
+  desktopHost: Flag.choice("desktop-host", ["127.0.0.1", "::1"] as const).pipe(Flag.optional),
+  desktopTailscaleServe: Flag.boolean("desktop-tailscale-serve"),
+  desktopTailscaleServePort: Flag.integer("desktop-tailscale-serve-port").pipe(
+    Flag.withSchema(PortSchema),
+    Flag.optional,
+  ),
+  bundleArchive: Flag.string("bundle-archive").pipe(
+    Flag.withDescription("Install the trusted portable archive shipped with this Desktop release."),
+    Flag.optional,
+  ),
+  bundleSha256: Flag.string("bundle-sha256").pipe(
+    Flag.withDescription("Expected SHA-256 from the trusted Desktop release."),
+    Flag.optional,
+  ),
+};
+
+const serviceInstallCommand = Command.make("install", serviceArtifactFlags).pipe(
   Command.withDescription("Install Workjet as a background service for this user."),
   Command.withHandler((flags) =>
     runServiceCommand(
@@ -92,7 +170,7 @@ const serviceInstallCommand = Command.make("install", projectLocationFlags).pipe
   ),
 );
 
-const serviceUpdateCommand = Command.make("update", projectLocationFlags).pipe(
+const serviceUpdateCommand = Command.make("update", serviceArtifactFlags).pipe(
   Command.withDescription(
     "Update or repair the background service using this CLI version. Use `npx workjet@latest service update` for the latest release.",
   ),
@@ -107,6 +185,43 @@ const serviceUpdateCommand = Command.make("update", projectLocationFlags).pipe(
         }
         yield* Console.log(
           `${result.previouslyInstalled ? "Updated" : "Installed"} Workjet service with workjet@${packageJson.version}.\nLogs: ${result.plan.logPath}`,
+        );
+      }),
+    ),
+  ),
+);
+
+const serviceStartCommand = Command.make("start", serviceArtifactFlags).pipe(
+  Command.withDescription(
+    "Start or reuse the installed service without replacing a running server.",
+  ),
+  Command.withHandler((flags) =>
+    runServiceCommand(
+      flags,
+      Effect.gen(function* () {
+        const service = yield* BootService.BootService;
+        yield* service.start;
+        yield* Console.log(
+          "Service start requested. Readiness must be checked through the server connection.",
+        );
+      }),
+    ),
+  ),
+);
+
+const serviceStopCommand = Command.make("stop", projectLocationFlags).pipe(
+  Command.withDescription(
+    "Stop the current service; retain its configuration for a later start or login.",
+  ),
+  Command.withHandler((flags) =>
+    runServiceCommand(
+      flags,
+      Effect.gen(function* () {
+        const service = yield* BootService.BootService;
+        yield* Console.log(
+          (yield* service.stop)
+            ? "Service stopped; installation retained."
+            : "No service is installed.",
         );
       }),
     ),
@@ -129,14 +244,39 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
   ),
 );
 
-const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
+const ServiceStatusDocument = Schema.Struct({
+  supported: Schema.Boolean,
+  installed: Schema.Boolean,
+  current: Schema.Boolean,
+  unitPath: Schema.String,
+  logPath: Schema.String,
+  loginSessionOnly: Schema.optionalKey(Schema.Boolean),
+  desktop: Schema.optionalKey(
+    Schema.Struct({
+      port: PortSchema,
+      host: Schema.Literals(["127.0.0.1", "::1"]),
+      tailscaleServeEnabled: Schema.Boolean,
+      tailscaleServePort: PortSchema,
+    }),
+  ),
+});
+
+const serviceStatusCommand = Command.make("status", {
+  ...serviceArtifactFlags,
+  json: Flag.boolean("json"),
+}).pipe(
   Command.withDescription("Show whether the Workjet background service is installed."),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
       Effect.gen(function* () {
         const service = yield* BootService.BootService;
-        yield* Console.log(formatServiceStatus(yield* service.status, packageJson.version));
+        const status = yield* service.status;
+        yield* Console.log(
+          flags.json
+            ? yield* Schema.encodeEffect(Schema.fromJsonString(ServiceStatusDocument))(status)
+            : formatServiceStatus(status, packageJson.version),
+        );
       }),
     ),
   ),
@@ -144,7 +284,7 @@ const serviceStatusCommand = Command.make("status", projectLocationFlags).pipe(
 
 export const offerServiceDuringOnboarding = Effect.gen(function* () {
   const service = yield* BootService.BootService;
-  const { supported, installed, current } = yield* service.status;
+  const { supported, installed, current, loginSessionOnly } = yield* service.status;
   if (!supported) {
     return false;
   }
@@ -156,8 +296,10 @@ export const offerServiceDuringOnboarding = Effect.gen(function* () {
     Prompt.confirm({
       message: installed
         ? "The installed Workjet service needs an update or repair. Update it now?"
-        : "Run Workjet in the background whenever this machine boots? " +
-          "It stays reachable through Workjet Connect even after you log out.",
+        : loginSessionOnly
+          ? "Run Workjet in the background while you are logged in? It starts at login and stops at logout."
+          : "Run Workjet in the background whenever this machine boots? " +
+            "It stays reachable through Workjet Connect even after you log out.",
       initial: true,
     }),
   );
@@ -194,6 +336,8 @@ export const serviceCommand = Command.make("service").pipe(
   Command.withDescription("Manage the Workjet background service."),
   Command.withSubcommands([
     serviceInstallCommand,
+    serviceStartCommand,
+    serviceStopCommand,
     serviceUninstallCommand,
     serviceUpdateCommand,
     serviceStatusCommand,

@@ -5,9 +5,11 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import { Launcher, readServiceState, writeServiceState } from "./serviceLauncher.ts";
+import { acquireProfileOwnership, ProfileOwnershipError } from "./profileOwnership.ts";
 import {
   compareExactServiceVersions,
   decodeServiceState,
+  serviceChildArguments,
   isExactServiceVersion,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STOP_MARKER_FILE,
@@ -19,6 +21,55 @@ it("accepts only exact semantic versions", () => {
   }
   for (const version of ["latest", "01.2.3", "1.2.3-01", "1.2.3-alpha..1", "1.2.3+."]) {
     assert.isFalse(isExactServiceVersion(version), version);
+  }
+});
+
+it("retains explicit Desktop endpoints across persisted service state and child launch", () => {
+  const desktop = {
+    port: 4852,
+    host: "::1" as const,
+    tailscaleServeEnabled: true,
+    tailscaleServePort: 8443,
+  };
+  const state = decodeServiceState({
+    protocol: SERVICE_LAUNCHER_PROTOCOL,
+    activeVersion: "1.2.3",
+    desktop,
+  });
+  assert.deepEqual(state?.desktop, desktop);
+  const args = serviceChildArguments("/profile with spaces", state?.desktop);
+  assert.deepEqual(args, [
+    "serve",
+    "--mode",
+    "desktop",
+    "--base-dir",
+    "/profile with spaces",
+    "--host",
+    "::1",
+    "--port",
+    "4852",
+    "--tailscale-serve-port",
+    "8443",
+    "--tailscale-serve",
+  ]);
+  assert.notInclude(
+    serviceChildArguments("/profile", { ...desktop, tailscaleServeEnabled: false }),
+    "--tailscale-serve",
+  );
+  assert.deepEqual(serviceChildArguments("/ordinary-profile"), ["serve"]);
+  for (const invalid of [
+    { ...desktop, port: 0 },
+    { ...desktop, port: 65536 },
+    { ...desktop, host: "0.0.0.0" },
+    { ...desktop, tailscaleServeEnabled: "false" },
+  ]) {
+    assert.isUndefined(
+      decodeServiceState({
+        protocol: SERVICE_LAUNCHER_PROTOCOL,
+        activeVersion: "1.2.3",
+        desktop: invalid,
+      }),
+    );
   }
 });
 
@@ -88,6 +139,41 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
       } as const;
 
       yield* Effect.promise(() => writeServiceState(statePath, state));
+      assert.deepEqual(yield* Effect.promise(() => readServiceState(statePath)), state);
+    }),
+  );
+
+  it.effect("does not restore a database while a manual runtime owns the profile", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-launcher-owner-" });
+      const dbPath = path.join(root, "state.sqlite");
+      const statePath = path.join(root, "runtime", "service-state.json");
+      const state = {
+        protocol: SERVICE_LAUNCHER_PROTOCOL,
+        activeVersion: "1.0.0",
+        update: {
+          id: "pending",
+          fromVersion: "1.0.0",
+          targetVersion: "1.1.0",
+          dbPath,
+          status: "pending" as const,
+        },
+      };
+      yield* fs.writeFileString(dbPath, "manual runtime's current data");
+      yield* Effect.promise(() => writeServiceState(statePath, state));
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() => acquireProfileOwnership(root, "runtime")),
+        (ownership) => Effect.sync(() => ownership.release()),
+      );
+      const launcher = new Launcher(root, state);
+      const error = yield* Effect.tryPromise({
+        try: () => launcher.run(),
+        catch: (cause) => cause,
+      }).pipe(Effect.flip);
+      assert.instanceOf(error, ProfileOwnershipError);
+      assert.equal(yield* fs.readFileString(dbPath), "manual runtime's current data");
       assert.deepEqual(yield* Effect.promise(() => readServiceState(statePath)), state);
     }),
   );

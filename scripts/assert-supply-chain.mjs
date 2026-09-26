@@ -1,5 +1,5 @@
-import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
+import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as NodeChildProcess from "node:child_process";
@@ -95,7 +95,6 @@ const workspace = NodeFS.readFileSync(NodePath.join(root, "pnpm-workspace.yaml")
 if (!/^  image-size: 2\.0\.4$/m.test(workspace)) {
   fail(`image-size must be overridden to reviewed ${reviewedImageSizeVersion}`);
 }
-
 if (!/^  image-size@2\.0\.4: patches\/image-size@2\.0\.4\.patch$/m.test(workspace)) {
   fail("image-size@2.0.4 must use the reviewed Metro compatibility patch");
 }
@@ -125,6 +124,35 @@ for (const advisory of Object.values(auditReport.advisories ?? {})) {
   fail(`unaccepted ${advisory.severity} advisory ${id ?? advisory.id} in ${advisory.module_name}`);
 }
 
+const mobileRequire = NodeModule.createRequire(NodePath.join(root, "apps/mobile/package.json"));
+const expoRequire = NodeModule.createRequire(mobileRequire.resolve("expo/package.json"));
+const expoMetroRequire = NodeModule.createRequire(expoRequire.resolve("@expo/metro/package.json"));
+const metroRequire = NodeModule.createRequire(expoMetroRequire.resolve("metro/package.json"));
+const imageSizePackage = JSON.parse(
+  NodeFS.readFileSync(
+    NodePath.resolve(metroRequire.resolve("image-size"), "../../../package.json"),
+    "utf8",
+  ),
+);
+if (imageSizePackage.version !== "2.0.4") {
+  fail("Metro must resolve the reviewed image-size@2.0.4 installation");
+}
+const imported = metroRequire("image-size");
+const imageSize = imported.imageSize ?? imported.default ?? imported;
+const { getAssetSize } = expoMetroRequire("metro/private/Assets");
+const png = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
+  "base64",
+);
+const dimensions = getAssetSize("png", png, "supply-chain-probe.png");
+if (dimensions?.width !== 1 || dimensions?.height !== 1) {
+  fail("Metro image-size buffer compatibility probe returned incorrect PNG dimensions");
+}
+const probes = [
+  ["icns", Buffer.from([0x69, 0x63, 0x6e, 0x73, 0, 0, 0, 16, 0x69, 0x63, 0x30, 0x37, 0, 0, 0])],
+  ["jxl", Buffer.from([0, 0, 0, 0, 0x4a, 0x58, 0x4c, 0x20])],
+  ["heif", Buffer.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66])],
+];
 const virtualStore = NodePath.join(root, "node_modules", ".pnpm");
 if (!NodeFS.existsSync(virtualStore)) fail("node_modules is missing; run pnpm install first");
 const imageSizeEntry = NodeFS.readdirSync(virtualStore).find((name) =>
@@ -132,15 +160,7 @@ const imageSizeEntry = NodeFS.readdirSync(virtualStore).find((name) =>
 );
 if (!imageSizeEntry) fail(`image-size@${reviewedImageSizeVersion} installation is missing`);
 const imageSizeRoot = NodePath.join(virtualStore, imageSizeEntry, "node_modules", "image-size");
-const imported = NodeModule.createRequire(import.meta.url)(imageSizeRoot);
-if (typeof imported.default !== "function")
-  fail("Metro's default image-size import is not callable");
-const imageSize = imported.default;
-const probes = [
-  ["icns", Buffer.from([0x69, 0x63, 0x6e, 0x73, 0, 0, 0, 16, 0x69, 0x63, 0x30, 0x37, 0, 0, 0, 0])],
-  ["jxl", Buffer.from([0, 0, 0, 0, 0x4a, 0x58, 0x4c, 0x20])],
-  ["heif", Buffer.from([0, 0, 0, 0, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66])],
-];
+const imageSizeEsmPath = NodePath.join(imageSizeRoot, "dist/esm/index.js");
 const parserProbe = NodeChildProcess.spawnSync(
   process.execPath,
   [
@@ -149,11 +169,11 @@ const parserProbe = NodeChildProcess.spawnSync(
       "async function run() {",
       "  const cjs = require(process.argv[1]).default;",
       "  const esm = (await import(require('node:url').pathToFileURL(process.argv[2]).href)).default;",
-      "  for (const [format, imageSize] of [['CommonJS', cjs], ['ESM', esm]]) {",
+      "  for (const [format, parse] of [['CommonJS', cjs], ['ESM', esm]]) {",
       "    for (const [name, bytes] of JSON.parse(process.argv[3])) {",
       "      for (const input of [Buffer.from(bytes), bytes]) {",
       "        let rejected = false;",
-      "        try { imageSize(input); } catch { rejected = true; }",
+      "        try { parse(input); } catch { rejected = true; }",
       "        if (!rejected) { console.error(format + ' ' + name + ' malformed input was accepted'); process.exit(2); }",
       "      }",
       "    }",
@@ -162,7 +182,7 @@ const parserProbe = NodeChildProcess.spawnSync(
       "run().catch((error) => { console.error(error); process.exit(1); });",
     ].join("\n"),
     imageSizeRoot,
-    NodePath.join(imageSizeRoot, "dist/esm/index.js"),
+    imageSizeEsmPath,
     JSON.stringify(probes.map(([name, bytes]) => [name, Array.from(bytes)])),
   ],
   { encoding: "utf8", timeout: 3_000, maxBuffer: 1024 * 1024 },
@@ -171,17 +191,7 @@ if (parserProbe.error)
   fail("image-size malformed-input probe failed or timed out: " + parserProbe.error);
 if (parserProbe.status !== 0)
   fail("image-size malformed-input probe failed: " + parserProbe.stderr);
-const png = Buffer.from([
-  137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0,
-  0, 0, 0, 0, 0,
-]);
-const dimensions = imageSize(png);
-if (dimensions.width !== 1 || dimensions.height !== 1) {
-  fail("image-size no longer parses a valid 1×1 PNG for Metro");
-}
-const imageSizeEsm = (
-  await import(NodeURL.pathToFileURL(NodePath.join(imageSizeRoot, "dist/esm/index.js")).href)
-).default;
+const imageSizeEsm = (await import(NodeURL.pathToFileURL(imageSizeEsmPath).href)).default;
 if (typeof imageSizeEsm !== "function") fail("Metro's ESM image-size import is not callable");
 for (const [format, parse] of [
   ["CommonJS", imageSize],
@@ -201,5 +211,5 @@ for (const [format, parse] of [
 }
 
 console.log(
-  "Supply-chain guard OK (no high/critical advisories; reviewed image-size release probed).",
+  "Supply-chain guard OK (no high/critical advisories; reviewed image-size parser probes passed).",
 );

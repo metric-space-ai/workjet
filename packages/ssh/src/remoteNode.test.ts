@@ -4,7 +4,11 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { describe, it, expect } from "vite-plus/test";
-import { buildManagedRemoteNodeScript, SSH_NODE_VERSION } from "./remoteNode.ts";
+import {
+  buildManagedRemoteNodeScript,
+  managedNodeArchive,
+  SSH_NODE_VERSION,
+} from "./remoteNode.ts";
 
 function fixture(run: (root: string, bin: string) => void) {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-node-bootstrap-"));
@@ -32,6 +36,20 @@ function execute(root: string, bin: string, action = "install_workjet_node") {
 }
 
 describe("private SSH Node bootstrap", () => {
+  it("uses the same pinned archives for portable packaging and remote bootstrap", () => {
+    for (const platform of ["darwin", "linux"]) {
+      for (const arch of ["x64", "arm64"]) {
+        const pin = managedNodeArchive(platform, arch);
+        expect(pin.url).toBe(
+          `https://nodejs.org/dist/v${SSH_NODE_VERSION}/node-v${SSH_NODE_VERSION}-${platform}-${arch}.tar.gz`,
+        );
+        expect(buildManagedRemoteNodeScript()).toContain(pin.sha256);
+      }
+    }
+    expect(() => managedNodeArchive("win32", "x64")).toThrow("No pinned Workjet Node runtime");
+    expect(() => managedNodeArchive("darwin", "ia32")).toThrow("No pinned Workjet Node runtime");
+  });
+
   it("produces valid POSIX shell", () => {
     NodeChildProcess.execFileSync("/bin/sh", ["-n"], { input: buildManagedRemoteNodeScript() });
   });

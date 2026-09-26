@@ -110,6 +110,15 @@ CLI status/onboarding explicitly limit its lifetime to the user's login session.
 This is a service-manager foundation, **not** desktop/runtime decoupling. It
 does not yet supply a pinned standalone Node executable for Desktop,
 authenticated attachment, reconnectable telemetry, or native reconciliation.
+Portable server packaging now stages the existing checksum-pinned Node 24.13.1
+distribution, matching the platform/architecture and native-dependency build.
+The archive includes its executable, npm, license and runtime provenance receipt;
+the build installs dependencies and runs the existing CLI/PTY smoke checks with
+that exact bundled executable. This build path is implemented but not executed
+on this source head. It does not install or select that executable in Desktop
+yet. That next step must import the exact bundled server/archive into immutable
+profile storage, refuse conflicting same-version content, and give BootService
+the durable Node path instead of Electron or a mutable host Node path.
 The subsequent ownership block uses separate, retained SQLite lock files under
 the canonical profile's `runtime/ownership`: the server holds `runtime` before
 building any persistence/reactor layers and through their shutdown; the launcher

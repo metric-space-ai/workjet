@@ -76,7 +76,9 @@ export const attachDesktopServiceTelemetry = Effect.fn("desktop.serviceTelemetry
       yield* Deferred.await(controlsReady);
       yield* input.desktopTelemetryStream.pipe(
         Stream.pipeThroughChannel(Ndjson.decode({ ignoreEmptyLines: true })),
-        Stream.mapEffect(Schema.decodeUnknownEffect(DesktopHostTelemetryMessage)),
+        Stream.mapEffect((message) =>
+          Schema.decodeUnknownEffect(DesktopHostTelemetryMessage)(message),
+        ),
         Stream.runForEach((message) =>
           Effect.gen(function* () {
             yield* session.client[WS_METHODS.serverPublishDesktopTelemetry]({

@@ -75,7 +75,9 @@ it.effect(
           Effect.acquireRelease(
             Effect.sync(() => {
               connects++;
-              return { closed: Effect.fail(new Error("socket closed")) };
+              return {
+                closed: Effect.fail(new LocalServiceAttachmentError({ reason: "socket closed" })),
+              };
             }),
             () =>
               Effect.sync(() => {

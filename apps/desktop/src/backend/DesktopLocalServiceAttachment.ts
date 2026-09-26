@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import type * as Scope from "effect/Scope";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -128,6 +129,7 @@ export const layer = Layer.effect(
     const sessions = yield* DesktopLocalServiceSession;
     const http = yield* HttpClient.HttpClient;
     const crypto = yield* Crypto.Crypto;
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const cli = {
       executablePath: process.execPath,
       entryPath: environment.backendEntryPath,
@@ -139,6 +141,7 @@ export const layer = Layer.effect(
     let artifactArgs: ReadonlyArray<string> = [];
     const status = () =>
       runLocalCli(cli, ["service", "status", ...profileArgs, ...artifactArgs, "--json"]).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(ServiceStatus))),
         Effect.mapError(() => blocked("Could not inspect the installed local service.")),
       );
@@ -208,7 +211,7 @@ export const layer = Layer.effect(
         return Option.some(endpoint);
       }).pipe(
         Effect.mapError((error) =>
-          error instanceof LocalServiceAttachmentError
+          Schema.is(LocalServiceAttachmentError)(error)
             ? error
             : blocked("Could not read the local service configuration."),
         ),
@@ -218,6 +221,7 @@ export const layer = Layer.effect(
         runLocalCli(cli, ["service", "start", ...profileArgs, ...artifactArgs]),
       ).pipe(
         Effect.asVoid,
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.mapError(() => blocked("Could not start the installed local service.")),
       ),
       connect: (input) =>
@@ -236,7 +240,7 @@ export const layer = Layer.effect(
         }).pipe(
           Effect.provideService(HttpClient.HttpClient, http),
           Effect.mapError((error) =>
-            error instanceof LocalServiceAttachmentError ? error : blocked(error.message),
+            Schema.is(LocalServiceAttachmentError)(error) ? error : blocked(error.message),
           ),
         ),
     });

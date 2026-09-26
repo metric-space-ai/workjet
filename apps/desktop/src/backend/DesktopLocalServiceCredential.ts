@@ -29,6 +29,21 @@ export class LocalServiceCredentialError extends Schema.TaggedErrorClass<LocalSe
   }
 }
 
+export interface LocalServiceCredentialStore {
+  readonly filePath: string;
+  readonly assertEnrollmentSettled: Effect.Effect<void, LocalServiceCredentialError>;
+  readonly beginEnrollment: Effect.Effect<string, LocalServiceCredentialError>;
+  readonly finishEnrollment: (
+    attemptId: string,
+  ) => Effect.Effect<void, LocalServiceCredentialError>;
+  readonly requireProtection: Effect.Effect<void, LocalServiceCredentialError>;
+  readonly get: Effect.Effect<Option.Option<LocalServiceCredential>, LocalServiceCredentialError>;
+  readonly save: (
+    credential: LocalServiceCredential,
+  ) => Effect.Effect<void, LocalServiceCredentialError>;
+  readonly remove: (sessionId: string) => Effect.Effect<void, LocalServiceCredentialError>;
+}
+
 /** Uses the existing OS-backed Electron safeStorage; not the remote connection catalog. */
 export const make = Effect.fn("desktop.localServiceCredential.make")(function* (input: {
   readonly baseDir: string;
@@ -138,10 +153,13 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
   });
   // The non-secret receipt records an UNKNOWN mutation outcome, not liveness.
   // Never age it out: a CLI may have committed before losing its reply.
-  const assertEnrollmentSettled = Effect.gen(function* () {
-    if (yield* fs.exists(pendingPath)) return yield* fail("reconcile an incomplete enrollment for");
-  }).pipe(Effect.mapError(() => fail("reconcile an incomplete enrollment for")));
-  const beginEnrollment = Effect.scoped(
+  const assertEnrollmentSettled: Effect.Effect<void, LocalServiceCredentialError> = Effect.gen(
+    function* () {
+      if (yield* fs.exists(pendingPath))
+        return yield* fail("reconcile an incomplete enrollment for");
+    },
+  ).pipe(Effect.mapError(() => fail("reconcile an incomplete enrollment for")));
+  const beginEnrollment: Effect.Effect<string, LocalServiceCredentialError> = Effect.scoped(
     Effect.gen(function* () {
       yield* assertEnrollmentSettled;
       const attemptId = NodeCrypto.randomUUID();
@@ -181,7 +199,7 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
         if (platform !== "win32") yield* (yield* fs.open(directory, { flag: "r" })).sync;
       }),
     ).pipe(Effect.mapError(() => fail("settle enrollment for")));
-  return {
+  const store: LocalServiceCredentialStore = {
     filePath,
     assertEnrollmentSettled: lock.withPermit(assertEnrollmentSettled),
     beginEnrollment: lock.withPermit(beginEnrollment),
@@ -192,4 +210,5 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
     save: (credential: LocalServiceCredential) => lock.withPermit(save(credential)),
     remove: (sessionId: string) => lock.withPermit(remove(sessionId)),
   };
+  return store;
 });

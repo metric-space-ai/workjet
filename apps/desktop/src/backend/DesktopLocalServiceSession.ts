@@ -1,4 +1,6 @@
-import * as NodeChildProcess from "node:child_process";
+import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as Stream from "effect/Stream";
 import { EnvironmentId, AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
 import { resolveRemoteWebSocketConnectionUrl } from "@workjet/client-runtime/authorization";
 import { PrimaryConnectionTarget } from "@workjet/client-runtime/connection";
@@ -171,27 +173,41 @@ export const runLocalCli = (
   >,
   args: ReadonlyArray<string>,
 ) =>
-  Effect.tryPromise({
-    try: (signal) =>
-      new Promise<string>((resolve, reject) => {
-        NodeChildProcess.execFile(
-          config.executablePath,
-          [config.entryPath, ...args],
-          {
-            cwd: config.cwd,
-            env: config.extendEnv ? { ...process.env, ...config.env } : config.env,
-            encoding: "utf8",
-            timeout: 30_000,
-            killSignal: "SIGKILL",
-            maxBuffer: 64 * 1024,
-            signal,
-          },
-          (error, stdout) =>
-            error ? reject(fail("run the local authorization command for")) : resolve(stdout),
-        );
-      }),
-    catch: () => fail("run the local authorization command for"),
-  });
+  Effect.scoped(
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const child = yield* spawner.spawn(
+        ChildProcess.make(config.executablePath, [config.entryPath, ...args], {
+          cwd: config.cwd,
+          env: config.env,
+          extendEnv: config.extendEnv,
+          killSignal: "SIGKILL",
+        }),
+      );
+      const readBounded = (stream: typeof child.stdout) =>
+        Effect.gen(function* () {
+          const chunks: Uint8Array[] = [];
+          let size = 0;
+          yield* Stream.runForEach(stream, (chunk) =>
+            Effect.gen(function* () {
+              size += chunk.byteLength;
+              if (size > 64 * 1024) return yield* fail("run the local authorization command for");
+              chunks.push(chunk);
+            }),
+          );
+          return Buffer.concat(chunks).toString("utf8");
+        });
+      const [stdout] = yield* Effect.all([readBounded(child.stdout), readBounded(child.stderr)], {
+        concurrency: 2,
+      });
+      if ((yield* child.exitCode) !== 0)
+        return yield* fail("run the local authorization command for");
+      return stdout;
+    }),
+  ).pipe(
+    Effect.timeout("30 seconds"),
+    Effect.mapError(() => fail("run the local authorization command for")),
+  );
 const identityArgs = (target: LocalServiceTarget) => [
   "--base-dir",
   target.baseDir,
@@ -215,6 +231,11 @@ export class DesktopLocalServiceSession extends Context.Service<
 
 export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const runCli = (config: DesktopBackendStartConfig, args: ReadonlyArray<string>) =>
+    runLocalCli(config, args).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+    );
   const http = yield* HttpClient.HttpClient;
   const rpc = yield* RpcSessionFactory;
   const storeContext = yield* Effect.context<Effect.Services<ReturnType<typeof Credential.make>>>();
@@ -256,7 +277,7 @@ export const make = Effect.gen(function* () {
         const baseDir = yield* fs
           .realPath(config.localSession.baseDir)
           .pipe(Effect.mapError(() => fail("resolve the profile for")));
-        const target = yield* runLocalCli(config, ["__desktop-target", "--base-dir", baseDir]).pipe(
+        const target = yield* runCli(config, ["__desktop-target", "--base-dir", baseDir]).pipe(
           Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(LocalServiceTarget))),
           Effect.mapError(() => fail("discover")),
         );
@@ -275,7 +296,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(() => fail("open the protected store for")),
       ),
     issue: (config, target, enrollmentId) =>
-      runLocalCli(config, [
+      runCli(config, [
         "auth",
         "session",
         "issue",
@@ -290,7 +311,7 @@ export const make = Effect.gen(function* () {
         Effect.mapError(() => fail("enroll")),
       ),
     revoke: (config, target, sessionId) =>
-      runLocalCli(config, ["auth", "session", "revoke", sessionId, ...identityArgs(target)]).pipe(
+      runCli(config, ["auth", "session", "revoke", sessionId, ...identityArgs(target)]).pipe(
         Effect.asVoid,
       ),
     validate: (target, credential) =>

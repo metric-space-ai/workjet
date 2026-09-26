@@ -5166,7 +5166,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             }),
           ),
         );
-      }).pipe(Effect.provide(NodeHttpServer.layerTest), Effect.provide(NodeServices.layer)),
+      }).pipe(
+        Effect.provide(NodeHttpServer.layerTest.pipe(Layer.provideMerge(NodeServices.layer))),
+      ),
   );
 
   it.effect("routes websocket rpc subscribeServerConfig emits provider status updates", () =>

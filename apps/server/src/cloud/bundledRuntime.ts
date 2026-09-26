@@ -56,7 +56,6 @@ export async function stageBundledRuntime(input: {
     maxBuffer: 1024 * 1024,
   });
   const packageDir = path.join(unpacked, "package");
-  // @effect-diagnostics-next-line preferSchemaOverJson:off - Validate the fixed shipped package manifest before publishing.
   const manifest: unknown = JSON.parse(
     await fs.readFile(path.join(packageDir, "package.json"), "utf8"),
   );

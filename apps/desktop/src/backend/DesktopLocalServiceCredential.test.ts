@@ -58,7 +58,7 @@ const fixture = Effect.fn("test.localServiceCredential.fixture")(function* () {
       Effect.provideService(ElectronSafeStorage.ElectronSafeStorage, storage),
       Effect.provideService(HostProcessPlatform, platform),
     );
-  const credential = Schema.decodeUnknownSync(LocalServiceCredential)({
+  const credential = yield* Schema.decodeUnknownEffect(LocalServiceCredential)({
     version: 1,
     baseDir,
     environmentId: "environment-a",

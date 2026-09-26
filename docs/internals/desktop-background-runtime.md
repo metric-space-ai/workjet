@@ -176,6 +176,14 @@ can return JSON and marks a differing requested endpoint as not current. Ordinar
 service repair preserves an existing Desktop endpoint. This is source-only and
 does not enable the Desktop service adapter yet. Configuration equality is not
 readiness or proof that a loaded service uses the current files.
+Explicit `service start` now reuses a current installation without replacing its
+files or terminating a running job (`launchctl kickstart` without `-k`, or
+`systemctl start`). An unloaded macOS label can be bootstrapped from that verified
+unit. Both attempts are bounded; failure does not launch a foreground fallback.
+`service stop` waits for the current service to stop while retaining installation,
+separate from uninstall. Start/stop command completion is not authenticated
+server readiness. These commands and tests remain unexecuted; Desktop still needs
+to call them and distinguish normal UI detach from explicit service control.
 Desktop currently continues to launch the old Electron-owned backend. No power-loss
 durability or host-restart guarantee follows from an install sentinel.
 The subsequent ownership block uses separate, retained SQLite lock files under

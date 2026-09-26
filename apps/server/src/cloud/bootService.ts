@@ -202,6 +202,8 @@ export class BootService extends Context.Service<
   BootService,
   {
     readonly install: Effect.Effect<BootServicePlan, BootServiceError>;
+    readonly start: Effect.Effect<void, BootServiceError>;
+    readonly stop: Effect.Effect<boolean, BootServiceError>;
     readonly uninstall: Effect.Effect<boolean, BootServiceError>;
     readonly status: Effect.Effect<BootServiceStatus, BootServiceError>;
   }
@@ -358,11 +360,12 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           ["bootout", "--wait", launchTarget],
           { timeout: Duration.seconds(30) },
         )
-      : runStep("stopping the installed service", "systemctl", [
-          "--user",
-          "stop",
-          BOOT_SERVICE_UNIT_FILE,
-        ]);
+      : runStep(
+          "stopping the installed service",
+          "systemctl",
+          ["--user", "stop", BOOT_SERVICE_UNIT_FILE],
+          { timeout: Duration.seconds(30) },
+        );
   const startService =
     platform === "darwin"
       ? runStep(
@@ -608,7 +611,42 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     Effect.withSpan("cloud.boot_service.status"),
   );
 
-  return BootService.of({ install, uninstall, status });
+  const start = Effect.gen(function* () {
+    const installed = yield* status;
+    if (!installed.current)
+      return yield* new BootServiceCommandError({
+        step: "starting a service whose installed configuration is missing or differs; explicitly install or update it first",
+      });
+    if (platform === "darwin") {
+      // Without -k, kickstart never terminates an already running job. If the
+      // label is unloaded, bootstrap the verified unit without rewriting it.
+      yield* runStep(
+        "starting the installed LaunchAgent",
+        "/bin/launchctl",
+        ["kickstart", launchTarget],
+        { timeout: Duration.seconds(30) },
+      ).pipe(Effect.catch(() => startService));
+    } else {
+      yield* runStep(
+        "starting the installed service",
+        "systemctl",
+        ["--user", "start", BOOT_SERVICE_UNIT_FILE],
+        { timeout: Duration.seconds(30) },
+      );
+    }
+  }).pipe(serializeAdministration, Effect.withSpan("cloud.boot_service.start"));
+  const stop = Effect.gen(function* () {
+    if (
+      !(yield* fs
+        .exists(unitPath)
+        .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause }))))
+    )
+      return false;
+    yield* stopInstalledService;
+    return true;
+  }).pipe(serializeAdministration, Effect.withSpan("cloud.boot_service.stop"));
+
+  return BootService.of({ install, uninstall, status, start, stop });
 });
 
 export const layer = (input: {

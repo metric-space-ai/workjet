@@ -166,6 +166,65 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("bundled service executable", (it) => {
+  for (const platform of ["darwin", "linux"] as const) {
+    it.effect(
+      `starts ${platform} without replacement and stops without removing installation`,
+      () =>
+        Effect.gen(function* () {
+          const { service, fs, commands, baseDir, statePath } = yield* makeHarness(platform);
+          const plan = yield* service.install;
+          const before = yield* fs.readFileString(statePath);
+          const unitBefore = yield* fs.readFileString(plan.unitPath);
+          const mark = commands.length;
+          yield* service.start;
+          const startCommands = commands.slice(mark);
+          expect(startCommands).toContain(
+            platform === "darwin"
+              ? `/bin/launchctl kickstart gui/501/${BootService.bootServiceLaunchAgentLabel(baseDir)}`
+              : "systemctl --user start workjet.service",
+          );
+          expect(
+            startCommands.some(
+              (command) =>
+                command.includes(" -k") ||
+                command.includes(" restart ") ||
+                command.includes("bootout --wait"),
+            ),
+          ).toBe(false);
+          expect(yield* service.stop).toBe(true);
+          expect(yield* fs.readFileString(statePath)).toBe(before);
+          expect(yield* fs.readFileString(plan.unitPath)).toBe(unitBefore);
+        }),
+    );
+  }
+  it.effect("loads an installed but unloaded LaunchAgent without replacing its files", () =>
+    Effect.gen(function* () {
+      const { service, fs, commands, control, baseDir } = yield* makeHarness("darwin");
+      const plan = yield* service.install;
+      const before = yield* fs.readFileString(plan.unitPath);
+      control.failCommand = `/bin/launchctl kickstart gui/501/${BootService.bootServiceLaunchAgentLabel(baseDir)}`;
+      const mark = commands.length;
+      yield* service.start;
+      expect(commands.slice(mark)).toContain(`/bin/launchctl bootstrap gui/501 ${plan.unitPath}`);
+      expect(commands.slice(mark).some((command) => command.includes("bootout --wait"))).toBe(
+        false,
+      );
+      expect(yield* fs.readFileString(plan.unitPath)).toBe(before);
+    }),
+  );
+  it.effect("refuses start when the installed runtime is not current", () =>
+    Effect.gen(function* () {
+      const { service, commands } = yield* makeHarness("darwin");
+      const error = yield* service.start.pipe(Effect.flip);
+      expect(error._tag).toBe("BootServiceCommandError");
+      expect(
+        commands.some(
+          (command) => command.includes(" kickstart ") || command.includes(" bootstrap "),
+        ),
+      ).toBe(false);
+    }),
+  );
+
   it.effect(
     "persists Desktop launch settings and reports mismatching endpoints as needing explicit update",
     () =>

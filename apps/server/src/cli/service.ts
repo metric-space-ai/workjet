@@ -191,6 +191,43 @@ const serviceUpdateCommand = Command.make("update", serviceArtifactFlags).pipe(
   ),
 );
 
+const serviceStartCommand = Command.make("start", serviceArtifactFlags).pipe(
+  Command.withDescription(
+    "Start or reuse the installed service without replacing a running server.",
+  ),
+  Command.withHandler((flags) =>
+    runServiceCommand(
+      flags,
+      Effect.gen(function* () {
+        const service = yield* BootService.BootService;
+        yield* service.start;
+        yield* Console.log(
+          "Service start requested. Readiness must be checked through the server connection.",
+        );
+      }),
+    ),
+  ),
+);
+
+const serviceStopCommand = Command.make("stop", projectLocationFlags).pipe(
+  Command.withDescription(
+    "Stop the current service; retain its configuration for a later start or login.",
+  ),
+  Command.withHandler((flags) =>
+    runServiceCommand(
+      flags,
+      Effect.gen(function* () {
+        const service = yield* BootService.BootService;
+        yield* Console.log(
+          (yield* service.stop)
+            ? "Service stopped; installation retained."
+            : "No service is installed.",
+        );
+      }),
+    ),
+  ),
+);
+
 const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).pipe(
   Command.withDescription("Stop and remove the Workjet background service."),
   Command.withHandler((flags) =>
@@ -299,6 +336,8 @@ export const serviceCommand = Command.make("service").pipe(
   Command.withDescription("Manage the Workjet background service."),
   Command.withSubcommands([
     serviceInstallCommand,
+    serviceStartCommand,
+    serviceStopCommand,
     serviceUninstallCommand,
     serviceUpdateCommand,
     serviceStatusCommand,

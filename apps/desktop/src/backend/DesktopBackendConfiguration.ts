@@ -465,6 +465,16 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       httpBaseUrl: backendExposure.httpBaseUrl,
       captureOutput: true,
       preflightFailure: Option.none(),
+      ...(environment.isPackaged &&
+      (hostPlatform === "darwin" || hostPlatform === "linux") &&
+      (backendExposure.bindHost === "127.0.0.1" || backendExposure.bindHost === "::1")
+        ? {
+            localSession: {
+              baseDir: environment.baseDir,
+              serverVersion: serverPackageJson.version,
+            },
+          }
+        : {}),
     } satisfies DesktopBackendManager.DesktopBackendStartConfig;
   },
 );

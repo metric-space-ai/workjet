@@ -85,6 +85,8 @@ export interface BackendProcessContext {
 export type DesktopBackendBootstrapDelivery = "fd3" | "stdin";
 
 export interface DesktopBackendStartConfig extends BackendProcessContext {
+  /** Canonical-profile enrollment for packaged, native loopback backends. */
+  readonly localSession?: { readonly baseDir: string; readonly serverVersion: string };
   readonly args: ReadonlyArray<string>;
   readonly env: Record<string, string | undefined>;
   // When true the spawner merges the desktop process.env on top of `env`;

@@ -141,11 +141,23 @@ ciphertext replacement and fsync avoid plaintext files; keychain/decode/binding
 failures preserve the record instead of resetting it. Linux basic-text protection
 is refused and protection can be checked before issuing a session. Session removal requires the expected saved session ID and the caller
 must first revoke it on the server. Store tests use a cryptography double; no real
-keychain, enrollment or Desktop restart has been exercised. These are integration
-primitives: the Desktop caller still needs to select the archive, invoke guarded
-enrollment only when appropriate, reuse the credential and validate authenticated
-readiness against a fresh profile-bound target. It must distinguish missing,
-expired, revoked and unreadable credentials; none of those is a second-server trigger.
+keychain, enrollment or Desktop restart has been exercised.
+`DesktopLocalEnvironmentAuth` now calls one main-owned local session service for
+packaged macOS/Linux native loopback backends. It discovers the canonical profile
+through the bundled CLI, checks the expected origin and server version, opens
+one protected store per profile, and enrolls only when no credential exists.
+Every reuse obtains a fresh target and verifies its environment, runtime generation
+and version over the existing authenticated RPC session before releasing the token
+through the existing bearer IPC. Closing that temporary validation connection
+does not close the backend. Enrollment is serialized across windows; failed
+validation/save attempts revoke the newly issued session, including interrupted
+or timed-out saves. Read/OS-protection failures, expired credentials and rejected
+existing sessions fail without silently creating replacement access. Explicit
+user recovery/re-enrollment UX is still owed before release. Development, WSL,
+Windows and non-loopback bindings retain the process-bootstrap path; its in-memory
+cache is now scoped to the active configuration. This integration and its tests
+are unexecuted. RPC identity checks do not authenticate a malicious listener merely
+because it can echo public identity fields, and are not a native authority fence.
 Desktop still needs to select its matching shipped archive and invoke this path;
 it currently continues to launch the old Electron-owned backend. No power-loss
 durability or host-restart guarantee follows from an install sentinel.

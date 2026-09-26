@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -9,6 +10,8 @@ import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@workjet/contracts";
 
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./DesktopLocalEnvironmentAuth.ts";
+import * as DesktopLocalServiceSession from "./DesktopLocalServiceSession.ts";
+vi.mock("electron", () => ({ safeStorage: {} }));
 
 const config = {
   executablePath: "/electron",
@@ -30,6 +33,55 @@ const config = {
 };
 
 describe("DesktopLocalEnvironmentAuth", () => {
+  it.effect(
+    "uses the protected session path on each request and never falls back to bootstrap on denial",
+    () =>
+      Effect.gen(function* () {
+        let requests = 0;
+        let deny = false;
+        const pool = {
+          list: Effect.succeed([
+            {
+              id: PRIMARY_LOCAL_ENVIRONMENT_ID,
+              currentConfig: Effect.succeed(
+                Option.some({
+                  ...config,
+                  localSession: { baseDir: "/profile", serverVersion: "1.2.3" },
+                }),
+              ),
+            },
+          ]),
+        } as unknown as DesktopBackendPool.DesktopBackendPool["Service"];
+        const auth = yield* DesktopLocalEnvironmentAuth.make.pipe(
+          Effect.provideService(DesktopBackendPool.DesktopBackendPool, pool),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("No bootstrap request is permitted.")),
+          ),
+          Effect.provideService(DesktopLocalServiceSession.DesktopLocalServiceSession, {
+            get: () =>
+              Effect.suspend(() => {
+                requests++;
+                return deny
+                  ? Effect.fail(
+                      new DesktopLocalServiceSession.LocalServiceSessionError({
+                        operation: "unlock",
+                      }),
+                    )
+                  : Effect.succeed("protected-token");
+              }),
+          }),
+        );
+        assert.equal(yield* auth.getBearerToken, "protected-token");
+        assert.equal(yield* auth.getBearerToken, "protected-token");
+        deny = true;
+        assert.equal(
+          (yield* auth.getBearerToken.pipe(Effect.flip))._tag,
+          "LocalServiceSessionError",
+        );
+        assert.equal(requests, 3);
+      }),
+  );
   it.effect("exchanges the desktop bootstrap credential only once", () =>
     Effect.gen(function* () {
       const requestCount = yield* Ref.make(0);
@@ -65,7 +117,15 @@ describe("DesktopLocalEnvironmentAuth", () => {
         ]),
       } as unknown as DesktopBackendPool.DesktopBackendPool["Service"]);
       const testLayer = DesktopLocalEnvironmentAuth.layer.pipe(
-        Layer.provide(Layer.mergeAll(poolLayer, httpClientLayer)),
+        Layer.provide(
+          Layer.mergeAll(
+            poolLayer,
+            httpClientLayer,
+            Layer.succeed(DesktopLocalServiceSession.DesktopLocalServiceSession, {
+              get: () => Effect.die("Legacy bootstrap must not enroll a local service session."),
+            }),
+          ),
+        ),
       );
 
       const [first, second] = yield* Effect.gen(function* () {

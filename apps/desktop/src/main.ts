@@ -57,6 +57,7 @@ import * as DesktopAssets from "./app/DesktopAssets.ts";
 import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopLocalServiceSession from "./backend/DesktopLocalServiceSession.ts";
 import * as DesktopNetworkInterfaces from "./backend/DesktopNetworkInterfaces.ts";
 import * as DesktopEnvironment from "./app/DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./app/DesktopLifecycle.ts";
@@ -204,12 +205,15 @@ const desktopWslBackendLayer = DesktopWslBackend.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
 );
 
-const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
-  Layer.provideMerge(desktopBackendLayer),
-);
-
 const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
   Layer.provide(Socket.layerWebSocketConstructorGlobal),
+);
+
+const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
+  Layer.provideMerge(
+    DesktopLocalServiceSession.layer.pipe(Layer.provideMerge(desktopRpcSessionLayer)),
+  ),
+  Layer.provideMerge(desktopBackendLayer),
 );
 
 // The local-daemon launch service resolves its target through the one

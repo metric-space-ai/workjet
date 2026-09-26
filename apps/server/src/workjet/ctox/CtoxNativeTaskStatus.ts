@@ -5,6 +5,7 @@ import { CtoxNativeRequestError, type NativeTaskReference } from "./CtoxNativeRe
 const Id = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 const Status = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128));
 const NativeProjectPayload = Schema.Struct({ project_id: Id });
+const NativeCrewPayload = Schema.Struct({ thread_id: Id });
 const CommandStatusResponse = Schema.Struct({
   ok: Schema.Literal(true),
   record: Schema.Struct({
@@ -57,8 +58,8 @@ function taskState(value: string): CtoxNativeTaskState {
 }
 
 /** Validate the real BusinessOsMcpRecordResponse against the locally pinned
- * native ids. This observation does not copy remote execution state into the
- * request ledger or infer completion from a successful HTTP response.
+ * native ids. An initially absent task id may be learned from its command.
+ * This observation does not copy remote execution state into the request ledger or infer completion from a successful HTTP response.
  */
 export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus")(function* (
   reference: NativeTaskReference,
@@ -71,13 +72,13 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
   // record_id identifies the app. General delegation belongs to its own module.
   const request = reference.request;
   const nativeModule =
-    request.operation === "start_project_task"
+    request.operation === "start_crew_execution" || request.operation === "start_project_task"
       ? "ctox"
       : request.operation === "delegate_task"
         ? request.module_id
         : "creator";
   const commandType =
-    request.operation === "start_project_task"
+    request.operation === "start_crew_execution" || request.operation === "start_project_task"
       ? "business_os.chat.task"
       : request.operation === "delegate_task"
         ? "ctox.delegate_task"
@@ -85,7 +86,7 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
           ? "ctox.business_os.app.create"
           : "ctox.business_os.app.modify";
   const recordId =
-    request.operation === "start_project_task"
+    request.operation === "start_crew_execution" || request.operation === "start_project_task"
       ? null
       : request.operation === "delegate_task"
         ? (request.record_id ?? null)
@@ -94,7 +95,7 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
     !reference.commandId ||
     record.id !== reference.commandId ||
     record.data.command_id !== reference.commandId ||
-    (record.data.task_id ?? null) !== reference.taskId ||
+    (reference.taskId !== null && (record.data.task_id ?? null) !== reference.taskId) ||
     (record.data.module !== undefined && record.data.module !== nativeModule) ||
     (record.data.record_id !== undefined && record.data.record_id !== recordId) ||
     (record.data.command_type !== undefined && record.data.command_type !== commandType) ||
@@ -103,6 +104,11 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
         record.data.command_type !== commandType ||
         !Schema.is(NativeProjectPayload)(record.data.payload) ||
         record.data.payload.project_id !== request.project_id)) ||
+    (request.operation === "start_crew_execution" &&
+      (record.data.module !== nativeModule ||
+        record.data.command_type !== commandType ||
+        !Schema.is(NativeCrewPayload)(record.data.payload) ||
+        record.data.payload.thread_id !== request.thread_id)) ||
     (record.status !== undefined && record.status !== record.data.status)
   ) {
     return yield* new CtoxNativeRequestError({ reason: "native-response-invalid" });
@@ -111,7 +117,10 @@ export const decodeCtoxNativeTaskStatus = Effect.fn("decodeCtoxNativeTaskStatus"
   // the compatibility command record. task_status is authoritative when present.
   const status = record.data.task_status ?? record.data.status;
   return {
-    reference,
+    reference:
+      reference.taskId === null && record.data.task_id
+        ? { ...reference, taskId: record.data.task_id }
+        : reference,
     state: taskState(status),
     status,
     note: record.data.status_note ?? null,

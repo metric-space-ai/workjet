@@ -1,4 +1,8 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG, type WorkjetThreadConfig } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  WorkjetConnectionId,
+  type WorkjetThreadConfig,
+} from "@workjet/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -26,6 +30,7 @@ import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
@@ -43,6 +48,10 @@ import {
   ProviderService,
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
+import {
+  ProviderSessionDirectory,
+  type ProviderRuntimeBinding,
+} from "../../provider/Services/ProviderSessionDirectory.ts";
 import { makeProviderRegistryLayer } from "../../provider/testUtils/providerRegistryMock.ts";
 import { TextGeneration, type TextGenerationShape } from "../../textGeneration/TextGeneration.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
@@ -64,6 +73,8 @@ import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import { CtoxCrewSessionBootstrap } from "../../mcp/CtoxCrewSessionBootstrap.ts";
+import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
@@ -155,6 +166,9 @@ describe("ProviderCommandReactor", () => {
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
+    readonly crewAdmission?: CtoxCrewTurnAdmission["Service"];
+    readonly initialProviderSession?: boolean;
+    readonly providerBinding?: ProviderRuntimeBinding;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -247,12 +261,13 @@ describe("ProviderCommandReactor", () => {
             ? (input as { threadId?: ThreadId }).threadId
             : undefined;
         if (!threadId) {
-          return;
+          return { terminated: false as const, method: "cooperative" as const, pids: [] };
         }
         const index = runtimeSessions.findIndex((session) => session.threadId === threadId);
         if (index >= 0) {
           runtimeSessions.splice(index, 1);
         }
+        return { terminated: true as const, method: "cooperative" as const, pids: [] };
       }),
     );
     const renameBranch = vi.fn((input: unknown) =>
@@ -393,6 +408,18 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(reactorOrchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
+      Layer.provideMerge(
+        input?.crewAdmission
+          ? Layer.succeed(CtoxCrewTurnAdmission, input.crewAdmission)
+          : Layer.empty,
+      ),
+      Layer.provideMerge(
+        input?.providerBinding
+          ? Layer.mock(ProviderSessionDirectory)({
+              getBinding: () => Effect.succeed(Option.some(input.providerBinding!)),
+            })
+          : Layer.empty,
+      ),
       Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -488,6 +515,34 @@ describe("ProviderCommandReactor", () => {
         }),
       );
     }
+    if (input?.initialProviderSession) {
+      await Effect.runPromise(
+        startSession(ThreadId.make("thread-1"), {
+          threadId: ThreadId.make("thread-1"),
+          providerInstanceId: modelSelection.instanceId,
+          modelSelection,
+          runtimeMode: "approval-required",
+        }),
+      );
+      await Effect.runPromise(
+        engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-previous-crew-session"),
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "ready",
+            providerName: ProviderDriverKind.make("codex"),
+            providerInstanceId: modelSelection.instanceId,
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
+          },
+          createdAt: now,
+        }),
+      );
+    }
 
     scope = await Effect.runPromise(Scope.make("sequential"));
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
@@ -555,6 +610,233 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("starts a fresh provider session for each claimed Crew turn", async () => {
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    let nextAttempt = 0;
+    const bindProviderSession = vi.fn(() => Effect.void);
+    const admission = {
+      prepare: ({
+        threadId,
+        requestId,
+        providerInstanceId,
+      }: {
+        threadId: ThreadId;
+        requestId: string;
+        providerInstanceId: ProviderInstanceId;
+      }) => {
+        const attemptId = `attempt-${++nextAttempt}`;
+        return Effect.succeed({
+          state: "ready" as const,
+          identity: {
+            threadId,
+            connectionId: binding.connectionId,
+            instanceId: binding.instanceId,
+            requestKey: requestId,
+          },
+          claim: { attemptId, prompt: `native prompt ${attemptId}` },
+          bootstrap: CtoxCrewSessionBootstrap.of({
+            binding,
+            nativeInstructions: `native instructions ${attemptId}`,
+            capability: {
+              threadId,
+              providerInstanceId,
+              attemptId,
+              refreshContext: () => Effect.die("unused"),
+              updatePlan: () => Effect.die("unused"),
+              report: () => Effect.die("unused"),
+            },
+          }),
+        });
+      },
+      recover: () => Effect.die("unused"),
+      bindProviderSession,
+      listRecoveryCandidates: () => Effect.succeed({ candidates: [], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+    });
+    for (const turn of [1, 2]) {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-crew-turn-${turn}`),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(`crew-message-${turn}`),
+            role: "user",
+            text: `do Crew work ${turn}`,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: `2026-01-01T00:00:0${turn}.000Z`,
+        }),
+      );
+      await waitFor(() => harness.sendTurn.mock.calls.length === turn, 3_000).catch(
+        async (cause: unknown) => {
+          const thread = (await harness.readModel()).threads.find(
+            (entry) => entry.id === ThreadId.make("thread-1"),
+          );
+          throw new Error(
+            `Crew turn ${turn} stalled: ${JSON.stringify({
+              starts: harness.startSession.mock.calls.length,
+              stops: harness.stopSession.mock.calls.length,
+              admissions: nextAttempt,
+              activities: thread?.activities,
+            })}`,
+            { cause },
+          );
+        },
+      );
+    }
+    expect(harness.startSession).toHaveBeenCalledTimes(2);
+    expect(harness.stopSession).toHaveBeenCalledTimes(1);
+    expect(bindProviderSession).toHaveBeenCalledTimes(2);
+    expect(
+      harness.sendTurn.mock.calls.map(([request]) => (request as { input?: string }).input),
+    ).toEqual(["native prompt attempt-1", "native prompt attempt-2"]);
+  });
+
+  it("replaces a resting provider route before dispatching a recovered Crew claim", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "turn-recovery-key",
+      },
+      requestId: "command:recovered-crew",
+    };
+    const recovered = vi.fn(() =>
+      Effect.succeed({
+        state: "ready" as const,
+        identity: candidate.identity,
+        claim: { attemptId: "recovered-attempt", prompt: "recovered native work" },
+        bootstrap: CtoxCrewSessionBootstrap.of({
+          binding,
+          nativeInstructions: "recovered native instructions",
+          capability: {
+            threadId,
+            providerInstanceId,
+            attemptId: "recovered-attempt",
+            refreshContext: () => Effect.die("unused"),
+            updatePlan: () => Effect.die("unused"),
+            report: () => Effect.die("unused"),
+          },
+        }),
+      }),
+    );
+    const bindProviderSession = vi.fn(() => Effect.void);
+    const admission = {
+      prepare: () => Effect.die("unused"),
+      recover: recovered,
+      bindProviderSession,
+      listRecoveryCandidates: () =>
+        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+      initialProviderSession: true,
+    });
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(recovered).toHaveBeenCalledTimes(1);
+    expect(harness.stopSession).toHaveBeenCalledTimes(1);
+    expect(harness.startSession).toHaveBeenCalledTimes(2);
+    expect(bindProviderSession).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      requestId: candidate.requestId,
+      input: "recovered native work",
+    });
+  });
+
+  it("reopens a claimed Crew attempt on its exact saved Codex thread without replaying the prompt", async () => {
+    const threadId = ThreadId.make("thread-1");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const binding = {
+      instanceId: "native-instance",
+      connectionId: WorkjetConnectionId.make("connection"),
+      chatId: "workjet_private_chat",
+    };
+    const candidate = {
+      identity: {
+        threadId,
+        connectionId: binding.connectionId,
+        instanceId: binding.instanceId,
+        requestKey: "turn-claimed-key",
+      },
+      requestId: "command:claimed-crew",
+    };
+    const resumeCursor = { threadId: "codex-saved-thread" };
+    const recover = vi.fn(() =>
+      Effect.succeed({
+        state: "resume-required" as const,
+        attemptId: "claimed-attempt",
+        identity: candidate.identity,
+      }),
+    );
+    const reissueClaimed = vi.fn(() =>
+      Effect.succeed({
+        claim: { attemptId: "claimed-attempt" },
+        bootstrap: CtoxCrewSessionBootstrap.of({
+          binding,
+          nativeInstructions: "continue this existing attempt",
+          capability: {
+            threadId,
+            providerInstanceId,
+            attemptId: "claimed-attempt",
+            refreshContext: () => Effect.die("unused"),
+            updatePlan: () => Effect.die("unused"),
+            report: () => Effect.die("unused"),
+          },
+        }),
+      }),
+    );
+    const admission = {
+      prepare: () => Effect.die("unused"),
+      recover,
+      reissueClaimed,
+      bindProviderSession: () => Effect.die("unused"),
+      listRecoveryCandidates: () =>
+        Effect.succeed({ candidates: [{ ...candidate, sequence: 1 }], nextSequence: null }),
+    } as unknown as CtoxCrewTurnAdmission["Service"];
+    const harness = await createHarness({
+      threadWorkjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: binding },
+      crewAdmission: admission,
+      providerBinding: {
+        threadId,
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId,
+        resumeCursor,
+      },
+    });
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
+    expect(recover).toHaveBeenCalledTimes(1);
+    expect(reissueClaimed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidate: expect.objectContaining({ ...candidate, sequence: 1 }),
+        binding,
+        providerInstanceId,
+        providerThreadId: threadId,
+        attemptId: "claimed-attempt",
+      }),
+    );
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ resumeCursor });
+    expect(harness.sendTurn).not.toHaveBeenCalled();
   });
 
   it("passes the thread's current Workjet config on provider start and restart", async () => {
@@ -2771,101 +3053,102 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
-  it("surfaces stale provider approval request failures without faking approval resolution", async () => {
-    const harness = await createHarness();
-    const now = "2026-01-01T00:00:00.000Z";
-    harness.respondToRequest.mockImplementation(() =>
-      Effect.fail(
-        new ProviderAdapterRequestError({
-          provider: ProviderDriverKind.make("codex"),
-          method: "session/request_permission",
-          detail: "Unknown pending permission request: approval-request-1",
-        }),
-      ),
-    );
+  effectIt.effect(
+    "surfaces stale provider approval request failures without faking approval resolution",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(() => createHarness());
+        const now = "2026-01-01T00:00:00.000Z";
+        harness.respondToRequest.mockImplementation(() =>
+          Effect.fail(
+            new ProviderAdapterRequestError({
+              provider: ProviderDriverKind.make("codex"),
+              method: "session/request_permission",
+              detail: "Unknown pending permission request: approval-request-1",
+            }),
+          ),
+        );
 
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.session.set",
-        commandId: CommandId.make("cmd-session-set-for-approval-error"),
-        threadId: ThreadId.make("thread-1"),
-        session: {
+        yield* harness.engine.dispatch({
+          type: "thread.session.set",
+          commandId: CommandId.make("cmd-session-set-for-approval-error"),
           threadId: ThreadId.make("thread-1"),
-          status: "running",
-          providerName: "codex",
-          runtimeMode: "approval-required",
-          activeTurnId: null,
-          lastError: null,
-          updatedAt: now,
-        },
-        createdAt: now,
-      }),
-    );
-
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.activity.append",
-        commandId: CommandId.make("cmd-approval-requested"),
-        threadId: ThreadId.make("thread-1"),
-        activity: {
-          id: EventId.make("activity-approval-requested"),
-          tone: "approval",
-          kind: "approval.requested",
-          summary: "Command approval requested",
-          payload: {
-            requestId: "approval-request-1",
-            requestKind: "command",
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "approval-required",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: now,
           },
-          turnId: null,
           createdAt: now,
-        },
-        createdAt: now,
+        });
+
+        yield* harness.engine.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make("cmd-approval-requested"),
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make("activity-approval-requested"),
+            tone: "approval",
+            kind: "approval.requested",
+            summary: "Command approval requested",
+            payload: {
+              requestId: "approval-request-1",
+              requestKind: "command",
+            },
+            turnId: null,
+            createdAt: now,
+          },
+          createdAt: now,
+        });
+
+        yield* harness.engine.dispatch({
+          type: "thread.approval.respond",
+          commandId: CommandId.make("cmd-approval-respond-stale"),
+          threadId: ThreadId.make("thread-1"),
+          requestId: asApprovalRequestId("approval-request-1"),
+          decision: "acceptForSession",
+          createdAt: now,
+        });
+
+        yield* Effect.promise(() =>
+          waitFor(async () => {
+            const readModel = await harness.readModel();
+            const thread = readModel.threads.find(
+              (entry) => entry.id === ThreadId.make("thread-1"),
+            );
+            if (!thread) return false;
+            return thread.activities.some(
+              (activity) => activity.kind === "provider.approval.respond.failed",
+            );
+          }),
+        );
+
+        const readModel = yield* Effect.promise(() => harness.readModel());
+        const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+        expect(thread).toBeDefined();
+
+        const failureActivity = thread?.activities.find(
+          (activity) => activity.kind === "provider.approval.respond.failed",
+        );
+        expect(failureActivity).toBeDefined();
+        expect(failureActivity?.payload).toMatchObject({
+          requestId: "approval-request-1",
+          detail: expect.stringContaining("Stale pending approval request: approval-request-1"),
+        });
+
+        const resolvedActivity = thread?.activities.find(
+          (activity) =>
+            activity.kind === "approval.resolved" &&
+            typeof activity.payload === "object" &&
+            activity.payload !== null &&
+            (activity.payload as Record<string, unknown>).requestId === "approval-request-1",
+        );
+        expect(resolvedActivity).toBeUndefined();
       }),
-    );
-
-    await Effect.runPromise(
-      harness.engine.dispatch({
-        type: "thread.approval.respond",
-        commandId: CommandId.make("cmd-approval-respond-stale"),
-        threadId: ThreadId.make("thread-1"),
-        requestId: asApprovalRequestId("approval-request-1"),
-        decision: "acceptForSession",
-        createdAt: now,
-      }),
-    );
-
-    await waitFor(async () => {
-      const readModel = await harness.readModel();
-      const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-      if (!thread) return false;
-      return thread.activities.some(
-        (activity) => activity.kind === "provider.approval.respond.failed",
-      );
-    });
-
-    const readModel = await harness.readModel();
-    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
-    expect(thread).toBeDefined();
-
-    const failureActivity = thread?.activities.find(
-      (activity) => activity.kind === "provider.approval.respond.failed",
-    );
-    expect(failureActivity).toBeDefined();
-    expect(failureActivity?.payload).toMatchObject({
-      requestId: "approval-request-1",
-      detail: expect.stringContaining("Stale pending approval request: approval-request-1"),
-    });
-
-    const resolvedActivity = thread?.activities.find(
-      (activity) =>
-        activity.kind === "approval.resolved" &&
-        typeof activity.payload === "object" &&
-        activity.payload !== null &&
-        (activity.payload as Record<string, unknown>).requestId === "approval-request-1",
-    );
-    expect(resolvedActivity).toBeUndefined();
-  });
-
+  );
   effectIt("surfaces non-resumable provider user-input callbacks as stale failures", () =>
     Effect.gen(function* () {
       const harness = yield* Effect.promise(() => createHarness());

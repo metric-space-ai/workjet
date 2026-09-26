@@ -702,9 +702,12 @@ export const makeServerLayer = Layer.unwrap(
             return;
           }
 
+          const environment = yield* ServerEnvironment.ServerEnvironment;
+          const descriptor = yield* environment.getDescriptor;
           const state = yield* makePersistedServerRuntimeState({
             config,
             port: address.port,
+            runtimeInstanceId: descriptor.runtimeInstanceId,
           });
           yield* persistServerRuntimeState({
             path: config.serverRuntimeStatePath,

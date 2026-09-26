@@ -149,10 +149,24 @@ The existing CLI pairing discovery now compares the responding environment ID
 with the saved profile ID before opening the pairing store. PID liveness and
 a valid public descriptor alone cannot distinguish a reused port/process from
 the intended profile. Missing, empty or conflicting identity fails explicitly
-without issuing a credential. This closes a prerequisite identity gap in the
-existing discovery path; a public descriptor comparison is **not** authenticated
-attachment, proof of the same process generation, or protection against a
-replacement between discovery and use. Those checks still belong in the live
-authenticated attach exchange, under exclusive profile ownership.
+without issuing a credential.
+
+Each new `ServerEnvironment` lifetime now creates a fresh `runtimeInstanceId`.
+It is constant across descriptor reads and recorded in the runtime-state file
+after activation. The durable environment ID stays unchanged across restarts.
+Pairing compares both generations before opening its store. Different values,
+including one missing value, refuse pairing without minting a grant. Legacy
+pairing remains supported when neither the descriptor nor state advertises a
+generation. Future durable Desktop attachment must require a generation rather
+than taking this legacy path. The new field is optional in the wire schema so
+existing web/mobile clients and older server descriptors remain decodable.
+
+These public comparisons detect stale discovery state; they are **not**
+authenticated attachment, native fencing or protection against a replacement
+between discovery and use. Those checks still belong in the live authenticated
+attach exchange, under exclusive profile ownership. Authored tests cover a live
+port with the same environment but a changed generation, one-sided legacy
+metadata, successful matching pairing and generation stability/renewal. They
+have not yet been executed.
 There is no measured completion date yet. A source patch, successful build or
 external-server demonstration alone cannot close this outcome.

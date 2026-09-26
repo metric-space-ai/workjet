@@ -1,3 +1,4 @@
+import { TrimmedNonEmptyString } from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -10,6 +11,9 @@ import { formatHostForUrl, isWildcardHost } from "./startupAccess.ts";
 
 export const PersistedServerRuntimeState = Schema.Struct({
   version: Schema.Literal(1),
+  // Optional for legacy state files. New servers record the same generation
+  // they expose in their descriptor; this is not a secret or proof of authority.
+  runtimeInstanceId: Schema.optionalKey(TrimmedNonEmptyString),
   pid: Schema.Int,
   host: Schema.optional(Schema.String),
   port: Schema.Int,
@@ -50,9 +54,13 @@ const runtimeOriginForConfig = (
 export const makePersistedServerRuntimeState = (input: {
   readonly config: Pick<ServerConfig.ServerConfig["Service"], "host" | "devUrl">;
   readonly port: number;
+  readonly runtimeInstanceId?: string | undefined;
 }): Effect.Effect<PersistedServerRuntimeState> =>
   Effect.map(DateTime.now, (now) => ({
     version: 1,
+    ...(input.runtimeInstanceId === undefined
+      ? {}
+      : { runtimeInstanceId: input.runtimeInstanceId }),
     pid: process.pid,
     ...(input.config.host ? { host: input.config.host } : {}),
     port: input.port,

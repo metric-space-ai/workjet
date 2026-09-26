@@ -70,7 +70,7 @@ export class PairTargetIdentityError extends Schema.TaggedErrorClass<PairTargetI
   { statePath: Schema.String },
 ) {
   override get message(): string {
-    return `Cannot verify the running server against the saved environment identity at ${this.statePath}. Pairing was refused; no credential was created. Check that this profile points to the intended server.`;
+    return `Cannot verify the running server against the saved environment identity and runtime generation at ${this.statePath}. Pairing was refused; no credential was created. Check that this profile points to the intended server.`;
   }
 }
 
@@ -306,7 +306,12 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
       if (
         Option.isNone(expectedId) ||
         expectedId.value === "" ||
-        probed.descriptor.environmentId !== expectedId.value
+        probed.descriptor.environmentId !== expectedId.value ||
+        // Both absent supports legacy pairing. If either side advertises a
+        // generation, it must match: do not downgrade a partially modern pair.
+        // This comparison detects stale state, not a malicious server or a
+        // replacement between this probe and the subsequent grant creation.
+        probed.descriptor.runtimeInstanceId !== state.value.runtimeInstanceId
       ) {
         return yield* new PairTargetIdentityError({ statePath });
       }

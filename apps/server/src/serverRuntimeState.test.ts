@@ -44,6 +44,28 @@ describe("serverRuntimeState", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect("persists the generation used by the running server descriptor", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "workjet-server-runtime-generation-",
+      });
+      const statePath = path.join(root, "server.json");
+      const state = yield* ServerRuntimeState.makePersistedServerRuntimeState({
+        config: { host: "127.0.0.1", devUrl: undefined },
+        port: 4_971,
+        runtimeInstanceId: "current-runtime",
+      });
+      yield* ServerRuntimeState.persistServerRuntimeState({ path: statePath, state });
+      const restored = Option.getOrThrow(
+        yield* ServerRuntimeState.readPersistedServerRuntimeState(statePath),
+      );
+      assert.equal(restored.runtimeInstanceId, "current-runtime");
+      assert.deepEqual(restored, state);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("records the dev web URL when the server fronts a dev server", () =>
     Effect.gen(function* () {
       const state = yield* ServerRuntimeState.makePersistedServerRuntimeState({

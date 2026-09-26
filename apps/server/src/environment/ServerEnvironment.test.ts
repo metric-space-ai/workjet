@@ -88,6 +88,9 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
       }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
 
       expect(first.environmentId).toBe(second.environmentId);
+      expect(first.runtimeInstanceId).toEqual(expect.any(String));
+      expect(second.runtimeInstanceId).toEqual(expect.any(String));
+      expect(first.runtimeInstanceId).not.toBe(second.runtimeInstanceId);
       expect(second.capabilities.repositoryIdentity).toBe(true);
       expect(second.capabilities.connectionProbe).toBe(true);
       expect(second.capabilities.pullRequests).toBe(true);
@@ -138,6 +141,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         yield* secrets.set(PUBLISH_AGENT_ACTIVITY_SECRET, encode("false"));
         const disabled = yield* serverEnvironment.getDescriptor;
         expect(disabled.capabilities.agentActivityPublishing).toBe(false);
+        expect(disabled.runtimeInstanceId).toBe(unlinked.runtimeInstanceId);
       }).pipe(Effect.provide(testLayer));
     }),
   );

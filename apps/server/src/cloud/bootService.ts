@@ -37,6 +37,8 @@ import {
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STATE_FILE,
   parseServiceState,
+  decodeDesktopServiceLaunchConfig,
+  type DesktopServiceLaunchConfig,
   serviceStateHasPendingUpdate,
   type ServiceState,
 } from "./serviceProtocol.ts";
@@ -193,6 +195,7 @@ export interface BootServiceStatus {
   readonly unitPath: string;
   readonly logPath: string;
   readonly loginSessionOnly?: boolean;
+  readonly desktop?: DesktopServiceLaunchConfig;
 }
 
 export class BootService extends Context.Service<
@@ -208,6 +211,7 @@ export interface BootServiceHost {
   readonly execPath: string;
   readonly launcherSourcePath?: string;
   readonly bundle?: BundledRuntimeSource;
+  readonly desktop?: DesktopServiceLaunchConfig;
 }
 
 export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
@@ -224,6 +228,8 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   const path = yield* Path.Path;
   const runner = yield* ProcessRunner.ProcessRunner;
   const host = input.host ?? { execPath: hostExecPath };
+  if (host.desktop !== undefined && decodeDesktopServiceLaunchConfig(host.desktop) === undefined)
+    return yield* new BootServiceInstallError({ cause: "Invalid Desktop service configuration." });
 
   // Resolve an existing ancestor too: a new profile below a symlink must keep
   // its label after the first install creates the missing directories.
@@ -451,8 +457,12 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     }
 
     yield* Effect.gen(function* () {
+      const previousStateText = yield* fs.readFileString(statePath).pipe(Effect.option);
+      const previousState = Option.isSome(previousStateText)
+        ? parseServiceState(previousStateText.value)
+        : undefined;
+      const desktop = host.desktop ?? previousState?.desktop;
       if (installed) {
-        const previousStateText = yield* fs.readFileString(statePath).pipe(Effect.option);
         if (
           Option.isSome(previousStateText) &&
           serviceStateHasPendingUpdate(previousStateText.value)
@@ -471,6 +481,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           {
             protocol: SERVICE_LAUNCHER_PROTOCOL,
             activeVersion: input.cliVersion,
+            ...(desktop === undefined ? {} : { desktop }),
           } satisfies ServiceState,
           null,
           2,
@@ -581,10 +592,16 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
             Option.isSome(bundleReceipt) &&
             bundleReceipt.value.trim() === host.bundle.sha256)) &&
         state?.activeVersion === input.cliVersion &&
+        (host.desktop === undefined ||
+          (state?.desktop?.port === host.desktop.port &&
+            state.desktop.host === host.desktop.host &&
+            state.desktop.tailscaleServeEnabled === host.desktop.tailscaleServeEnabled &&
+            state.desktop.tailscaleServePort === host.desktop.tailscaleServePort)) &&
         state?.update?.status !== "pending",
       unitPath,
       logPath,
       loginSessionOnly,
+      ...(state?.desktop === undefined ? {} : { desktop: state.desktop }),
     };
   }).pipe(
     Effect.mapError((cause) => new BootServiceInstallError({ cause })),

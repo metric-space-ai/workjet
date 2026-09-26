@@ -27,6 +27,7 @@ import {
   decodeServiceLauncherChildMessage,
   isExactServiceVersion,
   parseServiceState,
+  serviceChildArguments,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STATE_FILE,
@@ -413,10 +414,25 @@ export class Launcher {
       childVersion: version,
       ...(update === undefined ? {} : { update }),
     };
-    const child = NodeChildProcess.spawn(process.execPath, [paths.entryPath, "serve"], {
-      env: { ...process.env, [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context) },
-      stdio: ["inherit", "inherit", "inherit", "ipc"],
-    });
+    const childEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context),
+    };
+    if (this.#state.desktop !== undefined) {
+      // The service has no UI-owned descriptors or development proxy. Do not
+      // inherit these from a shell/launchd environment after Desktop exits.
+      delete childEnv.WORKJET_BOOTSTRAP_FD;
+      delete childEnv.VITE_DEV_SERVER_URL;
+      delete childEnv.WORKJET_TAILSCALE_SERVE;
+    }
+    const child = NodeChildProcess.spawn(
+      process.execPath,
+      [paths.entryPath, ...serviceChildArguments(this.#baseDir, this.#state.desktop)],
+      {
+        env: childEnv,
+        stdio: ["inherit", "inherit", "inherit", "ipc"],
+      },
+    );
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       child.once("error", onError);

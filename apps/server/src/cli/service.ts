@@ -3,6 +3,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Terminal from "effect/Terminal";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import { PortSchema } from "@workjet/contracts";
 import { HostProcessExecutablePath } from "@workjet/shared/hostProcess";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/unstable/cli";
 
@@ -76,6 +78,10 @@ const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
     readonly baseDir: Parameters<typeof resolveCliAuthConfig>[0]["baseDir"];
     readonly bundleArchive?: Option.Option<string>;
     readonly bundleSha256?: Option.Option<string>;
+    readonly desktopPort?: Option.Option<number>;
+    readonly desktopHost?: Option.Option<"127.0.0.1" | "::1">;
+    readonly desktopTailscaleServe?: boolean;
+    readonly desktopTailscaleServePort?: Option.Option<number>;
   },
   run: Effect.Effect<A, E, BootService.BootService>,
 ) {
@@ -91,15 +97,48 @@ const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
       cause: "Supply both --bundle-archive and a trusted --bundle-sha256.",
     });
   }
-  const host =
-    archivePath !== undefined && sha256 !== undefined
-      ? { execPath: yield* HostProcessExecutablePath, bundle: { archivePath, sha256 } }
-      : undefined;
+  const desktopPort = Option.getOrUndefined(flags.desktopPort ?? Option.none());
+  const desktopHost = Option.getOrUndefined(flags.desktopHost ?? Option.none());
+  const desktopTailscaleServePort = Option.getOrUndefined(
+    flags.desktopTailscaleServePort ?? Option.none(),
+  );
+  if (
+    desktopPort === undefined &&
+    (desktopHost !== undefined ||
+      desktopTailscaleServePort !== undefined ||
+      flags.desktopTailscaleServe === true)
+  )
+    return yield* new BootService.BootServiceInstallError({
+      cause: "Desktop service options require --desktop-port.",
+    });
+  const host: BootService.BootServiceHost = {
+    execPath: yield* HostProcessExecutablePath,
+    ...(archivePath !== undefined && sha256 !== undefined
+      ? { bundle: { archivePath, sha256 } }
+      : {}),
+    ...(desktopPort === undefined
+      ? {}
+      : {
+          desktop: {
+            port: desktopPort,
+            host: desktopHost ?? "127.0.0.1",
+            tailscaleServeEnabled: flags.desktopTailscaleServe ?? false,
+            tailscaleServePort: desktopTailscaleServePort ?? 443,
+          },
+        }),
+  };
   return yield* run.pipe(Effect.provide(bootServiceLayer(config, host)));
 });
 
 const serviceArtifactFlags = {
   ...projectLocationFlags,
+  desktopPort: Flag.integer("desktop-port").pipe(Flag.withSchema(PortSchema), Flag.optional),
+  desktopHost: Flag.choice("desktop-host", ["127.0.0.1", "::1"] as const).pipe(Flag.optional),
+  desktopTailscaleServe: Flag.boolean("desktop-tailscale-serve"),
+  desktopTailscaleServePort: Flag.integer("desktop-tailscale-serve-port").pipe(
+    Flag.withSchema(PortSchema),
+    Flag.optional,
+  ),
   bundleArchive: Flag.string("bundle-archive").pipe(
     Flag.withDescription("Install the trusted portable archive shipped with this Desktop release."),
     Flag.optional,
@@ -168,14 +207,39 @@ const serviceUninstallCommand = Command.make("uninstall", projectLocationFlags).
   ),
 );
 
-const serviceStatusCommand = Command.make("status", serviceArtifactFlags).pipe(
+const ServiceStatusDocument = Schema.Struct({
+  supported: Schema.Boolean,
+  installed: Schema.Boolean,
+  current: Schema.Boolean,
+  unitPath: Schema.String,
+  logPath: Schema.String,
+  loginSessionOnly: Schema.optionalKey(Schema.Boolean),
+  desktop: Schema.optionalKey(
+    Schema.Struct({
+      port: PortSchema,
+      host: Schema.Literals(["127.0.0.1", "::1"]),
+      tailscaleServeEnabled: Schema.Boolean,
+      tailscaleServePort: PortSchema,
+    }),
+  ),
+});
+
+const serviceStatusCommand = Command.make("status", {
+  ...serviceArtifactFlags,
+  json: Flag.boolean("json"),
+}).pipe(
   Command.withDescription("Show whether the Workjet background service is installed."),
   Command.withHandler((flags) =>
     runServiceCommand(
       flags,
       Effect.gen(function* () {
         const service = yield* BootService.BootService;
-        yield* Console.log(formatServiceStatus(yield* service.status, packageJson.version));
+        const status = yield* service.status;
+        yield* Console.log(
+          flags.json
+            ? yield* Schema.encodeEffect(Schema.fromJsonString(ServiceStatusDocument))(status)
+            : formatServiceStatus(status, packageJson.version),
+        );
       }),
     ),
   ),

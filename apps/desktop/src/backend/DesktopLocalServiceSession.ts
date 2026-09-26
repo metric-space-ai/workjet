@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 import { EnvironmentId, AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
 import { resolveRemoteWebSocketConnectionUrl } from "@workjet/client-runtime/authorization";
 import { PrimaryConnectionTarget } from "@workjet/client-runtime/connection";
@@ -163,7 +163,7 @@ const runCli = (config: DesktopBackendStartConfig, args: ReadonlyArray<string>) 
   Effect.tryPromise({
     try: (signal) =>
       new Promise<string>((resolve, reject) => {
-        execFile(
+        NodeChildProcess.execFile(
           config.executablePath,
           [config.entryPath, ...args],
           {

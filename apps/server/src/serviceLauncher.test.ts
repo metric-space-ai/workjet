@@ -9,6 +9,7 @@ import { acquireProfileOwnership, ProfileOwnershipError } from "./profileOwnersh
 import {
   compareExactServiceVersions,
   decodeServiceState,
+  serviceChildArguments,
   isExactServiceVersion,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STOP_MARKER_FILE,
@@ -20,6 +21,55 @@ it("accepts only exact semantic versions", () => {
   }
   for (const version of ["latest", "01.2.3", "1.2.3-01", "1.2.3-alpha..1", "1.2.3+."]) {
     assert.isFalse(isExactServiceVersion(version), version);
+  }
+});
+
+it("retains explicit Desktop endpoints across persisted service state and child launch", () => {
+  const desktop = {
+    port: 4852,
+    host: "::1" as const,
+    tailscaleServeEnabled: true,
+    tailscaleServePort: 8443,
+  };
+  const state = decodeServiceState({
+    protocol: SERVICE_LAUNCHER_PROTOCOL,
+    activeVersion: "1.2.3",
+    desktop,
+  });
+  assert.deepEqual(state?.desktop, desktop);
+  const args = serviceChildArguments("/profile with spaces", state?.desktop);
+  assert.deepEqual(args, [
+    "serve",
+    "--mode",
+    "desktop",
+    "--base-dir",
+    "/profile with spaces",
+    "--host",
+    "::1",
+    "--port",
+    "4852",
+    "--tailscale-serve-port",
+    "8443",
+    "--tailscale-serve",
+  ]);
+  assert.notInclude(
+    serviceChildArguments("/profile", { ...desktop, tailscaleServeEnabled: false }),
+    "--tailscale-serve",
+  );
+  assert.deepEqual(serviceChildArguments("/ordinary-profile"), ["serve"]);
+  for (const invalid of [
+    { ...desktop, port: 0 },
+    { ...desktop, port: 65536 },
+    { ...desktop, host: "0.0.0.0" },
+    { ...desktop, tailscaleServeEnabled: "false" },
+  ]) {
+    assert.isUndefined(
+      decodeServiceState({
+        protocol: SERVICE_LAUNCHER_PROTOCOL,
+        activeVersion: "1.2.3",
+        desktop: invalid,
+      }),
+    );
   }
 });
 

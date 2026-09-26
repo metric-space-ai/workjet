@@ -76,6 +76,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   usePinnedLauncher = false,
   aliasProfile = false,
   bundled = false,
+  desktop?: BootService.BootServiceHost["desktop"],
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -145,6 +146,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     cliVersion: "1.2.3",
     host: {
       execPath: "/usr/bin/node",
+      ...(desktop === undefined ? {} : { desktop }),
       ...(bundle === undefined ? {} : { bundle }),
       ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
     },
@@ -164,6 +166,55 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("bundled service executable", (it) => {
+  it.effect(
+    "persists Desktop launch settings and reports mismatching endpoints as needing explicit update",
+    () =>
+      Effect.gen(function* () {
+        const desktop = {
+          port: 4582,
+          host: "127.0.0.1" as const,
+          tailscaleServeEnabled: false,
+          tailscaleServePort: 443,
+        };
+        const { service, fs, statePath } = yield* makeHarness(
+          "darwin",
+          false,
+          false,
+          true,
+          desktop,
+        );
+        yield* service.install;
+        const status = yield* service.status;
+        expect(status.current).toBe(true);
+        expect(status.desktop).toEqual(desktop);
+        const state = parseServiceState(yield* fs.readFileString(statePath));
+        expect(state?.desktop).toEqual(desktop);
+        yield* fs.writeFileString(
+          statePath,
+          JSON.stringify({ ...state, desktop: { ...desktop, port: 4583 } }),
+        );
+        expect((yield* service.status).current).toBe(false);
+      }),
+  );
+
+  it.effect("preserves a Desktop endpoint during an ordinary CLI service repair", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath } = yield* makeHarness("darwin");
+      yield* service.install;
+      const state = parseServiceState(yield* fs.readFileString(statePath));
+      const desktop = {
+        port: 4852,
+        host: "::1",
+        tailscaleServeEnabled: true,
+        tailscaleServePort: 8443,
+      };
+      yield* fs.writeFileString(statePath, JSON.stringify({ ...state, desktop }));
+      yield* service.install;
+      expect(parseServiceState(yield* fs.readFileString(statePath))?.desktop).toEqual(desktop);
+      expect((yield* service.status).desktop).toEqual(desktop);
+    }),
+  );
+
   for (const platform of ["darwin", "linux"] as const) {
     it.effect(
       `pins ${platform} to imported Node and launcher, ignoring a mutable launcher override`,

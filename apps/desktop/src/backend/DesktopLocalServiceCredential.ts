@@ -1,5 +1,5 @@
 import { AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -144,7 +144,7 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
   const beginEnrollment = Effect.scoped(
     Effect.gen(function* () {
       yield* assertEnrollmentSettled;
-      const attemptId = randomUUID();
+      const attemptId = NodeCrypto.randomUUID();
       const receipt = yield* Schema.encodeEffect(Schema.fromJsonString(PendingEnrollment))({
         version: 1,
         baseDir,

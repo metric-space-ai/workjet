@@ -16,8 +16,9 @@ The accompanying `workjet-rollback-progress.jsonl` records completed move phases
 An interrupted move can leave the checkout in recovery while the administration
 data remains at its original location. Errors include original checkout/admin locations and mark recovery targets as
 `candidate` until the helper verifies both moves. Candidate directories may be
-missing or belong to another recovery; on partial failure locate your receipt
-at the original admin path before trusting any candidate contents. Inspect both
+missing or belong to another recovery. Inspect the original admin path first;
+if its receipt is absent, validate the candidate receipt and paths against the
+recorded identities. A timeout can occur after both moves but before acknowledgement. Inspect both
 locations in the receipt;
 a missing success result must never be treated as completed recovery. A partial
 final journal line is not a completed phase.

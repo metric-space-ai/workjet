@@ -124,7 +124,7 @@ const failureResult = (
         type: "text",
         text:
           recovery.recoveryWorktreePath || recovery.recoveryAdminPath
-            ? "Workjet worker dispatch failed. Preserve recovery data before storage cleanup. For candidate locations, find your receipt at originalAdminPath; candidate directories may be absent or unrelated."
+            ? "Workjet worker dispatch failed. Preserve recovery data before storage cleanup. For candidate locations, inspect originalAdminPath first; if absent, validate candidate receipts and paths against the recorded identities. Candidate directories may be absent or unrelated."
             : "Workjet worker dispatch failed.",
       },
     ],

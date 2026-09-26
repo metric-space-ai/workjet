@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import { Launcher, readServiceState, writeServiceState } from "./serviceLauncher.ts";
+import { acquireProfileOwnership, ProfileOwnershipError } from "./profileOwnership.ts";
 import {
   compareExactServiceVersions,
   decodeServiceState,
@@ -88,6 +89,41 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
       } as const;
 
       yield* Effect.promise(() => writeServiceState(statePath, state));
+      assert.deepEqual(yield* Effect.promise(() => readServiceState(statePath)), state);
+    }),
+  );
+
+  it.effect("does not restore a database while a manual runtime owns the profile", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-launcher-owner-" });
+      const dbPath = path.join(root, "state.sqlite");
+      const statePath = path.join(root, "runtime", "service-state.json");
+      const state = {
+        protocol: SERVICE_LAUNCHER_PROTOCOL,
+        activeVersion: "1.0.0",
+        update: {
+          id: "pending",
+          fromVersion: "1.0.0",
+          targetVersion: "1.1.0",
+          dbPath,
+          status: "pending" as const,
+        },
+      };
+      yield* fs.writeFileString(dbPath, "manual runtime's current data");
+      yield* Effect.promise(() => writeServiceState(statePath, state));
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() => acquireProfileOwnership(root, "runtime")),
+        (ownership) => Effect.sync(() => ownership.release()),
+      );
+      const launcher = new Launcher(root, state);
+      const error = yield* Effect.tryPromise({
+        try: () => launcher.run(),
+        catch: (cause) => cause,
+      }).pipe(Effect.flip);
+      assert.instanceOf(error, ProfileOwnershipError);
+      assert.equal(yield* fs.readFileString(dbPath), "manual runtime's current data");
       assert.deepEqual(yield* Effect.promise(() => readServiceState(statePath)), state);
     }),
   );

@@ -8,6 +8,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import { acquireProfileOwnership, withProfileOwnership } from "./profileOwnership.ts";
 
 import type {
   PendingServiceUpdate,
@@ -281,16 +282,22 @@ export class Launcher {
   }
 
   async run(): Promise<void> {
+    const ownership = await acquireProfileOwnership(this.#baseDir, "launcher");
     const onSigterm = () => void this.stop("SIGTERM");
     const onSigint = () => void this.stop("SIGINT");
     process.once("SIGTERM", onSigterm);
     process.once("SIGINT", onSigint);
     try {
+      if (this.#stopRequested) return;
+      // The constructor's snapshot may predate another launcher's exit.
+      this.#state = await readServiceState(this.#statePath);
+      if (this.#stopRequested) return;
       this.#enqueue(() => this.#recover());
       await this.#completion.promise;
     } finally {
       process.off("SIGTERM", onSigterm);
       process.off("SIGINT", onSigint);
+      ownership.release();
     }
   }
 
@@ -373,9 +380,12 @@ export class Launcher {
   }
 
   async #startTrial(pending: PendingServiceUpdate): Promise<void> {
-    // The previous child is dead here, so all three SQLite files are quiescent.
+    // The previous child is dead, but a manually started server could own the
+    // same profile. Hold runtime exclusion throughout the snapshot operation.
     try {
-      await backupDatabaseOnce(this.#baseDir, pending);
+      await withProfileOwnership(this.#baseDir, "runtime", () =>
+        backupDatabaseOnce(this.#baseDir, pending),
+      );
     } catch {
       await this.#returnToPrevious(pending, "failed", "db-backup-failed");
       return;
@@ -585,7 +595,9 @@ export class Launcher {
       this.#child = null;
       await terminateChild(child.process);
     }
-    await restoreDatabaseBackup(this.#baseDir, pending);
+    await withProfileOwnership(this.#baseDir, "runtime", () =>
+      restoreDatabaseBackup(this.#baseDir, pending),
+    );
     const outcome = terminalUpdate({ pending, status, reason });
     const next: ServiceState = {
       ...this.#state,

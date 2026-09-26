@@ -108,17 +108,30 @@ on an unsupported or uncertain stop. Pending launcher updates survive repair.
 CLI status/onboarding explicitly limit its lifetime to the user's login session.
 
 This is a service-manager foundation, **not** desktop/runtime decoupling. It
-does not yet supply a pinned standalone Node executable for Desktop, a
-cross-process profile writer lock, authenticated attachment, reconnectable
-telemetry, or native reconciliation. A label alone cannot exclude a manually
-started server or concurrent administrative commands from the same database.
-No service is installed by this source change. Focused tests use a fake process
-runner and real isolated files; they cannot prove launchd or full-Quit behavior.
+does not yet supply a pinned standalone Node executable for Desktop,
+authenticated attachment, reconnectable telemetry, or native reconciliation.
+The subsequent ownership block uses separate, retained SQLite lock files under
+the canonical profile's `runtime/ownership`: the server holds `runtime` before
+building any persistence/reactor layers and through their shutdown; the launcher
+holds `launcher` for its lifetime, and takes `runtime` during database snapshot
+or restore after its child has stopped. BootService serializes administrative
+commands with `administration` and requires `launcher` exclusion before changing
+mutable service files. Starting the new launcher occurs after releasing that
+mutation lock. Contention fails without PID/mtime-based takeover or file deletion.
+These are process-lifetime locks, not CTOX authority leases or native fencing.
+They require participating binaries: migration from old unguarded processes
+must stop those processes before adopting the new runtime. Filesystems must
+support SQLite locking; shared network profile storage is not certified.
+No service is installed by this source change. Service adapter tests use a fake
+process runner and real isolated files. Ownership tests exercise real SQLite,
+profile aliases, independent profiles, failure release, a competing subprocess
+and abrupt exit, plus refusal to restore under a manual runtime's ownership.
+They are authored but not yet executed and cannot prove full-Quit behavior.
 An installed-but-unloaded job currently fails closed during repair/uninstall
 rather than interpreting an arbitrary launchctl error as proof of absence.
 Status compares installed artifacts; it is not a runtime health assertion.
 
-Next source block: canonical-profile exclusive runtime ownership and a durable,
+Next source block: verify profile exclusion and add a durable,
 authenticated attach boundary, followed by Desktop's explicit attach/detach
 wiring. The actual macOS lifecycle and same-run proof remain dependent on an
 isolated exact build, admitted host capacity and the native contract above.

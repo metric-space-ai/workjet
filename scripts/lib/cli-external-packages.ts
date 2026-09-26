@@ -81,7 +81,10 @@ export const CLI_EXTERNAL_PACKAGE_PREFIXES = [
  * inlined while node-pty (a declared dependency) stayed external.
  */
 export function isExternalCliDependency(id: string): boolean {
-  return CLI_EXTERNAL_PACKAGE_PREFIXES.some((prefix) => id.startsWith(prefix));
+  // Bun built-ins are runtime-conditional and must not be resolved by a Node build.
+  return (
+    id.startsWith("bun:") || CLI_EXTERNAL_PACKAGE_PREFIXES.some((prefix) => id.startsWith(prefix))
+  );
 }
 
 /** True when the CLI bundle should inline `id` rather than leave it external. */

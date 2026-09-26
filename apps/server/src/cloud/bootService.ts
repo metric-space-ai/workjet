@@ -18,6 +18,11 @@ import * as Schema from "effect/Schema";
 
 import * as ProcessRunner from "../processRunner.ts";
 import {
+  acquireProfileOwnership,
+  ProfileOwnershipError,
+  type ProfileOwnershipKind,
+} from "../profileOwnership.ts";
+import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimePaths,
   PinnedRuntimeInstallError,
@@ -353,8 +358,23 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         )
       : runStep("starting the service", "systemctl", ["--user", "restart", BOOT_SERVICE_UNIT_FILE]);
 
+  const withOwnership = <A, E, R>(kind: ProfileOwnershipKind, work: Effect.Effect<A, E, R>) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        yield* Effect.acquireRelease(
+          Effect.tryPromise({
+            try: () => acquireProfileOwnership(baseDir, kind),
+            catch: (cause) => new BootServiceInstallError({ cause }),
+          }),
+          (ownership) => Effect.sync(() => ownership.release()),
+        );
+        return yield* work;
+      }),
+    );
+  const serializeAdministration = <A, E, R>(work: Effect.Effect<A, E, R>) =>
+    Effect.andThen(requireSupportedHost, withOwnership("administration", work));
+
   const install: BootService["Service"]["install"] = Effect.gen(function* () {
-    yield* requireSupportedHost;
     yield* fs
       .makeDirectory(input.logsDir, { recursive: true })
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
@@ -456,14 +476,22 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         ]);
         yield* runStep("enabling lingering for this user", "loginctl", ["enable-linger"]);
       }
-      // Start last. No administrative state write occurs after this succeeds.
-      yield* startService;
-    }).pipe(Effect.tapError(() => (installed ? startService.pipe(Effect.ignore) : Effect.void)));
+    }).pipe(
+      (work) => withOwnership("launcher", work),
+      Effect.tapError((error) =>
+        installed &&
+        !(error._tag === "BootServiceInstallError" && error.cause instanceof ProfileOwnershipError)
+          ? startService.pipe(Effect.ignore)
+          : Effect.void,
+      ),
+    );
+    // Release mutation exclusion before launching its new lifetime owner.
+    // Administration stays serialized until bootstrap returns.
+    yield* startService;
     return plan;
-  }).pipe(Effect.withSpan("cloud.boot_service.install"));
+  }).pipe(serializeAdministration, Effect.withSpan("cloud.boot_service.install"));
 
   const uninstall: BootService["Service"]["uninstall"] = Effect.gen(function* () {
-    yield* requireSupportedHost;
     if (
       !(yield* fs
         .exists(unitPath)
@@ -480,14 +508,15 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         BOOT_SERVICE_UNIT_FILE,
       ]);
     }
-    yield* fs
-      .remove(unitPath)
-      .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+    yield* withOwnership(
+      "launcher",
+      fs.remove(unitPath).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause }))),
+    );
     if (platform === "linux") {
       yield* runStep("reloading systemd user units", "systemctl", ["--user", "daemon-reload"]);
     }
     return true;
-  }).pipe(Effect.withSpan("cloud.boot_service.uninstall"));
+  }).pipe(serializeAdministration, Effect.withSpan("cloud.boot_service.uninstall"));
 
   const status: BootService["Service"]["status"] = Effect.gen(function* () {
     if (!supported) {

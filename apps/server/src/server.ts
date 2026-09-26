@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+
 import * as Schedule from "effect/Schedule";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -133,6 +134,7 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
+import { acquireProfileOwnership } from "./profileOwnership.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "./persistence/Layers/OrchestrationCommandReceipts.ts";
 import {
   clearPersistedServerRuntimeState,
@@ -665,6 +667,12 @@ export const makeRoutesLayer = Layer.mergeAll(
 export const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    // Acquire before constructing persistence/reactor layers and release after
+    // their finalizers, including runtime-state removal and provider shutdown.
+    yield* Effect.acquireRelease(
+      Effect.tryPromise(() => acquireProfileOwnership(config.baseDir, "runtime")),
+      (ownership) => Effect.sync(() => ownership.release()),
+    );
     const activation = yield* Deferred.make<void>();
     const awaitActivation = Deferred.await(activation);
     const activationLayer = Layer.succeed(ServerActivation, awaitActivation);

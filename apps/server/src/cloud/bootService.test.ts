@@ -15,6 +15,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 
 import * as ProcessRunner from "../processRunner.ts";
 import * as BootService from "./bootService.ts";
+import { acquireProfileOwnership } from "../profileOwnership.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
 import {
   parseServiceState,
@@ -176,6 +177,44 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(yield* service.uninstall).toBe(true);
       expect((yield* service.status).installed).toBe(false);
       expect(commands.some((command) => command.startsWith("npm "))).toBe(false);
+    }),
+  );
+
+  it.effect(
+    "rejects concurrent administration before stopping or changing the installed service",
+    () =>
+      Effect.gen(function* () {
+        const { service, fs, baseDir, statePath, commands } = yield* makeHarness();
+        yield* service.install;
+        const before = yield* fs.readFileString(statePath);
+        commands.length = 0;
+        yield* Effect.acquireRelease(
+          Effect.tryPromise(() => acquireProfileOwnership(baseDir, "administration")),
+          (ownership) => Effect.sync(() => ownership.release()),
+        );
+        expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+        expect((yield* service.uninstall.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+        expect(commands).toEqual([]);
+        expect(yield* fs.readFileString(statePath)).toBe(before);
+      }),
+  );
+
+  it.effect("refuses mutable service files when another launcher still owns the profile", () =>
+    Effect.gen(function* () {
+      const { service, fs, baseDir, statePath, commands } = yield* makeHarness();
+      const plan = yield* service.install;
+      const before = yield* fs.readFileString(statePath);
+      commands.length = 0;
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() => acquireProfileOwnership(baseDir, "launcher")),
+        (ownership) => Effect.sync(() => ownership.release()),
+      );
+      expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+      expect(yield* fs.readFileString(statePath)).toBe(before);
+      expect(yield* fs.exists(plan.unitPath)).toBe(true);
+      expect(commands.filter((command) => command.startsWith("systemctl "))).toEqual([
+        "systemctl --user stop workjet.service",
+      ]);
     }),
   );
 

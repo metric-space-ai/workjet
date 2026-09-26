@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { managedNodeArchive } from "../../packages/ssh/src/remoteNode.ts";
 import { preparePortableNode, stageVerifiedNodeArchive } from "./prepare-portable-node.ts";
 
@@ -44,6 +44,16 @@ async function fixture(
 }
 
 describe.skipIf(process.platform === "win32")("portable standalone Node packaging", () => {
+  // Effect caches the Fetch reference's default. Keep one mock identity for the
+  // whole suite so later cases cannot fall through a restored spy to the network.
+  const download = vi.fn<typeof fetch>();
+  beforeAll(() => vi.stubGlobal("fetch", download));
+  beforeEach(() => {
+    download.mockReset();
+    download.mockRejectedValue(new Error("Unexpected portable Node network request"));
+  });
+  afterAll(() => vi.unstubAllGlobals());
+
   it("verifies and stages an isolated archive with its license and release receipt", async () => {
     await fixture(async (input, root) => {
       const executable = await stageVerifiedNodeArchive(input);
@@ -101,7 +111,7 @@ describe.skipIf(process.platform === "win32")("portable standalone Node packagin
 
   it("removes a corrupt download and leaves no executable behind", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "workjet-node-download-test-"));
-    const download = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("corrupt"));
+    download.mockResolvedValue(new Response("corrupt"));
     try {
       await expect(
         preparePortableNode({
@@ -114,16 +124,13 @@ describe.skipIf(process.platform === "win32")("portable standalone Node packagin
       expect(download).toHaveBeenCalledOnce();
       expect(download.mock.calls[0]?.[1]?.redirect).toBe("error");
     } finally {
-      download.mockRestore();
       await fs.rm(root, { recursive: true, force: true });
     }
   });
 
   it("rejects an unsuccessful HTTP response and cleans its download stage", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "workjet-node-http-test-"));
-    const download = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response("unavailable", { status: 503 }));
+    download.mockResolvedValue(new Response("unavailable", { status: 503 }));
     try {
       await expect(
         preparePortableNode({
@@ -133,9 +140,9 @@ describe.skipIf(process.platform === "win32")("portable standalone Node packagin
         }),
       ).rejects.toThrow("Portable Node download failed (503)");
       expect(await fs.readdir(root)).toEqual([]);
+      expect(download).toHaveBeenCalledOnce();
       expect(download.mock.calls[0]?.[1]?.redirect).toBe("error");
     } finally {
-      download.mockRestore();
       await fs.rm(root, { recursive: true, force: true });
     }
   });
@@ -145,7 +152,7 @@ describe.skipIf(process.platform === "win32")("portable standalone Node packagin
     const chunk = new Uint8Array(1024 * 1024);
     let cancelled = false;
     let remainingChunks = 104;
-    const download = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    download.mockResolvedValue(
       new Response(
         new ReadableStream({
           pull(controller) {
@@ -168,8 +175,9 @@ describe.skipIf(process.platform === "win32")("portable standalone Node packagin
       ).rejects.toThrow("size limit");
       expect(cancelled).toBe(true);
       expect(await fs.readdir(root)).toEqual([]);
+      expect(download).toHaveBeenCalledOnce();
+      expect(download.mock.calls[0]?.[1]?.redirect).toBe("error");
     } finally {
-      download.mockRestore();
       await fs.rm(root, { recursive: true, force: true });
     }
   });

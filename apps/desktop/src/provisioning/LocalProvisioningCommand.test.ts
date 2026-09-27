@@ -1,7 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeProcess from "node:process";
-import * as NodeTimers from "node:timers/promises";
+import * as NodeTimersPromises from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { runLocalCommand } from "./LocalProvisioningCommand.ts";
@@ -112,7 +112,7 @@ describe("local provisioning command deadlines", () => {
       expect(child?.exitCode).toBe(0);
       // Observe this fixture's captured child identity only; no process scan.
       for (let attempt = 0; attempt < 100 && processExists(descendantPid); attempt++) {
-        await NodeTimers.setTimeout(10);
+        await NodeTimersPromises.setTimeout(10);
       }
       expect(processExists(descendantPid)).toBe(false);
       expect(vi.getTimerCount()).toBe(0);

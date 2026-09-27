@@ -5757,7 +5757,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       return;
     }
-    const workjetConfigForFirstTurn =
+    const workjetConfigForFirstTurn: WorkjetThreadConfig =
       useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.workjetConfig ??
       DEFAULT_WORKJET_THREAD_CONFIG;
     if (
@@ -6072,7 +6072,11 @@ function ChatViewContent(props: ChatViewProps) {
                 const sessionResult = registration.kind === "result" ? registration.result : null;
                 const sessionRegistered =
                   sessionResult?._tag === "completed" &&
-                  sessionResult.response.action === "session.create";
+                  sessionResult.response.action === "session.create" &&
+                  sessionResult.response.session.projectId === ctoxSessionTarget.ctoxProjectId &&
+                  sessionResult.response.session.workingCopyId ===
+                    ctoxSessionTarget.workingCopyId &&
+                  sessionResult.response.session.threadId === activeThread.id;
                 if (!sessionRegistered) {
                   console.warn("CTOX session registration failed; continuing first turn.", {
                     instanceId: ctoxSessionTarget.instanceId,
@@ -6091,10 +6095,47 @@ function ChatViewContent(props: ChatViewProps) {
                     }),
                   );
                 }
+                const authorityPromise = sessionRegistered
+                  ? Promise.resolve().then(
+                      () =>
+                        window.desktopBridge?.ctox?.resolveInstanceAuthority?.(
+                          ctoxSessionTarget.instanceId,
+                        ) ?? null,
+                    )
+                  : undefined;
+                let authorityTimeout: ReturnType<typeof setTimeout> | null = null;
+                const authority = await Promise.race([
+                  authorityPromise?.catch(() => null) ?? Promise.resolve(null),
+                  new Promise<null>((resolve) => {
+                    authorityTimeout = setTimeout(() => resolve(null), 3_000);
+                  }),
+                ]);
+                if (authorityTimeout !== null) clearTimeout(authorityTimeout);
+                if (sessionRegistered && authority?._tag !== "completed") {
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "warning",
+                      title: "CTOX-Projektzuordnung nicht verfügbar",
+                      description:
+                        "Der Thread startet, aber Projektaufgaben benötigen eine bestätigte CTOX-Instanz.",
+                    }),
+                  );
+                }
                 return startFirstTurn(
                   withCtoxSessionBinding(workjetConfigForFirstTurn, {
                     instanceId: ctoxSessionTarget.instanceId,
-                    result: sessionResult,
+                    result: sessionRegistered ? sessionResult : null,
+                    ...(authority?._tag === "completed"
+                      ? {
+                          project: {
+                            codeProjectId: activeThread.projectId,
+                            codeThreadId: activeThread.id,
+                            businessOsInstanceId: authority.businessOsInstanceId,
+                            nativeProjectId: ctoxSessionTarget.ctoxProjectId,
+                            workingCopyId: ctoxSessionTarget.workingCopyId,
+                          },
+                        }
+                      : {}),
                   }),
                 );
               },

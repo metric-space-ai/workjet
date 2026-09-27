@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   EventId,
   ProviderDriverKind,
@@ -18,6 +19,7 @@ import {
   type ProviderUserInputAnswers,
   ThreadId,
   TurnId,
+  WorkjetConnectionId,
 } from "@workjet/contracts";
 import { createModelSelection } from "@workjet/shared/model";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -354,6 +356,48 @@ const sessionErrorLayer = it.layer(
 );
 
 sessionErrorLayer("CodexAdapterLive session errors", (it) => {
+  it.effect(
+    "pins Crew resume policy and rejects malformed cursors before replacing a session",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* CodexAdapter;
+        const input = {
+          provider: ProviderDriverKind.make("codex"),
+          threadId: asThreadId("crew-resume-policy"),
+          runtimeMode: "full-access" as const,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            ctoxCrewChat: {
+              instanceId: "instance",
+              connectionId: WorkjetConnectionId.make("connection"),
+              chatId: "workjet_private_chat",
+            },
+          },
+        };
+        yield* adapter.startSession({ ...input, resumeCursor: { threadId: "owned" } });
+        const runtime = sessionRuntimeFactory.lastRuntime;
+        NodeAssert.ok(runtime);
+        NodeAssert.equal(runtime.options.resumePolicy, "require-existing");
+        NodeAssert.deepStrictEqual(runtime.options.resumeCursor, { threadId: "owned" });
+        const calls = sessionRuntimeFactory.factory.mock.calls.length;
+        for (const resumeCursor of [null, {}, { threadId: 42 }]) {
+          const error = yield* Effect.flip(adapter.startSession({ ...input, resumeCursor }));
+          NodeAssert.equal(error._tag, "ProviderAdapterValidationError");
+          NodeAssert.equal(sessionRuntimeFactory.factory.mock.calls.length, calls);
+          NodeAssert.equal(runtime.closeImpl.mock.calls.length, 0);
+        }
+        yield* adapter.startSession({
+          ...input,
+          threadId: asThreadId("ordinary-resume-policy"),
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          resumeCursor: { threadId: "ordinary" },
+        });
+        NodeAssert.equal(sessionRuntimeFactory.lastRuntime?.options.resumePolicy, undefined);
+        yield* adapter.startSession({ ...input, threadId: asThreadId("fresh-crew") });
+        NodeAssert.equal(sessionRuntimeFactory.lastRuntime?.options.resumePolicy, undefined);
+      }),
+  );
+
   it.effect("maps missing adapter sessions to ProviderAdapterSessionNotFoundError", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;

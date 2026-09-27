@@ -5,6 +5,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  WorkjetConnectionId,
   type OrchestrationEvent,
   type OrchestrationReadModel,
   type WorkjetThreadConfig,
@@ -147,6 +148,53 @@ it.layer(NodeServices.layer)("Workjet thread configuration decider", (it) => {
           updatedAt: event.occurredAt,
         });
       }
+    }),
+  );
+
+  it.effect("keeps the first private CTOX chat across config updates and rejects retargeting", () =>
+    Effect.gen(function* () {
+      const chat = {
+        instanceId: "native-instance-a",
+        connectionId: WorkjetConnectionId.make("connection-a"),
+        chatId: "workjet_private_chat-a",
+      };
+      const boundConfig = { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxCrewChat: chat };
+      const boundReadModel: OrchestrationReadModel = {
+        ...readModel,
+        threads: readModel.threads.map((thread) => ({ ...thread, workjetConfig: boundConfig })),
+      };
+      const proposed = { ...DEFAULT_WORKJET_THREAD_CONFIG, managedInstructions: "Updated" };
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("cmd-update-private-chat"),
+          threadId: THREAD_ID,
+          workjetConfig: proposed,
+          createdAt: NOW,
+        },
+        readModel: boundReadModel,
+      });
+      expect(Array.isArray(result)).toBe(false);
+      const event = result as Extract<OrchestrationEvent, { type: "thread.workjet-config-set" }>;
+      expect(event.payload.workjetConfig).toMatchObject({
+        managedInstructions: "Updated",
+        ctoxCrewChat: chat,
+      });
+
+      const error = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("cmd-retarget-private-chat"),
+          threadId: THREAD_ID,
+          workjetConfig: {
+            ...proposed,
+            ctoxCrewChat: { ...chat, chatId: "workjet_private_chat-b" },
+          },
+          createdAt: NOW,
+        },
+        readModel: boundReadModel,
+      }).pipe(Effect.flip);
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
     }),
   );
 

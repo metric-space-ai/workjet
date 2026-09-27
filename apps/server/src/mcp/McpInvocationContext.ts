@@ -11,6 +11,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import type { CtoxCrewMcpCapability } from "./CtoxCrewMcpCapability.ts";
+
 export type McpCapability = "preview";
 
 export interface McpInvocationScope {
@@ -27,6 +29,7 @@ export interface McpInvocationScope {
     readonly instanceId: string;
   };
   readonly cwd?: string;
+  readonly ctoxCrewExecution?: CtoxCrewMcpCapability;
   readonly issuedAt: number;
 }
 

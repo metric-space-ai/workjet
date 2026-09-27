@@ -1678,6 +1678,20 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           });
         }
 
+        const crewBound =
+          input.workjetConfig?.schemaVersion === 2 &&
+          input.workjetConfig.ctoxCrewChat !== undefined;
+        if (
+          crewBound &&
+          input.resumeCursor !== undefined &&
+          !isCodexResumeCursorSchema(input.resumeCursor)
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Crew recovery requires a valid Codex resume cursor.",
+          });
+        }
         const existing = sessions.get(input.threadId);
         if (existing && !existing.stopped) {
           yield* Effect.suspend(() => stopSessionInternal(existing));
@@ -1707,6 +1721,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
+            : {}),
+          ...(crewBound && input.resumeCursor !== undefined
+            ? { resumePolicy: "require-existing" as const }
             : {}),
           runtimeMode: input.runtimeMode,
           ...(input.modelSelection?.instanceId === boundInstanceId

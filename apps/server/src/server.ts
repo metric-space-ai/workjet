@@ -44,6 +44,7 @@ import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { CtoxThreadBindingSourceLive } from "./workjet/ctox/CtoxThreadBinding.ts";
 import { CtoxNativeRequests } from "./workjet/ctox/CtoxNativeRequests.ts";
+import { CtoxCrewTurnAdmission } from "./workjet/ctox/CtoxCrewTurnAdmission.ts";
 import { WorkjetCrossModeLinkStoreLive } from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
@@ -261,20 +262,6 @@ const PlatformServicesLive = Layer.unwrap(
   }),
 );
 
-const ReactorLayerLive = Layer.empty.pipe(
-  Layer.provideMerge(OrchestrationReactorLive),
-  Layer.provideMerge(ProviderRuntimeIngestionLive),
-  Layer.provideMerge(ProviderCommandReactorLive),
-  Layer.provideMerge(CheckpointReactorLive),
-  Layer.provideMerge(
-    // Worker worktree release is a thread-deletion reaction, so its service is
-    // provided directly to the reactor that consumes `thread.deleted`.
-    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
-  ),
-  Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
-  Layer.provideMerge(RuntimeReceiptBusLive),
-);
-
 const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
   Layer.provide(ProviderSessionRuntime.layer),
 );
@@ -292,6 +279,25 @@ const DecisionHubEscalationServiceLive = DecisionHubEscalationService.layer.pipe
 const DecisionHubReconcilerLive = DecisionHubReconciler.layer.pipe(
   Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(DecisionHubMcpClientLive),
+);
+
+const CtoxCrewTurnAdmissionLive = CtoxCrewTurnAdmission.layer.pipe(
+  Layer.provide(CtoxNativeRequests.layer),
+  Layer.provide(DecisionHubConnectionRegistryLive),
+  Layer.provide(FetchHttpClient.layer),
+);
+const ReactorLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(OrchestrationReactorLive),
+  Layer.provideMerge(ProviderRuntimeIngestionLive),
+  Layer.provideMerge(ProviderCommandReactorLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
+  Layer.provideMerge(CheckpointReactorLive),
+  Layer.provideMerge(
+    // Worker worktree release is a thread-deletion reaction, so its service is
+    // provided directly to the reactor that consumes `thread.deleted`.
+    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
+  ),
+  Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
 // `ProviderAdapterRegistryLive` is now a facade that resolves kind → adapter

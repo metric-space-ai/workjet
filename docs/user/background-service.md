@@ -1,8 +1,10 @@
 # Running Workjet in the Background
 
-On macOS, Workjet Desktop sets up a background service for a new local profile.
-The service continues running after you quit Workjet, while you remain logged in.
-Reopening Workjet reconnects to the service. Logging out ends the macOS user service.
+Automatic background setup for macOS Desktop is planned for an upcoming release.
+Its full Quit/reopen behavior has not yet been validated. The intended behavior is
+that a new local profile gets a background service, work continues after Quit while
+you remain logged in, and reopening Workjet reconnects to that service. Logging out
+ends the macOS user service. Do not rely on this upcoming Desktop behavior yet.
 
 Automatic migration of profiles created by older releases is not yet available.
 If Workjet requests migration or repair, finish active work and stop the old runtime

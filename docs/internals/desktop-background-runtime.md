@@ -251,7 +251,7 @@ than changing lock identity when their target is created. External SQLite tools
 and old clients do not participate and require a quiesced maintenance window.
 The mechanism uses [SQLite transaction locking](https://www.sqlite.org/lang_transaction.html),
 not a heartbeat or timestamp-based lease; actual UI lifecycle proof is still owed.
-No service is installed by this source change. Service adapter tests use a fake
+Implementation and focused tests did not install a real operating-system service. Service adapter tests use a fake
 process runner and real isolated files. Ownership tests exercise real SQLite,
 profile aliases, independent profiles, failure release, a competing subprocess
 and abrupt exit, plus refusal to restore under a manual runtime's ownership.

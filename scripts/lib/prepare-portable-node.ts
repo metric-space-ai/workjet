@@ -9,7 +9,7 @@ import * as Data from "effect/Data";
 import * as Stream from "effect/Stream";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
-import { managedNodeArchive } from "../../packages/ssh/src/remoteNode.ts";
+import { managedNodeArchive } from "@workjet/ssh/remoteNode";
 
 class PortableNodeDownloadError extends Data.TaggedError("PortableNodeDownloadError")<{
   readonly message: string;

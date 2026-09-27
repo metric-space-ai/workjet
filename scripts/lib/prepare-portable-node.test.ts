@@ -6,11 +6,8 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Context from "effect/Context";
-import {
-  HostProcessPlatform,
-  HostProcessArchitecture,
-} from "../../packages/shared/src/hostProcess.ts";
-import { managedNodeArchive } from "../../packages/ssh/src/remoteNode.ts";
+import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/hostProcess";
+import { managedNodeArchive } from "@workjet/ssh/remoteNode";
 import { preparePortableNode, stageVerifiedNodeArchive } from "./prepare-portable-node.ts";
 
 const hostContext = Context.empty();

@@ -918,6 +918,9 @@ importers:
       '@workjet/shared':
         specifier: workspace:*
         version: link:../packages/shared
+      '@workjet/ssh':
+        specifier: workspace:*
+        version: link:../packages/ssh
       '@workjet/tailscale':
         specifier: workspace:*
         version: link:../packages/tailscale

@@ -78,6 +78,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   aliasProfile = false,
   bundled = false,
   desktop?: BootService.BootServiceHost["desktop"],
+  requireFreshProfile = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -114,16 +115,20 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     failCommand: string | undefined;
     timeoutCommand: string | undefined;
     supportsWait: boolean;
+    onBootstrap: (() => Promise<void>) | undefined;
   } = {
     failCommand: undefined,
     timeoutCommand: undefined,
     supportsWait: true,
+    onBootstrap: undefined,
   };
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         const command = `${input.command} ${input.args.join(" ")}`;
         commands.push(command);
+        if (input.args[0] === "bootstrap" && control.onBootstrap !== undefined)
+          yield* Effect.promise(control.onBootstrap);
         return {
           stdout:
             input.args[1] === "--version"
@@ -147,6 +152,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     cliVersion: "1.2.3",
     host: {
       execPath: "/usr/bin/node",
+      requireFreshProfile,
       ...(desktop === undefined ? {} : { desktop }),
       ...(bundle === undefined ? {} : { bundle }),
       ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
@@ -167,6 +173,125 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("bundled service executable", (it) => {
+  const desktop = {
+    port: 3888,
+    host: "127.0.0.1" as const,
+    tailscaleServeEnabled: false,
+    tailscaleServePort: 443,
+  };
+
+  it.effect("installs a fresh Desktop profile and releases runtime ownership before handoff", () =>
+    Effect.gen(function* () {
+      const { service, baseDir, commands, control } = yield* makeHarness(
+        "darwin",
+        false,
+        false,
+        true,
+        desktop,
+        true,
+      );
+      control.onBootstrap = async () => {
+        const ownership = await acquireProfileOwnership(baseDir, "runtime");
+        ownership.release();
+      };
+      const plan = yield* service.install;
+      const status = yield* service.status;
+      expect(status.current).toBe(true);
+      expect(status.desktop).toEqual(desktop);
+      expect(commands.filter((command) => command.startsWith("/bin/launchctl bootstrap"))).toEqual([
+        `/bin/launchctl bootstrap gui/501 ${plan.unitPath}`,
+      ]);
+      yield* Effect.acquireRelease(
+        Effect.tryPromise(() => acquireProfileOwnership(baseDir, "runtime")),
+        (ownership) => Effect.sync(() => ownership.release()),
+      );
+    }),
+  );
+
+  for (const retained of ["database", "wal", "dangling-database", "service-state"] as const) {
+    it.effect(`refuses fresh installation over retained ${retained}`, () =>
+      Effect.gen(function* () {
+        const { service, fs, baseDir, statePath, commands, path } = yield* makeHarness(
+          "darwin",
+          false,
+          false,
+          true,
+          desktop,
+          true,
+        );
+        const stateDir = path.join(baseDir, "userdata");
+        yield* fs.makeDirectory(stateDir, { recursive: true });
+        const retainedPath =
+          retained === "service-state"
+            ? statePath
+            : path.join(stateDir, retained === "wal" ? "state.sqlite-wal" : "state.sqlite");
+        if (retained === "dangling-database") {
+          yield* fs.symlink(path.join(baseDir, "missing.sqlite"), retainedPath);
+        } else {
+          yield* fs.writeFileString(retainedPath, "retained data");
+        }
+        const error = yield* service.install.pipe(Effect.flip);
+        expect(error._tag).toBe("BootServiceInstallError");
+        expect((yield* service.status).installed).toBe(false);
+        expect(commands.some((command) => command.includes("bootstrap"))).toBe(false);
+        if (retained === "dangling-database") {
+          expect(yield* fs.readLink(retainedPath)).toBe(path.join(baseDir, "missing.sqlite"));
+        } else {
+          expect(yield* fs.readFileString(retainedPath)).toBe("retained data");
+        }
+        if (retained !== "service-state") expect(yield* fs.exists(statePath)).toBe(false);
+      }),
+    );
+  }
+
+  it.effect("does not replace or stop a service that appeared before fresh installation", () =>
+    Effect.gen(function* () {
+      const { service, fs, statePath, commands } = yield* makeHarness(
+        "darwin",
+        false,
+        false,
+        true,
+        desktop,
+        true,
+      );
+      const plan = yield* service.install;
+      const before = yield* fs.readFileString(statePath);
+      const unit = yield* fs.readFileString(plan.unitPath);
+      commands.length = 0;
+      expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+      expect(yield* fs.readFileString(statePath)).toBe(before);
+      expect(yield* fs.readFileString(plan.unitPath)).toBe(unit);
+      expect(
+        commands.some(
+          (command) => command.includes("bootout --wait") || command.includes("bootstrap"),
+        ),
+      ).toBe(false);
+    }),
+  );
+
+  it.effect(
+    "does not publish fresh service state while a foreground runtime owns the profile",
+    () =>
+      Effect.gen(function* () {
+        const { service, fs, baseDir, statePath, commands } = yield* makeHarness(
+          "darwin",
+          false,
+          false,
+          true,
+          desktop,
+          true,
+        );
+        yield* Effect.acquireRelease(
+          Effect.tryPromise(() => acquireProfileOwnership(baseDir, "runtime")),
+          (ownership) => Effect.sync(() => ownership.release()),
+        );
+        expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+        expect(yield* fs.exists(statePath)).toBe(false);
+        expect((yield* service.status).installed).toBe(false);
+        expect(commands.some((command) => command.includes("bootstrap"))).toBe(false);
+      }),
+  );
+
   for (const platform of ["darwin", "linux"] as const) {
     it.effect(
       `starts ${platform} without replacement and stops without removing installation`,

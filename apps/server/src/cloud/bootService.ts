@@ -214,6 +214,7 @@ export interface BootServiceHost {
   readonly launcherSourcePath?: string;
   readonly bundle?: BundledRuntimeSource;
   readonly desktop?: DesktopServiceLaunchConfig;
+  readonly requireFreshProfile?: boolean;
 }
 
 export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
@@ -232,6 +233,13 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   const host = input.host ?? { execPath: hostExecPath };
   if (host.desktop !== undefined && decodeDesktopServiceLaunchConfig(host.desktop) === undefined)
     return yield* new BootServiceInstallError({ cause: "Invalid Desktop service configuration." });
+  if (
+    host.requireFreshProfile &&
+    (platform !== "darwin" || host.desktop === undefined || host.bundle === undefined)
+  )
+    return yield* new BootServiceInstallError({
+      cause: "Fresh-profile installation requires the packaged macOS Desktop runtime and endpoint.",
+    });
 
   // Resolve an existing ancestor too: a new profile below a symlink must keep
   // its label after the first install creates the missing directories.
@@ -392,6 +400,25 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   const serializeAdministration = <A, E, R>(work: Effect.Effect<A, E, R>) =>
     Effect.andThen(requireSupportedHost, withOwnership("administration", work));
 
+  const requireFreshProfile = Effect.gen(function* () {
+    const stateDir = path.join(baseDir, "userdata");
+    const entries = (yield* fs.exists(stateDir)) ? yield* fs.readDirectory(stateDir) : [];
+    // Directory entries also catch dangling database symlinks and orphaned WAL files.
+    const runtimeEntries = yield* fs.readDirectory(path.dirname(statePath));
+    if (
+      entries.some((entry) => entry === "state.sqlite" || entry.startsWith("state.sqlite-")) ||
+      runtimeEntries.includes(SERVICE_STATE_FILE)
+    )
+      return yield* new BootServiceInstallError({
+        cause:
+          "This profile needs an explicit quiesced migration or service repair, not a fresh installation.",
+      });
+  }).pipe(
+    Effect.mapError((cause) =>
+      Schema.is(BootServiceInstallError)(cause) ? cause : new BootServiceInstallError({ cause }),
+    ),
+  );
+
   const install: BootService["Service"]["install"] = Effect.gen(function* () {
     yield* fs
       .makeDirectory(input.logsDir, { recursive: true })
@@ -456,6 +483,10 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       .exists(unitPath)
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
     if (installed) {
+      if (host.requireFreshProfile)
+        return yield* new BootServiceInstallError({
+          cause: "A service already exists; fresh installation cannot replace or stop it.",
+        });
       yield* stopInstalledService;
     }
 
@@ -503,6 +534,10 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       }
     }).pipe(
       (work) => withOwnership("launcher", work),
+      (work) =>
+        host.requireFreshProfile
+          ? withOwnership("runtime", Effect.andThen(requireFreshProfile, work))
+          : work,
       Effect.tapError((error) =>
         installed &&
         !(error._tag === "BootServiceInstallError" && error.cause instanceof ProfileOwnershipError)

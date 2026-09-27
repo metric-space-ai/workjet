@@ -82,6 +82,7 @@ const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
     readonly desktopHost?: Option.Option<"127.0.0.1" | "::1">;
     readonly desktopTailscaleServe?: boolean;
     readonly desktopTailscaleServePort?: Option.Option<number>;
+    readonly freshProfile?: boolean;
   },
   run: Effect.Effect<A, E, BootService.BootService>,
 ) {
@@ -113,6 +114,7 @@ const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
     });
   const host: BootService.BootServiceHost = {
     execPath: yield* HostProcessExecutablePath,
+    ...(flags.freshProfile ? { requireFreshProfile: true } : {}),
     ...(archivePath !== undefined && sha256 !== undefined
       ? { bundle: { archivePath, sha256 } }
       : {}),
@@ -149,7 +151,14 @@ const serviceArtifactFlags = {
   ),
 };
 
-const serviceInstallCommand = Command.make("install", serviceArtifactFlags).pipe(
+const serviceInstallCommand = Command.make("install", {
+  ...serviceArtifactFlags,
+  freshProfile: Flag.boolean("fresh-profile").pipe(
+    Flag.withDescription(
+      "Refuse existing database state or service replacement during Desktop first installation.",
+    ),
+  ),
+}).pipe(
   Command.withDescription("Install Workjet as a background service for this user."),
   Command.withHandler((flags) =>
     runServiceCommand(

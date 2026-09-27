@@ -1083,6 +1083,11 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetCrossModeListLinks,
     staleTimeMs: WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
   });
+  const resolveWorkjetBrowserOps = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:crossmode:resolve-browser-ops",
+    tag: WS_METHODS.workjetCrossModeResolveBrowserOps,
+    concurrency: workjetGatewayConcurrency,
+  });
   // `Delegate to Code` / `Open in Code` is single-flighted per ENVIRONMENT
   // rather than per source thread: its input names a HOST thread, not a source,
   // and the race that matters is two clicks on the same Business OS OBJECT — a
@@ -1117,6 +1122,7 @@ export function createServerEnvironmentAtoms<R, E>(
     updateStateAtom,
     workjetCrossModeThreadLink,
     workjetCrossModeLinks,
+    resolveWorkjetBrowserOps,
     openWorkjetCrossModeInCode,
     submitWorkjetCrossMode,
     sendWorkjetMailboxMessage,

@@ -5,6 +5,8 @@ import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/c
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+
+import { EventEmitter } from "node:events";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Fiber from "effect/Fiber";
@@ -12,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
-import type { BrowserWindow, Session, WebContentsView } from "electron";
+import type { BrowserWindow, Session, WebContents, WebContentsView } from "electron";
 import { expect, vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({ WebContentsView: class {} }));
@@ -24,6 +26,8 @@ import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./CtoxGuestManager.ts";
+import * as CtoxGuestWindows from "./CtoxGuestWindows.ts";
+import { DesktopIpcInvocation } from "../ipc/DesktopIpc.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
@@ -137,7 +141,7 @@ const pairedConfig: CtoxBusinessOsShell.CtoxBusinessOsLaunchConfig = {
   },
 };
 
-function makeGuestHarness() {
+function makeGuestHarness(windowOwners?: readonly BrowserWindow[]) {
   const beforeRequest = vi.fn();
   const browserSession = {
     webRequest: { onBeforeRequest: beforeRequest },
@@ -214,6 +218,7 @@ function makeGuestHarness() {
         }),
       },
       getURL: vi.fn(() => loadURL.mock.calls.at(-1)?.[0] ?? "about:blank"),
+      send: vi.fn(),
       executeJavaScript,
     };
     const view = { webContents, setBounds } as unknown as WebContentsView;
@@ -381,7 +386,15 @@ function makeGuestHarness() {
     Layer.succeed(ElectronWindow.ElectronWindow, electronWindow),
     Layer.succeed(ElectronShell.ElectronShell, electronShell),
   );
-  const layer = CtoxGuestManager.layer({ createView }).pipe(Layer.provide(dependencies));
+  const layer = (
+    windowOwners === undefined
+      ? CtoxGuestManager.layer({ createView })
+      : CtoxGuestWindows.layer({
+          createView,
+          windowForSender: (sender) =>
+            windowOwners.find((window) => window.webContents === sender) ?? null,
+        })
+  ).pipe(Layer.provide(dependencies));
   /** [instanceId, state] pairs of every guest-state event, in emission order. */
   const guestStateEvents = () =>
     sendAll.mock.calls
@@ -472,6 +485,326 @@ describe("child views on a host window", () => {
       yield* walk(root);
       assert.deepEqual(callers, ["ctox/CtoxGuestManager.ts"]);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
+
+function makeHostWindow() {
+  const contentsEvents = new EventEmitter();
+  const windowEvents = new EventEmitter();
+  let destroyed = false;
+  const send = vi.fn();
+  const addChildView = vi.fn();
+  const removeChildView = vi.fn();
+  const contents = Object.assign(contentsEvents, {
+    mainFrame: {},
+    isDestroyed: () => destroyed,
+    send,
+  });
+  const window = Object.assign(windowEvents, {
+    webContents: contents,
+    isDestroyed: () => destroyed,
+    contentView: { addChildView, removeChildView },
+  }) as unknown as BrowserWindow;
+  return {
+    window,
+    send,
+    addChildView,
+    removeChildView,
+    invoke: <A, E, R>(operation: Effect.Effect<A, E, R>) =>
+      operation.pipe(
+        Effect.provideService(DesktopIpcInvocation, {
+          sender: window.webContents,
+          senderFrame: window.webContents.mainFrame,
+        }),
+      ),
+    close: () => {
+      destroyed = true;
+      windowEvents.emit("closed");
+    },
+    reload: () => {
+      contentsEvents.emit("did-start-navigation", {}, "workjet://app/", false, true);
+      contents.mainFrame = {};
+    },
+  };
+}
+
+describe("CtoxGuestWindows", () => {
+  const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+  const unavailable = { _tag: "failed", code: "not_active" };
+
+  it.effect(
+    "rejects absent, subframe, stale-frame and guest senders without creating a view",
+    () => {
+      const host = makeHostWindow();
+      const harness = makeGuestHarness([host.window]);
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(yield* manager.ensurePooled(descriptor.id), unavailable);
+        assert.deepEqual(
+          yield* manager.enterBusinessOsMode.pipe(
+            Effect.provideService(DesktopIpcInvocation, {
+              sender: host.window.webContents,
+              senderFrame: {} as WebContents["mainFrame"],
+            }),
+          ),
+          unavailable,
+        );
+        const staleInvocation = host.invoke(manager.ensurePooled(descriptor.id));
+        host.reload();
+        assert.deepEqual(yield* staleInvocation, unavailable);
+        const guestSender = { mainFrame: {}, isDestroyed: () => false } as unknown as WebContents;
+        expect(
+          CtoxGuestWindows.resolveGuestWindow(
+            { sender: guestSender, senderFrame: guestSender.mainFrame },
+            () => host.window,
+          ),
+        ).toBeUndefined();
+        expect(harness.createView).not.toHaveBeenCalled();
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "keeps the same instance's views, bounds, theme, reads and selection independent in two windows",
+    () => {
+      const a = makeHostWindow();
+      const b = makeHostWindow();
+      const harness = makeGuestHarness([a.window, b.window]);
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* a.invoke(manager.enterBusinessOsMode);
+        yield* b.invoke(manager.enterBusinessOsMode);
+        yield* a.invoke(manager.activate(descriptor.id, bounds));
+        expect(b.send).not.toHaveBeenCalled();
+        yield* b.invoke(manager.activate(descriptor.id, { ...bounds, x: 12 }));
+        const first = harness.views[0]!;
+        const second = harness.views[1]!;
+        expect(a.addChildView).toHaveBeenCalledExactlyOnceWith(first.view);
+        expect(b.addChildView).toHaveBeenCalledExactlyOnceWith(second.view);
+        expect(harness.sendAll).not.toHaveBeenCalled();
+        yield* a.invoke(manager.setBounds({ ...bounds, width: 600 }));
+        expect(first.setBounds).toHaveBeenLastCalledWith({ ...bounds, width: 600 });
+        expect(second.setBounds).toHaveBeenCalledExactlyOnceWith({ ...bounds, x: 12 });
+        const theme = {
+          scheme: "dark" as const,
+          tokens: {
+            bg: "#000000",
+            surface: "#111111",
+            "surface-2": "#222222",
+            "surface-3": "#333333",
+            line: "#444444",
+            hairline: "#555555",
+            text: "#dddddd",
+            "text-strong": "#ffffff",
+            muted: "#888888",
+            accent: "#00ff00",
+            "accent-foreground": "#000000",
+            "accent-soft": "#005500",
+          },
+        };
+        yield* a.invoke(manager.setHostTheme(theme));
+        expect(first.view.webContents.send).toHaveBeenCalled();
+        expect(second.view.webContents.send).not.toHaveBeenCalled();
+        second.executeJavaScript.mockResolvedValueOnce({
+          status: "completed",
+          result: { action: "session.list", sessions: [] },
+        });
+        assert.equal(
+          (yield* b.invoke(
+            manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+          ))._tag,
+          "completed",
+        );
+        expect(first.executeJavaScript).not.toHaveBeenCalled();
+        yield* a.invoke(manager.exitBusinessOsMode);
+        expect(first.close).not.toHaveBeenCalled();
+        expect(b.removeChildView).not.toHaveBeenCalled();
+        yield* a.invoke(manager.deactivate);
+        expect(first.close).toHaveBeenCalledOnce();
+        expect(second.close).not.toHaveBeenCalled();
+        assert.deepEqual(yield* b.invoke(manager.setBounds(bounds)), { _tag: "completed" });
+        assert.deepEqual(yield* a.invoke(manager.openGuestSettings(descriptor.id)), unavailable);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "reload closes only that window and recreates a fresh guest without accepting old events",
+    () => {
+      const a = makeHostWindow();
+      const b = makeHostWindow();
+      const harness = makeGuestHarness([a.window, b.window]);
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* a.invoke(manager.ensurePooled(descriptor.id));
+        yield* b.invoke(manager.ensurePooled(descriptor.id));
+        const old = harness.views[0]!;
+        const destroyed = new Promise<void>((resolve) =>
+          old.view.webContents.on("destroyed", () => resolve()),
+        );
+        a.reload();
+        yield* Effect.promise(() => destroyed);
+        expect(old.close).toHaveBeenCalledOnce();
+        expect(harness.views[1]!.close).not.toHaveBeenCalled();
+        const oldEventCount = a.send.mock.calls.length;
+        old.refresh();
+        old.finishLoad();
+        expect(a.send.mock.calls.length).toBe(oldEventCount);
+        yield* a.invoke(manager.ensurePooled(descriptor.id));
+        expect(harness.views).toHaveLength(3);
+        yield* manager.deactivateAll;
+        expect(harness.views[1]!.close).toHaveBeenCalledOnce();
+        expect(harness.views[2]!.close).toHaveBeenCalledOnce();
+        expect(a.window.listenerCount("closed")).toBe(0);
+        expect(b.window.listenerCount("closed")).toBe(0);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "window close interrupts pending navigation and a late commit cannot attach elsewhere",
+    () => {
+      const a = makeHostWindow();
+      const b = makeHostWindow();
+      const harness = makeGuestHarness([a.window, b.window]);
+      let navigationStarted: (() => void) | undefined;
+      const started = new Promise<void>((resolve) => {
+        navigationStarted = resolve;
+      });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* b.invoke(manager.ensurePooled(descriptor.id));
+        yield* a.invoke(manager.enterBusinessOsMode);
+        harness.setLoadURLImplementation(() => {
+          navigationStarted?.();
+          return new Promise(() => undefined);
+        });
+        const pending = yield* a
+          .invoke(manager.activate(descriptor.id, bounds))
+          .pipe(Effect.forkChild);
+        yield* Effect.promise(() => started);
+        a.close();
+        assert.deepEqual(yield* Fiber.join(pending), unavailable);
+        const abandoned = harness.views[1]!;
+        expect(abandoned.close).toHaveBeenCalledOnce();
+        abandoned.emit("did-frame-navigate", {}, "https://ctox.dev/", 200, "OK", true, 1, 1);
+        expect(a.addChildView).toHaveBeenCalledOnce();
+        expect(b.addChildView).not.toHaveBeenCalled();
+        expect(harness.views[0]!.close).not.toHaveBeenCalled();
+        expect(a.window.listenerCount("closed")).toBe(0);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "account invalidation interrupts pending guests in every window and preserves no old mode",
+    () => {
+      const a = makeHostWindow();
+      const b = makeHostWindow();
+      const harness = makeGuestHarness([a.window, b.window]);
+      let started: (() => void) | undefined;
+      const navigation = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* a.invoke(manager.enterBusinessOsMode);
+        yield* a.invoke(manager.activate(descriptor.id, bounds));
+        harness.setLoadURLImplementation(() => {
+          started?.();
+          return new Promise(() => undefined);
+        });
+        const pending = yield* b.invoke(manager.ensurePooled(descriptor.id)).pipe(Effect.forkChild);
+        yield* Effect.promise(() => navigation);
+        assert.deepEqual(yield* manager.deactivateAll, { _tag: "completed" });
+        assert.deepEqual(yield* Fiber.join(pending), unavailable);
+        expect(harness.views.every((entry) => entry.view.webContents.isDestroyed())).toBe(true);
+        assert.deepEqual(yield* a.invoke(manager.activate(descriptor.id, bounds)), unavailable);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "shares a four-view budget and evicts the globally oldest warm guest without touching an active window",
+    () => {
+      const a = makeHostWindow();
+      const b = makeHostWindow();
+      const harness = makeGuestHarness([a.window, b.window]);
+      const instances = Array.from({ length: 5 }, (_, index) => ({
+        ...descriptor,
+        id: `managed:budget-${index}`,
+      }));
+      harness.setDiscovery({ _tag: "ready", instances });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* a.invoke(manager.enterBusinessOsMode);
+        yield* a.invoke(manager.activate(instances[0]!.id, bounds));
+        yield* a.invoke(manager.ensurePooled(instances[1]!.id));
+        yield* b.invoke(manager.ensurePooled(instances[2]!.id));
+        yield* b.invoke(manager.ensurePooled(instances[3]!.id));
+        yield* b.invoke(manager.ensurePooled(instances[4]!.id));
+        expect(harness.views[0]!.close).not.toHaveBeenCalled();
+        expect(harness.views[1]!.close).toHaveBeenCalledOnce();
+        expect(harness.views.filter((entry) => !entry.view.webContents.isDestroyed())).toHaveLength(
+          4,
+        );
+        assert.deepEqual(yield* a.invoke(manager.openGuestSettings(instances[1]!.id)), unavailable);
+        yield* a.invoke(manager.ensurePooled(instances[1]!.id));
+        expect(harness.views[2]!.close).toHaveBeenCalledOnce();
+        expect(harness.views.filter((entry) => !entry.view.webContents.isDestroyed())).toHaveLength(
+          4,
+        );
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "refuses a fifth active renderer and releases capacity when one window exits Business OS",
+    () => {
+      const hosts = Array.from({ length: 5 }, makeHostWindow);
+      const harness = makeGuestHarness(hosts.map((host) => host.window));
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        for (const host of hosts) yield* host.invoke(manager.enterBusinessOsMode);
+        for (const host of hosts.slice(0, 4))
+          assert.equal((yield* host.invoke(manager.activate(descriptor.id, bounds)))._tag, "ready");
+        assert.deepEqual(yield* hosts[4]!.invoke(manager.activate(descriptor.id, bounds)), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
+        expect(harness.views).toHaveLength(4);
+        yield* hosts[1]!.invoke(manager.exitBusinessOsMode);
+        assert.equal(
+          (yield* hosts[4]!.invoke(manager.activate(descriptor.id, bounds)))._tag,
+          "ready",
+        );
+        expect(harness.views[1]!.close).toHaveBeenCalledOnce();
+        expect(harness.views.filter((entry) => !entry.view.webContents.isDestroyed())).toHaveLength(
+          4,
+        );
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect(
+    "removes a registry instance from all windows while preserving another instance",
+    () => {
+      const a = makeHostWindow();
+      const b = makeHostWindow();
+      const harness = makeGuestHarness([a.window, b.window]);
+      const other = { ...descriptor, id: "managed:other" };
+      harness.setDiscovery({ _tag: "ready", instances: [descriptor, other] });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* a.invoke(manager.ensurePooled(descriptor.id));
+        yield* b.invoke(manager.ensurePooled(descriptor.id));
+        yield* b.invoke(manager.ensurePooled(other.id));
+        yield* manager.deactivateInstance(descriptor.id);
+        expect(harness.views[0]!.close).toHaveBeenCalledOnce();
+        expect(harness.views[1]!.close).toHaveBeenCalledOnce();
+        expect(harness.views[2]!.close).not.toHaveBeenCalled();
+      }).pipe(Effect.provide(harness.layer));
+    },
   );
 });
 

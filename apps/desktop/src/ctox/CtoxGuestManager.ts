@@ -35,6 +35,7 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { CTOX_GUEST_STATE_CHANNEL, CTOX_SESSION_TRANSFER_EVENT_CHANNEL } from "../ipc/channels.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
+import { CtoxGuestBudget, type CtoxGuestLease } from "./CtoxGuestBudget.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
@@ -112,6 +113,7 @@ interface ActiveGuest {
   readonly view: WebContentsView;
   readonly bounds: CtoxGuestBounds;
   readonly browserSession: Session;
+  readonly lease?: CtoxGuestLease;
   /**
    * Releases resources this activation opened outside the view — today the SSH
    * local forwards behind an `ssh_managed` instance. It is the guest session's
@@ -164,6 +166,7 @@ export interface CtoxGuestWebPreferences {
 
 export interface CtoxGuestManagerOptions {
   readonly createView?: (webPreferences: CtoxGuestWebPreferences) => WebContentsView | undefined;
+  readonly budget?: CtoxGuestBudget;
 }
 
 export class CtoxGuestManager extends Context.Service<
@@ -180,6 +183,8 @@ export class CtoxGuestManager extends Context.Service<
     /** Detach the active guest without destroying its warm renderer state. */
     readonly suspend: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivate: Effect.Effect<CtoxManagedActionResult>;
+    /** Account transitions release guests in every window, unlike a local selection reset. */
+    readonly deactivateAll: Effect.Effect<CtoxManagedActionResult>;
     readonly deactivateInstance: (instanceId: string) => Effect.Effect<CtoxManagedActionResult>;
     readonly setBounds: (bounds: CtoxGuestBounds) => Effect.Effect<CtoxManagedActionResult>;
     /** Bounded read of the active guest's installed modules and active module. */
@@ -655,6 +660,7 @@ function isValidBounds(bounds: CtoxGuestBounds): boolean {
  * webContents keeps running and the guest stays warm for re-attachment.
  */
 function detachGuest(guest: ActiveGuest): void {
+  guest.lease?.touch(false);
   try {
     guest.window.contentView.removeChildView(guest.view);
   } catch {
@@ -662,8 +668,9 @@ function detachGuest(guest: ActiveGuest): void {
   }
 }
 
-function destroyGuest(active: ActiveGuest | undefined): void {
-  if (active === undefined) return;
+function destroyGuest(active: ActiveGuest | undefined): boolean {
+  if (active === undefined) return false;
+  if (active.lease !== undefined && !active.lease.release()) return false;
   try {
     active.window.contentView.removeChildView(active.view);
   } catch {
@@ -679,6 +686,7 @@ function destroyGuest(active: ActiveGuest | undefined): void {
   } catch {
     // Teardown of out-of-view resources may not block guest destruction.
   }
+  return true;
 }
 
 function installRequestGuard(session: Session, launchOrigin: string): boolean {
@@ -856,6 +864,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const electronShell = yield* ElectronShell.ElectronShell;
     const context = yield* Effect.context<never>();
     const runPromise = Effect.runPromiseWith(context);
+    const ownerScope = yield* Effect.scope;
+    const budget = options.budget ?? new CtoxGuestBudget(CTOX_GUEST_POOL_LIMIT);
     let latestHostTheme: CtoxHostThemeInput | undefined;
     let registeredSessionComputerIds: readonly string[] = [];
     let guestUseSequence = 0;
@@ -869,7 +879,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     const preloadPath = `${__dirname}/ctox-guest-preload.cjs`;
 
     /**
-     * Pushes one instance's guest lifecycle to every renderer window. The
+     * Pushes one instance's guest lifecycle through the owning window adapter. The
      * payload is the instance id and the state token only — never guest data.
      */
     const emitGuestState = (instanceId: string, guestState: CtoxGuestLifecycleState): void => {
@@ -921,8 +931,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     };
 
     const destroyPooledGuest = (guest: ActiveGuest): void => {
-      destroyGuest(guest);
-      emitGuestState(guest.instanceId, "none");
+      if (destroyGuest(guest)) emitGuestState(guest.instanceId, "none");
     };
 
     const destroyAllGuests = (state: GuestState): void => {
@@ -1152,6 +1161,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return abandonLaunch({ _tag: "failed", code: "guest_failed" });
       }
 
+      const lease = budget.reserve(shouldAttach);
+      if (lease === undefined) return abandonLaunch({ _tag: "failed", code: "guest_failed" });
       const view = (options.createView ?? createGuestView)({
         session: resolvedSession.value,
         preload: preloadPath,
@@ -1160,6 +1171,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         nodeIntegration: false,
       });
       if (view === undefined) {
+        lease.release();
         return abandonLaunch({ _tag: "failed", code: "guest_failed" });
       }
       const failView = (): readonly [CtoxManagedGuestResult, undefined] => {
@@ -1169,6 +1181,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           view,
           bounds,
           browserSession: resolvedSession.value,
+          lease,
           ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
         });
         return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
@@ -1246,8 +1259,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         view,
         bounds,
         browserSession: resolvedSession.value,
+        lease,
         ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
       };
+      lease.bind(() => destroyPooledGuest(active));
+      webContents.on("destroyed", () => destroyPooledGuest(active));
       const committed = yield* waitForGuestNavigationCommit(
         webContents,
         launch.value.launchUrl,
@@ -1263,7 +1279,16 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         destroyGuest(active);
         return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
       }
-      yield* Effect.promise(() => registerSessionEventsForWebContents(instanceId, webContents));
+      yield* Effect.promise(() =>
+        registerSessionEventsForWebContents(instanceId, webContents),
+      ).pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            destroyGuest(active);
+          }),
+        ),
+      );
+      lease.ready();
       return [{ _tag: "ready", instanceId }, active] as const;
     });
 
@@ -1304,6 +1329,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
                 },
               ] as const;
             }
+            warm.lease?.touch(true);
             pool.set(instanceId, { ...warm, bounds, lastUsedAt: stamp });
             return [
               { _tag: "ready", instanceId } as const,
@@ -1363,6 +1389,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             !warm.view.webContents.isDestroyed() &&
             !warm.window.isDestroyed()
           ) {
+            warm.lease?.touch();
             pool.set(instanceId, { ...warm, lastUsedAt: stamp });
             return [{ _tag: "ready", instanceId } as const, { ...state, pool }] as const;
           }
@@ -1448,7 +1475,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       });
 
     refreshFromWebContents = (sender) => {
-      void runPromise(refresh(sender)).catch(() => undefined);
+      void runPromise(refresh(sender).pipe(Effect.forkIn(ownerScope))).catch(() => undefined);
     };
 
     const setBounds = (bounds: CtoxGuestBounds): Effect.Effect<CtoxManagedActionResult> =>
@@ -1912,6 +1939,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       ensurePooled,
       suspend,
       deactivate,
+      deactivateAll: deactivate,
       deactivateInstance,
       setBounds,
       readGuestApps,

@@ -30,7 +30,7 @@ import * as CtoxNativeIdentityResolver from "./ctox/CtoxNativeIdentityResolver.t
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
-import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
+import * as CtoxGuestWindows from "./ctox/CtoxGuestWindows.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
@@ -261,7 +261,7 @@ const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
   Layer.provideMerge(desktopCtoxControlLayer),
 );
 
-const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
+const desktopCtoxLayer = CtoxGuestWindows.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
 const desktopCtoxFleetLayer = CtoxShellFleet.layer().pipe(
   Layer.provideMerge(desktopCtoxControlLayer),
 );

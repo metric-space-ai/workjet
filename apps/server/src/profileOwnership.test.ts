@@ -158,7 +158,7 @@ it("excludes another process and recovers kernel ownership after its abrupt exit
       { stdio: ["ignore", "ignore", "ignore", "ipc"] },
     );
     try {
-      const [receipt] = await NodeEvents.once(child, "message", {
+      const [receipt] = await NodeEvents.EventEmitter.once(child, "message", {
         signal: AbortSignal.timeout(5_000),
       });
       expect(receipt).toBe("locked");
@@ -167,7 +167,7 @@ it("excludes another process and recovers kernel ownership after its abrupt exit
       );
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
-        const exited = NodeEvents.once(child, "exit", { signal: AbortSignal.timeout(5_000) });
+        const exited = NodeEvents.EventEmitter.once(child, "exit", { signal: AbortSignal.timeout(5_000) });
         child.kill("SIGKILL");
         await exited;
       }

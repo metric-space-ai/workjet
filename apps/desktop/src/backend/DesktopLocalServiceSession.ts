@@ -7,6 +7,7 @@ import { PrimaryConnectionTarget } from "@workjet/client-runtime/connection";
 import { RpcSessionFactory, type RpcSession } from "@workjet/client-runtime/rpc";
 import { isLocalServiceOrigin, LocalServiceTarget } from "@workjet/shared/localServiceTarget";
 import * as Clock from "effect/Clock";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -121,7 +122,9 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
               )
                 return yield* fail("validate the expiry of");
               yield* dependencies.validate(target, credential);
-              yield* credentialStore.save(credential).pipe(Effect.mapError(() => fail("save")));
+              yield* credentialStore
+                .save(credential)
+                .pipe(Effect.mapError((error) => fail(`${error.operation} credential for`)));
               return { target, credential };
             });
             const result = yield* Effect.exit(
@@ -153,6 +156,9 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
               .finishEnrollment(enrollmentId)
               .pipe(Effect.mapError(() => fail("settle enrollment for")));
             uncertainEnrollments.delete(target.baseDir);
+            const error = Cause.findErrorOption(result.cause);
+            if (Option.isSome(error) && Schema.is(LocalServiceSessionError)(error.value))
+              return yield* error.value;
             return yield* fail("save or validate");
           }),
         );

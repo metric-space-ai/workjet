@@ -228,7 +228,11 @@ for (const failure of ["denySave", "denyValidation"] as const) {
       const { dependencies, events, state } = fixture();
       state[failure] = true;
       const access = yield* makeSessionAccess(dependencies);
-      yield* access.get(config).pipe(Effect.flip);
+      const error = yield* access.get(config).pipe(Effect.flip);
+      assert.equal(
+        error.operation,
+        failure === "denySave" ? "fixture-denied credential for" : "authenticate",
+      );
       assert.equal(events.at(-1), "revoke");
       assert.isTrue(Option.isNone(state.saved));
     }),

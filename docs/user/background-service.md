@@ -1,5 +1,14 @@
 # Running Workjet in the Background
 
+On macOS, Workjet Desktop sets up a background service for a new local profile.
+The service continues running after you quit Workjet, while you remain logged in.
+Reopening Workjet reconnects to the service. Logging out ends the macOS user service.
+
+Automatic migration of profiles created by older releases is not yet available.
+If Workjet requests migration or repair, finish active work and stop the old runtime
+before migrating the existing profile. Failed setup does not start a replacement
+foreground server against the same data.
+
 On a Linux host, Workjet can run as a background service for your user. It starts when the machine
 boots and keeps running after you log out.
 
@@ -46,4 +55,4 @@ out. This is only an onboarding shortcut: the service and Workjet Connect are ma
 Signing out of Workjet Connect does not remove the service. Use `workjet service uninstall` when you no longer
 want Workjet to start in the background.
 
-The background service currently requires Linux with systemd.
+Background services require Linux with systemd or a macOS login session. Profile-specific Desktop attachment currently supports macOS.

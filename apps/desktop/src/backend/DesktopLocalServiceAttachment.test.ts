@@ -279,7 +279,11 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
           connect: () =>
             Effect.sync(() => {
               actions.push("connect");
-              return { closed: Effect.fail(new Error("connection closed")) };
+              return {
+                closed: Effect.fail(
+                  new LocalServiceAttachmentError({ reason: "connection closed" }),
+                ),
+              };
             }),
         });
         assert.deepEqual(yield* attachment.resolvePort, Option.none());

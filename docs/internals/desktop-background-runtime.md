@@ -1,11 +1,12 @@
 # Desktop-independent provider execution
 
-Status: implementation in progress on PR73 (2026-09-26), not a claim of
-delivered full-Quit behavior. Desktop now has a source-only attachment path for
-an explicitly installed, matching macOS service. New/unmanaged profiles still
-use the foreground backend. Authenticated reconnectable telemetry is now wired
-in source. Automatic migration/installation and recovery remain missing; no
-normal-Quit runtime proof has been executed.
+Status: implementation in progress on PR73 (2026-09-27), not a claim of
+delivered full-Quit behavior. A fresh packaged macOS profile now selects automatic
+installation of the trusted bundled runtime at Desktop's actual selected endpoint.
+Existing matching services are reused. Populated unmanaged profiles require
+explicit quiesced migration; they do not silently fall back to a foreground owner.
+Authenticated reconnectable telemetry is wired. Legacy migration and credential
+recovery remain incomplete; no normal-Quit runtime proof has been executed.
 
 ## Current ownership
 
@@ -35,7 +36,7 @@ lifecycle remains a separate contract.
    `cloud/bootService` and pinned runtime/launcher protocol instead of adding an
    independent job scheduler. BootService now has a macOS user LaunchAgent
    adapter alongside Linux/systemd; Desktop can now select an existing matching
-   macOS installation. Automatic setup and safe migration remain missing.
+   macOS installation and install a service for a fresh profile. Safe legacy migration remains missing.
    Windows needs an explicit supported
    service owner before advertising this guarantee there. Use a durable pinned
    runtime, not a mutable application-bundle executable or a temp worktree.
@@ -188,7 +189,7 @@ files or terminating a running job (`launchctl kickstart` without `-k`, or
 unit. Both attempts are bounded; failure does not launch a foreground fallback.
 `service stop` waits for the current service to stop while retaining installation,
 separate from uninstall. Start/stop command completion is not authenticated
-server readiness. These commands and tests remain unexecuted. Desktop resolves
+server readiness. Focused service tests exercise mocked operating-system commands; they do not establish actual service-manager behavior. Desktop resolves
 an existing installation before its free-port scan, verifies the app-shipped
 runtime receipt and saved endpoint, and calls start once per UI launch. An
 authenticated RPC attachment publishes readiness and observes disconnects;
@@ -213,10 +214,20 @@ first acknowledged snapshot. Losing either pump ends the attachment, allowing
 the existing connection retry to reauthenticate without restarting the service.
 Detach marks the last power sample stale and clears its Electron process metrics;
 the server and provider processes remain independently owned. The existing stale
-monitor also covers attached clients. These paths and authored focused tests
-remain unexecuted and do not prove actual macOS reconnect or full-Quit behavior.
-Absent services keep the legacy foreground path; retained state without a unit
-fails closed. Linux's global service unit is not treated as a profile-specific
+monitor also covers attached clients. Focused tests cover these paths but do not prove actual macOS reconnect or full-Quit behavior.
+Fresh packaged macOS profiles with no database or retained service state select
+first installation. Discovery checks the bundled archive/checksum; after Desktop
+chooses its endpoint, the controller requests installation once and verifies the
+result before authenticated attachment. The install-only `--fresh-profile` CLI
+guard checks retained DB/WAL/dangling database entries and service state under
+administration, runtime and launcher ownership before mutable publication. It
+refuses an existing unit before stopping it and releases runtime ownership before
+bootstrap. Failed or uncertain installation never triggers a foreground fallback
+or a second install request in that UI lifetime. Reopening inspects the persisted
+service state again. Populated unmanaged profiles and partial service state fail
+with an explicit migration/repair requirement. Legacy migration is not implemented
+by pretending that a missing service unit proves quiescence.
+Linux's global service unit is not treated as a profile-specific
 Desktop installation. No power-loss
 durability or host-restart guarantee follows from an install sentinel.
 The subsequent ownership block uses separate, retained SQLite lock files under
@@ -239,18 +250,17 @@ do not need filesystem admission. Dangling database symlinks fail closed rather
 than changing lock identity when their target is created. External SQLite tools
 and old clients do not participate and require a quiesced maintenance window.
 The mechanism uses [SQLite transaction locking](https://www.sqlite.org/lang_transaction.html),
-not a heartbeat or timestamp-based lease; actual execution proof is still owed.
+not a heartbeat or timestamp-based lease; actual UI lifecycle proof is still owed.
 No service is installed by this source change. Service adapter tests use a fake
 process runner and real isolated files. Ownership tests exercise real SQLite,
 profile aliases, independent profiles, failure release, a competing subprocess
 and abrupt exit, plus refusal to restore under a manual runtime's ownership.
-They are authored but not yet executed and cannot prove full-Quit behavior.
+Focused execution has passed; this cannot prove full-Quit behavior.
 An installed-but-unloaded job currently fails closed during repair/uninstall
 rather than interpreting an arbitrary launchctl error as proof of absence.
 Status compares installed artifacts; it is not a runtime health assertion.
 
-Next source block: automatic setup with a quiesced migration boundary and credential
-recovery. The actual macOS lifecycle
+Next source block: complete quiesced legacy migration and credential recovery. The actual macOS lifecycle
 and same-run proof remain dependent on an
 isolated exact build, admitted host capacity and the native contract above.
 
@@ -293,6 +303,6 @@ from trusted profile state. Authored tests cover live HTTP pairing mismatch,
 generation stability/renewal, token-cache reconnect preparation, propagation
 through all brokers, and WebSocket readiness refusal with scope cleanup. The
 runtime-state roundtrip test supplies a literal generation; it is not a running
-server descriptor/state integration test. These tests have not yet been executed.
+server descriptor/state integration test. Actual UI lifecycle acceptance is separate from these scoped tests.
 There is no measured completion date yet. A source patch, successful build or
 external-server demonstration alone cannot close this outcome.

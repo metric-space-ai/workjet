@@ -76,6 +76,7 @@ process.stdout.write('workjet-terminal-ready\\n');
                     Effect.tap(() => Deferred.succeed(exited, undefined)),
                     Effect.forkIn(scope),
                   );
+                  yield* Effect.logInfo("terminal cleanup fixture spawned", { pid: owned.pid });
                   // This captured fixture process must be reaped even if readiness/assertions fail.
                   yield* Scope.addFinalizer(
                     scope,
@@ -84,6 +85,7 @@ process.stdout.write('workjet-terminal-ready\\n');
                         yield* Effect.sync(() => owned.kill("SIGKILL"));
                       }
                       yield* Deferred.await(exited).pipe(Effect.timeout("5 seconds"), Effect.orDie);
+                      yield* Effect.logInfo("terminal cleanup fixture reaped", { pid: owned.pid });
                     }),
                   );
                 }),

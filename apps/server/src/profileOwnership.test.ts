@@ -167,7 +167,9 @@ it("excludes another process and recovers kernel ownership after its abrupt exit
       );
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
-        const exited = NodeEvents.EventEmitter.once(child, "exit", { signal: AbortSignal.timeout(5_000) });
+        const exited = NodeEvents.EventEmitter.once(child, "exit", {
+          signal: AbortSignal.timeout(5_000),
+        });
         child.kill("SIGKILL");
         await exited;
       }

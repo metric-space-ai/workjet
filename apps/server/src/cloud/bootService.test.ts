@@ -18,6 +18,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as ProcessRunner from "../processRunner.ts";
 import * as BootService from "./bootService.ts";
 import { acquireProfileOwnership, acquireDatabaseAccess } from "../profileOwnership.ts";
+import { PersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
 import { BUNDLED_RUNTIME_RECEIPT, bundledRuntimeNodePath } from "./bundledRuntime.ts";
 import {
@@ -422,9 +423,11 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
             runtimePath,
             state === "malformed"
               ? "{"
-              : JSON.stringify({
+              : Schema.encodeSync(Schema.fromJsonString(PersistedServerRuntimeState))({
                   version: 1,
                   pid: state === "invalid-pid" ? 0 : process.pid,
+                  host: undefined,
+                  devUrl: undefined,
                   port: 3888,
                   origin: "http://127.0.0.1:3888",
                   startedAt: "2026-09-27T00:00:00Z",

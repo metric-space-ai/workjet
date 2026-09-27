@@ -83,6 +83,7 @@ const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
     readonly desktopTailscaleServe?: boolean;
     readonly desktopTailscaleServePort?: Option.Option<number>;
     readonly freshProfile?: boolean;
+    readonly migrateStoppedProfile?: boolean;
   },
   run: Effect.Effect<A, E, BootService.BootService>,
 ) {
@@ -115,6 +116,7 @@ const runServiceCommand = Effect.fn("cli.service.run")(function* <A, E>(
   const host: BootService.BootServiceHost = {
     execPath: yield* HostProcessExecutablePath,
     ...(flags.freshProfile ? { requireFreshProfile: true } : {}),
+    ...(flags.migrateStoppedProfile ? { migrateStoppedProfile: true } : {}),
     ...(archivePath !== undefined && sha256 !== undefined
       ? { bundle: { archivePath, sha256 } }
       : {}),
@@ -156,6 +158,11 @@ const serviceInstallCommand = Command.make("install", {
   freshProfile: Flag.boolean("fresh-profile").pipe(
     Flag.withDescription(
       "Refuse existing database state or service replacement during Desktop first installation.",
+    ),
+  ),
+  migrateStoppedProfile: Flag.boolean("migrate-stopped-profile").pipe(
+    Flag.withDescription(
+      "Confirm older runtimes are stopped; back up and migrate this existing Desktop profile.",
     ),
   ),
 }).pipe(

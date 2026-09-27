@@ -60,7 +60,7 @@ const runtimePaths = (baseDir: string, version: string) => {
 const DB_FILE_SUFFIXES = ["", "-wal", "-shm"] as const;
 const RESTORE_MARKER = ".restore-pending";
 
-const databaseBackupDir = (baseDir: string, updateId: string) =>
+export const databaseBackupDir = (baseDir: string, updateId: string) =>
   NodePath.join(baseDir, "runtime", "db-backup", updateId);
 
 const databaseBackupFile = (backupDir: string, suffix: (typeof DB_FILE_SUFFIXES)[number]) =>
@@ -99,7 +99,10 @@ async function syncDirectory(directory: string): Promise<void> {
  * backup is never overwritten because a restarted launcher may be looking at
  * database writes from an earlier attempt by the same trial.
  */
-async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate): Promise<void> {
+export async function backupDatabaseOnce(
+  baseDir: string,
+  pending: Pick<PendingServiceUpdate, "id" | "dbPath">,
+): Promise<void> {
   const backupDir = databaseBackupDir(baseDir, pending.id);
   if (await pathExists(backupDir)) return;
 
@@ -114,12 +117,31 @@ async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate
       await NodeFSP.copyFile(source, destination);
       await syncFile(destination);
     }
+    await syncDirectory(stagingDir);
     await NodeFSP.rename(stagingDir, backupDir);
     await syncDirectory(NodePath.dirname(backupDir));
   } catch (cause) {
     await NodeFSP.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
     throw cause;
   }
+}
+
+/** Stream fingerprints without loading a possibly large profile database into memory. */
+export async function fingerprintDatabaseFiles(dbPath: string): Promise<{
+  readonly database: string;
+  readonly wal: string | null;
+  readonly shm: string | null;
+}> {
+  const hash = async (file: string): Promise<string> => {
+    const digest = NodeCrypto.createHash("sha256");
+    for await (const chunk of NodeFS.createReadStream(file)) digest.update(chunk);
+    return digest.digest("hex");
+  };
+  return {
+    database: await hash(dbPath),
+    wal: (await pathExists(`${dbPath}-wal`)) ? await hash(`${dbPath}-wal`) : null,
+    shm: (await pathExists(`${dbPath}-shm`)) ? await hash(`${dbPath}-shm`) : null,
+  };
 }
 
 const restoreMarkerPath = (baseDir: string, updateId: string) =>

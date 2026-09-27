@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Stable launchd labels hash the canonical profile path.
 import * as NodeCrypto from "node:crypto";
+import * as NodeProcess from "node:process";
 import {
   HostProcessExecutablePath,
   HostProcessPlatform,
@@ -24,9 +25,16 @@ import {
 } from "./bundledRuntime.ts";
 import {
   acquireProfileOwnership,
+  acquireDatabaseAccess,
   ProfileOwnershipError,
   type ProfileOwnershipKind,
 } from "../profileOwnership.ts";
+import { PersistedServerRuntimeState } from "../serverRuntimeState.ts";
+import {
+  backupDatabaseOnce,
+  databaseBackupDir,
+  fingerprintDatabaseFiles,
+} from "../serviceLauncher.ts";
 import {
   ensurePinnedRuntimeInstalled,
   pinnedRuntimePaths,
@@ -215,7 +223,34 @@ export interface BootServiceHost {
   readonly bundle?: BundledRuntimeSource;
   readonly desktop?: DesktopServiceLaunchConfig;
   readonly requireFreshProfile?: boolean;
+  readonly migrateStoppedProfile?: boolean;
 }
+
+const MigrationFiles = Schema.Struct({
+  database: Schema.String,
+  wal: Schema.NullOr(Schema.String),
+  shm: Schema.NullOr(Schema.String),
+});
+const DesktopMigrationReceipt = Schema.Struct({
+  version: Schema.Literal(1),
+  id: Schema.String.check(
+    Schema.isPattern(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/),
+  ),
+  baseDir: Schema.String,
+  dbPath: Schema.String,
+  targetVersion: Schema.String,
+  bundleSha256: Schema.String,
+  desktop: Schema.Struct({
+    port: Schema.Int,
+    host: Schema.String,
+    tailscaleServeEnabled: Schema.Boolean,
+    tailscaleServePort: Schema.Int,
+  }),
+  phase: Schema.Literals(["preparing", "backed-up"]),
+  files: Schema.optionalKey(MigrationFiles),
+});
+const equalMigrationFiles = (left: typeof MigrationFiles.Type, right: typeof MigrationFiles.Type) =>
+  left.database === right.database && left.wal === right.wal && left.shm === right.shm;
 
 export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   readonly baseDir: string;
@@ -234,11 +269,15 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
   if (host.desktop !== undefined && decodeDesktopServiceLaunchConfig(host.desktop) === undefined)
     return yield* new BootServiceInstallError({ cause: "Invalid Desktop service configuration." });
   if (
-    host.requireFreshProfile &&
+    (host.requireFreshProfile || host.migrateStoppedProfile) &&
     (platform !== "darwin" || host.desktop === undefined || host.bundle === undefined)
   )
     return yield* new BootServiceInstallError({
-      cause: "Fresh-profile installation requires the packaged macOS Desktop runtime and endpoint.",
+      cause: "Desktop profile installation requires the packaged macOS runtime and endpoint.",
+    });
+  if (host.requireFreshProfile && host.migrateStoppedProfile)
+    return yield* new BootServiceInstallError({
+      cause: "Choose fresh installation or confirmed migration, not both.",
     });
 
   // Resolve an existing ancestor too: a new profile below a symlink must keep
@@ -419,6 +458,151 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     ),
   );
 
+  const prepareProfileMigration = Effect.gen(function* () {
+    const desktop = host.desktop;
+    const bundle = host.bundle;
+    if (desktop === undefined || bundle === undefined)
+      return yield* new BootServiceInstallError({
+        cause: "Migration requires the selected Desktop artifact and endpoint.",
+      });
+    const stateDir = path.join(baseDir, "userdata");
+    const dbPath = path.join(stateDir, "state.sqlite");
+    const canonicalDb = yield* fs.realPath(dbPath);
+    if (canonicalDb !== path.join(yield* fs.realPath(stateDir), "state.sqlite"))
+      return yield* new BootServiceInstallError({
+        cause: "A database file alias requires an explicit migration plan.",
+      });
+    yield* Effect.acquireRelease(
+      Effect.tryPromise({
+        try: () => acquireDatabaseAccess(dbPath, "exclusive"),
+        catch: (cause) => new BootServiceInstallError({ cause }),
+      }),
+      (ownership) => Effect.sync(() => ownership.release()),
+    );
+    const runtimePath = path.join(stateDir, "server-runtime.json");
+    const stateEntries = yield* fs.readDirectory(stateDir);
+    if (stateEntries.includes("server-runtime.json")) {
+      const runtime = yield* fs
+        .readFileString(runtimePath)
+        .pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(Schema.fromJsonString(PersistedServerRuntimeState)),
+          ),
+        );
+      if (runtime.pid < 1)
+        return yield* new BootServiceInstallError({
+          cause: "The prior runtime identity is invalid.",
+        });
+      const alive = yield* Effect.try({
+        try: () => {
+          try {
+            NodeProcess.kill(runtime.pid, 0);
+            return true;
+          } catch (cause) {
+            if (cause instanceof Error && "code" in cause && cause.code === "ESRCH") return false;
+            throw cause;
+          }
+        },
+        catch: (cause) => new BootServiceInstallError({ cause }),
+      });
+      if (alive)
+        return yield* new BootServiceInstallError({
+          cause: "The previous recorded runtime is still running; migration did not stop it.",
+        });
+    }
+    const receiptPath = path.join(baseDir, "runtime", "desktop-profile-migration.json");
+    const runtimeEntries = yield* fs.readDirectory(path.dirname(receiptPath));
+    const receiptExists = runtimeEntries.includes("desktop-profile-migration.json");
+    if (!receiptExists && runtimeEntries.includes(SERVICE_STATE_FILE))
+      return yield* new BootServiceInstallError({
+        cause: "Retained service state requires repair, not a new migration.",
+      });
+    const receipt: typeof DesktopMigrationReceipt.Type = receiptExists
+      ? yield* fs
+          .readFileString(receiptPath)
+          .pipe(
+            Effect.flatMap(
+              Schema.decodeUnknownEffect(Schema.fromJsonString(DesktopMigrationReceipt)),
+            ),
+          )
+      : {
+          version: 1 as const,
+          id: NodeCrypto.randomUUID(),
+          baseDir,
+          dbPath: canonicalDb,
+          targetVersion: input.cliVersion,
+          bundleSha256: bundle.sha256,
+          desktop,
+          phase: "preparing" as const,
+        };
+    if (
+      receipt.baseDir !== baseDir ||
+      receipt.dbPath !== canonicalDb ||
+      receipt.targetVersion !== input.cliVersion ||
+      receipt.bundleSha256 !== bundle.sha256 ||
+      receipt.desktop.port !== desktop.port ||
+      receipt.desktop.host !== desktop.host ||
+      receipt.desktop.tailscaleServeEnabled !== desktop.tailscaleServeEnabled ||
+      receipt.desktop.tailscaleServePort !== desktop.tailscaleServePort
+    )
+      return yield* new BootServiceInstallError({
+        cause: "The retained migration belongs to a different profile, artifact or endpoint.",
+      });
+    if (runtimeEntries.includes(SERVICE_STATE_FILE)) {
+      const retained = parseServiceState(yield* fs.readFileString(statePath));
+      if (
+        retained === undefined ||
+        retained.activeVersion !== input.cliVersion ||
+        retained.update !== undefined ||
+        retained.desktop?.port !== desktop.port ||
+        retained.desktop.host !== desktop.host ||
+        retained.desktop.tailscaleServeEnabled !== desktop.tailscaleServeEnabled ||
+        retained.desktop.tailscaleServePort !== desktop.tailscaleServePort
+      )
+        return yield* new BootServiceInstallError({
+          cause: "The retained service state does not belong to this incomplete migration.",
+        });
+    }
+    const saveReceipt = (value: typeof DesktopMigrationReceipt.Type) =>
+      Schema.encodeUnknownEffect(Schema.fromJsonString(DesktopMigrationReceipt))(value).pipe(
+        Effect.flatMap((text) => writeDurably(receiptPath, `${text}\n`)),
+      );
+    if (!receiptExists) yield* saveReceipt(receipt);
+    const before = yield* Effect.tryPromise({
+      try: () => fingerprintDatabaseFiles(canonicalDb),
+      catch: (cause) => new BootServiceInstallError({ cause }),
+    });
+    if (receipt.phase === "preparing")
+      yield* Effect.tryPromise({
+        try: () => backupDatabaseOnce(baseDir, { id: receipt.id, dbPath: canonicalDb }),
+        catch: (cause) => new BootServiceInstallError({ cause }),
+      });
+    const backup = yield* Effect.tryPromise({
+      try: () =>
+        fingerprintDatabaseFiles(path.join(databaseBackupDir(baseDir, receipt.id), "database")),
+      catch: (cause) => new BootServiceInstallError({ cause }),
+    });
+    const after = yield* Effect.tryPromise({
+      try: () => fingerprintDatabaseFiles(canonicalDb),
+      catch: (cause) => new BootServiceInstallError({ cause }),
+    });
+    if (
+      !equalMigrationFiles(before, backup) ||
+      !equalMigrationFiles(after, backup) ||
+      (receipt.phase === "backed-up" &&
+        (receipt.files === undefined || !equalMigrationFiles(receipt.files, backup)))
+    )
+      return yield* new BootServiceInstallError({
+        cause: "The database or retained backup changed; migration requires explicit recovery.",
+      });
+    if (receipt.phase === "preparing")
+      yield* saveReceipt({ ...receipt, phase: "backed-up", files: backup });
+  }).pipe(
+    Effect.mapError((cause) =>
+      Schema.is(BootServiceInstallError)(cause) ? cause : new BootServiceInstallError({ cause }),
+    ),
+  );
+
   const install: BootService["Service"]["install"] = Effect.gen(function* () {
     yield* fs
       .makeDirectory(input.logsDir, { recursive: true })
@@ -483,7 +667,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       .exists(unitPath)
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
     if (installed) {
-      if (host.requireFreshProfile)
+      if (host.requireFreshProfile || host.migrateStoppedProfile)
         return yield* new BootServiceInstallError({
           cause: "A service already exists; fresh installation cannot replace or stop it.",
         });
@@ -491,6 +675,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     }
 
     yield* Effect.gen(function* () {
+      if (host.migrateStoppedProfile) yield* prepareProfileMigration;
       const previousStateText = yield* fs.readFileString(statePath).pipe(Effect.option);
       const previousState = Option.isSome(previousStateText)
         ? parseServiceState(previousStateText.value)
@@ -537,7 +722,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       (work) =>
         host.requireFreshProfile
           ? withOwnership("runtime", Effect.andThen(requireFreshProfile, work))
-          : work,
+          : host.migrateStoppedProfile
+            ? withOwnership("runtime", work)
+            : work,
       Effect.tapError((error) =>
         installed &&
         !(error._tag === "BootServiceInstallError" && error.cause instanceof ProfileOwnershipError)

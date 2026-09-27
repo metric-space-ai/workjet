@@ -16,7 +16,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 
 import * as ProcessRunner from "../processRunner.ts";
 import * as BootService from "./bootService.ts";
-import { acquireProfileOwnership } from "../profileOwnership.ts";
+import { acquireProfileOwnership, acquireDatabaseAccess } from "../profileOwnership.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
 import { BUNDLED_RUNTIME_RECEIPT, bundledRuntimeNodePath } from "./bundledRuntime.ts";
 import {
@@ -79,6 +79,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   bundled = false,
   desktop?: BootService.BootServiceHost["desktop"],
   requireFreshProfile = false,
+  migrateStoppedProfile = false,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -153,6 +154,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     host: {
       execPath: "/usr/bin/node",
       requireFreshProfile,
+      migrateStoppedProfile,
       ...(desktop === undefined ? {} : { desktop }),
       ...(bundle === undefined ? {} : { bundle }),
       ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
@@ -291,6 +293,156 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
         expect(commands.some((command) => command.includes("bootstrap"))).toBe(false);
       }),
   );
+
+  const migrationHarness = Effect.fn("test.desktopMigrationHarness")(function* () {
+    const fixture = yield* makeHarness("darwin", false, false, true, desktop, false, true);
+    const { fs, path, baseDir } = fixture;
+    const dbPath = path.join(baseDir, "userdata", "state.sqlite");
+    yield* fs.makeDirectory(path.dirname(dbPath), { recursive: true });
+    yield* fs.writeFileString(dbPath, "legacy database bytes");
+    yield* fs.writeFileString(`${dbPath}-wal`, "legacy wal bytes");
+    const receiptPath = path.join(baseDir, "runtime", "desktop-profile-migration.json");
+    const receipt = () =>
+      fs
+        .readFileString(receiptPath)
+        .pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(
+              Schema.fromJsonString(
+                Schema.Struct({
+                  id: Schema.String,
+                  phase: Schema.String,
+                  dbPath: Schema.String,
+                  bundleSha256: Schema.String,
+                }),
+              ),
+            ),
+          ),
+        );
+    return { ...fixture, dbPath, receiptPath, receipt };
+  });
+
+  it.effect(
+    "backs up confirmed stopped profile bytes and sidecars before installing the service",
+    () =>
+      Effect.gen(function* () {
+        const { service, fs, path, baseDir, dbPath, receipt } = yield* migrationHarness();
+        yield* service.install;
+        const saved = yield* receipt();
+        expect(saved.phase).toBe("backed-up");
+        expect(saved.bundleSha256).toBe("a".repeat(64));
+        expect(saved.dbPath).toBe(yield* fs.realPath(dbPath));
+        const backup = path.join(baseDir, "runtime", "db-backup", saved.id);
+        expect(yield* fs.readFileString(path.join(backup, "database"))).toBe(
+          "legacy database bytes",
+        );
+        expect(yield* fs.readFileString(path.join(backup, "database-wal"))).toBe(
+          "legacy wal bytes",
+        );
+        expect(yield* fs.exists(path.join(backup, "database-shm"))).toBe(false);
+        expect(yield* fs.readFileString(dbPath)).toBe("legacy database bytes");
+        expect((yield* service.status).current).toBe(true);
+      }),
+  );
+
+  for (const owner of ["runtime", "database"] as const) {
+    it.effect(`refuses migration while another ${owner} owner holds the profile`, () =>
+      Effect.gen(function* () {
+        const { service, fs, baseDir, dbPath, receiptPath, statePath, commands } =
+          yield* migrationHarness();
+        yield* Effect.acquireRelease(
+          Effect.tryPromise(() =>
+            owner === "runtime"
+              ? acquireProfileOwnership(baseDir, "runtime")
+              : acquireDatabaseAccess(dbPath, "shared"),
+          ),
+          (ownership) => Effect.sync(() => ownership.release()),
+        );
+        expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+        expect(yield* fs.exists(statePath)).toBe(false);
+        expect(yield* fs.exists(receiptPath)).toBe(false);
+        expect(commands.some((command) => command.includes("bootstrap"))).toBe(false);
+        expect(yield* fs.readFileString(dbPath)).toBe("legacy database bytes");
+      }),
+    );
+  }
+
+  for (const state of ["live", "malformed", "invalid-pid", "dangling"] as const) {
+    it.effect(`refuses a ${state} previous runtime identity without starting or stopping it`, () =>
+      Effect.gen(function* () {
+        const { service, fs, path, baseDir, receiptPath, commands } = yield* migrationHarness();
+        const runtimePath = path.join(baseDir, "userdata", "server-runtime.json");
+        if (state === "dangling") {
+          yield* fs.symlink(path.join(baseDir, "missing-runtime.json"), runtimePath);
+        } else {
+          yield* fs.writeFileString(
+            runtimePath,
+            state === "malformed"
+              ? "{"
+              : JSON.stringify({
+                  version: 1,
+                  pid: state === "invalid-pid" ? 0 : process.pid,
+                  port: 3888,
+                  origin: "http://127.0.0.1:3888",
+                  startedAt: "2026-09-27T00:00:00Z",
+                }),
+          );
+        }
+        expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+        expect(yield* fs.exists(receiptPath)).toBe(false);
+        expect((yield* service.status).installed).toBe(false);
+        expect(
+          commands.some(
+            (command) => command.includes("bootstrap") || command.includes("bootout --wait"),
+          ),
+        ).toBe(false);
+      }),
+    );
+  }
+
+  it.effect("resumes incomplete publication without changing the original backup or receipt", () =>
+    Effect.gen(function* () {
+      const { service, fs, receiptPath, receipt, commands } = yield* migrationHarness();
+      const plan = yield* service.install;
+      const before = yield* fs.readFileString(receiptPath);
+      const originalId = (yield* receipt()).id;
+      // The fake bootstrap creates no process. Model interruption before unit publication.
+      yield* fs.remove(plan.unitPath);
+      commands.length = 0;
+      yield* service.install;
+      expect((yield* receipt()).id).toBe(originalId);
+      expect(yield* fs.readFileString(receiptPath)).toBe(before);
+      expect((yield* service.status).current).toBe(true);
+      expect(commands.filter((command) => command.includes("bootstrap"))).toHaveLength(1);
+    }),
+  );
+
+  for (const changed of ["database", "backup"] as const) {
+    it.effect(
+      `preserves both versions and refuses recovery when the retained ${changed} changed`,
+      () =>
+        Effect.gen(function* () {
+          const { service, fs, path, baseDir, dbPath, receiptPath, receipt, commands } =
+            yield* migrationHarness();
+          const plan = yield* service.install;
+          const saved = yield* receipt();
+          const backupPath = path.join(baseDir, "runtime", "db-backup", saved.id, "database");
+          const receiptBefore = yield* fs.readFileString(receiptPath);
+          yield* fs.remove(plan.unitPath);
+          const changedPath = changed === "database" ? dbPath : backupPath;
+          yield* fs.writeFileString(changedPath, "later independent bytes");
+          commands.length = 0;
+          expect((yield* service.install.pipe(Effect.flip))._tag).toBe("BootServiceInstallError");
+          expect(yield* fs.readFileString(changedPath)).toBe("later independent bytes");
+          expect(yield* fs.readFileString(changed === "database" ? backupPath : dbPath)).toBe(
+            "legacy database bytes",
+          );
+          expect(yield* fs.readFileString(receiptPath)).toBe(receiptBefore);
+          expect(commands.some((command) => command.includes("bootstrap"))).toBe(false);
+          expect(yield* fs.exists(plan.unitPath)).toBe(false);
+        }),
+    );
+  }
 
   for (const platform of ["darwin", "linux"] as const) {
     it.effect(

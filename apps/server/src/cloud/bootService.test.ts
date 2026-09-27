@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeSqlite from "node:sqlite";
 import { expect, it } from "@effect/vitest";
 import {
   HostProcessArguments,
@@ -343,6 +344,33 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
         expect(yield* fs.readFileString(dbPath)).toBe("legacy database bytes");
         expect((yield* service.status).current).toBe(true);
       }),
+  );
+
+  it.effect("preserves a populated SQLite database and a readable independent migration backup", () =>
+    Effect.gen(function* () {
+      const { service, fs, path, baseDir, dbPath, receipt } = yield* migrationHarness();
+      yield* fs.remove(dbPath);
+      yield* fs.remove(`${dbPath}-wal`);
+      yield* Effect.sync(() => {
+        const database = new NodeSqlite.DatabaseSync(dbPath);
+        try {
+          database.exec("CREATE TABLE retained_work (id TEXT PRIMARY KEY, state TEXT NOT NULL); PRAGMA user_version=17;");
+          database.prepare("INSERT INTO retained_work VALUES (?, ?)").run("existing-intent", "waiting-for-approval");
+        } finally { database.close(); }
+      });
+      yield* service.install;
+      const saved = yield* receipt();
+      for (const location of [dbPath, path.join(baseDir, "runtime", "db-backup", saved.id, "database")]) {
+        yield* Effect.sync(() => {
+          const database = new NodeSqlite.DatabaseSync(location, { readOnly: true });
+          try {
+            expect(database.prepare("PRAGMA integrity_check").get()?.integrity_check).toBe("ok");
+            expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(17);
+            expect(database.prepare("SELECT state FROM retained_work WHERE id = ?").get("existing-intent")?.state).toBe("waiting-for-approval");
+          } finally { database.close(); }
+        });
+      }
+    }),
   );
 
   for (const owner of ["runtime", "database"] as const) {

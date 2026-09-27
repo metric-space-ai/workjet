@@ -113,6 +113,8 @@ describe("worker worktree cleanup on thread.deleted", () => {
     readonly advanceBranchAfterDeleteFailure?: boolean;
     readonly failStopProvider?: boolean;
     readonly providerStopTerminated?: boolean;
+    readonly terminalStopTerminated?: boolean;
+    readonly failCloseTerminals?: boolean;
     readonly failArchiveOnce?: boolean;
     readonly failProviderLookup?: boolean;
     readonly failCleanupContextFor?: ThreadId;
@@ -177,6 +179,10 @@ describe("worker worktree cleanup on thread.deleted", () => {
     } as unknown as ProviderService["Service"]);
     const terminalLayer = Layer.succeed(TerminalManager.TerminalManager, {
       close: () => Effect.void,
+      closeForCleanup: () =>
+        input.failCloseTerminals
+          ? Effect.fail("terminal close failed")
+          : Effect.succeed(input.terminalStopTerminated ?? true),
     } as unknown as TerminalManager.TerminalManager["Service"]);
     const queryLayer = Layer.succeed(ProjectionSnapshotQuery, {
       getThreadWorktreeCleanupContext: (threadId: ThreadId) => {
@@ -566,6 +572,34 @@ describe("worker worktree cleanup on thread.deleted", () => {
         expect(harness.branchDeletions).toEqual([]);
         expect(harness.archives).toEqual([]);
         expect(harness.receipts.size).toBe(0);
+      }
+    }),
+  );
+
+  it.effect("retains source on terminal failure or missing exit in both cleanup paths", () =>
+    Effect.gen(function* () {
+      for (const retained of [false, true]) {
+        for (const failCloseTerminals of [false, true]) {
+          const harness = makeHarness({
+            threads: {
+              [workerThreadId]: {
+                workjetRole: "worker",
+                branch: workerRefName,
+                worktreePath: workerWorktreePath,
+              },
+            },
+            events: retained ? [] : [deletedEvent(workerThreadId)],
+            retainedThreadIds: retained ? [workerThreadId] : [],
+            terminalStopTerminated: false,
+            failCloseTerminals,
+          });
+          if (retained) yield* harness.reconcile;
+          else yield* harness.run;
+          expect(harness.removals).toEqual([]);
+          expect(harness.branchDeletions).toEqual([]);
+          expect(harness.archives).toEqual([]);
+          expect(harness.receipts.size).toBe(0);
+        }
       }
     }),
   );

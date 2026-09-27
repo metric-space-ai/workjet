@@ -37,6 +37,7 @@ import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import { getTerminalLabel } from "@workjet/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
 import * as Equal from "effect/Equal";
@@ -167,6 +168,14 @@ export class TerminalManager extends Context.Service<
      * When `terminalId` is omitted, closes all sessions for the thread.
      */
     readonly close: (input: TerminalCloseInput) => Effect.Effect<void, TerminalError>;
+
+    /** Close every terminal and await actual PTY exit, including earlier closes/restarts.
+     * A false result retains the worktree for a later cleanup attempt.
+     * This does not attest to detached or externally owned processes.
+     */
+    readonly closeForCleanup: (input: {
+      readonly threadId: string;
+    }) => Effect.Effect<boolean, TerminalError>;
 
     /**
      * Subscribe to terminal runtime events with a direct callback.
@@ -1249,6 +1258,17 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   });
   const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
   const terminalEventListeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
+  // Independent of visible sessions: closing a tab must not erase a live process.
+  const processExits = new Map<
+    PtyAdapter.PtyProcess,
+    { threadId: string; exited: Deferred.Deferred<void>; unsubscribe: () => void }
+  >();
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      for (const entry of processExits.values()) entry.unsubscribe();
+      processExits.clear();
+    }),
+  );
   const workerScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(workerScope, Exit.void));
 
@@ -1388,7 +1408,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     threadId: string,
     terminalId: string,
   ) {
+    const entry = processExits.get(process);
+    if (!entry) return;
     const fiber = yield* runKillEscalation(process, threadId, terminalId).pipe(
+      Effect.raceFirst(Deferred.await(entry.exited)),
       Effect.ensuring(
         modifyManagerState((state) => {
           if (!state.killFibers.has(process)) {
@@ -1926,6 +1949,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
 
+            const trackedProcess = ptyProcess;
+            const exited = yield* Deferred.make<void>();
+            const entry = { threadId: session.threadId, exited, unsubscribe: () => {} };
+            processExits.set(trackedProcess, entry);
+            entry.unsubscribe = trackedProcess.onExit(() => {
+              processExits.delete(trackedProcess);
+              entry.unsubscribe();
+              runFork(Deferred.succeed(exited, undefined));
+            });
             const processPid = ptyProcess.pid;
             const unsubscribeData = ptyProcess.onData((data) => {
               if (!enqueueProcessEvent(session, processPid, { type: "output", data })) {
@@ -2669,25 +2701,41 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       }),
     );
 
+  const closeUnlocked = Effect.fn("terminal.closeUnlocked")(function* (input: TerminalCloseInput) {
+    if (input.terminalId) {
+      yield* closeSession(input.threadId, input.terminalId, input.deleteHistory === true);
+      return;
+    }
+
+    const threadSessions = yield* sessionsForThread(input.threadId);
+    yield* Effect.forEach(
+      threadSessions,
+      (session) => closeSession(input.threadId, session.terminalId, false),
+      { discard: true },
+    );
+
+    if (input.deleteHistory) {
+      yield* deleteAllHistoryForThread(input.threadId);
+    }
+  });
+
   const close: TerminalManager["Service"]["close"] = (input) =>
+    withThreadLock(input.threadId, closeUnlocked(input));
+
+  const closeForCleanup: TerminalManager["Service"]["closeForCleanup"] = (input) =>
     withThreadLock(
       input.threadId,
       Effect.gen(function* () {
-        if (input.terminalId) {
-          yield* closeSession(input.threadId, input.terminalId, input.deleteHistory === true);
-          return;
-        }
-
-        const threadSessions = yield* sessionsForThread(input.threadId);
-        yield* Effect.forEach(
-          threadSessions,
-          (session) => closeSession(input.threadId, session.terminalId, false),
-          { discard: true },
+        const exits = [...processExits.values()]
+          .filter((entry) => entry.threadId === input.threadId)
+          .map((entry) => entry.exited);
+        yield* closeUnlocked({ ...input, deleteHistory: true });
+        // A signal request (even SIGKILL) is not an exit acknowledgement.
+        // Timed-out entries remain tracked across retries after the tab disappears.
+        return yield* Effect.forEach(exits, Deferred.await, { discard: true }).pipe(
+          Effect.timeoutOption(processKillGraceMs + 5_000),
+          Effect.map(Option.isSome),
         );
-
-        if (input.deleteHistory) {
-          yield* deleteAllHistoryForThread(input.threadId);
-        }
       }),
     );
 
@@ -2699,6 +2747,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     clear,
     restart,
     close,
+    closeForCleanup,
     subscribe,
     subscribeMetadata,
   });

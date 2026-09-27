@@ -87,11 +87,22 @@ const make = Effect.gen(function* () {
     );
 
   const closeThreadTerminals = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
-    logCleanupCauseUnlessInterrupted({
-      effect: terminalManager.close({ threadId, deleteHistory: true }),
-      message: "thread deletion cleanup skipped terminal close",
-      threadId,
-    });
+    terminalManager.closeForCleanup({ threadId }).pipe(
+      Effect.tap((terminated) =>
+        terminated
+          ? Effect.void
+          : Effect.logWarning("thread deletion retained worktree awaiting terminal exit", {
+              threadId,
+            }),
+      ),
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause);
+        return Effect.logWarning("thread deletion retained worktree after terminal close failed", {
+          threadId,
+          cause: Cause.pretty(cause),
+        }).pipe(Effect.as(false));
+      }),
+    );
 
   /**
    * Durable end of a dispatched worker's life: `thread.deleted` is the only
@@ -148,8 +159,8 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const { threadId } = event.payload;
         const providerStopped = yield* stopProviderSession(threadId);
-        yield* closeThreadTerminals(threadId);
-        if (providerStopped) {
+        const terminalsStopped = yield* closeThreadTerminals(threadId);
+        if (providerStopped && terminalsStopped) {
           yield* removeWorkerWorktree(threadId);
           yield* archiveCleanedWorker(threadId);
         }
@@ -220,7 +231,8 @@ const make = Effect.gen(function* () {
                 }
               }
               const providerStopped = yield* stopProviderSession(threadId);
-              if (providerStopped) {
+              const terminalsStopped = yield* closeThreadTerminals(threadId);
+              if (providerStopped && terminalsStopped) {
                 yield* removeWorkerWorktree(threadId);
                 yield* archiveCleanedWorker(threadId);
               }

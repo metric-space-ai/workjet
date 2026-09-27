@@ -10,6 +10,7 @@ import {
 } from "@workjet/contracts";
 import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Data from "effect/Data";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Encoding from "effect/Encoding";
@@ -41,6 +42,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   readonly pid: number;
   writeFailure: unknown | undefined;
   resizeFailure: unknown | undefined;
+  killFailure: unknown | undefined;
   private readonly dataListeners = new Set<(data: string) => void>();
   private readonly exitListeners = new Set<(event: PtyAdapter.PtyExitEvent) => void>();
   killed = false;
@@ -66,6 +68,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   kill(signal?: string): void {
     this.killed = true;
     this.killSignals.push(signal);
+    if (this.killFailure !== undefined) throw this.killFailure;
   }
 
   onData(callback: (data: string) => void): () => void {
@@ -1200,6 +1203,87 @@ it.layer(
 
       assert.equal(process.killSignals[0], "SIGTERM");
       expect(process.killSignals).toContain("SIGKILL");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("cleanup waits for every owned PTY, including a previously closed tab", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      yield* manager.close({ threadId: "thread-1" });
+      yield* manager.open(openInput({ terminalId: "sidecar" }));
+      yield* manager.open(openInput({ threadId: "unrelated" }));
+      const [previous, current, unrelated] = ptyAdapter.processes;
+      assert.isDefined(previous);
+      assert.isDefined(current);
+      assert.isDefined(unrelated);
+      const closed = yield* Deferred.make<void>();
+      yield* manager.subscribe((event) =>
+        event.type === "closed" && event.threadId === "thread-1"
+          ? Deferred.succeed(closed, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      const cleanup = yield* manager
+        .closeForCleanup({ threadId: "thread-1" })
+        .pipe(Effect.forkScoped);
+      yield* Deferred.await(closed);
+      expect(cleanup.pollUnsafe()).toBeUndefined();
+      current.emitExit({ exitCode: 0, signal: null });
+      yield* Effect.yieldNow;
+      expect(cleanup.pollUnsafe()).toBeUndefined();
+      previous.emitExit({ exitCode: 0, signal: null });
+      expect(yield* Fiber.join(cleanup)).toBe(true);
+      expect(unrelated.killSignals).toEqual([]);
+    }),
+  );
+
+  it.effect("cleanup timeout keeps an unacknowledged PTY across retries", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 10 });
+      yield* manager.open(openInput());
+      const terminal = ptyAdapter.processes[0];
+      assert.isDefined(terminal);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const cleanup = yield* manager
+          .closeForCleanup({ threadId: "thread-1" })
+          .pipe(Effect.forkScoped);
+        yield* TestClock.adjust("5010 millis");
+        expect(yield* Fiber.join(cleanup)).toBe(false);
+      }
+      expect(terminal.killSignals).toEqual(["SIGTERM", "SIGKILL"]);
+      terminal.emitExit({ exitCode: 0, signal: 9 });
+      expect(yield* manager.closeForCleanup({ threadId: "thread-1" })).toBe(true);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("a failed kill cannot become cleanup success when the tab is already gone", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 10 });
+      yield* manager.open(openInput());
+      const terminal = ptyAdapter.processes[0];
+      assert.isDefined(terminal);
+      terminal.killFailure = new Error("signal refused");
+      yield* manager.close({ threadId: "thread-1" });
+      const cleanup = yield* manager
+        .closeForCleanup({ threadId: "thread-1" })
+        .pipe(Effect.forkScoped);
+      yield* TestClock.adjust("5010 millis");
+      expect(yield* Fiber.join(cleanup)).toBe(false);
+      terminal.emitExit({ exitCode: 0, signal: null });
+      expect(yield* manager.closeForCleanup({ threadId: "thread-1" })).toBe(true);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("an acknowledged exit cancels escalation after a normal tab close", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 10 });
+      yield* manager.open(openInput());
+      const terminal = ptyAdapter.processes[0];
+      assert.isDefined(terminal);
+      yield* manager.close({ threadId: "thread-1" });
+      terminal.emitExit({ exitCode: 0, signal: null });
+      yield* TestClock.adjust("10 millis");
+      expect(terminal.killSignals).not.toContain("SIGKILL");
     }).pipe(Effect.provide(TestClock.layer())),
   );
 

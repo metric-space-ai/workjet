@@ -83,7 +83,7 @@ process.stdout.write('workjet-terminal-ready\\n');
           ? Deferred.succeed(ready, undefined).pipe(Effect.asVoid)
           : Effect.void;
       });
-      yield* manager.open({ threadId: "owned-fixture", cwd: root });
+      yield* manager.open({ threadId: "owned-fixture", terminalId: "default", cwd: root });
       yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"));
       assert.isTrue(yield* manager.closeForCleanup({ threadId: "owned-fixture" }));
       assert.isTrue(yield* Deferred.isDone(exited));

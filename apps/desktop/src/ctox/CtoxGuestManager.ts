@@ -670,7 +670,7 @@ function detachGuest(guest: ActiveGuest): void {
 
 function destroyGuest(active: ActiveGuest | undefined): boolean {
   if (active === undefined) return false;
-  if (active.lease !== undefined && !active.lease.release()) return false;
+  if (active.lease !== undefined && !active.lease.retire()) return false;
   try {
     active.window.contentView.removeChildView(active.view);
   } catch {
@@ -678,6 +678,7 @@ function destroyGuest(active: ActiveGuest | undefined): boolean {
   }
   try {
     if (!active.view.webContents.isDestroyed()) active.view.webContents.close();
+    if (active.view.webContents.isDestroyed()) active.lease?.release();
   } catch {
     // Release is best-effort after the view has been detached.
   }
@@ -1033,149 +1034,156 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       existingSession?: Session,
       shouldAttach = true,
     ) {
-      if (!isValidBounds(bounds)) {
-        return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
-      }
-
-      // Local and explicitly paired instances resolve their own authority below.
-      // Their activation must not wait for the unrelated hosted account service.
-      const managed = instanceId.startsWith("managed:")
-        ? yield* auth.refresh.pipe(
-            Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
-          )
-        : ({ _tag: "signed_out" } as const);
-      const discovery = yield* registry.merge(managed);
-      const descriptor =
-        discovery._tag === "ready"
-          ? discovery.instances.find((instance) => instance.id === instanceId)
-          : undefined;
-      if (descriptor === undefined) {
-        const managedState =
-          discovery._tag === "ready" ? (discovery.managedState ?? "ready") : discovery._tag;
-        return managedState === "failed"
-          ? ([{ _tag: "failed", code: "guest_failed" }, undefined] as const)
-          : ([{ _tag: "revoked" }, undefined] as const);
-      }
-
-      let authoritativeDescriptor: CtoxManagedInstance;
-      let launch: Option.Option<CtoxBusinessOsShell.CtoxBusinessOsLaunch>;
-      // Set only by launch paths that opened resources outside the view. Until
-      // the guest exists to own it, every early return has to run it, or a
-      // failed activation would strand an SSH forward.
       let releaseLaunch: (() => void) | undefined;
-      const abandonLaunch = (
-        result: CtoxManagedGuestResult,
-      ): readonly [CtoxManagedGuestResult, undefined] => {
-        try {
-          releaseLaunch?.();
-        } catch {
-          // Teardown is best-effort; the activation fails either way.
+      let reservedLease: CtoxGuestLease | undefined;
+      let provisionalGuest: ActiveGuest | undefined;
+      let adopted = false;
+      return yield* Effect.gen(function* () {
+        if (!isValidBounds(bounds)) {
+          return [{ _tag: "failed", code: "invalid_input" }, undefined] as const;
         }
-        return [result, undefined] as const;
-      };
-      if (
-        descriptor.source === "ctox_dev" &&
-        descriptor.status === "available" &&
-        descriptor.id.startsWith("managed:")
-      ) {
-        authoritativeDescriptor = descriptor;
-        launch = yield* launches.launch(descriptor).pipe(Effect.option);
-      } else if (
-        (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") &&
-        descriptor.status === "paired"
-      ) {
-        const resolved = yield* registry.resolvePairedLaunch(descriptor.id).pipe(Effect.option);
+
+        // Local and explicitly paired instances resolve their own authority below.
+        // Their activation must not wait for the unrelated hosted account service.
+        const managed = instanceId.startsWith("managed:")
+          ? yield* auth.refresh.pipe(
+              Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
+            )
+          : ({ _tag: "signed_out" } as const);
+        const discovery = yield* registry.merge(managed);
+        const descriptor =
+          discovery._tag === "ready"
+            ? discovery.instances.find((instance) => instance.id === instanceId)
+            : undefined;
+        if (descriptor === undefined) {
+          const managedState =
+            discovery._tag === "ready" ? (discovery.managedState ?? "ready") : discovery._tag;
+          return managedState === "failed"
+            ? ([{ _tag: "failed", code: "guest_failed" }, undefined] as const)
+            : ([{ _tag: "revoked" }, undefined] as const);
+        }
+
+        let authoritativeDescriptor: CtoxManagedInstance;
+        let launch: Option.Option<CtoxBusinessOsShell.CtoxBusinessOsLaunch>;
+        // Set only by launch paths that opened resources outside the view. Until
+        // the guest exists to own it, every early return has to run it, or a
+        // failed activation would strand an SSH forward.
+        const abandonLaunch = (
+          result: CtoxManagedGuestResult,
+        ): readonly [CtoxManagedGuestResult, undefined] => {
+          try {
+            releaseLaunch?.();
+          } catch {
+            // Teardown is best-effort; the activation fails either way.
+          }
+          return [result, undefined] as const;
+        };
         if (
-          Option.isNone(resolved) ||
-          resolved.value.descriptor.id !== descriptor.id ||
-          resolved.value.descriptor.source !== descriptor.source
+          descriptor.source === "ctox_dev" &&
+          descriptor.status === "available" &&
+          descriptor.id.startsWith("managed:")
         ) {
+          authoritativeDescriptor = descriptor;
+          launch = yield* launches.launch(descriptor).pipe(Effect.option);
+        } else if (
+          (descriptor.source === "pairing_invite" || descriptor.source === "manual_pairing") &&
+          descriptor.status === "paired"
+        ) {
+          const resolved = yield* registry.resolvePairedLaunch(descriptor.id).pipe(Effect.option);
+          if (
+            Option.isNone(resolved) ||
+            resolved.value.descriptor.id !== descriptor.id ||
+            resolved.value.descriptor.source !== descriptor.source
+          ) {
+            return [{ _tag: "revoked" }, undefined] as const;
+          }
+          authoritativeDescriptor = resolved.value.descriptor;
+          launch = yield* (
+            authoritativeDescriptor.shellUpdate === undefined
+              ? businessOsShell.launch(resolved.value.config)
+              : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
+          ).pipe(Effect.option);
+        } else if (isLaunchableCtoxLocalDaemon(descriptor)) {
+          // Local pairing material is minted per activation and never persisted,
+          // so a daemon that stopped answering fails the launch instead of
+          // resurrecting a stale room.
+          const resolved = yield* localLaunch.resolveLaunch(descriptor.id).pipe(Effect.option);
+          if (
+            Option.isNone(resolved) ||
+            resolved.value.descriptor.id !== descriptor.id ||
+            resolved.value.descriptor.source !== "local_daemon"
+          ) {
+            return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
+          }
+          authoritativeDescriptor = resolved.value.descriptor;
+          launch = yield* (
+            authoritativeDescriptor.shellUpdate === undefined
+              ? businessOsShell.launch(resolved.value.config)
+              : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
+          ).pipe(Effect.option);
+        } else if (isLaunchableCtoxSshManagedInstance(descriptor)) {
+          // Remote pairing material is minted per activation, and its signaling
+          // URLs only mean anything through the forwards opened alongside it —
+          // so a host that stopped answering, an invite that will not parse, or
+          // a forward that never comes up all fail the launch. The forwards are
+          // handed to the guest as its release hook; nothing else may own them.
+          const resolved = yield* sshLaunch.resolveLaunch(descriptor.id).pipe(Effect.option);
+          if (
+            Option.isNone(resolved) ||
+            resolved.value.descriptor.id !== descriptor.id ||
+            resolved.value.descriptor.source !== "ssh_managed"
+          ) {
+            if (Option.isSome(resolved)) {
+              void runPromise(resolved.value.closeForwards).catch(() => undefined);
+            }
+            return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
+          }
+          const closeForwards = resolved.value.closeForwards;
+          let forwardsOpen = true;
+          releaseLaunch = () => {
+            if (!forwardsOpen) return;
+            forwardsOpen = false;
+            void runPromise(closeForwards).catch(() => undefined);
+          };
+          authoritativeDescriptor = resolved.value.descriptor;
+          launch = yield* (
+            authoritativeDescriptor.shellUpdate === undefined
+              ? businessOsShell.launch(resolved.value.config)
+              : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
+          ).pipe(Effect.option);
+        } else {
           return [{ _tag: "revoked" }, undefined] as const;
         }
-        authoritativeDescriptor = resolved.value.descriptor;
-        launch = yield* (
-          authoritativeDescriptor.shellUpdate === undefined
-            ? businessOsShell.launch(resolved.value.config)
-            : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
-        ).pipe(Effect.option);
-      } else if (isLaunchableCtoxLocalDaemon(descriptor)) {
-        // Local pairing material is minted per activation and never persisted,
-        // so a daemon that stopped answering fails the launch instead of
-        // resurrecting a stale room.
-        const resolved = yield* localLaunch.resolveLaunch(descriptor.id).pipe(Effect.option);
-        if (
-          Option.isNone(resolved) ||
-          resolved.value.descriptor.id !== descriptor.id ||
-          resolved.value.descriptor.source !== "local_daemon"
-        ) {
-          return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
+        if (Option.isNone(launch)) {
+          return abandonLaunch({ _tag: "failed", code: "launch_failed" });
         }
-        authoritativeDescriptor = resolved.value.descriptor;
-        launch = yield* (
-          authoritativeDescriptor.shellUpdate === undefined
-            ? businessOsShell.launch(resolved.value.config)
-            : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
-        ).pipe(Effect.option);
-      } else if (isLaunchableCtoxSshManagedInstance(descriptor)) {
-        // Remote pairing material is minted per activation, and its signaling
-        // URLs only mean anything through the forwards opened alongside it —
-        // so a host that stopped answering, an invite that will not parse, or
-        // a forward that never comes up all fail the launch. The forwards are
-        // handed to the guest as its release hook; nothing else may own them.
-        const resolved = yield* sshLaunch.resolveLaunch(descriptor.id).pipe(Effect.option);
-        if (
-          Option.isNone(resolved) ||
-          resolved.value.descriptor.id !== descriptor.id ||
-          resolved.value.descriptor.source !== "ssh_managed"
-        ) {
-          if (Option.isSome(resolved)) {
-            void runPromise(resolved.value.closeForwards).catch(() => undefined);
-          }
-          return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
+        const resolvedSession =
+          existingSession === undefined
+            ? yield* sessions.instance(authoritativeDescriptor).pipe(Effect.option)
+            : Option.some(existingSession);
+        if (Option.isNone(resolvedSession)) {
+          return abandonLaunch({ _tag: "failed", code: "guest_failed" });
         }
-        const closeForwards = resolved.value.closeForwards;
-        releaseLaunch = () => {
-          void runPromise(closeForwards).catch(() => undefined);
-        };
-        authoritativeDescriptor = resolved.value.descriptor;
-        launch = yield* (
-          authoritativeDescriptor.shellUpdate === undefined
-            ? businessOsShell.launch(resolved.value.config)
-            : businessOsShell.launch(resolved.value.config, authoritativeDescriptor.shellUpdate)
-        ).pipe(Effect.option);
-      } else {
-        return [{ _tag: "revoked" }, undefined] as const;
-      }
-      if (Option.isNone(launch)) {
-        return abandonLaunch({ _tag: "failed", code: "launch_failed" });
-      }
-      const resolvedSession =
-        existingSession === undefined
-          ? yield* sessions.instance(authoritativeDescriptor).pipe(Effect.option)
-          : Option.some(existingSession);
-      if (Option.isNone(resolvedSession)) {
-        return abandonLaunch({ _tag: "failed", code: "guest_failed" });
-      }
-      const mainWindow = yield* electronWindow.main;
-      if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) {
-        return abandonLaunch({ _tag: "failed", code: "guest_failed" });
-      }
+        const mainWindow = yield* electronWindow.main;
+        if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) {
+          return abandonLaunch({ _tag: "failed", code: "guest_failed" });
+        }
 
-      const lease = budget.reserve(shouldAttach);
-      if (lease === undefined) return abandonLaunch({ _tag: "failed", code: "guest_failed" });
-      const view = (options.createView ?? createGuestView)({
-        session: resolvedSession.value,
-        preload: preloadPath,
-        sandbox: true,
-        contextIsolation: true,
-        nodeIntegration: false,
-      });
-      if (view === undefined) {
-        lease.release();
-        return abandonLaunch({ _tag: "failed", code: "guest_failed" });
-      }
-      const failView = (): readonly [CtoxManagedGuestResult, undefined] => {
-        destroyGuest({
+        const lease = budget.reserve(shouldAttach);
+        reservedLease = lease;
+        if (lease === undefined) return abandonLaunch({ _tag: "failed", code: "guest_failed" });
+        const view = (options.createView ?? createGuestView)({
+          session: resolvedSession.value,
+          preload: preloadPath,
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+        });
+        if (view === undefined) {
+          lease.release();
+          return abandonLaunch({ _tag: "failed", code: "guest_failed" });
+        }
+        provisionalGuest = {
           instanceId,
           window: mainWindow.value,
           view,
@@ -1183,113 +1191,125 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           browserSession: resolvedSession.value,
           lease,
           ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
+        };
+        const active = provisionalGuest;
+        lease.bind(() => destroyPooledGuest(active));
+        view.webContents.on("destroyed", () => {
+          destroyPooledGuest(active);
+          lease.release();
         });
-        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-      };
-      if (!installRequestGuard(resolvedSession.value, launch.value.launchOrigin)) {
-        return failView();
-      }
+        const failView = (): readonly [CtoxManagedGuestResult, undefined] => {
+          destroyGuest(provisionalGuest);
+          return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+        };
+        if (!installRequestGuard(resolvedSession.value, launch.value.launchOrigin)) {
+          return failView();
+        }
 
-      const webContents = view.webContents;
-      try {
-        webContents.setWindowOpenHandler(({ url }) => {
-          if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
-          return { action: "deny" };
-        });
-        webContents.on("will-navigate", (event, url) => {
-          if (isAllowedCtoxTopFrameNavigation(url, launch.value.launchOrigin)) return;
-          event.preventDefault();
-          if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
-        });
-        webContents.on("did-finish-load", () => {
-          void registerSessionEventsForWebContents(instanceId, webContents);
-          if (latestHostTheme !== undefined) {
-            try {
-              webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, latestHostTheme);
-            } catch {
-              /* guest may be tearing down */
+        const webContents = view.webContents;
+        try {
+          webContents.setWindowOpenHandler(({ url }) => {
+            if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
+            return { action: "deny" };
+          });
+          webContents.on("will-navigate", (event, url) => {
+            if (isAllowedCtoxTopFrameNavigation(url, launch.value.launchOrigin)) return;
+            event.preventDefault();
+            if (isSafeCtoxExternalUrl(url)) void runPromise(electronShell.openExternal(url));
+          });
+          webContents.on("did-finish-load", () => {
+            void registerSessionEventsForWebContents(instanceId, webContents);
+            if (latestHostTheme !== undefined) {
+              try {
+                webContents.send(CTOX_APPLY_HOST_THEME_CHANNEL, latestHostTheme);
+              } catch {
+                /* guest may be tearing down */
+              }
             }
-          }
-          if (launch.value.shellVersion !== undefined) {
-            const shellStatus = {
-              version: launch.value.shellVersion,
-              channel: authoritativeDescriptor.shellUpdate?.channel ?? "stable",
-              state: launch.value.recoveryShell
-                ? "recovery"
-                : (authoritativeDescriptor.shellUpdate?.phase ?? "current"),
-              offeredVersion: authoritativeDescriptor.shellUpdate?.latestCompatibleVersion ?? null,
-              publishedAt: launch.value.shellRelease?.publishedAt ?? null,
-              compatibility: launch.value.shellRelease?.compatibility ?? null,
-              health: authoritativeDescriptor.shellUpdate?.health ?? "unknown",
-              administrable: authoritativeDescriptor.shellUpdate?.administrable ?? false,
-              lastCheckedAt: authoritativeDescriptor.shellUpdate?.lastCheckedAt ?? null,
-              errorCode: authoritativeDescriptor.shellUpdate?.errorCode ?? null,
-            };
+            if (launch.value.shellVersion !== undefined) {
+              const shellStatus = {
+                version: launch.value.shellVersion,
+                channel: authoritativeDescriptor.shellUpdate?.channel ?? "stable",
+                state: launch.value.recoveryShell
+                  ? "recovery"
+                  : (authoritativeDescriptor.shellUpdate?.phase ?? "current"),
+                offeredVersion:
+                  authoritativeDescriptor.shellUpdate?.latestCompatibleVersion ?? null,
+                publishedAt: launch.value.shellRelease?.publishedAt ?? null,
+                compatibility: launch.value.shellRelease?.compatibility ?? null,
+                health: authoritativeDescriptor.shellUpdate?.health ?? "unknown",
+                administrable: authoritativeDescriptor.shellUpdate?.administrable ?? false,
+                lastCheckedAt: authoritativeDescriptor.shellUpdate?.lastCheckedAt ?? null,
+                errorCode: authoritativeDescriptor.shellUpdate?.errorCode ?? null,
+              };
+              void webContents
+                .executeJavaScript(
+                  `window.dispatchEvent(new CustomEvent("workjet:shell-update-status", { detail: ${encodeUnknownJson(shellStatus)} }));`,
+                  true,
+                )
+                .catch(() => undefined);
+            }
+            const currentUrl = webContents.getURL();
+            const scrubbed = scrubSensitiveCtoxUrl(currentUrl);
+            if (scrubbed === undefined || scrubbed === currentUrl) return;
             void webContents
               .executeJavaScript(
-                `window.dispatchEvent(new CustomEvent("workjet:shell-update-status", { detail: ${encodeUnknownJson(shellStatus)} }));`,
+                `history.replaceState(history.state, document.title, ${encodeUnknownJson(scrubbed)});`,
                 true,
               )
               .catch(() => undefined);
-          }
-          const currentUrl = webContents.getURL();
-          const scrubbed = scrubSensitiveCtoxUrl(currentUrl);
-          if (scrubbed === undefined || scrubbed === currentUrl) return;
-          void webContents
-            .executeJavaScript(
-              `history.replaceState(history.state, document.title, ${encodeUnknownJson(scrubbed)});`,
-              true,
-            )
-            .catch(() => undefined);
-        });
-        webContents.ipc.on(REFRESH_MANAGED_LAUNCH_CHANNEL, (_event, ...args) => {
-          if (args.length === 0) refreshFromWebContents(webContents);
-        });
-        webContents.ipc.on(CTOX_SESSION_TRANSFER_POST_CHANNEL, (_event, ...args) => {
-          decodeAndEmitSessionTransferEvent(instanceId, args.length === 1 ? args[0] : undefined);
-        });
-      } catch {
-        return failView();
-      }
-      if (shouldAttach && !attachGuest(mainWindow.value, view, bounds)) return failView();
+          });
+          webContents.ipc.on(REFRESH_MANAGED_LAUNCH_CHANNEL, (_event, ...args) => {
+            if (args.length === 0) refreshFromWebContents(webContents);
+          });
+          webContents.ipc.on(CTOX_SESSION_TRANSFER_POST_CHANNEL, (_event, ...args) => {
+            decodeAndEmitSessionTransferEvent(instanceId, args.length === 1 ? args[0] : undefined);
+          });
+        } catch {
+          return failView();
+        }
+        if (shouldAttach && !attachGuest(mainWindow.value, view, bounds)) return failView();
 
-      const active: ActiveGuest = {
-        instanceId,
-        window: mainWindow.value,
-        view,
-        bounds,
-        browserSession: resolvedSession.value,
-        lease,
-        ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
-      };
-      lease.bind(() => destroyPooledGuest(active));
-      webContents.on("destroyed", () => destroyPooledGuest(active));
-      const committed = yield* waitForGuestNavigationCommit(
-        webContents,
-        launch.value.launchUrl,
-        launch.value.launchOrigin,
-      ).pipe(
-        Effect.onInterrupt(() =>
+        const committed = yield* waitForGuestNavigationCommit(
+          webContents,
+          launch.value.launchUrl,
+          launch.value.launchOrigin,
+        ).pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              destroyGuest(active);
+            }),
+          ),
+        );
+        if (!committed) {
+          destroyGuest(active);
+          return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
+        }
+        yield* Effect.promise(() =>
+          registerSessionEventsForWebContents(instanceId, webContents),
+        ).pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              destroyGuest(active);
+            }),
+          ),
+        );
+        if (webContents.isDestroyed()) return failView();
+        lease.ready();
+        adopted = true;
+        return [{ _tag: "ready", instanceId }, active] as const;
+      }).pipe(
+        Effect.ensuring(
           Effect.sync(() => {
-            destroyGuest(active);
+            if (adopted) return;
+            if (provisionalGuest !== undefined) destroyGuest(provisionalGuest);
+            else {
+              reservedLease?.release();
+              releaseLaunch?.();
+            }
           }),
         ),
       );
-      if (!committed) {
-        destroyGuest(active);
-        return [{ _tag: "failed", code: "guest_failed" }, undefined] as const;
-      }
-      yield* Effect.promise(() =>
-        registerSessionEventsForWebContents(instanceId, webContents),
-      ).pipe(
-        Effect.onInterrupt(() =>
-          Effect.sync(() => {
-            destroyGuest(active);
-          }),
-        ),
-      );
-      lease.ready();
-      return [{ _tag: "ready", instanceId }, active] as const;
     });
 
     const activate = (

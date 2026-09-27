@@ -3,6 +3,7 @@ export interface CtoxGuestLease {
   readonly bind: (destroy: () => void) => void;
   readonly ready: () => void;
   readonly touch: (attached?: boolean) => void;
+  readonly retire: () => boolean;
   /** Returns false when this exact guest has already been released. */
   readonly release: () => boolean;
 }
@@ -11,6 +12,7 @@ export class CtoxGuestBudget {
   private readonly entries = new Set<{
     attached: boolean;
     preparing: boolean;
+    retiring: boolean;
     lastUsed: number;
     destroy: (() => void) | undefined;
   }>();
@@ -24,7 +26,10 @@ export class CtoxGuestBudget {
   reserve(attached: boolean): CtoxGuestLease | undefined {
     if (this.entries.size >= this.limit) {
       const victim = [...this.entries]
-        .filter((entry) => !entry.attached && !entry.preparing && entry.destroy !== undefined)
+        .filter(
+          (entry) =>
+            !entry.attached && !entry.preparing && !entry.retiring && entry.destroy !== undefined,
+        )
         .sort((a, b) => a.lastUsed - b.lastUsed)[0];
       if (victim === undefined) return undefined;
       victim.destroy?.();
@@ -33,6 +38,7 @@ export class CtoxGuestBudget {
     const entry = {
       attached,
       preparing: true,
+      retiring: false,
       lastUsed: ++this.sequence,
       destroy: undefined as (() => void) | undefined,
     };
@@ -47,6 +53,11 @@ export class CtoxGuestBudget {
       touch: (nextAttached) => {
         if (nextAttached !== undefined) entry.attached = nextAttached;
         entry.lastUsed = ++this.sequence;
+      },
+      retire: () => {
+        if (entry.retiring) return false;
+        entry.retiring = true;
+        return true;
       },
       release: () => this.entries.delete(entry),
     };

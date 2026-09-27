@@ -5,6 +5,7 @@ import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/c
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
 
 import { EventEmitter } from "node:events";
 import * as FileSystem from "effect/FileSystem";
@@ -28,6 +29,7 @@ import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxGuestManager from "./CtoxGuestManager.ts";
 import * as CtoxGuestWindows from "./CtoxGuestWindows.ts";
 import { DesktopIpcInvocation } from "../ipc/DesktopIpc.ts";
+import * as DesktopIpc from "../ipc/DesktopIpc.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./CtoxLocalDaemonLaunch.ts";
 import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
@@ -521,9 +523,9 @@ function makeHostWindow() {
       destroyed = true;
       windowEvents.emit("closed");
     },
-    reload: () => {
+    reload: (replaceFrame = true) => {
       contentsEvents.emit("did-start-navigation", {}, "workjet://app/", false, true);
-      contents.mainFrame = {};
+      if (replaceFrame) contents.mainFrame = {};
     },
   };
 }
@@ -806,6 +808,130 @@ describe("CtoxGuestWindows", () => {
       }).pipe(Effect.provide(harness.layer));
     },
   );
+});
+
+describe("CtoxGuestWindows admission and native destruction", () => {
+  it.effect("fences an invocation that reloads while queued behind global registry cleanup", () => {
+    const a = makeHostWindow();
+    const b = makeHostWindow();
+    const harness = makeGuestHarness([a.window, b.window]);
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      let listener: DesktopIpc.DesktopIpcHandleListener | undefined;
+      const ipc = DesktopIpc.make({
+        removeHandler: () => undefined,
+        removeAllListeners: () => undefined,
+        on: () => undefined,
+        handle: (_channel, fn) => {
+          listener = fn;
+        },
+      });
+      yield* ipc.handle({
+        channel: "test.queuedGuest",
+        handler: () => manager.ensurePooled(descriptor.id),
+      });
+      yield* a.invoke(manager.ensurePooled(descriptor.id));
+      const originalClose = harness.views[0]!.close.getMockImplementation()!;
+      let queued: Promise<unknown> | undefined;
+      harness.views[0]!.close.mockImplementationOnce(() => {
+        // Native close is inside deactivateInstance's global permit. The IPC call validates,
+        // then waits for that permit; reload happens while its original frame still exists.
+        queued = Promise.resolve(
+          listener!(
+            { sender: b.window.webContents, senderFrame: b.window.webContents.mainFrame },
+            undefined,
+          ),
+        );
+        b.reload(false);
+        originalClose();
+      });
+      yield* manager.deactivateInstance(descriptor.id);
+      assert.isDefined(queued);
+      assert.deepEqual(yield* Effect.promise(() => queued!), {
+        _tag: "failed",
+        code: "not_active",
+      });
+      expect(harness.views).toHaveLength(1);
+      expect(b.window.listenerCount("closed")).toBe(0);
+      yield* b.invoke(manager.ensurePooled(descriptor.id));
+      expect(harness.views).toHaveLength(2);
+    }).pipe(Effect.provide(harness.layer), Effect.scoped);
+  });
+
+  for (const closeBehavior of ["delayed", "failed"] as const) {
+    it.effect(
+      `keeps renderer capacity reserved until actual destruction after ${closeBehavior} close`,
+      () => {
+        const a = makeHostWindow();
+        const b = makeHostWindow();
+        const harness = makeGuestHarness([a.window, b.window]);
+        const instances = Array.from({ length: 5 }, (_, index) => ({
+          ...descriptor,
+          id: `managed:close-${index}`,
+        }));
+        harness.setDiscovery({ _tag: "ready", instances });
+        return Effect.gen(function* () {
+          const manager = yield* CtoxGuestManager.CtoxGuestManager;
+          yield* a.invoke(manager.ensurePooled(instances[0]!.id));
+          yield* b.invoke(manager.enterBusinessOsMode);
+          yield* b.invoke(
+            manager.activate(instances[1]!.id, { x: 0, y: 0, width: 800, height: 600 }),
+          );
+          yield* b.invoke(manager.ensurePooled(instances[2]!.id));
+          yield* b.invoke(manager.ensurePooled(instances[3]!.id));
+          const old = harness.views[0]!;
+          old.close.mockImplementation(() => {
+            if (closeBehavior === "failed") throw new Error("native close failed");
+          });
+          assert.deepEqual(yield* a.invoke(manager.ensurePooled(instances[4]!.id)), {
+            _tag: "failed",
+            code: "guest_failed",
+          });
+          expect(old.close).toHaveBeenCalledOnce();
+          expect(harness.views).toHaveLength(4);
+          expect(old.view.webContents.isDestroyed()).toBe(false);
+          old.destroy();
+          assert.equal((yield* a.invoke(manager.ensurePooled(instances[4]!.id)))._tag, "ready");
+          expect(harness.views).toHaveLength(5);
+          expect(harness.views.filter((view) => !view.view.webContents.isDestroyed())).toHaveLength(
+            4,
+          );
+          expect(harness.views[1]!.close).not.toHaveBeenCalled();
+        }).pipe(Effect.provide(harness.layer));
+      },
+    );
+  }
+});
+
+describe("CtoxGuestWindows early launch cleanup", () => {
+  it.effect("releases SSH forwards once when the host closes before its guest view exists", () => {
+    const a = makeHostWindow();
+    const b = makeHostWindow();
+    const harness = makeGuestHarness([a.window, b.window]);
+    harness.setSshInstances([sshDescriptor]);
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* b.invoke(manager.ensurePooled(descriptor.id));
+      const entered = yield* Deferred.make<void>();
+      harness.shellLaunch.mockImplementation(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(entered, undefined);
+          return yield* Effect.never;
+        }),
+      );
+      const pending = yield* a
+        .invoke(manager.ensurePooled(sshDescriptor.id))
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(entered);
+      expect(harness.views).toHaveLength(1);
+      a.close();
+      assert.deepEqual(yield* Fiber.join(pending), { _tag: "failed", code: "not_active" });
+      expect(harness.closeForwards).toHaveBeenCalledOnce();
+      expect(harness.views[0]!.close).not.toHaveBeenCalled();
+      yield* manager.deactivateAll;
+      expect(harness.closeForwards).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(harness.layer));
+  });
 });
 
 describe("CtoxGuestManager", () => {

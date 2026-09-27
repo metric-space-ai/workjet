@@ -20,7 +20,7 @@ All windows share the existing four-renderer budget. New views evict the least
 recently used detached, fully prepared guest. Active and loading guests are not
 evicted to satisfy another window. If all four slots are active or loading, a
 further load returns the existing guest failure result without creating a fifth
-renderer. Closing a guest releases its slot and launch resources.
+renderer. A closing guest retains its slot until native WebContents destruction is observed; a delayed or failed close cannot temporarily exceed the limit. Launch cleanup also runs when cancellation happens before view construction.
 
 Focused IPC and guest-manager tests cover sender propagation, two-window routing,
 reload/close with late navigation, all-window account and registry invalidation,

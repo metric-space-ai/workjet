@@ -58,6 +58,7 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
     const windowForSender =
       options.windowForSender ?? ((sender) => BrowserWindow.fromWebContents(sender));
     let stopped = false;
+    let accountGeneration = 0;
 
     const retire = (entry: WindowGuests) => {
       entry.closed = true;
@@ -65,11 +66,11 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
     };
     const close = (entry: WindowGuests) => Scope.close(entry.scope, Exit.void);
 
-    const getOrCreate = (window: BrowserWindow) =>
+    const getOrCreate = (window: BrowserWindow, isCurrent: () => boolean) =>
       lock
         .withPermit(
           Effect.gen(function* () {
-            if (stopped || window.isDestroyed() || window.webContents.isDestroyed())
+            if (stopped || !isCurrent() || window.isDestroyed() || window.webContents.isDestroyed())
               return undefined;
             const previous = entries.get(window);
             if (previous !== undefined) return previous;
@@ -99,6 +100,11 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
             );
             entry = { window, scope, guests, closed: false };
             const owned = entry;
+            if (!isCurrent()) {
+              retire(owned);
+              yield* close(owned);
+              return undefined;
+            }
             entries.set(window, owned);
             const onClose = () => {
               if (owned.closed) return;
@@ -141,21 +147,62 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
         const invocation = yield* DesktopIpcInvocation;
         const window = resolveGuestWindow(invocation, windowForSender);
         if (window === undefined) return unavailable;
-        const entry = yield* getOrCreate(window);
-        if (entry === undefined || entry.closed) return unavailable;
-        const fiber = yield* Effect.forkIn(
-          Effect.suspend(() =>
-            entry.closed ? Effect.succeed(unavailable) : operation(entry.guests),
-          ),
-          entry.scope,
+        const generation = accountGeneration;
+        let invalidated = false;
+        const invalidate = () => {
+          invalidated = true;
+        };
+        const onNavigation = (
+          _event: unknown,
+          _url: string,
+          inPlace: boolean,
+          mainFrame: boolean,
+        ) => {
+          if (mainFrame && !inPlace) invalidate();
+        };
+        const isCurrent = () =>
+          !invalidated &&
+          generation === accountGeneration &&
+          resolveGuestWindow(invocation, windowForSender) === window;
+        return yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            // Watch before waiting for admission, including when no guest scope exists yet.
+            window.on("closed", invalidate);
+            window.webContents.on("destroyed", invalidate);
+            window.webContents.on("render-process-gone", invalidate);
+            window.webContents.on("did-start-navigation", onNavigation);
+          }),
+          () =>
+            Effect.gen(function* () {
+              const entry = yield* getOrCreate(window, isCurrent);
+              if (entry === undefined || entry.closed || !isCurrent()) return unavailable;
+              const fiber = yield* Effect.forkIn(
+                Effect.suspend(() =>
+                  entry.closed || !isCurrent()
+                    ? Effect.succeed(unavailable)
+                    : operation(entry.guests),
+                ),
+                entry.scope,
+              );
+              const result = yield* Fiber.await(fiber);
+              return Exit.isSuccess(result) && !entry.closed && isCurrent()
+                ? result.value
+                : unavailable;
+            }),
+          () =>
+            Effect.sync(() => {
+              window.off("closed", invalidate);
+              window.webContents.off("destroyed", invalidate);
+              window.webContents.off("render-process-gone", invalidate);
+              window.webContents.off("did-start-navigation", onNavigation);
+            }),
         );
-        const result = yield* Fiber.await(fiber);
-        return Exit.isSuccess(result) && !entry.closed ? result.value : unavailable;
       });
 
     const deactivateAll = lock
       .withPermit(
         Effect.gen(function* () {
+          accountGeneration += 1;
           const snapshot = [...entries.values()];
           for (const entry of snapshot) retire(entry);
           for (const entry of snapshot) yield* close(entry);

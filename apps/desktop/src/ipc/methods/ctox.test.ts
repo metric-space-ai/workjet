@@ -107,6 +107,7 @@ function authorityLayers(input: {
 function removalCleanupLayer(
   input: {
     readonly deactivate?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivate"];
+    readonly deactivateAll?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivateAll"];
     readonly deactivateInstance?: CtoxGuestManager.CtoxGuestManager["Service"]["deactivateInstance"];
     readonly clearInstance?: CtoxElectronSessions.CtoxElectronSessions["Service"]["clearInstance"];
   } = {},
@@ -118,7 +119,7 @@ function removalCleanupLayer(
     ensurePooled: () => Effect.die("unused"),
     suspend: Effect.succeed({ _tag: "completed" }),
     deactivate: input.deactivate ?? Effect.succeed({ _tag: "completed" }),
-    deactivateAll: input.deactivate ?? Effect.succeed({ _tag: "completed" }),
+    deactivateAll: input.deactivateAll ?? Effect.succeed({ _tag: "completed" }),
     deactivateInstance: input.deactivateInstance ?? (() => Effect.succeed({ _tag: "completed" })),
     setBounds: () => Effect.die("unused"),
     readGuestApps: () => Effect.succeed({ _tag: "failed", code: "not_active" }),
@@ -148,7 +149,10 @@ function accountCleanupLayer(
 ) {
   return Layer.mergeAll(
     CtoxAccountLifecycle.layer,
-    removalCleanupLayer({ deactivate }),
+    removalCleanupLayer({
+      deactivate: Effect.die("Account cleanup must cover every window"),
+      deactivateAll: deactivate,
+    }),
     Layer.succeed(CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner, {
       provision: () => Effect.die("unused"),
       disconnect: () => Effect.die("unused"),

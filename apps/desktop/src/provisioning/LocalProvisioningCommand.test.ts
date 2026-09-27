@@ -6,6 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { runLocalCommand } from "./LocalProvisioningCommand.ts";
 
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof NodeChildProcess>();
+  return { ...original, spawn: vi.fn(original.spawn) };
+});
+
 describe("local provisioning command deadlines", () => {
   let child: NodeChildProcess.ChildProcess | undefined;
   let closed: Promise<void> | undefined;
@@ -24,7 +29,8 @@ describe("local provisioning command deadlines", () => {
 
   function start(script: string) {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const spawn = vi.spyOn(NodeChildProcess, "spawn");
+    const spawn = vi.mocked(NodeChildProcess.spawn);
+    spawn.mockClear();
     const result = runLocalCommand(NodeProcess.execPath, ["-e", script]).then(
       (value) => ({ value, error: undefined }),
       (error: unknown) => ({ value: undefined, error }),

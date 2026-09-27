@@ -5,7 +5,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
 import {
   HostProcessPlatform,
   HostProcessArchitecture,
@@ -13,8 +13,9 @@ import {
 import { managedNodeArchive } from "../../packages/ssh/src/remoteNode.ts";
 import { preparePortableNode, stageVerifiedNodeArchive } from "./prepare-portable-node.ts";
 
-const hostPlatform = Effect.runSync(HostProcessPlatform);
-const hostArchitecture = Effect.runSync(HostProcessArchitecture);
+const hostContext = Context.empty();
+const hostPlatform = Context.get(hostContext, HostProcessPlatform);
+const hostArchitecture = Context.get(hostContext, HostProcessArchitecture);
 
 async function fixture(
   run: (input: Parameters<typeof stageVerifiedNodeArchive>[0], root: string) => Promise<void>,

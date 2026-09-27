@@ -26,6 +26,7 @@ export function runLocalCommand(
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let failure: Error | undefined;
+    let closed = false;
     let forceStop: ReturnType<typeof setTimeout> | undefined;
     const stop = (signal: NodeJS.Signals) => {
       try {
@@ -38,6 +39,7 @@ export function runLocalCommand(
       }
     };
     const terminate = () => {
+      if (closed) return;
       stop("SIGTERM");
       forceStop ??= setTimeout(() => stop("SIGKILL"), 1_000);
     };
@@ -56,7 +58,12 @@ export function runLocalCommand(
     });
     // Waiting for close retains ownership until the child and its output pipes have closed.
     child.on("close", (code) => {
+      closed = true;
       clearTimeout(timer);
+      // Pipe closure only proves the direct child is gone. A same-group
+      // descendant may have redirected its pipes and survived SIGTERM.
+      // Once the parent is gone, stop any remaining owned group immediately.
+      if (forceStop !== undefined) stop("SIGKILL");
       clearTimeout(forceStop);
       if (failure !== undefined) {
         reject(failure);

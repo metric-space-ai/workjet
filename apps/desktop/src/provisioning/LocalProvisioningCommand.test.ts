@@ -1,6 +1,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeProcess from "node:process";
+import * as NodeTimers from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { runLocalCommand } from "./LocalProvisioningCommand.ts";
@@ -9,6 +10,17 @@ describe("local provisioning command deadlines", () => {
   let child: NodeChildProcess.ChildProcess | undefined;
   let closed: Promise<void> | undefined;
   let childClosed = false;
+  let descendantPid: number | undefined;
+
+  function processExists(pid: number) {
+    try {
+      NodeProcess.kill(pid, 0);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+      throw error;
+    }
+  }
 
   function start(script: string) {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -37,10 +49,14 @@ describe("local provisioning command deadlines", () => {
         else NodeProcess.kill(-child.pid, "SIGKILL");
       }
       await closed;
+      if (descendantPid !== undefined && processExists(descendantPid)) {
+        NodeProcess.kill(descendantPid, "SIGKILL");
+      }
     } finally {
       child = undefined;
       closed = undefined;
       childClosed = false;
+      descendantPid = undefined;
       vi.useRealTimers();
       vi.restoreAllMocks();
     }
@@ -66,6 +82,33 @@ describe("local provisioning command deadlines", () => {
         new Error("Local provisioning command timed out after 30000 ms."),
       );
       expect(child?.exitCode).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.skipIf(NodeProcess.platform === "win32")(
+    "stops a resistant descendant with closed pipes when its parent exits zero",
+    async () => {
+      const descendant =
+        "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); process.send(process.pid); process.disconnect();";
+      const { result, ready } = start(
+        `process.on('SIGTERM', () => process.exit(0)); const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] }); child.once('message', pid => process.stdout.write(String(pid))); setInterval(() => {}, 1000);`,
+      );
+      const [pidChunk] = await ready;
+      descendantPid = Number(String(pidChunk));
+      expect(Number.isSafeInteger(descendantPid) && descendantPid > 0).toBe(true);
+      expect(processExists(descendantPid)).toBe(true);
+      vi.advanceTimersByTime(30_000);
+      const outcome = await result;
+      expect(outcome.error).toEqual(
+        new Error("Local provisioning command timed out after 30000 ms."),
+      );
+      expect(child?.exitCode).toBe(0);
+      // Observe this fixture's captured child identity only; no process scan.
+      for (let attempt = 0; attempt < 100 && processExists(descendantPid); attempt++) {
+        await NodeTimers.setTimeout(10);
+      }
+      expect(processExists(descendantPid)).toBe(false);
       expect(vi.getTimerCount()).toBe(0);
     },
   );

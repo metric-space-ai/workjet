@@ -10,6 +10,7 @@ import * as Scope from "effect/Scope";
 import * as ProcessRunner from "../processRunner.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as NodePtyAdapter from "./NodePtyAdapter.ts";
+import * as PtyAdapter from "./PtyAdapter.ts";
 
 it.layer(
   Layer.merge(NodeServices.layer, ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer))),
@@ -48,11 +49,26 @@ process.stdout.write('workjet-terminal-ready\\n');
         ptyAdapter: {
           spawn: (input) =>
             adapter.spawn(input).pipe(
+              Effect.map(
+                (owned): PtyAdapter.PtyProcess => ({
+                  pid: owned.pid,
+                  write: (data) => owned.write(data),
+                  resize: (cols, rows) => owned.resize(cols, rows),
+                  kill: (signal) => owned.kill(signal),
+                  onData: (listener) => owned.onData(listener),
+                  // Observe the OS event before forwarding it to any subscriber;
+                  // subscriber scheduling order is not a process-liveness signal.
+                  onExit: (listener) =>
+                    owned.onExit((event) => {
+                      exitObserved = true;
+                      listener(event);
+                    }),
+                }),
+              ),
               Effect.tap((owned) =>
                 Effect.gen(function* () {
                   yield* Effect.callback<void>((resume) => {
                     const unsubscribe = owned.onExit(() => {
-                      exitObserved = true;
                       resume(Effect.void);
                     });
                     return Effect.sync(unsubscribe);

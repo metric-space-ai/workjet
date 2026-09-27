@@ -904,6 +904,37 @@ describe("CtoxGuestWindows admission and native destruction", () => {
 });
 
 describe("CtoxGuestWindows early launch cleanup", () => {
+  it.effect(
+    "waits for SSH forward finalizers before acknowledging prepared guest deactivation",
+    () => {
+      const host = makeHostWindow();
+      const harness = makeGuestHarness([host.window]);
+      harness.setSshInstances([sshDescriptor]);
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const finished = yield* Deferred.make<void>();
+        harness.closeForwards.mockImplementation(() =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, undefined);
+            yield* Deferred.await(release);
+          }),
+        );
+        yield* host.invoke(manager.ensurePooled(sshDescriptor.id));
+        const closing = yield* host
+          .invoke(manager.deactivate)
+          .pipe(Effect.ensuring(Deferred.succeed(finished, undefined)), Effect.forkChild);
+        yield* Deferred.await(started);
+        assert.isFalse(yield* Deferred.isDone(finished));
+        expect(harness.views[0]!.view.webContents.isDestroyed()).toBe(true);
+        yield* Deferred.succeed(release, undefined);
+        assert.deepEqual(yield* Fiber.join(closing), { _tag: "completed" });
+        expect(harness.closeForwards).toHaveBeenCalledOnce();
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
   it.effect("releases SSH forwards once when the host closes before its guest view exists", () => {
     const a = makeHostWindow();
     const b = makeHostWindow();
@@ -1053,8 +1084,11 @@ describe("CtoxGuestManager", () => {
       expect(harness.views[0]?.loadURL).toHaveBeenCalledOnce();
       expect(harness.views[0]?.listenerCount("did-frame-navigate")).toBe(0);
       expect(harness.views[0]?.listenerCount("did-fail-load")).toBe(0);
-      expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
+      // The navigation waiter is gone; the renderer-budget destruction observer remains.
+      expect(harness.views[0]?.listenerCount("destroyed")).toBe(1);
       expect(harness.views[0]?.listenerCount("will-navigate")).toBe(1);
+      yield* manager.deactivate;
+      expect(harness.views[0]?.listenerCount("destroyed")).toBe(0);
     }).pipe(Effect.provide(harness.layer));
   });
 

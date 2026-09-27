@@ -123,6 +123,7 @@ interface ActiveGuest {
    * activation can never leave an `ssh` child behind.
    */
   readonly release?: () => void;
+  readonly awaitRelease?: Effect.Effect<void>;
 }
 
 /**
@@ -980,8 +981,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     // A full release of the mode's guests: warm entries do not survive it, so
     // logout or a renderer-side selection reset can never leave a live guest.
     const deactivate = SynchronizedRef.modifyEffect(stateRef, (state) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         destroyAllGuests(state);
+        yield* Effect.forEach(state.pool.values(), (guest) => guest.awaitRelease ?? Effect.void, {
+          discard: true,
+        });
         return [
           { _tag: "completed" } as const,
           { ...state, activeId: undefined, pool: new Map<string, PooledGuest>() },
@@ -993,12 +997,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
     // removal of a paired instance must never leave its guest in the pool.
     const deactivateInstance = (instanceId: string) =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const guest = state.pool.get(instanceId);
           if (guest === undefined) {
             return [{ _tag: "completed" } as const, state] as const;
           }
           destroyPooledGuest(guest);
+          yield* guest.awaitRelease ?? Effect.void;
           const pool = new Map(state.pool);
           pool.delete(instanceId);
           return [
@@ -1014,8 +1019,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
     yield* Effect.addFinalizer(() =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           destroyAllGuests(state);
+          yield* Effect.forEach(state.pool.values(), (guest) => guest.awaitRelease ?? Effect.void, {
+            discard: true,
+          });
           return [
             undefined,
             {
@@ -1199,6 +1207,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           browserSession: resolvedSession.value,
           lease,
           ...(releaseLaunch === undefined ? {} : { release: releaseLaunch }),
+          awaitRelease: awaitLaunchRelease,
         };
         const active = provisionalGuest;
         lease.bind(() => destroyPooledGuest(active));

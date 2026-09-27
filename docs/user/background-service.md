@@ -13,6 +13,13 @@ the service. Cancel leaves the profile unchanged; a failed or uncertain setup st
 without starting a replacement foreground server. Incomplete or changed migration
 data needs explicit repair. This migration flow still needs installed-app validation.
 
+The upcoming Desktop connection recovery will also ask before replacing an expired
+or unreadable saved session. Close other Workjet installations using the same profile
+before confirming. Recovery revokes the identified session, preserves the old encrypted
+files, and reconnects. Cancel or an unconfirmed revocation leaves recovery information
+in place. Unknown or conflicting identities require explicit repair. This flow still
+needs validation in the signed app.
+
 On a Linux host, Workjet can run as a background service for your user. It starts when the machine
 boots and keeps running after you log out.
 

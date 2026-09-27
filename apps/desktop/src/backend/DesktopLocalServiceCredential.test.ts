@@ -70,6 +70,112 @@ const fixture = Effect.fn("test.localServiceCredential.fixture")(function* () {
 });
 
 it.layer(NodeServices.layer)("protected local service credential", (it) => {
+  it.effect("keeps a non-secret recovery identity and archives unreadable ciphertext intact", () =>
+    Effect.gen(function* () {
+      const { fs, open, credential, control, baseDir } = yield* fixture();
+      const store = yield* open();
+      yield* store.save(credential);
+      const ciphertext = yield* fs.readFileString(store.filePath);
+      const bindingPath = store.filePath.replace("session.enc", "session-binding.json");
+      assert.notInclude(yield* fs.readFileString(bindingPath), Redacted.value(credential.token));
+      control.denyDecrypt = true;
+      yield* store.withAccess(
+        Effect.gen(function* () {
+          const recovery = yield* store.inspectRecovery;
+          assert.equal(recovery.sessionId, credential.sessionId);
+          yield* store.retireRecovered(recovery);
+        }),
+      );
+      const retired = (yield* fs.readDirectory(`${baseDir}/runtime`)).filter((name) =>
+        name.startsWith("desktop-auth-retired-"),
+      );
+      assert.equal(retired.length, 1);
+      assert.equal(
+        yield* fs.readFileString(`${baseDir}/runtime/${retired[0]}/session.enc`),
+        ciphertext,
+      );
+      assert.isTrue(Option.isNone(yield* (yield* open()).get));
+    }),
+  );
+
+  it.effect("a missing ciphertext cannot silently replace its retained server identity", () =>
+    Effect.gen(function* () {
+      const { fs, open, credential } = yield* fixture();
+      const store = yield* open();
+      yield* store.save(credential);
+      yield* fs.remove(store.filePath);
+      yield* store.get.pipe(Effect.flip);
+      yield* store.save(credential).pipe(Effect.flip);
+      const recovery = yield* store.withAccess(store.inspectRecovery);
+      assert.equal(recovery.sessionId, credential.sessionId);
+    }),
+  );
+
+  it.effect("recovers an exact pending enrollment identity across store recreation", () =>
+    Effect.gen(function* () {
+      const { open } = yield* fixture();
+      const original = yield* open();
+      const attempt = yield* original.beginEnrollment;
+      const reopened = yield* open();
+      const recovery = yield* reopened.withAccess(reopened.inspectRecovery);
+      assert.equal(recovery.attemptId, attempt);
+      assert.isUndefined(recovery.sessionId);
+    }),
+  );
+
+  it.effect("excludes another store's enrollment while recovery owns the canonical profile", () =>
+    Effect.gen(function* () {
+      const { open } = yield* fixture();
+      const first = yield* open();
+      const second = yield* open();
+      yield* first.withAccess(second.withAccess(Effect.void).pipe(Effect.flip));
+      yield* second.withAccess(Effect.void);
+    }),
+  );
+
+  it.effect("refuses to retire files changed since the revocation snapshot", () =>
+    Effect.gen(function* () {
+      const { fs, open, credential } = yield* fixture();
+      const store = yield* open();
+      yield* store.save(credential);
+      yield* store.withAccess(
+        Effect.gen(function* () {
+          const recovery = yield* store.inspectRecovery;
+          yield* fs.writeFileString(store.filePath, "changed-by-an-older-process");
+          yield* store.retireRecovered(recovery).pipe(Effect.flip);
+        }),
+      );
+      assert.equal(yield* fs.readFileString(store.filePath), "changed-by-an-older-process");
+    }),
+  );
+
+  for (const problem of ["foreign", "malformed", "dangling"] as const) {
+    it.effect(`refuses ${problem} recovery metadata without removing ciphertext`, () =>
+      Effect.gen(function* () {
+        const { fs, open, credential, control } = yield* fixture();
+        const store = yield* open();
+        yield* store.save(credential);
+        const before = yield* fs.readFileString(store.filePath);
+        const bindingPath = store.filePath.replace("session.enc", "session-binding.json");
+        if (problem === "dangling") {
+          yield* fs.remove(bindingPath);
+          yield* fs.symlink(`${bindingPath}.missing`, bindingPath);
+        } else if (problem === "malformed") {
+          yield* fs.writeFileString(bindingPath, "{");
+        } else {
+          const original = yield* fs.readFileString(bindingPath);
+          yield* fs.writeFileString(
+            bindingPath,
+            original.replace("environment-a", "environment-b"),
+          );
+        }
+        control.denyDecrypt = true;
+        yield* store.withAccess(store.inspectRecovery).pipe(Effect.flip);
+        assert.equal(yield* fs.readFileString(store.filePath), before);
+      }),
+    );
+  }
+
   it.effect(
     "retains incomplete enrollment across store recreation and refuses a different receipt",
     () =>
@@ -170,6 +276,7 @@ it.layer(NodeServices.layer)("protected local service credential", (it) => {
       assert.isTrue(yield* fs.exists(store.filePath));
       assert.isTrue(yield* store.remove(credential.sessionId));
       assert.isFalse(yield* fs.exists(store.filePath));
+      assert.isTrue(Option.isNone(yield* store.get));
     }),
   );
 });

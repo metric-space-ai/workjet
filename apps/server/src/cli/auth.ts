@@ -250,6 +250,7 @@ const sessionIssueCommand = Command.make("issue", {
 
 const sessionListCommand = Command.make("list", {
   ...authLocationFlags,
+  ...localDesktopIdentityFlags,
   json: jsonFlag,
 }).pipe(
   Command.withDescription("List active sessions without revealing bearer tokens."),

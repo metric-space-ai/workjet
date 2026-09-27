@@ -12,6 +12,8 @@ import {
 import {
   LocalServiceSessionError,
   makeSessionAccess,
+  decodeEnrollmentSessions,
+  requestLocalSessionRecoveryConsent,
   type LocalSessionDependencies,
 } from "./DesktopLocalServiceSession.ts";
 import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
@@ -56,6 +58,44 @@ const credential = Schema.decodeUnknownSync(LocalServiceCredential)({
   token: "test-secret",
   expiresAt: "2099-01-01T00:00:00Z",
 });
+it.effect("selects only the exact enrollment subject, never a label or a matching prefix", () =>
+  Effect.gen(function* () {
+    const selected = yield* decodeEnrollmentSessions(
+      `[
+      {"sessionId":"11111111-1111-4111-8111-111111111111","subject":"workjet-desktop-enrollment:attempt-a"},
+      {"sessionId":"22222222-2222-4222-8222-222222222222","subject":"workjet-desktop-enrollment:attempt-ab","client":{"label":"Workjet Desktop"}},
+      {"sessionId":"33333333-3333-4333-8333-333333333333","subject":"cli-issued-session","client":{"label":"workjet-desktop-enrollment:attempt-a"}}
+    ]`,
+      "attempt-a",
+    );
+    assert.deepEqual(selected, [credential.sessionId]);
+    yield* decodeEnrollmentSessions("{", "attempt-a").pipe(Effect.flip);
+  }),
+);
+
+it.effect(
+  "recovery consent defaults to Cancel and requires the stopped-installations checkbox",
+  () =>
+    Effect.gen(function* () {
+      for (const response of [0, 1]) {
+        for (const checkboxChecked of [false, true]) {
+          const consent = yield* requestLocalSessionRecoveryConsent(
+            {
+              showMessageBox: (options) => {
+                assert.equal(options.defaultId, 0);
+                assert.equal(options.cancelId, 0);
+                assert.equal(options.checkboxChecked, false);
+                return Effect.succeed({ response, checkboxChecked });
+              },
+            },
+            target,
+          );
+          assert.equal(consent, response === 1 && checkboxChecked);
+        }
+      }
+    }),
+);
+
 const fixture = () => {
   const events: string[] = [];
   const state = {
@@ -67,15 +107,42 @@ const fixture = () => {
     denyValidation: false,
     stores: 0,
     pending: false,
+    approveRecovery: true,
   };
   const denied = () => new LocalServiceCredentialError({ operation: "fixture-denied" });
   const dependencies: LocalSessionDependencies = {
+    confirmRecovery: () =>
+      Effect.sync(() => {
+        events.push("confirm");
+        return state.approveRecovery;
+      }),
+    listEnrollmentSessions: (_config, _target, attemptId) =>
+      Effect.sync(() => {
+        assert.equal(attemptId, "attempt-a");
+        events.push("list-exact-enrollment");
+        return [credential.sessionId];
+      }),
     discover: () => Effect.sync(() => ({ ...target, runtimeInstanceId: state.generation })),
     openStore: () =>
       Effect.sync(() => {
         state.stores++;
         return {
           filePath: "/profile/runtime/desktop-auth/session.enc",
+          withAccess: <A, E, R>(operation: Effect.Effect<A, E, R>) => operation,
+          inspectRecovery: Effect.sync(() => ({
+            baseDir: target.baseDir,
+            environmentId: target.environmentId,
+            sessionId: Option.isSome(state.saved) ? state.saved.value.sessionId : undefined,
+            attemptId: state.pending ? "attempt-a" : undefined,
+            fingerprints: [],
+          })),
+          retireRecovered: () =>
+            Effect.sync(() => {
+              events.push("retire");
+              state.pending = false;
+              state.saved = Option.none();
+              state.denyRead = false;
+            }),
           assertEnrollmentSettled: Effect.suspend(() =>
             state.pending ? Effect.fail(denied()) : Effect.void,
           ),
@@ -124,6 +191,86 @@ const fixture = () => {
   };
   return { dependencies, events, state };
 };
+
+it.effect(
+  "explicit recovery reconciles unknown enrollment before retiring files or re-enrolling",
+  () =>
+    Effect.gen(function* () {
+      const { dependencies, state, events } = fixture();
+      state.pending = true;
+      const access = yield* makeSessionAccess(dependencies);
+      const prepared = yield* access.prepareWithRecovery(config);
+      assert.equal(prepared.credential.sessionId, credential.sessionId);
+      assert.deepEqual(events, [
+        "protect",
+        "confirm",
+        "list-exact-enrollment",
+        "revoke",
+        "retire",
+        "protect",
+        "issue",
+        "validate:runtime-a",
+        "save",
+      ]);
+    }),
+);
+
+it.effect("refuses a recovery identity from another environment before consent or revocation", () =>
+  Effect.gen(function* () {
+    const { dependencies, state, events } = fixture();
+    state.saved = Option.some(credential);
+    const access = yield* makeSessionAccess({
+      ...dependencies,
+      discover: () => Effect.succeed({ ...target, environmentId: "environment-b" }),
+    });
+    const error = yield* access.recover(config).pipe(Effect.flip);
+    assert.include(error.operation, "recovery target");
+    assert.deepEqual(events, []);
+    assert.isTrue(Option.isSome(state.saved));
+  }),
+);
+
+it.effect(
+  "cancel preserves the old session without revocation, retirement or automatic re-enrollment",
+  () =>
+    Effect.gen(function* () {
+      const { dependencies, state, events } = fixture();
+      state.pending = true;
+      state.approveRecovery = false;
+      const access = yield* makeSessionAccess(dependencies);
+      const error = yield* access.prepareWithRecovery(config).pipe(Effect.flip);
+      assert.include(error.operation, "cancelling");
+      yield* access.prepareWithRecovery(config).pipe(Effect.flip);
+      assert.deepEqual(events, ["protect", "confirm"]);
+      assert.isTrue(state.pending);
+    }),
+);
+
+it.effect(
+  "a lost revoke reply retains recovery across reopening and never retries within the same UI",
+  () =>
+    Effect.gen(function* () {
+      const { dependencies, state, events } = fixture();
+      state.pending = true;
+      const first = yield* makeSessionAccess({
+        ...dependencies,
+        revoke: () =>
+          Effect.sync(() => events.push("revoke-unknown")).pipe(
+            Effect.andThen(
+              Effect.fail(new LocalServiceSessionError({ operation: "confirm revocation of" })),
+            ),
+          ),
+      });
+      yield* first.prepareWithRecovery(config).pipe(Effect.flip);
+      yield* first.prepareWithRecovery(config).pipe(Effect.flip);
+      assert.isTrue(state.pending);
+      assert.deepEqual(events, ["protect", "confirm", "list-exact-enrollment", "revoke-unknown"]);
+      const reopened = yield* makeSessionAccess(dependencies);
+      yield* reopened.prepareWithRecovery(config);
+      assert.equal(events.filter((event) => event === "issue").length, 1);
+      assert.isBelow(events.indexOf("revoke"), events.indexOf("retire"));
+    }),
+);
 
 it.effect(
   "serializes concurrent first enrollment and reuses the protected session after reopening",

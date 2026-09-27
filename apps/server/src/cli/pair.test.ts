@@ -235,7 +235,18 @@ describe("local Desktop enrollment", () => {
           Schema.fromJsonString(Schema.Array(Schema.Struct({ sessionId: Schema.String }))),
         )(
           yield* captureStdout(
-            runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
+            runCli([
+              "auth",
+              "session",
+              "list",
+              "--base-dir",
+              baseDir,
+              "--json",
+              "--local-environment-id",
+              testDescriptor.environmentId,
+              "--local-runtime-instance-id",
+              testDescriptor.runtimeInstanceId,
+            ]),
           ),
         );
         assert.equal(sessions.length, 1);
@@ -258,7 +269,18 @@ describe("local Desktop enrollment", () => {
           Schema.fromJsonString(Schema.Array(Schema.Struct({ sessionId: Schema.String }))),
         )(
           yield* captureStdout(
-            runCli(["auth", "session", "list", "--base-dir", baseDir, "--json"]),
+            runCli([
+              "auth",
+              "session",
+              "list",
+              "--base-dir",
+              baseDir,
+              "--json",
+              "--local-environment-id",
+              testDescriptor.environmentId,
+              "--local-runtime-instance-id",
+              testDescriptor.runtimeInstanceId,
+            ]),
           ),
         );
         assert.equal(afterRevoke.length, 0);
@@ -279,6 +301,20 @@ describe("local Desktop enrollment", () => {
               "auth",
               "session",
               "issue",
+              "--base-dir",
+              baseDir,
+              "--json",
+              "--local-environment-id",
+              expected[0]!,
+              "--local-runtime-instance-id",
+              expected[1]!,
+            ]).pipe(Effect.flip),
+          );
+          yield* provideCliTestLayers(
+            runCli([
+              "auth",
+              "session",
+              "list",
               "--base-dir",
               baseDir,
               "--json",

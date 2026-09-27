@@ -49,9 +49,12 @@ process.stdout.write('workjet-terminal-ready\\n');
             adapter.spawn(input).pipe(
               Effect.tap((owned) =>
                 Effect.gen(function* () {
-                  const runFork = Effect.runForkWith(yield* Effect.context<never>());
-                  const unsubscribe = owned.onExit(() =>
-                    runFork(Deferred.succeed(exited, undefined)),
+                  yield* Effect.callback<void>((resume) => {
+                    const unsubscribe = owned.onExit(() => resume(Effect.void));
+                    return Effect.sync(unsubscribe);
+                  }).pipe(
+                    Effect.tap(() => Deferred.succeed(exited, undefined)),
+                    Effect.forkIn(scope),
                   );
                   // This captured fixture process must be reaped even if readiness/assertions fail.
                   yield* Scope.addFinalizer(
@@ -64,7 +67,6 @@ process.stdout.write('workjet-terminal-ready\\n');
                           Effect.orDie,
                         );
                       }
-                      unsubscribe();
                     }),
                   );
                 }),

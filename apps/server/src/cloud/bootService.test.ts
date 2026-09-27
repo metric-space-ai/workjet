@@ -304,22 +304,20 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
     yield* fs.writeFileString(`${dbPath}-wal`, "legacy wal bytes");
     const receiptPath = path.join(baseDir, "runtime", "desktop-profile-migration.json");
     const receipt = () =>
-      fs
-        .readFileString(receiptPath)
-        .pipe(
-          Effect.flatMap(
-            Schema.decodeUnknownEffect(
-              Schema.fromJsonString(
-                Schema.Struct({
-                  id: Schema.String,
-                  phase: Schema.String,
-                  dbPath: Schema.String,
-                  bundleSha256: Schema.String,
-                }),
-              ),
+      fs.readFileString(receiptPath).pipe(
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            Schema.fromJsonString(
+              Schema.Struct({
+                id: Schema.String,
+                phase: Schema.String,
+                dbPath: Schema.String,
+                bundleSha256: Schema.String,
+              }),
             ),
           ),
-        );
+        ),
+      );
     return { ...fixture, dbPath, receiptPath, receipt };
   });
 
@@ -346,31 +344,48 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
       }),
   );
 
-  it.effect("preserves a populated SQLite database and a readable independent migration backup", () =>
-    Effect.gen(function* () {
-      const { service, fs, path, baseDir, dbPath, receipt } = yield* migrationHarness();
-      yield* fs.remove(dbPath);
-      yield* fs.remove(`${dbPath}-wal`);
-      yield* Effect.sync(() => {
-        const database = new NodeSqlite.DatabaseSync(dbPath);
-        try {
-          database.exec("CREATE TABLE retained_work (id TEXT PRIMARY KEY, state TEXT NOT NULL); PRAGMA user_version=17;");
-          database.prepare("INSERT INTO retained_work VALUES (?, ?)").run("existing-intent", "waiting-for-approval");
-        } finally { database.close(); }
-      });
-      yield* service.install;
-      const saved = yield* receipt();
-      for (const location of [dbPath, path.join(baseDir, "runtime", "db-backup", saved.id, "database")]) {
+  it.effect(
+    "preserves a populated SQLite database and a readable independent migration backup",
+    () =>
+      Effect.gen(function* () {
+        const { service, fs, path, baseDir, dbPath, receipt } = yield* migrationHarness();
+        yield* fs.remove(dbPath);
+        yield* fs.remove(`${dbPath}-wal`);
         yield* Effect.sync(() => {
-          const database = new NodeSqlite.DatabaseSync(location, { readOnly: true });
+          const database = new NodeSqlite.DatabaseSync(dbPath);
           try {
-            expect(database.prepare("PRAGMA integrity_check").get()?.integrity_check).toBe("ok");
-            expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(17);
-            expect(database.prepare("SELECT state FROM retained_work WHERE id = ?").get("existing-intent")?.state).toBe("waiting-for-approval");
-          } finally { database.close(); }
+            database.exec(
+              "CREATE TABLE retained_work (id TEXT PRIMARY KEY, state TEXT NOT NULL); PRAGMA user_version=17;",
+            );
+            database
+              .prepare("INSERT INTO retained_work VALUES (?, ?)")
+              .run("existing-intent", "waiting-for-approval");
+          } finally {
+            database.close();
+          }
         });
-      }
-    }),
+        yield* service.install;
+        const saved = yield* receipt();
+        for (const location of [
+          dbPath,
+          path.join(baseDir, "runtime", "db-backup", saved.id, "database"),
+        ]) {
+          yield* Effect.sync(() => {
+            const database = new NodeSqlite.DatabaseSync(location, { readOnly: true });
+            try {
+              expect(database.prepare("PRAGMA integrity_check").get()?.integrity_check).toBe("ok");
+              expect(database.prepare("PRAGMA user_version").get()?.user_version).toBe(17);
+              expect(
+                database
+                  .prepare("SELECT state FROM retained_work WHERE id = ?")
+                  .get("existing-intent")?.state,
+              ).toBe("waiting-for-approval");
+            } finally {
+              database.close();
+            }
+          });
+        }
+      }),
   );
 
   for (const owner of ["runtime", "database"] as const) {

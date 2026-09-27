@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
@@ -37,7 +37,7 @@ const fixture = Effect.fn("test.bundled_runtime.fixture")(function* () {
     ChildProcess.make("tar", ["-czf", archivePath, "-C", source, "package"]),
   );
   assert.equal(tarExit, 0);
-  const sha256 = createHash("sha256")
+  const sha256 = NodeCrypto.createHash("sha256")
     .update(yield* fs.readFile(archivePath))
     .digest("hex");
   const input = {

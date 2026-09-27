@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Process-lifetime exclusion uses the runtime's built-in SQLite.
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 
 export type ProfileOwnershipKind =
   | "runtime"
@@ -48,10 +48,10 @@ async function acquireOwnership(
 ): Promise<ProfileOwnership> {
   let database: LockDatabase | undefined;
   try {
-    await NodeFS.mkdir(baseDir, { recursive: true, mode: 0o700 });
-    const canonicalBaseDir = await NodeFS.realpath(baseDir);
+    await NodeFSP.mkdir(baseDir, { recursive: true, mode: 0o700 });
+    const canonicalBaseDir = await NodeFSP.realpath(baseDir);
     const directory = NodePath.join(canonicalBaseDir, "runtime", "ownership");
-    await NodeFS.mkdir(directory, { recursive: true, mode: 0o700 });
+    await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
     const lockPath = NodePath.join(directory, fileName);
     // Match the server's existing Node/Bun SQLite choice without a new native dependency.
     database =
@@ -102,13 +102,13 @@ export async function acquireDatabaseAccess(
   mode: "shared" | "exclusive",
 ): Promise<ProfileOwnership> {
   const absolutePath = NodePath.resolve(dbPath);
-  await NodeFS.mkdir(NodePath.dirname(absolutePath), { recursive: true, mode: 0o700 });
-  const canonicalParent = await NodeFS.realpath(NodePath.dirname(absolutePath));
-  const canonicalDb = await NodeFS.realpath(absolutePath).catch(async (cause: unknown) => {
+  await NodeFSP.mkdir(NodePath.dirname(absolutePath), { recursive: true, mode: 0o700 });
+  const canonicalParent = await NodeFSP.realpath(NodePath.dirname(absolutePath));
+  const canonicalDb = await NodeFSP.realpath(absolutePath).catch(async (cause: unknown) => {
     if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
       // A dangling file symlink would resolve to a different lock after SQLite
       // creates its target. Only a genuinely absent path may use this fallback.
-      const existing = await NodeFS.lstat(absolutePath).catch((error: unknown) => {
+      const existing = await NodeFSP.lstat(absolutePath).catch((error: unknown) => {
         if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
         throw error;
       });
@@ -117,7 +117,7 @@ export async function acquireDatabaseAccess(
     }
     throw cause;
   });
-  const fileName = `database-${createHash("sha256").update(canonicalDb).digest("hex")}.sqlite`;
+  const fileName = `database-${NodeCrypto.createHash("sha256").update(canonicalDb).digest("hex")}.sqlite`;
   return acquireOwnership(NodePath.dirname(canonicalDb), "database", fileName, mode);
 }
 

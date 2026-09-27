@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Stable launchd labels hash the canonical profile path.
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import {
   HostProcessExecutablePath,
   HostProcessPlatform,
@@ -103,7 +103,7 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
 
 /** One launchd owner per canonical Workjet home; never share a label across profiles. */
 export function bootServiceLaunchAgentLabel(canonicalBaseDir: string): string {
-  return `dev.workjet.server.${createHash("sha256").update(canonicalBaseDir).digest("hex")}`;
+  return `dev.workjet.server.${NodeCrypto.createHash("sha256").update(canonicalBaseDir).digest("hex")}`;
 }
 
 function escapePlistString(value: string): string {

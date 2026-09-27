@@ -1,9 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off -- release preparation runs outside the application runtime.
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
 import * as Data from "effect/Data";
 import * as Stream from "effect/Stream";
@@ -21,18 +21,22 @@ export async function stageVerifiedNodeArchive(input: {
   readonly destination: string;
   readonly pin: ReturnType<typeof managedNodeArchive>;
 }) {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(input.archivePath)) hash.update(chunk);
+  const hash = NodeCrypto.createHash("sha256");
+  for await (const chunk of NodeFS.createReadStream(input.archivePath)) hash.update(chunk);
   const actual = hash.digest("hex");
   if (actual !== input.pin.sha256) throw new Error("Portable Node checksum verification failed.");
-  const staging = await fs.mkdtemp(path.join(path.dirname(input.destination), ".node-stage-"));
+  const staging = await NodeFSP.mkdtemp(
+    NodePath.join(NodePath.dirname(input.destination), ".node-stage-"),
+  );
   let ownsDestination = false;
   try {
-    execFileSync("tar", ["-xzf", input.archivePath, "-C", staging], { timeout: 60_000 });
-    const root = path.join(staging, input.pin.directoryName);
-    const nodePath = path.join(root, "bin", "node");
+    NodeChildProcess.execFileSync("tar", ["-xzf", input.archivePath, "-C", staging], {
+      timeout: 60_000,
+    });
+    const root = NodePath.join(staging, input.pin.directoryName);
+    const nodePath = NodePath.join(root, "bin", "node");
     const reported = JSON.parse(
-      execFileSync(
+      NodeChildProcess.execFileSync(
         nodePath,
         [
           "-p",
@@ -53,23 +57,23 @@ export async function stageVerifiedNodeArchive(input: {
     ) {
       throw new Error("Portable Node runtime identity does not match its release pin.");
     }
-    await fs.access(path.join(root, "LICENSE"));
+    await NodeFSP.access(NodePath.join(root, "LICENSE"));
     // Build stages are private. Never replace a previously staged executable.
-    await fs.mkdir(input.destination);
+    await NodeFSP.mkdir(input.destination);
     ownsDestination = true;
-    for (const entry of await fs.readdir(root)) {
-      await fs.rename(path.join(root, entry), path.join(input.destination, entry));
+    for (const entry of await NodeFSP.readdir(root)) {
+      await NodeFSP.rename(NodePath.join(root, entry), NodePath.join(input.destination, entry));
     }
-    await fs.writeFile(
-      path.join(input.destination, "workjet-runtime.json"),
+    await NodeFSP.writeFile(
+      NodePath.join(input.destination, "workjet-runtime.json"),
       `${JSON.stringify(input.pin, null, 2)}\n`,
     );
-    return path.join(input.destination, "bin", "node");
+    return NodePath.join(input.destination, "bin", "node");
   } catch (cause) {
-    if (ownsDestination) await fs.rm(input.destination, { recursive: true, force: true });
+    if (ownsDestination) await NodeFSP.rm(input.destination, { recursive: true, force: true });
     throw cause;
   } finally {
-    await fs.rm(staging, { recursive: true, force: true });
+    await NodeFSP.rm(staging, { recursive: true, force: true });
   }
 }
 
@@ -80,10 +84,12 @@ export async function preparePortableNode(input: {
   readonly arch: string;
 }) {
   const pin = managedNodeArchive(input.platform, input.arch);
-  await fs.mkdir(path.dirname(input.destination), { recursive: true });
-  const download = await fs.mkdtemp(path.join(path.dirname(input.destination), ".node-download-"));
+  await NodeFSP.mkdir(NodePath.dirname(input.destination), { recursive: true });
+  const download = await NodeFSP.mkdtemp(
+    NodePath.join(NodePath.dirname(input.destination), ".node-download-"),
+  );
   try {
-    const archivePath = path.join(download, "node.tar.gz");
+    const archivePath = NodePath.join(download, "node.tar.gz");
     // Bound both the response body and on-disk temporary archive, including chunked responses.
     await Effect.runPromise(
       Effect.scoped(
@@ -94,7 +100,7 @@ export async function preparePortableNode(input: {
               message: `Portable Node download failed (${response.status}).`,
             });
           const file = yield* Effect.acquireRelease(
-            Effect.tryPromise(() => fs.open(archivePath, "wx", 0o600)),
+            Effect.tryPromise(() => NodeFSP.open(archivePath, "wx", 0o600)),
             (handle) => Effect.promise(() => handle.close()),
           );
           let size = 0;
@@ -117,6 +123,6 @@ export async function preparePortableNode(input: {
     );
     return await stageVerifiedNodeArchive({ archivePath, destination: input.destination, pin });
   } finally {
-    await fs.rm(download, { recursive: true, force: true });
+    await NodeFSP.rm(download, { recursive: true, force: true });
   }
 }

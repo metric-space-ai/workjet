@@ -1,9 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - Real SQLite/filesystem and bounded child-process exclusion tests.
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeEvents from "node:events";
 import { expect, it } from "@effect/vitest";
 import {
   acquireProfileOwnership,
@@ -13,11 +13,11 @@ import {
 } from "./profileOwnership.ts";
 
 async function withProfile(run: (root: string) => Promise<void>): Promise<void> {
-  const root = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-profile-owner-"));
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-profile-owner-"));
   try {
     await run(root);
   } finally {
-    await NodeFS.rm(root, { recursive: true, force: true });
+    await NodeFSP.rm(root, { recursive: true, force: true });
   }
 }
 
@@ -27,7 +27,7 @@ it("excludes a second owner through a profile alias and reopens after release", 
     const owner = await acquireProfileOwnership(base, "runtime");
     try {
       const alias = NodePath.join(root, "alias");
-      await NodeFS.symlink(base, alias, "dir");
+      await NodeFSP.symlink(base, alias, "dir");
       await expect(acquireProfileOwnership(alias, "runtime")).rejects.toBeInstanceOf(
         ProfileOwnershipError,
       );
@@ -46,9 +46,9 @@ it("excludes a second owner through a profile alias and reopens after release", 
 it("admits live database clients together and excludes file restore through a symlink", () =>
   withProfile(async (root) => {
     const dbPath = NodePath.join(root, "state.sqlite");
-    await NodeFS.writeFile(dbPath, "");
+    await NodeFSP.writeFile(dbPath, "");
     const alias = NodePath.join(root, "alias.sqlite");
-    await NodeFS.symlink(dbPath, alias);
+    await NodeFSP.symlink(dbPath, alias);
     const reader = await acquireDatabaseAccess(dbPath, "shared");
     try {
       const second = await acquireDatabaseAccess(alias, "shared");
@@ -101,7 +101,7 @@ it("restores reader exclusion when an existing admission file was in WAL mode", 
 it("refuses a dangling database alias instead of changing lock identity after creation", () =>
   withProfile(async (root) => {
     const alias = NodePath.join(root, "alias.sqlite");
-    await NodeFS.symlink(NodePath.join(root, "missing.sqlite"), alias);
+    await NodeFSP.symlink(NodePath.join(root, "missing.sqlite"), alias);
     await expect(acquireDatabaseAccess(alias, "shared")).rejects.toThrow();
   }));
 
@@ -120,7 +120,7 @@ it("keeps independent profiles and ownership domains separate", () =>
 it("releases ownership when guarded work fails without replacing its lock file", () =>
   withProfile(async (root) => {
     const owner = await acquireProfileOwnership(root, "runtime");
-    const before = await NodeFS.stat(owner.lockPath);
+    const before = await NodeFSP.stat(owner.lockPath);
     owner.release();
     const failure = new Error("guarded operation failed");
     await expect(
@@ -129,7 +129,7 @@ it("releases ownership when guarded work fails without replacing its lock file",
       }),
     ).rejects.toBe(failure);
     await withProfileOwnership(root, "runtime", async () => {
-      expect((await NodeFS.stat(owner.lockPath)).ino).toBe(before.ino);
+      expect((await NodeFSP.stat(owner.lockPath)).ino).toBe(before.ino);
     });
   }));
 
@@ -137,9 +137,9 @@ it("excludes another process and recovers kernel ownership after its abrupt exit
   withProfile(async (root) => {
     const initial = await acquireProfileOwnership(root, "runtime");
     const lockPath = initial.lockPath;
-    const inode = (await NodeFS.stat(lockPath)).ino;
+    const inode = (await NodeFSP.stat(lockPath)).ino;
     initial.release();
-    const child = spawn(
+    const child = NodeChildProcess.spawn(
       process.execPath,
       [
         "--input-type=module",
@@ -158,19 +158,21 @@ it("excludes another process and recovers kernel ownership after its abrupt exit
       { stdio: ["ignore", "ignore", "ignore", "ipc"] },
     );
     try {
-      const [receipt] = await once(child, "message", { signal: AbortSignal.timeout(5_000) });
+      const [receipt] = await NodeEvents.once(child, "message", {
+        signal: AbortSignal.timeout(5_000),
+      });
       expect(receipt).toBe("locked");
       await expect(acquireProfileOwnership(root, "runtime")).rejects.toBeInstanceOf(
         ProfileOwnershipError,
       );
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
-        const exited = once(child, "exit", { signal: AbortSignal.timeout(5_000) });
+        const exited = NodeEvents.once(child, "exit", { signal: AbortSignal.timeout(5_000) });
         child.kill("SIGKILL");
         await exited;
       }
     }
     await withProfileOwnership(root, "runtime", async () => {
-      expect((await NodeFS.stat(lockPath)).ino).toBe(inode);
+      expect((await NodeFSP.stat(lockPath)).ino).toBe(inode);
     });
   }));

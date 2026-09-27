@@ -2732,11 +2732,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         yield* closeUnlocked({ ...input, deleteHistory: true });
         // A signal request (even SIGKILL) is not an exit acknowledgement.
         // Timed-out entries remain tracked across retries after the tab disappears.
-        return yield* Effect.forEach(exits, Deferred.await, { discard: true }).pipe(
-          Effect.timeoutOption(processKillGraceMs + 5_000),
-          Effect.map(Option.isSome),
-        );
-      }),
+        yield* Effect.forEach(exits, Deferred.await, { discard: true });
+      }).pipe(Effect.timeoutOption(processKillGraceMs + 5_000), Effect.map(Option.isSome)),
     );
 
   return TerminalManager.of({

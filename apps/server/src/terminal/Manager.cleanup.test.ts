@@ -37,6 +37,7 @@ process.stdout.write('workjet-terminal-ready\\n');
       const adapter = yield* NodePtyAdapter.make();
       const scope = yield* Scope.Scope;
       const exited = yield* Deferred.make<void>();
+      let exitObserved = false;
       const manager = yield* TerminalManager.makeWithOptions({
         logsDir: path.join(root, "logs"),
         shellResolver: () => executable,
@@ -50,7 +51,10 @@ process.stdout.write('workjet-terminal-ready\\n');
               Effect.tap((owned) =>
                 Effect.gen(function* () {
                   yield* Effect.callback<void>((resume) => {
-                    const unsubscribe = owned.onExit(() => resume(Effect.void));
+                    const unsubscribe = owned.onExit(() => {
+                      exitObserved = true;
+                      resume(Effect.void);
+                    });
                     return Effect.sync(unsubscribe);
                   }).pipe(
                     Effect.tap(() => Deferred.succeed(exited, undefined)),
@@ -60,13 +64,10 @@ process.stdout.write('workjet-terminal-ready\\n');
                   yield* Scope.addFinalizer(
                     scope,
                     Effect.gen(function* () {
-                      if (!(yield* Deferred.isDone(exited))) {
+                      if (!exitObserved) {
                         yield* Effect.sync(() => owned.kill("SIGKILL"));
-                        yield* Deferred.await(exited).pipe(
-                          Effect.timeout("5 seconds"),
-                          Effect.orDie,
-                        );
                       }
+                      yield* Deferred.await(exited).pipe(Effect.timeout("5 seconds"), Effect.orDie);
                     }),
                   );
                 }),
@@ -86,7 +87,7 @@ process.stdout.write('workjet-terminal-ready\\n');
       yield* manager.open({ threadId: "owned-fixture", terminalId: "default", cwd: root });
       yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"));
       assert.isTrue(yield* manager.closeForCleanup({ threadId: "owned-fixture" }));
-      assert.isTrue(yield* Deferred.isDone(exited));
+      assert.isTrue(exitObserved);
       assert.equal(yield* fs.readFileString(path.join(root, "last-write")), "written before exit");
     }),
   );

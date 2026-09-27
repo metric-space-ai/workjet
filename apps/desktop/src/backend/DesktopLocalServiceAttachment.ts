@@ -92,7 +92,10 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
         ? yield* fs.readDirectory(runtimeDir)
         : [];
       const migration = runtimeEntries.includes("desktop-profile-migration.json");
-      if (runtimeEntries.includes("service-state.json") && !migration)
+      if (
+        runtimeEntries.includes("service-state.json") &&
+        (!migration || environment.platform !== "darwin")
+      )
         return yield* blocked("Service state exists without an installed service.");
       if (environment.platform !== "darwin") return foreground;
       const stateDir = environment.path.join(environment.baseDir, "userdata");

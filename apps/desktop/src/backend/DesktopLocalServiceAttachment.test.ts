@@ -501,6 +501,22 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
     );
   }
 
+  it.effect("refuses retained Linux service state even when a migration marker exists", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDiscoveryHarness();
+      fixture.environment.platform = "linux";
+      const { fs, path, baseDir } = fixture;
+      yield* fs.makeDirectory(path.join(baseDir, "runtime"), { recursive: true });
+      yield* fs.writeFileString(path.join(baseDir, "runtime", "service-state.json"), "{}");
+      yield* fs.writeFileString(
+        path.join(baseDir, "runtime", "desktop-profile-migration.json"),
+        "{}",
+      );
+      const error = yield* fixture.discover().pipe(Effect.flip);
+      assert.include(error.message, "state exists");
+    }),
+  );
+
   for (const resume of [false, true]) {
     it.effect(`requests explicit migration for an existing profile (resume=${resume})`, () =>
       Effect.gen(function* () {

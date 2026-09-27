@@ -6,10 +6,12 @@ that a new local profile gets a background service, work continues after Quit wh
 you remain logged in, and reopening Workjet reconnects to that service. Logging out
 ends the macOS user service. Do not rely on this upcoming Desktop behavior yet.
 
-Automatic migration of profiles created by older releases is not yet available.
-If Workjet requests migration or repair, finish active work and stop the old runtime
-before migrating the existing profile. Failed setup does not start a replacement
-foreground server against the same data.
+The upcoming macOS setup will ask before migrating a profile from an older release.
+Finish active work and stop all older Workjet apps and command-line runtimes using
+that profile before confirming. Setup will back up the database before installing
+the service. Cancel leaves the profile unchanged; a failed or uncertain setup stops
+without starting a replacement foreground server. Incomplete or changed migration
+data needs explicit repair. This migration flow still needs installed-app validation.
 
 On a Linux host, Workjet can run as a background service for your user. It starts when the machine
 boots and keeps running after you log out.

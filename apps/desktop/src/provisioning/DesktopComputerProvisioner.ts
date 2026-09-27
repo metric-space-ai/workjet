@@ -3,7 +3,6 @@
 // @effect-diagnostics globalDate:off globalDateInEffect:off -- timestamps are renderer-safe snapshots, not scheduling decisions.
 // @effect-diagnostics anyUnknownInErrorContext:off globalErrorInEffectFailure:off -- heterogeneous OS/SSH failures are sanitized at this boundary.
 // @effect-diagnostics preferSchemaOverJson:off tryCatchInEffectGen:off -- only bounded installer NDJSON events are parsed and normalized.
-import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -36,6 +35,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as DesktopSshPasswordPrompts from "../ssh/DesktopSshPasswordPrompts.ts";
 import * as CtoxInstanceRegistry from "../ctox/CtoxInstanceRegistry.ts";
 import { reuseHealthyCtox } from "./ctoxBootstrap.ts";
+import { runLocalCommand, type CommandResult } from "./LocalProvisioningCommand.ts";
 
 const PREFLIGHT_TTL_MS = 10 * 60 * 1_000;
 const OPERATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
@@ -58,49 +58,9 @@ interface PreflightRecord {
   readonly createdAtMs: number;
 }
 
-interface CommandResult {
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
 interface MutableOperation {
   snapshot: WorkjetProvisioningSnapshot;
   updatedAtMs: number;
-}
-
-function runLocalCommand(
-  command: string,
-  args: readonly string[],
-  input?: string,
-  timeoutMs = 30_000,
-): Promise<CommandResult> {
-  return new Promise((resolve, reject) => {
-    const child = NodeChildProcess.spawn(command, [...args], {
-      env: process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    const timer = setTimeout(() => child.kill("SIGTERM"), timeoutMs);
-    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      const result = {
-        stdout: Buffer.concat(stdout).toString("utf8"),
-        stderr: Buffer.concat(stderr).toString("utf8"),
-      };
-      if (code === 0) resolve(result);
-      else reject(new Error(result.stderr.trim() || result.stdout.trim() || `${command} failed`));
-    });
-    if (input !== undefined) child.stdin.end(input);
-    else child.stdin.end();
-  });
 }
 
 function normalizePlatform(value: string): "macos" | "linux" | "windows" | null {

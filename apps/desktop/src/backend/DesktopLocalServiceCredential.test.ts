@@ -267,6 +267,22 @@ it.layer(NodeServices.layer)("protected local service credential", (it) => {
       assert.isFalse(yield* fs.exists(linux.filePath));
     }),
   );
+  it.effect("cannot overwrite another saved session without explicit recovery", () =>
+    Effect.gen(function* () {
+      const { fs, open, credential } = yield* fixture();
+      const store = yield* open();
+      yield* store.save(credential);
+      const before = yield* fs.readFileString(store.filePath);
+      const other = yield* Schema.decodeUnknownEffect(LocalServiceCredential)({
+        ...credential,
+        sessionId: "22222222-2222-4222-8222-222222222222",
+        token: Redacted.value(credential.token),
+      });
+      yield* store.save(other).pipe(Effect.flip);
+      assert.equal(yield* fs.readFileString(store.filePath), before);
+    }),
+  );
+
   it.effect("removes only the explicitly named saved session", () =>
     Effect.gen(function* () {
       const { fs, open, credential } = yield* fixture();

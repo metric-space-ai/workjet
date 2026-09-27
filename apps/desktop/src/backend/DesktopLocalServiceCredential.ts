@@ -184,7 +184,9 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
     yield* checkBinding(credential);
     // Read and validate an existing encrypted record before replacing it. A
     // denied keychain or a different profile must never become implicit reset.
-    yield* read;
+    const previous = yield* read;
+    if (Option.isSome(previous) && previous.value.sessionId !== credential.sessionId)
+      return yield* fail("replace an existing session without recovery of");
     yield* requireProtection;
     const plaintext = yield* encode(credential).pipe(Effect.mapError(() => fail("encode")));
     const encrypted = yield* safeStorage
@@ -198,7 +200,6 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
         if (platform !== "win32") yield* fs.chmod(temporary, 0o600);
         yield* fs.writeFile(temporary, encrypted);
         yield* (yield* fs.open(temporary, { flag: "r" })).sync;
-        yield* fs.rename(temporary, filePath);
         const binding = yield* Schema.encodeEffect(Schema.fromJsonString(SessionBinding))({
           version: 1,
           baseDir,
@@ -210,6 +211,7 @@ export const make = Effect.fn("desktop.localServiceCredential.make")(function* (
         yield* fs.writeFileString(bindingTemporary, binding);
         yield* (yield* fs.open(bindingTemporary, { flag: "r" })).sync;
         yield* fs.rename(bindingTemporary, bindingPath);
+        yield* fs.rename(temporary, filePath);
         if (platform !== "win32") yield* (yield* fs.open(directory, { flag: "r" })).sync;
       }),
     ).pipe(Effect.mapError(() => fail("save")));

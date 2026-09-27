@@ -7,7 +7,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 
-import { EventEmitter } from "node:events";
+import * as NodeEvents from "node:events";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Fiber from "effect/Fiber";
@@ -491,8 +491,8 @@ describe("child views on a host window", () => {
 });
 
 function makeHostWindow() {
-  const contentsEvents = new EventEmitter();
-  const windowEvents = new EventEmitter();
+  const contentsEvents = new NodeEvents.EventEmitter();
+  const windowEvents = new NodeEvents.EventEmitter();
   let destroyed = false;
   const send = vi.fn();
   const addChildView = vi.fn();
@@ -532,7 +532,7 @@ function makeHostWindow() {
 
 describe("CtoxGuestWindows", () => {
   const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
-  const unavailable = { _tag: "failed", code: "not_active" };
+  const unavailable = { _tag: "failed", code: "not_active" } as const;
 
   it.effect(
     "rejects absent, subframe, stale-frame and guest senders without creating a view",
@@ -831,7 +831,7 @@ describe("CtoxGuestWindows admission and native destruction", () => {
         handler: () => manager.ensurePooled(descriptor.id),
       });
       yield* a.invoke(manager.ensurePooled(descriptor.id));
-      const originalClose = harness.views[0]!.close.getMockImplementation()!;
+
       let queued: Promise<unknown> | undefined;
       harness.views[0]!.close.mockImplementationOnce(() => {
         // Native close is inside deactivateInstance's global permit. The IPC call validates,
@@ -843,7 +843,7 @@ describe("CtoxGuestWindows admission and native destruction", () => {
           ),
         );
         b.reload(false);
-        originalClose();
+        harness.views[0]!.destroy();
       });
       yield* manager.deactivateInstance(descriptor.id);
       assert.isDefined(queued);

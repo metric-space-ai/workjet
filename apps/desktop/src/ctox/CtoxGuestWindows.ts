@@ -182,10 +182,11 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
               const entry = yield* getOrCreate(window, isCurrent);
               if (entry === undefined || entry.closed || !isCurrent()) return unavailable;
               const fiber = yield* Effect.forkIn(
-                Effect.suspend(() =>
-                  entry.closed || !isCurrent()
-                    ? Effect.succeed(unavailable)
-                    : operation(entry.guests),
+                Effect.suspend(
+                  (): Effect.Effect<A | typeof unavailable> =>
+                    entry.closed || !isCurrent()
+                      ? Effect.succeed(unavailable)
+                      : operation(entry.guests),
                 ),
                 entry.scope,
               );

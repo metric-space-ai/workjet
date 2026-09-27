@@ -14,6 +14,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import {
   makeAttachment,
   discoverService,
+  requestProfileMigrationConsent,
   LocalServiceAttachmentError,
 } from "./DesktopLocalServiceAttachment.ts";
 import type { RunBackendProcessOptions } from "./DesktopBackendManager.ts";
@@ -70,6 +71,8 @@ it.effect(
       let releases = 0;
       let ready = 0;
       const attachment = yield* makeAttachment({
+        confirmMigration: Effect.die("Unexpected migration confirmation."),
+        migrate: () => Effect.die("Unexpected profile migration."),
         install: () => Effect.die("An existing service must not be installed again."),
         discover: Effect.sync(() => {
           discoveries++;
@@ -121,6 +124,8 @@ it.effect("closing the UI attachment scope does not request any service control"
     let starts = 0;
     let releases = 0;
     const attachment = yield* makeAttachment({
+      confirmMigration: Effect.die("Unexpected migration confirmation."),
+      migrate: () => Effect.die("Unexpected profile migration."),
       install: () => Effect.die("An existing service must not be installed again."),
       discover: Effect.succeed(Option.some(endpoint)),
       assertCurrent: Effect.void,
@@ -162,6 +167,8 @@ it.effect(
         let ready = 0;
         const error = new LocalServiceAttachmentError({ reason: phase });
         const attachment = yield* makeAttachment({
+          confirmMigration: Effect.die("Unexpected migration confirmation."),
+          migrate: () => Effect.die("Unexpected profile migration."),
           install: () => Effect.die("An existing service must not be installed again."),
           discover: Effect.succeed(Option.some(endpoint)),
           assertCurrent: Effect.void,
@@ -196,6 +203,8 @@ it.effect(
 it.effect("refuses changed endpoint settings before starting or attaching", () =>
   Effect.gen(function* () {
     const attachment = yield* makeAttachment({
+      confirmMigration: Effect.die("Unexpected migration confirmation."),
+      migrate: () => Effect.die("Unexpected profile migration."),
       install: () => Effect.die("An existing service must not be installed again."),
       discover: Effect.succeed(Option.some(endpoint)),
       assertCurrent: Effect.die("Endpoint mismatch must fail before service inspection."),
@@ -210,6 +219,96 @@ it.effect("refuses changed endpoint settings before starting or attaching", () =
     assert.include(result.reason, "settings do not match");
   }).pipe(Effect.provide(noForeground)),
 );
+
+it.effect("requires both an affirmative migration button and stopped-runtime confirmation", () =>
+  Effect.gen(function* () {
+    for (const response of [0, 1]) {
+      for (const checkboxChecked of [false, true]) {
+        const consent = yield* requestProfileMigrationConsent(
+          {
+            showMessageBox: (options) => {
+              assert.equal(options.defaultId, 0);
+              assert.equal(options.cancelId, 0);
+              assert.equal(options.checkboxChecked, false);
+              assert.include(options.detail, "/existing-profile");
+              return Effect.succeed({ response, checkboxChecked });
+            },
+          },
+          "/existing-profile",
+        );
+        assert.equal(consent, response === 1 && checkboxChecked);
+      }
+    }
+  }),
+);
+
+it.effect("migrates the confirmed selected endpoint once and reconnects without reinstalling", () =>
+  Effect.gen(function* () {
+    const actions: string[] = [];
+    const attachment = yield* makeAttachment({
+      discover: Effect.succeed("migrate"),
+      install: () => Effect.die("Existing data must not enter fresh installation."),
+      confirmMigration: Effect.sync(() => {
+        actions.push("confirm");
+        return true;
+      }),
+      migrate: (selected) =>
+        Effect.sync(() => {
+          assert.deepEqual(selected, endpoint);
+          actions.push("migrate");
+        }),
+      assertCurrent: Effect.sync(() => {
+        actions.push("verify");
+      }),
+      start: Effect.die("Migration already starts the service."),
+      connect: () =>
+        Effect.sync(() => {
+          actions.push("connect");
+          return {
+            closed: Effect.fail(new LocalServiceAttachmentError({ reason: "disconnected" })),
+          };
+        }),
+    });
+    assert.deepEqual(yield* attachment.resolvePort, Option.none());
+    for (let index = 0; index < 2; index++) {
+      const exit = yield* Effect.scoped(attachment.run(input));
+      assert.notEqual(exit.restart, false);
+    }
+    assert.deepEqual(actions, ["confirm", "migrate", "verify", "connect", "verify", "connect"]);
+  }).pipe(Effect.provide(noForeground)),
+);
+
+for (const phase of ["cancel", "uncertain"] as const) {
+  it.effect(`does not repeat ${phase} migration or start a replacement`, () =>
+    Effect.gen(function* () {
+      let confirmations = 0;
+      let migrations = 0;
+      const attachment = yield* makeAttachment({
+        discover: Effect.succeed("migrate"),
+        install: () => Effect.die("Must not install a fresh profile."),
+        confirmMigration: Effect.sync(() => {
+          confirmations++;
+          return phase !== "cancel";
+        }),
+        migrate: () =>
+          Effect.suspend(() => {
+            migrations++;
+            return Effect.fail(new LocalServiceAttachmentError({ reason: "migration reply lost" }));
+          }),
+        assertCurrent: Effect.die("Failed migration must not report current."),
+        start: Effect.die("Failed migration must not start again."),
+        connect: () => Effect.die("Failed migration must not attach."),
+      });
+      yield* attachment.resolvePort;
+      for (let index = 0; index < 2; index++) {
+        const exit = yield* Effect.scoped(attachment.run(input));
+        assert.equal(exit.restart, false);
+      }
+      assert.equal(confirmations, 1);
+      assert.equal(migrations, phase === "cancel" ? 0 : 1);
+    }).pipe(Effect.provide(noForeground)),
+  );
+}
 
 const makeDiscoveryHarness = Effect.fn("test.desktopServiceDiscovery")(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -266,6 +365,8 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
         const actions: string[] = [];
         let ready = 0;
         const attachment = yield* makeAttachment({
+          confirmMigration: Effect.die("Unexpected migration confirmation."),
+          migrate: () => Effect.die("Unexpected profile migration."),
           discover: Effect.succeed(discovered.selection),
           install: (selected) =>
             Effect.sync(() => {
@@ -311,6 +412,8 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
       const discovered = yield* fixture.discover();
       let installs = 0;
       const attachment = yield* makeAttachment({
+        confirmMigration: Effect.die("Unexpected migration confirmation."),
+        migrate: () => Effect.die("Unexpected profile migration."),
         discover: Effect.succeed(discovered.selection),
         install: () =>
           Effect.suspend(() => {
@@ -342,6 +445,8 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
       const fixture = yield* makeDiscoveryHarness();
       const discovered = yield* fixture.discover();
       const attachment = yield* makeAttachment({
+        confirmMigration: Effect.die("Unexpected migration confirmation."),
+        migrate: () => Effect.die("Unexpected profile migration."),
         discover: Effect.succeed(discovered.selection),
         install: () => Effect.die("Invalid endpoint must not be installed."),
         assertCurrent: Effect.die("Invalid endpoint must not be inspected."),
@@ -360,16 +465,22 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
   );
 
   for (const retained of [
-    "state.sqlite",
     "state.sqlite-wal",
     "dangling",
     "service-state",
+    "migration-without-database",
   ] as const) {
     it.effect(`does not classify retained ${retained} as a fresh packaged profile`, () =>
       Effect.gen(function* () {
         const fixture = yield* makeDiscoveryHarness();
         const { fs, path, baseDir } = fixture;
-        if (retained === "service-state") {
+        if (retained === "migration-without-database") {
+          yield* fs.makeDirectory(path.join(baseDir, "runtime"), { recursive: true });
+          yield* fs.writeFileString(
+            path.join(baseDir, "runtime", "desktop-profile-migration.json"),
+            "{}",
+          );
+        } else if (retained === "service-state") {
           yield* fs.makeDirectory(path.join(baseDir, "runtime"), { recursive: true });
           yield* fs.writeFileString(path.join(baseDir, "runtime", "service-state.json"), "{}");
         } else if (retained === "dangling") {
@@ -384,8 +495,33 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
         assert.equal(error._tag, "LocalServiceAttachmentError");
         assert.include(
           error.message,
-          retained === "service-state" ? "state exists" : "explicit migration",
+          retained === "service-state" ? "state exists" : "explicit recovery",
         );
+      }),
+    );
+  }
+
+  for (const resume of [false, true]) {
+    it.effect(`requests explicit migration for an existing profile (resume=${resume})`, () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeDiscoveryHarness();
+        const { fs, path, baseDir } = fixture;
+        yield* fs.writeFileString(
+          path.join(baseDir, "userdata", "state.sqlite"),
+          "existing database",
+        );
+        if (resume) {
+          yield* fs.makeDirectory(path.join(baseDir, "runtime"), { recursive: true });
+          // Discovery only selects migration; the CLI must validate the receipt and state.
+          yield* fs.writeFileString(
+            path.join(baseDir, "runtime", "desktop-profile-migration.json"),
+            "{}",
+          );
+          yield* fs.writeFileString(path.join(baseDir, "runtime", "service-state.json"), "{}");
+        }
+        const discovered = yield* fixture.discover();
+        assert.equal(discovered.selection, "migrate");
+        assert.include(discovered.artifactArgs, fixture.archive);
       }),
     );
   }

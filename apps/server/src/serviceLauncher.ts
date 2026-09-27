@@ -653,7 +653,7 @@ export class Launcher {
   }
 }
 
-async function main(): Promise<void> {
+export async function runServiceLauncher(): Promise<void> {
   const baseDir = process.env.WORKJET_HOME?.trim();
   if (baseDir === undefined || baseDir === "") {
     throw new Error("WORKJET_HOME is required by the Workjet service launcher.");
@@ -661,12 +661,4 @@ async function main(): Promise<void> {
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
   await new Launcher(baseDir, state).run();
-}
-
-if (import.meta.main) {
-  main().catch((cause: unknown) => {
-    const error = cause instanceof Error ? cause : new Error(String(cause));
-    process.stderr.write(`[service-launcher] ${error.message}\n`);
-    process.exitCode = 1;
-  });
 }

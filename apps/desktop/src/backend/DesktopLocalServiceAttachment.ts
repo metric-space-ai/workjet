@@ -10,6 +10,7 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import type * as Scope from "effect/Scope";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { ElectronDialog } from "../electron/ElectronDialog.ts";
 import {
   runBackendProcess,
   type BackendProcessExit,
@@ -42,7 +43,7 @@ const ServiceStatus = Schema.Struct({
   current: Schema.Boolean,
   desktop: Schema.optionalKey(DesktopEndpoint),
 });
-type Discovery = Option.Option<Endpoint> | "install";
+type Discovery = Option.Option<Endpoint> | "install" | "migrate";
 
 const endpointArgs = (endpoint: Endpoint): ReadonlyArray<string> => [
   "--desktop-port",
@@ -84,18 +85,25 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
     )
       return foreground;
     const initial = yield* input.status([]);
+    let setup: "install" | "migrate" = "install";
     if (!initial.installed) {
-      const retained = yield* fs.exists(
-        environment.path.join(environment.baseDir, "runtime", "service-state.json"),
-      );
-      if (retained) return yield* blocked("Service state exists without an installed service.");
+      const runtimeDir = environment.path.join(environment.baseDir, "runtime");
+      const runtimeEntries = (yield* fs.exists(runtimeDir))
+        ? yield* fs.readDirectory(runtimeDir)
+        : [];
+      const migration = runtimeEntries.includes("desktop-profile-migration.json");
+      if (runtimeEntries.includes("service-state.json") && !migration)
+        return yield* blocked("Service state exists without an installed service.");
       if (environment.platform !== "darwin") return foreground;
       const stateDir = environment.path.join(environment.baseDir, "userdata");
       const entries = (yield* fs.exists(stateDir)) ? yield* fs.readDirectory(stateDir) : [];
-      if (entries.some((entry) => entry === "state.sqlite" || entry.startsWith("state.sqlite-")))
-        return yield* blocked(
-          "This existing profile needs an explicit migration after its previous runtime has stopped.",
-        );
+      const hasDatabase = yield* fs.exists(environment.path.join(stateDir, "state.sqlite"));
+      if (hasDatabase) setup = "migrate";
+      else if (
+        migration ||
+        entries.some((entry) => entry === "state.sqlite" || entry.startsWith("state.sqlite-"))
+      )
+        return yield* blocked("This incomplete profile needs explicit recovery before migration.");
     }
     if (environment.platform !== "darwin")
       return yield* blocked("Desktop attachment requires a profile-specific service manager.");
@@ -110,7 +118,7 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
     if (match?.[1] === undefined || match[2] !== filename || !(yield* fs.exists(archive)))
       return yield* blocked("The shipped runtime archive or checksum is unavailable.");
     const artifactArgs = ["--bundle-archive", archive, "--bundle-sha256", match[1]];
-    if (!initial.installed) return { selection: "install" as const, artifactArgs };
+    if (!initial.installed) return { selection: setup, artifactArgs };
     const saved = yield* input.status(artifactArgs);
     const endpoint = saved.desktop;
     if (!saved.supported || !saved.installed || !saved.current || endpoint === undefined)
@@ -135,6 +143,8 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
 export interface AttachmentDependencies {
   readonly discover: Effect.Effect<Discovery, LocalServiceAttachmentError>;
   readonly install: (endpoint: Endpoint) => Effect.Effect<void, LocalServiceAttachmentError>;
+  readonly confirmMigration: Effect.Effect<boolean, LocalServiceAttachmentError>;
+  readonly migrate: (endpoint: Endpoint) => Effect.Effect<void, LocalServiceAttachmentError>;
   readonly assertCurrent: Effect.Effect<void, LocalServiceAttachmentError>;
   readonly start: Effect.Effect<void, LocalServiceAttachmentError>;
   readonly connect: (
@@ -154,7 +164,7 @@ export const makeAttachment = Effect.fn("desktop.localServiceAttachment.make")(f
   let startRequested = false;
   const resolvePort = Effect.gen(function* () {
     if (selection === undefined) selection = yield* dependencies.discover;
-    return selection === "install"
+    return typeof selection === "string"
       ? Option.none<number>()
       : Option.map(selection, (endpoint) => endpoint.port);
   });
@@ -167,7 +177,7 @@ export const makeAttachment = Effect.fn("desktop.localServiceAttachment.make")(f
           reason: "The local service must be resolved before starting a backend.",
           restart: false,
         });
-      if (current !== "install" && Option.isNone(current)) return runBackendProcess(input);
+      if (typeof current !== "string" && Option.isNone(current)) return runBackendProcess(input);
       return Effect.gen(function* () {
         if (input.localSession === undefined)
           return yield* blocked("The local service requires a protected Desktop session.");
@@ -176,14 +186,18 @@ export const makeAttachment = Effect.fn("desktop.localServiceAttachment.make")(f
             blocked("The Desktop settings do not provide a valid local service endpoint."),
           ),
         );
-        if (current === "install") {
+        if (typeof current === "string") {
           if (startRequested)
             return yield* blocked(
               "The previous service installation did not complete with a confirmed result.",
             );
           // Set before issuing: a lost response must not repeat an install or start a foreground owner.
           startRequested = true;
-          yield* dependencies.install(candidate);
+          if (current === "migrate") {
+            if (!(yield* dependencies.confirmMigration))
+              return yield* blocked("Profile migration was cancelled. Your data was not changed.");
+            yield* dependencies.migrate(candidate);
+          } else yield* dependencies.install(candidate);
           selection = Option.some(candidate);
         } else if (
           candidate.port !== current.value.port ||
@@ -228,6 +242,28 @@ export class DesktopLocalServiceAttachment extends Context.Service<
   Effect.Success<ReturnType<typeof makeAttachment>>
 >()("@workjet/desktop/backend/DesktopLocalServiceAttachment") {}
 
+export const requestProfileMigrationConsent = (
+  dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
+  baseDir: string,
+) =>
+  dialog
+    .showMessageBox({
+      type: "question",
+      title: "Move Workjet to a background service",
+      message: "Keep your existing Workjet data and continue work after closing the app.",
+      detail: `Finish active work and stop older Workjet apps and command-line runtimes using this profile. Workjet will back up the database before setting up the background service.\n\nProfile: ${baseDir}`,
+      buttons: ["Cancel", "Back up and migrate"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      checkboxLabel: "All previous Workjet runtimes using this profile are stopped.",
+      checkboxChecked: false,
+    })
+    .pipe(
+      Effect.map((result) => result.response === 1 && result.checkboxChecked),
+      Effect.mapError(() => blocked("Could not confirm the profile migration.")),
+    );
+
 export const layer = Layer.effect(
   DesktopLocalServiceAttachment,
   Effect.gen(function* () {
@@ -237,6 +273,7 @@ export const layer = Layer.effect(
     const http = yield* HttpClient.HttpClient;
     const crypto = yield* Crypto.Crypto;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const dialog = yield* ElectronDialog;
     const cli = {
       executablePath: process.execPath,
       entryPath: environment.backendEntryPath,
@@ -277,6 +314,25 @@ export const layer = Layer.effect(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.mapError(() =>
             blocked("Could not complete the first background-service installation."),
+          ),
+        ),
+      confirmMigration: requestProfileMigrationConsent(dialog, environment.baseDir),
+      migrate: (endpoint) =>
+        Effect.gen(function* () {
+          artifactArgs = [...artifactArgs, ...endpointArgs(endpoint)];
+          yield* runLocalCli(cli, [
+            "service",
+            "install",
+            ...profileArgs,
+            ...artifactArgs,
+            "--migrate-stopped-profile",
+          ]);
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.mapError(() =>
+            blocked(
+              "Could not complete the profile migration. Existing data and any backup were retained.",
+            ),
           ),
         ),
       assertCurrent,

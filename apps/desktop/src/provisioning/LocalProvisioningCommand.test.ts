@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Observes real children at the native installer process boundary.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeProcess from "node:process";
@@ -45,7 +46,7 @@ describe("local provisioning command deadlines", () => {
       }),
     );
     const output = spawned.stdout;
-    return { result, output, ready: NodeEvents.once(output, "data") };
+    return { result, output, ready: NodeEvents.EventEmitter.once(output, "data") };
   }
 
   afterEach(async () => {
@@ -128,7 +129,7 @@ describe("local provisioning command deadlines", () => {
         `process.on('SIGTERM', () => process.stdout.write('term')); require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(descendant)}], { stdio: ['ignore', 1, 2] }); setInterval(() => {}, 1000);`,
       );
       await ready;
-      const term = NodeEvents.once(output, "data");
+      const term = NodeEvents.EventEmitter.once(output, "data");
       vi.advanceTimersByTime(30_000);
       await term;
       expect(child?.exitCode).toBeNull();

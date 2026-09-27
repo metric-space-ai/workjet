@@ -915,6 +915,7 @@ describe("CtoxGuestWindows early launch cleanup", () => {
       const entered = yield* Deferred.make<void>();
       const releaseStarted = yield* Deferred.make<void>();
       const released = yield* Deferred.make<void>();
+      const finished = yield* Deferred.make<void>();
       harness.closeForwards.mockImplementation(() =>
         Effect.gen(function* () {
           yield* Deferred.succeed(releaseStarted, undefined);
@@ -929,12 +930,12 @@ describe("CtoxGuestWindows early launch cleanup", () => {
       );
       const pending = yield* a
         .invoke(manager.ensurePooled(sshDescriptor.id))
-        .pipe(Effect.forkChild);
+        .pipe(Effect.ensuring(Deferred.succeed(finished, undefined)), Effect.forkChild);
       yield* Deferred.await(entered);
       expect(harness.views).toHaveLength(1);
       a.close();
       yield* Deferred.await(releaseStarted);
-      assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+      assert.isFalse(yield* Deferred.isDone(finished));
       yield* Deferred.succeed(released, undefined);
       assert.deepEqual(yield* Fiber.join(pending), { _tag: "failed", code: "not_active" });
       expect(harness.closeForwards).toHaveBeenCalledOnce();

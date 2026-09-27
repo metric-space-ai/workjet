@@ -913,6 +913,14 @@ describe("CtoxGuestWindows early launch cleanup", () => {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* b.invoke(manager.ensurePooled(descriptor.id));
       const entered = yield* Deferred.make<void>();
+      const releaseStarted = yield* Deferred.make<void>();
+      const released = yield* Deferred.make<void>();
+      harness.closeForwards.mockImplementation(() =>
+        Effect.gen(function* () {
+          yield* Deferred.succeed(releaseStarted, undefined);
+          yield* Deferred.await(released);
+        }),
+      );
       harness.shellLaunch.mockImplementation(() =>
         Effect.gen(function* () {
           yield* Deferred.succeed(entered, undefined);
@@ -925,6 +933,9 @@ describe("CtoxGuestWindows early launch cleanup", () => {
       yield* Deferred.await(entered);
       expect(harness.views).toHaveLength(1);
       a.close();
+      yield* Deferred.await(releaseStarted);
+      assert.isTrue(Option.isNone(yield* Fiber.poll(pending)));
+      yield* Deferred.succeed(released, undefined);
       assert.deepEqual(yield* Fiber.join(pending), { _tag: "failed", code: "not_active" });
       expect(harness.closeForwards).toHaveBeenCalledOnce();
       expect(harness.views[0]!.close).not.toHaveBeenCalled();

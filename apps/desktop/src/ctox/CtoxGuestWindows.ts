@@ -64,7 +64,8 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
       entry.closed = true;
       if (entries.get(entry.window) === entry) entries.delete(entry.window);
     };
-    const close = (entry: WindowGuests) => Scope.close(entry.scope, Exit.void);
+    const close = (entry: WindowGuests) =>
+      Scope.close(entry.scope, Exit.void).pipe(Effect.uninterruptible);
 
     const getOrCreate = (window: BrowserWindow, isCurrent: () => boolean) =>
       lock
@@ -109,6 +110,7 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
             const onClose = () => {
               if (owned.closed) return;
               retire(owned);
+              removeListeners();
               // The parent scope owns cleanup even though a native event triggered it.
               void runPromise(close(owned).pipe(Effect.forkIn(parentScope))).catch(() => undefined);
             };
@@ -120,6 +122,12 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
             ) => {
               if (mainFrame && !inPlace) onClose();
             };
+            const removeListeners = () => {
+              window.off("closed", onClose);
+              window.webContents.off("destroyed", onClose);
+              window.webContents.off("render-process-gone", onClose);
+              window.webContents.off("did-start-navigation", onNavigation);
+            };
             window.on("closed", onClose);
             window.webContents.on("destroyed", onClose);
             window.webContents.on("render-process-gone", onClose);
@@ -128,10 +136,7 @@ export const make = (options: CtoxGuestWindowsOptions = {}) =>
               scope,
               Effect.sync(() => {
                 retire(owned);
-                window.off("closed", onClose);
-                window.webContents.off("destroyed", onClose);
-                window.webContents.off("render-process-gone", onClose);
-                window.webContents.off("did-start-navigation", onNavigation);
+                removeListeners();
               }),
             );
             return owned;

@@ -24,9 +24,11 @@ import {
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { WebContentsView, type BrowserWindow, type Session, type WebContents } from "electron";
 
@@ -1035,6 +1037,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       shouldAttach = true,
     ) {
       let releaseLaunch: (() => void) | undefined;
+      let awaitLaunchRelease: Effect.Effect<void> = Effect.void;
       let reservedLease: CtoxGuestLease | undefined;
       let provisionalGuest: ActiveGuest | undefined;
       let adopted = false;
@@ -1139,11 +1142,16 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             return [{ _tag: "failed", code: "launch_failed" }, undefined] as const;
           }
           const closeForwards = resolved.value.closeForwards;
-          let forwardsOpen = true;
+          awaitLaunchRelease = closeForwards;
+          const closeOnce = yield* Effect.cached(closeForwards.pipe(Effect.uninterruptible));
+          awaitLaunchRelease = closeOnce;
+          const launchScope = yield* Scope.fork(ownerScope, "sequential");
+          yield* Scope.addFinalizer(launchScope, closeOnce);
+          awaitLaunchRelease = closeOnce.pipe(Effect.ensuring(Scope.close(launchScope, Exit.void)));
           releaseLaunch = () => {
-            if (!forwardsOpen) return;
-            forwardsOpen = false;
-            void runPromise(closeForwards).catch(() => undefined);
+            void runPromise(awaitLaunchRelease.pipe(Effect.forkIn(ownerScope))).catch(
+              () => undefined,
+            );
           };
           authoritativeDescriptor = resolved.value.descriptor;
           launch = yield* (
@@ -1300,13 +1308,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         return [{ _tag: "ready", instanceId }, active] as const;
       }).pipe(
         Effect.ensuring(
-          Effect.sync(() => {
+          Effect.gen(function* () {
             if (adopted) return;
             if (provisionalGuest !== undefined) destroyGuest(provisionalGuest);
             else {
               reservedLease?.release();
-              releaseLaunch?.();
             }
+            yield* awaitLaunchRelease;
           }),
         ),
       );

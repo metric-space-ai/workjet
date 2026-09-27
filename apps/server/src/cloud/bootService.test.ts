@@ -423,7 +423,7 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
             runtimePath,
             state === "malformed"
               ? "{"
-              : Schema.encodeSync(Schema.fromJsonString(PersistedServerRuntimeState))({
+              : yield* Schema.encodeEffect(Schema.fromJsonString(PersistedServerRuntimeState))({
                   version: 1,
                   pid: state === "invalid-pid" ? 0 : process.pid,
                   host: undefined,

@@ -215,6 +215,30 @@ it.effect(
     }),
 );
 
+it.effect("a transient session outage keeps the saved credential and never opens recovery", () =>
+  Effect.gen(function* () {
+    const { dependencies, state, events } = fixture();
+    state.saved = Option.some(credential);
+    let validations = 0;
+    const access = yield* makeSessionAccess({
+      ...dependencies,
+      validate: () =>
+        Effect.suspend(() => {
+          validations++;
+          return validations === 1
+            ? Effect.fail(new LocalServiceSessionError({ operation: "reach", retryable: true }))
+            : Effect.void;
+        }),
+    });
+    const outage = yield* access.prepareWithRecovery(config).pipe(Effect.flip);
+    assert.equal(outage.retryable, true);
+    const restored = yield* access.prepareWithRecovery(config);
+    assert.equal(restored.credential.sessionId, credential.sessionId);
+    assert.equal(validations, 2);
+    assert.deepEqual(events, []);
+  }),
+);
+
 it.effect("refuses a recovery identity from another environment before consent or revocation", () =>
   Effect.gen(function* () {
     const { dependencies, state, events } = fixture();

@@ -1,9 +1,22 @@
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as Stream from "effect/Stream";
-import { EnvironmentId, AuthSessionId, TrimmedNonEmptyString } from "@workjet/contracts";
-import { resolveRemoteWebSocketConnectionUrl } from "@workjet/client-runtime/authorization";
-import { PrimaryConnectionTarget } from "@workjet/client-runtime/connection";
+import {
+  EnvironmentId,
+  AuthSessionId,
+  TrimmedNonEmptyString,
+  EnvironmentInternalError,
+} from "@workjet/contracts";
+import {
+  resolveRemoteWebSocketConnectionUrl,
+  RemoteEnvironmentAuthFetchError,
+  RemoteEnvironmentAuthTimeoutError,
+  RemoteEnvironmentAuthUndeclaredStatusError,
+} from "@workjet/client-runtime/authorization";
+import {
+  PrimaryConnectionTarget,
+  ConnectionTransientError,
+} from "@workjet/client-runtime/connection";
 import { RpcSessionFactory, type RpcSession } from "@workjet/client-runtime/rpc";
 import { isLocalServiceOrigin, LocalServiceTarget } from "@workjet/shared/localServiceTarget";
 import * as Clock from "effect/Clock";
@@ -25,7 +38,11 @@ import { ElectronDialog } from "../electron/ElectronDialog.ts";
 
 export class LocalServiceSessionError extends Schema.TaggedErrorClass<LocalServiceSessionError>()(
   "LocalServiceSessionError",
-  { operation: Schema.String, recoveryAttempted: Schema.optionalKey(Schema.Boolean) },
+  {
+    operation: Schema.String,
+    recoveryAttempted: Schema.optionalKey(Schema.Boolean),
+    retryable: Schema.optionalKey(Schema.Boolean),
+  },
 ) {
   override get message(): string {
     return `Could not ${this.operation} the saved local Desktop session. No replacement session was authorized.`;
@@ -70,6 +87,7 @@ export interface LocalSessionDependencies {
 }
 
 const fail = (operation: string) => new LocalServiceSessionError({ operation });
+const retry = (operation: string) => new LocalServiceSessionError({ operation, retryable: true });
 
 export const requestLocalSessionRecoveryConsent = (
   dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
@@ -287,10 +305,12 @@ export const makeSessionAccess = Effect.fn("desktop.localServiceSession.access")
   const prepareWithRecovery = (config: DesktopBackendStartConfig) =>
     prepare(config).pipe(
       Effect.catch((original) =>
-        recover(config).pipe(
-          Effect.andThen(prepare(config)),
-          Effect.mapError((error) => (error.recoveryAttempted ? error : original)),
-        ),
+        original.retryable
+          ? Effect.fail(original)
+          : recover(config).pipe(
+              Effect.andThen(prepare(config)),
+              Effect.mapError((error) => (error.recoveryAttempted ? error : original)),
+            ),
       ),
     );
   return {
@@ -385,28 +405,58 @@ export const make = Effect.gen(function* () {
         httpBaseUrl: target.origin,
         wsBaseUrl,
         bearerToken: Redacted.value(credential.token),
-      });
+      }).pipe(
+        Effect.mapError((error) =>
+          error instanceof RemoteEnvironmentAuthFetchError ||
+          error instanceof RemoteEnvironmentAuthTimeoutError ||
+          Schema.is(EnvironmentInternalError)(error) ||
+          (error instanceof RemoteEnvironmentAuthUndeclaredStatusError &&
+            (error.status === 408 || error.status === 429 || error.status >= 500))
+            ? retry("reach")
+            : fail("authenticate the current server generation for"),
+        ),
+      );
       const connectionTarget = new PrimaryConnectionTarget({
         environmentId: EnvironmentId.make(target.environmentId),
         label: "Workjet Desktop",
         httpBaseUrl: target.origin,
         wsBaseUrl,
       });
-      const session = yield* rpc.connect({
-        ...connectionTarget,
-        runtimeInstanceId: target.runtimeInstanceId,
-        socketUrl,
-        httpAuthorization: null,
-        target: connectionTarget,
-      });
-      yield* session.ready;
+      const session = yield* rpc
+        .connect({
+          ...connectionTarget,
+          runtimeInstanceId: target.runtimeInstanceId,
+          socketUrl,
+          httpAuthorization: null,
+          target: connectionTarget,
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            Schema.is(ConnectionTransientError)(error)
+              ? retry("connect to")
+              : fail("authenticate the current server generation for"),
+          ),
+        );
+      yield* session.ready.pipe(
+        Effect.mapError((error) =>
+          Schema.is(ConnectionTransientError)(error)
+            ? retry("connect to")
+            : fail("authenticate the current server generation for"),
+        ),
+      );
       if ((yield* session.initialConfig).environment.serverVersion !== target.serverVersion)
         return yield* fail("verify the server version for");
       return session;
     }).pipe(
       Effect.provideService(HttpClient.HttpClient, http),
       Effect.timeout("20 seconds"),
-      Effect.mapError(() => fail("authenticate the current server generation for")),
+      Effect.mapError((error) =>
+        Schema.is(LocalServiceSessionError)(error)
+          ? error
+          : error._tag === "TimeoutException"
+            ? retry("reach")
+            : fail("authenticate the current server generation for"),
+      ),
     );
   const access = yield* makeSessionAccess({
     confirmRecovery: (target) => requestLocalSessionRecoveryConsent(dialog, target),

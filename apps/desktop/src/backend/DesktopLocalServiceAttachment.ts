@@ -22,13 +22,16 @@ import * as Crypto from "effect/Crypto";
 
 export class LocalServiceAttachmentError extends Schema.TaggedErrorClass<LocalServiceAttachmentError>()(
   "LocalServiceAttachmentError",
-  { reason: Schema.String },
+  { reason: Schema.String, retryable: Schema.optionalKey(Schema.Boolean) },
 ) {
   override get message(): string {
-    return `${this.reason} No foreground replacement was started. Repair the service configuration before reopening Workjet.`;
+    return this.retryable
+      ? `${this.reason} Reconnecting to the installed service without starting a foreground replacement.`
+      : `${this.reason} No foreground replacement was started. Repair the service configuration before reopening Workjet.`;
   }
 }
 const blocked = (reason: string) => new LocalServiceAttachmentError({ reason });
+const retry = (reason: string) => new LocalServiceAttachmentError({ reason, retryable: true });
 // A first install unpacks the bundled runtime; keep it bounded without applying
 // the short authorization/status deadline to that disk-heavy operation.
 const SERVICE_INSTALL_TIMEOUT = "5 minutes";
@@ -229,7 +232,7 @@ export const makeAttachment = Effect.fn("desktop.localServiceAttachment.make")(f
           Effect.succeed<BackendProcessExit>({
             code: Option.none(),
             reason: error.message,
-            restart: false,
+            restart: error.retryable === true,
           }),
         ),
       );
@@ -345,7 +348,7 @@ export const layer = Layer.effect(
             baseUrl: input.httpBaseUrl.href,
             path: "/.well-known/workjet/environment",
             timeoutMs: 30_000,
-            makeError: () => blocked("The installed local service did not become reachable."),
+            makeError: () => retry("The installed local service did not become reachable."),
           });
           const session = yield* sessions.attach(input);
           return yield* attachDesktopServiceTelemetry(session, input).pipe(
@@ -354,7 +357,11 @@ export const layer = Layer.effect(
         }).pipe(
           Effect.provideService(HttpClient.HttpClient, http),
           Effect.mapError((error) =>
-            Schema.is(LocalServiceAttachmentError)(error) ? error : blocked(error.message),
+            Schema.is(LocalServiceAttachmentError)(error)
+              ? error
+              : error.retryable
+                ? retry(error.message)
+                : blocked(error.message),
           ),
         ),
     });

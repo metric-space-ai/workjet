@@ -16,7 +16,11 @@ import {
   type BackendProcessExit,
   type RunBackendProcessOptions,
 } from "./DesktopBackendManager.ts";
-import { DesktopLocalServiceSession, runLocalCli } from "./DesktopLocalServiceSession.ts";
+import {
+  DesktopLocalServiceSession,
+  LocalServiceSessionError,
+  runLocalCli,
+} from "./DesktopLocalServiceSession.ts";
 import { attachDesktopServiceTelemetry } from "./DesktopServiceTelemetry.ts";
 import * as Crypto from "effect/Crypto";
 
@@ -359,7 +363,7 @@ export const layer = Layer.effect(
           Effect.mapError((error) =>
             Schema.is(LocalServiceAttachmentError)(error)
               ? error
-              : error.retryable
+              : Schema.is(LocalServiceSessionError)(error) && error.retryable
                 ? retry(error.message)
                 : blocked(error.message),
           ),

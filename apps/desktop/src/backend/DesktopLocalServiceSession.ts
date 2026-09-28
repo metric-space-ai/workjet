@@ -16,6 +16,7 @@ import {
 import {
   PrimaryConnectionTarget,
   ConnectionTransientError,
+  type ConnectionAttemptError,
 } from "@workjet/client-runtime/connection";
 import { RpcSessionFactory, type RpcSession } from "@workjet/client-runtime/rpc";
 import { isLocalServiceOrigin, LocalServiceTarget } from "@workjet/shared/localServiceTarget";
@@ -88,6 +89,10 @@ export interface LocalSessionDependencies {
 
 const fail = (operation: string) => new LocalServiceSessionError({ operation });
 const retry = (operation: string) => new LocalServiceSessionError({ operation, retryable: true });
+const classifySessionRpcError = (error: ConnectionAttemptError): LocalServiceSessionError =>
+  Schema.is(ConnectionTransientError)(error)
+    ? retry("connect to")
+    : fail("authenticate the current server generation for");
 
 export const classifySessionConnectionFailure = (
   error: LocalServiceSessionError | Cause.TimeoutError,
@@ -439,21 +444,12 @@ export const make = Effect.gen(function* () {
           httpAuthorization: null,
           target: connectionTarget,
         })
-        .pipe(
-          Effect.mapError((error) =>
-            Schema.is(ConnectionTransientError)(error)
-              ? retry("connect to")
-              : fail("authenticate the current server generation for"),
-          ),
-        );
-      yield* session.ready.pipe(
-        Effect.mapError((error) =>
-          Schema.is(ConnectionTransientError)(error)
-            ? retry("connect to")
-            : fail("authenticate the current server generation for"),
-        ),
+        .pipe(Effect.mapError(classifySessionRpcError));
+      yield* session.ready.pipe(Effect.mapError(classifySessionRpcError));
+      const initialConfig = yield* session.initialConfig.pipe(
+        Effect.mapError(classifySessionRpcError),
       );
-      if ((yield* session.initialConfig).environment.serverVersion !== target.serverVersion)
+      if (initialConfig.environment.serverVersion !== target.serverVersion)
         return yield* fail("verify the server version for");
       return session;
     }).pipe(

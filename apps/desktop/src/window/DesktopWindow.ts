@@ -884,7 +884,10 @@ export const make = Effect.gen(function* () {
         yield* Effect.tryPromise({
           try: () =>
             splash.value.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors, reason)),
-          catch: (cause) => (cause instanceof Error ? cause : new Error(String(cause))),
+          catch: (cause) => ({
+            _tag: "BlockedSplashLoadError" as const,
+            message: cause instanceof Error ? cause.message : String(cause),
+          }),
         });
         yield* electronWindow.reveal(splash.value);
         return true;

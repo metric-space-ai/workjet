@@ -2106,6 +2106,9 @@ export function useComputerConnections({
         )}
         disabled={isAddingSavedBackend || connectingSshHostAlias !== null}
         onClick={() => {
+          if (input.mode !== savedBackendMode) {
+            setSavedBackendSshHost("");
+          }
           setSavedBackendMode(input.mode);
           setSavedBackendError(null);
           setSshConnectionError(null);

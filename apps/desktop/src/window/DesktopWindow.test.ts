@@ -1147,6 +1147,30 @@ describe("DesktopWindow", () => {
       }),
   );
 
+  it.effect("replaces a blocked first-start spinner with a visible escaped failure", () =>
+    Effect.gen(function* () {
+      const splash = makeFakeBrowserWindow();
+      const scenario = yield* makeSplashScenario([splash.window]);
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.showConnectingSplash;
+        assert.isTrue(
+          yield* desktopWindow.handleBackendBlocked(
+            'Could not encrypt <local> credential & open "keychain".',
+          ),
+        );
+        assert.equal(yield* Ref.get(scenario.createCalls), 1);
+        const url = splash.loadURL.mock.lastCall?.[0] as string;
+        const html = decodeURIComponent(url.split(",")[1] ?? "");
+        assert.include(html, "Workjet needs attention");
+        assert.include(html, "&lt;local&gt; credential &amp; open &quot;keychain&quot;");
+        assert.notInclude(html, "<local>");
+        assert.notInclude(html, '<div class="spinner"></div>');
+        assert.deepEqual(yield* Ref.get(scenario.revealedWindows), [splash.window]);
+      }).pipe(Effect.provide(scenario.layer));
+    }),
+  );
+
   it.effect(
     "re-reveals the connecting splash on activate while the backend is still cold-booting",
     () =>

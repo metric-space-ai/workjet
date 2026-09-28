@@ -278,7 +278,15 @@ const make = (run?: DesktopBackendManager.BackendInstanceSpec["run"]) =>
       id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
       ...(run === undefined ? {} : { run }),
       onAttachmentBlocked: (reason) =>
-        electronDialog.showErrorBox("Workjet service needs attention", reason),
+        desktopWindow
+          .handleBackendBlocked(reason)
+          .pipe(
+            Effect.flatMap((shown) =>
+              shown
+                ? Effect.void
+                : electronDialog.showErrorBox("Workjet service needs attention", reason),
+            ),
+          ),
       // Keep this lazy. The pool layer is initialized before startup loads
       // persisted desktop settings, so resolving the primary label here would
       // permanently capture DEFAULT_DESKTOP_SETTINGS and mislabel WSL-only

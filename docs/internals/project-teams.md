@@ -158,18 +158,18 @@ thread detail and command reads still reject deleted threads.
 This branch is not production-ready. Receipt reconciliation, atomic review
 signals and edges, result-to-rework, bounded rework reminders, guarded cleanup,
 and one bounded remote review-signal redrive have focused tests. Worktree
-cleanup still needs a no-follow deletion and a proven provider process boundary:
-the current canonical path check cannot exclude a concurrent same-user symlink
-swap before Git removes the worktree. A disposable Git 2.50.1 fixture replaced a
-clean worker checkout with a symlink to a sibling directory containing a copied
-tracked file and forged matching `.git` backlink. Plain `git worktree remove`
-without `--force` deleted that sibling file before failing, so this is a
-demonstrated path escape. The server now retains the verified receipt and
-checkout instead of invoking that pathname-based Git removal; the
-descriptor-relative native helper is not wired. Automatic removal
-must use a no-follow boundary and unregister only that worktree's Git metadata,
-and provider shutdown must prove detached descendants quiescent or retain the
-checkout. Do not merge or install automatic cleanup on the current path.
+cleanup uses the wired native resource-monitor helper on macOS and Linux. It
+pins directory device/inode identities, checks both Git backlinks, and removes
+entries relative to open directory descriptors without following symlinks. A
+disposable Git 2.50.1 fixture demonstrated why this matters: plain
+`git worktree remove` followed a swapped worker-checkout symlink and deleted a
+sibling tracked file before failing. The current helper avoids that
+pathname-based removal; unsupported platforms retain the checkout. A native
+failure after removing the checkout but before removing its Git admin directory
+still leaves only a `verified` receipt. Reconciliation sees the missing checkout
+and retains the branch for manual recovery rather than claiming completion.
+That partial-removal path and the provider's detached-descendant shutdown still
+need exact-head acceptance before automatic cleanup can be installed.
 The archive history read is protected by a typed RPC and a query boundary, but
 still needs exact-head CI and real Mobile acceptance. Android preview APK and real
 desktop/web/mobile acceptance remain pending.

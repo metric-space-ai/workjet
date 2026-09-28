@@ -453,7 +453,7 @@ export const make = Effect.gen(function* () {
       Effect.mapError((error) =>
         Schema.is(LocalServiceSessionError)(error)
           ? error
-          : error._tag === "TimeoutException"
+          : error._tag === "TimeoutError"
             ? retry("reach")
             : fail("authenticate the current server generation for"),
       ),

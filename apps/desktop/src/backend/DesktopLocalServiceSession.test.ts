@@ -250,6 +250,7 @@ it.effect("an actual Effect connection timeout is retryable without changing blo
       Effect.flip,
       Effect.forkChild,
     );
+    yield* Effect.yieldNow;
     yield* TestClock.adjust(Duration.seconds(20));
     const error = yield* Fiber.join(timeout);
     assert.equal(error.retryable, true);

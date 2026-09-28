@@ -9,6 +9,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
 import {
   buildTailscaleHttpsBaseUrl,
@@ -184,6 +185,57 @@ describe("tailscale", () => {
       ),
     ),
   );
+  it.effect("uses the macOS app CLI when a GUI launch cannot find tailscale on PATH", () => {
+    const missing = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "ChildProcess",
+      method: "spawn",
+    });
+    const commands: string[] = [];
+    const spawner = Layer.succeed(
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make((command) => {
+        if (command._tag !== "StandardCommand") return Effect.die("Expected a standard command.");
+        commands.push(command.command);
+        if (command.command === "tailscale") return Effect.fail(missing);
+        assert.equal(command.command, "/Applications/Tailscale.app/Contents/MacOS/Tailscale");
+        assert.deepEqual(command.args, ["status", "--json"]);
+        assert.equal(command.options.extendEnv, true);
+        assert.deepEqual(command.options.env, { TAILSCALE_BE_CLI: "1" });
+        return Effect.succeed(mockHandle({ stdout: '{"BackendState":"Running","Peer":{}}' }));
+      }),
+    );
+    return Effect.gen(function* () {
+      const result = yield* readTailscalePeers;
+      assert.deepEqual(result, { status: "available", peers: [] });
+      assert.deepEqual(commands, [
+        "tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+      ]);
+    }).pipe(Effect.provide(spawner), Effect.provideService(HostProcessPlatform, "darwin"));
+  });
+  it.effect("does not try another macOS CLI after a permission error", () => {
+    const denied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "ChildProcess",
+      method: "spawn",
+    });
+    const commands: string[] = [];
+    const spawner = Layer.succeed(
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make((command) => {
+        if (command._tag !== "StandardCommand") return Effect.die("Expected a standard command.");
+        commands.push(command.command);
+        return Effect.fail(denied);
+      }),
+    );
+    return Effect.gen(function* () {
+      const error = yield* readTailscalePeers.pipe(Effect.flip);
+      assert.instanceOf(error, TailscaleCommandSpawnError);
+      assert.strictEqual(error.cause, denied);
+      assert.deepEqual(commands, ["tailscale"]);
+    }).pipe(Effect.provide(spawner), Effect.provideService(HostProcessPlatform, "darwin"));
+  });
   it.effect("detects Tailnet IPv4 addresses", () =>
     Effect.sync(() => {
       assert.equal(isTailscaleIpv4Address("100.64.0.1"), true);

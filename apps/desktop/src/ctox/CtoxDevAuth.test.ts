@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeEvents from "node:events";
 
-import type { CtoxManagedDiscoveryResult } from "@t3tools/contracts";
+import type { CtoxManagedDiscoveryResult } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

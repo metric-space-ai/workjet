@@ -2,7 +2,7 @@ import type {
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionTransferNotification,
   ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { toastManager } from "../components/ui/toast";

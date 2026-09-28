@@ -1,4 +1,4 @@
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxManagedInstance } from "@workjet/contracts";
 
 import { canActivateCtoxInstance } from "./CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";

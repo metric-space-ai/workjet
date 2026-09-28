@@ -75,7 +75,7 @@ export interface GreppySearchShape {
 }
 
 export class GreppySearch extends Context.Service<GreppySearch, GreppySearchShape>()(
-  "t3/mcp/toolkits/workjet/GreppySearch",
+  "workjet/mcp/toolkits/workjet/GreppySearch",
 ) {}
 
 interface BoundedOutput {

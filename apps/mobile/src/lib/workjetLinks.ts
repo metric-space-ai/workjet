@@ -10,9 +10,9 @@ const LEGACY_SCHEME_VARIANTS: Readonly<Record<string, WorkjetLinkVariant>> = {
   "ctox-mobile": "production",
   "ctox-mobile-dev": "development",
   "ctox-mobile-preview": "preview",
-  t3code: "production",
-  "t3code-dev": "development",
-  "t3code-preview": "preview",
+  workjet: "production",
+  "workjet-dev": "development",
+  "workjet-preview": "preview",
 };
 
 export function buildWorkjetUrl(

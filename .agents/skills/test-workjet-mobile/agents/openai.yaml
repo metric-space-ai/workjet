@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Workjet Mobile"
+  short_description: "Test Workjet on iOS or Android"
+  default_prompt: "Use $test-workjet-mobile to launch Workjet against an isolated backend and verify the affected flow on an available simulator or emulator."

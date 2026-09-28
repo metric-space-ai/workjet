@@ -1,10 +1,10 @@
-import { type EnvironmentId, type ThreadId } from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { type EnvironmentId, type ThreadId } from "@workjet/contracts";
+import { scopeThreadRef } from "@workjet/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { ChangeRequestStateLike } from "@t3tools/client-runtime/state/thread-settled";
+} from "@workjet/client-runtime/state/runtime";
+import type { ChangeRequestStateLike } from "@workjet/client-runtime/state/thread-settled";
 import { ChevronDownIcon } from "lucide-react";
 import {
   memo,

@@ -1,4 +1,4 @@
-import type { CapabilityManifest } from "@t3tools/contracts";
+import type { CapabilityManifest } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -32,9 +32,12 @@ describe("capability availability from one catalog", () => {
       "web-search",
       "web-stack-browser",
       "decision-hub",
+      "ctox-business-os",
     ]);
     expect(capabilityAvailabilityIds(ctox)).toEqual(["greppy", "web-search", "web-stack-browser"]);
-    for (const view of code.filter(({ manifest }) => manifest.id !== "decision-hub")) {
+    for (const view of code.filter(
+      ({ manifest }) => manifest.id !== "decision-hub" && manifest.id !== "ctox-business-os",
+    )) {
       // Not a copy: the very same manifest object both hosts resolve.
       expect(view.manifest).toBe(
         ctox.find(({ manifest }) => manifest.id === view.manifest.id)?.manifest,
@@ -64,6 +67,7 @@ describe("capability availability from one catalog", () => {
       { id: "web-search", status: "available", activated: false },
       { id: "web-stack-browser", status: "available", activated: false },
       { id: "decision-hub", status: "available", activated: false },
+      { id: "ctox-business-os", status: "available", activated: false },
     ]);
 
     const ctox = resolveCtoxInstanceCapabilityAvailability({
@@ -86,7 +90,8 @@ describe("capability availability from one catalog", () => {
         ?.target,
     ).toEqual({ kind: "ctox-instance", instanceId });
     expect(
-      resolveCapabilityCatalogForHost({ adapter: "t3-mcp", enabledCapabilityIds: [] })[0]?.target,
+      resolveCapabilityCatalogForHost({ adapter: "workjet-mcp", enabledCapabilityIds: [] })[0]
+        ?.target,
     ).toBeNull();
   });
 
@@ -122,7 +127,7 @@ describe("capability availability from one catalog", () => {
           registry,
         }),
       ),
-    ).toEqual(["greppy", "web-search", "web-stack-browser", "decision-hub"]);
+    ).toEqual(["greppy", "web-search", "web-stack-browser", "decision-hub", "ctox-business-os"]);
   });
 
   it("reports an incompatible pin instead of silently resolving another version", () => {

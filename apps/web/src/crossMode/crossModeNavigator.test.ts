@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { WorkjetProductMode } from "@t3tools/contracts/settings";
+import type { WorkjetProductMode } from "@workjet/contracts/settings";
 
 import {
   clearCrossModeBusinessOsRequest,

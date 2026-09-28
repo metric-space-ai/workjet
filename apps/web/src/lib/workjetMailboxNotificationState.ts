@@ -22,7 +22,7 @@ import {
   toWorkjetMailboxNotification,
   type WorkjetMailboxAuditEvent,
   type WorkjetMailboxNotification,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 /**
  * Beyond this many the oldest are dropped. A stream is unbounded and a

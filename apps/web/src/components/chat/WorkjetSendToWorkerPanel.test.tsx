@@ -6,7 +6,7 @@ import {
   WorkjetMeshWorkspaceId,
   type WorkjetMeshPeerBinding,
   type WorkjetMeshRoster,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -525,7 +525,7 @@ describe("WorkjetSendToWorkerPanelContent remote recipients", () => {
       (element) => element.type === "optgroup",
     );
 
-    expect(group?.props.label).toBe("Remote environments");
+    expect(group?.props.label).toBe("Other computers");
     const options = descendants(group?.props.children).filter(
       (element) => element.type === "option",
     );

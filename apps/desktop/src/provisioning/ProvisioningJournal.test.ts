@@ -5,8 +5,8 @@ import { it } from "@effect/vitest";
 import type {
   WorkjetProvisioningSnapshot,
   WorkjetProvisioningStartInput,
-} from "@t3tools/contracts";
-import { HostProcessExecutablePath, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@workjet/contracts";
+import { HostProcessExecutablePath, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
 import {
   CommandId,
   defaultInstanceIdForDriver,
@@ -9,7 +9,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 
 import type { TurnProcessingQuiescedReceipt } from "../src/orchestration/Services/RuntimeReceiptBus.ts";

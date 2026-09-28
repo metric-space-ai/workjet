@@ -6,7 +6,7 @@ import type {
   ScopedThreadRef,
   ThreadId,
   WorkjetThreadConfig,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export interface WorkjetPauseThread {
   readonly environmentId: EnvironmentId;

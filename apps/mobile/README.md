@@ -14,7 +14,7 @@ This app has three variants:
 - `preview`: persistent internal build named `Workjet` with the `workjet-preview://` scheme
 - `production`: store/release build named `Workjet` with the `workjet://` scheme
 
-Existing bundle/package identifiers and local storage identities remain unchanged for update continuity. Legacy `ctox-mobile*://`, `ctox-business-os-mobile://pair`, and `t3code*://` inputs remain registered during the documented migration window; generated links use Workjet schemes only.
+Existing bundle/package identifiers and local storage identities remain unchanged for update continuity. Legacy `ctox-mobile*://`, `ctox-business-os-mobile://pair`, and `workjet*://` inputs remain registered during the documented migration window; generated links use Workjet schemes only.
 
 Run commands from `apps/mobile`.
 
@@ -41,8 +41,8 @@ reduced-capability local build. Personal Team builds omit the widget and share e
 entitlement, and native Sign in with Apple entitlement; builds without this opt-in are unchanged.
 
 ```bash
-T3CODE_IOS_PERSONAL_TEAM=1 \
-T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.t3code.dev \
+WORKJET_IOS_PERSONAL_TEAM=1 \
+WORKJET_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.workjet.dev \
 vp run ios:dev
 ```
 
@@ -55,8 +55,8 @@ vp run ios:release
 The Personal Team equivalent also needs a unique bundle identifier:
 
 ```bash
-T3CODE_IOS_PERSONAL_TEAM=1 \
-T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.t3code \
+WORKJET_IOS_PERSONAL_TEAM=1 \
+WORKJET_IOS_PERSONAL_TEAM_BUNDLE_ID=com.example.workjet \
 vp run ios:release
 ```
 
@@ -98,8 +98,8 @@ updates are disabled, so no matching-fingerprint OTA path can replace code in
 an installed build. Production CI additionally binds each finished EAS build
 to the exact Git commit before accepting it as release evidence.
 
-For preview EAS environments, set `T3CODE_CLERK_PUBLISHABLE_KEY`,
-`T3CODE_CLERK_JWT_TEMPLATE`, `T3CODE_RELAY_URL`, and
+For preview EAS environments, set `WORKJET_CLERK_PUBLISHABLE_KEY`,
+`WORKJET_CLERK_JWT_TEMPLATE`, `WORKJET_RELAY_URL`, and
 `EXPO_PUBLIC_WORKJET_MANAGED_CONTROL_URL` as EAS environment variables. Expo config maps the
 canonical values into the mobile build. Production builds contain the public Workjet production
 origins and Clerk identifiers as safe defaults so a local release APK cannot silently disable

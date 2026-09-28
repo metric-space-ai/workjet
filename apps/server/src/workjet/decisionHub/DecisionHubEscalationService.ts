@@ -3,7 +3,7 @@ import {
   WorkjetDecisionHubConnectionError,
   type WorkjetDecisionHubEscalationInput,
   type WorkjetDecisionHubEscalationResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -26,7 +26,7 @@ export interface DecisionHubEscalationServiceShape {
 export class DecisionHubEscalationService extends Context.Service<
   DecisionHubEscalationService,
   DecisionHubEscalationServiceShape
->()("t3/workjet/decisionHub/DecisionHubEscalationService") {}
+>()("workjet/workjet/decisionHub/DecisionHubEscalationService") {}
 
 const failure = () => new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" });
 

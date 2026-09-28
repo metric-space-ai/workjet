@@ -1,4 +1,4 @@
-import { EnvironmentHttpApi } from "@t3tools/contracts";
+import { EnvironmentHttpApi } from "@workjet/contracts";
 import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -42,6 +42,10 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
+import { CtoxThreadBindingSourceLive } from "./workjet/ctox/CtoxThreadBinding.ts";
+import { CtoxNativeRequests } from "./workjet/ctox/CtoxNativeRequests.ts";
+import { CtoxCrewTurnAdmission } from "./workjet/ctox/CtoxCrewTurnAdmission.ts";
+import { WorkjetCrossModeLinkStoreLive } from "./workjet/crossmode/WorkjetCrossModeLinkStore.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -78,7 +82,7 @@ import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
-import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
+import * as WorkjetProjectFileLoader from "./project/WorkjetProjectFileLoader.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
@@ -132,13 +136,13 @@ import {
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
-import * as NetService from "@t3tools/shared/Net";
-import * as RelayClient from "@t3tools/shared/relayClient";
-import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
+import * as NetService from "@workjet/shared/Net";
+import * as RelayClient from "@workjet/shared/relayClient";
+import { disableTailscaleServe, ensureTailscaleServe } from "@workjet/tailscale";
 import { forkParked, ServerActivation } from "./serverActivation.ts";
 
 // Effect's default preemptive shutdown waits 20s before finalizing request scopes.
-// T3's primary transport is long-lived WebSocket RPC, whose Effect scope finalizer
+// Workjet's primary transport is long-lived WebSocket RPC, whose Effect scope finalizer
 // already closes the websocket gracefully. Do not add an artificial drain before
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
@@ -258,20 +262,6 @@ const PlatformServicesLive = Layer.unwrap(
   }),
 );
 
-const ReactorLayerLive = Layer.empty.pipe(
-  Layer.provideMerge(OrchestrationReactorLive),
-  Layer.provideMerge(ProviderRuntimeIngestionLive),
-  Layer.provideMerge(ProviderCommandReactorLive),
-  Layer.provideMerge(CheckpointReactorLive),
-  Layer.provideMerge(
-    // Worker worktree release is a thread-deletion reaction, so its service is
-    // provided directly to the reactor that consumes `thread.deleted`.
-    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
-  ),
-  Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
-  Layer.provideMerge(RuntimeReceiptBusLive),
-);
-
 const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
   Layer.provide(ProviderSessionRuntime.layer),
 );
@@ -289,6 +279,25 @@ const DecisionHubEscalationServiceLive = DecisionHubEscalationService.layer.pipe
 const DecisionHubReconcilerLive = DecisionHubReconciler.layer.pipe(
   Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(DecisionHubMcpClientLive),
+);
+
+const CtoxCrewTurnAdmissionLive = CtoxCrewTurnAdmission.layer.pipe(
+  Layer.provide(CtoxNativeRequests.layer),
+  Layer.provide(DecisionHubConnectionRegistryLive),
+  Layer.provide(FetchHttpClient.layer),
+);
+const ReactorLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(OrchestrationReactorLive),
+  Layer.provideMerge(ProviderRuntimeIngestionLive),
+  Layer.provideMerge(ProviderCommandReactorLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
+  Layer.provideMerge(CheckpointReactorLive),
+  Layer.provideMerge(
+    // Worker worktree release is a thread-deletion reaction, so its service is
+    // provided directly to the reactor that consumes `thread.deleted`.
+    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
+  ),
+  Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
+  Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
 // `ProviderAdapterRegistryLive` is now a facade that resolves kind → adapter
@@ -387,7 +396,7 @@ const WorkspaceLayerLive = Layer.mergeAll(
 
 const ProjectFaviconResolverLayerLive = ProjectFaviconResolver.layer.pipe(
   Layer.provide(WorkspacePaths.layer),
-  Layer.provide(T3ProjectFileLoader.layer),
+  Layer.provide(WorkjetProjectFileLoader.layer),
 );
 
 const AuthLayerLive = EnvironmentAuth.layer.pipe(
@@ -429,6 +438,15 @@ const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // `providerInstances` hydration merges `settings.providers.<kind>`
   // with explicit `providerInstances` entries on boot.
   Layer.provideMerge(ProviderInstanceRegistryHydrationLive),
+  // The CTOX driver resolves each thread's native scope instead of spawning a
+  // process. It takes these optionally — a build without them reports the
+  // instance unavailable rather than dragging the session-directory chain into
+  // every registry construction site — so production has to supply them here,
+  // where the registry is hydrated.
+  Layer.provideMerge(CtoxThreadBindingSourceLive),
+  Layer.provideMerge(WorkjetCrossModeLinkStoreLive),
+  Layer.provideMerge(CtoxNativeRequests.layer),
+  Layer.provideMerge(ProviderSessionDirectoryLayerLive),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
   // `ProviderService` (canonical stream, written after event normalization).
@@ -550,6 +568,8 @@ export const makeRoutesLayer = Layer.mergeAll(
     ),
   ),
   McpHttpServer.layer.pipe(
+    Layer.provide(CtoxNativeRequests.layer),
+    Layer.provide(DecisionHubConnectionRegistryLive),
     Layer.provide(DecisionHubEscalationServiceLive),
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(WorkerDispatch.layer),

@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -8,7 +8,7 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";

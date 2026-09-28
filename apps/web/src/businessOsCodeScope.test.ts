@@ -1,4 +1,4 @@
-import { BusinessOsInstanceId, EnvironmentId } from "@t3tools/contracts";
+import { BusinessOsInstanceId, EnvironmentId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -27,6 +27,37 @@ describe("Business OS Code scope", () => {
     ]);
 
     expect([...projectBusinessOsEnvironmentIds(WELSCH, entries)]).toEqual([WELSCH_ENV]);
+  });
+
+  it("includes an SSH environment only when its exact computer id has a confirmed assignment", () => {
+    const input = {
+      businessOsInstanceId: WELSCH,
+      entries: new Map([[SSH_ENV, { target: { _tag: "SshConnectionTarget" } }]]),
+      primaryEnvironmentId: null,
+      computers: [
+        { id: "computer-gpu", environmentId: SSH_ENV, presentationKind: "tailscale" as const },
+      ],
+    };
+    expect([...resolveBusinessOsCodeScopeEnvironmentIds(input)]).toEqual([]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        confirmedComputerIds: new Set(["other-computer"]),
+      }),
+    ]).toEqual([]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        confirmedComputerIds: new Set(["computer-gpu"]),
+      }),
+    ]).toEqual([SSH_ENV]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        entries: new Map(),
+        confirmedComputerIds: new Set(["computer-gpu"]),
+      }),
+    ]).toEqual([]);
   });
 
   it("includes the Primary environment when the registered local computer identifies it", () => {
@@ -77,7 +108,7 @@ describe("Business OS Code scope", () => {
         computers: [
           { presentationKind: "ssh", environmentId: PRIMARY_ENV },
           { presentationKind: "tailscale", environmentId: PRIMARY_ENV },
-          { presentationKind: "t3-connect", environmentId: PRIMARY_ENV },
+          { presentationKind: "workjet-connect", environmentId: PRIMARY_ENV },
         ],
       }),
     ]).toEqual([]);

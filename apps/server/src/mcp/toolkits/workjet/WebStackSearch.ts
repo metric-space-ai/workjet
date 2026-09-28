@@ -71,7 +71,7 @@ export interface WebStackSearchShape {
 }
 
 export class WebStackSearch extends Context.Service<WebStackSearch, WebStackSearchShape>()(
-  "t3/mcp/toolkits/workjet/WebStackSearch",
+  "workjet/mcp/toolkits/workjet/WebStackSearch",
 ) {}
 
 export type WebStackRuntimeBoundary = NativeProcess.WebStackRuntimeBoundary;

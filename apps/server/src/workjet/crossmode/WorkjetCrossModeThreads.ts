@@ -5,7 +5,7 @@ import {
   ThreadId,
   WorkjetCrossModeError,
   type OrchestrationCommand,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

@@ -21,8 +21,8 @@ import {
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@workjet/contracts";
+import { createModelSelection } from "@workjet/shared/model";
 import { assert, describe, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -44,7 +44,7 @@ const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
 class ClaudeAdapter extends Context.Service<ClaudeAdapter, ClaudeAdapterShape>()(
-  "t3/provider/Layers/ClaudeAdapter.test/ClaudeAdapter",
+  "workjet/provider/Layers/ClaudeAdapter.test/ClaudeAdapter",
 ) {}
 
 class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
@@ -1607,7 +1607,7 @@ describe("ClaudeAdapterLive", () => {
       });
 
       // Byte-for-byte the shape observed in
-      // ~/.t3/userdata/logs/provider/events.*.log when the CLI's OAuth session
+      // ~/.workjet/userdata/logs/provider/events.*.log when the CLI's OAuth session
       // has expired: subtype "success", is_error true, terminal_reason
       // "api_error", NO `errors` array, reason in `result`, and the request
       // never reached the API (duration_api_ms 0).
@@ -2323,8 +2323,8 @@ describe("ClaudeAdapterLive", () => {
           type: "system",
           subtype: "code_change_published",
           provider: "github",
-          url: "https://github.com/pingdotgg/t3code/pull/1",
-          repo: "pingdotgg/t3code",
+          url: "https://github.com/metric-space-ai/workjet/pull/1",
+          repo: "pingdotgg/workjet",
           identifier: "1",
           session_id: "session",
           uuid: "ccp",

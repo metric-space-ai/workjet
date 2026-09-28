@@ -1,4 +1,4 @@
-import type { EnvironmentId, WorkjetConfiguration } from "@t3tools/contracts";
+import type { EnvironmentId, WorkjetConfiguration } from "@workjet/contracts";
 
 /**
  * Fill the current-computer default without overriding an explicit operator

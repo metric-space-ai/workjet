@@ -22,6 +22,7 @@
  */
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
+import { CtoxDriver, type CtoxDriverEnv } from "./Drivers/CtoxDriver.ts";
 import { CursorDriver, type CursorDriverEnv } from "./Drivers/CursorDriver.ts";
 import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
 import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
@@ -35,6 +36,7 @@ import type { AnyProviderDriver } from "./ProviderDriver.ts";
 export type BuiltInDriversEnv =
   | ClaudeDriverEnv
   | CodexDriverEnv
+  | CtoxDriverEnv
   | CursorDriverEnv
   | GrokDriverEnv
   | OpenCodeDriverEnv;
@@ -47,6 +49,10 @@ export type BuiltInDriversEnv =
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   CodexDriver,
   ClaudeDriver,
+  // CTOX ships no legacy `settings.providers.ctox` mirror, so listing it here
+  // adds no default instance: a CTOX row exists only where a real binding was
+  // configured. See the driver's header.
+  CtoxDriver,
   CursorDriver,
   GrokDriver,
   OpenCodeDriver,

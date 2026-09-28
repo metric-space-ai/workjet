@@ -11,7 +11,7 @@ import {
   RuntimeRequestId,
   type ThreadId,
   TurnId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -689,13 +689,13 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
-            clientInfo: { name: "t3-code", version: "0.0.0" },
+            clientInfo: { name: "workjet", version: "0.0.0" },
             ...(mcpSession
               ? {
                   mcpServers: [
                     {
                       type: "http" as const,
-                      name: "t3-code",
+                      name: "workjet",
                       url: mcpSession.endpoint,
                       headers: [
                         {

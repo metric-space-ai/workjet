@@ -22,7 +22,7 @@ export async function prepareMobileBusinessOsBundle({ projectRoot, platform }) {
       release: CTOX_BUSINESS_OS_SHELL_RELEASE,
       catalog: BUILT_IN_BUSINESS_OS_MOBILE_CATALOG,
     });
-    const moduleRoot = NodePath.join(projectRoot, "modules/t3-native-controls");
+    const moduleRoot = NodePath.join(projectRoot, "modules/workjet-native-controls");
     const link =
       platform === "android"
         ? NodePath.join(moduleRoot, "android/src/main/assets/workjet-business-os")

@@ -28,7 +28,7 @@ import {
   SUPPORT_BUNDLE_UPLOAD_SUPPORTED,
   SUPPORT_CRASH_METADATA_KEYS,
   type SupportCrashMetadata,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -128,7 +128,7 @@ export class DesktopCrashReporting extends Context.Service<
     readonly configure: Effect.Effect<void>;
     readonly state: Effect.Effect<DesktopCrashReportingState>;
   }
->()("@t3tools/desktop/support/DesktopCrashReporting") {}
+>()("@workjet/desktop/support/DesktopCrashReporting") {}
 
 const EMPTY_METADATA: SupportCrashMetadata = {
   appVersion: "",

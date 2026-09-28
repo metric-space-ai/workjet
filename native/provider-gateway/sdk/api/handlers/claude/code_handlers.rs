@@ -42,7 +42,7 @@ impl ClaudeMessagesHttpResponse {
         &self.body
     }
 
-    fn json(status: u16, body: Vec<u8>) -> Self {
+    pub(super) fn json(status: u16, body: Vec<u8>) -> Self {
         Self {
             status,
             content_type: "application/json",
@@ -187,6 +187,7 @@ pub enum ClaudeMessagesRouteResponse {
     /// Antigravity variant nothing is translated: the upstream already speaks
     /// the Messages SSE shape, which is exactly what the caller asked for.
     ClaudeStream(Box<ClaudeMessagesClaudeStream>),
+    ResponsesStream(Box<super::responses_bridge::ClaudeMessagesResponsesStream>),
 }
 
 pub struct ClaudeMessagesAntigravityStream {
@@ -516,12 +517,14 @@ impl std::fmt::Debug for ClaudeMessagesAntigravityHandler {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ClaudeMessagesRequestShape {
-    model: String,
-    stream: bool,
+pub(super) struct ClaudeMessagesRequestShape {
+    pub(super) model: String,
+    pub(super) stream: bool,
 }
 
-fn parse_messages_request(body: &[u8]) -> Result<ClaudeMessagesRequestShape, &'static str> {
+pub(super) fn parse_messages_request(
+    body: &[u8],
+) -> Result<ClaudeMessagesRequestShape, &'static str> {
     let root = serde_json::from_slice::<Value>(body).map_err(|_| "invalid JSON request body")?;
     let object = root
         .as_object()

@@ -23,16 +23,16 @@ import {
   effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+} from "@workjet/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import {
   scopeProjectRef,
   scopeThreadRef,
   scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { buildWorkjetThreadDeepLink } from "@t3tools/shared/agentAwareness";
-import type { TimestampFormat } from "@t3tools/contracts/settings";
+} from "@workjet/client-runtime/environment";
+import type { ScopedThreadRef, ThreadId } from "@workjet/contracts";
+import { buildWorkjetThreadDeepLink } from "@workjet/shared/agentAwareness";
+import type { TimestampFormat } from "@workjet/contracts/settings";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -73,7 +73,7 @@ import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
@@ -122,6 +122,7 @@ import type { SidebarThreadSummary } from "../types";
 import { cn } from "~/lib/utils";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
+  activateSidebarProject,
   buildBulkTitleRegenerationContextMenuItem,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
@@ -180,6 +181,7 @@ import {
   type DraftSessionState,
 } from "../composerDraftStore";
 import { selectWorkjetProject } from "../workjetProjectRegistry";
+import { workjetProjectConversationKeys } from "../workjetProjectConversationScope";
 import {
   buildAvailableProjects,
   useAvailableProjectContext,
@@ -191,8 +193,8 @@ import {
 const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
-const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
-const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
+const SETTLED_SHELF_EXPANDED_KEY = "workjet:sidebar-v2:settled-expanded";
+const SNOOZED_SHELF_EXPANDED_KEY = "workjet:sidebar-v2:snoozed-expanded";
 
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
@@ -1095,7 +1097,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   );
 
   // A real link so cmd/ctrl+click and middle-click open the host in the
-  // browser. A plain click still opens T3's pull request view.
+  // browser. A plain click still opens Workjet's pull request view.
   const prBadge =
     prStatus && pr ? (
       <a
@@ -1898,29 +1900,197 @@ export default function Sidebar() {
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
   const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
-  const scopedProjectGroup = useMemo(
+  const lastActiveProjectKey = useRef<string | null>(null);
+  const activeProjectThread = newThreadContext.activeDraftThread ?? newThreadContext.activeThread;
+  const activeProjectEnvironmentId = activeProjectThread?.environmentId;
+  const activeProjectId = activeProjectThread?.projectId;
+  useEffect(() => {
+    if (activeProjectEnvironmentId === undefined || activeProjectId === undefined) return;
+    const key = `${activeProjectEnvironmentId}\0${activeProjectId}`;
+    if (lastActiveProjectKey.current === key) return;
+    const group = projectGroups.find((candidate) =>
+      candidate.memberProjectRefs.some(
+        (member) =>
+          member.environmentId === activeProjectEnvironmentId &&
+          member.projectId === activeProjectId,
+      ),
+    );
+    if (group === undefined) return;
+    lastActiveProjectKey.current = key;
+    setProjectScopeKey(group.projectKey);
+  }, [activeProjectEnvironmentId, activeProjectId, projectGroups]);
+  const projectSwitchPending = useRef(false);
+  const [isSwitchingProject, setIsSwitchingProject] = useState(false);
+  const handleProjectScopeChange = useCallback(
+    async (value: string) => {
+      if (projectSwitchPending.current) return;
+      const group = projectGroups.find((project) => project.projectKey === value);
+      if (group === undefined) return;
+      const target = scopeProjectRef(group.environmentId, group.id);
+      const active = newThreadContext.activeDraftThread ?? newThreadContext.activeThread;
+      projectSwitchPending.current = true;
+      setIsSwitchingProject(true);
+      try {
+        await activateSidebarProject({
+          target,
+          active: active ? scopeProjectRef(active.environmentId, active.projectId) : null,
+          open: () =>
+            newThreadContext.handleNewThread(
+              availableProjects.find(
+                (project) =>
+                  project.id === target.projectId && project.environmentId === target.environmentId,
+              ) ?? target,
+            ),
+          select: () => setProjectScopeKey(value),
+        });
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not open project",
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
+      } finally {
+        projectSwitchPending.current = false;
+        setIsSwitchingProject(false);
+      }
+    },
+    [availableProjects, newThreadContext, projectGroups],
+  );
+  const handleWorkjetProjectSelection = useCallback(
+    async (projectId: string) => {
+      if (projectSwitchPending.current) return;
+      const instanceId = workjetProjectRegistry.presentationInstanceId;
+      const project = workjetProjects.find((candidate) => candidate.id === projectId);
+      if (instanceId === null || project === undefined) return;
+      const target = buildAvailableProjects({
+        projects: [],
+        workjetProjects: [project],
+        computer: selectedWorkjetComputer ?? sidebarComputer,
+      })[0];
+      projectSwitchPending.current = true;
+      setIsSwitchingProject(true);
+      try {
+        if (target === undefined) {
+          selectWorkjetProject(instanceId, project.id);
+          setProjectScopeKey(null);
+          await router.navigate({ to: "/" });
+        } else {
+          const opened = await newThreadContext.handleNewThread(target);
+          if (opened === null) return;
+          selectWorkjetProject(instanceId, project.id);
+          const group = projectGroups.find((candidate) =>
+            candidate.memberProjects.some(
+              (member) =>
+                member.environmentId === target.environmentId &&
+                member.workspaceRoot === target.path,
+            ),
+          );
+          setProjectScopeKey(group?.projectKey ?? null);
+        }
+        if (isMobile) setOpenMobile(false);
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not open project",
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
+      } finally {
+        projectSwitchPending.current = false;
+        setIsSwitchingProject(false);
+      }
+    },
+    [
+      isMobile,
+      newThreadContext,
+      projectGroups,
+      router,
+      selectedWorkjetComputer,
+      setOpenMobile,
+      sidebarComputer,
+      workjetProjectRegistry.presentationInstanceId,
+      workjetProjects,
+    ],
+  );
+  const legacyScopedProjectGroup = useMemo(
     () =>
       projectScopeKey === null
         ? null
         : (projectGroups.find((project) => project.projectKey === projectScopeKey) ?? null),
     [projectGroups, projectScopeKey],
   );
-  const scopedProjectKeys = useMemo(
+  const selectedWorkjetProject =
+    workjetProjects.find((project) => project.id === workjetProjectRegistry.selectedProjectId) ??
+    null;
+  const scopedProjectKeys = useMemo(() => {
+    if (workjetProjectRegistry.phase === "loading" || workjetProjectRegistry.phase === "blocked") {
+      return new Set<string>();
+    }
+    if (workjetProjects.length > 0) {
+      return workjetProjectConversationKeys({
+        project: selectedWorkjetProject,
+        computers: workjetConfiguration.computers,
+        projects: sidebarProjects,
+      });
+    }
+    return new Set(
+      legacyScopedProjectGroup?.memberProjectRefs.map(
+        (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+      ) ?? [],
+    );
+  }, [
+    legacyScopedProjectGroup,
+    selectedWorkjetProject,
+    sidebarProjects,
+    workjetConfiguration.computers,
+    workjetProjectRegistry.phase,
+    workjetProjects.length,
+  ]);
+  const scopedProjectGroup = useMemo(
     () =>
-      scopedProjectGroup === null
-        ? null
-        : new Set(
-            scopedProjectGroup.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+      workjetProjects.length === 0
+        ? legacyScopedProjectGroup
+        : (projectGroups.find((group) =>
+            group.memberProjectRefs.some((member) =>
+              scopedProjectKeys.has(`${member.environmentId}:${member.projectId}`),
             ),
-          ),
-    [scopedProjectGroup],
+          ) ?? null),
+    [legacyScopedProjectGroup, projectGroups, scopedProjectKeys, workjetProjects.length],
   );
+  const lastMatchedWorkjetRoute = useRef<string | null>(null);
   useEffect(() => {
-    if (projectScopeKey !== null && scopedProjectGroup === null) {
+    const instanceId = workjetProjectRegistry.presentationInstanceId;
+    if (
+      instanceId === null ||
+      activeProjectEnvironmentId === undefined ||
+      activeProjectId === undefined
+    )
+      return;
+    const routeKey = JSON.stringify([instanceId, activeProjectEnvironmentId, activeProjectId]);
+    if (lastMatchedWorkjetRoute.current === routeKey) return;
+    const matches = workjetProjects.filter((project) =>
+      workjetProjectConversationKeys({
+        project,
+        computers: workjetConfiguration.computers,
+        projects: sidebarProjects,
+      }).has(`${activeProjectEnvironmentId}:${activeProjectId}`),
+    );
+    // Shared paths can be ambiguous. Do not silently pick a different logical project.
+    if (matches.length !== 1 || matches[0] === undefined) return;
+    lastMatchedWorkjetRoute.current = routeKey;
+    selectWorkjetProject(instanceId, matches[0].id);
+  }, [
+    activeProjectEnvironmentId,
+    activeProjectId,
+    sidebarProjects,
+    workjetConfiguration.computers,
+    workjetProjectRegistry.presentationInstanceId,
+    workjetProjects,
+  ]);
+  useEffect(() => {
+    if (projectScopeKey !== null && legacyScopedProjectGroup === null) {
       setProjectScopeKey(null);
     }
-  }, [projectScopeKey, scopedProjectGroup]);
+  }, [projectScopeKey, legacyScopedProjectGroup]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -1951,7 +2121,12 @@ export default function Sidebar() {
   // hidden now, and bulk actions must never count or touch invisible rows.
   useEffect(() => {
     clearSelection();
-  }, [clearSelection, projectScopeKey]);
+  }, [
+    clearSelection,
+    projectScopeKey,
+    workjetProjectRegistry.presentationInstanceId,
+    workjetProjectRegistry.selectedProjectId,
+  ]);
 
   const handleProjectSettings = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
@@ -2125,7 +2300,11 @@ export default function Sidebar() {
   // filter context changes so a scope/search flip never inherits a deep
   // page state.
   const [settledVisibleCount, setSettledVisibleCount] = useState(SETTLED_TAIL_INITIAL_COUNT);
-  const settledResetKey = projectScopeKey ?? "all";
+  const settledResetKey = JSON.stringify([
+    workjetProjectRegistry.presentationInstanceId,
+    selectedWorkjetProject?.id,
+    projectScopeKey,
+  ]);
   const lastSettledResetKeyRef = useRef(settledResetKey);
   if (lastSettledResetKeyRef.current !== settledResetKey) {
     lastSettledResetKeyRef.current = settledResetKey;
@@ -3284,6 +3463,35 @@ export default function Sidebar() {
   // for multi-project setups.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
+      if (workjetProjects.length > 0) {
+        if (selectedWorkjetProject === null) {
+          setProjectScopeMenuOpen(true);
+          return;
+        }
+        const target = buildAvailableProjects({
+          projects: [],
+          workjetProjects: [selectedWorkjetProject],
+          computer: sidebarComputer ?? selectedWorkjetComputer,
+        })[0];
+        if (target === undefined) {
+          toastManager.add({
+            type: "warning",
+            title: "No working copy on this computer",
+            description: "Choose a computer with an active working copy of this project.",
+          });
+          return;
+        }
+        if (isMobile) setOpenMobile(false);
+        void newThreadContext.handleNewThread(target);
+        return;
+      }
+      if (scopedProjectGroup !== null) {
+        if (isMobile) setOpenMobile(false);
+        void newThreadContext.handleNewThread(
+          scopeProjectRef(scopedProjectGroup.environmentId, scopedProjectGroup.id),
+        );
+        return;
+      }
       if (sidebarFallbackProject !== null) {
         if (isMobile) setOpenMobile(false);
         void newThreadContext.handleNewThread(sidebarFallbackProject);
@@ -3317,6 +3525,11 @@ export default function Sidebar() {
       setOpenMobile,
       sidebarAvailableProjectCount,
       sidebarFallbackProject,
+      scopedProjectGroup,
+      selectedWorkjetProject,
+      selectedWorkjetComputer,
+      sidebarComputer,
+      workjetProjects.length,
     ],
   );
 
@@ -3434,173 +3647,94 @@ export default function Sidebar() {
                 </Tooltip>
               </div>
             </div>
-            {projectGroups.length > 0 ? (
-              <div className="flex items-center gap-1">
-                <Menu open={projectScopeMenuOpen} onOpenChange={setProjectScopeMenuOpen}>
-                  <MenuTrigger
-                    render={
-                      <SidebarMenuButton
-                        aria-label="Filter threads by project"
-                        className="min-w-0 flex-1 ps-[calc(var(--sidebar-row-content-inset)-1px)] focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                      />
-                    }
-                  >
-                    {scopedProjectGroup ? (
-                      <ProjectFavicon
-                        environmentId={scopedProjectGroup.environmentId}
-                        cwd={scopedProjectGroup.workspaceRoot}
-                        faviconPath={scopedProjectGroup.faviconPath}
-                        className="size-4 shrink-0"
-                      />
-                    ) : (
-                      <FolderIcon className="size-4 shrink-0" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate">
-                      {scopedProjectGroup?.displayName ?? "All projects"}
-                    </span>
-                    <ChevronDownIcon className="-mr-px size-4 shrink-0" />
-                  </MenuTrigger>
-                  <MenuPopup align="start" className="w-(--anchor-width)">
-                    <MenuRadioGroup
-                      value={projectScopeKey ?? "all"}
-                      onValueChange={(value) =>
-                        setProjectScopeKey(value === "all" ? null : (value as string))
+            {projectGroups.length > 0 || workjetProjects.length > 0 ? (
+              <div className="space-y-1">
+                <p className="px-2 text-[11px] text-sidebar-muted-foreground">Project</p>
+                <div className="flex items-center gap-1">
+                  <Menu open={projectScopeMenuOpen} onOpenChange={setProjectScopeMenuOpen}>
+                    <MenuTrigger
+                      render={
+                        <SidebarMenuButton
+                          aria-label="Choose project"
+                          aria-busy={isSwitchingProject}
+                          disabled={isSwitchingProject}
+                          className="min-w-0 flex-1 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+                        />
                       }
                     >
-                      <MenuRadioItem
-                        value="all"
-                        closeOnClick
-                        className="h-8 min-h-8 px-1 py-0 text-sm font-medium [&>span:last-child]:flex [&>span:last-child]:min-w-0 [&>span:last-child]:items-center [&>span:last-child]:gap-2"
+                      <FolderIcon aria-hidden className="size-4 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">
+                        {selectedWorkjetProject?.title ??
+                          scopedProjectGroup?.displayName ??
+                          "Choose project"}
+                      </span>
+                      <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
+                    </MenuTrigger>
+                    <MenuPopup align="start" className="min-w-64 max-w-80">
+                      <MenuRadioGroup
+                        value={
+                          workjetProjects.length > 0
+                            ? (selectedWorkjetProject?.id ?? "")
+                            : (projectScopeKey ?? "")
+                        }
+                        onValueChange={(value) => {
+                          if (typeof value !== "string" || value.length === 0) return;
+                          if (workjetProjects.length > 0) {
+                            void handleWorkjetProjectSelection(value);
+                          } else {
+                            void handleProjectScopeChange(value);
+                          }
+                        }}
                       >
-                        <FolderIcon className="size-4 shrink-0" />
-                        <span className="min-w-0 truncate text-sm">All projects</span>
-                      </MenuRadioItem>
-                      {projectGroups.map((project) => {
-                        const scopeKey = project.projectKey;
-                        return (
-                          <MenuRadioItem
-                            key={scopeKey}
-                            value={scopeKey}
-                            closeOnClick
-                            className="h-8 min-h-8 px-1 py-0 text-sm font-medium [&>span:last-child]:flex [&>span:last-child]:min-w-0 [&>span:last-child]:items-center [&>span:last-child]:gap-2"
-                          >
-                            <ProjectFavicon
-                              environmentId={project.environmentId}
-                              cwd={project.workspaceRoot}
-                              faviconPath={project.faviconPath}
-                              className="size-4 shrink-0"
-                            />
-                            <span className="min-w-0 truncate text-sm">{project.displayName}</span>
-                            <button
-                              type="button"
-                              aria-label={`Project settings for ${project.displayName}`}
-                              title={`Project settings for ${project.displayName}`}
-                              className="ml-auto inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-icon-muted outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                void handleProjectSettings(event, project);
-                              }}
-                            >
-                              <SettingsIcon className="size-3.5" />
-                            </button>
-                          </MenuRadioItem>
-                        );
-                      })}
-                    </MenuRadioGroup>
-                  </MenuPopup>
-                </Menu>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="icon"
-                        className="relative shrink-0 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
-                        onClick={openAddProjectCommandPalette}
-                        type="button"
-                        aria-label="New project"
-                      />
-                    }
+                        {workjetProjects.length > 0
+                          ? workjetProjects.map((project) => (
+                              <MenuRadioItem
+                                key={project.id}
+                                value={project.id}
+                                closeOnClick
+                                data-workjet-action={`project.select:`}
+                              >
+                                <span className="min-w-0 truncate">{project.title}</span>
+                              </MenuRadioItem>
+                            ))
+                          : projectGroups.map((project) => (
+                              <MenuRadioItem
+                                key={project.projectKey}
+                                value={project.projectKey}
+                                closeOnClick
+                              >
+                                <span className="min-w-0 truncate">{project.displayName}</span>
+                              </MenuRadioItem>
+                            ))}
+                      </MenuRadioGroup>
+                    </MenuPopup>
+                  </Menu>
+                  {scopedProjectGroup ? (
+                    <SidebarMenuButton
+                      type="button"
+                      size="icon"
+                      aria-label={`Project settings for `}
+                      onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
+                    >
+                      <SettingsIcon aria-hidden className="size-4" />
+                    </SidebarMenuButton>
+                  ) : null}
+                  <SidebarMenuButton
+                    type="button"
+                    size="icon"
+                    aria-label="New project"
+                    data-workjet-action="project.add.sidebar.persistent"
+                    onClick={openAddProjectCommandPalette}
                   >
-                    <FolderPlusIcon />
-                    <span
-                      className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
-                      aria-hidden="true"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="right">New project</TooltipPopup>
-                </Tooltip>
+                    <FolderPlusIcon aria-hidden className="size-4" />
+                  </SidebarMenuButton>
+                </div>
               </div>
             ) : null}
           </SidebarGroup>
         }
       >
         <SidebarGroup className="ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
-          {!isSearchingThreads && workjetProjects.length > 0 ? (
-            <div className="mb-2 flex flex-col gap-1.5">
-              <ul aria-label="Projects" className="flex flex-col gap-px">
-                {workjetProjects.map((project) => (
-                  <li key={project.id} className="list-none">
-                    <button
-                      type="button"
-                      aria-current={
-                        workjetProjectRegistry.selectedProjectId === project.id ? "page" : undefined
-                      }
-                      data-workjet-action={`project.select:${project.id}`}
-                      onClick={() => {
-                        if (workjetProjectRegistry.presentationInstanceId !== null) {
-                          selectWorkjetProject(
-                            workjetProjectRegistry.presentationInstanceId,
-                            project.id,
-                          );
-                        }
-                      }}
-                      className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-row-hover aria-[current=page]:bg-sidebar-row-hover"
-                    >
-                      <FolderIcon
-                        aria-hidden
-                        className="size-4 shrink-0 text-sidebar-muted-foreground"
-                      />
-                      <span className="min-w-0 flex-1 truncate">{project.title}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <div className="grid grid-cols-2 gap-1 px-1">
-                <button
-                  type="button"
-                  data-workjet-action="project.add.sidebar.persistent"
-                  onClick={openAddProjectCommandPalette}
-                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-sidebar-border px-2 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-                >
-                  <FolderPlusIcon aria-hidden className="size-3.5" />
-                  Add project
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNewThreadClick}
-                  disabled={isSidebarNewThreadDisabled(sidebarAvailableProjectCount)}
-                  aria-label={
-                    sidebarAvailableProjectCount === 0
-                      ? hasResolvableSidebarComputer
-                        ? "New session unavailable without a working copy on this computer"
-                        : "New session unavailable until a computer is selected"
-                      : "New session"
-                  }
-                  title={
-                    sidebarAvailableProjectCount === 0
-                      ? hasResolvableSidebarComputer
-                        ? "Add a working copy on this computer before starting a session"
-                        : "Choose a computer before starting a session"
-                      : "New session"
-                  }
-                  className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-sidebar-border px-2 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <SquarePenIcon aria-hidden className="size-3.5" />
-                  New session
-                </button>
-              </div>
-            </div>
-          ) : null}
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -3956,10 +4090,12 @@ export default function Sidebar() {
                 </>
               ) : workjetProjects.length > 0 && sidebarAvailableProjectCount === 0 ? (
                 <span>Project available, but no working copy on this computer</span>
+              ) : selectedWorkjetProject ? (
+                `No chats in ${selectedWorkjetProject.title} yet`
               ) : scopedProjectGroup ? (
                 `No threads in ${scopedProjectGroup.displayName} yet`
               ) : (
-                "No threads yet"
+                "Choose a project to see its chats"
               )}
             </div>
           ) : null}

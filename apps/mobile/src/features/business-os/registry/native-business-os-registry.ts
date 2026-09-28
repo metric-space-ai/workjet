@@ -1,7 +1,7 @@
 import * as SecureStore from "expo-secure-store";
 import * as SQLite from "expo-sqlite";
-import { EnvironmentId } from "@t3tools/contracts";
-import type { WorkjetManagedDeviceSessionAuthorization } from "@t3tools/client-runtime/state/business-os-managed-backend-control";
+import { EnvironmentId } from "@workjet/contracts";
+import type { WorkjetManagedDeviceSessionAuthorization } from "@workjet/client-runtime/state/business-os-managed-backend-control";
 
 import { uuidv4 } from "../../../lib/uuid";
 import { MOBILE_DATABASE_NAME } from "../../../persistence/mobile-database";

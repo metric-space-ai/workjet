@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@workjet/contracts";
 import * as Arr from "effect/Array";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -13,10 +13,10 @@ import {
 } from "../lib/connection";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 
-const CONNECTIONS_KEY = "t3code.connections";
-const AGENT_AWARENESS_DEVICE_ID_KEY = "t3code.agent-awareness.device-id";
-const AGENT_AWARENESS_REGISTRATION_KEY = "t3code.agent-awareness.registration";
-const RECENT_THREAD_SHORTCUTS_KEY = "t3code.recent-thread-shortcuts";
+const CONNECTIONS_KEY = "workjet.connections";
+const AGENT_AWARENESS_DEVICE_ID_KEY = "workjet.agent-awareness.device-id";
+const AGENT_AWARENESS_REGISTRATION_KEY = "workjet.agent-awareness.registration";
+const RECENT_THREAD_SHORTCUTS_KEY = "workjet.recent-thread-shortcuts";
 
 export class MobileStorageDecodeError extends Schema.TaggedErrorClass<MobileStorageDecodeError>()(
   "MobileStorageDecodeError",
@@ -115,7 +115,7 @@ export class MobileStorage extends Context.Service<
       MobileSecureStorage.MobileSecureStorageError | MobileStorageEncodeError
     >;
   }
->()("@t3tools/mobile/persistence/MobileStorage") {}
+>()("@workjet/mobile/persistence/MobileStorage") {}
 
 export const make = Effect.fn("MobileStorage.make")(function* () {
   const secureStorage = yield* MobileSecureStorage.MobileSecureStorage;

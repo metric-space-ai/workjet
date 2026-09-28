@@ -1,6 +1,6 @@
 // @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded MCP results.
 import { expect, it, vi } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

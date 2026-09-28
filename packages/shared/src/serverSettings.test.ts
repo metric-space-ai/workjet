@@ -8,7 +8,7 @@ import {
   WorkjetComputerId,
   WorkjetLlmRouteId,
   WorkjetWorkerProfileId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Duration from "effect/Duration";
 import { describe, expect, it } from "vite-plus/test";
 import { resolveServerBackgroundActivitySettings } from "./backgroundActivitySettings.ts";

@@ -27,9 +27,9 @@ describe("Workjet Mobile product identity", () => {
       "Workjet Preview",
       "Workjet",
     ]);
-    expect(config).toContain('iosBundleIdentifier: "com.t3tools.t3code"');
-    expect(config).toContain('androidPackage: "com.t3tools.t3code"');
-    expect(config).toContain('slug: "t3-code"');
+    expect(config).toContain('iosBundleIdentifier: "dev.workjet.app"');
+    expect(config).toContain('androidPackage: "dev.workjet.app"');
+    expect(config).toContain('slug: "workjet"');
     expect(config).toContain('orientation: "default"');
     expect(config).toContain("supportsTablet: true");
   });
@@ -37,8 +37,8 @@ describe("Workjet Mobile product identity", () => {
   it("keeps the established local data identity during the soft migration", () => {
     const preferences = read("../persistence/mobile-preferences.ts");
     const database = read("../persistence/mobile-database.ts");
-    expect(preferences).toContain('const PREFERENCES_KEY = "t3code.preferences"');
-    expect(database).toContain('const DATABASE_NAME = "t3code-client.db"');
+    expect(preferences).toContain('const PREFERENCES_KEY = "workjet.preferences"');
+    expect(database).toContain('const DATABASE_NAME = "workjet-client.db"');
   });
 
   it("does not expose superseded app names in the primary mobile surfaces", () => {
@@ -54,11 +54,9 @@ describe("Workjet Mobile product identity", () => {
       readProductionTree("../features/business-os/"),
     ].join("\n");
 
-    expect(surfaces).not.toMatch(
-      /CTOX Desktop App|CTOX Mobile|CTOX Business OS App|T3 Code|T3Code|\bAlpha\b/u,
-    );
-    expect(surfaces).not.toContain('label="T3 Account"');
-    expect(surfaces).not.toContain("T3 Connect");
+    expect(surfaces).not.toMatch(/CTOX Desktop App|CTOX Mobile|CTOX Business OS App|\bAlpha\b/u);
+    expect(surfaces).toContain('label="Workjet Account"');
+    expect(surfaces).toContain("Workjet Connect");
     expect(surfaces).not.toContain('accessibilityLabel="CTOX"');
     expect(surfaces).not.toContain('stage="Alpha"');
   });
@@ -73,7 +71,7 @@ describe("Workjet Mobile product identity", () => {
       "Workjet Preview",
       "Workjet",
     ]);
-    expect(config).not.toMatch(/appName: "(?:CTOX|T3 Code|T3Code|Alpha)"/u);
+    expect(config).not.toMatch(/appName: "(?:CTOX|Alpha)"/u);
     expect(config).toContain("Allow Workjet to connect to CTOX backends");
     expect(config).toContain("updates: { enabled: false }");
     expect(config).not.toContain("expo-widgets");

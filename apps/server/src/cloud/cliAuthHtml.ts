@@ -1,9 +1,9 @@
 export type LoopbackAuthorizationStage = "dev" | "nightly" | "latest";
 
-declare const __T3CODE_BUILD_CHANNEL__: "nightly" | "latest" | undefined;
+declare const __WORKJET_BUILD_CHANNEL__: "nightly" | "latest" | undefined;
 
 export function resolveLoopbackAuthorizationStage(): LoopbackAuthorizationStage {
-  return typeof __T3CODE_BUILD_CHANNEL__ === "undefined" ? "dev" : __T3CODE_BUILD_CHANNEL__;
+  return typeof __WORKJET_BUILD_CHANNEL__ === "undefined" ? "dev" : __WORKJET_BUILD_CHANNEL__;
 }
 
 const stageBrands = {

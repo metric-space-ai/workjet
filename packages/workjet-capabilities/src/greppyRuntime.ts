@@ -6,7 +6,7 @@ export {
   GreppyRuntimeReason,
   GreppyRuntimeSnapshot,
   GreppyRuntimeSource,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export const GREPPY_RUNTIME_PIN = {
   version: "0.3.1",

@@ -6,7 +6,7 @@ import type {
   CapabilityManifest,
   CapabilityThreadActivationTarget,
   WorkjetCapabilityId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import { capabilityHostForAdapter, type CapabilityHostId } from "./dualHost.ts";
 import { defaultCapabilityRegistry, type CapabilityRegistry } from "./registry.ts";
@@ -131,7 +131,7 @@ export const resolveThreadCapabilityAvailability = (input: {
       environmentId: input.environmentId,
       threadId: input.threadId,
     },
-    adapter: input.adapter ?? "t3-mcp",
+    adapter: input.adapter ?? "workjet-mcp",
     enabledCapabilityIds: input.enabledCapabilityIds,
     ...(input.registry ? { registry: input.registry } : {}),
   });

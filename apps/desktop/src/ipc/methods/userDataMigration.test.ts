@@ -102,7 +102,7 @@ describe("user-data migration IPC contract", () => {
   it.effect("returns a decodable offer when one is pending", () => {
     const recorded = emptyRecording();
     const offer = Option.some({
-      legacyPath: "/support/t3code",
+      legacyPath: "/support/workjet",
       targetPath: "/support/CTOX Desktop App",
     });
 
@@ -111,7 +111,7 @@ describe("user-data migration IPC contract", () => {
       Effect.tap((decoded) =>
         Effect.sync(() => {
           assert.isNotNull(decoded);
-          assert.equal(decoded?.legacyPath, "/support/t3code");
+          assert.equal(decoded?.legacyPath, "/support/workjet");
           assert.equal(decoded?.targetPath, "/support/CTOX Desktop App");
           assert.deepEqual(
             [...(decoded?.entries ?? [])],
@@ -146,7 +146,7 @@ describe("user-data migration IPC contract", () => {
       Effect.provide(
         makeLayer(
           recorded,
-          Option.some({ legacyPath: "/support/t3code", targetPath: "/support/CTOX" }),
+          Option.some({ legacyPath: "/support/workjet", targetPath: "/support/CTOX" }),
         ),
       ),
     );
@@ -165,7 +165,7 @@ describe("user-data migration IPC contract", () => {
       Effect.provide(
         makeLayer(
           recorded,
-          Option.some({ legacyPath: "/support/t3code", targetPath: "/support/CTOX" }),
+          Option.some({ legacyPath: "/support/workjet", targetPath: "/support/CTOX" }),
         ),
       ),
     );

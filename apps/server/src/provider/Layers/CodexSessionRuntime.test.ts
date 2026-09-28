@@ -4,7 +4,7 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe } from "vite-plus/test";
-import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_MODEL, ThreadId } from "@workjet/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 
@@ -337,13 +337,13 @@ describe("buildCodexDeveloperInstructions", () => {
   });
 });
 
-describe("T3 browser developer instructions", () => {
+describe("Workjet browser developer instructions", () => {
   it("prefers the product-native preview tools in both collaboration modes", () => {
     for (const instructions of [
       CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
       CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS,
     ]) {
-      NodeAssert.match(instructions, /t3-code/);
+      NodeAssert.match(instructions, /workjet/);
       NodeAssert.match(instructions, /preview_status/);
       NodeAssert.match(instructions, /preview_open/);
       NodeAssert.match(instructions, /Do not switch to global browser skills/);
@@ -356,7 +356,7 @@ describe("hasConfiguredMcpServer", () => {
     NodeAssert.equal(hasConfiguredMcpServer(undefined), false);
     NodeAssert.equal(hasConfiguredMcpServer(["--model", "gpt-5.4"]), false);
     NodeAssert.equal(
-      hasConfiguredMcpServer(["-c", 'mcp_servers.t3-code.url="http://127.0.0.1/mcp"']),
+      hasConfiguredMcpServer(["-c", 'mcp_servers.workjet.url="http://127.0.0.1/mcp"']),
       true,
     );
   });
@@ -374,7 +374,7 @@ describe("codexSessionAppServerArgs", () => {
   it("keeps launch args when explicit app-server args are provided", () => {
     NodeAssert.deepStrictEqual(
       codexSessionAppServerArgs(
-        ["-c", "mcp_servers.t3-code.url=http://127.0.0.1/mcp"],
+        ["-c", "mcp_servers.workjet.url=http://127.0.0.1/mcp"],
         "--strict-config --enable foo",
       ),
       [
@@ -383,7 +383,7 @@ describe("codexSessionAppServerArgs", () => {
         "--enable",
         "foo",
         "-c",
-        "mcp_servers.t3-code.url=http://127.0.0.1/mcp",
+        "mcp_servers.workjet.url=http://127.0.0.1/mcp",
       ],
     );
   });
@@ -437,6 +437,92 @@ describe("isRecoverableThreadResumeError", () => {
 });
 
 describe("openCodexThread", () => {
+  it.effect("does not fresh-start a Crew attempt when its provider thread is missing", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const failure = new CodexErrors.CodexAppServerRequestError({
+        code: -32603,
+        errorMessage: "thread not found",
+      });
+      const error = yield* Effect.flip(
+        openCodexThread({
+          client: {
+            request: (method) => {
+              calls.push(method);
+              return Effect.fail(failure);
+            },
+          },
+          threadId: ThreadId.make("crew-thread"),
+          runtimeMode: "full-access",
+          cwd: "/workspace/crew",
+          requestedModel: undefined,
+          serviceTier: undefined,
+          resumeThreadId: "owned-provider-thread",
+          resumePolicy: "require-existing",
+        }),
+      );
+      NodeAssert.strictEqual(error, failure);
+      NodeAssert.deepStrictEqual(calls, ["thread/resume"]);
+    }),
+  );
+
+  it.effect("rejects Crew recovery without a provider identity before any RPC", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const error = yield* Effect.flip(
+        openCodexThread({
+          client: {
+            request: (method) => {
+              calls.push(method);
+              return Effect.die("Unexpected provider RPC");
+            },
+          },
+          threadId: ThreadId.make("crew-thread"),
+          runtimeMode: "full-access",
+          cwd: "/workspace/crew",
+          requestedModel: undefined,
+          serviceTier: undefined,
+          resumeThreadId: undefined,
+          resumePolicy: "require-existing",
+        }),
+      );
+      NodeAssert.ok(isCodexAppServerRequestError(error));
+      NodeAssert.match(error.errorMessage, /existing provider thread identity/);
+      NodeAssert.deepStrictEqual(calls, []);
+    }),
+  );
+
+  it.effect("accepts only the exact resumed Crew provider thread", () =>
+    Effect.gen(function* () {
+      for (const returnedId of ["owned-provider-thread", "different-provider-thread"]) {
+        const calls: string[] = [];
+        const result = yield* openCodexThread({
+          client: {
+            request: (method) => {
+              calls.push(method);
+              return Effect.succeed(makeThreadOpenResponse(returnedId));
+            },
+          },
+          threadId: ThreadId.make("crew-thread"),
+          runtimeMode: "full-access",
+          cwd: "/workspace/crew",
+          requestedModel: undefined,
+          serviceTier: undefined,
+          resumeThreadId: "owned-provider-thread",
+          resumePolicy: "require-existing",
+        }).pipe(Effect.result);
+        NodeAssert.deepStrictEqual(calls, ["thread/resume"]);
+        if (returnedId === "owned-provider-thread") {
+          NodeAssert.equal(result._tag, "Success");
+        } else {
+          NodeAssert.equal(result._tag, "Failure");
+          NodeAssert.ok(isCodexAppServerRequestError(result.failure));
+          NodeAssert.match(result.failure.errorMessage, /different provider thread identity/);
+        }
+      }
+    }),
+  );
+
   it.effect("falls back to thread/start when resume fails recoverably", () =>
     Effect.gen(function* () {
       const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];

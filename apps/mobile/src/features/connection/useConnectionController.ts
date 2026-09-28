@@ -2,12 +2,12 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   RelayConnectionRegistration,
   RelayConnectionTarget,
-} from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@workjet/client-runtime/connection";
+import type { EnvironmentId } from "@workjet/contracts";
 import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
-} from "@t3tools/contracts/relay";
+} from "@workjet/contracts/relay";
 import * as Option from "effect/Option";
 import { useCallback, useMemo } from "react";
 
@@ -38,6 +38,10 @@ export function useConnectionController() {
   const updateBearer = useAtomCommand(updateBearerConnection, { reportFailure: false });
   const registerEnvironment = useAtomCommand(environmentCatalog.register, "environment register");
   const removeEnvironmentMutation = useAtomCommand(environmentCatalog.remove, "environment remove");
+  const disconnectEnvironmentMutation = useAtomCommand(
+    environmentCatalog.disconnect,
+    "environment disconnect",
+  );
   const retryEnvironmentMutation = useAtomCommand(environmentCatalog.retryNow, "environment retry");
   const refreshRelayEnvironments = useAtomCommand(
     relayEnvironmentDiscovery.refresh,
@@ -88,6 +92,10 @@ export function useConnectionController() {
     (environmentId: EnvironmentId) => removeEnvironmentMutation(environmentId),
     [removeEnvironmentMutation],
   );
+  const disconnectEnvironment = useCallback(
+    (environmentId: EnvironmentId) => disconnectEnvironmentMutation(environmentId),
+    [disconnectEnvironmentMutation],
+  );
   const retryEnvironment = useCallback(
     (environmentId: EnvironmentId) => retryEnvironmentMutation(environmentId),
     [retryEnvironmentMutation],
@@ -118,6 +126,7 @@ export function useConnectionController() {
     connectPairingUrl,
     connectRelayEnvironment,
     removeEnvironment,
+    disconnectEnvironment,
     retryEnvironment,
     updateEnvironment,
     refreshRelayEnvironments,

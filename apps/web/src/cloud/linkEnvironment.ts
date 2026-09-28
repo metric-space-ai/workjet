@@ -14,18 +14,18 @@ import {
   EnvironmentHttpUnauthorizedError,
   EnvironmentId,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   type RelayClientDeviceRecord,
   type RelayClientEnvironmentRecord,
   type RelayEnvironmentLinkResponse,
   type RelayProtectedError as RelayProtectedErrorType,
   type RelayManagedEndpointProviderKind,
-} from "@t3tools/contracts/relay";
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
-import { request, runStream } from "@t3tools/client-runtime/rpc";
-import { makeEnvironmentHttpApiClient } from "@t3tools/client-runtime/rpc";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+} from "@workjet/contracts/relay";
+import { EnvironmentRegistry } from "@workjet/client-runtime/connection";
+import { request, runStream } from "@workjet/client-runtime/rpc";
+import { makeEnvironmentHttpApiClient } from "@workjet/client-runtime/rpc";
+import { ManagedRelay } from "@workjet/client-runtime/relay";
 
 import {
   readPrimaryEnvironmentDescriptor,
@@ -285,7 +285,7 @@ export function listManagedCloudEnvironments(input: {
     const configuredRelayUrl = relayUrl();
     if (!configuredRelayUrl) {
       return yield* new CloudEnvironmentLinkError({
-        message: "T3CODE_RELAY_URL is not configured.",
+        message: "WORKJET_RELAY_URL is not configured.",
       });
     }
     const relayClient = yield* ManagedRelay.ManagedRelayClient;
@@ -315,7 +315,7 @@ export function listCloudDevices(input: {
   return Effect.gen(function* () {
     if (!relayUrl()) {
       return yield* new CloudEnvironmentLinkError({
-        message: "T3CODE_RELAY_URL is not configured.",
+        message: "WORKJET_RELAY_URL is not configured.",
       });
     }
     const relayClient = yield* ManagedRelay.ManagedRelayClient;
@@ -412,7 +412,7 @@ export function linkPrimaryEnvironmentToCloud(input: {
     const configuredRelayUrl = relayUrl();
     if (!configuredRelayUrl) {
       return yield* new CloudEnvironmentLinkError({
-        message: "T3CODE_RELAY_URL is not configured.",
+        message: "WORKJET_RELAY_URL is not configured.",
       });
     }
     const managedTunnelsEnabled = (input.mode ?? "managed") === "managed";

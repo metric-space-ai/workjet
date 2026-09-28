@@ -5,10 +5,12 @@ import {
   EnvironmentId,
   NonNegativeInt,
   PositiveInt,
+  ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
+import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
 
 export const WorkjetThreadRole = Schema.Literals(["standard", "orchestrator", "worker"]);
 export type WorkjetThreadRole = typeof WorkjetThreadRole.Type;
@@ -18,6 +20,7 @@ export const WorkjetCapabilityId = Schema.Literals([
   "web-search",
   "web-stack-browser",
   "decision-hub",
+  "ctox-business-os",
 ]);
 export type WorkjetCapabilityId = typeof WorkjetCapabilityId.Type;
 
@@ -51,6 +54,7 @@ export type WorkjetConnectionSummary = typeof WorkjetConnectionSummary.Type;
 export const WorkjetCtoxConnectionBindingTarget = Schema.Struct({
   kind: Schema.Literal("ctox-connection"),
   connectionId: WorkjetConnectionId,
+  instanceId: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
 });
 export type WorkjetCtoxConnectionBindingTarget = typeof WorkjetCtoxConnectionBindingTarget.Type;
 
@@ -84,7 +88,7 @@ export type WorkjetHarness = typeof WorkjetHarness.Type;
 /** Presentation only. The referenced Code environment remains transport authority. */
 export const WorkjetComputerPresentationKind = Schema.Literals([
   "local",
-  "t3-connect",
+  "workjet-connect",
   "ssh",
   "tailscale",
   "remote",
@@ -936,11 +940,39 @@ export const WorkjetThreadCtoxSession = Schema.Struct({
 });
 export type WorkjetThreadCtoxSession = typeof WorkjetThreadCtoxSession.Type;
 
+/** A project/working-copy identity confirmed by the selected native guest's
+ * session.create response. The Workjet project may have a different physical
+ * id on another computer; never infer the native project from that id alone.
+ */
+export const WorkjetThreadCtoxProject = Schema.Struct({
+  codeProjectId: ProjectId,
+  codeThreadId: ThreadId,
+  presentationInstanceId: WorkjetThreadCtoxText(512),
+  businessOsInstanceId: BusinessOsInstanceId,
+  nativeProjectId: WorkjetThreadCtoxText(128),
+  workingCopyId: WorkjetThreadCtoxText(160),
+  nativeSessionId: WorkjetThreadCtoxText(160),
+});
+export type WorkjetThreadCtoxProject = typeof WorkjetThreadCtoxProject.Type;
+
+/** A selected native private Crew chat, not a transfer session or an execution
+ * attempt. These are references only: CTOX authorizes the chat and admits each
+ * attempt. Absence preserves an ordinary Dev thread. App backlinks stay separate.
+ */
+export const WorkjetThreadCtoxCrewChat = Schema.Struct({
+  instanceId: WorkjetThreadCtoxText(512),
+  connectionId: WorkjetConnectionId,
+  chatId: WorkjetThreadCtoxText(256).check(Schema.isPattern(/^workjet_private_.+/)),
+});
+export type WorkjetThreadCtoxCrewChat = typeof WorkjetThreadCtoxCrewChat.Type;
+
 const WorkjetThreadConfigV2BaseFields = {
   schemaVersion: Schema.Literal(2),
   managedInstructions: Schema.String,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
+  ctoxCrewChat: Schema.optionalKey(WorkjetThreadCtoxCrewChat),
+  ctoxProject: Schema.optionalKey(WorkjetThreadCtoxProject),
   ctoxSession: Schema.optionalKey(Schema.NullOr(WorkjetThreadCtoxSession)).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1178,6 +1210,69 @@ export const WorkjetGatewayCatalog = Schema.Struct({
   ),
 });
 export type WorkjetGatewayCatalog = typeof WorkjetGatewayCatalog.Type;
+
+/** A catalog grant names one selected CTOX instance and one execution computer. */
+export const WorkjetGatewayGrantTarget = Schema.Struct({
+  connectionId: WorkjetConnectionId,
+  instanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  computerId: WorkjetComputerId.check(Schema.isMaxLength(256)),
+});
+export type WorkjetGatewayGrantTarget = typeof WorkjetGatewayGrantTarget.Type;
+
+/** Logical identities only: credential material and secret-store names never cross this boundary. */
+export const WorkjetGatewayProviderRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  provider: WorkjetGatewayProvider,
+});
+export type WorkjetGatewayProviderRef = typeof WorkjetGatewayProviderRef.Type;
+
+export const WorkjetGatewayModelRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  provider: WorkjetGatewayProvider,
+  modelId: TrimmedNonEmptyString,
+});
+export type WorkjetGatewayModelRef = typeof WorkjetGatewayModelRef.Type;
+
+export const WorkjetGatewayCredentialRef = Schema.Struct({
+  environmentId: EnvironmentId,
+  accountId: WorkjetGatewayAccountId,
+});
+export type WorkjetGatewayCredentialRef = typeof WorkjetGatewayCredentialRef.Type;
+
+export const WorkjetGatewayScopedAccount = Schema.Struct({
+  credentialRef: WorkjetGatewayCredentialRef,
+  providerRef: WorkjetGatewayProviderRef,
+  label: TrimmedNonEmptyString,
+  modelRefs: Schema.Array(WorkjetGatewayModelRef),
+});
+export type WorkjetGatewayScopedAccount = typeof WorkjetGatewayScopedAccount.Type;
+
+export const WorkjetGatewayScopedCatalog = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  target: WorkjetGatewayGrantTarget,
+  accounts: Schema.Array(WorkjetGatewayScopedAccount),
+});
+export type WorkjetGatewayScopedCatalog = typeof WorkjetGatewayScopedCatalog.Type;
+
+export const WorkjetGatewaySetGrantInput = Schema.Struct({
+  target: WorkjetGatewayGrantTarget,
+  accountId: WorkjetGatewayAccountId,
+  granted: Schema.Boolean,
+});
+export type WorkjetGatewaySetGrantInput = typeof WorkjetGatewaySetGrantInput.Type;
+
+export const WorkjetGatewaySetGrantResult = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  target: WorkjetGatewayGrantTarget,
+  accountId: WorkjetGatewayAccountId,
+  granted: Schema.Boolean,
+});
+export type WorkjetGatewaySetGrantResult = typeof WorkjetGatewaySetGrantResult.Type;
+
+export class WorkjetGatewayAccessError extends Schema.TaggedErrorClass<WorkjetGatewayAccessError>()(
+  "WorkjetGatewayAccessError",
+  { reason: Schema.Literals(["target-unavailable", "account-unavailable", "grants-unavailable"]) },
+) {}
 
 /**
  * Whether a health dimension is something the gateway host reports at all.

@@ -23,7 +23,7 @@ import type {
   WorkjetMeshOverviewPeer,
   WorkjetMeshPeerBinding,
   WorkjetMeshWorkspaceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon } from "lucide-react";
 import { useState } from "react";

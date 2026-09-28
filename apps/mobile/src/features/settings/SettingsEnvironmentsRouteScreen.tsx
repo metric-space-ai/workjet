@@ -1,7 +1,7 @@
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@workjet/contracts";
 import { useCallback, useEffect, useState } from "react";
 import { Platform, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -91,11 +91,11 @@ export function SettingsEnvironmentsRouteScreen() {
           {/* Android renders its own in-screen header instead of the native bar. */}
           <NativeStackScreenOptions options={{ headerShown: false }} />
           <AndroidScreenHeader
-            title="Environments"
+            title="Computers"
             onBack={() => navigation.goBack()}
             actions={[
               {
-                accessibilityLabel: "Add environment",
+                accessibilityLabel: "Add computer",
                 icon: "plus",
                 onPress: () =>
                   navigation.navigate("SettingsSheet", {
@@ -160,8 +160,8 @@ export function SettingsEnvironmentsRouteScreen() {
               />
             </View>
             <Text className="text-center text-sm leading-normal text-foreground-muted">
-              No environments connected yet.{"\n"}Tap{" "}
-              <Text className="font-t3-bold text-foreground">+</Text> to add one.
+              No computers connected yet.{"\n"}Tap{" "}
+              <Text className="font-workjet-bold text-foreground">+</Text> to add one.
             </Text>
           </View>
         )}

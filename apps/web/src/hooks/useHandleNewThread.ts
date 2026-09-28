@@ -3,19 +3,19 @@ import {
   scopedProjectKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@workjet/client-runtime/environment";
 import {
   squashAtomCommandFailure,
   type AtomCommand,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+} from "@workjet/client-runtime/state/runtime";
+import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
 import {
   DEFAULT_RUNTIME_MODE,
   type ProjectId,
   type ScopedProjectRef,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -33,10 +33,10 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
+import { resolveDefaultThreadEnvMode } from "@workjet/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThread } from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
-import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
+import { readWorkjetProjectFileDefaultThreadEnvMode } from "../lib/workjetProjectFileDefaults";
 import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
@@ -288,7 +288,7 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
-      // The shared resolver owns the priority order. The t3.json read is
+      // The shared resolver owns the priority order. The workjet.json read is
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
@@ -296,7 +296,7 @@ export function useNewThreadHandler() {
         return resolveDefaultThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,
           projectFile: consultProjectFile
-            ? await readT3ProjectFileDefaultThreadEnvMode(
+            ? await readWorkjetProjectFileDefaultThreadEnvMode(
                 project.environmentId,
                 project.workspaceRoot,
               )

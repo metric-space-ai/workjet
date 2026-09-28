@@ -1,5 +1,5 @@
-import type { ComposerTriggerKind } from "@t3tools/shared/composerTrigger";
-import type { ServerProviderSkill, ServerProviderSlashCommand } from "@t3tools/contracts";
+import type { ComposerTriggerKind } from "@workjet/shared/composerTrigger";
+import type { ServerProviderSkill, ServerProviderSlashCommand } from "@workjet/contracts";
 import { SymbolView } from "../../components/AppSymbol";
 import { memo } from "react";
 import { Pressable, ScrollView, useColorScheme, View, type ViewStyle } from "react-native";
@@ -135,7 +135,7 @@ const CommandRow = memo(function CommandRow(props: {
       ) : iconName ? (
         <SymbolView name={iconName} size={14} tintColor={iconColor} type="monochrome" />
       ) : null}
-      <Text className="shrink-0 text-base font-t3-medium text-foreground" numberOfLines={1}>
+      <Text className="shrink-0 text-base font-workjet-medium text-foreground" numberOfLines={1}>
         {props.item.label}
       </Text>
       {props.item.description ? (
@@ -157,7 +157,7 @@ export const ComposerCommandPopover = memo(function ComposerCommandPopover(
     <PopoverSurface isDarkMode={isDarkMode}>
       {label ? (
         <View className="px-3.5 pt-2.5 pb-1">
-          <Text className="text-3xs font-t3-bold tracking-[0.8px] uppercase text-foreground-muted">
+          <Text className="text-3xs font-workjet-bold tracking-[0.8px] uppercase text-foreground-muted">
             {label}
           </Text>
         </View>

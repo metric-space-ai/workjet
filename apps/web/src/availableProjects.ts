@@ -1,12 +1,12 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
 import type {
   CtoxWorkjetProjectProjection,
   EnvironmentId,
   ProjectId,
   ScopedProjectRef,
   WorkjetComputer,
-} from "@t3tools/contracts";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+} from "@workjet/contracts";
+import { scopeProjectRef } from "@workjet/client-runtime/environment";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
 

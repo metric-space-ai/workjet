@@ -1,6 +1,6 @@
 # Customize a project icon
 
-Workjet selects a project icon automatically. It checks `t3.json`, common favicon and app icon
+Workjet selects a project icon automatically. It checks `workjet.json`, common favicon and app icon
 paths, and icon links in project HTML files.
 
 To choose a different icon:

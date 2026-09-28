@@ -30,7 +30,7 @@ export class CtoxServiceAuth extends Context.Service<
   {
     readonly isAuthorized: (authorization: string | undefined) => Effect.Effect<boolean>;
   }
->()("t3code-relay/auth/CtoxServiceAuth") {}
+>()("workjet-relay/auth/CtoxServiceAuth") {}
 
 export const layer = Layer.effect(
   CtoxServiceAuth,

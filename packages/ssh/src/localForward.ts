@@ -1,7 +1,7 @@
 import * as NodeNet from "node:net";
 
-import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
-import * as NetService from "@t3tools/shared/Net";
+import type { DesktopSshEnvironmentTarget } from "@workjet/contracts";
+import * as NetService from "@workjet/shared/Net";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -25,10 +25,10 @@ import { SshCommandError, SshInvalidTargetError, SshTunnelError } from "./errors
  * The server-agnostic `ssh -L` local forward.
  *
  * `startSshTunnel` in `./tunnel.ts` used to be the only forward in the repo,
- * but it is a *T3 server* forward: it takes an HTTP base URL, gates readiness
+ * but it is a *Workjet server* forward: it takes an HTTP base URL, gates readiness
  * on an HTTP probe, and lives inside `SshEnvironmentManager`'s tunnel registry.
  * Anything else that needs a remote loopback port — a CTOX daemon's signaling
- * socket, for one — needs the forward without the T3 opinions.
+ * socket, for one — needs the forward without the Workjet opinions.
  *
  * So the spawn and the exit-monitor are extracted here and shared: `tunnel.ts`
  * imports `spawnSshLocalForwardProcess` and `sshLocalForwardExitFailure` rather
@@ -90,7 +90,7 @@ export interface SshLocalForwardProcess {
 
 /**
  * Spawns `ssh -N -L <local>:127.0.0.1:<remote>` into the ambient scope. Both
- * the T3 tunnel and the generic forward go through here so the two can never
+ * the Workjet tunnel and the generic forward go through here so the two can never
  * drift apart on host-key handling, keep-alives, or control-socket policy.
  */
 export const spawnSshLocalForwardProcess = Effect.fn(

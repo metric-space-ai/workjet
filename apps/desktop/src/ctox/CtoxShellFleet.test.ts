@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxShellFleetRow } from "@t3tools/contracts";
+import type { CtoxShellFleetRow } from "@workjet/contracts";
 import { describe, it } from "@effect/vitest";
 import { expect } from "vite-plus/test";
 

@@ -12,19 +12,21 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Socket from "effect/unstable/socket/Socket";
-import { RpcSessionFactoryLive } from "@t3tools/client-runtime/rpc";
+import { RpcSessionFactoryLive } from "@workjet/client-runtime/rpc";
 
 import * as Electron from "electron";
 
-import * as NetService from "@t3tools/shared/Net";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveRemoteT3CliPackageSpec } from "@t3tools/ssh/command";
-import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
+import * as NetService from "@workjet/shared/Net";
+import { HostProcessArchitecture, HostProcessPlatform } from "@workjet/shared/hostProcess";
+import { resolveRemoteWorkjetCliPackageSpec } from "@workjet/ssh/command";
+import type { RemoteWorkjetRunnerOptions } from "@workjet/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as CtoxAppRail from "./ctox/CtoxAppRail.ts";
 import * as CtoxBusinessOsShell from "./ctox/CtoxBusinessOsShell.ts";
+import * as CtoxAccountLifecycle from "./ctox/CtoxAccountLifecycle.ts";
+import * as CtoxNativeIdentityResolver from "./ctox/CtoxNativeIdentityResolver.ts";
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
@@ -107,8 +109,8 @@ const desktopEnvironmentLayer = Layer.unwrap(
 const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
   settings: DesktopAppSettings.DesktopSettings,
-): RemoteT3RunnerOptions => {
-  const devRemoteEntryPath = Option.getOrUndefined(environment.devRemoteT3ServerEntryPath);
+): RemoteWorkjetRunnerOptions => {
+  const devRemoteEntryPath = Option.getOrUndefined(environment.devRemoteWorkjetServerEntryPath);
   if (environment.isDevelopment && devRemoteEntryPath !== undefined) {
     return {
       nodeScriptPath: devRemoteEntryPath,
@@ -116,12 +118,13 @@ const resolveDesktopSshCliRunner = (
     };
   }
   return {
-    packageSpec: resolveRemoteT3CliPackageSpec({
+    packageSpec: resolveRemoteWorkjetCliPackageSpec({
       appVersion: environment.appVersion,
       updateChannel: settings.updateChannel,
       isDevelopment: environment.isDevelopment,
     }),
     nodeEngineRange: serverPackageJson.engines.node,
+    portableArchivesDirectory: environment.path.join(environment.resourcesPath, "ssh-servers"),
   };
 };
 
@@ -213,6 +216,7 @@ const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
 // registry instance, so the registry is provided to (and re-exported by) the
 // merged control layer rather than merged beside it.
 const desktopCtoxControlLayer = Layer.mergeAll(
+  CtoxNativeIdentityResolver.layer(),
   CtoxBusinessOsShell.layer,
   CtoxDevAuth.layer(),
   CtoxAppRail.layer(),
@@ -220,6 +224,7 @@ const desktopCtoxControlLayer = Layer.mergeAll(
   CtoxLocalDaemonLaunch.layer(),
   CtoxSshManagedLaunch.layer(),
 ).pipe(
+  Layer.provideMerge(CtoxAccountLifecycle.layer),
   Layer.provideMerge(
     CtoxInstanceRegistry.layer({
       localDaemon: {

@@ -303,7 +303,7 @@ describe("CTOX renderer contracts", () => {
     expect(decode({ action: "binding.list" })).toEqual({ action: "binding.list" });
     expect(() => decode({ action: "invite.create", ttlSeconds: 59 })).toThrow();
     expect(() => decode({ action: "binding.list", environmentId: "primary" })).toThrow();
-    expect(() => decode({ action: "connect", url: "https://relay.t3.codes" })).toThrow();
+    expect(() => decode({ action: "connect", url: "https://relay.workjet.codes" })).toThrow();
   });
 
   it("accepts all bounded Workjet session-control actions", () => {

@@ -9,7 +9,7 @@ without duplicating local data.
 
 The user-visible name is `Workjet`. `CTOX` names the backend/daemon only. New
 links use `workjet://` (or the matching development/preview variant). Existing
-`ctox-mobile*://`, `ctox-business-os-mobile://pair` and `t3code*://` inputs are
+`ctox-mobile*://`, `ctox-business-os-mobile://pair` and `workjet*://` inputs are
 accepted and normalized during the migration window.
 
 ## Donor provenance
@@ -74,7 +74,7 @@ selects an authenticated, unambiguous environment and creates a fresh
 request-bound proof for relay-managed DPoP connections; Mobile does not read or
 reimplement bearer, cookie or DPoP credentials.
 
-The Mobile registry uses the existing `t3code-client.db` identity and adds
+The Mobile registry uses the existing `workjet-client.db` identity and adds
 `business_os_instances` plus a singleton selection row. Room passwords and
 capability tokens are stored only under opaque, device-bound Expo SecureStore
 references. Re-pairing writes both new secrets and the registry row before old
@@ -166,7 +166,7 @@ Backend.
   timestamp; no WebView screenshot, record or secret crosses the native
   boundary.
 - The per-instance layout, dock, folders and Recents live in the existing
-  `t3code-client.db` data identity. Forgetting an instance deletes this row in
+  `workjet-client.db` data identity. Forgetting an instance deletes this row in
   addition to its secrets and isolated WebView profile.
 - The versioned `workjet.business-os-shell.v1` bridge accepts only host
   configuration, catalog, app lifecycle, back, declared action and aggregate

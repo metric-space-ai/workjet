@@ -22,7 +22,7 @@
  *
  * @module WorkerWorktreeCleanup
  */
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -92,7 +92,7 @@ export interface WorkerWorktreeCleanupShape {
 export class WorkerWorktreeCleanup extends Context.Service<
   WorkerWorktreeCleanup,
   WorkerWorktreeCleanupShape
->()("t3/workjet/WorkerWorktreeCleanup") {}
+>()("workjet/workjet/WorkerWorktreeCleanup") {}
 
 /** Strictly beneath `root` — the root itself is never a removal target. */
 const isStrictlyWithin = (path: Path.Path, candidate: string, root: string): boolean => {

@@ -149,7 +149,7 @@ function runPhase(
 }
 
 export function main(): number {
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone native keychain probe has no Effect runtime; capture the host boundary once.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone native keychain probe has no Effect runtime; capture the host boundary once.
   const hostPlatform = process.platform;
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "keychain-smoke-"));
   const filePath = NodePath.join(directory, "ciphertext.bin");

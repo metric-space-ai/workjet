@@ -14,7 +14,7 @@ import {
   type CanonicalCapabilityProjection,
   type CapabilityProjectionDivergence,
 } from "@metric-space-ai/workjet-capabilities";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/unstable/ai";
@@ -39,7 +39,7 @@ import * as WebStackTool from "./WebStackTool.ts";
  *
  * WHAT THE TWO LEGS ACTUALLY ARE.
  *
- *   Code leg (`t3-mcp`)  — REAL. Every case below is driven through the
+ *   Code leg (`workjet-mcp`)  — REAL. Every case below is driven through the
  *     production MCP registrations in `GreppyTool.ts` and `WebStackTool.ts` via
  *     `server.callTool`, with the capability core stubbed so the comparison is
  *     about the ADAPTER's projection, not about the network.
@@ -243,7 +243,7 @@ const greppyCases: ReadonlyArray<ConformanceCase> = [
 const conformanceCases: ReadonlyArray<ConformanceCase> = [...greppyCases, ...webStackCases];
 
 // ---------------------------------------------------------------------------
-// The Code leg: the real T3 MCP adapter.
+// The Code leg: the real Workjet MCP adapter.
 // ---------------------------------------------------------------------------
 
 const client = McpSchema.McpServerClient.of({
@@ -431,7 +431,7 @@ describe("cross-host capability conformance gate", () => {
       for (const conformanceCase of conformanceCases) {
         assert.ok(
           registered.has(conformanceCase.tool),
-          `${conformanceCase.tool} is not a registered T3 MCP tool`,
+          `${conformanceCase.tool} is not a registered Workjet MCP tool`,
         );
       }
     }).pipe(Effect.provide(gateLayer)),

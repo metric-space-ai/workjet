@@ -1,9 +1,10 @@
 import {
   EventId,
+  retainWorkjetCtoxBinding,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -913,11 +914,18 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.workjet-config.set": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      const retained = retainWorkjetCtoxBinding(thread.workjetConfig, command.workjetConfig);
+      if (retained.error !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: retained.error,
+        });
+      }
       const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
@@ -929,7 +937,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.workjet-config-set",
         payload: {
           threadId: command.threadId,
-          workjetConfig: command.workjetConfig,
+          workjetConfig: retained.config,
           updatedAt: occurredAt,
         },
       };

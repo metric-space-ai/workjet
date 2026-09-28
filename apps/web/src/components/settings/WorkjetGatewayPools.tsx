@@ -8,7 +8,7 @@ import {
   type WorkjetGatewayProviderPool,
   type WorkjetGatewayRoutingStrategy,
   type WorkjetGatewayUpdateRoutingInput,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 

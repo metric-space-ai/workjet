@@ -10,7 +10,7 @@ import {
   type WorkjetMailboxTimestamp,
   type WorkjetMeshPeerBinding,
   type WorkjetMeshWorkspaceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -412,7 +412,7 @@ export interface WorkjetMailboxTransportShape {
 export class WorkjetMailboxTransport extends Context.Service<
   WorkjetMailboxTransport,
   WorkjetMailboxTransportShape
->()("t3/workjet/mailbox/WorkjetMailboxTransport") {}
+>()("workjet/workjet/mailbox/WorkjetMailboxTransport") {}
 
 // ===============================
 // Daemon descriptor

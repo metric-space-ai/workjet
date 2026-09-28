@@ -3,7 +3,7 @@ import {
   EnvironmentId,
   WorkjetGreppyOperationError,
   type GreppyRuntimeSnapshot,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { renderToStaticMarkup } from "react-dom/server";

@@ -62,13 +62,16 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
+  WorkjetGatewayAccessError,
+  type WorkjetGatewayGrantTarget,
   WorkjetDecisionHubConnectionError,
+  WorkjetCrossModeError,
   WORKJET_MESH_OVERVIEW_MAX_PEERS,
   WORKJET_MESH_ROSTER_MAX_PEERS,
   WS_METHODS,
   WsRpcGroup,
-} from "@t3tools/contracts";
-import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+} from "@workjet/contracts";
+import { resolveServerBackgroundActivitySettings } from "@workjet/shared/backgroundActivitySettings";
 import { validateCapabilityActivation } from "@metric-space-ai/workjet-capabilities";
 import { HttpRouter, HttpServerRequest, HttpServerRespondable } from "effect/unstable/http";
 import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
@@ -90,6 +93,7 @@ import * as WorkjetCrossModeLinkStore from "./workjet/crossmode/WorkjetCrossMode
 import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts";
 import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
+import { requireCtoxConnectionInstance } from "./workjet/ctox/CtoxConnectionBinding.ts";
 import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
 import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
 import * as WorkjetSessionImport from "./workjet/sessionImport/WorkjetSessionImport.ts";
@@ -154,7 +158,7 @@ import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
-import * as RelayClient from "@t3tools/shared/relayClient";
+import * as RelayClient from "@workjet/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -463,6 +467,19 @@ const makeWsRpcLayer = (
       const usage = yield* UsageService.UsageService;
       const greppyRuntime = yield* GreppyRuntime.GreppyRuntime;
       const providerGateway = yield* ProviderGateway.ProviderGatewayService;
+      const requireGatewayGrantTarget = Effect.fn("gateway.requireGrantTarget")(function* (
+        target: WorkjetGatewayGrantTarget,
+      ) {
+        const settings = yield* serverSettings.getSettings.pipe(
+          Effect.mapError(() => new WorkjetGatewayAccessError({ reason: "target-unavailable" })),
+        );
+        if (!settings.workjet.computers.some((computer) => computer.id === target.computerId)) {
+          return yield* new WorkjetGatewayAccessError({ reason: "target-unavailable" });
+        }
+        yield* requireCtoxConnectionInstance(target.connectionId, target.instanceId).pipe(
+          Effect.mapError(() => new WorkjetGatewayAccessError({ reason: "target-unavailable" })),
+        );
+      });
       const decisionHubConnections = yield* Effect.serviceOption(
         DecisionHubConnectionRegistry.DecisionHubConnectionRegistry,
       );
@@ -610,6 +627,12 @@ const makeWsRpcLayer = (
         environmentId: yield* serverEnvironment.getEnvironmentId,
         nowIso,
         randomUUID: crypto.randomUUIDv4.pipe(Effect.orDie),
+        verifyBrowserOpsConnection: (connectionId, instanceId) =>
+          withDecisionHubConnections((registry) =>
+            registry.verifyReadyTarget(connectionId, instanceId),
+          ).pipe(
+            Effect.mapError(() => new WorkjetCrossModeError({ reason: "unverified-authority" })),
+          ),
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1896,6 +1919,24 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.workjetGatewayCatalog, providerGateway.catalog(), {
             "rpc.aggregate": "workjet-provider-gateway",
           }),
+        [WS_METHODS.workjetGatewayScopedCatalog]: ({ target }) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewayScopedCatalog,
+            Effect.gen(function* () {
+              yield* requireGatewayGrantTarget(target);
+              const environmentId = yield* serverEnvironment.getEnvironmentId;
+              return yield* providerGateway.scopedCatalog(target, environmentId);
+            }),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
+        [WS_METHODS.workjetGatewaySetGrant]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetGatewaySetGrant,
+            requireGatewayGrantTarget(input.target).pipe(
+              Effect.andThen(providerGateway.setGrant(input)),
+            ),
+            { "rpc.aggregate": "workjet-provider-gateway" },
+          ),
         [WS_METHODS.workjetGatewayStart]: (_input) =>
           observeRpcEffect(WS_METHODS.workjetGatewayStart, providerGateway.start(), {
             "rpc.aggregate": "workjet-provider-gateway",
@@ -2048,6 +2089,12 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.workjetCrossModeGetThreadLink,
             workjetCrossMode.getThreadLink(input),
+            { "rpc.aggregate": "workjet-crossmode" },
+          ),
+        [WS_METHODS.workjetCrossModeResolveBrowserOps]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCrossModeResolveBrowserOps,
+            workjetCrossMode.resolveBrowserOps(input),
             { "rpc.aggregate": "workjet-crossmode" },
           ),
         [WS_METHODS.workjetCrossModeListLinks]: (input) =>

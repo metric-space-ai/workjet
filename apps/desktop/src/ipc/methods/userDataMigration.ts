@@ -17,6 +17,7 @@ export const DesktopUserDataMigrationOfferSchema = Schema.NullOr(
     targetPath: Schema.String,
     /** Top-level entries the import would copy. The legacy directory is never modified. */
     entries: Schema.Array(Schema.String),
+    previousAttemptFailed: Schema.optionalKey(Schema.Boolean),
   }),
 );
 export type DesktopUserDataMigrationOffer = typeof DesktopUserDataMigrationOfferSchema.Type;
@@ -33,6 +34,7 @@ export const getUserDataMigrationOffer = makeIpcMethod({
         legacyPath: offer.legacyPath,
         targetPath: offer.targetPath,
         entries: DesktopUserDataMigration.USER_DATA_MIGRATION_ALLOWLIST,
+        previousAttemptFailed: offer.previousAttemptFailed ?? false,
       }),
     });
   }),

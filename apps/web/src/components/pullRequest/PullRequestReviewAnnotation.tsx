@@ -7,7 +7,7 @@ import type {
   PullRequestRef,
   PullRequestReviewThread,
   PullRequestThreadComment,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   CheckCircle2Icon,
   CircleIcon,

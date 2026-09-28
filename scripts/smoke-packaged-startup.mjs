@@ -1,4 +1,4 @@
-// oxlint-disable t3code/no-global-process-runtime -- Standalone CI process boundary with a fresh temporary profile.
+// oxlint-disable workjet/no-global-process-runtime -- Standalone CI process boundary with a fresh temporary profile.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
@@ -61,7 +61,7 @@ async function renderedWindow(debugPort) {
     (item) =>
       item.type === "page" &&
       typeof item.url === "string" &&
-      item.url.startsWith("t3code://app/") &&
+      item.url.startsWith("workjet://app/") &&
       typeof item.webSocketDebuggerUrl === "string",
   );
   if (!target) return false;
@@ -95,9 +95,9 @@ async function main() {
   await Promise.all([debug.close(), backend.close()]);
   const env = {
     ...process.env,
-    T3CODE_DESKTOP_APP_DATA_DIR: NodePath.join(root, "app-data"),
-    T3CODE_HOME: NodePath.join(root, "home"),
-    T3CODE_PORT: String(backend.port),
+    WORKJET_DESKTOP_APP_DATA_DIR: NodePath.join(root, "app-data"),
+    WORKJET_HOME: NodePath.join(root, "home"),
+    WORKJET_PORT: String(backend.port),
   };
   delete env.ELECTRON_RUN_AS_NODE;
   const child = NodeChildProcess.spawn(

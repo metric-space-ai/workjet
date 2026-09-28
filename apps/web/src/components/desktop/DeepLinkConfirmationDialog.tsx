@@ -1,4 +1,4 @@
-import type { DesktopPendingDeepLink } from "@t3tools/contracts";
+import type { DesktopPendingDeepLink } from "@workjet/contracts";
 import { useEffect, useState } from "react";
 
 import { Button } from "../ui/button";

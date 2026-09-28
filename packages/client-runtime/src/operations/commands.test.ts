@@ -6,7 +6,7 @@ import {
   ThreadId,
   type ClientOrchestrationCommand,
   type WorkjetThreadConfig,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

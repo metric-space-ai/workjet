@@ -40,7 +40,7 @@ import {
   type WorkjetLlmRoute,
   type WorkjetReasoningSelection,
   type WorkjetWorkerProfile,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import {
   LEGACY_WORKJET_FIELD_PATHS,
@@ -55,7 +55,7 @@ export interface LegacyWorkjetImportBindings {
   /**
    * Legacy computer id → the Code environment that machine actually is. The
    * legacy SSH/Tailscale connection details are deliberately NOT a source for
-   * this: T3 remains the environment authority.
+   * this: Workjet remains the environment authority.
    */
   readonly environmentByComputerId: Readonly<Record<string, EnvironmentId>>;
   /** Legacy provider id → provider-gateway account. */
@@ -384,7 +384,7 @@ export const LEGACY_WORKJET_MAPPING_TABLE: readonly LegacyWorkjetDecision[] = [
     destination: null,
     outcome: "dropped",
     reason:
-      "Swift SSH/snapshot sidecar deployment state. The plan forbids porting that protocol; T3 is the workspace authority.",
+      "Swift SSH/snapshot sidecar deployment state. The plan forbids porting that protocol; Workjet is the workspace authority.",
   },
   {
     source: "computers[].sidecarBundlePath",

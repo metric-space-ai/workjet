@@ -7,7 +7,7 @@ import {
   WorkjetProvisioningSnapshot,
   WorkjetProvisioningStartInput,
   WorkjetProvisioningTarget,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 const RecordSchema = Schema.Struct({

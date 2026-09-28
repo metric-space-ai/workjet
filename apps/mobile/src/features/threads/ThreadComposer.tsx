@@ -5,14 +5,14 @@ import type {
   OrchestrationThreadShell,
   ProviderInteractionMode,
   RuntimeMode,
-  ServerConfig as T3ServerConfig,
-} from "@t3tools/contracts";
+  ServerConfig as WorkjetServerConfig,
+} from "@workjet/contracts";
 import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
   type ComposerTrigger,
-} from "@t3tools/shared/composerTrigger";
+} from "@workjet/shared/composerTrigger";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -62,7 +62,7 @@ import {
   insertRankedSearchResult,
   normalizeSearchQuery,
   scoreQueryMatch,
-} from "@t3tools/shared/searchRanking";
+} from "@workjet/shared/searchRanking";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
@@ -103,7 +103,7 @@ export interface ThreadComposerProps {
    */
   readonly threadSyncPhase?: "loading" | "syncing" | null;
   readonly selectedThread: OrchestrationThreadShell;
-  readonly serverConfig: T3ServerConfig | null;
+  readonly serverConfig: WorkjetServerConfig | null;
   readonly queueCount: number;
   readonly activeThreadBusy: boolean;
   readonly environmentId: EnvironmentId;
@@ -255,7 +255,7 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
           <View className="h-2 w-2 rounded-full bg-red-500" />
         )}
         <Text
-          className="max-w-[260px] text-sm font-t3-bold leading-snug text-foreground"
+          className="max-w-[260px] text-sm font-workjet-bold leading-snug text-foreground"
           numberOfLines={1}
         >
           {props.status.label}
@@ -824,7 +824,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               ))}
               {props.draftAttachments.length > 3 ? (
                 <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
-                  <Text className="text-foreground-muted text-2xs font-t3-bold">
+                  <Text className="text-foreground-muted text-2xs font-workjet-bold">
                     +{props.draftAttachments.length - 3}
                   </Text>
                 </View>

@@ -16,7 +16,7 @@ import {
   type WorkjetPromptSnapshotRef,
   type WorkjetRoutingEnvelope,
   type WorkjetWorkerAddress,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

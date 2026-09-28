@@ -3,7 +3,7 @@ import {
   WorkjetLlmRouteId,
   type WorkjetGatewayAccountSummary,
   type WorkjetLlmRoute,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { useMemo, useState } from "react";
 
 import { randomUUID } from "../../lib/utils";

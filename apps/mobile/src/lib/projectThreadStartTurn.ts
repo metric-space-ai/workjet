@@ -7,7 +7,7 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
   DEFAULT_WORKJET_THREAD_CONFIG,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import { toUploadChatImageAttachments, type DraftComposerImageAttachment } from "./composerImages";
 

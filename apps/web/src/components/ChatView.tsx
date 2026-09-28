@@ -29,32 +29,32 @@ import {
   TerminalOpenInput,
   type WorkjetBusinessOsObjectId,
   type WorkjetBusinessOsObjectKind,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
-} from "@t3tools/client-runtime/connection";
+} from "@workjet/client-runtime/connection";
 import {
   changeRequestAutoSettles,
   effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
+} from "@workjet/client-runtime/state/thread-settled";
 import {
   parseScopedThreadKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@workjet/client-runtime/environment";
 import {
   applyClaudePromptEffortPrefix,
   createModelSelection,
   resolvePromptInjectedEffort,
-} from "@t3tools/shared/model";
-import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
-import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
-import { truncate } from "@t3tools/shared/String";
-import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+} from "@workjet/shared/model";
+import { CHAT_LIST_ANCHOR_OFFSET } from "@workjet/shared/chatList";
+import { projectScriptCwd, projectScriptRuntimeEnv } from "@workjet/shared/projectScripts";
+import { truncate } from "@workjet/shared/String";
+import { nextTerminalId, resolveTerminalSessionLabel } from "@workjet/shared/terminalLabels";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -77,7 +77,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
@@ -128,11 +128,10 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
+import { buildTemporaryWorktreeBranchName } from "@workjet/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
-  selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
   type RightPanelSurface,
@@ -162,7 +161,7 @@ import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
   foldSubagentActivities,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@workjet/client-runtime/state/subagentRuntime";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
@@ -176,6 +175,7 @@ import {
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -244,7 +244,7 @@ import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import {
   requestOlderThreadTurns,
   threadHasOlderTurns,
-} from "@t3tools/client-runtime/state/threads";
+} from "@workjet/client-runtime/state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useBusinessOsScopedEnvironments } from "../state/environments";
 import {
@@ -257,6 +257,10 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import {
+  visibleWorkjetRightPanelState,
+  workjetBrowserSurfaceEnabled,
+} from "../workjetSurfaceVisibility";
 import {
   executeWorkjetCapabilitySet,
   executeWorkjetCapabilityToggle,
@@ -1362,6 +1366,9 @@ function ChatViewContent(props: ChatViewProps) {
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
   );
+  const composerWorkjetConfig = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.workjetConfig ?? null,
+  );
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const setComposerDraftTerminalContexts = useComposerDraftStore(
@@ -1651,6 +1658,11 @@ function ChatViewContent(props: ChatViewProps) {
       ? (activeWorkjetConfigOverride?.config ?? activeServerThread.workjetConfig)
       : null;
   const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
+  const browserSurfaceEnabled = workjetBrowserSurfaceEnabled({
+    isServerThread,
+    serverConfig: visibleWorkjetConfig,
+    draftConfig: composerWorkjetConfig,
+  });
   // "Send to worker" exists only on an ORCHESTRATOR thread. That is the same
   // boundary the server enforces on the RPC, restated in the UI so a worker or
   // standard thread is never offered an action it would be refused.
@@ -2076,16 +2088,19 @@ function ChatViewContent(props: ChatViewProps) {
     setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
   }
   const timelineAnchorMessageId = timelineAnchor.messageId;
-  const activeRightPanelKind = useRightPanelStore((state) =>
-    selectActiveRightPanel(state.byThreadKey, activeThreadRef),
-  );
-  const diffOpen = activeRightPanelKind === "diff";
-  const rightPanelState = useRightPanelStore((state) =>
+  const storedRightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
-  const activeRightPanelSurface = useRightPanelStore((state) =>
-    selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
+  const rightPanelState = useMemo(
+    () => visibleWorkjetRightPanelState(storedRightPanelState, browserSurfaceEnabled),
+    [storedRightPanelState, browserSurfaceEnabled],
   );
+  const activeRightPanelSurface = rightPanelState.isOpen
+    ? (rightPanelState.surfaces.find((surface) => surface.id === rightPanelState.activeSurfaceId) ??
+      null)
+    : null;
+  const activeRightPanelKind = activeRightPanelSurface?.kind ?? null;
+  const diffOpen = activeRightPanelKind === "diff";
   const [pullRequestTabStatuses, setPullRequestTabStatuses] = useState<
     Record<string, PullRequestTabStatus>
   >({});
@@ -2141,7 +2156,7 @@ function ChatViewContent(props: ChatViewProps) {
       previewPanelOpen &&
       activeRightPanelSurface?.kind === "preview" &&
       activeRightPanelSurface.resourceId === activePreviewMiniPlayer.tabId;
-    if (!miniTabStillExists || sameTabOpenInPanel) {
+    if (!browserSurfaceEnabled || !miniTabStillExists || sameTabOpenInPanel) {
       usePreviewMiniPlayerStore.getState().close(activeThreadRef);
     }
   }, [
@@ -2150,6 +2165,7 @@ function ChatViewContent(props: ChatViewProps) {
     activeRightPanelSurface,
     activeThreadRef,
     previewPanelOpen,
+    browserSurfaceEnabled,
   ]);
 
   const existingOpenTerminalThreadKeys = useMemo(() => {
@@ -3925,9 +3941,9 @@ function ChatViewContent(props: ChatViewProps) {
     void navigate({ to: WORKJET_SETTINGS_ROUTE });
   }, [navigate]);
   const createBrowserSurface = useCallback(() => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || !browserSurfaceEnabled || !isPreviewSupportedInRuntime()) return;
     void addBrowserSurface({ threadRef: activeThreadRef, openPreview });
-  }, [activeThreadRef, openPreview]);
+  }, [activeThreadRef, browserSurfaceEnabled, openPreview]);
   const addDiffSurface = useCallback(() => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
     useRightPanelStore.getState().open(activeThreadRef, "diff");
@@ -4015,7 +4031,7 @@ function ChatViewContent(props: ChatViewProps) {
     [activeProject, activeThreadRef, supportsPullRequests, threadRepository],
   );
   const togglePreviewPanel = useCallback(() => {
-    if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
+    if (!activeThreadRef || !browserSurfaceEnabled || !isPreviewSupportedInRuntime()) return;
     if (previewPanelOpen) {
       useRightPanelStore.getState().close(activeThreadRef);
       return;
@@ -4026,7 +4042,13 @@ function ChatViewContent(props: ChatViewProps) {
     } else {
       createBrowserSurface();
     }
-  }, [activePreviewState.activeTabId, activeThreadRef, createBrowserSurface, previewPanelOpen]);
+  }, [
+    activePreviewState.activeTabId,
+    activeThreadRef,
+    browserSurfaceEnabled,
+    createBrowserSurface,
+    previewPanelOpen,
+  ]);
   const closePreviewPanel = useCallback(() => {
     if (activeThreadRef) {
       setMaximizedRightPanelThreadKey(null);
@@ -4133,7 +4155,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
-      if (!activeThreadRef) return;
+      if (!activeThreadRef || (surface.kind === "preview" && !browserSurfaceEnabled)) return;
       useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
       if (surface.kind === "preview" && surface.resourceId) {
         setActivePreviewTab(activeThreadRef, surface.resourceId);
@@ -4145,7 +4167,7 @@ function ChatViewContent(props: ChatViewProps) {
         onDiffPanelOpen?.();
       }
     },
-    [activeThreadRef, diffOpen, onDiffPanelOpen],
+    [activeThreadRef, browserSurfaceEnabled, diffOpen, onDiffPanelOpen],
   );
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
@@ -4193,7 +4215,7 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
   const syncActivePreviewSurface = useCallback(() => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || !browserSurfaceEnabled) return;
     const nextActiveSurface = selectActiveRightPanelSurface(
       useRightPanelStore.getState().byThreadKey,
       activeThreadRef,
@@ -4201,7 +4223,7 @@ function ChatViewContent(props: ChatViewProps) {
     if (nextActiveSurface?.kind === "preview" && nextActiveSurface.resourceId) {
       setActivePreviewTab(activeThreadRef, nextActiveSurface.resourceId);
     }
-  }, [activeThreadRef]);
+  }, [activeThreadRef, browserSurfaceEnabled]);
   const closeRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
@@ -4216,7 +4238,10 @@ function ChatViewContent(props: ChatViewProps) {
       if (!activeThreadRef) return;
       const surfaces = rightPanelState.surfaces.filter((entry) => entry.id !== surface.id);
       cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeOtherSurfaces(activeThreadRef, surface.id);
+      for (const entry of surfaces) {
+        useRightPanelStore.getState().closeSurface(activeThreadRef, entry.id);
+      }
+      useRightPanelStore.getState().activateSurface(activeThreadRef, surface.id);
       syncActivePreviewSurface();
     },
     [
@@ -4233,7 +4258,9 @@ function ChatViewContent(props: ChatViewProps) {
       if (surfaceIndex < 0) return;
       const surfaces = rightPanelState.surfaces.slice(surfaceIndex + 1);
       cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeSurfacesToRight(activeThreadRef, surface.id);
+      for (const entry of surfaces) {
+        useRightPanelStore.getState().closeSurface(activeThreadRef, entry.id);
+      }
       syncActivePreviewSurface();
     },
     [
@@ -4246,7 +4273,9 @@ function ChatViewContent(props: ChatViewProps) {
   const closeAllRightPanelSurfaces = useCallback(() => {
     if (!activeThreadRef) return;
     cleanupRightPanelSurfaces(rightPanelState.surfaces);
-    useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
+    for (const surface of rightPanelState.surfaces) {
+      useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
+    }
   }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
   const copyRightPanelFilePath = useCallback((relativePath: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
@@ -4644,7 +4673,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, []);
 
   // Anchored end space intentionally disables LegendList's normal end-follow so
-  // the sent message can stay near the top. T3 only owns streaming adjustments
+  // the sent message can stay near the top. Workjet only owns streaming adjustments
   // during that mode; LegendList owns ordinary end-follow everywhere else.
   useEffect(() => {
     if (!activeThread?.id) {
@@ -5728,7 +5757,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       return;
     }
-    const workjetConfigForFirstTurn =
+    const workjetConfigForFirstTurn: WorkjetThreadConfig =
       useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.workjetConfig ??
       DEFAULT_WORKJET_THREAD_CONFIG;
     if (
@@ -6043,7 +6072,11 @@ function ChatViewContent(props: ChatViewProps) {
                 const sessionResult = registration.kind === "result" ? registration.result : null;
                 const sessionRegistered =
                   sessionResult?._tag === "completed" &&
-                  sessionResult.response.action === "session.create";
+                  sessionResult.response.action === "session.create" &&
+                  sessionResult.response.session.projectId === ctoxSessionTarget.ctoxProjectId &&
+                  sessionResult.response.session.workingCopyId ===
+                    ctoxSessionTarget.workingCopyId &&
+                  sessionResult.response.session.threadId === activeThread.id;
                 if (!sessionRegistered) {
                   console.warn("CTOX session registration failed; continuing first turn.", {
                     instanceId: ctoxSessionTarget.instanceId,
@@ -6062,10 +6095,47 @@ function ChatViewContent(props: ChatViewProps) {
                     }),
                   );
                 }
+                const authorityPromise = sessionRegistered
+                  ? Promise.resolve().then(
+                      () =>
+                        window.desktopBridge?.ctox?.resolveInstanceAuthority?.(
+                          ctoxSessionTarget.instanceId,
+                        ) ?? null,
+                    )
+                  : undefined;
+                let authorityTimeout: ReturnType<typeof setTimeout> | null = null;
+                const authority = await Promise.race([
+                  authorityPromise?.catch(() => null) ?? Promise.resolve(null),
+                  new Promise<null>((resolve) => {
+                    authorityTimeout = setTimeout(() => resolve(null), 3_000);
+                  }),
+                ]);
+                if (authorityTimeout !== null) clearTimeout(authorityTimeout);
+                if (sessionRegistered && authority?._tag !== "completed") {
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "warning",
+                      title: "CTOX-Projektzuordnung nicht verfügbar",
+                      description:
+                        "Der Thread startet, aber Projektaufgaben benötigen eine bestätigte CTOX-Instanz.",
+                    }),
+                  );
+                }
                 return startFirstTurn(
                   withCtoxSessionBinding(workjetConfigForFirstTurn, {
                     instanceId: ctoxSessionTarget.instanceId,
-                    result: sessionResult,
+                    result: sessionRegistered ? sessionResult : null,
+                    ...(authority?._tag === "completed"
+                      ? {
+                          project: {
+                            codeProjectId: activeThread.projectId,
+                            codeThreadId: activeThread.id,
+                            businessOsInstanceId: authority.businessOsInstanceId,
+                            nativeProjectId: ctoxSessionTarget.ctoxProjectId,
+                            workingCopyId: ctoxSessionTarget.workingCopyId,
+                          },
+                        }
+                      : {}),
                   }),
                 );
               },
@@ -6965,7 +7035,7 @@ function ChatViewContent(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
-        <header
+        <WorkjetHeaderContent
           data-chat-header
           className={cn(
             "bg-background transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
@@ -6993,7 +7063,7 @@ function ChatViewContent(props: ChatViewProps) {
             rightPanelOpen={rightPanelOpen}
             onNewThreadInProject={handleNewThreadInActiveProject}
           />
-        </header>
+        </WorkjetHeaderContent>
 
         <ThreadErrorBanner
           error={visibleThreadError}
@@ -7330,7 +7400,7 @@ function ChatViewContent(props: ChatViewProps) {
               </div>
             </div>
 
-            {activeThreadRef && activePreviewMiniPlayer ? (
+            {browserSurfaceEnabled && activeThreadRef && activePreviewMiniPlayer ? (
               <ThreadPreviewMiniPlayer
                 key={`${activeThreadKey}:${activePreviewMiniPlayer.tabId}`}
                 threadRef={activeThreadRef}
@@ -7432,6 +7502,7 @@ function ChatViewContent(props: ChatViewProps) {
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
+          browserEnabled={browserSurfaceEnabled}
           browserAvailable={isPreviewSupportedInRuntime()}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
@@ -7467,6 +7538,7 @@ function ChatViewContent(props: ChatViewProps) {
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
+            browserEnabled={browserSurfaceEnabled}
             browserAvailable={isPreviewSupportedInRuntime()}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}

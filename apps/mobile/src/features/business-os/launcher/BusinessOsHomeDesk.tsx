@@ -79,7 +79,7 @@ function FolderIcon(props: {
           ) : null;
         })}
       </View>
-      <Text className="mt-1.5 text-center text-xs font-t3-medium" numberOfLines={1}>
+      <Text className="mt-1.5 text-center text-xs font-workjet-medium" numberOfLines={1}>
         {props.item.title}
       </Text>
     </Pressable>
@@ -169,7 +169,7 @@ function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
         <View className="flex-row items-end justify-between gap-4">
           <View className="min-w-0 flex-1">
             <BrandMark compact />
-            <Text className="mt-3 text-3xl font-t3-bold" numberOfLines={1}>
+            <Text className="mt-3 text-3xl font-workjet-bold" numberOfLines={1}>
               {props.instance.displayName}
             </Text>
             <Text className="mt-1 text-sm text-foreground-muted">
@@ -297,7 +297,7 @@ function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
           }}
           onPress={props.onOpenRecents}
         >
-          <Text className="text-xs font-t3-bold text-foreground-muted">RECENTS</Text>
+          <Text className="text-xs font-workjet-bold text-foreground-muted">RECENTS</Text>
         </Pressable>
         <BusinessOsPlatformDock>
           {props.layout.dock.map((appId) => {
@@ -328,7 +328,7 @@ function BusinessOsHomeDeskFallback(props: BusinessOsHomeDeskProps) {
             className="w-full max-w-[520px] rounded-[32px] bg-card p-6 shadow-2xl"
             onPress={(event) => event.stopPropagation()}
           >
-            <Text className="text-center text-xl font-t3-bold">{selectedFolder.title}</Text>
+            <Text className="text-center text-xl font-workjet-bold">{selectedFolder.title}</Text>
             <View className="mt-6 flex-row flex-wrap justify-center gap-4">
               {selectedFolder.appIds.map((appId) => {
                 const app = appsById.get(appId);

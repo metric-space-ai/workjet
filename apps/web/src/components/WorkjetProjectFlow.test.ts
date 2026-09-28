@@ -26,7 +26,12 @@ describe("CTOX-native project story", () => {
     const creation = commandPaletteSource.slice(start, end);
 
     expect(creation).toContain("await createProject");
-    expect(creation).toContain("unscopedProjects.filter");
+    expect(creation).toContain(".get(environmentProjects.projectsAtom)");
+    expect(creation).toContain(".filter((project) => project.environmentId === environmentId)");
+    expect(creation).not.toContain("unscopedProjects.filter");
+    expect(creation.indexOf("await listWorkjetProjects")).toBeLessThan(
+      creation.indexOf("await createProject"),
+    );
     expect(creation.indexOf("await createProject")).toBeLessThan(
       creation.indexOf("await runWorkjetProjectCreation"),
     );
@@ -59,7 +64,7 @@ describe("CTOX-native project story", () => {
     expect(commandPaletteSource).toContain(
       "void createLogicalProjectFromPath(resolvedAddProjectPath)",
     );
-    expect(commandPaletteSource).toContain("Adding the local project and syncing it with CTOX…");
+    expect(commandPaletteSource).toContain("ProjectCreationProgress stage={projectCreationStage}");
     expect(commandPaletteSource).toContain('aria-live="polite"');
   });
 

@@ -4,7 +4,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   WorkjetConnectionId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import type { McpInvocationScope } from "../../McpInvocationContext.ts";
 import { isDecisionHubToolVisible } from "./DecisionHubTool.ts";

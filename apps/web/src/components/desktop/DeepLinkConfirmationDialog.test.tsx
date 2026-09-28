@@ -1,4 +1,4 @@
-import type { DesktopPendingDeepLink } from "@t3tools/contracts";
+import type { DesktopPendingDeepLink } from "@workjet/contracts";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -7,7 +7,7 @@ import { DeepLinkConfirmationPrompt } from "./DeepLinkConfirmationDialog";
 const link: DesktopPendingDeepLink = {
   linkId: "deep-link-1",
   scheme: "ctox-desktop",
-  canonicalUrl: "t3code://app/threads/abc?tab=diff",
+  canonicalUrl: "workjet://app/threads/abc?tab=diff",
   path: "/threads/abc",
   search: "?tab=diff",
   hash: "",
@@ -49,7 +49,7 @@ describe("DeepLinkConfirmationPrompt", () => {
     const target = findByMarker(element, "data-deep-link-target");
     expect(target).not.toBeNull();
     expect(collectText(target?.["children"] as ReactNode)).toContain(
-      "t3code://app/threads/abc?tab=diff",
+      "workjet://app/threads/abc?tab=diff",
     );
     expect(collectText(element)).toContain("ctox-desktop");
   });

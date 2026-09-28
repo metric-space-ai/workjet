@@ -1,6 +1,6 @@
 import * as NodeCrypto from "node:crypto";
 
-import { normalizeRelayIssuer, verifyRelayJwt } from "@t3tools/shared/relayJwt";
+import { normalizeRelayIssuer, verifyRelayJwt } from "@workjet/shared/relayJwt";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -112,7 +112,7 @@ export class ControlIdentityAssertions extends Context.Service<
       ControlIdentityAssertionError
     >;
   }
->()("t3code-relay/workjet/ControlIdentityAssertions") {}
+>()("workjet-relay/workjet/ControlIdentityAssertions") {}
 
 const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;

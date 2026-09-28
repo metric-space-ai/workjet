@@ -132,7 +132,7 @@ describe("GreppySearch", () => {
             return Effect.succeed({
               executable: "/sensitive/resolved/greppy",
               source: "override",
-              storeDir: "/t3-state/greppy",
+              storeDir: "/workjet-state/greppy",
               cwd: "/canonical/project",
               status: "ready",
             });
@@ -168,7 +168,7 @@ describe("GreppySearch", () => {
         "find retries",
       ]);
       assert.equal(command?.options.cwd, "/canonical/project");
-      assert.deepEqual(command?.options.env, { GREPPY_STORE_DIR: "/t3-state/greppy" });
+      assert.deepEqual(command?.options.env, { GREPPY_STORE_DIR: "/workjet-state/greppy" });
       assert.equal(command?.options.extendEnv, true);
       assert.equal(command?.options.shell, false);
     }),

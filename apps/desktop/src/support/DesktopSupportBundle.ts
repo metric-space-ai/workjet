@@ -48,7 +48,7 @@ import {
   type SupportBundleGatewayAccount,
   type SupportBundleGatewaySection,
   type SupportBundleLogExcerpt,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -137,7 +137,7 @@ export class DesktopSupportBundle extends Context.Service<
     /** Collects, redacts, writes, and reports the exact path. */
     readonly create: Effect.Effect<DesktopSupportBundleResult, DesktopSupportBundleWriteError>;
   }
->()("@t3tools/desktop/support/DesktopSupportBundle") {}
+>()("@workjet/desktop/support/DesktopSupportBundle") {}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

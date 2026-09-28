@@ -66,7 +66,7 @@ describe("restart recovery verdict", () => {
   });
 
   it("refuses to pass if it did not use a disposable state directory", () => {
-    // A smoke that quietly ran against the developer's real T3CODE_HOME would
+    // A smoke that quietly ran against the developer's real WORKJET_HOME would
     // be destructive AND a false pass, so this is checked before anything
     // else and cannot be overridden by a good-looking result.
     const result = interpretRestartRecovery({

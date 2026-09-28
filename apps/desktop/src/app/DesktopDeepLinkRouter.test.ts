@@ -116,7 +116,7 @@ describe("DesktopDeepLinkRouter", () => {
         {
           linkId: "deep-link-1",
           scheme: "ctox-desktop",
-          canonicalUrl: "t3code://app/threads/abc?tab=diff#top",
+          canonicalUrl: "workjet://app/threads/abc?tab=diff#top",
           path: "/threads/abc",
           search: "?tab=diff",
           hash: "#top",
@@ -165,13 +165,13 @@ describe("DesktopDeepLinkRouter", () => {
 
       // Exactly the shape @clerk/electron builds: renderer scheme, host `app`,
       // path `/`, OAuth parameters in the query.
-      yield* openUrl(harness, "t3code://app/?code=oauth-code&state=xyz");
+      yield* openUrl(harness, "workjet://app/?code=oauth-code&state=xyz");
 
       assert.deepEqual(yield* router.takePending, []);
       assert.deepEqual(harness.preventedDefaults, []);
 
       // The same scheme WITH a path is a product deep link and is claimed.
-      yield* openUrl(harness, "t3code://app/threads/abc");
+      yield* openUrl(harness, "workjet://app/threads/abc");
       assert.equal((yield* router.takePending).length, 1);
     }),
   );
@@ -192,7 +192,7 @@ describe("DesktopDeepLinkRouter", () => {
       const delivered = yield* router.takePending;
       assert.deepEqual(
         delivered.map((link) => link.canonicalUrl),
-        ["t3code://app/threads/from-argv"],
+        ["workjet://app/threads/from-argv"],
       );
     }),
   );
@@ -233,14 +233,14 @@ describe("DesktopDeepLinkRouter", () => {
       const harness = makeHarness();
       const router = yield* makeRouter(harness, true);
 
-      yield* router.offer("t3code-dev://app/?code=oauth", "open-url");
+      yield* router.offer("workjet-dev://app/?code=oauth", "open-url");
       assert.deepEqual(yield* router.takePending, []);
 
       yield* router.offer("ctox-desktop-dev://app/threads/x", "open-url");
       const delivered = yield* router.takePending;
       assert.deepEqual(
         delivered.map((link) => link.canonicalUrl),
-        ["t3code-dev://app/threads/x"],
+        ["workjet-dev://app/threads/x"],
       );
     }),
   );
@@ -252,13 +252,13 @@ describe("extractDeepLinksFromArgv", () => {
       [
         ...DesktopDeepLinkRouter.extractDeepLinksFromArgv([
           "/usr/bin/ctox",
-          "t3code://app/a",
+          "workjet://app/a",
           "ctox://instance/pairing",
           "ctox-desktop://app/b?x=1",
           "--flag",
         ]),
       ],
-      ["t3code://app/a", "ctox-desktop://app/b?x=1"],
+      ["workjet://app/a", "ctox-desktop://app/b?x=1"],
     );
   });
 });

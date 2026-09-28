@@ -12,7 +12,7 @@
  * sequence is observable, and it is only observable if the sequence is not
  * tangled up in React effects.
  */
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@workjet/contracts";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback } from "react";
 

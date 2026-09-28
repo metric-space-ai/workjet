@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["WorkjetTerminalModule"],
+    "podspecPath": "WorkjetTerminalNative.podspec"
+  },
+  "android": {
+    "modules": ["expo.modules.workjetterminal.WorkjetTerminalModule"]
+  }
+}

@@ -47,7 +47,7 @@ export class BusinessOsMemberships extends Context.Service<
       readonly environmentId: string;
     }) => Effect.Effect<boolean, BusinessOsMembershipPersistenceError>;
   }
->()("t3code-relay/workjet/BusinessOsMemberships") {}
+>()("workjet-relay/workjet/BusinessOsMemberships") {}
 
 function sameSet(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
   return left.length === right.length && left.every((value) => right.includes(value));

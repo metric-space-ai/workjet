@@ -53,7 +53,7 @@ import {
   type WorkjetMeshRevokePeerInput,
   type WorkjetMeshRevokePeerResult,
   type WorkjetMeshWorkspaceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

@@ -2,7 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ServerSettings,
   type WorktreeStorageInspection,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -47,7 +47,7 @@ export class WorktreeStorage extends Context.Service<
     }) => Effect.Effect<string, WorktreeStorageUnavailableError>;
     readonly trustedRoots: Effect.Effect<ReadonlyArray<string>>;
   }
->()("t3/worktree/WorktreeStorage") {}
+>()("workjet/worktree/WorktreeStorage") {}
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;

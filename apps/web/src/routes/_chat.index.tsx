@@ -1,4 +1,9 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  InstanceOnboarding,
+  resolveInstanceOnboardingState,
+} from "../components/ctox/InstanceOnboarding";
+import { useCtoxMode } from "../components/ctox/CtoxModeShell";
+import { scopeProjectRef } from "@workjet/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { FolderPlusIcon, LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +13,7 @@ import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
+import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import {
   useAllEnvironmentShellsBootstrapped,
@@ -25,6 +31,14 @@ import { useActiveWorkjetScope } from "../activeWorkjetScope";
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const { environments } = useBusinessOsScopedEnvironments();
+  const mode = useCtoxMode();
+  const onboarding = resolveInstanceOnboardingState(
+    mode.discovery,
+    mode.selectedId,
+    mode.connection,
+  );
+  if (mode.bridge !== undefined && onboarding !== "ready")
+    return <InstanceOnboarding state={onboarding} />;
 
   if (authGateState.status === "hosted-static" && environments.length === 0) {
     return <HostedStaticOnboardingState />;
@@ -57,7 +71,13 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    // An explicitly selected Business OS project owns this landing page.
+    // Opening an unrelated recent local project would undo that selection.
+    if (
+      workjetProjectRegistry.projects.length > 0 ||
+      mostRecentProject === null ||
+      startingRef.current
+    ) {
       return;
     }
     startingRef.current = true;
@@ -67,7 +87,12 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [
+    handleNewThread,
+    mostRecentProject,
+    startState.retryRequest,
+    workjetProjectRegistry.projects.length,
+  ]);
 
   const selectedWorkjetProject =
     workjetProjectRegistry.projects.find(
@@ -159,11 +184,10 @@ function NoProjectsHero() {
                 Workjet Collective
               </p>
               <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                Your workers start here.
+                Deine Instanz ist bereit.
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Add a project to create threads, connect harnesses, and share durable handoffs
-                across computers.
+                Füge dein erstes Projekt hinzu. Danach kannst du eine Coding-Aufgabe starten.
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
                 <Button size="sm" data-workjet-action="project.add.hero" onClick={openAddProject}>
@@ -189,7 +213,7 @@ function HostedStaticOnboardingState() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <header
+        <WorkjetHeaderContent
           className={cn(
             "workspace-topbar border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
@@ -200,7 +224,7 @@ function HostedStaticOnboardingState() {
               {APP_DISPLAY_NAME}
             </span>
           </div>
-        </header>
+        </WorkjetHeaderContent>
 
         <Empty className="flex-1">
           <div className="w-full max-w-xl rounded-3xl border border-border/55 bg-card/20 px-8 py-12 shadow-sm/5">

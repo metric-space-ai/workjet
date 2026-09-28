@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off globalDate:off -- Explicit Node platform boundary injected into the Effect gateway service.
 import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
@@ -56,7 +57,9 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
   joinPath: (...parts) => NodePath.join(...parts),
   defaultExecutable: (stateDir) =>
     process.env.WORKJET_PROVIDER_GATEWAY_HOST_EXECUTABLE ??
-    NodePath.join(stateDir, "provider-gateway-host"),
+    (NodeFS.existsSync(NodePath.join(import.meta.dirname, "workjet-provider-gateway-host"))
+      ? NodePath.join(import.meta.dirname, "workjet-provider-gateway-host")
+      : NodePath.join(stateDir, "provider-gateway-host")),
   byteLength: (value) => (typeof value === "string" ? Buffer.byteLength(value) : value.byteLength),
   chunkText: (value) => (typeof value === "string" ? value : Buffer.from(value).toString("utf8")),
   bytesToHex: (value) => Buffer.from(value).toString("hex"),

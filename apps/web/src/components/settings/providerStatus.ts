@@ -1,4 +1,4 @@
-import type { ServerProvider, ServerProviderVersionAdvisory } from "@t3tools/contracts";
+import type { ServerProvider, ServerProviderVersionAdvisory } from "@workjet/contracts";
 
 import { getRelativeTimeState } from "../../timestampFormat";
 

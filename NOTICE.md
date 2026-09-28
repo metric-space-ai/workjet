@@ -10,7 +10,7 @@ legal advice and it grants no rights beyond the licenses it names.
 
 ## 1. Workjet application
 
-The Workjet application is derived from T3 Code and remains under the MIT License. The
+The Workjet application remains under the MIT License. The
 original copyright and permission notice is retained verbatim in the repository-root
 [`LICENSE`](LICENSE) file and is packaged with every desktop artifact under
 `Resources/legal/LICENSE`.
@@ -56,7 +56,7 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 
 ### `native/resource-monitor`
 
-- Component: `t3-resource-monitor` 0.1.0
+- Component: `workjet-resource-monitor` 0.1.0
 - License: `MIT`
 - Redistributed in the desktop artifact: yes
 - Retained license texts: `LICENSE`
@@ -402,7 +402,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `jose@6.2.2` — panva/jose
 - `jose@6.2.3` — panva/jose
 - `js-cookie@3.0.7` — https://github.com/js-cookie/js-cookie
-- `js-yaml@4.3.1` — nodeca/js-yaml
+- `js-yaml@4.3.2` — nodeca/js-yaml
 - `json-schema-to-ts@3.1.1` — https://github.com/ThomasAribart/json-schema-to-ts
 - `json-schema-traverse@1.0.0` — https://github.com/epoberezkin/json-schema-traverse
 - `jsonc-parser@3.3.1` — https://github.com/microsoft/node-jsonc-parser

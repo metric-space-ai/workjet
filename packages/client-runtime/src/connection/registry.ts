@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type DesktopSshEnvironmentTarget } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -36,6 +36,15 @@ import * as ConnectionDriver from "./driver.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
 const isSshConnectionProfile = Schema.is(SshConnectionProfile);
+
+const sameSshTarget = (
+  left: DesktopSshEnvironmentTarget,
+  right: DesktopSshEnvironmentTarget,
+): boolean =>
+  left.alias === right.alias &&
+  left.hostname === right.hostname &&
+  left.username === right.username &&
+  left.port === right.port;
 
 export class EnvironmentNotRegisteredError extends Schema.TaggedErrorClass<EnvironmentNotRegisteredError>()(
   "EnvironmentNotRegisteredError",
@@ -91,6 +100,9 @@ export class EnvironmentRegistry extends Context.Service<
       | ConnectionAttemptError
       | PlatformEnvironmentRemovalError
     >;
+    readonly disconnect: (
+      environmentId: EnvironmentId,
+    ) => Effect.Effect<void, ConnectionAttemptError | EnvironmentNotRegisteredError>;
     readonly retryNow: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly state: (
       environmentId: EnvironmentId,
@@ -119,7 +131,7 @@ export class EnvironmentRegistry extends Context.Service<
       stream: Stream.Stream<A, E, R>,
     ) => Stream.Stream<A, E, Exclude<R, EnvironmentSupervisor.EnvironmentSupervisor>>;
   }
->()("@t3tools/client-runtime/connection/registry/EnvironmentRegistry") {}
+>()("@workjet/client-runtime/connection/registry/EnvironmentRegistry") {}
 
 interface EnvironmentServiceScope {
   readonly entry: ConnectionCatalogEntry;
@@ -247,7 +259,7 @@ export const make = Effect.gen(function* () {
   });
 
   const createServiceScope = Effect.fn("EnvironmentRegistry.createServiceScope")(
-    (entry: ConnectionCatalogEntry) =>
+    (entry: ConnectionCatalogEntry, connect = true) =>
       Effect.uninterruptible(
         Effect.gen(function* () {
           const environmentId = entry.target.environmentId;
@@ -261,7 +273,7 @@ export const make = Effect.gen(function* () {
             Scope.provide(scope),
             Effect.onError(() => Scope.close(scope, Exit.void)),
           );
-          yield* supervisor.connect;
+          if (connect) yield* supervisor.connect;
           yield* SubscriptionRef.update(serviceScopes, (current) => {
             const next = new Map(current);
             next.set(environmentId, { entry, supervisor, scope });
@@ -379,6 +391,20 @@ export const make = Effect.gen(function* () {
       return;
     }
 
+    const previousSshTarget =
+      previous !== undefined &&
+      previous.target._tag === "SshConnectionTarget" &&
+      Option.isSome(previous.profile) &&
+      isSshConnectionProfile(previous.profile.value)
+        ? previous.profile.value.target
+        : null;
+    const nextSshTarget =
+      entry.target._tag === "SshConnectionTarget" &&
+      Option.isSome(entry.profile) &&
+      isSshConnectionProfile(entry.profile.value)
+        ? entry.profile.value.target
+        : null;
+
     yield* closeServiceScope(target.environmentId);
     yield* SubscriptionRef.update(entries, (current) => {
       const next = new Map(current);
@@ -386,6 +412,30 @@ export const make = Effect.gen(function* () {
       return next;
     });
     yield* createServiceScope(entry);
+    const oldTunnelStillInUse =
+      previousSshTarget !== null &&
+      [...(yield* SubscriptionRef.get(entries)).values()].some(
+        (candidate) =>
+          candidate.target._tag === "SshConnectionTarget" &&
+          Option.isSome(candidate.profile) &&
+          isSshConnectionProfile(candidate.profile.value) &&
+          sameSshTarget(candidate.profile.value.target, previousSshTarget),
+      );
+    if (
+      previousSshTarget !== null &&
+      !oldTunnelStillInUse &&
+      (nextSshTarget === null || !sameSshTarget(previousSshTarget, nextSshTarget))
+    ) {
+      yield* ssh.release(previousSshTarget).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("Could not release the replaced SSH tunnel.", {
+            environmentId: target.environmentId,
+            error,
+          }),
+        ),
+        Effect.ignore,
+      );
+    }
   });
 
   const register = Effect.fn("EnvironmentRegistry.register")(function* (
@@ -591,7 +641,18 @@ export const make = Effect.gen(function* () {
           Option.isSome(profile) &&
           isSshConnectionProfile(profile.value)
         ) {
-          yield* ssh.disconnect(profile.value.target).pipe(
+          const sshTarget = profile.value.target;
+          const stillInUse = [...(yield* SubscriptionRef.get(entries)).values()].some(
+            (candidate) =>
+              candidate.target._tag === "SshConnectionTarget" &&
+              Option.isSome(candidate.profile) &&
+              isSshConnectionProfile(candidate.profile.value) &&
+              sameSshTarget(candidate.profile.value.target, sshTarget),
+          );
+          if (stillInUse) {
+            return;
+          }
+          yield* ssh.disconnect(sshTarget).pipe(
             Effect.tapError((error) =>
               Effect.logWarning("Could not disconnect the managed SSH environment.", {
                 environmentId,
@@ -625,9 +686,34 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const disconnect = Effect.fn("EnvironmentRegistry.disconnect")(function* (
+    environmentId: EnvironmentId,
+  ) {
+    return yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        const entry = yield* getEntry(environmentId);
+        const existing = (yield* SubscriptionRef.get(serviceScopes)).get(environmentId);
+        const supervisor = existing?.supervisor ?? (yield* createServiceScope(entry, false));
+        yield* supervisor.disconnect;
+        yield* SubscriptionRef.changes(supervisor.state).pipe(
+          Stream.filter((state) => state.phase === "available"),
+          Stream.runHead,
+        );
+        if (
+          entry.target._tag === "SshConnectionTarget" &&
+          Option.isSome(entry.profile) &&
+          isSshConnectionProfile(entry.profile.value)
+        ) {
+          yield* ssh.disconnect(entry.profile.value.target);
+        }
+      }),
+    );
+  });
+
   const retryNow = (environmentId: EnvironmentId) =>
     acquireSupervisor(environmentId).pipe(
-      Effect.flatMap((supervisor) => supervisor.retryNow),
+      Effect.flatMap((supervisor) => supervisor.retryNow.pipe(Effect.andThen(supervisor.connect))),
       Effect.catchTag("EnvironmentNotRegisteredError", () => Effect.void),
       Effect.withSpan("EnvironmentRegistry.retryNow"),
     );
@@ -669,6 +755,7 @@ export const make = Effect.gen(function* () {
     reconcilePlatform,
     remove,
     removeRelayEnvironments,
+    disconnect,
     retryNow,
     state,
     stateChanges,

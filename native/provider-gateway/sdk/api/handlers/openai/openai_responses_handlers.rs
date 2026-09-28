@@ -954,9 +954,36 @@ fn pool_error_response(error: ClaudeAccountPoolError) -> OpenAiResponsesHttpResp
 }
 
 fn codex_pool_error_response(error: CodexAccountPoolError) -> OpenAiResponsesHttpResponse {
+    use crate::internal::auth::codex::{CodexRefreshError, SecretStoreError};
+    use crate::internal::runtime::executor::{CodexExecutionError, CodexSubscriptionAuthError};
+
     let (status, message) = match error {
         CodexAccountPoolError::Routing(_) => (503, "no Codex account is currently available"),
         CodexAccountPoolError::Execution(error) => match error {
+            CodexExecutionError::Auth(CodexSubscriptionAuthError::Refresh(
+                CodexRefreshError::Http {
+                    status: 400 | 401 | 403,
+                    retryable: false,
+                },
+            ))
+            | CodexExecutionError::Auth(CodexSubscriptionAuthError::Store(
+                SecretStoreError::Missing | SecretStoreError::InvalidValue,
+            ))
+            | CodexExecutionError::ReplayExhausted => (
+                401,
+                "Codex sign-in has expired or is invalid. Sign in again in Settings > Models.",
+            ),
+            CodexExecutionError::Auth(CodexSubscriptionAuthError::Store(_)) => (
+                500,
+                "Codex credentials could not be read or saved. Check local storage access.",
+            ),
+            CodexExecutionError::Auth(_) => (
+                503,
+                "Codex sign-in could not be refreshed. Retry when the authentication service is available.",
+            ),
+            CodexExecutionError::Request(_)
+            | CodexExecutionError::Image(_)
+            | CodexExecutionError::TokenCount(_) => (400, "Codex request is invalid"),
             crate::internal::runtime::executor::CodexExecutionError::Http { status, .. }
             | crate::internal::runtime::executor::CodexExecutionError::Terminal {
                 status, ..
@@ -964,7 +991,12 @@ fn codex_pool_error_response(error: CodexAccountPoolError) -> OpenAiResponsesHtt
                 normalized_upstream_status(status),
                 "Codex upstream rejected the request",
             ),
-            _ => (502, "Codex upstream transport failed"),
+            CodexExecutionError::Transport(_) => (502, "Codex upstream transport failed"),
+            CodexExecutionError::IncompleteStream => (502, "Codex response stream ended early"),
+            CodexExecutionError::InvalidCompletion => (502, "Codex response is invalid"),
+            CodexExecutionError::InvalidTimeout | CodexExecutionError::StreamingUnavailable => {
+                (500, "Codex runtime is not configured correctly")
+            }
         },
         CodexAccountPoolError::OutcomePersistence => {
             (503, "Codex account outcome could not be persisted")
@@ -1120,6 +1152,58 @@ fn redact_stream_failure_message(chunk: &mut Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn codex_rejected_refresh_requires_sign_in_instead_of_transport_retries() {
+        use crate::internal::auth::codex::CodexRefreshError;
+        use crate::internal::runtime::executor::{CodexExecutionError, CodexSubscriptionAuthError};
+
+        for status in [400, 401, 403] {
+            let response = codex_pool_error_response(CodexAccountPoolError::Execution(
+                CodexExecutionError::Auth(CodexSubscriptionAuthError::Refresh(
+                    CodexRefreshError::Http {
+                        status,
+                        retryable: false,
+                    },
+                )),
+            ));
+            assert_eq!(response.status(), 401);
+            let body: Value = serde_json::from_slice(response.body()).unwrap();
+            assert!(body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Settings > Models"));
+            assert!(!String::from_utf8_lossy(response.body()).contains("transport"));
+        }
+    }
+
+    #[test]
+    fn codex_transient_refresh_failure_does_not_request_a_new_login() {
+        use crate::internal::auth::codex::CodexRefreshError;
+        use crate::internal::runtime::executor::{CodexExecutionError, CodexSubscriptionAuthError};
+
+        let response =
+            codex_pool_error_response(CodexAccountPoolError::Execution(CodexExecutionError::Auth(
+                CodexSubscriptionAuthError::Refresh(CodexRefreshError::Http {
+                    status: 503,
+                    retryable: true,
+                }),
+            )));
+        assert_eq!(response.status(), 503);
+        assert!(!String::from_utf8_lossy(response.body()).contains("Sign in again"));
+    }
+
+    #[test]
+    fn codex_storage_failure_is_not_an_upstream_transport_error() {
+        use crate::internal::auth::codex::SecretStoreError;
+        use crate::internal::runtime::executor::{CodexExecutionError, CodexSubscriptionAuthError};
+
+        let response = codex_pool_error_response(CodexAccountPoolError::Execution(
+            CodexExecutionError::Auth(CodexSubscriptionAuthError::Store(SecretStoreError::Write)),
+        ));
+        assert_eq!(response.status(), 500);
+        assert!(String::from_utf8_lossy(response.body()).contains("local storage access"));
+    }
 
     #[test]
     fn request_requires_json_object_and_model() {

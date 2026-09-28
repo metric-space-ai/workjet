@@ -15,11 +15,11 @@ export const GREPPY_MCP_TOOL_NAME = "greppy_search";
 const encodeJsonText = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const greppyManifest = builtInCapabilityManifests.find(
-  (manifest) => manifest.id === "greppy" && manifest.supportedAdapters.includes("t3-mcp"),
+  (manifest) => manifest.id === "greppy" && manifest.supportedAdapters.includes("workjet-mcp"),
 );
 
 if (!greppyManifest) {
-  throw new Error("The built-in Greppy t3-mcp manifest is unavailable.");
+  throw new Error("The built-in Greppy workjet-mcp manifest is unavailable.");
 }
 
 const GreppySearchInput = Schema.Struct({

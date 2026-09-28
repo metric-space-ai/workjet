@@ -6,7 +6,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   WS_METHODS,
   WsRpcGroup,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { RPC_REQUIRED_SCOPES, requiredScopeForRpcMethod } from "./RpcAuthorization.ts";
@@ -52,6 +52,12 @@ describe("RPC authorization scopes", () => {
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayCatalog)).toBe(
       AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayScopedCatalog)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewaySetGrant)).toBe(
+      AuthOrchestrationOperateScope,
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayStart)).toBe(
       AuthOrchestrationOperateScope,
@@ -123,9 +129,12 @@ describe("RPC authorization scopes", () => {
   });
 
   it("separates reading a cross-mode link from creating one or returning through it", () => {
-    // The two reads carry references and a redacted label; the two writes create
+    // These reads carry references and a redacted label; the two writes create
     // a thread and cross an authority boundary.
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetCrossModeGetThreadLink)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetCrossModeResolveBrowserOps)).toBe(
       AuthOrchestrationReadScope,
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetCrossModeListLinks)).toBe(

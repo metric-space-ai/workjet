@@ -7,7 +7,7 @@ import {
   type OrchestrationCommand,
   type WorkjetCapabilityId,
   type WorkjetParentThreadReference,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -98,7 +98,7 @@ export interface WorkerDispatchShape {
 }
 
 export class WorkerDispatch extends Context.Service<WorkerDispatch, WorkerDispatchShape>()(
-  "t3/workjet/WorkerDispatch",
+  "workjet/workjet/WorkerDispatch",
 ) {}
 
 export interface WorkerDispatchSources {

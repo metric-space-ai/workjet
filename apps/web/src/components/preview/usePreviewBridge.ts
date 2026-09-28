@@ -5,8 +5,8 @@ import type {
   PreviewReportStatusInput,
   ScopedThreadRef,
   ThreadId,
-} from "@t3tools/contracts";
-import { parseScopedThreadKey, scopedThreadKey } from "@t3tools/client-runtime/environment";
+} from "@workjet/contracts";
+import { parseScopedThreadKey, scopedThreadKey } from "@workjet/client-runtime/environment";
 import * as Option from "effect/Option";
 import { useEffect, useEffectEvent, useMemo, useRef } from "react";
 

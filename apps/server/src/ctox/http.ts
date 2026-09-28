@@ -7,7 +7,7 @@ import {
   EnvironmentHttpApi,
   WorkjetDeviceInviteRedeemRateLimitedError,
   WorkjetDeviceInviteRedeemRejectedError,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

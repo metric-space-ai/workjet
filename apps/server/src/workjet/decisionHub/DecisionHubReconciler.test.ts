@@ -5,7 +5,7 @@ import {
   type OrchestrationThread,
   ThreadId,
   WorkjetConnectionId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";

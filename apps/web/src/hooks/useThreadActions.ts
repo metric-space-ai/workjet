@@ -3,10 +3,10 @@ import {
   scopeProjectRef,
   scopeThreadRef,
   scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { canSettle, canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
-import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+} from "@workjet/client-runtime/environment";
+import { settlePromise, squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
+import { canSettle, canSnooze, threadWokeAt } from "@workjet/client-runtime/state/thread-settled";
+import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";

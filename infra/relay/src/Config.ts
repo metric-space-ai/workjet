@@ -31,7 +31,7 @@ export class RelayConfiguration extends Context.Service<
     readonly managedEndpointBaseDomain: string | undefined;
     readonly managedEndpointNamespace: string | undefined;
   }
->()("t3code-relay/Config/RelayConfiguration") {}
+>()("workjet-relay/Config/RelayConfiguration") {}
 
 export const make = (configuration: RelayConfiguration["Service"]) =>
   RelayConfiguration.of(configuration);

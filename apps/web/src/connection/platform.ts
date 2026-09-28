@@ -6,7 +6,7 @@ import {
   PrimaryEnvironmentAuth,
   RelayDeviceIdentity,
   SshEnvironmentGateway,
-} from "@t3tools/client-runtime/platform";
+} from "@workjet/client-runtime/platform";
 import {
   BearerConnectionCredential,
   BearerConnectionProfile,
@@ -20,18 +20,18 @@ import {
   PrimaryConnectionRegistration,
   PrimaryConnectionTarget,
   Wakeups,
-} from "@t3tools/client-runtime/connection";
-import { bootstrapRemoteBearerSession } from "@t3tools/client-runtime/authorization";
-import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
-import { EnvironmentRpcRequestObserver } from "@t3tools/client-runtime/rpc";
+} from "@workjet/client-runtime/connection";
+import { bootstrapRemoteBearerSession } from "@workjet/client-runtime/authorization";
+import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
+import { managedRelayAccountChanges, managedRelaySessionAtom } from "@workjet/client-runtime/relay";
+import { EnvironmentRpcRequestObserver } from "@workjet/client-runtime/rpc";
 import {
   AuthStandardClientScopes,
   type DesktopBridge,
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -269,6 +269,20 @@ const capabilitiesLayer = Layer.effectContext(
             new ConnectionTransientError({
               reason: "remote-unavailable",
               detail: `Could not disconnect the SSH environment: ${String(cause)}`,
+            }),
+        });
+      }),
+      release: Effect.fn("web.connectionPlatform.ssh.release")(function* (target) {
+        const bridge = window.desktopBridge;
+        if (bridge === undefined) {
+          return;
+        }
+        yield* Effect.tryPromise({
+          try: () => bridge.disconnectSshEnvironment(target, { releaseOnly: true }),
+          catch: (cause) =>
+            new ConnectionTransientError({
+              reason: "remote-unavailable",
+              detail: `Could not release the SSH tunnel: ${String(cause)}`,
             }),
         });
       }),

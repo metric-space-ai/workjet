@@ -1,4 +1,4 @@
-import type { ThreadId, WorkjetReceivedHandoff } from "@t3tools/contracts";
+import type { ThreadId, WorkjetReceivedHandoff } from "@workjet/contracts";
 import type { ReactElement } from "react";
 
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible";

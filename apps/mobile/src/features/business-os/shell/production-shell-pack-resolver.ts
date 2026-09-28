@@ -1,5 +1,5 @@
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { CtoxMobileShellPackTrustKey, EnvironmentId } from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
+import type { CtoxMobileShellPackTrustKey, EnvironmentId } from "@workjet/contracts";
 import { useMemo } from "react";
 
 import { businessOsMobileShellPackEnvironment } from "../../../state/business-os-mobile-shell-pack";

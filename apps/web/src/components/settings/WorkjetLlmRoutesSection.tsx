@@ -2,7 +2,7 @@ import type {
   WorkjetConfiguration,
   WorkjetGatewayCatalog,
   WorkjetLlmRoute,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { Fragment, useState } from "react";
 import { PencilIcon, PlusIcon } from "lucide-react";
 

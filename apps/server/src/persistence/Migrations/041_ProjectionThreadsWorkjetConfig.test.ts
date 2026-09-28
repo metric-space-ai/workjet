@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "@workjet/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

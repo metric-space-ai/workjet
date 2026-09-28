@@ -8,7 +8,7 @@ import {
   SyncIpcResponseSchema,
   type SyncIpcRequest,
   type SyncIpcResponse,
-} from "@t3tools/contracts/ctoxSync";
+} from "@workjet/contracts/ctoxSync";
 import * as Schema from "effect/Schema";
 
 export class SyncIpcError extends Schema.TaggedErrorClass<SyncIpcError>()("SyncIpcError", {

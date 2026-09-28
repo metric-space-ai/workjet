@@ -2,7 +2,7 @@ import type {
   CtoxWorkjetSessionControlRequest,
   CtoxWorkjetSessionControlResult,
   DesktopCtoxBridge,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export type WorkjetSessionControlPort = NonNullable<DesktopCtoxBridge["requestSessionControl"]>;
 export type WorkjetSessionPoolPort = NonNullable<DesktopCtoxBridge["ensurePooled"]>;

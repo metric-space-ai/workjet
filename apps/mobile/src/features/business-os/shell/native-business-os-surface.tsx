@@ -2,7 +2,7 @@ import { requireNativeView, requireOptionalNativeModule } from "expo";
 import type { ComponentType } from "react";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 
-const MODULE_NAME = "T3BusinessOsSurface";
+const MODULE_NAME = "WorkjetBusinessOsSurface";
 
 interface NativeBusinessOsSurfaceModule {
   readonly isSupported?: () => boolean;

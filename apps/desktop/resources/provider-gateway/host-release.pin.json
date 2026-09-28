@@ -3,67 +3,67 @@
   "component": "workjet-provider-gateway-host",
   "status": "pinned",
   "release": {
-    "version": "0.1.0",
-    "releaseTag": "provider-gateway-host-v0.1.0",
-    "sourceCommit": "26f0a9947a10debe349d0c609df73147aa154221",
-    "manifestFileName": "workjet-provider-gateway-host-0.1.0.manifest.json",
-    "manifestUrl": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.0/workjet-provider-gateway-host-0.1.0.manifest.json",
+    "version": "0.1.1",
+    "releaseTag": "provider-gateway-host-v0.1.1",
+    "sourceCommit": "9b2c23c2d000c5f50715b3e0bb6ff9e4bf500dba",
+    "manifestFileName": "workjet-provider-gateway-host-0.1.1.manifest.json",
+    "manifestUrl": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1.manifest.json",
     "manifestByteLength": 3174,
-    "manifestSha256": "f223546bd636b829d615390cfdbd289288d4bdb2c9aa54f05ac9a2626ee0a960",
+    "manifestSha256": "8b1409f9efa1919fb30a06569d1b8a8727612de36f22355008cb2c8332b914b7",
     "artifacts": [
       {
         "triple": "aarch64-apple-darwin",
         "os": "darwin",
         "arch": "arm64",
-        "fileName": "workjet-provider-gateway-host-0.1.0-aarch64-apple-darwin",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.0/workjet-provider-gateway-host-0.1.0-aarch64-apple-darwin",
-        "byteLength": 17667456,
-        "sha256": "87ba8f6c5afcb781b2734910e34aa0dba65410025014b4b5665d9683e7a676a5"
+        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-apple-darwin",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-apple-darwin",
+        "byteLength": 17667856,
+        "sha256": "5d07e61898d2e69d6bb1b2974f651d0062418f6d514891848b8c3185649d4c82"
       },
       {
         "triple": "x86_64-apple-darwin",
         "os": "darwin",
         "arch": "x64",
-        "fileName": "workjet-provider-gateway-host-0.1.0-x86_64-apple-darwin",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.0/workjet-provider-gateway-host-0.1.0-x86_64-apple-darwin",
-        "byteLength": 19100520,
-        "sha256": "45069f4308ed3f1c0ec02525fa9d31ee60b08c518253d58d0e1757b450de6cba"
+        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-apple-darwin",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-apple-darwin",
+        "byteLength": 19113240,
+        "sha256": "2c2583262e0ee0e185abf3f06f2a5792a334f107a3608359aca55194e7813790"
       },
       {
         "triple": "x86_64-unknown-linux-gnu",
         "os": "linux",
         "arch": "x64",
-        "fileName": "workjet-provider-gateway-host-0.1.0-x86_64-unknown-linux-gnu",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.0/workjet-provider-gateway-host-0.1.0-x86_64-unknown-linux-gnu",
-        "byteLength": 20861744,
-        "sha256": "c0ecbe1691647f1f9eeb58fa0455ec04943d7d007cb24eb60cb8ee0c0cd12689"
+        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-unknown-linux-gnu",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-unknown-linux-gnu",
+        "byteLength": 20872496,
+        "sha256": "f31b07e4fd8768b1450f94a2d884f09c63fc88bfff2f9fd7c38d9f4fffe7efd9"
       },
       {
         "triple": "aarch64-unknown-linux-gnu",
         "os": "linux",
         "arch": "arm64",
-        "fileName": "workjet-provider-gateway-host-0.1.0-aarch64-unknown-linux-gnu",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.0/workjet-provider-gateway-host-0.1.0-aarch64-unknown-linux-gnu",
+        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-unknown-linux-gnu",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-unknown-linux-gnu",
         "byteLength": 18622584,
-        "sha256": "7663c1a4a12c0076fba8f53716ff1bfe1b6aa79681f6425bf237f21c4fad1fab"
+        "sha256": "887b7afc056dc6a4b2a5f10827f966c5d6cf5c3b5fcdfae28cfa046bf61f30a9"
       },
       {
         "triple": "x86_64-pc-windows-msvc",
         "os": "win32",
         "arch": "x64",
-        "fileName": "workjet-provider-gateway-host-0.1.0-x86_64-pc-windows-msvc.exe",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.0/workjet-provider-gateway-host-0.1.0-x86_64-pc-windows-msvc.exe",
-        "byteLength": 24624128,
-        "sha256": "41e052bd9d3ead6fee26b5c3af997a49247f28049f62fe2fe2cc8f5ceb2928d0"
+        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-pc-windows-msvc.exe",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-pc-windows-msvc.exe",
+        "byteLength": 24647168,
+        "sha256": "3ea7a3a400d2a368ebd3e664ff55513317f7c293b489ed55975b3be74ed3af1f"
       },
       {
         "triple": "aarch64-pc-windows-msvc",
         "os": "win32",
         "arch": "arm64",
-        "fileName": "workjet-provider-gateway-host-0.1.0-aarch64-pc-windows-msvc.exe",
-        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.0/workjet-provider-gateway-host-0.1.0-aarch64-pc-windows-msvc.exe",
-        "byteLength": 21726720,
-        "sha256": "0ac1b981fba73e3d264a83ba5e3f4d65eac1a7a39ab2170eea975781ae9d5bbe"
+        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-pc-windows-msvc.exe",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-pc-windows-msvc.exe",
+        "byteLength": 21745664,
+        "sha256": "b12a103527465eb5134844e9bf4f934a22cd8f3dfcc15d89c2269c9106d3cc20"
       }
     ]
   }

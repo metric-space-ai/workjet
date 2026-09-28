@@ -47,7 +47,7 @@ export const ENTROPY_RUN = /[A-Za-z0-9+/=]{28,}/gu;
 
 /**
  * A long alphanumeric run is only a credential when it actually carries
- * entropy. `resolveRemoteT3CliPackageSpec` is 29 characters with one digit;
+ * entropy. `resolveRemoteWorkjetCliPackageSpec` is 29 characters with one digit;
  * a base64 token of the same length has five or more, and a hex digest more
  * still. Base64 padding and the `+`/`/` alphabet are decisive on their own.
  */

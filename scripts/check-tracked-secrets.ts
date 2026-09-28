@@ -13,7 +13,7 @@ import {
   SECRET_SHAPES,
   SOURCE_TREE_SECRET_SHAPES,
   type SecretShapeName,
-} from "@t3tools/shared/secretShapes";
+} from "@workjet/shared/secretShapes";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -31,7 +31,7 @@ import { Command, Flag } from "effect/unstable/cli";
  * and fails when a tracked file carries committed secret material.
  *
  * It does NOT define what a secret looks like. The shapes come from
- * `@t3tools/shared/secretShapes`, the same table
+ * `@workjet/shared/secretShapes`, the same table
  * `apps/desktop/src/support/SupportBundleRedaction.ts` redacts with, because a
  * second and drifting definition is worse than none — the copy that is not
  * updated becomes the one that leaks. What this script contributes is SCOPE:
@@ -128,7 +128,7 @@ const CREDENTIAL_FILENAME =
  * …unless the name also says the file is a documented template. `.env.example`
  * exists to show which variables exist; its values are `...` and
  * `/absolute/path/to/x`, and the residue heuristics read both as credentials
- * (`PROFILE=/absolute/path/to/t3code` is 32 characters of the base64 alphabet).
+ * (`PROFILE=/absolute/path/to/workjet` is 32 characters of the base64 alphabet).
  * A template is documentation, so it is scanned like documentation.
  */
 const TEMPLATE_FILENAME = /\.(?:example|sample|template|dist)$/u;

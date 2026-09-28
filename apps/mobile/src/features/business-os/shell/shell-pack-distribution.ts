@@ -3,7 +3,7 @@ import type {
   CtoxMobileShellPackResolveInput,
   CtoxMobileShellPackResolveResult,
   CtoxMobileShellPackTrustKey,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { hexToBytes } from "@noble/hashes/utils.js";
 
 export interface BusinessOsShellPackResolvePort {

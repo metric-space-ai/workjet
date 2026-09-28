@@ -1,10 +1,12 @@
+import { openInstanceSetup } from "../../instanceSetup";
+import { encodeBusinessOsManualCredential } from "./businessOsManualCredential";
 import type {
   CtoxDiscoveryResult,
   CtoxManagedInstance,
   DesktopCtoxBridge,
   WorkjetDeviceBindingSummary,
   WorkjetManagedDeviceInviteManualConnectionResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   BriefcaseBusinessIcon,
   CircleAlertIcon,
@@ -16,14 +18,14 @@ import {
   RefreshCwIcon,
   SmartphoneIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 import { CtoxInstanceSelectOption } from "../ctox/CtoxInstanceSelectOption";
-import { useCtoxMode } from "../ctox/CtoxModeShell";
+import { CtoxSidebarShell, useCtoxMode } from "../ctox/CtoxModeShell";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -37,6 +39,7 @@ import {
 import { QRCodeSvg } from "../ui/qr-code";
 import { Spinner } from "../ui/spinner";
 import {
+  businessOsDeviceControlErrorMessage,
   createBusinessOsDeviceInvite,
   type BusinessOsWebRtcDeviceInvite,
   listBusinessOsDevices,
@@ -48,16 +51,14 @@ import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
 
-/** SSH-managed hosts are computers inside a Business OS, never Business-OS instances. */
+/** The instance registry contains actual CTOX backends, including those hosted over SSH. */
 export function visibleBusinessOsInstances(
   discovery: BusinessOsDiscovery,
 ): readonly CtoxManagedInstance[] {
   if (discovery === "loading" || discovery._tag !== "ready") return [];
-  return discovery.instances
-    .filter((instance) => instance.source !== "ssh_managed")
-    .toSorted((left, right) =>
-      ctoxInstanceDisplayTitle(left).localeCompare(ctoxInstanceDisplayTitle(right)),
-    );
+  return discovery.instances.toSorted((left, right) =>
+    ctoxInstanceDisplayTitle(left).localeCompare(ctoxInstanceDisplayTitle(right)),
+  );
 }
 
 export function resolveActiveBusinessOsInstanceId(target: CrossModeTarget | null): string | null {
@@ -270,11 +271,13 @@ function DevicePairingDialog({
                         </dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Browser-Token</dt>
+                        <dt className="text-xs font-medium text-muted-foreground">
+                          Verbindungspasswort
+                        </dt>
                         <dd className="mt-1 flex items-center gap-2">
                           <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
                             {manualConnectionCredentialText(
-                              manualConnection.browserToken,
+                              encodeBusinessOsManualCredential(manualConnection),
                               credentialVisible,
                             )}
                           </code>
@@ -283,8 +286,8 @@ function DevicePairingDialog({
                             variant="ghost"
                             aria-label={
                               credentialVisible
-                                ? "Browser-Token verbergen"
-                                : "Browser-Token anzeigen"
+                                ? "Verbindungspasswort verbergen"
+                                : "Verbindungspasswort anzeigen"
                             }
                             onClick={() => setCredentialVisible((visible) => !visible)}
                           >
@@ -297,8 +300,13 @@ function DevicePairingDialog({
                           <Button
                             size="icon-sm"
                             variant="ghost"
-                            aria-label="Browser-Token kopieren"
-                            onClick={() => void copyValue(manualConnection.browserToken, true)}
+                            aria-label="Verbindungspasswort kopieren"
+                            onClick={() =>
+                              void copyValue(
+                                encodeBusinessOsManualCredential(manualConnection),
+                                true,
+                              )
+                            }
                           >
                             <CopyIcon aria-hidden />
                           </Button>
@@ -333,7 +341,6 @@ export function BusinessOsSettingsView({
   activeInstanceId,
   loading = false,
   refreshDisabled = false,
-  addDisabledReason = null,
   computerCount = 0,
   devices = [],
   devicesLoading = false,
@@ -341,7 +348,6 @@ export function BusinessOsSettingsView({
   deviceManagementBlockedReason = null,
   onSelectInstance,
   onRefresh,
-  onAddBusinessOs,
   onAddDevice,
   onRevokeDevice,
   onRetryDevices,
@@ -353,12 +359,12 @@ export function BusinessOsSettingsView({
   onRevokeInvite,
   onLoadManualConnection,
   revokingInvite = false,
+  connectionManagement,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
   readonly loading?: boolean;
   readonly refreshDisabled?: boolean;
-  readonly addDisabledReason?: string | null;
   readonly computerCount?: number;
   readonly devices?: readonly WorkjetDeviceBindingSummary[];
   readonly devicesLoading?: boolean;
@@ -366,7 +372,6 @@ export function BusinessOsSettingsView({
   readonly deviceManagementBlockedReason?: string | null;
   readonly onSelectInstance?: (instanceId: string) => void;
   readonly onRefresh?: () => void;
-  readonly onAddBusinessOs?: (invite: string) => Promise<string | null>;
   readonly onAddDevice?: () => void;
   readonly onRevokeDevice?: (devicePairingId: string) => void;
   readonly onRetryDevices?: () => void;
@@ -378,42 +383,23 @@ export function BusinessOsSettingsView({
   readonly onRevokeInvite?: () => void;
   readonly onLoadManualConnection?: () => Promise<WorkjetManagedDeviceInviteManualConnectionResult>;
   readonly revokingInvite?: boolean;
+  readonly connectionManagement?: ReactNode;
 }) {
-  const [adding, setAdding] = useState(false);
-  const [invite, setInvite] = useState("");
-  const [addingError, setAddingError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const selectedDisplayName = selected === null ? null : ctoxInstanceDisplayTitle(selected);
-
-  const submitInvite = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (onAddBusinessOs === undefined) return;
-    setAddingError(null);
-    setSubmitting(true);
-    void onAddBusinessOs(invite)
-      .then((error) => {
-        if (error !== null) {
-          setAddingError(error);
-          return;
-        }
-        setInvite("");
-        setAdding(false);
-      })
-      .finally(() => setSubmitting(false));
-  };
 
   return (
     <SettingsPageContainer className="gap-6">
       <div className="px-3 sm:px-4">
-        <h1 className="text-xl font-semibold tracking-[-0.025em]">Business OS</h1>
+        <h1 className="text-xl font-semibold tracking-[-0.025em]">Instanzen</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Verwalte die aktive Instanz, deine Workjet-Geräte und die zugehörigen Code-Rechner.
+          Jede CTOX-Instanz ist der Master ihres Netzwerks und liefert Ops aus. Verwalte hier den
+          Zugriff auf die ausgewählte Instanz.
         </p>
       </div>
 
       <SettingsSection
-        title="Business-OS-Instanz"
+        title="CTOX-Instanzen"
         headerAction={
           <div className="flex items-center gap-2">
             <Button
@@ -425,9 +411,9 @@ export function BusinessOsSettingsView({
               <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
               Aktualisieren
             </Button>
-            <Button size="sm" onClick={() => setAdding((current) => !current)}>
+            <Button size="sm" onClick={() => openInstanceSetup()}>
               <PlusIcon aria-hidden />
-              Business OS hinzufügen
+              Instanz hinzufügen
             </Button>
           </div>
         }
@@ -435,15 +421,15 @@ export function BusinessOsSettingsView({
         <div className="max-w-3xl rounded-xl border border-border/80 bg-card/30 p-4 sm:p-5">
           {loading ? (
             <p className="text-sm text-muted-foreground" role="status">
-              Business-OS-Instanzen werden geladen …
+              CTOX-Instanzen werden geladen …
             </p>
           ) : instances.length === 0 ? (
             <div className="flex items-start gap-3" role="status">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               <div>
-                <p className="text-sm font-medium">Keine Business-OS-Instanz verbunden</p>
+                <p className="text-sm font-medium">Keine CTOX-Instanz verbunden</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Füge eine Business-OS-Instanz über eine sichere Backend-Einladung hinzu.
+                  Verbinde einen vorhandenen CTOX-Master oder richte eine neue Instanz ein.
                 </p>
               </div>
             </div>
@@ -454,7 +440,7 @@ export function BusinessOsSettingsView({
                 className="mt-2 h-10 w-full rounded-md border border-input bg-popover px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={selected?.id ?? ""}
                 onChange={(event) => onSelectInstance?.(event.target.value)}
-                aria-label="Aktive Business-OS-Instanz"
+                aria-label="CTOX-Instanz auswählen"
               >
                 {selected === null ? <option value="">Instanz auswählen</option> : null}
                 {instances.map((instance) => (
@@ -470,45 +456,6 @@ export function BusinessOsSettingsView({
               )}
             </label>
           )}
-
-          {adding ? (
-            <form className="mt-4 border-t border-border pt-4" onSubmit={submitInvite}>
-              <label className="block text-sm font-medium">
-                Backend-Einladung
-                <textarea
-                  className="mt-2 min-h-24 w-full resize-y rounded-md border border-input bg-popover p-3 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={invite}
-                  onChange={(event) => setInvite(event.target.value)}
-                  autoComplete="off"
-                  maxLength={65_536}
-                  required
-                  aria-describedby="business-os-add-help"
-                />
-              </label>
-              <p id="business-os-add-help" className="mt-2 text-xs text-muted-foreground">
-                Fügt eine echte CTOX-Backend-Instanz hinzu. SSH-Rechner werden unter Computers
-                eingerichtet und erscheinen hier nicht als eigene Business OS.
-              </p>
-              {addDisabledReason === null ? null : (
-                <p className="mt-2 text-xs text-destructive" role="alert">
-                  {addDisabledReason}
-                </p>
-              )}
-              {addingError === null ? null : (
-                <p className="mt-2 text-xs text-destructive" role="alert">
-                  {addingError}
-                </p>
-              )}
-              <div className="mt-3 flex gap-2">
-                <Button type="submit" size="sm" disabled={submitting || addDisabledReason !== null}>
-                  {submitting ? "Wird hinzugefügt …" : "Einladung verwenden"}
-                </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>
-                  Abbrechen
-                </Button>
-              </div>
-            </form>
-          ) : null}
         </div>
       </SettingsSection>
 
@@ -528,7 +475,7 @@ export function BusinessOsSettingsView({
                 </p>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
                   {selected === null
-                    ? "Wähle zuerst eine Business-OS-Instanz."
+                    ? "Wähle zuerst eine CTOX-Instanz."
                     : "Verbinde einen weiteren Computer, ein Smartphone oder Tablet mit dieser Instanz."}
                 </p>
               </div>
@@ -625,7 +572,7 @@ export function BusinessOsSettingsView({
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
                 {computerCount === 0
                   ? "Im globalen Computer-Inventar sind noch keine Rechner eingerichtet."
-                  : `${computerCount} Rechner sind eingerichtet. Weise sie dieser Business-OS-Instanz im Computer-Inventar zu.`}
+                  : `${computerCount} Rechner sind eingerichtet. Weise sie dieser CTOX-Instanz im Computer-Inventar zu.`}
               </p>
               <a
                 className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
@@ -638,6 +585,7 @@ export function BusinessOsSettingsView({
         </div>
       </SettingsSection>
 
+      {connectionManagement}
       <DevicePairingDialog
         instanceName={selectedDisplayName}
         invite={activeInvite}
@@ -714,11 +662,14 @@ export function BusinessOsSettings() {
         setDevicesError(null);
         setDevicesLoading(false);
       },
-      () => {
+      (error) => {
         if (cancelled) return;
         setDevices([]);
         setDevicesError(
-          "Die Geräteverbindung ist noch nicht verfügbar. Prüfe die Verbindung und versuche es erneut.",
+          businessOsDeviceControlErrorMessage(
+            error,
+            "Die Geräteverbindung ist noch nicht verfügbar. Prüfe die Verbindung und versuche es erneut.",
+          ),
         );
         setDevicesLoading(false);
       },
@@ -727,9 +678,6 @@ export function BusinessOsSettings() {
       cancelled = true;
     };
   }, [activeInstanceId, bridge, deviceControlAvailable, deviceRefreshKey]);
-
-  const addBusinessOs = (invite: string) =>
-    importBusinessOsSettingsInvite(bridge, invite, select, refresh);
 
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const deviceManagementBlockedReason =
@@ -751,9 +699,12 @@ export function BusinessOsSettings() {
           ctoxInstanceDisplayTitle(selected),
         ),
       );
-    } catch {
+    } catch (error) {
       setDevicesError(
-        "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
+        ),
       );
     } finally {
       setAddingDevice(false);
@@ -766,8 +717,13 @@ export function BusinessOsSettings() {
     try {
       await revokeBusinessOsDeviceInvite(bridge, activeInstanceId, activeInvite.inviteId);
       setActiveInvite(null);
-    } catch {
-      setDevicesError("Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.");
+    } catch (error) {
+      setDevicesError(
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Die Einladung konnte nicht widerrufen werden. Bitte erneut versuchen.",
+        ),
+      );
     } finally {
       setRevokingInvite(false);
     }
@@ -805,8 +761,13 @@ export function BusinessOsSettings() {
           ctoxInstanceDisplayTitle(selected),
         ),
       );
-    } catch {
-      setDevicesError("Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.");
+    } catch (error) {
+      setDevicesError(
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Es konnte kein neuer QR-Code erstellt werden. Bitte erneut versuchen.",
+        ),
+      );
     } finally {
       setRevokingInvite(false);
     }
@@ -818,8 +779,13 @@ export function BusinessOsSettings() {
     try {
       await revokeBusinessOsDevice(bridge, activeInstanceId, devicePairingId);
       setDeviceRefreshKey((key) => key + 1);
-    } catch {
-      setDevicesError("Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.");
+    } catch (error) {
+      setDevicesError(
+        businessOsDeviceControlErrorMessage(
+          error,
+          "Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.",
+        ),
+      );
     } finally {
       setRevokingDeviceId(null);
     }
@@ -831,7 +797,6 @@ export function BusinessOsSettings() {
       activeInstanceId={activeInstanceId}
       loading={discovery === "loading"}
       refreshDisabled={bridge === undefined || refreshing}
-      addDisabledReason={bridge === undefined ? "Nur in Workjet Desktop verfügbar." : null}
       computerCount={settings.workjet.computers.length}
       devices={devices}
       devicesLoading={devicesLoading}
@@ -839,7 +804,6 @@ export function BusinessOsSettings() {
       deviceManagementBlockedReason={deviceManagementBlockedReason}
       onSelectInstance={selectInstance}
       onRefresh={() => void refresh()}
-      onAddBusinessOs={addBusinessOs}
       {...(!deviceControlAvailable ? {} : { onAddDevice: () => void createDeviceInvite() })}
       addingDevice={addingDevice}
       onRetryDevices={() => setDeviceRefreshKey((key) => key + 1)}
@@ -855,6 +819,14 @@ export function BusinessOsSettings() {
             onLoadManualConnection: async () => activeInvite.manualConnection,
           })}
       revokingInvite={revokingInvite}
+      connectionManagement={
+        <details data-workjet-instance-management="">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+            Instanzverbindungen verwalten
+          </summary>
+          <CtoxSidebarShell showChrome={false} />
+        </details>
+      }
     />
   );
 }

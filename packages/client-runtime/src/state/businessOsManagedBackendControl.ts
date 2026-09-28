@@ -23,15 +23,15 @@ import type {
   WorkjetManagedDeviceInviteRevokeInput,
   WorkjetRelayControlIdentityAssertionIssueInput,
   WorkjetRelayControlIdentityAssertionIssueResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   WORKJET_DEVICE_SESSION_BOOTSTRAP_EXCHANGE_PATH,
   WORKJET_DEVICE_SESSION_MEMBERSHIP_READ_PATH,
   WORKJET_DEVICE_SESSION_RENEW_PATH,
   WORKJET_MANAGED_DEVICE_INVITES_REDEEM_PATH,
   WORKJET_RELAY_CONTROL_IDENTITY_ASSERTION_PATH,
-} from "@t3tools/contracts";
-import type { RelayEnvironmentConnectResponse } from "@t3tools/contracts/relay";
+} from "@workjet/contracts";
+import type { RelayEnvironmentConnectResponse } from "@workjet/contracts/relay";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -80,7 +80,7 @@ export class WorkjetManagedBackendControlClient extends Context.Service<
     ) => Effect.Effect<WorkjetDeviceInviteRevokeResult, WorkjetManagedBackendControlClientError>;
   }
 >()(
-  "@t3tools/client-runtime/state/businessOsManagedBackendControl/WorkjetManagedBackendControlClient",
+  "@workjet/client-runtime/state/businessOsManagedBackendControl/WorkjetManagedBackendControlClient",
 ) {}
 
 export const resolveManagedBusinessOsBackendControl = (
@@ -263,7 +263,7 @@ export class WorkjetManagedDeviceSessionClient extends Context.Service<
     >;
   }
 >()(
-  "@t3tools/client-runtime/state/businessOsManagedBackendControl/WorkjetManagedDeviceSessionClient",
+  "@workjet/client-runtime/state/businessOsManagedBackendControl/WorkjetManagedDeviceSessionClient",
 ) {}
 
 /** Obtains the Relay-signed, DPoP-bound identity assertion consumed by ctox.dev resolve. */
@@ -304,7 +304,7 @@ export class WorkjetManagedDeviceSessionAuthorizationProvider extends Context.Se
     >;
   }
 >()(
-  "@t3tools/client-runtime/state/businessOsManagedBackendControl/WorkjetManagedDeviceSessionAuthorizationProvider",
+  "@workjet/client-runtime/state/businessOsManagedBackendControl/WorkjetManagedDeviceSessionAuthorizationProvider",
 ) {}
 
 function isExactLoopbackHostname(hostname: string): boolean {

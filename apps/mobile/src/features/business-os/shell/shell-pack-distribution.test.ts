@@ -1,7 +1,7 @@
 import type {
   CtoxMobileShellPackResolveResult,
   CtoxMobileShellPackTrustKey,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

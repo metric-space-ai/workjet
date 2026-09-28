@@ -11,7 +11,7 @@
  *
  * - the CTOX side — the CTOX authority/instance plus a Business OS object
  *   reference (module id + object kind + object id), and
- * - the Code side — the T3 authority/environment plus thread, and optionally the
+ * - the Code side — the Workjet authority/environment plus thread, and optionally the
  *   turn ("run") and bounded artifact references that work produced.
  *
  * The plan's constraint is the whole design:
@@ -60,6 +60,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { CtoxAppModuleId, CtoxManagedInstanceId } from "./ctox.ts";
+import { WorkjetConnectionId } from "./workjet.ts";
 import { WorkjetArtifactReferences, WorkjetDelegationApprovalState } from "./workjetMailbox.ts";
 
 /** Current schema version of every contract in this module. */
@@ -126,7 +127,7 @@ export type WorkjetCrossModeLinkId = typeof WorkjetCrossModeLinkId.Type;
  *
  * It is a bounded opaque token rather than a closed literal union on purpose:
  * Business OS modules are the CTOX authority's own extension surface, and
- * enumerating their object kinds here would make every new module a T3 contract
+ * enumerating their object kinds here would make every new module a Workjet contract
  * change. The charset is CTOX's own id charset (`[A-Za-z0-9_-]`, see
  * `CTOX_ID_PATTERN` in the server's `WorkjetMailboxTransport`), so a kind that
  * this contract accepts is always a kind CTOX can store.
@@ -138,7 +139,7 @@ export const WorkjetBusinessOsObjectKind = TrimmedNonEmptyString.check(
 export type WorkjetBusinessOsObjectKind = typeof WorkjetBusinessOsObjectKind.Type;
 
 /**
- * The IDENTITY of one Business OS object inside its module. Opaque to T3 by
+ * The IDENTITY of one Business OS object inside its module. Opaque to Workjet by
  * construction: this side of the bridge never interprets it, it only carries it
  * back to the authority that issued it. Bounded to CTOX's id charset for the
  * same reason as the kind.
@@ -176,7 +177,7 @@ export type WorkjetCrossModeCtoxRef = typeof WorkjetCrossModeCtoxRef.Type;
 // ===============================
 
 /**
- * The Code half: the T3 AUTHORITY (`environmentId` — one running T3 server and
+ * The Code half: the Workjet AUTHORITY (`environmentId` — one running Workjet server and
  * the machine, filesystem, credentials, and state it owns) plus the thread, and
  * optionally the turn that produced a result and the bounded artifact
  * references that work left behind.
@@ -423,6 +424,38 @@ export const WorkjetCrossModeGetThreadLinkRpcResult = Schema.Struct({
 });
 export type WorkjetCrossModeGetThreadLinkRpcResult =
   typeof WorkjetCrossModeGetThreadLinkRpcResult.Type;
+
+/**
+ * A browser asks whether it may open the selected Ops connection, optionally
+ * from a linked Code thread. The selected instance is a consistency check,
+ * never authority: the server compares it with the stored link when present
+ * and with its own connection binding on every request.
+ */
+export const WorkjetCrossModeResolveBrowserOpsRpcInput = Schema.Struct({
+  threadId: Schema.optionalKey(ThreadId),
+  connectionId: WorkjetConnectionId,
+  selectedInstanceId: CtoxManagedInstanceId,
+});
+export type WorkjetCrossModeResolveBrowserOpsRpcInput =
+  typeof WorkjetCrossModeResolveBrowserOpsRpcInput.Type;
+
+/** No URL, token or pairing material crosses back to the browser. */
+export const WorkjetCrossModeResolveBrowserOpsRpcResult = Schema.Union([
+  Schema.TaggedStruct("instance", {
+    schemaVersion: CrossModeSchemaVersion,
+    connectionId: WorkjetConnectionId,
+    instanceId: CtoxManagedInstanceId,
+  }),
+  Schema.TaggedStruct("linked-object", {
+    schemaVersion: CrossModeSchemaVersion,
+    connectionId: WorkjetConnectionId,
+    instanceId: CtoxManagedInstanceId,
+    linkId: WorkjetCrossModeLinkId,
+    ctox: WorkjetCrossModeCtoxRef,
+  }),
+]);
+export type WorkjetCrossModeResolveBrowserOpsRpcResult =
+  typeof WorkjetCrossModeResolveBrowserOpsRpcResult.Type;
 
 export const WorkjetCrossModeListLinksRpcInput = Schema.Struct({
   limit: Schema.optional(

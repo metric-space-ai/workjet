@@ -21,8 +21,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@workjet/contracts";
+import { createModelSelection } from "@workjet/shared/model";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -43,7 +43,7 @@ import {
 
 // Test-local service tag so the rest of the file can keep using `yield* OpenCodeAdapter`.
 class OpenCodeAdapter extends Context.Service<OpenCodeAdapter, OpenCodeAdapterShape>()(
-  "t3/provider/Layers/OpenCodeAdapter.test/OpenCodeAdapter",
+  "workjet/provider/Layers/OpenCodeAdapter.test/OpenCodeAdapter",
 ) {}
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
@@ -67,6 +67,8 @@ const runtimeMock = {
     revertCalls: [] as Array<{ sessionID: string; messageID?: string }>,
     promptCalls: [] as Array<unknown>,
     promptAsyncError: null as Error | null,
+    promptAsyncHook: null as (() => Promise<void>) | null,
+    subscribedEventStream: null as AsyncIterable<unknown> | null,
     closeError: null as Error | null,
     messages: [] as MessageEntry[],
     subscribedEvents: [] as unknown[],
@@ -87,6 +89,8 @@ const runtimeMock = {
     this.state.revertCalls.length = 0;
     this.state.promptCalls.length = 0;
     this.state.promptAsyncError = null;
+    this.state.promptAsyncHook = null;
+    this.state.subscribedEventStream = null;
     this.state.closeError = null;
     this.state.messages = [];
     this.state.subscribedEvents = [];
@@ -181,6 +185,7 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
         },
         promptAsync: async (input: unknown) => {
           runtimeMock.state.promptCalls.push(input);
+          await runtimeMock.state.promptAsyncHook?.();
           if (runtimeMock.state.promptAsyncError) {
             throw runtimeMock.state.promptAsyncError;
           }
@@ -207,11 +212,13 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
       },
       event: {
         subscribe: async () => ({
-          stream: (async function* () {
-            for (const event of runtimeMock.state.subscribedEvents) {
-              yield event;
-            }
-          })(),
+          stream:
+            runtimeMock.state.subscribedEventStream ??
+            (async function* () {
+              for (const event of runtimeMock.state.subscribedEvents) {
+                yield event;
+              }
+            })(),
         }),
       },
     }) as unknown as ReturnType<OpenCodeRuntimeShape["createOpenCodeSdkClient"]>,
@@ -295,7 +302,148 @@ function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): vo
   });
 }
 
+// Each send resolves only after the subscriber has processed the event.
+function controlledOpenCodeEvents() {
+  type Entry = { event: unknown; processed: () => void };
+  let deliver!: (entry: Entry | undefined) => void;
+  const next = () =>
+    new Promise<Entry | undefined>((resolve) => {
+      deliver = resolve;
+    });
+  let pending = next();
+  return {
+    stream: (async function* () {
+      while (true) {
+        const entry = await pending;
+        if (!entry) return;
+        pending = next();
+        yield entry.event;
+        entry.processed();
+      }
+    })(),
+    send: (event: unknown) => new Promise<void>((processed) => deliver({ event, processed })),
+    close: () => deliver(undefined),
+  };
+}
+
 it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
+  for (const compactDuringRequest of [false, true]) {
+    it.effect(
+      `restores managed instructions after compaction (request pending: ${compactDuringRequest})`,
+      () =>
+        Effect.gen(function* () {
+          const adapter = yield* OpenCodeAdapter;
+          const threadId = asThreadId(`opencode-compaction-${compactDuringRequest}`);
+          const events = controlledOpenCodeEvents();
+          runtimeMock.state.subscribedEventStream = events.stream;
+          setManagedPrompt(threadId, "Keep this bound workflow.");
+          const startInput = {
+            provider: ProviderDriverKind.make("opencode"),
+            threadId,
+            runtimeMode: "full-access" as const,
+          };
+          const send = (input: string) =>
+            adapter.sendTurn({
+              threadId,
+              input,
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("opencode"),
+                model: "openai/gpt-5",
+              },
+            });
+          let releaseRequest = () => {};
+          let requestEntered = () => {};
+          const entered = new Promise<void>((resolve) => {
+            requestEntered = resolve;
+          });
+          const released = new Promise<void>((resolve) => {
+            releaseRequest = resolve;
+          });
+          return yield* Effect.gen(function* () {
+            const session = yield* adapter.startSession(startInput);
+            const sessionID = (session.resumeCursor as { sessionId: string }).sessionId;
+            if (compactDuringRequest) {
+              runtimeMock.state.promptAsyncHook = () => {
+                requestEntered();
+                return released;
+              };
+              const first = yield* send("first").pipe(Effect.forkChild);
+              yield* Effect.promise(() => entered);
+              yield* Effect.promise(() =>
+                events.send({ type: "session.compacted", properties: { sessionID } }),
+              );
+              releaseRequest();
+              const response = yield* Fiber.join(first);
+              NodeAssert.equal(
+                (response.resumeCursor as { managedPromptFingerprint?: string })
+                  .managedPromptFingerprint,
+                undefined,
+              );
+              runtimeMock.state.promptAsyncHook = null;
+            } else {
+              yield* send("first");
+              yield* Effect.promise(() =>
+                events.send({
+                  type: "session.compacted",
+                  properties: { sessionID: "foreign-session" },
+                }),
+              );
+              yield* send("unaffected");
+              const unaffected = runtimeMock.state.promptCalls[1] as {
+                parts: Array<{ text?: string }>;
+              };
+              NodeAssert.deepEqual(
+                unaffected.parts.map(({ text }) => text),
+                ["unaffected"],
+              );
+              yield* Effect.promise(() =>
+                events.send({ type: "session.compacted", properties: { sessionID } }),
+              );
+            }
+            const restored = yield* send("after compaction");
+            const restoredCall = runtimeMock.state.promptCalls.at(-1) as {
+              parts: Array<{ text?: string }>;
+            };
+            NodeAssert.deepEqual(
+              restoredCall.parts.map(({ text }) => text),
+              [
+                "<workjet_managed_instructions>\nKeep this bound workflow.\n</workjet_managed_instructions>",
+                "after compaction",
+              ],
+            );
+            yield* send("ordinary follow-up");
+            const ordinary = runtimeMock.state.promptCalls.at(-1) as {
+              parts: Array<{ text?: string }>;
+            };
+            NodeAssert.deepEqual(
+              ordinary.parts.map(({ text }) => text),
+              ["ordinary follow-up"],
+            );
+
+            // A saved fingerprint cannot prove that no compaction happened offline.
+            events.close();
+            yield* adapter.stopSession(threadId);
+            runtimeMock.state.subscribedEventStream = null;
+            yield* adapter.startSession({ ...startInput, resumeCursor: restored.resumeCursor });
+            yield* send("resumed");
+            const resumed = runtimeMock.state.promptCalls.at(-1) as {
+              parts: Array<{ text?: string }>;
+            };
+            NodeAssert.equal(resumed.parts[0]?.text, restoredCall.parts[0]?.text);
+          }).pipe(
+            Effect.ensuring(
+              Effect.gen(function* () {
+                releaseRequest();
+                events.close();
+                yield* adapter.stopSession(threadId).pipe(Effect.ignore);
+                McpProviderSession.clearMcpProviderSession(threadId);
+              }),
+            ),
+          );
+        }),
+    );
+  }
+
   it.effect("injects managed instructions once and persists their resume fingerprint", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;
@@ -1121,7 +1269,7 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
 
       // A symlinked cwd (the macOS `/tmp` → `/private/tmp` shape) resolves to
       // the directory it points at, so the two spellings compare equal.
-      const base = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-opencode-dir-" });
+      const base = yield* fileSystem.makeTempDirectoryScoped({ prefix: "workjet-opencode-dir-" });
       const real = path.join(base, "real");
       const link = path.join(base, "link");
       yield* fileSystem.makeDirectory(real);

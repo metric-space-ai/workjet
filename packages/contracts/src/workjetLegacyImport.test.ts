@@ -29,7 +29,7 @@ const offer = {
   schemaVersion: version,
   state: "offer",
   legacyPath: "/Users/me/Library/Application Support/Workjet/config.v1.json",
-  settingsPath: "/Users/me/.t3/settings.json",
+  settingsPath: "/Users/me/.workjet/settings.json",
   summary: {
     computersImported: 0,
     computersTotal: 3,

@@ -9,7 +9,7 @@ import {
   WorkjetEnvelopeId,
   WorkjetMailboxError,
   WorkjetMeshWorkspaceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -69,7 +69,7 @@ const makeSnapshotStoreLayer = (prefix: string) =>
 
 const makeTestLayer = (
   delivery: Partial<WorkjetMailboxDelivery.WorkjetMailboxDeliveryShape>,
-  snapshotPrefix = "t3code-review-tool-test-",
+  snapshotPrefix = "workjet-review-tool-test-",
 ) =>
   MailboxToolkitRegistrationLive.pipe(
     Layer.provideMerge(McpServer.McpServer.layer),

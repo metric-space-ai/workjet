@@ -4,7 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 
-import type { WorktreeStorageInvalidReason } from "@t3tools/contracts";
+import type { WorktreeStorageInvalidReason } from "@workjet/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

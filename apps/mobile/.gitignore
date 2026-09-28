@@ -37,8 +37,8 @@ yarn-error.*
 *.tsbuildinfo
 
 # Resources derived from the verified release during prebuild (links to the build volume).
-/modules/t3-native-controls/android/src/main/assets/workjet-business-os
-/modules/t3-native-controls/ios/Resources/WorkjetBusinessOs.bundle
+/modules/workjet-native-controls/android/src/main/assets/workjet-business-os
+/modules/workjet-native-controls/ios/Resources/WorkjetBusinessOs.bundle
 
 # generated native folders
 /ios

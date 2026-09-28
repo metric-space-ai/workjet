@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";

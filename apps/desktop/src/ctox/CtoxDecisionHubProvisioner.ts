@@ -1,14 +1,14 @@
 import {
   bootstrapRemoteBearerSession,
   resolveRemoteWebSocketConnectionUrl,
-} from "@t3tools/client-runtime/authorization";
+} from "@workjet/client-runtime/authorization";
 import {
   type PreparedConnection,
   PrimaryConnectionTarget,
-} from "@t3tools/client-runtime/connection";
-import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
-import { ConnectionCatalogDocument } from "@t3tools/client-runtime/platform";
-import { RpcSessionFactory } from "@t3tools/client-runtime/rpc";
+} from "@workjet/client-runtime/connection";
+import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
+import { ConnectionCatalogDocument } from "@workjet/client-runtime/platform";
+import { RpcSessionFactory } from "@workjet/client-runtime/rpc";
 import {
   WS_METHODS,
   type CtoxDecisionHubDisconnectInput,
@@ -16,7 +16,7 @@ import {
   WorkjetConnectionId,
   type CtoxDecisionHubProvisionInput,
   type CtoxDecisionHubProvisionResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -83,7 +83,7 @@ export class CtoxDecisionHubProvisioner extends Context.Service<
     ) => Effect.Effect<CtoxDecisionHubDisconnectResult>;
     readonly revokeAll: Effect.Effect<void>;
   }
->()("@t3tools/desktop/ctox/CtoxDecisionHubProvisioner") {}
+>()("@workjet/desktop/ctox/CtoxDecisionHubProvisioner") {}
 
 const make = Effect.gen(function* () {
   const sessions = yield* CtoxElectronSessions.CtoxElectronSessions;

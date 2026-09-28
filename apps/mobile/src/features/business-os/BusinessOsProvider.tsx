@@ -1,6 +1,6 @@
 import * as Linking from "expo-linking";
-import { BusinessOsInstanceId, type EnvironmentId } from "@t3tools/contracts";
-import type { WorkjetManagedDeviceSessionAuthorization } from "@t3tools/client-runtime/state/business-os-managed-backend-control";
+import { BusinessOsInstanceId, type EnvironmentId } from "@workjet/contracts";
+import type { WorkjetManagedDeviceSessionAuthorization } from "@workjet/client-runtime/state/business-os-managed-backend-control";
 import {
   createContext,
   use,

@@ -6,10 +6,12 @@ import {
   WorkjetCapabilityId,
   type WorkjetConnectionId,
   type WorkjetThreadRole,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+
+import type { CtoxCrewMcpCapability } from "./CtoxCrewMcpCapability.ts";
 
 export type McpCapability = "preview";
 
@@ -22,7 +24,12 @@ export interface McpInvocationScope {
   readonly activeWorkjetMcpCapabilityIds?: ReadonlySet<WorkjetCapabilityId>;
   readonly workjetRole?: WorkjetThreadRole;
   readonly decisionHubConnectionId?: WorkjetConnectionId;
+  readonly ctoxBusinessOsBinding?: {
+    readonly connectionId: WorkjetConnectionId;
+    readonly instanceId: string;
+  };
   readonly cwd?: string;
+  readonly ctoxCrewExecution?: CtoxCrewMcpCapability;
   readonly issuedAt: number;
 }
 
@@ -67,7 +74,7 @@ export class McpSessionCwdUnavailableError extends Schema.TaggedErrorClass<McpSe
 export class McpInvocationContext extends Context.Service<
   McpInvocationContext,
   McpInvocationScope
->()("t3/mcp/McpInvocationContext") {}
+>()("workjet/mcp/McpInvocationContext") {}
 
 export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function* (
   capability: McpCapability,

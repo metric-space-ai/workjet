@@ -7,7 +7,7 @@ import {
   type WorkjetDelegationState,
   type WorkjetDeliveryDisposition,
   type WorkjetMeshWorkspaceId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {

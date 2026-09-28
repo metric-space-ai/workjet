@@ -309,6 +309,7 @@ export const runLocalCli = (
     "executablePath" | "entryPath" | "cwd" | "env" | "extendEnv"
   >,
   args: ReadonlyArray<string>,
+  timeout: "30 seconds" | "5 minutes" = "30 seconds",
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -342,7 +343,7 @@ export const runLocalCli = (
       return stdout;
     }),
   ).pipe(
-    Effect.timeout("30 seconds"),
+    Effect.timeout(timeout),
     Effect.mapError(() => fail("run the local authorization command for")),
   );
 const identityArgs = (target: LocalServiceTarget) => [

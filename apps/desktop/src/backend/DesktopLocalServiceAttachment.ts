@@ -29,6 +29,9 @@ export class LocalServiceAttachmentError extends Schema.TaggedErrorClass<LocalSe
   }
 }
 const blocked = (reason: string) => new LocalServiceAttachmentError({ reason });
+// A first install unpacks the bundled runtime; keep it bounded without applying
+// the short authorization/status deadline to that disk-heavy operation.
+const SERVICE_INSTALL_TIMEOUT = "5 minutes";
 
 const DesktopEndpoint = Schema.Struct({
   port: PortSchema,
@@ -306,13 +309,11 @@ export const layer = Layer.effect(
       install: (endpoint) =>
         Effect.gen(function* () {
           artifactArgs = [...artifactArgs, ...endpointArgs(endpoint)];
-          yield* runLocalCli(cli, [
-            "service",
-            "install",
-            ...profileArgs,
-            ...artifactArgs,
-            "--fresh-profile",
-          ]);
+          yield* runLocalCli(
+            cli,
+            ["service", "install", ...profileArgs, ...artifactArgs, "--fresh-profile"],
+            SERVICE_INSTALL_TIMEOUT,
+          );
         }).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.mapError(() =>
@@ -323,13 +324,11 @@ export const layer = Layer.effect(
       migrate: (endpoint) =>
         Effect.gen(function* () {
           artifactArgs = [...artifactArgs, ...endpointArgs(endpoint)];
-          yield* runLocalCli(cli, [
-            "service",
-            "install",
-            ...profileArgs,
-            ...artifactArgs,
-            "--migrate-stopped-profile",
-          ]);
+          yield* runLocalCli(
+            cli,
+            ["service", "install", ...profileArgs, ...artifactArgs, "--migrate-stopped-profile"],
+            SERVICE_INSTALL_TIMEOUT,
+          );
         }).pipe(
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           Effect.mapError(() =>

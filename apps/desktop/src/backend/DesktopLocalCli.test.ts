@@ -85,6 +85,35 @@ it.effect("enforces the deadline even while enrollment masks caller interruption
   ).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect(
+  "keeps a service installation alive past the short CLI deadline and still reaps it at five minutes",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const config = yield* fixture("setInterval(() => {}, 1000);");
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const started = yield* Deferred.make<ChildProcessSpawner.ChildProcessHandle>();
+        const observed = {
+          ...spawner,
+          spawn: (command: Parameters<typeof spawner.spawn>[0]) =>
+            spawner.spawn(command).pipe(Effect.tap((child) => Deferred.succeed(started, child))),
+        };
+        const fiber = yield* runLocalCli(config, [], "5 minutes").pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, observed),
+          Effect.forkScoped,
+        );
+        const child = yield* Deferred.await(started);
+        yield* Effect.addFinalizer(() => child.kill({ killSignal: "SIGKILL" }).pipe(Effect.ignore));
+        yield* TestClock.adjust("30 seconds");
+        assert.isTrue(yield* child.isRunning);
+        yield* TestClock.adjust("270 seconds");
+        const error = yield* Fiber.join(fiber).pipe(Effect.flip);
+        assert.equal(error._tag, "LocalServiceSessionError");
+        assert.isFalse(yield* child.isRunning);
+      }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.live("terminates and reaps its scoped CLI child when the caller is interrupted", () =>
   Effect.scoped(
     Effect.gen(function* () {

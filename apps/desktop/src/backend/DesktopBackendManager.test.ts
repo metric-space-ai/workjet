@@ -254,7 +254,7 @@ describe("DesktopBackendManager", () => {
           });
           yield* instance.start;
           assert.equal(yield* Queue.take(attempts), 1);
-          yield* TestClock.adjust(Duration.seconds(31));
+          yield* TestClock.adjust(Duration.millis(30_250));
           const waiting = yield* instance.snapshot;
           assert.equal(waiting.desiredRunning, true);
           assert.equal(waiting.restartScheduled, true);

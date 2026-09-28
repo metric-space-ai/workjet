@@ -89,6 +89,15 @@ export interface LocalSessionDependencies {
 const fail = (operation: string) => new LocalServiceSessionError({ operation });
 const retry = (operation: string) => new LocalServiceSessionError({ operation, retryable: true });
 
+export const classifySessionConnectionFailure = (
+  error: LocalServiceSessionError | Cause.TimeoutError,
+): LocalServiceSessionError =>
+  Schema.is(LocalServiceSessionError)(error)
+    ? error
+    : Cause.isTimeoutError(error)
+      ? retry("reach")
+      : fail("authenticate the current server generation for");
+
 export const requestLocalSessionRecoveryConsent = (
   dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
   target: Pick<LocalServiceTarget, "baseDir">,
@@ -450,13 +459,7 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.provideService(HttpClient.HttpClient, http),
       Effect.timeout("20 seconds"),
-      Effect.mapError((error) =>
-        Schema.is(LocalServiceSessionError)(error)
-          ? error
-          : error._tag === "TimeoutError"
-            ? retry("reach")
-            : fail("authenticate the current server generation for"),
-      ),
+      Effect.mapError(classifySessionConnectionFailure),
     );
   const access = yield* makeSessionAccess({
     confirmRecovery: (target) => requestLocalSessionRecoveryConsent(dialog, target),

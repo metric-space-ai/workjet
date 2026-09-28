@@ -2,15 +2,18 @@ import { assert, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import {
   LocalServiceCredential,
   LocalServiceCredentialError,
 } from "./DesktopLocalServiceCredential.ts";
 import {
   LocalServiceSessionError,
+  classifySessionConnectionFailure,
   makeSessionAccess,
   decodeEnrollmentSessions,
   requestLocalSessionRecoveryConsent,
@@ -237,6 +240,23 @@ it.effect("a transient session outage keeps the saved credential and never opens
     assert.equal(validations, 2);
     assert.deepEqual(events, []);
   }),
+);
+
+it.effect("an actual Effect connection timeout is retryable without changing blocked errors", () =>
+  Effect.gen(function* () {
+    const timeout = yield* Effect.never.pipe(
+      Effect.timeout(Duration.seconds(20)),
+      Effect.mapError(classifySessionConnectionFailure),
+      Effect.flip,
+      Effect.forkChild,
+    );
+    yield* TestClock.adjust(Duration.seconds(20));
+    const error = yield* Fiber.join(timeout);
+    assert.equal(error.retryable, true);
+    const blocked = new LocalServiceSessionError({ operation: "verify the profile binding of" });
+    assert.strictEqual(classifySessionConnectionFailure(blocked), blocked);
+    assert.notEqual(blocked.retryable, true);
+  }).pipe(Effect.provide(TestClock.layer())),
 );
 
 it.effect("refuses a recovery identity from another environment before consent or revocation", () =>

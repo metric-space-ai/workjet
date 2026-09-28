@@ -118,60 +118,58 @@ it.effect(
     }).pipe(Effect.provide(noForeground)),
 );
 
-it.effect(
-  "reattaches the same service session after a readiness outage longer than 30 seconds",
-  () =>
-    Effect.gen(function* () {
-      let starts = 0;
-      let attaches = 0;
-      let installs = 0;
-      let ready = 0;
-      const attachment = yield* makeAttachment({
-        confirmMigration: Effect.die("An outage must not trigger migration."),
-        migrate: () => Effect.die("An outage must not trigger migration."),
-        install: () =>
+it.effect("reports a retryable readiness timeout without reinstalling the service", () =>
+  Effect.gen(function* () {
+    let starts = 0;
+    let attaches = 0;
+    let installs = 0;
+    let ready = 0;
+    const attachment = yield* makeAttachment({
+      confirmMigration: Effect.die("An outage must not trigger migration."),
+      migrate: () => Effect.die("An outage must not trigger migration."),
+      install: () =>
+        Effect.sync(() => {
+          installs++;
+        }),
+      discover: Effect.succeed(Option.some(endpoint)),
+      assertCurrent: Effect.void,
+      start: Effect.sync(() => {
+        starts++;
+      }),
+      connect: (attemptInput) =>
+        Effect.suspend(() => {
+          assert.deepEqual(attemptInput.localSession, input.localSession);
+          attaches++;
+          return attaches === 1
+            ? Effect.fail(
+                new LocalServiceAttachmentError({
+                  reason: "Readiness timed out after 30 seconds.",
+                  retryable: true,
+                }),
+              )
+            : Effect.succeed({
+                closed: Effect.fail(new LocalServiceAttachmentError({ reason: "socket closed" })),
+              });
+        }),
+    });
+    yield* attachment.resolvePort;
+    const outage = yield* Effect.scoped(attachment.run(input));
+    assert.equal(outage.restart, true);
+    const recovered = yield* Effect.scoped(
+      attachment.run({
+        ...input,
+        onReady: () =>
           Effect.sync(() => {
-            installs++;
+            ready++;
           }),
-        discover: Effect.succeed(Option.some(endpoint)),
-        assertCurrent: Effect.void,
-        start: Effect.sync(() => {
-          starts++;
-        }),
-        connect: (attemptInput) =>
-          Effect.suspend(() => {
-            assert.deepEqual(attemptInput.localSession, input.localSession);
-            attaches++;
-            return attaches === 1
-              ? Effect.fail(
-                  new LocalServiceAttachmentError({
-                    reason: "Readiness timed out after 30 seconds.",
-                    retryable: true,
-                  }),
-                )
-              : Effect.succeed({
-                  closed: Effect.fail(new LocalServiceAttachmentError({ reason: "socket closed" })),
-                });
-          }),
-      });
-      yield* attachment.resolvePort;
-      const outage = yield* Effect.scoped(attachment.run(input));
-      assert.equal(outage.restart, true);
-      const recovered = yield* Effect.scoped(
-        attachment.run({
-          ...input,
-          onReady: () =>
-            Effect.sync(() => {
-              ready++;
-            }),
-        }),
-      );
-      assert.notEqual(recovered.restart, false);
-      assert.equal(starts, 1);
-      assert.equal(installs, 0);
-      assert.equal(attaches, 2);
-      assert.equal(ready, 1);
-    }).pipe(Effect.provide(noForeground)),
+      }),
+    );
+    assert.notEqual(recovered.restart, false);
+    assert.equal(starts, 1);
+    assert.equal(installs, 0);
+    assert.equal(attaches, 2);
+    assert.equal(ready, 1);
+  }).pipe(Effect.provide(noForeground)),
 );
 
 it.effect("closing the UI attachment scope does not request any service control", () =>

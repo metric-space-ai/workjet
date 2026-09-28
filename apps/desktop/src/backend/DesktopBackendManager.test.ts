@@ -23,6 +23,8 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstab
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import { makeAttachment, LocalServiceAttachmentError } from "./DesktopLocalServiceAttachment.ts";
+import { waitForHttpReady } from "@workjet/shared/httpReadiness";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 
@@ -188,6 +190,86 @@ function makeTestInstance(input: MakeInstanceInput) {
 }
 
 describe("DesktopBackendManager", () => {
+  it.effect(
+    "automatically reattaches the installed service after a 30-second readiness outage",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const attempts = yield* Queue.unbounded<number>();
+          const reattached = yield* Deferred.make<void>();
+          let available = false;
+          let starts = 0;
+          let connects = 0;
+          const savedSession = { baseDir: "/profile", serverVersion: "1.2.3" };
+          const endpoint = {
+            port: 3888,
+            host: "127.0.0.1" as const,
+            tailscaleServeEnabled: false,
+            tailscaleServePort: 443,
+          };
+          const http = HttpClient.make((request) =>
+            Effect.succeed(responseForRequest(request, available ? 200 : 503)),
+          );
+          const attachment = yield* makeAttachment({
+            discover: Effect.succeed(Option.some(endpoint)),
+            install: () => Effect.die("A saved service must not be installed again."),
+            migrate: () => Effect.die("An outage must not trigger migration."),
+            confirmMigration: Effect.die("An outage must not trigger migration."),
+            assertCurrent: Effect.void,
+            start: Effect.sync(() => {
+              starts++;
+            }),
+            connect: (config) =>
+              Effect.gen(function* () {
+                assert.deepEqual(config.localSession, savedSession);
+                connects++;
+                yield* Queue.offer(attempts, connects);
+                yield* waitForHttpReady({
+                  baseUrl: config.httpBaseUrl.href,
+                  path: "/.well-known/workjet/environment",
+                  timeoutMs: 30_000,
+                  makeError: () =>
+                    new LocalServiceAttachmentError({
+                      reason: "The installed local service did not become reachable.",
+                      retryable: true,
+                    }),
+                }).pipe(Effect.provideService(HttpClient.HttpClient, http));
+                return { closed: Effect.never };
+              }),
+          });
+          yield* attachment.resolvePort;
+          const instance = yield* makeTestInstance({
+            run: attachment.run,
+            spawnerLayer: Layer.succeed(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.make(() => Effect.die("Must not spawn a foreground backend.")),
+            ),
+            config: {
+              ...baseConfig,
+              localSession: savedSession,
+              httpBaseUrl: new URL("http://127.0.0.1:3888"),
+              bootstrap: { ...baseConfig.bootstrap, port: 3888 },
+            },
+            onReady: Deferred.succeed(reattached, undefined).pipe(Effect.asVoid),
+          });
+          yield* instance.start;
+          assert.equal(yield* Queue.take(attempts), 1);
+          yield* TestClock.adjust(Duration.seconds(31));
+          const waiting = yield* instance.snapshot;
+          assert.equal(waiting.desiredRunning, true);
+          assert.equal(waiting.restartScheduled, true);
+          available = true;
+          yield* TestClock.adjust(Duration.millis(500));
+          assert.equal(yield* Queue.take(attempts), 2);
+          yield* Deferred.await(reattached);
+          const restored = yield* instance.snapshot;
+          assert.equal(restored.ready, true);
+          assert.equal(starts, 1);
+          assert.equal(connects, 2);
+        }).pipe(Effect.provide(TestClock.layer())),
+      ),
+  );
+
   it.effect("halts a blocked service attachment without scheduling a foreground restart", () =>
     Effect.scoped(
       Effect.gen(function* () {

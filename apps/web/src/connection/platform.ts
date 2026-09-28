@@ -125,11 +125,24 @@ function clientMetadata() {
 
 function sshPreparationError(cause: unknown) {
   const message = cause instanceof Error ? cause.message : String(cause);
-  if (message.toLowerCase().includes("cancel")) {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("cancel") ||
+    /permission denied \((?:publickey|password|keyboard-interactive|hostbased|gssapi-with-mic)[^)]*\)/u.test(
+      normalized,
+    ) ||
+    /authentication failed|too many authentication failures/u.test(normalized)
+  ) {
     return new ConnectionBlockedError({
       reason: "authentication",
       detail: message,
     });
+  }
+  if (normalized.includes("tailnet policy does not permit")) {
+    return new ConnectionBlockedError({ reason: "permission", detail: message });
+  }
+  if (/host key verification failed|remote host identification has changed/u.test(normalized)) {
+    return new ConnectionBlockedError({ reason: "configuration", detail: message });
   }
   return new ConnectionTransientError({
     reason: "remote-unavailable",

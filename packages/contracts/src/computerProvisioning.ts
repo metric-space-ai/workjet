@@ -142,7 +142,7 @@ export type WorkjetProvisioningEvent = typeof WorkjetProvisioningEvent.Type;
 
 export const WorkjetProvisioningSnapshot = Schema.Struct({
   operationId: OpaqueId,
-  state: Schema.Literals(["queued", "running", "completed", "failed", "cancelled"]),
+  state: Schema.Literals(["queued", "running", "completed", "failed", "cancelled", "interrupted"]),
   action: WorkjetProvisioningAction,
   components: Schema.Array(WorkjetProvisioningComponent).check(Schema.isMaxLength(2)),
   events: Schema.Array(WorkjetProvisioningEvent).check(Schema.isMaxLength(256)),
@@ -163,6 +163,7 @@ export const WorkjetProvisioningSnapshot = Schema.Struct({
       "health_failed",
       "replication_failed",
       "operation_failed",
+      "outcome_unknown",
     ]),
   ),
 });
@@ -188,5 +189,19 @@ export type WorkjetProvisioningGetInput = typeof WorkjetProvisioningGetInput.Typ
 export const WorkjetProvisioningGetResult = Schema.Union([
   Schema.TaggedStruct("found", { operation: WorkjetProvisioningSnapshot }),
   Schema.TaggedStruct("not_found", {}),
+  Schema.TaggedStruct("failed", { message: BoundedText }),
 ]);
 export type WorkjetProvisioningGetResult = typeof WorkjetProvisioningGetResult.Type;
+
+export const WorkjetProvisioningListResult = Schema.Union([
+  Schema.TaggedStruct("found", {
+    operations: Schema.Array(
+      Schema.Struct({
+        target: WorkjetProvisioningTarget,
+        operation: WorkjetProvisioningSnapshot,
+      }),
+    ).check(Schema.isMaxLength(50)),
+  }),
+  Schema.TaggedStruct("failed", { message: BoundedText }),
+]);
+export type WorkjetProvisioningListResult = typeof WorkjetProvisioningListResult.Type;

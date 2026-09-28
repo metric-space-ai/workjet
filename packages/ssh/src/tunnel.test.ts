@@ -524,11 +524,14 @@ describe("ssh tunnel scripts", () => {
         const manager = yield* SshEnvironmentManager;
         const first = yield* manager.ensureEnvironment(target);
         assert.equal(first.httpBaseUrl, "http://127.0.0.1:41773/");
-        const second = yield* manager.ensureEnvironment(target);
+        const reconnect = yield* Effect.forkChild(manager.ensureEnvironment(target));
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust(Duration.millis(2_000));
+        const second = yield* Fiber.join(reconnect);
         assert.equal(second.httpBaseUrl, "http://127.0.0.1:41774/");
         assert.equal(tunnelKillCount, 1);
         assert.equal(remoteStopCount, 0);
-      }).pipe(Effect.provide(layer), Effect.scoped);
+      }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layer)), Effect.scoped);
     }),
   );
 });

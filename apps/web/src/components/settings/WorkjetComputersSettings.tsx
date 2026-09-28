@@ -214,7 +214,12 @@ export function WorkjetComputersSettingsView({
     <SettingsSection
       id={searchableSetting("workjet-computers").id}
       title={searchableSetting("workjet-computers").title}
-      headerAction={
+    >
+      <SettingsRow
+        title={environmentsReady ? "Your computers" : "Loading computers…"}
+        description="Select the computer for your next session, or edit its name and coding tools."
+      />
+      <div className="px-3 py-2 sm:px-4">
         <Button
           type="button"
           size="sm"
@@ -225,12 +230,7 @@ export function WorkjetComputersSettingsView({
           <PlusIcon className="size-3.5" />
           Add computer
         </Button>
-      }
-    >
-      <SettingsRow
-        title={environmentsReady ? "Your computers" : "Loading computers…"}
-        description="Select the computer for your next session, or edit its name and coding tools."
-      />
+      </div>
       {configuration.computers.length === 0 ? (
         <SettingsRow
           title="No computers yet"

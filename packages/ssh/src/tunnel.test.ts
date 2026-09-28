@@ -465,4 +465,70 @@ describe("ssh tunnel scripts", () => {
       assert.equal(stopCommandCount, 0);
     }).pipe(Effect.provide(layer), Effect.scoped);
   });
+
+  it.effect("replaces a stale local forward without stopping the remote server", () =>
+    Effect.gen(function* () {
+      let firstPortReady = false;
+      let nextPort = 41_773;
+      let tunnelKillCount = 0;
+      let remoteStopCount = 0;
+      const httpClient = HttpClient.make((request) => {
+        if (request.url.includes(":41773/") && firstPortReady) {
+          return Effect.never;
+        }
+        firstPortReady = true;
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(request, new Response("", { status: 200 })),
+        );
+      });
+      const netService = NetService.NetService.of({
+        canListenOnHost: () => Effect.succeed(true),
+        isPortAvailableOnLoopback: () => Effect.succeed(true),
+        reserveLoopbackPort: () => Effect.sync(() => nextPort++),
+        findAvailablePort: (preferred) => Effect.succeed(preferred),
+      });
+      const spawner = ChildProcessSpawner.make((command) =>
+        Effect.sync(() => {
+          const args = commandArgs(command);
+          if (args.includes("-N")) {
+            return makeRunningProcess(() => {
+              tunnelKillCount += 1;
+            });
+          }
+          if (args.includes("sh") && args.includes("--")) {
+            return makeSuccessfulProcess('{"remotePort":3773}\n');
+          }
+          if (args.includes("sh")) {
+            remoteStopCount += 1;
+            return makeSuccessfulProcess('{"stopped":true}\n');
+          }
+          return makeSuccessfulProcess("\n");
+        }),
+      );
+      const layer = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Layer.succeed(HttpClient.HttpClient, httpClient),
+        Layer.succeed(NetService.NetService, netService),
+        SshPasswordPrompt.disabledLayer,
+        SshEnvironmentManager.layer(),
+      );
+      const target = {
+        alias: "devbox",
+        hostname: "devbox.example.com",
+        username: "julius",
+        port: 2222,
+      } as const;
+
+      yield* Effect.gen(function* () {
+        const manager = yield* SshEnvironmentManager;
+        const first = yield* manager.ensureEnvironment(target);
+        assert.equal(first.httpBaseUrl, "http://127.0.0.1:41773/");
+        const second = yield* manager.ensureEnvironment(target);
+        assert.equal(second.httpBaseUrl, "http://127.0.0.1:41774/");
+        assert.equal(tunnelKillCount, 1);
+        assert.equal(remoteStopCount, 0);
+      }).pipe(Effect.provide(layer), Effect.scoped);
+    }),
+  );
 });

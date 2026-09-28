@@ -1077,6 +1077,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 
   const releaseTunnelEntry = Effect.fn("ssh/tunnel.releaseTunnelEntry")(function* (
     entry: SshTunnelEntry,
+    options?: { readonly retainAuthSecret?: boolean },
   ) {
     if (tunnels.get(entry.key) !== entry) {
       return;
@@ -1091,7 +1092,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       })
       .pipe(Effect.ignore);
     yield* Scope.close(entry.scope, Exit.void).pipe(Effect.ignore);
-    authSecrets.delete(entry.key);
+    if (!options?.retainAuthSecret) authSecrets.delete(entry.key);
   });
 
   const cancelPendingTunnelEntry = Effect.fn("ssh/tunnel.cancelPendingTunnelEntry")(function* (
@@ -1373,7 +1374,9 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
         remotePort: entry.remotePort,
         cause: readinessExit.cause,
       });
-      yield* closeTunnelEntry(entry);
+      // A failed local forward does not prove the remote server is unhealthy.
+      // Keep it running while the replacement reuses or repairs it.
+      yield* releaseTunnelEntry(entry, { retainAuthSecret: true });
       yield* cancelPendingTunnelEntry(key, resolvedTarget);
       entry = null;
     }

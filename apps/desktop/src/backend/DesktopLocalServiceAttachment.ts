@@ -95,12 +95,8 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
         ? yield* fs.readDirectory(runtimeDir)
         : [];
       const migration = runtimeEntries.includes("desktop-profile-migration.json");
-      if (
-        runtimeEntries.includes("service-state.json") &&
-        (!migration || environment.platform !== "darwin")
-      )
+      if (runtimeEntries.includes("service-state.json") && !migration)
         return yield* blocked("Service state exists without an installed service.");
-      if (environment.platform !== "darwin") return foreground;
       const stateDir = environment.path.join(environment.baseDir, "userdata");
       const entries = (yield* fs.exists(stateDir)) ? yield* fs.readDirectory(stateDir) : [];
       const hasDatabase = yield* fs.exists(environment.path.join(stateDir, "state.sqlite"));
@@ -111,13 +107,11 @@ export const discoverService = Effect.fn("desktop.localServiceAttachment.discove
       )
         return yield* blocked("This incomplete profile needs explicit recovery before migration.");
     }
-    if (environment.platform !== "darwin")
-      return yield* blocked("Desktop attachment requires a profile-specific service manager.");
     if (!initial.supported)
       return yield* blocked("The background service is not available on this machine.");
     if (environment.processArch !== "arm64" && environment.processArch !== "x64")
       return yield* blocked("The app has no bundled runtime for this architecture.");
-    const filename = `workjet-server-darwin-${environment.processArch}.tgz`;
+    const filename = `workjet-server-${environment.platform}-${environment.processArch}.tgz`;
     const archive = environment.path.join(environment.resourcesPath, "ssh-servers", filename);
     const checksum = yield* fs.readFileString(`${archive}.sha256`);
     const match = /^([a-f0-9]{64})  ([^\r\n]+)\r?\n?$/.exec(checksum);

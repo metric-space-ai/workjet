@@ -345,7 +345,7 @@ const makeDiscoveryHarness = Effect.fn("test.desktopServiceDiscovery")(function*
           return { supported: true, installed: false, current: false };
         }),
     });
-  return { discover, environment, fs, path, archive, baseDir, statusCalls };
+  return { discover, environment, fs, path, archive, baseDir, resourcesPath, statusCalls };
 });
 
 it.layer(NodeServices.layer)("packaged service discovery and first installation", (it) => {
@@ -501,7 +501,36 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
     );
   }
 
-  it.effect("refuses retained Linux service state even when a migration marker exists", () =>
+  it.effect("selects the bundled Linux service for fresh and stopped existing profiles", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeDiscoveryHarness();
+      fixture.environment.platform = "linux";
+      const { fs, path, baseDir, resourcesPath } = fixture;
+      const archive = path.join(resourcesPath, "ssh-servers", "workjet-server-linux-arm64.tgz");
+      yield* fs.writeFileString(archive, "Linux archive fixture; backend validates its contents");
+      yield* fs.writeFileString(
+        `${archive}.sha256`,
+        `${"b".repeat(64)}  workjet-server-linux-arm64.tgz\n`,
+      );
+      const fresh = yield* fixture.discover();
+      assert.equal(fresh.selection, "install");
+      assert.deepEqual(fresh.artifactArgs, [
+        "--bundle-archive",
+        archive,
+        "--bundle-sha256",
+        "b".repeat(64),
+      ]);
+      yield* fs.writeFileString(
+        path.join(baseDir, "userdata", "state.sqlite"),
+        "existing database",
+      );
+      const existing = yield* fixture.discover();
+      assert.equal(existing.selection, "migrate");
+      assert.deepEqual(existing.artifactArgs, fresh.artifactArgs);
+    }),
+  );
+
+  it.effect("refuses retained Linux service state without a recoverable database", () =>
     Effect.gen(function* () {
       const fixture = yield* makeDiscoveryHarness();
       fixture.environment.platform = "linux";
@@ -513,7 +542,7 @@ it.layer(NodeServices.layer)("packaged service discovery and first installation"
         "{}",
       );
       const error = yield* fixture.discover().pipe(Effect.flip);
-      assert.include(error.message, "state exists");
+      assert.include(error.message, "explicit recovery");
     }),
   );
 

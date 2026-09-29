@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Duration from "effect/Duration";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -39,12 +40,16 @@ const makeFailedProcess = (input: { readonly stdout: string; readonly stderr?: s
   });
 };
 
-const makeNeverFinishingProcess = (stderr = "") => {
+const makeNeverFinishingProcess = (stderr = "", onStderr?: Effect.Effect<unknown>) => {
   let finish: ((exitCode: ChildProcessSpawner.ExitCode) => void) | null = null;
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(123),
     stdout: Stream.empty,
-    stderr: stderr ? Stream.make(encoder.encode(stderr)) : Stream.empty,
+    stderr: stderr
+      ? Stream.make(encoder.encode(stderr)).pipe(
+          onStderr ? Stream.tap(() => onStderr) : (stream) => stream,
+        )
+      : Stream.empty,
     all: Stream.empty,
     exitCode: Effect.callback<ChildProcessSpawner.ExitCode>((resume) => {
       finish = (exitCode) => resume(Effect.succeed(exitCode));
@@ -236,29 +241,27 @@ describe("ssh command", () => {
   });
 
   it.effect("explains a Tailscale SSH identity check instead of hiding it behind a timeout", () => {
-    const spawner = ChildProcessSpawner.make(() =>
-      Effect.succeed(
-        makeNeverFinishingProcess(
-          "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc123\n",
-        ),
-      ),
-    );
-    const processLayer = Layer.mergeAll(
-      NodeServices.layer,
-      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
-      TestClock.layer(),
-    );
     return Effect.gen(function* () {
+      const stderrReady = yield* Deferred.make<void>();
+      const spawner = ChildProcessSpawner.make(() =>
+        Effect.succeed(
+          makeNeverFinishingProcess(
+            "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc123\n",
+            Deferred.succeed(stderrReady, undefined),
+          ),
+        ),
+      );
       const fiber = yield* Effect.forkChild(
         Effect.result(
           runSshCommand(
             { alias: "gpu1-a6000", hostname: "100.87.204.48", username: "deck", port: 22 },
-            { timeoutMs: 1, interactiveAuth: true },
+            { timeoutMs: 1000, interactiveAuth: true },
           ),
-        ),
+        ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
       );
+      yield* Deferred.await(stderrReady);
       yield* Effect.yieldNow;
-      yield* TestClock.adjust(Duration.millis(1));
+      yield* TestClock.adjust(Duration.millis(1000));
       const result = yield* Fiber.join(fiber);
       assert.isTrue(Result.isFailure(result));
       if (Result.isFailure(result)) {
@@ -267,6 +270,6 @@ describe("ssh command", () => {
         assert.include(result.failure.message, "https://login.tailscale.com/a/abc123");
         assert.notInclude(result.failure.message, "timed out");
       }
-    }).pipe(Effect.provide(processLayer));
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, TestClock.layer())));
   });
 });

@@ -1,6 +1,6 @@
 import { PlusIcon, QrCodeIcon, RefreshCwIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { type ReactNode, memo, useCallback, useId, useMemo, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -1783,6 +1783,10 @@ export function useComputerConnections({
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
   const [isRecoveringCatalog, setIsRecoveringCatalog] = useState(false);
   const [catalogRecoveryMessage, setCatalogRecoveryMessage] = useState<string | null>(null);
+  const [catalogReadError, setCatalogReadError] = useState<string | null>(null);
+  const [isCheckingCatalog, setIsCheckingCatalog] = useState(
+    desktopBridge?.getConnectionCatalog !== undefined,
+  );
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const desktopSshHosts = useEnvironmentQuery(
@@ -1791,6 +1795,28 @@ export function useComputerConnections({
       : null,
   );
   const refreshSshHosts = desktopSshHosts.refresh;
+  useEffect(() => {
+    if (!desktopBridge?.getConnectionCatalog || (!inline && !addBackendDialogOpen)) return;
+    let active = true;
+    setIsCheckingCatalog(true);
+    void desktopBridge.getConnectionCatalog().then(
+      () => {
+        if (!active) return;
+        setCatalogReadError(null);
+        setIsCheckingCatalog(false);
+      },
+      (error: unknown) => {
+        if (!active) return;
+        setCatalogReadError(
+          error instanceof Error ? error.message : "Could not read saved connections.",
+        );
+        setIsCheckingCatalog(false);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [addBackendDialogOpen, desktopBridge, inline]);
   const discoveredSshHosts = desktopSshHosts.data ?? EMPTY_DISCOVERED_SSH_HOSTS;
   const unsavedDiscoveredSshHosts = useMemo(
     () =>
@@ -1813,7 +1839,7 @@ export function useComputerConnections({
     sshConnectionError ?? (savedBackendMode === "ssh" ? desktopSshHosts.error : null);
   const catalogRecoveryAvailable =
     desktopBridge?.recoverConnectionCatalog !== undefined &&
-    [savedBackendError, sshConnectionError, desktopSshHosts.error].some(
+    [catalogReadError, savedBackendError, sshConnectionError, desktopSshHosts.error].some(
       (message) =>
         message !== null &&
         (message.includes("decrypt-catalog") ||
@@ -1826,6 +1852,7 @@ export function useComputerConnections({
     setCatalogRecoveryMessage(null);
     try {
       const backupPath = await desktopBridge.recoverConnectionCatalog();
+      setCatalogReadError(null);
       setSavedBackendError(null);
       setSshConnectionError(null);
       refreshSshHosts();
@@ -2240,9 +2267,9 @@ export function useComputerConnections({
             : "Use an IP address, hostname, or saved SSH alias."}{" "}
           If a password is required, Workjet asks for it when connecting.
         </p>
-        {savedBackendError || discoveredSshHostsError ? (
+        {catalogReadError || savedBackendError || discoveredSshHostsError ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            {savedBackendError ?? discoveredSshHostsError}
+            {catalogReadError ?? savedBackendError ?? discoveredSshHostsError}
           </div>
         ) : null}
         {catalogRecoveryAvailable ? (
@@ -2269,7 +2296,13 @@ export function useComputerConnections({
         <Button
           variant="outline"
           className="w-full"
-          disabled={isAddingSavedBackend || isRecoveringCatalog || connectingSshHostAlias !== null}
+          disabled={
+            isCheckingCatalog ||
+            catalogReadError !== null ||
+            isAddingSavedBackend ||
+            isRecoveringCatalog ||
+            connectingSshHostAlias !== null
+          }
           onClick={() => void handleAddSavedBackend()}
         >
           <PlusIcon className="size-3.5" />

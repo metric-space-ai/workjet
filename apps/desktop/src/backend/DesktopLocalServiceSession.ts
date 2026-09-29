@@ -37,12 +37,29 @@ import type { DesktopBackendStartConfig } from "./DesktopBackendManager.ts";
 import * as Credential from "./DesktopLocalServiceCredential.ts";
 import { ElectronDialog } from "../electron/ElectronDialog.ts";
 
+const LocalCliCommandFailure = Schema.Struct({
+  command: Schema.Literals([
+    "service-install",
+    "service-status",
+    "service-start",
+    "service-other",
+    "authorization",
+  ]),
+  kind: Schema.Literals(["spawn", "read", "output-limit", "exit", "timeout"]),
+  exitCode: Schema.optionalKey(Schema.Number),
+  step: Schema.optionalKey(
+    Schema.Literals(["bundle-staging", "runtime-verification", "service-start"]),
+  ),
+});
+type LocalCliCommandFailure = typeof LocalCliCommandFailure.Type;
+
 export class LocalServiceSessionError extends Schema.TaggedErrorClass<LocalServiceSessionError>()(
   "LocalServiceSessionError",
   {
     operation: Schema.String,
     recoveryAttempted: Schema.optionalKey(Schema.Boolean),
     retryable: Schema.optionalKey(Schema.Boolean),
+    commandFailure: Schema.optionalKey(LocalCliCommandFailure),
   },
 ) {
   override get message(): string {
@@ -344,18 +361,38 @@ export const runLocalCli = (
   >,
   args: ReadonlyArray<string>,
   timeout: "30 seconds" | "5 minutes" = "30 seconds",
-) =>
-  Effect.scoped(
+) => {
+  const command: LocalCliCommandFailure["command"] =
+    args[0] !== "service"
+      ? "authorization"
+      : args[1] === "install"
+        ? "service-install"
+        : args[1] === "status"
+          ? "service-status"
+          : args[1] === "start"
+            ? "service-start"
+            : "service-other";
+  const failure = (
+    kind: LocalCliCommandFailure["kind"],
+    details: Pick<LocalCliCommandFailure, "exitCode" | "step"> = {},
+  ) =>
+    new LocalServiceSessionError({
+      operation: "run the local authorization command for",
+      commandFailure: { command, kind, ...details },
+    });
+  return Effect.scoped(
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const child = yield* spawner.spawn(
-        ChildProcess.make(config.executablePath, [config.entryPath, ...args], {
-          cwd: config.cwd,
-          env: config.env,
-          extendEnv: config.extendEnv,
-          killSignal: "SIGKILL",
-        }),
-      );
+      const child = yield* spawner
+        .spawn(
+          ChildProcess.make(config.executablePath, [config.entryPath, ...args], {
+            cwd: config.cwd,
+            env: config.env,
+            extendEnv: config.extendEnv,
+            killSignal: "SIGKILL",
+          }),
+        )
+        .pipe(Effect.mapError(() => failure("spawn")));
       const readBounded = (stream: typeof child.stdout) =>
         Effect.gen(function* () {
           const chunks: Uint8Array[] = [];
@@ -363,23 +400,57 @@ export const runLocalCli = (
           yield* Stream.runForEach(stream, (chunk) =>
             Effect.gen(function* () {
               size += chunk.byteLength;
-              if (size > 64 * 1024) return yield* fail("run the local authorization command for");
+              if (size > 64 * 1024) return yield* failure("output-limit");
               chunks.push(chunk);
             }),
+          ).pipe(
+            Effect.mapError((error) =>
+              Schema.is(LocalServiceSessionError)(error) ? error : failure("read"),
+            ),
           );
           return Buffer.concat(chunks).toString("utf8");
         });
-      const [stdout] = yield* Effect.all([readBounded(child.stdout), readBounded(child.stderr)], {
-        concurrency: 2,
-      });
-      if ((yield* child.exitCode) !== 0)
-        return yield* fail("run the local authorization command for");
+      const [stdout, stderr] = yield* Effect.all(
+        [readBounded(child.stdout), readBounded(child.stderr)],
+        {
+          concurrency: 2,
+        },
+      );
+      const exitCode = yield* child.exitCode.pipe(Effect.mapError(() => failure("read")));
+      if (exitCode !== 0) {
+        // Only fixed step identifiers leave memory; CLI output and arguments can contain credentials.
+        const step: LocalCliCommandFailure["step"] =
+          command !== "service-install"
+            ? undefined
+            : stderr.includes("staging the bundled runtime") ||
+                stderr.includes("stageBundledRuntime")
+              ? "bundle-staging"
+              : stderr.includes("verifying the pinned workjet runtime")
+                ? "runtime-verification"
+                : stderr.includes("starting the LaunchAgent")
+                  ? "service-start"
+                  : undefined;
+        return yield* failure("exit", {
+          exitCode: Number(exitCode),
+          ...(step === undefined ? {} : { step }),
+        });
+      }
       return stdout;
     }),
   ).pipe(
     Effect.timeout(timeout),
-    Effect.mapError(() => fail("run the local authorization command for")),
+    Effect.mapError((error) =>
+      Schema.is(LocalServiceSessionError)(error)
+        ? error
+        : failure(Cause.isTimeoutError(error) ? "timeout" : "read"),
+    ),
+    Effect.tapError((error) =>
+      args[0] === "service"
+        ? Effect.logError("local background-service command failed", error.commandFailure)
+        : Effect.void,
+    ),
   );
+};
 const identityArgs = (target: LocalServiceTarget) => [
   "--base-dir",
   target.baseDir,

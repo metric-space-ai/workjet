@@ -291,4 +291,23 @@ describe("unified computer catalog", () => {
     expect(markup).toContain("Checking coding tools");
     expect(markup).not.toContain("Disconnected. Reconnect this computer");
   });
+  it("shows a connecting computer as connecting and ignores its stale probe error", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(remoteComputer)}
+        environments={[remote]}
+        environmentsReady
+        connectedEnvironmentIds={[]}
+        connectingEnvironmentIds={[remoteEnvironmentId]}
+        harnessInspections={{
+          [remoteEnvironmentId]: { snapshot: null, error: "stale connection error" },
+        }}
+        environmentId={localEnvironmentId}
+        onChange={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Connecting. Coding tools will be checked once connected.");
+    expect(markup).not.toContain("Disconnected. Reconnect this computer");
+    expect(markup).not.toContain("Could not check coding tools");
+  });
 });

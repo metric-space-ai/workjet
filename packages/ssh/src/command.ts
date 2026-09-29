@@ -73,9 +73,13 @@ export function targetConnectionKey(target: DesktopSshEnvironmentTarget): string
   return `${target.alias}\u0000${target.hostname}\u0000${target.username ?? ""}\u0000${target.port ?? ""}`;
 }
 
-export function remoteStateKey(target: DesktopSshEnvironmentTarget): string {
+export function remoteStateKey(target: DesktopSshEnvironmentTarget, namespace?: string): string {
   return NodeCrypto.createHash("sha256")
-    .update(targetConnectionKey(target))
+    .update(
+      namespace === undefined
+        ? targetConnectionKey(target)
+        : `${namespace}\u0000${targetConnectionKey(target)}`,
+    )
     .digest("hex")
     .slice(0, 16);
 }

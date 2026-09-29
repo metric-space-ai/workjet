@@ -10,10 +10,16 @@ its SHA-256 digest and stores it under `~/.workjet/ssh-server/<digest>`.
 The archive includes the terminal, resource monitor and provider gateway host.
 Repeated connections reuse the verified installation.
 
-Disconnect stops the managed SSH backend and tunnel while retaining the saved
-connection, credentials and cached project data. Connect reopens that saved
-connection without entering the host again. Remove explicitly forgets the
-connection and clears its owned cached data.
+Closing Desktop stops its local SSH tunnel but leaves the remote user service
+running, including active worker turns. Reopening Desktop reconnects to that
+service. An explicit Disconnect stops only the remote server owned by this
+Desktop profile and closes its tunnel while retaining the saved connection,
+credentials and cached project data. Connect reopens that saved connection
+without entering the host again. Remove explicitly forgets the connection and
+clears its owned cached data. Remote PID, port and runner records use a stable
+profile namespace, so two Desktop profiles using the same SSH account do not
+replace or stop each other's managed services. Older unscoped service records
+are left intact during the transition.
 
 When a systemd user manager is available, Workjet starts its managed server
 as a transient user service. This keeps the server alive when the setup SSH
@@ -23,6 +29,8 @@ main process is tracked for the existing disconnect and restart lifecycle.
 Hosts without a user manager retain the portable detached launch path. Workjet
 does not enable lingering, change SSH policy, or require administrator rights.
 A failed service start is reported instead of retrying in the SSH session.
+Reattachment to a healthy server does not restart it solely because the
+packaged runner changed; an active turn must finish before an explicit restart.
 
 If the required Node runtime is unavailable, Workjet downloads Node 24.13.1
 from nodejs.org and verifies a pinned SHA-256 digest before extraction. The

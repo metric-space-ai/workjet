@@ -8,6 +8,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
+import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -135,6 +136,11 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const settings = yield* DesktopAppSettings.DesktopAppSettings;
     return DesktopSshEnvironment.layer({
+      // A stable profile namespace prevents another Workjet installation using
+      // the same SSH account from replacing or stopping this profile's server.
+      remoteStateNamespace: NodeCrypto.createHash("sha256")
+        .update(`workjet-desktop-ssh-profile\u0000${environment.baseDir}`)
+        .digest("hex"),
       resolveCliRunner: settings.get.pipe(
         Effect.map((currentSettings) => resolveDesktopSshCliRunner(environment, currentSettings)),
       ),

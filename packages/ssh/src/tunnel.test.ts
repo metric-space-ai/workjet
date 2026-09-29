@@ -122,6 +122,7 @@ describe("ssh tunnel scripts", () => {
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
+    let otherDefault: ReturnType<typeof NodeChildProcess.spawn> | null = null;
     try {
       const port = await new Promise<number>((resolve, reject) => {
         const timeout = setTimeout(
@@ -171,7 +172,44 @@ describe("ssh tunnel scripts", () => {
 
       assert.deepEqual(attach("profile-b"), { remotePort: port, serverKind: "external" });
       assert.doesNotThrow(() => process.kill(server.pid!, 0));
+      otherDefault = NodeChildProcess.spawn(
+        process.execPath,
+        [
+          "-e",
+          'require("node:http").createServer((_request, response) => response.end("ok")).listen(0, "127.0.0.1", function () { console.log(this.address().port); });',
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      const otherPort = await new Promise<number>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("Other HTTP server did not start")),
+          5_000,
+        );
+        otherDefault!.once("error", reject);
+        otherDefault!.stdout!.once("data", (chunk: Buffer) => {
+          clearTimeout(timeout);
+          resolve(Number(String(chunk).trim()));
+        });
+      });
+      assert.isNumber(otherDefault.pid);
+      await NodeFSP.writeFile(
+        NodePath.join(root, "userdata", "server-runtime.json"),
+        JSON.stringify({
+          pid: otherDefault.pid,
+          port: otherPort,
+          origin: `http://127.0.0.1:${otherPort}/`,
+        }),
+      );
+      assert.deepEqual(attach("profile-a"), { remotePort: port, serverKind: "managed" });
+      assert.doesNotThrow(() => process.kill(server.pid!, 0));
+      assert.doesNotThrow(() => process.kill(otherDefault!.pid!, 0));
     } finally {
+      if (otherDefault) {
+        otherDefault.kill("SIGTERM");
+        if (otherDefault.exitCode === null) {
+          await new Promise<void>((resolve) => otherDefault!.once("exit", () => resolve()));
+        }
+      }
       server.kill("SIGTERM");
       if (server.exitCode === null) {
         await new Promise<void>((resolve) => server.once("exit", () => resolve()));

@@ -19,7 +19,8 @@ without entering the host again. Remove explicitly forgets the connection and
 clears its owned cached data. Remote PID, port and runner records use a stable
 profile namespace, so two Desktop profiles using the same SSH account do not
 replace or stop each other's managed services. Older unscoped service records
-are left intact during the transition.
+are left intact during the transition. A profile reconnects to its own healthy
+managed server even if another profile has since updated the default runtime.
 
 When a systemd user manager is available, Workjet starts its managed server
 as a transient user service. This keeps the server alive when the setup SSH

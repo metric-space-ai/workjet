@@ -275,4 +275,20 @@ describe("unified computer catalog", () => {
     );
     expect(markup).toContain("Disconnected. Reconnect this computer");
   });
+  it("shows a pending connection as checking until its environment is ready", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(remoteComputer)}
+        environments={[remote]}
+        environmentsReady
+        connectedEnvironmentIds={[]}
+        pendingConnectionEnvironmentId={remoteEnvironmentId}
+        harnessInspections={{}}
+        environmentId={localEnvironmentId}
+        onChange={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Checking coding tools");
+    expect(markup).not.toContain("Disconnected. Reconnect this computer");
+  });
 });

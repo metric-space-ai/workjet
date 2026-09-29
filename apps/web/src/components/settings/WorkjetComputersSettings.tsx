@@ -140,6 +140,7 @@ export function WorkjetComputersSettingsView({
   onRemove,
   renderConnection,
   connectedEnvironmentIds,
+  pendingConnectionEnvironmentId,
 }: {
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
@@ -160,6 +161,7 @@ export function WorkjetComputersSettingsView({
   readonly onRemove?: (computer: WorkjetComputer) => void;
   readonly renderConnection?: (environmentId: EnvironmentId) => ReactNode;
   readonly connectedEnvironmentIds?: ReadonlyArray<EnvironmentId>;
+  readonly pendingConnectionEnvironmentId?: EnvironmentId | null;
 }) {
   const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
   const editingComputer =
@@ -245,6 +247,7 @@ export function WorkjetComputersSettingsView({
           const disconnected =
             environmentsReady &&
             computer.environmentId !== environmentId &&
+            computer.environmentId !== pendingConnectionEnvironmentId &&
             !(connectedEnvironmentIds ?? environments.map((entry) => entry.environmentId)).includes(
               computer.environmentId,
             );
@@ -658,6 +661,7 @@ export function WorkjetComputersSettings({
         connectedEnvironmentIds={environments
           .filter((entry) => entry.connection.phase === "connected")
           .map((entry) => entry.environmentId)}
+        pendingConnectionEnvironmentId={pendingComputerId}
         onRemove={(computer) => {
           void (async () => {
             if (

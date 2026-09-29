@@ -235,7 +235,7 @@ describe("ssh command", () => {
     }).pipe(Effect.provide(processLayer));
   });
 
-  it.effect("explains a Tailscale SSH identity check instead of hiding it behind a timeout", () => {
+  it.live("explains a Tailscale SSH identity check instead of hiding it behind a timeout", () => {
     const spawner = ChildProcessSpawner.make(() =>
       Effect.succeed(
         makeNeverFinishingProcess(

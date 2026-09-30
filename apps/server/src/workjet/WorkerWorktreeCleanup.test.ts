@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeEffectPath from "@effect/platform-node/NodePath";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -192,7 +193,7 @@ const cleanupFixture = () => {
           calls.push("mark-complete");
         }),
     }),
-    Layer.mock(FileSystem.FileSystem)({ exists: () => Effect.sync(() => state.exists) }),
+    FileSystem.layerNoop({ exists: () => Effect.sync(() => state.exists) }),
     Layer.mock(NativeWorkerWorktreeRemover)({
       capture: () =>
         Effect.sync(() => {
@@ -214,8 +215,7 @@ const cleanupFixture = () => {
     state,
     receipt,
     service: make(() => Effect.succeed(identity.worktreePath)).pipe(
-      Effect.provide(services),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(Layer.mergeAll(services, NodeEffectPath.layer)),
     ),
   };
 };

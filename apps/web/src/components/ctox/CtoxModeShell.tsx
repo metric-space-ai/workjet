@@ -956,12 +956,18 @@ export function CtoxModeProvider({
   );
 }
 
-export function ctoxInstanceStatusLabel(instance: CtoxManagedInstance, connected = false): string {
-  const health =
-    connected || instance.healthSummary.dataPlaneReady
-      ? "Synchronisierung bereit"
-      : "Synchronisierung nicht verfügbar";
-  return `${STATUS_LABELS[instance.status]} · ${health}`;
+export function ctoxInstanceStatusLabel(
+  instance: CtoxManagedInstance,
+  guestOpened = false,
+): string {
+  // Discovery describes backend capability; guest activation only opens its
+  // window. Neither proves the current module completed a fresh pull. Keep
+  // that distinction until the host receives a current module freshness proof.
+  const health = instance.healthSummary.dataPlaneReady
+    ? "Synchronisierung verfügbar"
+    : "Synchronisierung nicht verfügbar";
+  const opened = guestOpened ? " · Geöffnet · Datenstand unbestätigt" : "";
+  return `${STATUS_LABELS[instance.status]} · ${health}${opened}`;
 }
 
 export function ctoxShellUpdateLabel(instance: CtoxManagedInstance): string {

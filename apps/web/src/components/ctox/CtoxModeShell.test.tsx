@@ -71,7 +71,7 @@ const unavailable = {
   nativePeerObserved: false,
 };
 
-it("shows an authenticated selected backend as synchronized", () => {
+it("does not treat an opened guest as a synchronized module", () => {
   const local = instance({
     id: "local:AAAAAAAAAAAAAAAAAAAAAA",
     source: "local_daemon",
@@ -81,7 +81,18 @@ it("shows an authenticated selected backend as synchronized", () => {
   expect(ctoxInstanceStatusLabel(local, false)).toBe(
     "Verfügbar · Synchronisierung nicht verfügbar",
   );
-  expect(ctoxInstanceStatusLabel(local, true)).toBe("Verfügbar · Synchronisierung bereit");
+  expect(ctoxInstanceStatusLabel(local, true)).toBe(
+    "Verfügbar · Synchronisierung nicht verfügbar · Geöffnet · Datenstand unbestätigt",
+  );
+});
+
+it("keeps module freshness unconfirmed when discovery advertises a ready data plane", () => {
+  const managed = instance({ id: "managed:welsch", source: "ctox_dev", displayName: "Welsch" });
+  expect(ctoxInstanceStatusLabel(managed)).toBe("Verfügbar · Synchronisierung verfügbar");
+  expect(ctoxInstanceStatusLabel(managed, true)).toBe(
+    "Verfügbar · Synchronisierung verfügbar · Geöffnet · Datenstand unbestätigt",
+  );
+  expect(ctoxInstanceStatusLabel(managed, true)).not.toContain("Synchronisierung bereit");
 });
 
 it("keeps shell freshness visible outside the guest", () => {
@@ -261,7 +272,8 @@ describe("CTOX instance presentation", () => {
     expect(markup).not.toContain("Local Lab");
     expect(markup).not.toContain("SSH Lab");
     expect(markup).toContain("CTOX Backend · owner · alpha.ctox.dev");
-    expect(markup).toContain("Verfügbar · Synchronisierung bereit");
+    expect(markup).toContain("Verfügbar · Synchronisierung verfügbar");
+    expect(markup).not.toContain("Synchronisierung bereit");
     expect(markup).not.toContain("room-secret-must-not-render");
     expect(markup).not.toContain("tenant-launch-token-must-not-render");
     expect(markup).not.toContain("partition-must-not-render");

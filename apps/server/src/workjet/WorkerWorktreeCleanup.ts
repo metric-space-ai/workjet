@@ -243,21 +243,33 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
       }).pipe(Effect.orElseSucceed(() => null));
 
     const cwd = context.workspaceRoot;
+    const existingPath = yield* fs.exists(worktreePath).pipe(Effect.orElseSucceed(() => true));
+    const safeRemovalPath = existingPath
+      ? yield* validateRemovalPath({ worktreePath, workspaceRoot: cwd, trustedRoots })
+      : null;
+    if (existingPath && safeRemovalPath === null) {
+      return { status: "skipped", reason: "outside-storage-root" } as const;
+    }
+    // Bind the merge checks to this directory before Git or provider calls.
+    // Capturing after verification would silently authorize a replacement.
+    const captured =
+      safeRemovalPath === null
+        ? null
+        : yield* nativeRemover
+            .capture(safeRemovalPath)
+            .pipe(
+              Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })),
+            );
     yield* gitWorkflow.invalidateLocalStatus(worktreePath);
     const local = yield* gitWorkflow
       .localStatus({ cwd: worktreePath })
       .pipe(Effect.orElseSucceed(() => null));
     if (local?.isRepo) {
-      if (local.refName !== workerRefName || local.hasWorkingTreeChanges) {
+      if (captured === null) {
         return { status: "skipped", reason: "merge-unverified" } as const;
       }
-      const safeRemovalPath = yield* validateRemovalPath({
-        worktreePath,
-        workspaceRoot: cwd,
-        trustedRoots,
-      });
-      if (safeRemovalPath === null) {
-        return { status: "skipped", reason: "outside-storage-root" } as const;
+      if (local.refName !== workerRefName || local.hasWorkingTreeChanges) {
+        return { status: "skipped", reason: "merge-unverified" } as const;
       }
       const head = yield* git
         .resolveCommit({ cwd: worktreePath, revision: "HEAD" })
@@ -285,11 +297,28 @@ export const make = Effect.fn("WorkerWorktreeCleanup.make")(function* (
       if (Option.isNone(stored) || stored.value.status !== "verified") {
         return { status: "skipped", reason: "merge-unverified" } as const;
       }
-      // The reactor has already stopped the exact provider session. The
-      // native helper pins directory identities, checks both Git backlinks,
-      // and never follows a pathname while removing the checkout and admin.
+      // Provider lookup and durable receipt writes can take time. Retain any
+      // edits or ref changes observed since the original clean Git status.
+      yield* gitWorkflow.invalidateLocalStatus(worktreePath);
+      const latest = yield* gitWorkflow
+        .localStatus({ cwd: worktreePath })
+        .pipe(Effect.orElseSucceed(() => null));
+      const latestHead = yield* git
+        .resolveCommit({ cwd: worktreePath, revision: "HEAD" })
+        .pipe(Effect.orElseSucceed(() => null));
+      if (
+        !latest?.isRepo ||
+        latest.refName !== workerRefName ||
+        latest.hasWorkingTreeChanges ||
+        latestHead?.commitSha.toLowerCase() !== head.commitSha.toLowerCase()
+      ) {
+        return { status: "skipped", reason: "merge-unverified" } as const;
+      }
+      // The native helper must use the ORIGINAL identity, never recapture a
+      // potentially replaced checkout after the merge/status checks.
+      // This does not fence writes through an already-open file descriptor.
       yield* nativeRemover
-        .remove(safeRemovalPath)
+        .removeCaptured(captured)
         .pipe(Effect.mapError(() => new WorkerWorktreeCleanupError({ step: "remove-worktree" })));
       yield* receipts
         .markRemoved(receipt)

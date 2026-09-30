@@ -105,7 +105,7 @@ overrides:
   "@hono/node-server": 1.19.15
   "@pierre/diffs>@shikijs/transformers": ^4.2.0
   "@types/node": "catalog:"
-  brace-expansion: 5.0.9
+  brace-expansion: 5.0.11
   builder-util-runtime: 9.7.0
   effect: "catalog:"
   expo-modules-jsi: 56.0.10

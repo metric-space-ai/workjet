@@ -5,9 +5,12 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import { runLocalCli } from "./DesktopLocalServiceSession.ts";
+
+const serializeError = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const fixture = Effect.fn("test.localCli.fixture")(function* (body: string) {
   const fs = yield* FileSystem.FileSystem;
@@ -164,10 +167,10 @@ for (const [name, args, body, expected] of [
         const config = yield* fixture(body);
         const error = yield* runLocalCli(config, args).pipe(Effect.flip);
         assert.deepEqual(error.commandFailure, expected);
-        assert.notInclude(JSON.stringify(error), "synthetic-secret");
-        assert.notInclude(JSON.stringify(error), "synthetic-private-argument");
-        assert.notInclude(JSON.stringify(error), config.cwd);
-        assert.isBelow(JSON.stringify(error).length, 1000);
+        assert.notInclude(serializeError(error), "synthetic-secret");
+        assert.notInclude(serializeError(error), "synthetic-private-argument");
+        assert.notInclude(serializeError(error), config.cwd);
+        assert.isBelow(serializeError(error).length, 1000);
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -183,7 +186,7 @@ it.live("distinguishes a missing CLI executable from an install exit", () =>
         ["service", "start"],
       ).pipe(Effect.flip);
       assert.deepEqual(error.commandFailure, { command: "service-start", kind: "spawn" });
-      assert.notInclude(JSON.stringify(error), config.cwd);
+      assert.notInclude(serializeError(error), config.cwd);
     }),
   ).pipe(Effect.provide(NodeServices.layer)),
 );

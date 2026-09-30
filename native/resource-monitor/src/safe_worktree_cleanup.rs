@@ -246,6 +246,7 @@ mod unix {
         // A pinned descriptor is still usable after the checkout is renamed.
         // Reject a replacement before unlinking any original contents, rather
         // than discovering the replacement only after deleting the moved tree.
+        // This path check does not fence writes through an already-open file descriptor.
         require_named_identity(&parent, &name, expected)?;
         remove_contents(&target, expected_dev)?;
         require_named_identity(&parent, &name, expected)?;

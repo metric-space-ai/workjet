@@ -243,6 +243,10 @@ mod unix {
             ));
         }
         before_contents();
+        // A pinned descriptor is still usable after the checkout is renamed.
+        // Reject a replacement before unlinking any original contents, rather
+        // than discovering the replacement only after deleting the moved tree.
+        require_named_identity(&parent, &name, expected)?;
         remove_contents(&target, expected_dev)?;
         require_named_identity(&parent, &name, expected)?;
         unlink_at(&parent, &name, libc::AT_REMOVEDIR)
@@ -301,6 +305,12 @@ mod unix {
             ));
         }
 
+        require_named_identity(
+            &worktree_parent,
+            &worktree_name,
+            (worktree_dev, worktree_ino),
+        )?;
+        require_named_identity(&admin_parent, &admin_name, (admin_dev, admin_ino))?;
         remove_contents(&worktree, worktree_dev)?;
         require_named_identity(
             &worktree_parent,
@@ -672,6 +682,7 @@ mod unix {
             assert!(result.is_err());
             assert!(outside.join("sentinel").exists());
             assert!(moved.exists());
+            assert_eq!(std::fs::read(moved.join("owned")).unwrap(), b"merged");
             std::fs::remove_file(&target).unwrap();
             std::fs::remove_dir_all(root).unwrap();
         }
@@ -691,6 +702,7 @@ mod unix {
             assert!(result.is_err());
             assert!(target.is_dir());
             assert!(moved.is_dir());
+            assert_eq!(std::fs::read(moved.join("owned")).unwrap(), b"merged");
             std::fs::remove_dir_all(root).unwrap();
         }
 

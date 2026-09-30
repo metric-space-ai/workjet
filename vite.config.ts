@@ -28,7 +28,8 @@ export default defineConfig({
   },
   staged: {
     // Formatter only for now — no lint or typecheck on commit.
-    "*": "vp fmt",
+    "!(*.rs)": "vp fmt",
+    "*.rs": "rustfmt --edition 2024 --check",
   },
   fmt: {
     ignorePatterns: [

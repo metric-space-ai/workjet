@@ -35,6 +35,10 @@ async function fixture(
       { mode: 0o755 },
     );
     await NodeFSP.writeFile(NodePath.join(source, "LICENSE"), "Fixture notice\n");
+    for (const entry of ["include/node", "share/man", "lib/node_modules/npm"]) {
+      await NodeFSP.mkdir(NodePath.join(source, entry), { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(source, entry, "fixture"), entry);
+    }
     const archivePath = NodePath.join(root, "node.tar.gz");
     NodeChildProcess.execFileSync("tar", ["-czf", archivePath, "-C", root, pin.directoryName], {
       timeout: 10_000,
@@ -75,6 +79,17 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
           await NodeFSP.readFile(NodePath.join(input.destination, "workjet-runtime.json"), "utf8"),
         ),
       ).toEqual(input.pin);
+      expect(
+        await NodeFSP.readFile(
+          NodePath.join(input.destination, "lib/node_modules/npm/fixture"),
+          "utf8",
+        ),
+      ).toBe("lib/node_modules/npm");
+      for (const entry of ["include", "share"]) {
+        await expect(NodeFSP.access(NodePath.join(input.destination, entry))).rejects.toMatchObject(
+          { code: "ENOENT" },
+        );
+      }
       expect((await NodeFSP.readdir(root)).some((entry) => entry.startsWith(".node-stage-"))).toBe(
         false,
       );

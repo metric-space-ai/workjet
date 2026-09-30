@@ -61,7 +61,11 @@ export async function stageVerifiedNodeArchive(input: {
     // Build stages are private. Never replace a previously staged executable.
     await NodeFSP.mkdir(input.destination);
     ownsDestination = true;
+    // The installed service needs Node and npm, not the native-addon SDK or
+    // documentation. Preserve npm while avoiding unnecessary header/manpage
+    // writes on every fresh service install.
     for (const entry of await NodeFSP.readdir(root)) {
+      if (entry === "include" || entry === "share") continue;
       await NodeFSP.rename(NodePath.join(root, entry), NodePath.join(input.destination, entry));
     }
     await NodeFSP.writeFile(

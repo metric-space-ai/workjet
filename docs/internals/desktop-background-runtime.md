@@ -119,8 +119,12 @@ does not yet provide authenticated Desktop attachment, reconnectable telemetry,
 or native reconciliation.
 Portable server packaging now stages the existing checksum-pinned Node 24.13.1
 distribution, matching the platform/architecture and native-dependency build.
-The archive includes its executable, npm, license and runtime provenance receipt;
-the build installs dependencies and runs the existing CLI/PTY smoke checks with
+The archive includes its executable, npm, license and runtime provenance receipt.
+Native-addon headers (`include/`) and manuals (`share/`) stay in the verified
+build stage and are not shipped in the service archive, reducing fresh-install
+filesystem writes. The original distribution hash and executable identity are
+verified before this reduction. The build installs dependencies and runs the
+existing CLI/PTY smoke checks with
 that exact bundled executable. This build path is implemented but not executed
 on this source head. Service install/update/status now accept an explicit trusted
 `--bundle-archive` together with `--bundle-sha256`. Import hashes a private copy,

@@ -27,26 +27,17 @@ import {
 } from "../businessOsCodeScope";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
+import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
+import { localProjectIsVisible } from "../localProjectVisibility";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
 import { environmentServerConfigsAtom } from "./server";
 import { allEnvironmentShellsBootstrappedAtom } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
-const EMPTY_PROJECT_REFS: ReadonlyArray<ScopedProjectRef> = Object.freeze([]);
-const EMPTY_THREAD_REFS: ReadonlyArray<ScopedThreadRef> = Object.freeze([]);
 const EMPTY_MESSAGES: ReadonlyArray<OrchestrationMessage> = Object.freeze([]);
 const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = Object.freeze([]);
 const EMPTY_PROPOSED_PLANS: ReadonlyArray<OrchestrationProposedPlan> = Object.freeze([]);
 
-const EMPTY_PROJECT_ATOM = Atom.make<EnvironmentProject | null>(null).pipe(
-  Atom.withLabel("web-project:empty"),
-);
-const EMPTY_PROJECT_REFS_ATOM = Atom.make(EMPTY_PROJECT_REFS).pipe(
-  Atom.withLabel("web-project-refs:empty"),
-);
-const EMPTY_THREAD_REFS_ATOM = Atom.make(EMPTY_THREAD_REFS).pipe(
-  Atom.withLabel("web-thread-refs:empty"),
-);
 const EMPTY_THREAD_SHELL_ATOM = Atom.make<EnvironmentThreadShell | null>(null).pipe(
   Atom.withLabel("web-thread-shell:empty"),
 );
@@ -117,22 +108,20 @@ export function useThreadRefs(): ReadonlyArray<ScopedThreadRef> {
 export function useEnvironmentProjectRefs(
   environmentId: EnvironmentId | null,
 ): ReadonlyArray<ScopedProjectRef> {
-  const scope = useBusinessOsCodeScope();
-  return useAtomValue(
-    environmentId === null || !businessOsCodeScopeContainsEnvironment(scope, environmentId)
-      ? EMPTY_PROJECT_REFS_ATOM
-      : environmentProjects.environmentProjectRefsAtom(environmentId),
+  const refs = useProjectRefs();
+  return useMemo(
+    () => refs.filter((ref) => ref.environmentId === environmentId),
+    [refs, environmentId],
   );
 }
 
 export function useEnvironmentThreadRefs(
   environmentId: EnvironmentId | null,
 ): ReadonlyArray<ScopedThreadRef> {
-  const scope = useBusinessOsCodeScope();
-  return useAtomValue(
-    environmentId === null || !businessOsCodeScopeContainsEnvironment(scope, environmentId)
-      ? EMPTY_THREAD_REFS_ATOM
-      : environmentThreadShells.environmentThreadRefsAtom(environmentId),
+  const refs = useThreadRefs();
+  return useMemo(
+    () => refs.filter((ref) => ref.environmentId === environmentId),
+    [refs, environmentId],
   );
 }
 
@@ -140,54 +129,56 @@ export function useProjects(): ReadonlyArray<EnvironmentProject> {
   const projects = useAtomValue(environmentProjects.projectsAtom);
   const scope = useBusinessOsCodeScope();
   const { selectedInstanceId } = useActiveWorkjetScope();
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   return useMemo(
     () =>
-      projects.filter(
-        (project) =>
-          businessOsCodeScopeContainsEnvironment(scope, project.environmentId) &&
-          (project.ctoxRegistration == null ||
-            project.ctoxRegistration.instanceId === selectedInstanceId),
+      projects.filter((project) =>
+        localProjectIsVisible(project, { scope, selectedInstanceId, primaryEnvironmentId }),
       ),
-    [projects, scope, selectedInstanceId],
+    [projects, scope, selectedInstanceId, primaryEnvironmentId],
   );
 }
 
 export function useServerConfigs(): ReadonlyMap<EnvironmentId, ServerConfig> {
   const configs = useAtomValue(environmentServerConfigsAtom);
+  const projects = useProjects();
   const scope = useBusinessOsCodeScope();
   return useMemo(
     () =>
       new Map(
-        [...configs].filter(([environmentId]) =>
-          businessOsCodeScopeContainsEnvironment(scope, environmentId),
+        [...configs].filter(
+          ([environmentId]) =>
+            businessOsCodeScopeContainsEnvironment(scope, environmentId) ||
+            projects.some((project) => project.environmentId === environmentId),
         ),
       ),
-    [configs, scope],
+    [configs, projects, scope],
   );
 }
 
 export function useThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
   const threads = useAtomValue(environmentThreadShells.threadShellsAtom);
   const projects = useProjects();
-  const scope = useBusinessOsCodeScope();
   return useMemo(
     () =>
-      threads.filter(
-        (thread) =>
-          businessOsCodeScopeContainsEnvironment(scope, thread.environmentId) &&
-          projects.some(
-            (project) =>
-              project.environmentId === thread.environmentId && project.id === thread.projectId,
-          ),
+      threads.filter((thread) =>
+        projects.some(
+          (project) =>
+            project.environmentId === thread.environmentId && project.id === thread.projectId,
+        ),
       ),
-    [projects, scope, threads],
+    [projects, threads],
   );
 }
 
 export function useAllEnvironmentShellsBootstrapped(): boolean {
   const allBootstrapped = useAtomValue(allEnvironmentShellsBootstrappedAtom);
   const scope = useBusinessOsCodeScope();
-  return scope.phase === "ready" && (scope.environmentIds.size === 0 || allBootstrapped);
+  const projects = useProjects();
+  return (
+    (scope.phase === "ready" && (scope.environmentIds.size === 0 || allBootstrapped)) ||
+    (allBootstrapped && projects.some((project) => project.ctoxRegistration != null))
+  );
 }
 
 export function useThreadShellsForProjectRefs(
@@ -207,60 +198,51 @@ export function useThreadShellsForProjectRefs(
 }
 
 export function useProject(ref: ScopedProjectRef | null): EnvironmentProject | null {
-  const scope = useBusinessOsCodeScope();
-  const { selectedInstanceId } = useActiveWorkjetScope();
-  const project = useAtomValue(
-    ref === null || !businessOsCodeScopeContainsEnvironment(scope, ref.environmentId)
-      ? EMPTY_PROJECT_ATOM
-      : environmentProjects.projectAtom(ref),
+  const projects = useProjects();
+  return (
+    projects.find(
+      (project) => project.environmentId === ref?.environmentId && project.id === ref.projectId,
+    ) ?? null
   );
-  return project?.ctoxRegistration != null &&
-    project.ctoxRegistration.instanceId !== selectedInstanceId
-    ? null
-    : project;
 }
 
 export function useThreadShell(ref: ScopedThreadRef | null): EnvironmentThreadShell | null {
-  const scope = useBusinessOsCodeScope();
   const shell = useAtomValue(
-    ref === null || !businessOsCodeScopeContainsEnvironment(scope, ref.environmentId)
-      ? EMPTY_THREAD_SHELL_ATOM
-      : environmentThreadShells.threadShellAtom(ref),
+    ref === null ? EMPTY_THREAD_SHELL_ATOM : environmentThreadShells.threadShellAtom(ref),
   );
   const project = useProject(
     shell === null ? null : { environmentId: shell.environmentId, projectId: shell.projectId },
   );
-  return shell !== null && project === null ? null : shell;
+  return project === null ? null : shell;
 }
 
 function useVisibleThreadRef(ref: ScopedThreadRef | null): ScopedThreadRef | null {
   const scope = useBusinessOsCodeScope();
   const shell = useAtomValue(
-    ref === null || !businessOsCodeScopeContainsEnvironment(scope, ref.environmentId)
-      ? EMPTY_THREAD_SHELL_ATOM
-      : environmentThreadShells.threadShellAtom(ref),
+    ref === null ? EMPTY_THREAD_SHELL_ATOM : environmentThreadShells.threadShellAtom(ref),
   );
   const project = useProject(
     shell === null ? null : { environmentId: shell.environmentId, projectId: shell.projectId },
   );
-  return shell !== null && project === null ? null : ref;
+  if (shell !== null) return project === null ? null : ref;
+  return ref !== null && businessOsCodeScopeContainsEnvironment(scope, ref.environmentId)
+    ? ref
+    : null;
 }
 
 export function useThreadDetail(ref: ScopedThreadRef | null): EnvironmentThread | null {
-  const scope = useBusinessOsCodeScope();
   const visibleRef = useVisibleThreadRef(ref);
   return useAtomValue(
-    visibleRef === null || !businessOsCodeScopeContainsEnvironment(scope, visibleRef.environmentId)
+    visibleRef === null
       ? EMPTY_THREAD_DETAIL_ATOM
       : environmentThreadDetails.detailAtom(visibleRef),
   );
 }
 
 export function useThreadStatus(ref: ScopedThreadRef | null): EnvironmentThreadStatus {
-  const scope = useBusinessOsCodeScope();
   const visibleRef = useVisibleThreadRef(ref);
   return useAtomValue(
-    visibleRef === null || !businessOsCodeScopeContainsEnvironment(scope, visibleRef.environmentId)
+    visibleRef === null
       ? EMPTY_THREAD_STATUS_ATOM
       : environmentThreadDetails.statusAtom(visibleRef),
   );
@@ -301,22 +283,18 @@ export function useThread(
 export function useThreadMessages(
   ref: ScopedThreadRef | null,
 ): ReadonlyArray<OrchestrationMessage> {
-  const scope = useBusinessOsCodeScope();
   const visibleRef = useVisibleThreadRef(ref);
   return useAtomValue(
-    visibleRef === null || !businessOsCodeScopeContainsEnvironment(scope, visibleRef.environmentId)
-      ? EMPTY_MESSAGES_ATOM
-      : environmentThreadDetails.messagesAtom(visibleRef),
+    visibleRef === null ? EMPTY_MESSAGES_ATOM : environmentThreadDetails.messagesAtom(visibleRef),
   );
 }
 
 export function useThreadActivities(
   ref: ScopedThreadRef | null,
 ): ReadonlyArray<OrchestrationThreadActivity> {
-  const scope = useBusinessOsCodeScope();
   const visibleRef = useVisibleThreadRef(ref);
   return useAtomValue(
-    visibleRef === null || !businessOsCodeScopeContainsEnvironment(scope, visibleRef.environmentId)
+    visibleRef === null
       ? EMPTY_ACTIVITIES_ATOM
       : environmentThreadDetails.activitiesAtom(visibleRef),
   );
@@ -325,40 +303,34 @@ export function useThreadActivities(
 export function useThreadProposedPlans(
   ref: ScopedThreadRef | null,
 ): ReadonlyArray<OrchestrationProposedPlan> {
-  const scope = useBusinessOsCodeScope();
   const visibleRef = useVisibleThreadRef(ref);
   return useAtomValue(
-    visibleRef === null || !businessOsCodeScopeContainsEnvironment(scope, visibleRef.environmentId)
+    visibleRef === null
       ? EMPTY_PROPOSED_PLANS_ATOM
       : environmentThreadDetails.proposedPlansAtom(visibleRef),
   );
 }
 
 export function useThreadSession(ref: ScopedThreadRef | null): OrchestrationSession | null {
-  const scope = useBusinessOsCodeScope();
   const visibleRef = useVisibleThreadRef(ref);
   return useAtomValue(
-    visibleRef === null || !businessOsCodeScopeContainsEnvironment(scope, visibleRef.environmentId)
-      ? EMPTY_SESSION_ATOM
-      : environmentThreadDetails.sessionAtom(visibleRef),
+    visibleRef === null ? EMPTY_SESSION_ATOM : environmentThreadDetails.sessionAtom(visibleRef),
   );
 }
 
 export function readProject(ref: ScopedProjectRef): EnvironmentProject | null {
-  if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), ref.environmentId)) {
-    return null;
-  }
   const project = appAtomRegistry.get(environmentProjects.projectAtom(ref));
-  return project?.ctoxRegistration != null &&
-    project.ctoxRegistration.instanceId !== readActiveWorkjetScope().selectedInstanceId
-    ? null
-    : project;
+  return project !== null &&
+    localProjectIsVisible(project, {
+      scope: readBusinessOsCodeScope(),
+      selectedInstanceId: readActiveWorkjetScope().selectedInstanceId,
+      primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
+    })
+    ? project
+    : null;
 }
 
 export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | null {
-  if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), ref.environmentId)) {
-    return null;
-  }
   const shell = appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
   return shell !== null &&
     readProject({ environmentId: shell.environmentId, projectId: shell.projectId }) === null
@@ -413,46 +385,32 @@ export function readEnvironmentSupportsPinReorder(environmentId: EnvironmentId):
 }
 
 export function readThreadDetail(ref: ScopedThreadRef): EnvironmentThread | null {
-  if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), ref.environmentId)) {
-    return null;
-  }
-  const detail = appAtomRegistry.get(environmentThreadDetails.detailAtom(ref));
-  return detail !== null &&
-    readProject({ environmentId: detail.environmentId, projectId: detail.projectId }) === null
-    ? null
-    : detail;
+  const shell = readThreadShell(ref);
+  if (shell === null) return null;
+  return appAtomRegistry.get(environmentThreadDetails.detailAtom(ref));
 }
 
 export function readEnvironmentThreadRefs(
   environmentId: EnvironmentId,
 ): ReadonlyArray<ScopedThreadRef> {
-  if (!businessOsCodeScopeContainsEnvironment(readBusinessOsCodeScope(), environmentId)) return [];
-  return appAtomRegistry.get(environmentThreadShells.environmentThreadRefsAtom(environmentId));
+  return readThreadRefs().filter((ref) => ref.environmentId === environmentId);
 }
 
 export function readThreadRefs(): ReadonlyArray<ScopedThreadRef> {
-  const scope = readBusinessOsCodeScope();
   return appAtomRegistry
     .get(environmentThreadShells.threadRefsAtom)
-    .filter((ref) => businessOsCodeScopeContainsEnvironment(scope, ref.environmentId));
+    .filter((ref) => readThreadShell(ref) !== null);
 }
 
 export function readThreadShells(): ReadonlyArray<EnvironmentThreadShell> {
-  const scope = readBusinessOsCodeScope();
   return appAtomRegistry
     .get(environmentThreadShells.threadShellsAtom)
-    .filter((thread) => businessOsCodeScopeContainsEnvironment(scope, thread.environmentId));
+    .filter(
+      (thread) =>
+        readProject({ environmentId: thread.environmentId, projectId: thread.projectId }) !== null,
+    );
 }
 
 export function findThreadRef(threadId: ThreadId): ScopedThreadRef | null {
-  const scope = readBusinessOsCodeScope();
-  return (
-    appAtomRegistry
-      .get(environmentThreadShells.threadRefsAtom)
-      .find(
-        (ref) =>
-          ref.threadId === threadId &&
-          businessOsCodeScopeContainsEnvironment(scope, ref.environmentId),
-      ) ?? null
-  );
+  return readThreadRefs().find((ref) => ref.threadId === threadId) ?? null;
 }

@@ -4,11 +4,15 @@ import {
 } from "../components/ctox/InstanceOnboarding";
 import { useCtoxMode } from "../components/ctox/CtoxModeShell";
 import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environment";
+import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
+import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
+import { RegistryContext } from "@effect/atom-react";
+import type { CommandId } from "@workjet/contracts";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { FolderPlusIcon, LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
@@ -22,13 +26,25 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useBusinessOsScopedEnvironments } from "../state/environments";
+import {
+  useBusinessOsScopedEnvironments,
+  usePrimaryEnvironment,
+  usePrimaryEnvironmentId,
+} from "../state/environments";
+import { environmentProjects, projectEnvironment } from "../state/projects";
+import { useAtomCommand } from "../state/use-atom-command";
+import { resolveNativeProjectOpening } from "../nativeProjectOpening";
+import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { cn } from "~/lib/utils";
+import { cn, newCommandId } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
-import { selectWorkjetProject, useWorkjetProjectRegistry } from "../workjetProjectRegistry";
-import { useActiveWorkjetScope } from "../activeWorkjetScope";
+import {
+  readWorkjetProjectRegistry,
+  selectWorkjetProject,
+  useWorkjetProjectRegistry,
+} from "../workjetProjectRegistry";
+import { readActiveWorkjetScope, useActiveWorkjetScope } from "../activeWorkjetScope";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
@@ -57,6 +73,16 @@ function IndexDraftLanding() {
   const projects = useProjects();
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
+  const projectStore = useContext(RegistryContext);
+  const primaryEnvironment = usePrimaryEnvironment();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
+  const openingNative = useRef(false);
+  const nativeAttempt = useRef<{ key: string; commandId: CommandId } | null>(null);
+  const [nativeOpenState, setNativeOpenState] = useState({
+    pending: false,
+    error: null as string | null,
+  });
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
@@ -68,11 +94,20 @@ function IndexDraftLanding() {
   > | null>(null);
   const selectedNative =
     registry.projects.find((project) => project.id === registry.selectedProjectId) ?? null;
+  useEffect(() => {
+    setNativeOpenState({ pending: openingNative.current, error: null });
+  }, [activeCtoxInstanceId, selectedNative?.id]);
   const landingProject = useMemo(() => {
     if (!bootstrapped) return null;
     const ordered = sortScopedProjectsForSidebar(projects, threads, "updated_at");
     if (selectedNative !== null)
-      return ordered.find((project) => project.id === selectedNative.id) ?? null;
+      return (
+        ordered.find(
+          (project) =>
+            project.id === selectedNative.id &&
+            project.ctoxRegistration?.instanceId === activeCtoxInstanceId,
+        ) ?? null
+      );
     if (activeCtoxInstanceId !== null || selectedLegacyProject === null) return null;
     return (
       ordered.find(
@@ -118,6 +153,62 @@ function IndexDraftLanding() {
     });
   }, [handleNewThread, landingProject, navigate, startState.retryRequest, supervisor]);
 
+  const openNativeSupervisor = async () => {
+    if (openingNative.current || selectedNative === null || activeCtoxInstanceId === null) return;
+    const instanceId = activeCtoxInstanceId;
+    const scope = readActiveWorkjetScope();
+    if (scope.selectedInstanceId !== instanceId) return;
+    const plan = resolveNativeProjectOpening({
+      instanceId,
+      project: selectedNative,
+      localEnvironmentId: primaryEnvironmentId,
+      localConnected:
+        bootstrapped && canCreateProjectInEnvironment(primaryEnvironment?.connection.phase),
+      projects: projectStore.get(environmentProjects.projectsAtom),
+    });
+    if (plan._tag === "blocked") {
+      setNativeOpenState({ pending: false, error: plan.message });
+      return;
+    }
+    if (plan._tag === "existing") return;
+    const key = JSON.stringify([instanceId, plan.environmentId, plan.projectId]);
+    if (nativeAttempt.current?.key !== key)
+      nativeAttempt.current = { key, commandId: newCommandId() };
+    const commandId = nativeAttempt.current.commandId;
+    openingNative.current = true;
+    setNativeOpenState({ pending: true, error: null });
+    try {
+      const result = await createProject({
+        environmentId: plan.environmentId,
+        input: {
+          projectId: plan.projectId,
+          commandId,
+          title: plan.title,
+          workspaceRoot: null,
+          ctoxRegistration: { instanceId, commandId, status: "pending" },
+          defaultModelSelection: resolveDefaultProviderModelSelection(
+            primaryEnvironment?.serverConfig?.providers ?? [],
+            null,
+          ),
+        },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    } catch (error) {
+      if (
+        readActiveWorkjetScope().selectionRevision === scope.selectionRevision &&
+        readWorkjetProjectRegistry(instanceId).selectedProjectId === selectedNative.id
+      )
+        setNativeOpenState({
+          pending: false,
+          error:
+            error instanceof Error ? error.message : "Couldn’t open this supervisor. Try again.",
+        });
+    } finally {
+      openingNative.current = false;
+      setNativeOpenState((state) => ({ ...state, pending: false }));
+    }
+  };
+
   if (landingProject !== null)
     return startState.failed ? (
       <DraftStartError
@@ -126,7 +217,15 @@ function IndexDraftLanding() {
         }
       />
     ) : null;
-  if (selectedNative !== null) return <WorkjetProjectReady projectTitle={selectedNative.title} />;
+  if (selectedNative !== null)
+    return (
+      <WorkjetProjectReady
+        projectTitle={selectedNative.title}
+        onOpenSupervisor={() => void openNativeSupervisor()}
+        pending={nativeOpenState.pending}
+        error={nativeOpenState.error}
+      />
+    );
   if (registry.projects.length > 0)
     return (
       <ProjectGallery
@@ -215,22 +314,39 @@ function ProjectGallery({
   );
 }
 
-function WorkjetProjectReady({ projectTitle }: { readonly projectTitle: string }) {
-  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
-
+function WorkjetProjectReady({
+  projectTitle,
+  onOpenSupervisor,
+  pending,
+  error,
+}: {
+  readonly projectTitle: string;
+  readonly onOpenSupervisor: () => void;
+  readonly pending: boolean;
+  readonly error: string | null;
+}) {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <Empty className="flex-1" data-workjet-project-state="ready">
         <EmptyHeader className="max-w-md">
           <EmptyTitle className="text-foreground text-xl">{projectTitle}</EmptyTitle>
           <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-            Project synced with this CTOX instance. Choose a computer when you are ready to run a
-            worker; the project itself is not tied to one computer.
+            Project synced with this CTOX instance. Open its supervisor to continue. You can attach
+            a folder or choose a computer later.
           </EmptyDescription>
+          {error ? (
+            <p role="alert" className="mt-3 text-sm text-destructive">
+              {error}
+            </p>
+          ) : null}
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Button size="sm" variant="outline" onClick={openAddProject}>
-              <FolderPlusIcon className="size-4" />
-              Add project
+            <Button
+              size="sm"
+              onClick={onOpenSupervisor}
+              disabled={pending}
+              data-workjet-action="project.open.supervisor"
+            >
+              {pending ? "Opening supervisor…" : "Open supervisor"}
             </Button>
             <Button render={<Link to="/settings/computers" />} size="sm">
               <ServerIcon className="size-4" />

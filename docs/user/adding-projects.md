@@ -19,6 +19,12 @@ return to the overview.
 The cards show the saved projects for the selected instance. Choose a card to
 open that project, or choose **Add project** to create another one.
 
+If an existing instance project has no conversation on this Code environment,
+choose **Open supervisor**. Workjet retains the same project identity and opens
+its saved Supervisor conversation. No working folder is required. Instance
+synchronization may still be pending; it never replaces another instance’s
+conversation.
+
 The overview stays selected when you reopen Workjet. If a previously selected
 project is removed, Workjet returns to the overview instead of opening a
 different project automatically.

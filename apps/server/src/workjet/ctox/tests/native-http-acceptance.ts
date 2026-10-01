@@ -102,7 +102,7 @@ const decodeSavedReceipt = Schema.decodeUnknownEffect(Schema.fromJsonString(Save
 const decodeTokenCapture = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ value: Schema.String.check(Schema.isMinLength(1)) })),
 );
-const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeStoredIntent = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Struct({ request: Schema.Unknown })),
 );

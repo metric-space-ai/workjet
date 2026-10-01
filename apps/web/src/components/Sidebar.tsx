@@ -3723,7 +3723,31 @@ export default function Sidebar() {
             </div>
             {projectGroups.length > 0 || workjetProjects.length > 0 ? (
               <div className="space-y-1">
-                <p className="px-2 text-[11px] text-sidebar-muted-foreground">Project</p>
+                <div className="flex items-center justify-between px-2">
+                  <p className="text-[11px] text-sidebar-muted-foreground">Project</p>
+                  <button
+                    type="button"
+                    data-workjet-action="project.overview"
+                    disabled={isSwitchingProject}
+                    className="rounded px-1 py-0.5 text-[11px] text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-ring"
+                    onClick={() => {
+                      const instanceId = workjetProjectRegistry.presentationInstanceId;
+                      if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
+                      setProjectScopeKey(null);
+                      setProjectScopeMenuOpen(false);
+                      if (isMobile) setOpenMobile(false);
+                      void router.navigate({ to: "/" }).catch((error) => {
+                        toastManager.add({
+                          type: "error",
+                          title: "Could not open project overview",
+                          description: error instanceof Error ? error.message : "Please try again.",
+                        });
+                      });
+                    }}
+                  >
+                    All projects
+                  </button>
+                </div>
                 <div className="flex items-center gap-1">
                   <Menu open={projectScopeMenuOpen} onOpenChange={setProjectScopeMenuOpen}>
                     <MenuTrigger

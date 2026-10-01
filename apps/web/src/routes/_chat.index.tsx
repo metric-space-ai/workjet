@@ -27,7 +27,7 @@ import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
-import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
+import { selectWorkjetProject, useWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import { useActiveWorkjetScope } from "../activeWorkjetScope";
 
 function ChatIndexRouteView() {
@@ -63,17 +63,32 @@ function IndexDraftLanding() {
   const navigate = useNavigate();
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
+  const [selectedLegacyProject, setSelectedLegacyProject] = useState<ReturnType<
+    typeof scopeProjectRef
+  > | null>(null);
   const selectedNative =
-    registry.projects.find((project) => project.id === registry.selectedProjectId) ??
-    registry.projects[0] ??
-    null;
+    registry.projects.find((project) => project.id === registry.selectedProjectId) ?? null;
   const landingProject = useMemo(() => {
     if (!bootstrapped) return null;
     const ordered = sortScopedProjectsForSidebar(projects, threads, "updated_at");
     if (selectedNative !== null)
       return ordered.find((project) => project.id === selectedNative.id) ?? null;
-    return ordered[0] ?? null;
-  }, [bootstrapped, projects, selectedNative, threads]);
+    if (activeCtoxInstanceId !== null || selectedLegacyProject === null) return null;
+    return (
+      ordered.find(
+        (project) =>
+          project.id === selectedLegacyProject.projectId &&
+          project.environmentId === selectedLegacyProject.environmentId,
+      ) ?? null
+    );
+  }, [
+    activeCtoxInstanceId,
+    bootstrapped,
+    projects,
+    selectedLegacyProject,
+    selectedNative,
+    threads,
+  ]);
   const supervisor =
     landingProject === null
       ? null
@@ -112,8 +127,92 @@ function IndexDraftLanding() {
       />
     ) : null;
   if (selectedNative !== null) return <WorkjetProjectReady projectTitle={selectedNative.title} />;
-  if (!bootstrapped && registry.phase !== "ready") return null;
+  if (registry.projects.length > 0)
+    return (
+      <ProjectGallery
+        projects={registry.projects.map((project) => ({
+          key: project.id,
+          title: project.title,
+          onOpen: () => {
+            if (activeCtoxInstanceId !== null)
+              selectWorkjetProject(activeCtoxInstanceId, project.id);
+          },
+        }))}
+      />
+    );
+  if (activeCtoxInstanceId === null && bootstrapped && projects.length > 0)
+    return (
+      <ProjectGallery
+        projects={sortScopedProjectsForSidebar(projects, threads, "updated_at").map((project) => ({
+          key: `${project.environmentId}:${project.id}`,
+          title: project.title,
+          onOpen: () =>
+            setSelectedLegacyProject(scopeProjectRef(project.environmentId, project.id)),
+        }))}
+      />
+    );
+  if ((!bootstrapped && registry.phase !== "ready") || registry.phase === "loading") return null;
+  if (registry.phase === "blocked")
+    return (
+      <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
+        <Empty className="flex-1">
+          <EmptyHeader>
+            <EmptyTitle>Couldn’t load projects</EmptyTitle>
+            <EmptyDescription>Reconnect to this instance to load your projects.</EmptyDescription>
+            <Button render={<Link to="/settings/computers" />} size="sm">
+              Open Computers
+            </Button>
+          </EmptyHeader>
+        </Empty>
+      </SidebarInset>
+    );
   return <NoProjectsHero />;
+}
+
+function ProjectGallery({
+  projects,
+}: {
+  readonly projects: readonly {
+    readonly key: string;
+    readonly title: string;
+    readonly onOpen: () => void;
+  }[];
+}) {
+  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
+      <main className="flex-1 overflow-auto px-6 py-10 sm:px-10" data-workjet-project-gallery="">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-semibold">All projects</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Choose a project to continue.</p>
+            </div>
+            <Button size="sm" onClick={openAddProject}>
+              <PlusIcon className="size-4" />
+              Add project
+            </Button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {projects.map((project) => (
+              <button
+                key={project.key}
+                type="button"
+                data-workjet-action={`project.open.gallery:${project.key}`}
+                aria-label={`Open ${project.title}`}
+                onClick={project.onOpen}
+                className="flex min-h-36 flex-col items-start justify-between gap-6 rounded-xl border border-border bg-card p-5 text-left hover:bg-accent focus-visible:outline focus-visible:outline-ring"
+              >
+                <span className="text-lg font-medium">{project.title}</span>
+                <span className="text-sm text-muted-foreground">Open project</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </main>
+    </SidebarInset>
+  );
 }
 
 function WorkjetProjectReady({ projectTitle }: { readonly projectTitle: string }) {

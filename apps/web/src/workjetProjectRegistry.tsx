@@ -43,6 +43,13 @@ function registryStorageKey(presentationInstanceId: string): string {
   return `${WORKJET_PROJECT_REGISTRY_STORAGE_PREFIX}${encodeURIComponent(presentationInstanceId)}`;
 }
 
+export function resolveSelectedWorkjetProjectId(
+  projects: readonly CtoxWorkjetProjectProjection[],
+  selectedProjectId: string | null,
+): string | null {
+  return projects.some((project) => project.id === selectedProjectId) ? selectedProjectId : null;
+}
+
 function readPersistedSnapshot(
   presentationInstanceId: string,
 ): WorkjetProjectRegistrySnapshot | null {
@@ -51,11 +58,10 @@ function readPersistedSnapshot(
     const raw = localStorage.getItem(registryStorageKey(presentationInstanceId));
     if (raw === null) return null;
     const persisted = decodePersistedWorkjetProjectRegistry(JSON.parse(raw));
-    const selectedProjectId = persisted.projects.some(
-      (project) => project.id === persisted.selectedProjectId,
-    )
-      ? persisted.selectedProjectId
-      : (persisted.projects[0]?.id ?? null);
+    const selectedProjectId = resolveSelectedWorkjetProjectId(
+      persisted.projects,
+      persisted.selectedProjectId,
+    );
     return Object.freeze({
       presentationInstanceId,
       phase: "ready",
@@ -243,10 +249,13 @@ export function recordWorkjetProjectProjection(
   return true;
 }
 
-export function selectWorkjetProject(presentationInstanceId: string, projectId: string): boolean {
+export function selectWorkjetProject(
+  presentationInstanceId: string,
+  projectId: string | null,
+): boolean {
   if (
     snapshot.presentationInstanceId !== presentationInstanceId ||
-    !snapshot.projects.some((project) => project.id === projectId)
+    (projectId !== null && !snapshot.projects.some((project) => project.id === projectId))
   )
     return false;
   if (snapshot.selectedProjectId !== projectId)
@@ -284,11 +293,10 @@ export function WorkjetProjectRegistrySynchronizer() {
           publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
           return;
         }
-        const selectedProjectId = result.response.projects.some(
-          (project) => project.id === snapshot.selectedProjectId,
-        )
-          ? snapshot.selectedProjectId
-          : (result.response.projects[0]?.id ?? null);
+        const selectedProjectId = resolveSelectedWorkjetProjectId(
+          result.response.projects,
+          snapshot.selectedProjectId,
+        );
         publish({
           presentationInstanceId,
           phase: "ready",

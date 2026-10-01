@@ -227,12 +227,15 @@ fn parse_js_config_section(script: &str, marker: &str) -> BTreeMap<String, Share
     let rest = &script[start..];
     let end = rest.find("\n});").unwrap_or(rest.len());
     let section = &rest[..end];
-    let entry_re =
-        Regex::new(r#"(?s)"([a-z0-9][a-z0-9.-]*)"\s*:\s*\{(.*?)\}"#).expect("entry regex compiles");
+    let entry_re = Regex::new(
+        r#"(?ms)(?:"([a-z0-9][a-z0-9.-]*)"|^[ \t]*([A-Za-z_$][A-Za-z0-9_$]*))\s*:\s*\{(.*?)\}"#,
+    )
+    .expect("entry regex compiles");
     for caps in entry_re.captures_iter(section) {
-        let body = &caps[2];
+        let source_id = caps.get(1).or_else(|| caps.get(2)).unwrap().as_str();
+        let body = &caps[3];
         out.insert(
-            caps[1].to_string(),
+            source_id.to_string(),
             SharedEntry {
                 domains: js_string_list(body, "domains"),
                 login_url: js_string_field(body, "login_url"),
@@ -2005,7 +2008,31 @@ const SOURCE_CONFIG = Object.freeze({
     }
 
     #[test]
-    fn real_registry_has_fifteen_adapters_with_valid_shared_config() {
+    fn shared_config_reads_quoted_domains_and_formatter_unquoted_identifiers() {
+        let script = r#"const SOURCE_CONFIG = Object.freeze({
+  "example.com": { domains: ["example.com"] },
+  // Formatters may remove optional quotes around a valid JavaScript identifier.
+  impressum: { domains: [], credential_ref: "ctox-secret://credentials/example" },
+  bad-key: { domains: ["invalid.example"] },
+});
+const OTHER_CONFIG = Object.freeze({
+  outside: { domains: ["outside.example"] },
+});"#;
+        let config = parse_js_config_section(script, "const SOURCE_CONFIG = Object.freeze({");
+        assert_eq!(
+            config.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["example.com", "impressum"]
+        );
+        assert_eq!(config["example.com"].domains, ["example.com"]);
+        assert!(config["impressum"].domains.is_empty());
+        assert_eq!(
+            config["impressum"].credential_ref.as_deref(),
+            Some("ctox-secret://credentials/example")
+        );
+    }
+
+    #[test]
+    fn real_registry_matches_production_adapters_with_valid_shared_config() {
         let adapters_dir = default_adapters_dir();
         let shared = std::fs::read_to_string(adapters_dir.join(SHARED_SCRIPT_REL)).unwrap();
         let source_config =
@@ -2013,10 +2040,35 @@ const SOURCE_CONFIG = Object.freeze({
         let protected_config =
             parse_js_config_section(&shared, "const PROTECTED_SOURCE_CONFIG = Object.freeze({");
         let discovered = discover_adapters(&adapters_dir).unwrap();
+        let expected = [
+            "bundesanzeiger.de",
+            "companyhouse.de",
+            "dnbhoovers.com",
+            "experte.de",
+            "firmenabc.at",
+            "google.de",
+            "handelsregister.de",
+            "impressum",
+            "leadfeeder.com",
+            "linkedin.com",
+            "maps.google.com",
+            "moneyhouse.ch",
+            "northdata.de",
+            "rocketreach.com",
+            "xing.com",
+            "zefix.ch",
+        ];
         assert_eq!(
-            discovered.len(),
-            15,
-            "expected 15 registered production adapters"
+            discovered
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>(),
+            expected,
+            "production adapter identities changed"
+        );
+        assert_eq!(
+            source_config.keys().map(String::as_str).collect::<Vec<_>>(),
+            expected
         );
         for (source_id, _) in &discovered {
             assert!(

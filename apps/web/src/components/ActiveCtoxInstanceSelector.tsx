@@ -49,7 +49,7 @@ export function filterCtoxInstances(
   const query = search.trim().toLocaleLowerCase();
   return query
     ? instances.filter((instance) =>
-        `${ctoxInstanceDisplayTitle(instance)} ${instance.domain ?? ""} ${instance.source === "local_daemon" ? "lokal dieser computer" : ""}`
+        `${ctoxInstanceDisplayTitle(instance)} ${instance.domain ?? ""} ${instance.source === "local_daemon" ? "local this computer lokal dieser computer" : ""}`
           .toLocaleLowerCase()
           .includes(query),
       )
@@ -57,9 +57,9 @@ export function filterCtoxInstances(
 }
 
 export function ctoxInstancePickerStatus(instance: CtoxManagedInstance): string {
-  if (instance.status === "pairing_expired") return "Einladung abgelaufen";
-  if (!canActivateCtoxInstance(instance)) return "Nicht erreichbar";
-  return instance.healthSummary.dataPlaneReady ? "Verbunden" : "Verbindung nicht bestätigt";
+  if (instance.status === "pairing_expired") return "Invitation expired";
+  if (!canActivateCtoxInstance(instance)) return "Unavailable";
+  return instance.healthSummary.dataPlaneReady ? "Connected" : "Connection not confirmed";
 }
 
 export function ActiveCtoxInstanceSelector({
@@ -93,9 +93,9 @@ export function ActiveCtoxInstanceSelector({
       if (await showNetwork()) {
         close();
         await navigate({ to: "/" });
-      } else setError("Die Instanz konnte nicht verlassen werden. Bitte erneut versuchen.");
+      } else setError("Could not leave the instance. Please try again.");
     } catch {
-      setError("Die Netzwerkübersicht konnte nicht geöffnet werden.");
+      setError("Could not open the network overview.");
     } finally {
       setReturning(false);
     }
@@ -105,9 +105,9 @@ export function ActiveCtoxInstanceSelector({
     setError(null);
     try {
       if (await select(instance)) close();
-      else setError("Instanzwechsel nicht bestätigt. Bitte erneut versuchen.");
+      else setError("Instance switch not confirmed. Please try again.");
     } catch {
-      setError("Die Instanz konnte nicht ausgewählt werden.");
+      setError("Could not select the instance.");
     } finally {
       setReturning(false);
     }
@@ -138,12 +138,12 @@ export function ActiveCtoxInstanceSelector({
             <Button
               variant="ghost"
               className="w-full min-w-0 justify-between gap-2 px-2 text-sm"
-              aria-label="CTOX-Instanz auswählen"
+              aria-label="Select CTOX instance"
             />
           }
         >
           <span className="truncate">
-            {active ? ctoxInstanceDisplayTitle(active) : "Netzwerkübersicht"}
+            {active ? ctoxInstanceDisplayTitle(active) : "Network overview"}
           </span>
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
         </PopoverTrigger>
@@ -151,14 +151,14 @@ export function ActiveCtoxInstanceSelector({
           align="start"
           className="w-80 max-w-[calc(100vw-24px)]"
           viewportClassName="p-2"
-          aria-label="Instanzen"
+          aria-label="Instances"
         >
           <label className="mb-2 flex items-center gap-2 border-b border-border px-2 pb-3 pt-1">
             <SearchIcon className="size-4 text-muted-foreground" aria-hidden />
             <input
               autoFocus
-              aria-label="Instanzen suchen"
-              placeholder="Instanz oder Host suchen…"
+              aria-label="Search instances"
+              placeholder="Search instance or host…"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               className="min-w-0 flex-1 bg-transparent text-sm outline-none"
@@ -172,32 +172,30 @@ export function ActiveCtoxInstanceSelector({
             onClick={() => void returnToNetwork()}
           >
             <NetworkIcon className="size-4 text-muted-foreground" />{" "}
-            <span className="flex-1">
-              {returning ? "Netzwerk wird geöffnet…" : "Netzwerkübersicht"}
-            </span>
+            <span className="flex-1">{returning ? "Opening network…" : "Network overview"}</span>
             {activeId === null && <CheckIcon className="size-4" />}
           </button>
           <div
             className="my-2 max-h-64 overflow-y-auto"
-            aria-label="Verfügbare Instanzen"
+            aria-label="Available instances"
             aria-busy={loading}
           >
             {loading ? (
               <p role="status" className="px-2 py-3 text-xs text-muted-foreground">
-                Instanzen werden geladen…
+                Loading instances…
               </p>
             ) : failed ? (
               <div className="px-2 py-3">
                 <p role="alert" className="text-xs text-muted-foreground">
-                  Instanzen konnten nicht geladen werden.
+                  Could not load instances.
                 </p>
                 <Button size="sm" variant="ghost" className="mt-2" onClick={refresh}>
-                  Erneut versuchen
+                  Try again
                 </Button>
               </div>
             ) : filtered.length === 0 ? (
               <p className="px-2 py-3 text-xs text-muted-foreground">
-                {search.trim() ? "Keine passende Instanz." : "Noch keine Instanz verbunden."}
+                {search.trim() ? "No matching instance." : "No instance connected yet."}
               </p>
             ) : (
               filtered.map((instance) => (
@@ -244,7 +242,7 @@ export function ActiveCtoxInstanceSelector({
               }}
             >
               <PlusIcon className="size-4" />
-              Instanz erstellen
+              Create instance
             </Button>
             <Button
               variant="ghost"
@@ -255,7 +253,7 @@ export function ActiveCtoxInstanceSelector({
               }}
             >
               <LinkIcon className="size-4" />
-              Instanz verbinden
+              Connect instance
             </Button>
             <Button
               variant="ghost"
@@ -266,7 +264,7 @@ export function ActiveCtoxInstanceSelector({
               }}
             >
               <SettingsIcon className="size-4" />
-              Instanzen verwalten
+              Manage instances
             </Button>
           </div>
         </PopoverPopup>

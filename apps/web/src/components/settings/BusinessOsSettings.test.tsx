@@ -82,7 +82,7 @@ describe("Business OS settings scope", () => {
     };
     expect(
       await importBusinessOsSettingsInvite(bridge, "fixture-invite", select, refresh),
-    ).toContain("nicht hinzugefügt");
+    ).toContain("could not be added");
     expect(select).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
@@ -114,9 +114,9 @@ describe("Business OS settings scope", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView instances={[]} activeInstanceId={null} />,
     );
-    expect(markup).toContain("Keine CTOX-Instanz verbunden");
-    expect(markup).toContain("Instanz hinzufügen");
-    expect(markup).toContain("Gerät hinzufügen");
+    expect(markup).toContain("No CTOX instance connected");
+    expect(markup).toContain("Add instance");
+    expect(markup).toContain("Add device");
     expect(markup).toContain("disabled");
     expect(markup).not.toContain("environment-alpha");
   });
@@ -129,15 +129,15 @@ describe("Business OS settings scope", () => {
         computerCount={3}
       />,
     );
-    expect(markup).toContain('aria-label="CTOX-Instanz auswählen"');
+    expect(markup).toContain('aria-label="Select CTOX instance"');
     expect(markup).toContain("WELSCH");
-    expect(markup).toContain("Geräte für WELSCH");
-    expect(markup).toContain("Zuweisungen zu WELSCH");
-    expect(markup).toContain("3 Rechner sind eingerichtet");
+    expect(markup).toContain("Devices for WELSCH");
+    expect(markup).toContain("Assignments for WELSCH");
+    expect(markup).toContain("3 computers are configured");
     expect(markup).not.toContain("Technische Details");
     expect(markup).not.toContain("Darstellungs-ID");
     expect(markup).not.toContain("ctox_dev");
-    expect(markup.indexOf("Workjet-Geräte")).toBeLessThan(markup.indexOf("Rechner für Code"));
+    expect(markup.indexOf("Workjet devices")).toBeLessThan(markup.indexOf("Computers for Code"));
     expect(markup).not.toContain("Diagnose");
   });
 
@@ -161,7 +161,7 @@ describe("Business OS settings scope", () => {
         deviceManagementBlockedReason="WELSCH konnte noch nicht bestätigt werden."
       />,
     );
-    expect(markup).toContain("Gerät hinzufügen");
+    expect(markup).toContain("Add device");
     expect(markup).toContain("WELSCH konnte noch nicht bestätigt werden");
     expect(markup).toContain("disabled");
     expect(markup).not.toContain("serverautoritativ");
@@ -186,8 +186,8 @@ describe("Business OS settings scope", () => {
         onRevokeDevice={() => undefined}
       />,
     );
-    expect(markup).toContain("Workjet-Gerät · abcdefgh");
-    expect(markup).toContain("Widerrufen");
+    expect(markup).toContain("Workjet device · abcdefgh");
+    expect(markup).toContain("Revoke");
     expect(markup).not.toContain("welsch-authority");
     expect(markup).not.toContain("pairing-1");
   });

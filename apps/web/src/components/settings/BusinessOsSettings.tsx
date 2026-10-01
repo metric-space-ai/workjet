@@ -70,14 +70,14 @@ export function resolveActiveBusinessOsInstanceId(target: CrossModeTarget | null
 function instanceStatus(instance: CtoxManagedInstance): string {
   if (instance.status === "available" || instance.status === "paired") {
     return instance.healthSummary.dataPlaneReady
-      ? "Verbunden und synchron"
-      : "Verbunden, Synchronisierung beeinträchtigt";
+      ? "Connected and synchronized"
+      : "Connected, sync degraded";
   }
-  if (instance.status === "needs_auth") return "Anmeldung erforderlich";
-  if (instance.status === "pairing_expired") return "Gerätefreigabe abgelaufen";
-  if (instance.status === "offline") return "Nicht erreichbar";
-  if (instance.status === "installing") return "Wird eingerichtet";
-  return "Verbindung fehlerhaft";
+  if (instance.status === "needs_auth") return "Sign-in required";
+  if (instance.status === "pairing_expired") return "Device authorization expired";
+  if (instance.status === "offline") return "Unavailable";
+  if (instance.status === "installing") return "Setting up";
+  return "Connection failed";
 }
 
 export function manualConnectionCredentialText(credential: string, visible: boolean): string {
@@ -166,10 +166,10 @@ function DevicePairingDialog({
     <Dialog open={invite !== null} onOpenChange={(open) => (open ? undefined : close())}>
       <DialogPopup className="max-w-lg overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Workjet-Gerät verbinden</DialogTitle>
+          <DialogTitle>Connect a Workjet device</DialogTitle>
           <DialogDescription>
-            Scanne den QR-Code mit Workjet auf dem neuen Gerät. Code und Business OS werden
-            gemeinsam mit {instanceName ?? "dieser Instanz"} verbunden.
+            Scan the QR code with Workjet on the new device. Code and Business OS will connect
+            together to {instanceName ?? "this instance"}.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="flex flex-col items-center gap-4">
@@ -181,14 +181,14 @@ function DevicePairingDialog({
                   size={320}
                   level="M"
                   marginSize={4}
-                  title={`QR-Code für ${instanceName ?? "Business OS"}`}
+                  title={`QR code for ${instanceName ?? "Business OS"}`}
                   className="h-auto w-full max-w-80"
                 />
               </div>
               <div className="w-full rounded-lg bg-muted/40 px-3 py-3 text-center">
                 <p className="text-sm font-medium">{instanceName ?? "Business OS"}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Gültig bis {formatMobileInviteExpiry(invite.expiresAt, "de-DE")} Uhr
+                  Expires at {formatMobileInviteExpiry(invite.expiresAt, "en-US")}
                 </p>
               </div>
               <Button
@@ -199,7 +199,7 @@ function DevicePairingDialog({
                 }}
               >
                 <CopyIcon aria-hidden />
-                {copied ? "Link kopiert" : "Verbindungslink kopieren"}
+                {copied ? "Link copied" : "Copy connection link"}
               </Button>
 
               <details
@@ -210,28 +210,27 @@ function DevicePairingDialog({
                 }}
               >
                 <summary className="cursor-pointer px-3 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  Manuelle Verbindungsdaten
+                  Manual connection details
                 </summary>
                 <div className="border-t border-border/70 px-3 py-3">
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Diese Daten verbinden nur die CTOX-Synchronisierung. Für die vollständige
-                    Workjet-Verbindung mit Code und Business OS verwende den QR-Code oder den
-                    Verbindungslink.
+                    These details connect CTOX synchronization only. For the complete Workjet
+                    connection with Code and Business OS, use the QR code or connection link.
                   </p>
                   {manualLoading ? (
                     <p
                       className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"
                       role="status"
                     >
-                      <Spinner className="size-3.5" /> Verbindungsdaten werden geladen …
+                      <Spinner className="size-3.5" /> Loading connection details …
                     </p>
                   ) : manualError ? (
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm text-destructive" role="alert">
-                        Die manuellen Verbindungsdaten konnten nicht geladen werden.
+                        Could not load manual connection details.
                       </p>
                       <Button size="sm" variant="outline" onClick={loadManualConnection}>
-                        Erneut versuchen
+                        Try again
                       </Button>
                     </div>
                   ) : manualConnection === null ? null : (
@@ -246,7 +245,7 @@ function DevicePairingDialog({
                             <Button
                               size="icon-sm"
                               variant="ghost"
-                              aria-label="Server kopieren"
+                              aria-label="Copy server"
                               onClick={() => void copyValue(url)}
                             >
                               <CopyIcon aria-hidden />
@@ -255,7 +254,7 @@ function DevicePairingDialog({
                         ))}
                       </div>
                       <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Raum</dt>
+                        <dt className="text-xs font-medium text-muted-foreground">Room</dt>
                         <dd className="mt-1 flex items-center gap-2">
                           <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
                             {manualConnection.room}
@@ -263,7 +262,7 @@ function DevicePairingDialog({
                           <Button
                             size="icon-sm"
                             variant="ghost"
-                            aria-label="Raum kopieren"
+                            aria-label="Copy room"
                             onClick={() => void copyValue(manualConnection.room)}
                           >
                             <CopyIcon aria-hidden />
@@ -272,7 +271,7 @@ function DevicePairingDialog({
                       </div>
                       <div>
                         <dt className="text-xs font-medium text-muted-foreground">
-                          Verbindungspasswort
+                          Connection password
                         </dt>
                         <dd className="mt-1 flex items-center gap-2">
                           <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
@@ -286,8 +285,8 @@ function DevicePairingDialog({
                             variant="ghost"
                             aria-label={
                               credentialVisible
-                                ? "Verbindungspasswort verbergen"
-                                : "Verbindungspasswort anzeigen"
+                                ? "Hide connection password"
+                                : "Show connection password"
                             }
                             onClick={() => setCredentialVisible((visible) => !visible)}
                           >
@@ -300,7 +299,7 @@ function DevicePairingDialog({
                           <Button
                             size="icon-sm"
                             variant="ghost"
-                            aria-label="Verbindungspasswort kopieren"
+                            aria-label="Copy connection password"
                             onClick={() =>
                               void copyValue(
                                 encodeBusinessOsManualCredential(manualConnection),
@@ -321,14 +320,14 @@ function DevicePairingDialog({
         </DialogPanel>
         <DialogFooter className="sm:flex-wrap">
           <Button variant="ghost" onClick={close}>
-            Schließen
+            Close
           </Button>
           <Button variant="outline" onClick={onRenew} disabled={revoking}>
-            Neuen QR-Code erstellen
+            Create a new QR code
           </Button>
           <Button variant="destructive" onClick={onRevoke} disabled={revoking}>
             {revoking ? <Spinner className="size-3.5" /> : null}
-            Einladung widerrufen
+            Revoke invitation
           </Button>
         </DialogFooter>
       </DialogPopup>
@@ -391,15 +390,15 @@ export function BusinessOsSettingsView({
   return (
     <SettingsPageContainer className="gap-6">
       <div className="px-3 sm:px-4">
-        <h1 className="text-xl font-semibold tracking-[-0.025em]">Instanzen</h1>
+        <h1 className="text-xl font-semibold tracking-[-0.025em]">Instances</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Jede CTOX-Instanz ist der Master ihres Netzwerks und liefert Ops aus. Verwalte hier den
-          Zugriff auf die ausgewählte Instanz.
+          Each CTOX instance owns its network and serves Ops. Manage access to the selected instance
+          here.
         </p>
       </div>
 
       <SettingsSection
-        title="CTOX-Instanzen"
+        title="CTOX instances"
         headerAction={
           <div className="flex items-center gap-2">
             <Button
@@ -409,11 +408,11 @@ export function BusinessOsSettingsView({
               disabled={refreshDisabled || onRefresh === undefined}
             >
               <RefreshCwIcon className={loading ? "animate-spin" : undefined} aria-hidden />
-              Aktualisieren
+              Refresh
             </Button>
             <Button size="sm" onClick={() => openInstanceSetup()}>
               <PlusIcon aria-hidden />
-              Instanz hinzufügen
+              Add instance
             </Button>
           </div>
         }
@@ -421,28 +420,28 @@ export function BusinessOsSettingsView({
         <div className="max-w-3xl rounded-xl border border-border/80 bg-card/30 p-4 sm:p-5">
           {loading ? (
             <p className="text-sm text-muted-foreground" role="status">
-              CTOX-Instanzen werden geladen …
+              Loading CTOX instances …
             </p>
           ) : instances.length === 0 ? (
             <div className="flex items-start gap-3" role="status">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               <div>
-                <p className="text-sm font-medium">Keine CTOX-Instanz verbunden</p>
+                <p className="text-sm font-medium">No CTOX instance connected</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Verbinde einen vorhandenen CTOX-Master oder richte eine neue Instanz ein.
+                  Connect an existing CTOX master or set up a new instance.
                 </p>
               </div>
             </div>
           ) : (
             <label className="block text-sm font-medium text-foreground">
-              Aktive Instanz
+              Active instance
               <select
                 className="mt-2 h-10 w-full rounded-md border border-input bg-popover px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={selected?.id ?? ""}
                 onChange={(event) => onSelectInstance?.(event.target.value)}
-                aria-label="CTOX-Instanz auswählen"
+                aria-label="Select CTOX instance"
               >
-                {selected === null ? <option value="">Instanz auswählen</option> : null}
+                {selected === null ? <option value="">Select an instance</option> : null}
                 {instances.map((instance) => (
                   <CtoxInstanceSelectOption key={instance.id} instance={instance} />
                 ))}
@@ -459,7 +458,7 @@ export function BusinessOsSettingsView({
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Workjet-Geräte">
+      <SettingsSection title="Workjet devices">
         <div className="max-w-3xl rounded-xl border border-border/80 bg-card/20 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
@@ -470,13 +469,13 @@ export function BusinessOsSettingsView({
               <div>
                 <p className="text-sm font-medium">
                   {selectedDisplayName === null
-                    ? "Instanz auswählen"
-                    : `Geräte für ${selectedDisplayName}`}
+                    ? "Select an instance"
+                    : `Devices for ${selectedDisplayName}`}
                 </p>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
                   {selected === null
-                    ? "Wähle zuerst eine CTOX-Instanz."
-                    : "Verbinde einen weiteren Computer, ein Smartphone oder Tablet mit dieser Instanz."}
+                    ? "Select a CTOX instance first."
+                    : "Connect another computer, phone or tablet to this instance."}
                 </p>
               </div>
             </div>
@@ -492,7 +491,7 @@ export function BusinessOsSettingsView({
               title={deviceManagementBlockedReason ?? undefined}
             >
               {addingDevice ? <Spinner className="size-3.5" /> : <PlusIcon aria-hidden />}
-              {addingDevice ? "QR-Code wird erstellt …" : "Gerät hinzufügen"}
+              {addingDevice ? "Creating QR code …" : "Add device"}
             </Button>
           </div>
           {selected === null ? null : deviceManagementBlockedReason !== null ? (
@@ -501,13 +500,13 @@ export function BusinessOsSettingsView({
               {onRetryDevices === undefined ? null : (
                 <Button size="sm" variant="outline" onClick={onRetryDevices}>
                   <RefreshCwIcon aria-hidden />
-                  Erneut prüfen
+                  Check again
                 </Button>
               )}
             </div>
           ) : devicesLoading ? (
             <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground" role="status">
-              <Spinner className="size-3.5" /> Geräte werden geladen …
+              <Spinner className="size-3.5" /> Loading devices …
             </p>
           ) : devicesError !== null ? (
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-3">
@@ -516,13 +515,13 @@ export function BusinessOsSettingsView({
               </p>
               {onRetryDevices === undefined ? null : (
                 <Button size="sm" variant="outline" onClick={onRetryDevices}>
-                  Erneut versuchen
+                  Try again
                 </Button>
               )}
             </div>
           ) : devices.length === 0 ? (
             <p className="mt-4 rounded-lg bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-              Mit dieser Instanz ist noch kein weiteres Workjet-Gerät verbunden.
+              No other Workjet device is connected to this instance yet.
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-border rounded-md border border-border">
@@ -533,10 +532,10 @@ export function BusinessOsSettingsView({
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">
-                      Workjet-Gerät · {device.deviceId.slice(-8)}
+                      Workjet device · {device.deviceId.slice(-8)}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Verbunden am {new Date(device.pairedAtMillis).toLocaleDateString()}
+                      Connected on {new Date(device.pairedAtMillis).toLocaleDateString()}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -549,7 +548,7 @@ export function BusinessOsSettingsView({
                       {revokingDeviceId === device.devicePairingId ? (
                         <Spinner className="size-3.5" />
                       ) : null}
-                      Widerrufen
+                      Revoke
                     </Button>
                   </div>
                 </li>
@@ -559,26 +558,26 @@ export function BusinessOsSettingsView({
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Rechner für Code">
+      <SettingsSection title="Computers for Code">
         <div className="max-w-3xl rounded-xl border border-border/80 bg-card/20 p-4 sm:p-5">
           <div className="flex items-start gap-3">
             <LaptopIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
             <div>
               <p className="text-sm font-medium">
                 {selectedDisplayName === null
-                  ? "Instanz auswählen"
-                  : `Zuweisungen zu ${selectedDisplayName}`}
+                  ? "Select an instance"
+                  : `Assignments for ${selectedDisplayName}`}
               </p>
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
                 {computerCount === 0
-                  ? "Im globalen Computer-Inventar sind noch keine Rechner eingerichtet."
-                  : `${computerCount} Rechner sind eingerichtet. Weise sie dieser CTOX-Instanz im Computer-Inventar zu.`}
+                  ? "No computers have been set up in the global computer inventory."
+                  : `${computerCount} computers are configured. Assign them to this CTOX instance in the computer inventory.`}
               </p>
               <a
                 className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
                 href="#/settings/computers"
               >
-                Computer-Inventar öffnen
+                Open computer inventory
               </a>
             </div>
           </div>
@@ -609,16 +608,15 @@ export async function importBusinessOsSettingsInvite(
   select: (instance: CtoxManagedInstance) => void,
   refresh: () => void,
 ): Promise<string | null> {
-  if (bridge === undefined)
-    return "Diese Workjet-Ausgabe kann keine Backend-Einladung importieren.";
+  if (bridge === undefined) return "This Workjet edition cannot import a backend invitation.";
   try {
     const result = await bridge.importInvite(invite);
-    if (result._tag !== "completed") return "Die Backend-Einladung ist ungültig oder abgelaufen.";
+    if (result._tag !== "completed") return "The backend invitation is invalid or expired.";
     select(result.instance);
     refresh();
     return null;
   } catch {
-    return "Business OS konnte nicht hinzugefügt werden. Bitte Verbindung und Einladung prüfen.";
+    return "Business OS could not be added. Check the connection and invitation.";
   }
 }
 
@@ -668,7 +666,7 @@ export function BusinessOsSettings() {
         setDevicesError(
           businessOsDeviceControlErrorMessage(
             error,
-            "Die Geräteverbindung ist noch nicht verfügbar. Prüfe die Verbindung und versuche es erneut.",
+            "Device connection is not available yet. Check the connection and try again.",
           ),
         );
         setDevicesLoading(false);
@@ -684,7 +682,7 @@ export function BusinessOsSettings() {
     selected === null
       ? null
       : !deviceControlAvailable
-        ? `Öffne ${ctoxInstanceDisplayTitle(selected)} einmal in Business OS, um ein Gerät über CTOX Sync zu verbinden.`
+        ? `Open ${ctoxInstanceDisplayTitle(selected)} in Business OS once to connect a device through CTOX Sync.`
         : null;
 
   const createDeviceInvite = async () => {
@@ -703,7 +701,7 @@ export function BusinessOsSettings() {
       setDevicesError(
         businessOsDeviceControlErrorMessage(
           error,
-          "Der QR-Code konnte nicht erstellt werden. Die sichere Geräteverbindung ist derzeit nicht erreichbar.",
+          "Could not create the QR code. The secure device connection is currently unavailable.",
         ),
       );
     } finally {
@@ -783,7 +781,7 @@ export function BusinessOsSettings() {
       setDevicesError(
         businessOsDeviceControlErrorMessage(
           error,
-          "Das Gerät konnte nicht getrennt werden. Bitte erneut versuchen.",
+          "Could not disconnect the device. Please try again.",
         ),
       );
     } finally {
@@ -822,7 +820,7 @@ export function BusinessOsSettings() {
       connectionManagement={
         <details data-workjet-instance-management="">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-            Instanzverbindungen verwalten
+            Manage instance connections
           </summary>
           <CtoxSidebarShell showChrome={false} />
         </details>

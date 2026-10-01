@@ -150,19 +150,32 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
       const parts = value.split(/\s+/).filter(Boolean);
       if (parts.length >= 2 && parts.length <= 5
           && parts.every(validNameToken)
-          && !relevantCompanyText(value)
+          && !/\b(?:gmbh|ag|kg|ohg|gbr|ltd|sarl|sàrl)\b/i.test(value)
           && !/^(?:profil|profile|kontakt|contacts?|network|xing)\b/i.test(value)) {
         return value;
       }
     }
     return "";
   };
+  const observedAcademicName = (link, personName) => {
+    for (const candidate of [link.text, ...(link.contextLines || []).slice(0, 4)]) {
+      const visible = clean(candidate)
+        .replace(/^(?:profil von|profile of)\s+/i, "")
+        .replace(/\s*[|·]\s*XING\s*$/i, "");
+      const prefix = visible.match(/^((?:(?:dr|prof)\.?\s+)+)/i);
+      if (prefix && personNameKey(visible.slice(prefix[0].length)) === personNameKey(personName)) {
+        return { title: clean(prefix[0]), quote: visible };
+      }
+    }
+    return null;
+  };
   const formerEmployment = /\b(?:ehemalige[snr]?\s+unternehmen|ehemalig|former\s+(?:company|employer)|previous\s+(?:company|employer))\b/i;
-  const currentCompanyIndex = (lines) => {
+  const currentCompanyIndex = (lines, personName) => {
     const matches = lines.map((line, index) => relevantCompanyText(line) ? index : -1).filter((index) => index >= 0);
     return matches.find((index) => {
       const employmentLabel = lines.slice(Math.max(0, index - 2), index + 1).join(" ");
-      return !formerEmployment.test(employmentLabel);
+      return !formerEmployment.test(employmentLabel)
+        && personNameKey(lines[index]) !== personNameKey(personName);
     }) ?? -1;
   };
   const locationLine = (value) => /(?:^|[,\s])(?:deutschland|germany|österreich|austria|schweiz|switzerland)\s*$/i.test(clean(value));
@@ -174,7 +187,7 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
   };
   const labelOnlyLine = (value) => /^[^:]{2,80}:\s*$/.test(clean(value));
   const roleSignal = /\b(?:geschäftsführ(?:er|erin|ung)|managing\s+director|chief\s+(?:executive|operating|financial|technology|commercial)\s+officer|ceo|coo|cfo|cto|cmo|vorstand|inhaber(?:in)?|eigentümer(?:in)?|gründer(?:in)?|founder|prokurist(?:in)?|leiter(?:in)?|leitung|head\s+of|director|manager|vertrieb|sales|einkauf|procurement|marketing|produktion|operations|business\s+development|partner)\b/i;
-  const personNameKey = (value) => normalize(value)
+  const personNameKey = (value) => normalize(clean(value).replace(/^(?:(?:dr|prof)\.?\s+)+/i, ""))
     .replace(/ae/g, "a")
     .replace(/oe/g, "o")
     .replace(/ue/g, "u");
@@ -231,7 +244,7 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     const neighborIndex = contextLines.findIndex((line) => Array.from(memberNames.entries())
       .some(([url, otherName]) => url !== profile.url && personNameKey(line) === personNameKey(otherName)));
     const lines = neighborIndex >= 0 ? contextLines.slice(0, neighborIndex) : contextLines;
-    const companyIndex = currentCompanyIndex(lines);
+    const companyIndex = currentCompanyIndex(lines, name);
     if (companyIndex < 0) continue;
     const employer = lines[companyIndex];
     if (personNameKey(name) === personNameKey(companyName.replace(/\b(?:gmbh|ag|kg|ohg|gbr|ltd)\b/gi, ""))
@@ -251,11 +264,15 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     // "Dr. Sandra Junghänel", "Prof. Max Muster".
     return /^(Dr\.|Prof\.|Dipl\.[-\w.]*)\s+\p{Lu}[\p{L}-]+\s+\p{Lu}[\p{L}-]+$/u.test(clean(text));
   };
-  for (const { lines, companyIndex, profile, name, nameParts } of profiles) {
-    const employerNote = `XING member result profile name: "${name}"; current employer: "${lines[companyIndex]}"`;
+  for (const { link, lines, companyIndex, profile, name, nameParts } of profiles) {
+    const academicName = observedAcademicName(link, name);
+    const employerNote = `XING member result profile name: "${academicName?.quote || name}"; current employer: "${lines[companyIndex]}"`;
     push("person_vorname", nameParts[0], "medium", employerNote, profile.url);
     push("person_nachname", nameParts.slice(1).join(" "), "medium", employerNote, profile.url);
     push("person_xing", profile.url, "high", employerNote, profile.url);
+    if (academicName) {
+      push("person_titel", academicName.title, "medium", employerNote, profile.url);
+    }
 
     const candidateIndexes = [companyIndex - 1, companyIndex - 2, companyIndex + 1, companyIndex + 2]
       .filter((index) => index >= 0 && index < lines.length);

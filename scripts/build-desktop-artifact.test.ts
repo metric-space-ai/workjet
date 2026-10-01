@@ -535,7 +535,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("installs optional native dependencies for the target desktop architecture", () => {
-    assert.deepStrictEqual(STAGE_INSTALL_ARGS, ["install", "--prod", "--frozen-lockfile"]);
+    assert.deepStrictEqual(STAGE_INSTALL_ARGS, [
+      "install",
+      "--prod",
+      "--frozen-lockfile",
+      "--",
+      "--child-concurrency=2",
+    ]);
     assert.deepStrictEqual(createStageWorkspaceConfig({ platform: "mac", arch: "x64" }), {
       supportedArchitectures: {
         os: ["darwin"],

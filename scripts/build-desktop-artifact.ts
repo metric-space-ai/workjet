@@ -760,7 +760,13 @@ interface StagePackageJson {
   };
 }
 
-export const STAGE_INSTALL_ARGS = ["install", "--prod", "--frozen-lockfile"] as const;
+export const STAGE_INSTALL_ARGS = [
+  "install",
+  "--prod",
+  "--frozen-lockfile",
+  "--",
+  "--child-concurrency=2",
+] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
   // Workjet always passes the user's installed Claude executable to the SDK,
@@ -1904,6 +1910,10 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const manifestPath = path.join(input.repoRoot, "native/resource-monitor/Cargo.toml");
+  const targetDirectory = path.resolve(
+    input.repoRoot,
+    process.env.CARGO_TARGET_DIR ?? "native/resource-monitor/target",
+  );
   const executableName = resourceMonitorExecutableName(input.platform);
   const rustTargets = resolveResourceMonitorRustTargets(input.platform, input.arch);
   const builtBinaries: string[] = [];
@@ -1917,6 +1927,10 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
       manifestPath,
       "--target",
       rustTarget,
+      "--target-dir",
+      targetDirectory,
+      "-j",
+      "2",
     ]);
     yield* runCommand(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
@@ -1929,13 +1943,7 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
       },
     );
 
-    const binaryPath = path.join(
-      input.repoRoot,
-      "native/resource-monitor/target",
-      rustTarget,
-      "release",
-      executableName,
-    );
+    const binaryPath = path.join(targetDirectory, rustTarget, "release", executableName);
     if (!(yield* fs.exists(binaryPath))) {
       return yield* new ResourceMonitorBuildOutputMissingError({
         binaryPath,

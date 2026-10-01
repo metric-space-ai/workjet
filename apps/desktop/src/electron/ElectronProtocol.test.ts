@@ -1,6 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { beforeEach, vi } from "vite-plus/test";
 
 const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
@@ -15,6 +18,23 @@ vi.mock("electron", () => ({
 }));
 
 import * as ElectronProtocol from "./ElectronProtocol.ts";
+
+const bundledRendererFixture = Effect.acquireRelease(
+  Effect.promise(async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-renderer-"));
+    const root = NodePath.join(directory, "client");
+    await NodeFSP.mkdir(NodePath.join(root, "assets"), { recursive: true });
+    await NodeFSP.writeFile(NodePath.join(root, "index.html"), "<main>Local shell</main>");
+    await NodeFSP.writeFile(NodePath.join(root, "assets/app.js"), "window.localShell = true;");
+    await NodeFSP.writeFile(NodePath.join(directory, "outside.txt"), "private");
+    await NodeFSP.symlink(
+      NodePath.join(directory, "outside.txt"),
+      NodePath.join(root, "escape.txt"),
+    );
+    return { directory, root };
+  }),
+  ({ directory }) => Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
+);
 
 describe("ElectronProtocol", () => {
   beforeEach(() => {
@@ -86,6 +106,88 @@ describe("ElectronProtocol", () => {
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
       assert.deepEqual(unhandleMock.mock.calls, [["workjet-dev"]]);
     }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("loads shipped UI and assets while the local service is unavailable", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { root } = yield* bundledRendererFixture;
+        let handler: ((request: Request) => Promise<Response>) | undefined;
+        handleMock.mockImplementation((_scheme, nextHandler) => {
+          handler = nextHandler;
+        });
+        netFetchMock.mockRejectedValue(new Error("local service has not been installed"));
+        const protocol = yield* ElectronProtocol.ElectronProtocol;
+        yield* protocol.registerDesktopProtocol({
+          scheme: "workjet",
+          targetOrigin: new URL("http://127.0.0.1:3773/"),
+          backendOrigin: new URL("http://127.0.0.1:3773/"),
+          clerkFrontendApiHostname: undefined,
+          bundledRendererRoot: root,
+        });
+        const page = yield* Effect.promise(() => handler!(new Request("workjet://app/")));
+        assert.equal(yield* Effect.promise(() => page.text()), "<main>Local shell</main>");
+        assert.equal(page.headers.get("content-type"), "text/html; charset=utf-8");
+        assert.include(page.headers.get("content-security-policy") ?? "", "default-src 'self'");
+        const script = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/assets/app.js?v=1")),
+        );
+        assert.equal(yield* Effect.promise(() => script.text()), "window.localShell = true;");
+        assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
+        const head = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/assets/app.js", { method: "HEAD" })),
+        );
+        assert.equal(yield* Effect.promise(() => head.text()), "");
+        assert.equal(head.headers.get("content-length"), "25");
+        assert.equal(netFetchMock.mock.calls.length, 0);
+      }),
+    ).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it.effect("confines static reads and keeps server APIs out of the UI fallback", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { root } = yield* bundledRendererFixture;
+        let handler: ((request: Request) => Promise<Response>) | undefined;
+        handleMock.mockImplementation((_scheme, nextHandler) => {
+          handler = nextHandler;
+        });
+        const protocol = yield* ElectronProtocol.ElectronProtocol;
+        yield* protocol.registerDesktopProtocol({
+          scheme: "workjet",
+          targetOrigin: new URL("http://127.0.0.1:3773/"),
+          backendOrigin: new URL("http://127.0.0.1:3773/"),
+          clerkFrontendApiHostname: undefined,
+          bundledRendererRoot: root,
+        });
+        for (const [url, status] of [
+          ["workjet://other/", 404],
+          ["workjet://app/%2e%2e%2foutside.txt", 400],
+          ["workjet://app/assets%5c..%5coutside.txt", 400],
+          ["workjet://app/%00", 400],
+          ["workjet://app/%ZZ", 400],
+          ["workjet://app/escape.txt", 403],
+          ["workjet://app/assets/missing.js", 404],
+          ["workjet://app/unknown-route", 404],
+        ] as const) {
+          const response = yield* Effect.promise(() => handler!(new Request(url)));
+          assert.equal(response.status, status, url);
+          assert.equal(yield* Effect.promise(() => response.text()), "");
+        }
+        const mutation = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/index.html", { method: "POST", body: "change" })),
+        );
+        assert.equal(mutation.status, 405);
+        assert.equal(netFetchMock.mock.calls.length, 0);
+        netFetchMock.mockResolvedValue(new Response("authentication required", { status: 401 }));
+        const api = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/api/auth/session")),
+        );
+        assert.equal(api.status, 401);
+        assert.equal(yield* Effect.promise(() => api.text()), "authentication required");
+        assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/api/auth/session");
+      }),
+    ).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
   it.effect("rejects custom protocol requests for another host", () =>

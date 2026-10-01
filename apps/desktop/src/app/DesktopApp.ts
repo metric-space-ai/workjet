@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as NodePath from "node:path";
 
 import * as NetService from "@workjet/shared/Net";
 import * as Crypto from "effect/Crypto";
@@ -190,6 +191,9 @@ const bootstrap = Effect.gen(function* () {
     targetOrigin: rendererTarget,
     backendOrigin: backendConfig.httpBaseUrl,
     clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+    ...(!environment.isDevelopment
+      ? { bundledRendererRoot: NodePath.join(environment.appRoot, "apps/server/dist/client") }
+      : {}),
   });
   yield* logBootstrapInfo("bootstrap resolved backend endpoint", {
     baseUrl: backendConfig.httpBaseUrl.href,
@@ -208,13 +212,11 @@ const bootstrap = Effect.gen(function* () {
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
 
   if (!(yield* Ref.get(state.quitting))) {
-    // A first local-service install and a WSL-only cold boot can both leave
-    // the app without a renderer until the backend is ready. Show a lightweight
-    // window during either wait so startup remains visible and activatable.
-    if (
-      Option.isNone(servicePort) ||
-      (settings.wslOnly === true && settings.wslBackendEnabled === true)
-    ) {
+    // Shipped UI assets and persisted client state do not depend on service
+    // installation. Create the actual shell before starting the backend.
+    if (!environment.isDevelopment) {
+      yield* desktopWindow.ensureMain;
+    } else if (Option.isNone(servicePort) || (settings.wslOnly && settings.wslBackendEnabled)) {
       yield* desktopWindow.showConnectingSplash;
     }
     yield* primaryBackend.start;

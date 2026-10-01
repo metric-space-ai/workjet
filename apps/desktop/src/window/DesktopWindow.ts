@@ -870,7 +870,11 @@ export const make = Effect.gen(function* () {
           return;
         }
       }
-      yield* createMainIfBackendReady;
+      if (!environment.isDevelopment) {
+        yield* revealOrCreateMain;
+      } else {
+        yield* createMainIfBackendReady;
+      }
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
     showConnectingSplash,
@@ -913,7 +917,11 @@ export const make = Effect.gen(function* () {
     dispatchMenuAction: Effect.fn("desktop.window.dispatchMenuAction")(function* (action) {
       yield* Effect.annotateCurrentSpan({ action });
       const existingWindow = yield* focusedMainWindow;
-      if (Option.isNone(existingWindow) && !(yield* Ref.get(backendReadyRef))) {
+      if (
+        environment.isDevelopment &&
+        Option.isNone(existingWindow) &&
+        !(yield* Ref.get(backendReadyRef))
+      ) {
         return;
       }
       const targetWindow = Option.isSome(existingWindow) ? existingWindow.value : yield* ensureMain;

@@ -10,10 +10,9 @@ export function resolveNativeProjectOpening(input: {
   readonly project: Pick<CtoxWorkjetProjectProjection, "id" | "title">;
   readonly localEnvironmentId: EnvironmentId | null;
   readonly localConnected: boolean;
-  readonly projects: readonly Pick<
-    OrchestrationProjectShell,
-    "id" | "environmentId" | "ctoxRegistration"
-  >[];
+  readonly projects: readonly (Pick<OrchestrationProjectShell, "id" | "ctoxRegistration"> & {
+    readonly environmentId: EnvironmentId;
+  })[];
 }) {
   const existing = input.projects.find(
     (project) =>

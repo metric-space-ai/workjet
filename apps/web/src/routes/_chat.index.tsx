@@ -11,7 +11,7 @@ import type { CommandId } from "@workjet/contracts";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { FolderPlusIcon, LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
+import { LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";

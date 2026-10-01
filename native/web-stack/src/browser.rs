@@ -2092,6 +2092,7 @@ fn build_persistent_browser_runner_script(
 	import dns from "node:dns/promises";
 	import readline from "node:readline";
 	import util from "node:util";
+	import fs from "node:fs/promises";
 
 	const VIEWPORT_W = {viewport_w};
 	const VIEWPORT_H = {viewport_h};
@@ -2207,10 +2208,29 @@ if (hostLocale) contextOptions.locale = hostLocale;
 let context;
 let page;
 let closing = false;
+const sessionCookiesFile = path.join(profileDir, "ctox-session-cookies.json");
+const SESSION_COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const saveSessionCookies = async () => {{
+  const state = await context.storageState();
+  const cookies = (state.cookies || []).filter((cookie) => !(Number(cookie.expires) > 0));
+  await fs.writeFile(sessionCookiesFile, JSON.stringify({{ savedAtMs: Date.now(), cookies }}), {{ mode: 0o600 }});
+}};
 try {{
   context = await chromium.launchPersistentContext(profileDir, {{ ...launchOptions, ...contextOptions }});
   try {{
     await context.addInitScript({{ path: path.join(process.cwd(), "stealth_init.js") }});
+  }} catch {{}}
+  // Session cookies (no expiry) are the login of several providers
+  // (D&B Hoovers JSESSIONID). Chromium drops them on every exit, so each
+  // idle-TTL restart logged the account out (30.09.2026, after orphaned
+  // Chromium processes stopped surviving their runner). The close op saves
+  // them; the next start of the same profile restores them.
+  try {{
+    const saved = JSON.parse(await fs.readFile(sessionCookiesFile, "utf8"));
+    const fresh = Number(saved?.savedAtMs) > Date.now() - SESSION_COOKIE_MAX_AGE_MS;
+    if (fresh && Array.isArray(saved.cookies) && saved.cookies.length) {{
+      await context.addCookies(saved.cookies);
+    }}
   }} catch {{}}
   page = context.pages()[0] || await context.newPage();
   context.on("close", () => {{
@@ -2971,6 +2991,7 @@ for await (const line of rl) {{
 	      // Close Chromium before acknowledging: the host kills the runner right
 	      // after the reply, and a mid-close kill orphaned the network service
 	      // (23 h at 100 % CPU on THESEN, 30.09.2026).
+	      try {{ await saveSessionCookies(); }} catch {{}}
 	      try {{ await context.close(); }} catch {{}}
 	      respond({{ id, ok: true }});
       process.exit(0);
@@ -3412,6 +3433,40 @@ mod tests {
             .unwrap();
         assert!(status.success(), "generated browser runner must parse");
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn persistent_browser_runner_keeps_session_cookies_across_restarts() {
+        let script = build_persistent_browser_runner_script(
+            1280,
+            720,
+            None,
+            std::path::Path::new("/tmp/ctox-browser-test-profile"),
+            std::path::Path::new("/tmp/ctox-browser-test-downloads"),
+            &[],
+        )
+        .unwrap();
+        // Session cookies are saved before Chromium closes and restored right
+        // after the persistent context opens (D&B Hoovers JSESSIONID login).
+        let save = script
+            .find("try { await saveSessionCookies(); } catch {}")
+            .unwrap();
+        let close = script
+            .find("try { await context.close(); } catch {}")
+            .unwrap();
+        assert!(
+            save < close,
+            "session cookies must be saved before the context closes"
+        );
+        let launch = script
+            .find("context = await chromium.launchPersistentContext(")
+            .unwrap();
+        let restore = script
+            .find("await context.addCookies(saved.cookies);")
+            .unwrap();
+        assert!(launch < restore);
+        assert!(script.contains("!(Number(cookie.expires) > 0)"));
+        assert!(script.contains("{ mode: 0o600 }"));
     }
 
     #[test]

@@ -1,9 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
-import * as NodeFSP from "node:fs/promises";
-import * as NodeOS from "node:os";
-import * as NodePath from "node:path";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Layer from "effect/Layer";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { beforeEach, vi } from "vite-plus/test";
 
 const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
@@ -19,22 +20,23 @@ vi.mock("electron", () => ({
 
 import * as ElectronProtocol from "./ElectronProtocol.ts";
 
-const bundledRendererFixture = Effect.acquireRelease(
-  Effect.promise(async () => {
-    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-renderer-"));
-    const root = NodePath.join(directory, "client");
-    await NodeFSP.mkdir(NodePath.join(root, "assets"), { recursive: true });
-    await NodeFSP.writeFile(NodePath.join(root, "index.html"), "<main>Local shell</main>");
-    await NodeFSP.writeFile(NodePath.join(root, "assets/app.js"), "window.localShell = true;");
-    await NodeFSP.writeFile(NodePath.join(directory, "outside.txt"), "private");
-    await NodeFSP.symlink(
-      NodePath.join(directory, "outside.txt"),
-      NodePath.join(root, "escape.txt"),
-    );
-    return { directory, root };
-  }),
-  ({ directory }) => Effect.promise(() => NodeFSP.rm(directory, { recursive: true, force: true })),
+const testLayer = Layer.merge(
+  ElectronProtocol.layer.pipe(Layer.provide(NodeServices.layer)),
+  NodeServices.layer,
 );
+
+const bundledRendererFixture = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const directory = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-renderer-" });
+  const root = path.join(directory, "client");
+  yield* fs.makeDirectory(path.join(root, "assets"), { recursive: true });
+  yield* fs.writeFileString(path.join(root, "index.html"), "<main>Local shell</main>");
+  yield* fs.writeFileString(path.join(root, "assets/app.js"), "window.localShell = true;");
+  yield* fs.writeFileString(path.join(directory, "outside.txt"), "private");
+  yield* fs.symlink(path.join(directory, "outside.txt"), path.join(root, "escape.txt"));
+  return { root };
+});
 
 describe("ElectronProtocol", () => {
   beforeEach(() => {
@@ -105,7 +107,7 @@ describe("ElectronProtocol", () => {
       assert.isNull(forwardedHeaders.get("referer"));
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
       assert.deepEqual(unhandleMock.mock.calls, [["workjet-dev"]]);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("loads shipped UI and assets while the local service is unavailable", () =>
@@ -141,7 +143,7 @@ describe("ElectronProtocol", () => {
         assert.equal(head.headers.get("content-length"), "25");
         assert.equal(netFetchMock.mock.calls.length, 0);
       }),
-    ).pipe(Effect.provide(ElectronProtocol.layer)),
+    ).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("confines static reads and keeps server APIs out of the UI fallback", () =>
@@ -187,7 +189,7 @@ describe("ElectronProtocol", () => {
         assert.equal(yield* Effect.promise(() => api.text()), "authentication required");
         assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/api/auth/session");
       }),
-    ).pipe(Effect.provide(ElectronProtocol.layer)),
+    ).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("rejects custom protocol requests for another host", () =>
@@ -212,7 +214,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(response.status, 404);
       assert.equal(netFetchMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("retries transient renderer target failures", () =>
@@ -240,7 +242,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(yield* Effect.promise(() => response.text()), "ready");
       assert.equal(netFetchMock.mock.calls.length, 2);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("preserves protocol registration failures", () =>
@@ -264,7 +266,7 @@ describe("ElectronProtocol", () => {
       assert.equal(error.scheme, "workjet-dev");
       assert.strictEqual(error.cause, cause);
       assert.equal(error.message, 'Failed to register Electron protocol scheme "workjet-dev".');
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("preserves protocol unregistration failures", () =>
@@ -294,7 +296,7 @@ describe("ElectronProtocol", () => {
         assert.strictEqual(error.cause, cause);
         assert.equal(error.message, 'Failed to unregister Electron protocol scheme "workjet".');
       }
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it("keeps executable sources host-restricted while allowing runtime network resources", () => {

@@ -1,9 +1,10 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as NodeTimersPromises from "node:timers/promises";
-import * as NodeFSP from "node:fs/promises";
-import * as NodePath from "node:path";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -200,44 +201,47 @@ const RENDERER_CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".wasm": "application/wasm",
 };
 
-async function serveBundledRenderer(
-  request: Request,
-  root: string,
-  contentSecurityPolicy: string,
-): Promise<Response> {
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
-  }
-  let pathname: string;
-  try {
-    pathname = decodeURIComponent(new URL(request.url).pathname);
-  } catch {
-    return new Response(null, { status: 400 });
-  }
-  if (
-    pathname.includes("\\") ||
-    pathname.includes("\0") ||
-    pathname.split("/").some((segment) => segment === ".." || segment === ".")
+const serveBundledRenderer = Effect.fn("desktop.electron.protocol.serveBundledRenderer")(
+  function* (
+    request: Request,
+    root: string,
+    contentSecurityPolicy: string,
+    fs: FileSystem.FileSystem,
+    path: Path.Path,
   ) {
-    return new Response(null, { status: 400 });
-  }
-  const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
-  try {
-    const realRoot = await NodeFSP.realpath(root);
-    const filePath = await NodeFSP.realpath(NodePath.resolve(realRoot, relativePath));
-    const relative = NodePath.relative(realRoot, filePath);
-    if (relative.startsWith("..") || NodePath.isAbsolute(relative)) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+    }
+    const decodedPath = yield* Effect.try(() =>
+      decodeURIComponent(new URL(request.url).pathname),
+    ).pipe(Effect.option);
+    if (Option.isNone(decodedPath)) {
+      return new Response(null, { status: 400 });
+    }
+    const pathname = decodedPath.value;
+    if (
+      pathname.includes("\\") ||
+      pathname.includes("\0") ||
+      pathname.split("/").some((segment) => segment === ".." || segment === ".")
+    ) {
+      return new Response(null, { status: 400 });
+    }
+    const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+    const realRoot = yield* fs.realPath(root);
+    const filePath = yield* fs.realPath(path.resolve(realRoot, relativePath));
+    const relative = path.relative(realRoot, filePath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
       return new Response(null, { status: 403 });
     }
-    if (!(await NodeFSP.stat(filePath)).isFile()) {
+    if ((yield* fs.stat(filePath)).type !== "File") {
       return new Response(null, { status: 404 });
     }
-    const data = await NodeFSP.readFile(filePath);
+    const data = yield* fs.readFile(filePath);
     return withContentSecurityPolicy(
       new Response(request.method === "HEAD" ? null : new Uint8Array(data), {
         headers: {
           "Content-Type":
-            RENDERER_CONTENT_TYPES[NodePath.extname(filePath)] ?? "application/octet-stream",
+            RENDERER_CONTENT_TYPES[path.extname(filePath)] ?? "application/octet-stream",
           "Content-Length": String(data.byteLength),
           "Cache-Control": "no-cache",
           "X-Content-Type-Options": "nosniff",
@@ -245,16 +249,16 @@ async function serveBundledRenderer(
       }),
       contentSecurityPolicy,
     );
-  } catch {
-    // Missing UI assets must never fall back to a remote response or index.html.
-    return new Response(null, { status: 404 });
-  }
-}
+  },
+  Effect.orElseSucceed(() => new Response(null, { status: 404 })),
+);
 
 function handleDesktopRequest(
   request: Request,
   input: DesktopProtocolRegistrationInput,
   contentSecurityPolicy: string,
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
 ): Promise<Response> {
   const url = new URL(request.url);
   if (url.host !== DESKTOP_HOST) return Promise.resolve(new Response(null, { status: 404 }));
@@ -266,7 +270,10 @@ function handleDesktopRequest(
     url.pathname === "/.well-known" ||
     url.pathname.startsWith("/.well-known/");
   if (input.bundledRendererRoot !== undefined && !isRuntimeRequest) {
-    return serveBundledRenderer(request, input.bundledRendererRoot, contentSecurityPolicy);
+    // Missing UI assets never fall back to a remote response or index.html.
+    return Effect.runPromise(
+      serveBundledRenderer(request, input.bundledRendererRoot, contentSecurityPolicy, fs, path),
+    );
   }
   return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
 }
@@ -290,6 +297,8 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
 }
 
 export const make = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const registered = yield* Ref.make(false);
 
   const registerDesktopProtocol = Effect.fn("desktop.electron.protocol.registerDesktopProtocol")(
@@ -302,7 +311,7 @@ export const make = Effect.gen(function* () {
         Effect.try({
           try: () => {
             Electron.protocol.handle(input.scheme, (request) =>
-              handleDesktopRequest(request, input, contentSecurityPolicy),
+              handleDesktopRequest(request, input, contentSecurityPolicy, fs, path),
             );
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),

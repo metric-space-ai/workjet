@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as NodePath from "node:path";
+import * as Path from "effect/Path";
 
 import * as NetService from "@workjet/shared/Net";
 import * as Crypto from "effect/Crypto";
@@ -183,6 +183,7 @@ const bootstrap = Effect.gen(function* () {
   const serverExposureState = yield* serverExposure.configureFromSettings({ port: backendPort });
   const backendConfig = yield* serverExposure.backendConfig;
   const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
+  const path = yield* Path.Path;
   const rendererTarget = environment.isDevelopment
     ? Option.getOrThrow(environment.devServerUrl)
     : backendConfig.httpBaseUrl;
@@ -192,7 +193,7 @@ const bootstrap = Effect.gen(function* () {
     backendOrigin: backendConfig.httpBaseUrl,
     clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
     ...(!environment.isDevelopment
-      ? { bundledRendererRoot: NodePath.join(environment.appRoot, "apps/server/dist/client") }
+      ? { bundledRendererRoot: path.join(environment.appRoot, "apps/server/dist/client") }
       : {}),
   });
   yield* logBootstrapInfo("bootstrap resolved backend endpoint", {

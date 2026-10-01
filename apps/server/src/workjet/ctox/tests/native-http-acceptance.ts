@@ -2,11 +2,11 @@
  * Run: node native-http-acceptance.ts <private-fixture.json> <first|resume|stop|verify>
  * This does not establish desktop UI, connection-registry, provider or installed acceptance.
  */
-import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeSqlite from "node:sqlite";
 import {
   ThreadId,
   WorkjetConnectionId,
@@ -67,31 +67,47 @@ const IntentRow = Schema.Struct({
   command_id: Schema.NullOr(Schema.String),
   task_id: Schema.NullOr(Schema.String),
 });
+const decodeFixture = Schema.decodeUnknownSync(Fixture);
+const decodeIntentRow = Schema.decodeUnknownSync(IntentRow);
+const decodeNativeReceipt = Schema.decodeUnknownSync(NativeReceipt);
+const decodeSavedReceipt = Schema.decodeUnknownSync(SavedReceipt);
+const decodeTokenCapture = Schema.decodeUnknownSync(
+  Schema.Struct({ value: Schema.String.check(Schema.isMinLength(1)) }),
+);
 const fixtureFile = process.argv[2];
 const phase = process.argv[3];
-assert(
+NodeAssert.ok(
   fixtureFile && ["first", "resume", "stop", "verify"].includes(phase ?? ""),
   "Private fixture and explicit phase required",
 );
-assert.equal(fs.statSync(fixtureFile).mode & 0o077, 0, "Fixture must be private");
+NodeAssert.equal(NodeFS.statSync(fixtureFile).mode & 0o077, 0, "Fixture must be private");
 function loadPrivateFixture() {
   try {
-    return Schema.decodeUnknownSync(Fixture)(JSON.parse(fs.readFileSync(fixtureFile!, "utf8")));
+    return decodeFixture(JSON.parse(NodeFS.readFileSync(fixtureFile!, "utf8")));
   } catch {
     throw new Error("Private acceptance fixture is invalid");
   }
 }
 const fixture = loadPrivateFixture();
-const directory = fs.realpathSync(fixture.directory);
-assert(
+const directory = NodeFS.realpathSync(fixture.directory);
+NodeAssert.ok(
   directory.startsWith("/Volumes/tmp/dev-artifacts/workjet/pr73-http-acceptance/"),
   "Owned tmp fixture required",
 );
-assert.equal(
-  execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+NodeAssert.equal(
+  NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], {
+    encoding: "utf8",
+    timeout: 5000,
+  }).trim(),
   fixture.workjetSource,
 );
-assert.equal(execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim(), "");
+NodeAssert.equal(
+  NodeChildProcess.execFileSync("git", ["status", "--porcelain"], {
+    encoding: "utf8",
+    timeout: 5000,
+  }).trim(),
+  "",
+);
 function loopbackEndpoint() {
   try {
     return new URL(fixture.endpoint);
@@ -100,78 +116,94 @@ function loopbackEndpoint() {
   }
 }
 const endpoint = loopbackEndpoint();
-assert(
+NodeAssert.ok(
   endpoint.protocol === "http:" &&
     endpoint.hostname === "127.0.0.1" &&
     endpoint.pathname === "/mcp",
   "Owned loopback MCP endpoint required",
 );
-assert(
+NodeAssert.ok(
   endpoint.username === "" &&
     endpoint.password === "" &&
     endpoint.search === "" &&
     endpoint.hash === "",
   "Credentials and query parameters are forbidden in the endpoint",
 );
-const listeners = execFileSync("lsof", ["-nP", "-t", `-iTCP:${endpoint.port}`, "-sTCP:LISTEN"], {
-  encoding: "utf8",
-})
+const listeners = NodeChildProcess.execFileSync(
+  "lsof",
+  ["-nP", "-t", `-iTCP:${endpoint.port}`, "-sTCP:LISTEN"],
+  {
+    encoding: "utf8",
+    timeout: 5000,
+  },
+)
   .trim()
   .split("\n");
-assert.deepEqual(
+NodeAssert.deepEqual(
   listeners,
   [String(fixture.serverPid)],
   "Only the captured fixture server may own the port",
 );
-const nativeRoot = fs.realpathSync(fixture.nativeRoot);
-assert(nativeRoot.startsWith(directory + path.sep), "Native root must be inside the owned fixture");
-const serverCommand = execFileSync("ps", ["-p", String(fixture.serverPid), "-o", "command="], {
-  encoding: "utf8",
-}).trim();
-assert(
+const nativeRoot = NodeFS.realpathSync(fixture.nativeRoot);
+NodeAssert.ok(
+  nativeRoot.startsWith(directory + NodePath.sep),
+  "Native root must be inside the owned fixture",
+);
+const serverCommand = NodeChildProcess.execFileSync(
+  "ps",
+  ["-p", String(fixture.serverPid), "-o", "command="],
+  {
+    encoding: "utf8",
+    timeout: 5000,
+  },
+).trim();
+NodeAssert.ok(
   serverCommand.includes(" business-os mcp serve ") &&
     serverCommand.endsWith(" --root " + nativeRoot),
   "Captured native server must use the owned isolated root",
 );
-assert(fs.realpathSync(fixture.tokenFile).startsWith(directory + path.sep));
-assert.equal(fs.statSync(fixture.tokenFile).mode & 0o077, 0, "Token capture must be private");
+NodeAssert.ok(NodeFS.realpathSync(fixture.tokenFile).startsWith(directory + NodePath.sep));
+NodeAssert.equal(
+  NodeFS.statSync(fixture.tokenFile).mode & 0o077,
+  0,
+  "Token capture must be private",
+);
 function loadPrivateToken() {
   try {
-    return Schema.decodeUnknownSync(
-      Schema.Struct({ value: Schema.String.check(Schema.isMinLength(1)) }),
-    )(JSON.parse(fs.readFileSync(fixture.tokenFile, "utf8"))).value;
+    return decodeTokenCapture(JSON.parse(NodeFS.readFileSync(fixture.tokenFile, "utf8"))).value;
   } catch {
     throw new Error("Private token capture is invalid");
   }
 }
 const token = loadPrivateToken();
 const target = { endpoint: fixture.endpoint, token };
-const database = path.join(directory, "workjet-ledger.sqlite");
-const proofFile = path.join(directory, "accepted-native-ids.json");
-if (phase === "first") assert(!fs.existsSync(database), "First phase must use a fresh ledger");
-else assert(fs.existsSync(database), "A later phase must reopen the retained ledger");
+const database = NodePath.join(directory, "workjet-ledger.sqlite");
+const proofFile = NodePath.join(directory, "accepted-native-ids.json");
+if (phase === "first")
+  NodeAssert.ok(!NodeFS.existsSync(database), "First phase must use a fresh ledger");
+else NodeAssert.ok(NodeFS.existsSync(database), "A later phase must reopen the retained ledger");
 const key = nativeTurnKeyForRequestId(fixture.requestId);
 const identity = { ...fixture.scope, requestKey: key };
 let httpCalls = 0;
 let nativeKey: string | null = null;
 
 function committedIntent() {
-  const db = new DatabaseSync(database, { readOnly: true });
+  const db = new NodeSqlite.DatabaseSync(database, { readOnly: true });
   try {
     const rows = db.prepare("SELECT * FROM workjet_ctox_native_requests").all();
-    assert.equal(rows.length, 1, "One durable local request, observed from a separate reader");
-    const row = Schema.decodeUnknownSync(IntentRow)(rows[0]);
-    assert.equal(row.thread_id, fixture.scope.threadId);
-    assert.equal(row.request_key, key);
-    assert.equal(row.connection_id, fixture.scope.connectionId);
-    assert.equal(row.instance_id, fixture.scope.instanceId);
+    NodeAssert.equal(rows.length, 1, "One durable local request, observed from a separate reader");
+    const row = decodeIntentRow(rows[0]);
+    NodeAssert.equal(row.thread_id, fixture.scope.threadId);
+    NodeAssert.equal(row.request_key, key);
+    NodeAssert.equal(row.connection_id, fixture.scope.connectionId);
+    NodeAssert.equal(row.instance_id, fixture.scope.instanceId);
     const { request } = JSON.parse(row.intent_json);
-    assert.deepEqual(request, {
+    NodeAssert.deepEqual(request, {
       ...fixture.projectTask,
       operation: "start_project_task",
       idempotency_key: key,
     });
-    if (nativeKey !== null) assert.equal(row.remote_request_key, nativeKey);
+    if (nativeKey !== null) NodeAssert.equal(row.remote_request_key, nativeKey);
     nativeKey = row.remote_request_key;
     return row;
   } finally {
@@ -203,15 +235,15 @@ const program = Effect.gen(function* () {
         Effect.flatMap((result) => {
           if (phase !== "first" || args[1] !== "business_os.start_project_task" || dropped)
             return Effect.succeed(result);
-          assert.notEqual(
+          NodeAssert.notEqual(
             result.isError,
             true,
             "The real native operation must be accepted before discarding its reply",
           );
-          const receipt = Schema.decodeUnknownSync(NativeReceipt)(result.structuredContent);
-          assert.equal(receipt.project_id, fixture.projectTask.project_id);
-          assert(nativeKey !== null);
-          fs.writeFileSync(
+          const receipt = decodeNativeReceipt(result.structuredContent);
+          NodeAssert.equal(receipt.project_id, fixture.projectTask.project_id);
+          NodeAssert.ok(nativeKey !== null);
+          NodeFS.writeFileSync(
             proofFile,
             JSON.stringify({ commandId: receipt.command_id, taskId: receipt.task_id, nativeKey }) +
               "\n",
@@ -236,27 +268,25 @@ const program = Effect.gen(function* () {
     const failure = yield* Effect.flip(
       client.submitTurn(fixture.scope, fixture.requestId, fixture.projectTask),
     );
-    assert.equal(failure._tag, "CtoxMcpTransportError");
-    assert.equal(failure.reason, "connection-unavailable");
-    assert(dropped);
+    NodeAssert.equal(failure._tag, "CtoxMcpTransportError");
+    NodeAssert.equal(failure.reason, "connection-unavailable");
+    NodeAssert.ok(dropped);
     const reference = yield* requests.get(identity);
-    assert.equal(reference.commandId, null);
-    assert.equal(reference.taskId, null);
-    assert.equal(committedIntent().command_id, null);
+    NodeAssert.equal(reference.commandId, null);
+    NodeAssert.equal(reference.taskId, null);
+    NodeAssert.equal(committedIntent().command_id, null);
   } else {
-    const saved = Schema.decodeUnknownSync(SavedReceipt)(
-      JSON.parse(fs.readFileSync(proofFile, "utf8")),
-    );
+    const saved = decodeSavedReceipt(JSON.parse(NodeFS.readFileSync(proofFile, "utf8")));
     nativeKey = saved.nativeKey;
     const recovered = yield* client.submitTurn(
       fixture.scope,
       fixture.requestId,
       fixture.projectTask,
     );
-    assert.equal(recovered.reference.commandId, saved.commandId);
-    assert.equal(recovered.reference.taskId, saved.taskId);
-    assert.equal(committedIntent().command_id, saved.commandId);
-    assert.equal(committedIntent().task_id, saved.taskId);
+    NodeAssert.equal(recovered.reference.commandId, saved.commandId);
+    NodeAssert.equal(recovered.reference.taskId, saved.taskId);
+    NodeAssert.equal(committedIntent().command_id, saved.commandId);
+    NodeAssert.equal(committedIntent().task_id, saved.taskId);
     const beforeDenial = httpCalls;
     const changed = yield* Effect.flip(
       client.submitTurn(fixture.scope, fixture.requestId, {
@@ -264,7 +294,7 @@ const program = Effect.gen(function* () {
         instruction: "Changed acceptance intent",
       }),
     );
-    assert.equal(changed.reason, "native-request-conflict");
+    NodeAssert.equal(changed.reason, "native-request-conflict");
     const foreign = yield* Effect.flip(
       client.submitTurn(
         { ...fixture.scope, instanceId: "another-fixture-instance" },
@@ -272,8 +302,8 @@ const program = Effect.gen(function* () {
         fixture.projectTask,
       ),
     );
-    assert.equal(foreign.reason, "connection-instance-mismatch");
-    assert.equal(
+    NodeAssert.equal(foreign.reason, "connection-instance-mismatch");
+    NodeAssert.equal(
       httpCalls,
       beforeDenial,
       "Conflicting intent and scope must fail before transport",
@@ -292,22 +322,22 @@ const program = Effect.gen(function* () {
         "business_os.cancel_project_task",
         args,
       );
-      assert.notEqual(stopped.isError, true);
-      assert.notEqual(stopped.structuredContent, undefined);
+      NodeAssert.notEqual(stopped.isError, true);
+      NodeAssert.notEqual(stopped.structuredContent, undefined);
       const repeated = yield* realTransport.callTool(
         target,
         "business_os.cancel_project_task",
         args,
       );
-      assert.notEqual(repeated.isError, true);
-      assert.deepEqual(repeated.structuredContent, stopped.structuredContent);
+      NodeAssert.notEqual(repeated.isError, true);
+      NodeAssert.deepEqual(repeated.structuredContent, stopped.structuredContent);
     }
     const status = yield* client.readStatus(identity);
-    assert.equal(status.reference.commandId, saved.commandId);
-    assert.equal(status.reference.taskId, saved.taskId);
-    if (phase === "stop" || phase === "verify") assert.equal(status.state, "cancelled");
+    NodeAssert.equal(status.reference.commandId, saved.commandId);
+    NodeAssert.equal(status.reference.taskId, saved.taskId);
+    if (phase === "stop" || phase === "verify") NodeAssert.equal(status.state, "cancelled");
     else
-      assert(
+      NodeAssert.ok(
         ["queued", "running", "waiting"].includes(status.state),
         "Closing the first Workjet process must not cancel native work",
       );
@@ -336,8 +366,8 @@ const program = Effect.gen(function* () {
 
 try {
   const result = await Effect.runPromise(program);
-  fs.writeFileSync(
-    path.join(directory, `workjet-${phase}-result.json`),
+  NodeFS.writeFileSync(
+    NodePath.join(directory, `workjet-${phase}-result.json`),
     JSON.stringify(result, null, 2) + "\n",
     { mode: 0o600 },
   );
@@ -355,8 +385,8 @@ try {
     nativeSource: fixture.nativeSource,
     httpCalls,
   };
-  fs.writeFileSync(
-    path.join(directory, `workjet-${phase}-result.json`),
+  NodeFS.writeFileSync(
+    NodePath.join(directory, `workjet-${phase}-result.json`),
     JSON.stringify(result, null, 2) + "\n",
     { mode: 0o600 },
   );

@@ -755,7 +755,7 @@ export function WorkjetSettingsView({
           // shows no evidence the save happened (interactive-review finding).
           toastManager.add({
             type: "success",
-            title: "Worker saved",
+            title: "Luma saved",
             description: worker.name,
           });
         }}
@@ -772,9 +772,11 @@ export function WorkjetSettingsView({
     <SettingsPageContainer className="gap-6">
       <div className="space-y-3">
         <div className="px-3 sm:px-4">
-          <h1 className="text-xl font-semibold tracking-[-0.025em]">Worker</h1>
+          <h1 className="text-xl font-semibold tracking-[-0.025em]">
+            {searchableSetting("workjet-workers").title}
+          </h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Compose reusable workers from independent computer, harness, route, model, prompt,
+            Compose reusable Lumas from independent computer, harness, route, model, prompt,
             reasoning, and capability choices.
           </p>
         </div>
@@ -848,7 +850,7 @@ export function WorkjetSettingsView({
                       status={warning ? <span role="alert">{warning}</span> : undefined}
                       control={
                         <ItemActions
-                          label={`worker ${worker.name}`}
+                          label={`Luma ${worker.name}`}
                           onEdit={() => {
                             setAddingWorker(false);
                             setEditingWorkerId(worker.id);
@@ -930,7 +932,7 @@ export function WorkjetSettingsView({
         >
           <SettingsRow
             title="Workjet Manager"
-            description="Provider-neutral Workjet link for the durable CTOX-backed manager thread. Workers use it for bug reports, access requests, scoped secret operations, and collective notices."
+            description="Provider-neutral Workjet link for the durable CTOX-backed manager thread. Lumas use it for bug reports, access requests, scoped secret operations, and collective notices."
           >
             <div className="mt-2 max-w-3xl pb-3.5">
               <Textarea
@@ -1030,8 +1032,7 @@ export function WorkjetSettingsView({
                       </div>
                       {modelRulesEditorHere ? null : (
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                          Shared with {modelRulesOwner?.name ?? "the worker above"} — edit them
-                          there.
+                          Shared with {modelRulesOwner?.name ?? "the Luma above"} — edit them there.
                         </p>
                       )}
                       {!modelRulesEditorHere ? null : (
@@ -1046,7 +1047,7 @@ export function WorkjetSettingsView({
                             ),
                           )}
                           aria-label={`Model rules for ${worker.modelId}`}
-                          placeholder="No model rules — shared guidance for every worker on this model."
+                          placeholder="No model rules — shared guidance for every Luma on this model."
                           className="mt-1 text-[12px]"
                           onBlur={(event) => {
                             const prompt = event.target.value;
@@ -1079,8 +1080,8 @@ export function WorkjetSettingsView({
                           10,
                           Math.max(2, (worker.instructions ?? "").split("\n").length),
                         )}
-                        aria-label={`Task for worker ${worker.name}`}
-                        placeholder="No task set — describe what this worker takes on."
+                        aria-label={`Task for Luma ${worker.name}`}
+                        placeholder="No task set — describe what this Luma takes on."
                         className="mt-1 text-[12px]"
                         onBlur={(event) => {
                           const instructions = event.target.value;
@@ -1125,7 +1126,7 @@ export function WorkjetSettingsView({
         >
           <SettingsRow
             title="Claude Code events"
-            description="Collect Workjet lifecycle events emitted by Claude Code workers for status and diagnostics."
+            description="Collect Workjet lifecycle events emitted by Claude Code Lumas for status and diagnostics."
             control={
               <Switch
                 checked={configuration.telemetry.claudeCodeEvents}
@@ -1143,8 +1144,8 @@ export function WorkjetSettingsView({
             }
           />
           <SettingsRow
-            title="Worker runtime events"
-            description="Collect Workjet worker runtime events used to correlate worker starts, exits, and failures."
+            title="Luma runtime events"
+            description="Collect Workjet Luma runtime events used to correlate Luma starts, exits, and failures."
             control={
               <Switch
                 checked={configuration.telemetry.sidecarEvents}
@@ -1157,7 +1158,7 @@ export function WorkjetSettingsView({
                     },
                   })
                 }
-                aria-label="Collect Workjet worker runtime events"
+                aria-label="Collect Workjet Luma runtime events"
               />
             }
           />
@@ -1192,7 +1193,7 @@ export function WorkjetSettingsView({
           <AutomaticWorktreeStorageSettings storage={automaticWorktreeStorage} />
           <SettingsRow
             title="Probe timeout"
-            description="Maximum time for a bounded worker availability probe."
+            description="Maximum time for a bounded Luma availability probe."
             control={
               <PositiveIntegerInput
                 ariaLabel="Workjet probe timeout seconds"
@@ -1209,7 +1210,7 @@ export function WorkjetSettingsView({
           />
           <SettingsRow
             title="Turn timeout"
-            description="Maximum runtime for one worker turn before the runtime may stop it."
+            description="Maximum runtime for one Luma turn before the runtime may stop it."
             control={
               <PositiveIntegerInput
                 ariaLabel="Workjet turn timeout seconds"
@@ -1270,13 +1271,13 @@ export function WorkjetSettings({
         : target.reason === "no-code-computer"
           ? "Der CTOX-Master ist eingerichtet. Für Coding-Aufgaben muss ein Rechner zugeordnet und ein Harness einsatzbereit sein. Der Zentralrechner kann diese Aufgaben ebenfalls übernehmen."
           : target.reason === "ambiguous-code-computer"
-            ? "Worker-Einstellungen sind noch nicht als instanzweite CTOX-Konfiguration verfügbar. Bei mehreren zugewiesenen Rechnern bleibt die Seite deshalb zum Schutz vor Datenvermischung gesperrt."
+            ? "Luma-Einstellungen sind noch nicht als instanzweite CTOX-Konfiguration verfügbar. Bei mehreren zugewiesenen Rechnern bleibt die Seite deshalb zum Schutz vor Datenvermischung gesperrt."
             : "Die Berechtigung der aktiven Business-OS-Instanz konnte nicht bestätigt werden.";
     return (
       <SettingsPageContainer>
-        <SettingsSection title="Worker">
+        <SettingsSection title="Lumas">
           <SettingsRow
-            title={resolving ? "Instanz wird geladen" : "Worker nicht verfügbar"}
+            title={resolving ? "Instanz wird geladen" : "Lumas nicht verfügbar"}
             description={description}
             control={
               resolving ? undefined : target.reason === "no-active-instance" ? (

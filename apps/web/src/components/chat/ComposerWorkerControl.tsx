@@ -78,8 +78,8 @@ export function WorkerChoiceList({
     <div className="space-y-0.5">
       <input
         type="search"
-        aria-label="Search workers"
-        placeholder="Search workers…"
+        aria-label="Search Lumas"
+        placeholder="Search Lumas…"
         value={query}
         disabled={disabled}
         onChange={(event) => onQueryChange?.(event.currentTarget.value)}
@@ -147,10 +147,10 @@ export function WorkerChoiceList({
         </div>
       ))}
       {workers.length === 0 ? (
-        <p className="px-2 py-2 text-xs text-muted-foreground">No saved workers</p>
+        <p className="px-2 py-2 text-xs text-muted-foreground">No saved Lumas</p>
       ) : matches.length === 0 ? (
         <p role="status" className="px-2 py-2 text-xs text-muted-foreground">
-          No matching workers
+          No matching Lumas
         </p>
       ) : null}
       <button
@@ -159,7 +159,7 @@ export function WorkerChoiceList({
         className={cn(choiceClass, "mt-2 border-t border-border/60 text-muted-foreground")}
         onClick={() => onEditWorker(null)}
       >
-        <PlusIcon aria-hidden="true" className="size-4" /> Add worker…
+        <PlusIcon aria-hidden="true" className="size-4" /> Add Luma…
       </button>
     </div>
   );
@@ -203,13 +203,13 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
           setOpen(next);
         }
       }}
-      title="Workers"
+      title="Lumas"
       trigger={
         <ComposerControl
           type="button"
           disabled={props.disabled}
           className="min-w-0 max-w-52 font-medium"
-          aria-label="Worker"
+          aria-label="Luma"
         >
           <ComposerControlIcon icon={UsersRoundIcon} />
           <span className="min-w-0 truncate">{selected?.name ?? "Manual"}</span>
@@ -245,8 +245,8 @@ export function ComposerWorkerControlView(props: ComposerWorkerControlProps) {
       }
       detailTitle={
         editing?.workerId === null
-          ? "New worker"
-          : (props.workers.find((worker) => worker.id === editing?.workerId)?.name ?? "Worker")
+          ? "New Luma"
+          : (props.workers.find((worker) => worker.id === editing?.workerId)?.name ?? "Luma")
       }
       onBack={goBack}
       detail={

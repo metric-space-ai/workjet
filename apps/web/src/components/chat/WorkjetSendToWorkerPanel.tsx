@@ -883,7 +883,7 @@ export function WorkjetSendToWorkerPanelControl(props: WorkjetSendToWorkerPanelP
                 ? "min-w-0 max-w-40 shrink-0 px-2"
                 : "min-w-0 max-w-40 shrink-0 whitespace-nowrap"
             }
-            aria-label="Send to worker"
+            aria-label="Send to Luma"
           />
         }
       >
@@ -893,7 +893,7 @@ export function WorkjetSendToWorkerPanelControl(props: WorkjetSendToWorkerPanelP
          * the control never becomes an unlabelled icon for a screen reader.
          */}
         <span className={compact ? "sr-only" : "sr-only sm:not-sr-only truncate"}>
-          Send to worker
+          Send to Luma
         </span>
       </PopoverTrigger>
       <PopoverPopup align="start" className={compact ? "w-80" : "w-96"}>

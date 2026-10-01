@@ -133,7 +133,7 @@ export function WorkjetWorkerOverview({
         className="text-muted-foreground hover:text-foreground flex w-full items-center gap-2 text-xs font-medium tracking-wide uppercase"
         data-testid="workjet-worker-overview-trigger"
       >
-        Workers ({rows.length})
+        Lumas ({rows.length})
       </CollapsibleTrigger>
       <CollapsiblePanel>
         <ul className="mt-1.5 flex flex-col gap-0.5" data-testid="workjet-worker-overview-list">

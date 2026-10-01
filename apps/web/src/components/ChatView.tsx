@@ -5163,7 +5163,7 @@ function ChatViewContent(props: ChatViewProps) {
       ),
       title: working
         ? liveCount > 0
-          ? `${liveCount} ${liveCount === 1 ? "agent" : "agents"} working in the background`
+          ? `${liveCount} ${liveCount === 1 ? "Luma" : "Lumas"} working in the background`
           : "Background work running"
         : "Monitoring in the background",
       actions: (

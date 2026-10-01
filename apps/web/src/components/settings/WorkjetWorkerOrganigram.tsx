@@ -214,7 +214,7 @@ export function WorkjetWorkerOrganigram({
       <div className="flex min-h-12 flex-wrap items-center gap-1.5 border-b border-border/60 px-2.5 py-2">
         <Button type="button" size="sm" variant="outline" onClick={() => onAddWorker(null)}>
           <PlusIcon className="size-3.5" />
-          Worker
+          Luma
         </Button>
         <Button
           type="button"
@@ -316,7 +316,7 @@ export function WorkjetWorkerOrganigram({
           }
         }}
         tabIndex={0}
-        aria-label="Worker dependency organigram"
+        aria-label="Luma dependency organigram"
       >
         <svg className="pointer-events-none absolute inset-0 size-full" aria-hidden="true">
           {cleanGraph.dependencies.map((dependency, index) => {
@@ -388,7 +388,7 @@ export function WorkjetWorkerOrganigram({
               />
               <button
                 type="button"
-                aria-label={`Add child worker to ${worker.name}`}
+                aria-label={`Add child Luma to ${worker.name}`}
                 className="absolute bottom-[-11px] right-2 grid size-[22px] place-items-center rounded-full border border-border bg-card text-muted-foreground hover:border-primary/60 hover:bg-primary hover:text-primary-foreground"
                 onClick={(event) => {
                   event.stopPropagation();

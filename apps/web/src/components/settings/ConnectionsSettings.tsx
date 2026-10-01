@@ -1627,7 +1627,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         description: enabled
           ? "This environment is available through Workjet Connect."
           : publishAgentActivity
-            ? "The managed tunnel was removed. Agent activity publishing stays on."
+            ? "The managed tunnel was removed. Luma activity publishing stays on."
             : "This environment is no longer available through Workjet Connect.",
       });
     }
@@ -1640,10 +1640,10 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
     if (ok) {
       toastManager.add({
         type: "success",
-        title: enabled ? "Agent activity enabled" : "Agent activity disabled",
+        title: enabled ? "Luma activity enabled" : "Luma activity disabled",
         description: enabled
-          ? "This environment publishes agent activity to your mobile clients."
-          : "This environment will stop publishing agent activity.",
+          ? "This environment publishes Luma activity to your mobile clients."
+          : "This environment will stop publishing Luma activity.",
       });
     }
     setIsUpdatingPreference(false);
@@ -1669,11 +1669,11 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         }
       />
       <SettingsRow
-        title="Publish agent activity"
+        title="Publish Luma activity"
         description="Send activity from this environment to your mobile clients for push notifications and Live Activities. Works without a Workjet Connect tunnel."
         control={
           <CloudLinkSwitch
-            ariaLabel="Publish agent activity to mobile clients"
+            ariaLabel="Publish Luma activity to mobile clients"
             checked={publishAgentActivity}
             disabled={!canManageRelay || !isSignedIn || primaryCloudLinkState.isPending || isBusy}
             disabledReason={disabledReason}

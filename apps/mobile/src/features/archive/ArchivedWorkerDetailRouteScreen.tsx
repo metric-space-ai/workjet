@@ -49,7 +49,7 @@ function ArchivedWorkerHistoryPage(props: {
     ...thread.messages.map((message) => ({
       key: `message:${message.id}`,
       createdAt: message.createdAt,
-      label: message.role === "assistant" ? "Worker" : message.role,
+      label: message.role === "assistant" ? "Luma" : message.role,
       text: message.text,
       attachments: message.attachments?.map((attachment) => attachment.name) ?? [],
     })),

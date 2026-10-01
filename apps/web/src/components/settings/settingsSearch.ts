@@ -16,6 +16,7 @@ export interface SettingsSearchItem {
   readonly title: string;
   readonly to: SettingsPath;
   readonly targetId?: string;
+  readonly searchAliases?: ReadonlyArray<string>;
 }
 
 /**
@@ -32,7 +33,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/computers": "Computers",
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
-  "/settings/workjet": "Worker",
+  "/settings/workjet": "Lumas",
   "/settings/source-control": "Source Control",
   "/settings/diagnostics": "Diagnostics",
   "/settings/archived": "Archive",
@@ -201,9 +202,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-workers",
-    // Singular on purpose: it must title-match the page entry so the search
-    // dedupe collapses both into one result (Befund K-A12).
+    // Match the page title to keep one result, while preserving old search vocabulary.
     title: "Lumas",
+    searchAliases: ["worker", "workers", "agent", "agents"],
     to: "/settings/workjet",
   },
   {
@@ -314,7 +315,11 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  const matches = items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  const matches = items.filter((item) =>
+    [item.title, ...(item.searchAliases ?? [])].some((label) =>
+      normalizeSearchText(label).includes(normalizedQuery),
+    ),
+  );
   // Page results lead, minus pages an equally titled item already represents
   // (e.g. the "Computers" catalog entry that lands on /settings/computers).
   const pageMatches = SETTINGS_PAGE_SEARCH_ITEMS.filter(

@@ -149,6 +149,24 @@ for (const [name, args, body, expected] of [
     { command: "service-install", kind: "exit", exitCode: 17, step: "bundle-staging" },
   ],
   [
+    "bundle staging failure on stdout",
+    ["service", "install", "synthetic-private-argument"],
+    'console.log("staging the bundled runtime: token=synthetic-secret"); process.exit(17);',
+    { command: "service-install", kind: "exit", exitCode: 17, step: "bundle-staging" },
+  ],
+  [
+    "runtime verification failure on stdout",
+    ["service", "install"],
+    'console.log("verifying the pinned workjet runtime: token=synthetic-secret"); process.exit(18);',
+    { command: "service-install", kind: "exit", exitCode: 18, step: "runtime-verification" },
+  ],
+  [
+    "service start failure on stdout",
+    ["service", "install"],
+    'console.log("starting the LaunchAgent: token=synthetic-secret"); process.exit(19);',
+    { command: "service-install", kind: "exit", exitCode: 19, step: "service-start" },
+  ],
+  [
     "authorization failure",
     ["auth", "session", "synthetic-private-argument"],
     'console.error("staging the bundled runtime: token=synthetic-secret"); process.exit(4);',

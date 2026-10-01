@@ -418,16 +418,18 @@ export const runLocalCli = (
       );
       const exitCode = yield* child.exitCode.pipe(Effect.mapError(() => failure("read")));
       if (exitCode !== 0) {
-        // Only fixed step identifiers leave memory; CLI output and arguments can contain credentials.
+        // Effect CLI failures can arrive on either stream. Only fixed step
+        // identifiers leave memory; output and arguments can contain credentials.
+        const diagnostics = `${stderr}\n${stdout}`;
         const step: LocalCliCommandFailure["step"] =
           command !== "service-install"
             ? undefined
-            : stderr.includes("staging the bundled runtime") ||
-                stderr.includes("stageBundledRuntime")
+            : diagnostics.includes("staging the bundled runtime") ||
+                diagnostics.includes("stageBundledRuntime")
               ? "bundle-staging"
-              : stderr.includes("verifying the pinned workjet runtime")
+              : diagnostics.includes("verifying the pinned workjet runtime")
                 ? "runtime-verification"
-                : stderr.includes("starting the LaunchAgent")
+                : diagnostics.includes("starting the LaunchAgent")
                   ? "service-start"
                   : undefined;
         return yield* failure("exit", {

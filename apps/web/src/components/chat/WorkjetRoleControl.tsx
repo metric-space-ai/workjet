@@ -58,7 +58,7 @@ export const WORKJET_ROLE_FAILURE_TOAST = {
  * reason.
  */
 export const WORKJET_WORKER_ROLE_REASON =
-  "This thread was created as a worker by its orchestrator. Its role travels with that dispatch and cannot be changed here.";
+  "This thread was created as a Luma by its orchestrator. Its role travels with that dispatch and cannot be changed here.";
 
 /**
  * The role is compiled into the managed system prompt when a provider session
@@ -72,7 +72,7 @@ export const WORKJET_ROLE_NEXT_SESSION_HINT =
 const ROLE_LABELS = {
   standard: "Code",
   orchestrator: "Orchestrator",
-  worker: "Worker",
+  worker: "Luma",
 } as const satisfies Record<WorkjetThreadRole, string>;
 
 const ROLE_ICONS = {
@@ -88,7 +88,7 @@ const SELECTABLE_ROLES = [
 
 const ROLE_TOOLTIPS = {
   standard: `Code — an ordinary thread. ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
-  orchestrator: `Orchestrator — this thread may delegate to workers. ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
+  orchestrator: `Orchestrator — this thread may delegate to Lumas. ${WORKJET_ROLE_NEXT_SESSION_HINT}`,
 } as const satisfies Record<WorkjetSelectableRole, string>;
 
 /**

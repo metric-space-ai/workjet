@@ -11,7 +11,7 @@ import {
 } from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Console from "effect/Console";
-import * as Either from "effect/Either";
+import * as Result from "effect/Result";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
@@ -474,16 +474,16 @@ const execution = Effect.gen(function* () {
     ),
   );
 
-  const outcome = yield* program.pipe(Effect.either);
-  if (Either.isRight(outcome)) {
+  const outcome = yield* program.pipe(Effect.result);
+  if (Result.isSuccess(outcome)) {
     yield* fs.writeFileString(
       path.join(directory, `workjet-${phase}-result.json`),
-      encodeJson(outcome.right) + "\n",
+      encodeJson(outcome.success) + "\n",
       { mode: 0o600 },
     );
-    yield* Console.log(encodeJson(outcome.right));
+    yield* Console.log(encodeJson(outcome.success));
   } else {
-    const error = outcome.left;
+    const error = outcome.failure;
     const reason =
       isNativeRequestError(error) || isMcpTransportError(error)
         ? error.reason

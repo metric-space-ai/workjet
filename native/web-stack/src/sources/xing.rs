@@ -169,12 +169,17 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     }
     return null;
   };
-  const formerEmployment = /\b(?:ehemalige[snr]?\s+unternehmen|ehemalig|former\s+(?:company|employer)|previous\s+(?:company|employer))\b/i;
+  const formerEmployment = /\b(?:ehemalig(?:e[snr]?)?|former\s+(?:company|employer)|previous\s+(?:company|employer))\b/i;
+  const employmentHeading = /^(?:(?:ehemalige[snr]?|aktuelle[snr]?|derzeitige[snr]?)\s+(?:unternehmen|arbeitgeber)|(?:former|previous|current)\s+(?:company|employer))(?:\s*:|\s*$)/i;
+  const employmentSectionIndex = (lines, index) => lines.slice(0, index + 1).findLastIndex((line) => employmentHeading.test(line));
   const currentCompanyIndex = (lines, personName) => {
     const matches = lines.map((line, index) => relevantCompanyText(line) ? index : -1).filter((index) => index >= 0);
     return matches.find((index) => {
-      const employmentLabel = lines.slice(Math.max(0, index - 2), index + 1).join(" ");
-      return !formerEmployment.test(employmentLabel)
+      // Role/location/contact lines do not end an employment section.
+      // Only a later explicit current-company heading can supersede a former one.
+      const heading = lines[employmentSectionIndex(lines, index)];
+      const employmentLabel = heading || lines.slice(Math.max(0, index - 2), index + 1).join(" ");
+      return !formerEmployment.test(employmentLabel) && !formerEmployment.test(lines[index])
         && personNameKey(lines[index]) !== personNameKey(personName);
     }) ?? -1;
   };
@@ -275,7 +280,8 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     }
 
     const candidateIndexes = [companyIndex - 1, companyIndex - 2, companyIndex + 1, companyIndex + 2]
-      .filter((index) => index >= 0 && index < lines.length);
+      .filter((index) => index >= 0 && index < lines.length
+        && employmentSectionIndex(lines, index) === employmentSectionIndex(lines, companyIndex));
     const functionLine = candidateIndexes.map((index) => lines[index])
       .find((line) => plausibleFunctionLine(line, name) && !sieht_aus_wie_personenname(line));
     if (functionLine) {

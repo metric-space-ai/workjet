@@ -29,6 +29,17 @@ assert.ok(records.find((record) => record.field === "person_funktion").note.incl
 assert.equal(records.find((record) => record.field === 'person_funktion').value, 'Leiterin Einkauf');
 assert.ok(!records.some((record) => record.field === 'firma_name'), 'Member-query echo must never become a company fact');
 assert.equal(parse(company, [profile('Anna_Muster', ['Anna Muster', 'Ehemaliges Unternehmen', company])]).length, 0);
+for (const heading of ['Ehemaliges Unternehmen', 'Ehemaliger Arbeitgeber', 'Former employer', 'Previous company:']) {
+  assert.equal(parse(company, [profile('Anna_Muster', ['Anna Muster', heading, 'Director', 'Kontakte: 284', company])]).length, 0, 'A former-employment heading persists across intervening role/metadata lines');
+}
+assert.equal(parse(company, [profile('Anna_Muster', ['Anna Muster', 'Ehemaliges Unternehmen', 'Ford-Werke Köln', 'Derzeitiges Unternehmen:', 'Leiterin Einkauf', company])]).length, 4, 'An explicit current heading starts a new employment section');
+const currentWithoutRole = parse(company, [profile('Anna_Muster', ['Anna Muster', 'Ehemaliges Unternehmen', 'Director', 'Derzeitiges Unternehmen:', company])]);
+assert.equal(currentWithoutRole.length, 3, 'A former role is never borrowed into the current employment section');
+assert.ok(!currentWithoutRole.some((record) => record.field === 'person_funktion'));
+assert.equal(parse(company, [profile('Anna_Muster', ['Anna Muster', 'Derzeitiges Unternehmen:', 'Director', 'Ehemaliges Unternehmen', company])]).length, 0, 'A later former heading supersedes the current section');
+const roleAfterFormerHeading = parse(company, [profile('Anna_Muster', ['Anna Muster', 'Derzeitiges Unternehmen:', company, 'Ehemaliges Unternehmen', 'Director'])]);
+assert.equal(roleAfterFormerHeading.length, 3, 'A following former section cannot lend its role');
+
 assert.equal(parse('Josef Göbel GmbH', [profile('Josef_Goebel', ['Josef Göbel', 'Senior Software Engineer', 'Josef Göbel'])]).length, 0);
 const mismatchedName = { ...good, text: "Thomas Schauzu", contextLines: ["Thomas Schauzu", "Leiter Einkauf", company] };
 assert.equal(parse(company, [mismatchedName]).length, 0, "A visible name that contradicts the profile URL is never replaced by the URL name");

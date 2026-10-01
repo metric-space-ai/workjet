@@ -6,7 +6,7 @@ import * as NodeModule from "node:module";
 import * as NodeURL from "node:url";
 
 import { fromYaml } from "@workjet/shared/schemaYaml";
-import { HostProcessPlatform } from "@workjet/shared/hostProcess";
+import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@workjet/shared/relayAuth";
 import { resolveSpawnCommand } from "@workjet/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -19,6 +19,9 @@ import { BRAND_ASSET_PATHS, type WebAssetBrand } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
+import { verifyBundledServerSource } from "./lib/bundled-server-source.ts";
+import { preparePortableNode } from "./lib/prepare-portable-node.ts";
+
 import {
   CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
   findInlinedExternalPackages,
@@ -281,6 +284,15 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
     ].filter((section): section is string => section !== undefined);
     const outputSuffix = outputSections.length > 0 ? `\n\n${outputSections.join("\n\n")}` : "";
     return `Command exited with non-zero exit code (${this.exitCode})${outputSuffix}`;
+  }
+}
+
+export class BundledServerSourceVerificationError extends Schema.TaggedErrorClass<BundledServerSourceVerificationError>()(
+  "BundledServerSourceVerificationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Could not verify bundled server source: ${this.cause instanceof Error ? this.cause.message : "unknown verification failure"}`;
   }
 }
 
@@ -2642,6 +2654,50 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
+  // The managed local service installs this archive, not the server inside ASAR.
+  // Generate the host-native archive from the fresh build; cross-host inputs
+  // must already match that same build and are verified before packaging.
+  const localServerPlatform = options.platform === "mac" ? "darwin" : options.platform;
+  const hostArchitecture = yield* HostProcessArchitecture;
+  const buildsHostRuntime =
+    localServerPlatform !== "win" &&
+    localServerPlatform === hostPlatform &&
+    (options.arch === "universal" || options.arch === hostArchitecture);
+  if (buildsHostRuntime) {
+    const buildNode = yield* Effect.tryPromise({
+      try: () =>
+        preparePortableNode({
+          destination: path.join(stageRoot, "bundled-server-build-node"),
+          platform: hostPlatform,
+          arch: hostArchitecture,
+        }),
+      catch: (cause) => new BundledServerSourceVerificationError({ cause }),
+    });
+    yield* runCommand(
+      ChildProcess.make(
+        buildNode,
+        [
+          path.join(repoRoot, "scripts/build-ssh-server.mjs"),
+          path.join(stageResourcesDir, "ssh-servers"),
+        ],
+        { cwd: repoRoot },
+      ),
+      { label: "build current bundled local server", verbose: options.verbose },
+    );
+  }
+  const verifiedServerArchives = yield* Effect.tryPromise({
+    try: () =>
+      verifyBundledServerSource({
+        serverDist: distDirs.serverDist,
+        archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+        platform: options.platform,
+        arch: options.arch,
+      }),
+    catch: (cause) => new BundledServerSourceVerificationError({ cause }),
+  });
+  yield* Effect.log(
+    `[desktop-artifact] Verified current server code in ${verifiedServerArchives.length} bundled server archives.`,
+  );
   yield* stageLegalNotices({ repoRoot, stageAppDir });
   // One capability, one version, both hosts. A desktop artifact whose Code and
   // CTOX hosts resolve different manifests, JSON schemas, implementation

@@ -67,6 +67,12 @@ authenticated.
 ## Desktop artifacts
 
 - `vp run dist:desktop:artifact --platform <mac|linux|win> --target <target> --arch <arch>`: Builds a desktop artifact for a specific platform/target/arch.
+  On a matching macOS or Linux host, packaging regenerates the portable local server
+  with checksum-pinned Node from the fresh server build. Every included server TGZ
+  must have a valid checksum and matching `bin.mjs` and `service-launcher.mjs`;
+  cross-host and universal builds need current archives from their matching hosts
+  (`node scripts/build-ssh-server.mjs <output-directory>` after building the server,
+  using the pinned Node version). Windows uses the staged server for WSL.
 - `vp run dist:desktop:dmg`: Builds a shareable macOS `.dmg` into `./release`. Architecture defaults
   to the host, so this produces an arm64 DMG on Apple Silicon. Use `dist:desktop:dmg:arm64` or
   `dist:desktop:dmg:x64`, or pass `--arch <arm64|x64|universal>`, to force one.

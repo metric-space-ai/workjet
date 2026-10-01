@@ -202,7 +202,11 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
   const providerLinks = (snapshot) => (snapshot?.links || []).filter((link) => providerUrl(link.url));
   const memberNames = new Map(providerLinks(memberSearch).map((link) => {
     const profile = canonicalProfile(link.url);
-    return [profile?.url, profile ? nameFromSlug(profile.slug) || nameFromVisibleResult(link) : ""];
+    const visibleName = nameFromVisibleResult(link);
+    const slugName = profile ? nameFromSlug(profile.slug) : "";
+    const name = visibleName && (!slugName || personNameKey(visibleName) === personNameKey(slugName))
+      ? visibleName : "";
+    return [profile?.url, name];
   }).filter(([url, name]) => url && name));
   const companyHit = providerLinks(companySearch).find((link) => {
     const url = providerUrl(link.url);
@@ -248,7 +252,7 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     return /^(Dr\.|Prof\.|Dipl\.[-\w.]*)\s+\p{Lu}[\p{L}-]+\s+\p{Lu}[\p{L}-]+$/u.test(clean(text));
   };
   for (const { lines, companyIndex, profile, name, nameParts } of profiles) {
-    const employerNote = `XING member result current employer: "${lines[companyIndex]}"`;
+    const employerNote = `XING member result profile name: "${name}"; current employer: "${lines[companyIndex]}"`;
     push("person_vorname", nameParts[0], "medium", employerNote, profile.url);
     push("person_nachname", nameParts.slice(1).join(" "), "medium", employerNote, profile.url);
     push("person_xing", profile.url, "high", employerNote, profile.url);
@@ -258,7 +262,7 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     const functionLine = candidateIndexes.map((index) => lines[index])
       .find((line) => plausibleFunctionLine(line, name) && !sieht_aus_wie_personenname(line));
     if (functionLine) {
-      push("person_funktion", functionLine, "medium", employerNote, profile.url);
+      push("person_funktion", functionLine, "medium", `${employerNote}; role: "${functionLine}"`, profile.url);
     }
   }
   return records;
@@ -938,13 +942,13 @@ mod tests {
     }
 
     #[test]
-    fn browser_capture_uses_canonical_profile_slug_and_rejects_location_as_function() {
+    fn browser_capture_corroborates_visible_name_and_rejects_location_as_function() {
         let records = parse_browser_records(serde_json::json!([
             {
                 "url": "https://www.xing.com/profile/Anna_Schmidt10?sc_o=search_result",
-                "text": "1",
+                "text": "Anna Schmidt",
                 "contextLines": [
-                    "1",
+                    "Anna Schmidt",
                     "Leiterin Einkauf",
                     "Example Industrial GmbH",
                     "Harthausen, Deutschland"
@@ -952,8 +956,8 @@ mod tests {
             },
             {
                 "url": "https://www.xing.com/profile/Bernd_Mueller7",
-                "text": "2",
-                "contextLines": ["2", "Example Industrial GmbH", "Harthausen, Deutschland"]
+                "text": "Bernd Mueller",
+                "contextLines": ["Bernd Mueller", "Example Industrial GmbH", "Harthausen, Deutschland"]
             }
         ]));
 

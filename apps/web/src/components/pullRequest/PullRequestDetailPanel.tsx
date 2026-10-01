@@ -567,7 +567,10 @@ export function PullRequestDetailPanel({
       context === "page"
         ? resolvePickableEnvironments(
             { environmentId, projectId: reference.projectId },
-            projects,
+            projects.filter(
+              (project): project is typeof project & { workspaceRoot: string } =>
+                project.workspaceRoot !== null,
+            ),
             environments,
           )
         : [],

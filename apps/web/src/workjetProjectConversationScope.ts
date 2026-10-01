@@ -17,7 +17,7 @@ export function workjetProjectConversationKeys(input: {
   readonly projects: readonly {
     readonly id: ProjectId;
     readonly environmentId: EnvironmentId;
-    readonly workspaceRoot: string;
+    readonly workspaceRoot: string | null;
   }[];
 }): ReadonlySet<string> {
   const keys = new Set<string>();

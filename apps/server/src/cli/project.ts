@@ -41,7 +41,7 @@ import { type CliAuthLocationFlags, projectLocationFlags, resolveCliAuthConfig }
 type ProjectMutationTarget = {
   readonly id: ProjectId;
   readonly title: string;
-  readonly workspaceRoot: string;
+  readonly workspaceRoot: string | null;
 };
 
 type ProjectCommandExecutionMode = "live" | "offline";
@@ -236,7 +236,7 @@ const normalizeWorkspaceRootForProjectCommand = Effect.fn(
 });
 
 const resolveProjectTitle = Effect.fn("resolveProjectTitle")(function* (
-  workspaceRoot: string,
+  workspaceRoot: string | null,
   explicitTitle?: string,
 ) {
   if (explicitTitle !== undefined) {
@@ -250,6 +250,12 @@ const resolveProjectTitle = Effect.fn("resolveProjectTitle")(function* (
     });
   }
 
+  if (workspaceRoot === null) {
+    return yield* new ProjectTitleEmptyError({
+      operation: "validateProjectTitle",
+      title: explicitTitle ?? "",
+    });
+  }
   const path = yield* Path.Path;
   const basename = path.basename(workspaceRoot).trim();
   return basename.length > 0 ? basename : "project";

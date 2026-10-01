@@ -75,13 +75,15 @@ export function requireProjectAbsent(input: {
 export function requireActiveProjectWorkspaceRootAbsent(input: {
   readonly readModel: OrchestrationReadModel;
   readonly command: OrchestrationCommand;
-  readonly workspaceRoot: string;
+  readonly workspaceRoot: string | null;
   readonly exceptProjectId?: ProjectId;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (input.workspaceRoot === null) return Effect.void;
   const normalizedWorkspaceRoot = normalizeProjectPathForComparison(input.workspaceRoot);
   const existingProject = input.readModel.projects.find(
     (project) =>
       project.deletedAt === null &&
+      project.workspaceRoot !== null &&
       normalizeProjectPathForComparison(project.workspaceRoot) === normalizedWorkspaceRoot &&
       project.id !== input.exceptProjectId,
   );

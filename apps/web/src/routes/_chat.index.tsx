@@ -3,8 +3,10 @@ import {
   resolveInstanceOnboardingState,
 } from "../components/ctox/InstanceOnboarding";
 import { useCtoxMode } from "../components/ctox/CtoxModeShell";
-import { scopeProjectRef } from "@workjet/client-runtime/environment";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environment";
+import { buildThreadRouteParams } from "../threadRoutes";
+import { findProjectSupervisor } from "../lib/projectSupervisor";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { FolderPlusIcon, LinkIcon, PlusIcon, RotateCcwIcon, ServerIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -48,77 +50,69 @@ function ChatIndexRouteView() {
 }
 
 /**
- * Landing on the index route drops straight into a draft thread for the most
- * recently active project, so the first screen is a prompt instead of a dead
- * end. Falls back to an add-project hero when no project exists yet.
+ * Opens the retained supervisor for the selected project. Legacy projects can
+ * still open a draft, and an empty workspace offers project creation.
  */
 function IndexDraftLanding() {
   const projects = useProjects();
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
-  const workjetProjectRegistry = useWorkjetProjectRegistry(activeCtoxInstanceId);
+  const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
+  const navigate = useNavigate();
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
-
-  const mostRecentProject = useMemo(
-    () =>
-      bootstrapped
-        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
-        : null,
-    [bootstrapped, projects, threads],
-  );
+  const selectedNative =
+    registry.projects.find((project) => project.id === registry.selectedProjectId) ??
+    registry.projects[0] ??
+    null;
+  const landingProject = useMemo(() => {
+    if (!bootstrapped) return null;
+    const ordered = sortScopedProjectsForSidebar(projects, threads, "updated_at");
+    if (selectedNative !== null)
+      return ordered.find((project) => project.id === selectedNative.id) ?? null;
+    return ordered[0] ?? null;
+  }, [bootstrapped, projects, selectedNative, threads]);
+  const supervisor =
+    landingProject === null
+      ? null
+      : findProjectSupervisor(
+          threads,
+          scopeProjectRef(landingProject.environmentId, landingProject.id),
+        );
 
   useEffect(() => {
-    // An explicitly selected Business OS project owns this landing page.
-    // Opening an unrelated recent local project would undo that selection.
-    if (
-      workjetProjectRegistry.projects.length > 0 ||
-      mostRecentProject === null ||
-      startingRef.current
-    ) {
-      return;
-    }
+    if (landingProject === null || startingRef.current) return;
+    // A newly persisted project may arrive immediately before its supervisor event.
+    if (landingProject.ctoxRegistration != null && supervisor === null) return;
     startingRef.current = true;
-    void handleNewThread(scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id), {
-      replace: true,
-    }).catch(() => {
+    const opening =
+      supervisor === null
+        ? handleNewThread(scopeProjectRef(landingProject.environmentId, landingProject.id), {
+            replace: true,
+          })
+        : navigate({
+            to: "/$environmentId/$threadId",
+            replace: true,
+            params: buildThreadRouteParams(scopeThreadRef(supervisor.environmentId, supervisor.id)),
+          });
+    void opening.catch(() => {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [
-    handleNewThread,
-    mostRecentProject,
-    startState.retryRequest,
-    workjetProjectRegistry.projects.length,
-  ]);
+  }, [handleNewThread, landingProject, navigate, startState.retryRequest, supervisor]);
 
-  const selectedWorkjetProject =
-    workjetProjectRegistry.projects.find(
-      (project) => project.id === workjetProjectRegistry.selectedProjectId,
-    ) ??
-    workjetProjectRegistry.projects[0] ??
-    null;
-
-  if (selectedWorkjetProject !== null) {
-    return <WorkjetProjectReady projectTitle={selectedWorkjetProject.title} />;
-  }
-  if (!bootstrapped && workjetProjectRegistry.phase !== "ready") {
-    return null;
-  }
-  if (mostRecentProject !== null) {
+  if (landingProject !== null)
     return startState.failed ? (
       <DraftStartError
-        onRetry={() => {
-          setStartState((state) => ({
-            failed: false,
-            retryRequest: state.retryRequest + 1,
-          }));
-        }}
+        onRetry={() =>
+          setStartState((state) => ({ failed: false, retryRequest: state.retryRequest + 1 }))
+        }
       />
     ) : null;
-  }
+  if (selectedNative !== null) return <WorkjetProjectReady projectTitle={selectedNative.title} />;
+  if (!bootstrapped && registry.phase !== "ready") return null;
   return <NoProjectsHero />;
 }
 
@@ -155,9 +149,9 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <Empty className="flex-1">
         <EmptyHeader className="max-w-md">
-          <EmptyTitle className="text-foreground text-xl">Couldn’t start a new thread</EmptyTitle>
+          <EmptyTitle className="text-foreground text-xl">Couldn’t open project</EmptyTitle>
           <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-            The project is still available. Try opening the draft again.
+            The project is still available. Try opening it again.
           </EmptyDescription>
           <div className="mt-5 flex justify-center">
             <Button size="sm" onClick={onRetry}>
@@ -184,10 +178,11 @@ function NoProjectsHero() {
                 Workjet Collective
               </p>
               <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                Deine Instanz ist bereit.
+                Your instance is ready.
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Füge dein erstes Projekt hinzu. Danach kannst du eine Coding-Aufgabe starten.
+                Create your first project by name. Its supervisor keeps your work together; you can
+                attach a computer and working copy later.
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
                 <Button size="sm" data-workjet-action="project.add.hero" onClick={openAddProject}>

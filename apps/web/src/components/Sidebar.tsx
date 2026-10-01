@@ -1,3 +1,4 @@
+import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
@@ -1799,7 +1800,9 @@ export default function Sidebar() {
         getId: getProjectOrderKey,
         getPreferenceIds: (project) => [
           getProjectOrderKey(project),
-          legacyProjectCwdPreferenceKey(project.workspaceRoot),
+          ...(project.workspaceRoot === null
+            ? []
+            : [legacyProjectCwdPreferenceKey(project.workspaceRoot)]),
         ],
       }),
     [projectOrder, sidebarProjects],
@@ -1837,10 +1840,11 @@ export default function Sidebar() {
   const projectCwdByKey = useMemo(
     () =>
       new Map(
-        sidebarProjects.map((project) => [
-          `${project.environmentId}:${project.id}`,
-          project.workspaceRoot,
-        ]),
+        sidebarProjects.flatMap((project) =>
+          project.workspaceRoot === null
+            ? []
+            : [[`${project.environmentId}:${project.id}`, project.workspaceRoot] as const],
+        ),
       ),
     [sidebarProjects],
   );
@@ -1919,6 +1923,21 @@ export default function Sidebar() {
     lastActiveProjectKey.current = key;
     setProjectScopeKey(group.projectKey);
   }, [activeProjectEnvironmentId, activeProjectId, projectGroups]);
+  const localLogicalProjects = sidebarProjects.filter(
+    (project) =>
+      project.ctoxRegistration?.instanceId === workjetProjectRegistry.presentationInstanceId,
+  );
+  const selectableWorkjetProjects = [
+    ...workjetProjects.map(({ id, title }) => ({ id, title })),
+    ...localLogicalProjects
+      .filter((project) => !workjetProjects.some((native) => native.id === project.id))
+      .map(({ id, title }) => ({ id, title })),
+  ];
+  const selectedLocalLogicalProject =
+    localLogicalProjects.find(
+      (project) =>
+        project.id === activeProjectId && project.environmentId === activeProjectEnvironmentId,
+    ) ?? null;
   const projectSwitchPending = useRef(false);
   const [isSwitchingProject, setIsSwitchingProject] = useState(false);
   const handleProjectScopeChange = useCallback(
@@ -1960,8 +1979,55 @@ export default function Sidebar() {
     async (projectId: string) => {
       if (projectSwitchPending.current) return;
       const instanceId = workjetProjectRegistry.presentationInstanceId;
+      const localProject = sidebarProjects.find(
+        (candidate) =>
+          candidate.id === projectId && candidate.ctoxRegistration?.instanceId === instanceId,
+      );
       const project = workjetProjects.find((candidate) => candidate.id === projectId);
-      if (instanceId === null || project === undefined) return;
+      if (instanceId === null || (project === undefined && localProject === undefined)) return;
+      if (localProject !== undefined) {
+        const supervisor = findProjectSupervisor(
+          threads,
+          scopeProjectRef(localProject.environmentId, localProject.id),
+        );
+        if (supervisor === null) {
+          toastManager.add({
+            type: "error",
+            title: "Supervisor is not available yet",
+            description: "The saved project remains available. Try opening it again.",
+          });
+          return;
+        }
+        projectSwitchPending.current = true;
+        setIsSwitchingProject(true);
+        try {
+          await router.navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(scopeThreadRef(supervisor.environmentId, supervisor.id)),
+          });
+          const group = projectGroups.find((candidate) =>
+            candidate.memberProjectRefs.some(
+              (ref) =>
+                ref.environmentId === localProject.environmentId &&
+                ref.projectId === localProject.id,
+            ),
+          );
+          setProjectScopeKey(group?.projectKey ?? null);
+          if (project !== undefined) selectWorkjetProject(instanceId, project.id);
+          if (isMobile) setOpenMobile(false);
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Could not open project",
+            description: error instanceof Error ? error.message : "Please try again.",
+          });
+        } finally {
+          projectSwitchPending.current = false;
+          setIsSwitchingProject(false);
+        }
+        return;
+      }
+      if (project === undefined) return;
       const target = buildAvailableProjects({
         projects: [],
         workjetProjects: [project],
@@ -2008,6 +2074,8 @@ export default function Sidebar() {
       setOpenMobile,
       sidebarComputer,
       workjetProjectRegistry.presentationInstanceId,
+      sidebarProjects,
+      threads,
       workjetProjects,
     ],
   );
@@ -2022,8 +2090,14 @@ export default function Sidebar() {
     workjetProjects.find((project) => project.id === workjetProjectRegistry.selectedProjectId) ??
     null;
   const scopedProjectKeys = useMemo(() => {
-    if (workjetProjectRegistry.phase === "loading" || workjetProjectRegistry.phase === "blocked") {
-      return new Set<string>();
+    if (
+      legacyScopedProjectGroup?.memberProjects.some((project) => project.ctoxRegistration != null)
+    ) {
+      return new Set(
+        legacyScopedProjectGroup.memberProjectRefs.map(
+          (ref) => `${ref.environmentId}:${ref.projectId}`,
+        ),
+      );
     }
     if (workjetProjects.length > 0) {
       return workjetProjectConversationKeys({
@@ -3664,7 +3738,8 @@ export default function Sidebar() {
                     >
                       <FolderIcon aria-hidden className="size-4 shrink-0" />
                       <span className="min-w-0 flex-1 truncate">
-                        {selectedWorkjetProject?.title ??
+                        {selectedLocalLogicalProject?.title ??
+                          selectedWorkjetProject?.title ??
                           scopedProjectGroup?.displayName ??
                           "Choose project"}
                       </span>
@@ -3673,26 +3748,26 @@ export default function Sidebar() {
                     <MenuPopup align="start" className="min-w-64 max-w-80">
                       <MenuRadioGroup
                         value={
-                          workjetProjects.length > 0
-                            ? (selectedWorkjetProject?.id ?? "")
+                          selectableWorkjetProjects.length > 0
+                            ? (selectedLocalLogicalProject?.id ?? selectedWorkjetProject?.id ?? "")
                             : (projectScopeKey ?? "")
                         }
                         onValueChange={(value) => {
                           if (typeof value !== "string" || value.length === 0) return;
-                          if (workjetProjects.length > 0) {
+                          if (selectableWorkjetProjects.length > 0) {
                             void handleWorkjetProjectSelection(value);
                           } else {
                             void handleProjectScopeChange(value);
                           }
                         }}
                       >
-                        {workjetProjects.length > 0
-                          ? workjetProjects.map((project) => (
+                        {selectableWorkjetProjects.length > 0
+                          ? selectableWorkjetProjects.map((project) => (
                               <MenuRadioItem
                                 key={project.id}
                                 value={project.id}
                                 closeOnClick
-                                data-workjet-action={`project.select:`}
+                                data-workjet-action={`project.select:${project.id}`}
                               >
                                 <span className="min-w-0 truncate">{project.title}</span>
                               </MenuRadioItem>
@@ -3713,7 +3788,7 @@ export default function Sidebar() {
                     <SidebarMenuButton
                       type="button"
                       size="icon"
-                      aria-label={`Project settings for `}
+                      aria-label={`Project settings for ${scopedProjectGroup.displayName}`}
                       onClick={(event) => void handleProjectSettings(event, scopedProjectGroup)}
                     >
                       <SettingsIcon aria-hidden className="size-4" />

@@ -176,6 +176,7 @@ import {
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
+import { ProjectNativeSyncStatus } from "../localProjectRegistration";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -3489,6 +3490,10 @@ function ChatViewContent(props: ChatViewProps) {
         });
       }
       const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
+      if (targetCwd === null) {
+        setThreadError(activeThread.id, "Attach a working copy before running scripts.");
+        return;
+      }
       const baseTerminalId =
         terminalUiState.activeTerminalId || activeKnownTerminalIds[0] || DEFAULT_THREAD_TERMINAL_ID;
       const isBaseTerminalBusy = runningTerminalIds.includes(baseTerminalId);
@@ -3593,7 +3598,7 @@ function ChatViewContent(props: ChatViewProps) {
   const persistProjectScripts = useCallback(
     async (input: {
       projectId: ProjectId;
-      projectCwd: string;
+      projectCwd: string | null;
       previousScripts: ReadonlyArray<ProjectScript>;
       nextScripts: ReadonlyArray<ProjectScript>;
       keybinding?: string | null;
@@ -4059,6 +4064,7 @@ function ChatViewContent(props: ChatViewProps) {
   const addTerminalSurface = useCallback(() => {
     if (!activeThreadRef || !activeThreadId || !activeProject) return;
     const cwd = gitCwd ?? activeProject.workspaceRoot;
+    if (cwd === null) return;
     const terminalId = nextTerminalId(allocatableActiveTerminalIds);
     useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId);
     setTerminalFocusRequestId((value) => value + 1);
@@ -4097,6 +4103,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       const terminalId = nextTerminalId(allocatableActiveTerminalIds);
       const cwd = gitCwd ?? activeProject.workspaceRoot;
+      if (cwd === null) return;
       useRightPanelStore
         .getState()
         .splitTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId, direction);
@@ -5994,7 +6001,7 @@ function ChatViewContent(props: ChatViewProps) {
                       },
                     }
                   : {}),
-                ...(baseBranchForWorktree
+                ...(baseBranchForWorktree && activeProject.workspaceRoot !== null
                   ? {
                       prepareWorktree: {
                         projectCwd: activeProject.workspaceRoot,
@@ -7067,6 +7074,7 @@ function ChatViewContent(props: ChatViewProps) {
             onNewThreadInProject={handleNewThreadInActiveProject}
           />
         </WorkjetHeaderContent>
+        <ProjectNativeSyncStatus project={activeProject ?? null} />
 
         <ThreadErrorBanner
           error={visibleThreadError}

@@ -10,6 +10,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useActiveWorkjetScope } from "./activeWorkjetScope";
 import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
 import { listWorkjetProjects } from "./workjetProjectControl";
+import { LocalProjectRegistrationSynchronizer } from "./localProjectRegistration";
 
 export interface WorkjetProjectRegistrySnapshot {
   readonly presentationInstanceId: string | null;
@@ -272,20 +273,15 @@ export function WorkjetProjectRegistrySynchronizer() {
 
   useEffect(() => {
     let cancelled = false;
-    publish(loadingWorkjetProjectRegistry(presentationInstanceId));
+    const restored = loadingWorkjetProjectRegistry(presentationInstanceId);
+    publish(presentationInstanceId === null ? restored : { ...restored, phase: "loading" });
     if (presentationInstanceId === null) return;
     void listWorkjetProjects(presentationInstanceId).then(
       (result) => {
         if (cancelled) return;
         if (result._tag !== "completed" || result.response.action !== "project.list") {
           const current = readWorkjetProjectRegistry(presentationInstanceId);
-          if (current.projects.length === 0)
-            publish({
-              presentationInstanceId,
-              phase: "blocked",
-              projects: EMPTY_PROJECTS,
-              selectedProjectId: null,
-            });
+          publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
           return;
         }
         const selectedProjectId = result.response.projects.some(
@@ -303,13 +299,7 @@ export function WorkjetProjectRegistrySynchronizer() {
       () => {
         if (!cancelled) {
           const current = readWorkjetProjectRegistry(presentationInstanceId);
-          if (current.projects.length === 0)
-            publish({
-              presentationInstanceId,
-              phase: "blocked",
-              projects: EMPTY_PROJECTS,
-              selectedProjectId: null,
-            });
+          publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
         }
       },
     );
@@ -317,7 +307,7 @@ export function WorkjetProjectRegistrySynchronizer() {
       cancelled = true;
     };
   }, [presentationInstanceId]);
-  return null;
+  return <LocalProjectRegistrationSynchronizer />;
 }
 
 export function __resetWorkjetProjectRegistryForTests(

@@ -340,7 +340,7 @@ export const WORKJET_SETTINGS_SECTIONS: ReadonlyArray<{
   // operator's re-mapping: Computers is a TOP-LEVEL settings page, provider
   // accounts and LLM routes live on Models beside the accounts they
   // reference, and capabilities are toggled inside the worker editor.
-  { id: "workers", targetId: "workjet-workers", label: "Workers" },
+  { id: "workers", targetId: "workjet-workers", label: "Lumas" },
   { id: "organigram", targetId: "workjet-organigram", label: "Organigram" },
   { id: "prompt", targetId: "workjet-prompt", label: "Prompt" },
   { id: "telemetry", targetId: "workjet-telemetry", label: "Telemetry" },
@@ -802,7 +802,7 @@ export function WorkjetSettingsView({
       {activeSection === "workers" ? (
         <SettingsSection
           id={searchableSetting("workjet-workers").id}
-          title="Configured workers"
+          title="Configured Lumas"
           headerAction={
             <Button
               type="button"
@@ -815,7 +815,7 @@ export function WorkjetSettingsView({
               }}
             >
               <PlusIcon className="size-3.5" />
-              Add worker
+              Add Luma
             </Button>
           }
         >
@@ -827,8 +827,8 @@ export function WorkjetSettingsView({
           {addingWorker ? workerEditor : null}
           {configuration.workerProfiles.length === 0 ? (
             <SettingsRow
-              title="No saved workers"
-              description="Add a reusable worker after configuring a computer and LLM route."
+              title="No saved Lumas"
+              description="Add a reusable Luma after configuring a computer and LLM route."
             />
           ) : (
             <div className="divide-y divide-border/60">
@@ -990,8 +990,8 @@ export function WorkjetSettingsView({
               together, and they lived on different pages here. */}
           {configuration.workerProfiles.length === 0 ? null : (
             <SettingsRow
-              title="Worker tasks"
-              description="Each worker's own instructions, appended to the shared rules above when Workjet composes its prompt."
+              title="Luma tasks"
+              description="Each Luma's own instructions, appended to the shared rules above when Workjet composes its prompt."
             >
               <div className="mt-2 space-y-2 pb-3.5">
                 {configuration.workerProfiles.map((worker, workerIndex) => {

@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId } from "@workjet/contracts";
+import { CommandId, EnvironmentId, ProjectId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentProject } from "./models.ts";
@@ -52,6 +52,32 @@ function settings(
 }
 
 describe("buildProjectGroups", () => {
+  it("retains logical identity across working-copy attachment and shared repositories", () => {
+    const registration = {
+      instanceId: "managed:welsch",
+      commandId: CommandId.make("register-project"),
+      status: "pending" as const,
+    };
+    const logical = makeProject("logical", "/unused", {
+      workspaceRoot: null,
+      repositoryIdentity: null,
+      ctoxRegistration: registration,
+    });
+    const attached = { ...logical, workspaceRoot: "/work/workjet", repositoryIdentity };
+    const other = makeProject("another-project", "/work/another", {
+      ctoxRegistration: { ...registration, commandId: CommandId.make("register-other") },
+    });
+    for (const mode of ["separate", "repository", "repository_path"] as const) {
+      const before = buildProjectGroups({ projects: [logical], settings: settings(mode) });
+      const after = buildProjectGroups({ projects: [attached, other], settings: settings(mode) });
+      expect(after).toHaveLength(2);
+      expect(after.find((group) => group.representative.id === logical.id)?.key).toBe(
+        before[0]?.key,
+      );
+      expect(derivePhysicalProjectKey(attached)).toBe(derivePhysicalProjectKey(logical));
+    }
+  });
+
   it("preserves every physical clone as a selectable member in repository modes", () => {
     const projects = [
       makeProject("workjet", "/work/workjet"),

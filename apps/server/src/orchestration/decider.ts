@@ -250,6 +250,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
 > {
   switch (command.type) {
     case "project.create": {
+      if (command.ctoxRegistration?.status === "confirmed") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "A local project must begin with pending native registration.",
+        });
+      }
       yield* requireProjectAbsent({
         readModel,
         command,
@@ -274,6 +280,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: command.projectId,
           title: command.title,
           workspaceRoot: command.workspaceRoot,
+          ctoxRegistration: command.ctoxRegistration ?? null,
           defaultModelSelection: command.defaultModelSelection ?? null,
           faviconPath: null,
           scripts: [],
@@ -324,6 +331,22 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "project.meta.update": {
+      const registration = readModel.projects.find(
+        (project) => project.id === command.projectId,
+      )?.ctoxRegistration;
+      if (
+        registration &&
+        command.ctoxRegistration !== undefined &&
+        (command.ctoxRegistration === null ||
+          command.ctoxRegistration.instanceId !== registration.instanceId ||
+          command.ctoxRegistration.commandId !== registration.commandId)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail:
+            "A logical project cannot silently change its CTOX instance or registration identity.",
+        });
+      }
       yield* requireProject({
         readModel,
         command,
@@ -350,6 +373,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: command.projectId,
           ...(command.title !== undefined ? { title: command.title } : {}),
           ...(command.workspaceRoot !== undefined ? { workspaceRoot: command.workspaceRoot } : {}),
+          ...(command.ctoxRegistration !== undefined
+            ? { ctoxRegistration: command.ctoxRegistration }
+            : {}),
           ...(command.defaultModelSelection !== undefined
             ? { defaultModelSelection: command.defaultModelSelection }
             : {}),

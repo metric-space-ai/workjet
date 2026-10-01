@@ -1,5 +1,6 @@
 import {
   ChatAttachment,
+  CtoxProjectRegistration,
   CheckpointRef,
   IsoDateTime,
   MessageId,
@@ -75,6 +76,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+    ctoxRegistration: Schema.NullOr(Schema.fromJsonString(CtoxProjectRegistration)),
   }),
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
@@ -183,13 +185,13 @@ const ProjectionThreadIdLookupRowSchema = Schema.Struct({
 const ProjectionThreadCheckpointContextThreadRowSchema = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
-  workspaceRoot: Schema.String,
+  workspaceRoot: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
 });
 const ProjectionThreadWorktreeCleanupRowSchema = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
-  workspaceRoot: Schema.String,
+  workspaceRoot: Schema.NullOr(Schema.String),
   workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
@@ -206,7 +208,7 @@ const FullThreadDiffContextLookupInput = Schema.Struct({
 const ProjectionFullThreadDiffContextRowSchema = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
-  workspaceRoot: Schema.String,
+  workspaceRoot: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
   latestCheckpointTurnCount: Schema.NullOr(NonNegativeInt),
   toCheckpointRef: Schema.NullOr(CheckpointRef),
@@ -338,6 +340,7 @@ function mapProjectShellRow(
     id: row.projectId,
     title: row.title,
     workspaceRoot: row.workspaceRoot,
+    ctoxRegistration: row.ctoxRegistration ?? null,
     repositoryIdentity,
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
@@ -387,7 +390,13 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       options?.includeDeleted === true
         ? projectRows
         : projectRows.filter((row) => row.deletedAt === null);
-    const uniqueWorkspaceRoots = [...new Set(filteredProjectRows.map((row) => row.workspaceRoot))];
+    const uniqueWorkspaceRoots = [
+      ...new Set(
+        filteredProjectRows.flatMap((row) =>
+          row.workspaceRoot === null ? [] : [row.workspaceRoot],
+        ),
+      ),
+    ];
     const repositoryIdentityByWorkspaceRoot = new Map(
       yield* Effect.forEach(
         uniqueWorkspaceRoots,
@@ -402,7 +411,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     return new Map(
       filteredProjectRows.map((row) => [
         row.projectId,
-        repositoryIdentityByWorkspaceRoot.get(row.workspaceRoot) ?? null,
+        row.workspaceRoot === null
+          ? null
+          : (repositoryIdentityByWorkspaceRoot.get(row.workspaceRoot) ?? null),
       ]),
     );
   });
@@ -417,6 +428,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           title,
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
+          ctox_registration_json AS "ctoxRegistration",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
           scripts_json AS "scripts",
@@ -889,6 +901,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           title,
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
+          ctox_registration_json AS "ctoxRegistration",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
           scripts_json AS "scripts",
@@ -913,6 +926,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           title,
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
+          ctox_registration_json AS "ctoxRegistration",
           default_thread_env_mode AS "defaultThreadEnvMode",
           favicon_path AS "faviconPath",
           scripts_json AS "scripts",
@@ -1688,6 +1702,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 id: row.projectId,
                 title: row.title,
                 workspaceRoot: row.workspaceRoot,
+                ctoxRegistration: row.ctoxRegistration ?? null,
                 repositoryIdentity: repositoryIdentities.get(row.projectId) ?? null,
                 defaultModelSelection: row.defaultModelSelection,
                 defaultThreadEnvMode: row.defaultThreadEnvMode,
@@ -1821,6 +1836,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   id: row.projectId,
                   title: row.title,
                   workspaceRoot: row.workspaceRoot,
+                  ctoxRegistration: row.ctoxRegistration ?? null,
                   defaultModelSelection: row.defaultModelSelection,
                   defaultThreadEnvMode: row.defaultThreadEnvMode,
                   faviconPath: row.faviconPath ?? null,
@@ -2311,7 +2327,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         Effect.flatMap((option) =>
           Option.isNone(option)
             ? Effect.succeed(Option.none<OrchestrationProject>())
-            : repositoryIdentityResolver.resolve(option.value.workspaceRoot).pipe(
+            : (option.value.workspaceRoot === null
+                ? Effect.succeed(null)
+                : repositoryIdentityResolver.resolve(option.value.workspaceRoot)
+              ).pipe(
                 Effect.map((repositoryIdentity) =>
                   Option.some({
                     id: option.value.projectId,
@@ -2342,13 +2361,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       Effect.flatMap((option) =>
         Option.isNone(option)
           ? Effect.succeed(Option.none<OrchestrationProjectShell>())
-          : repositoryIdentityResolver
-              .resolve(option.value.workspaceRoot)
-              .pipe(
-                Effect.map((repositoryIdentity) =>
-                  Option.some(mapProjectShellRow(option.value, repositoryIdentity)),
-                ),
+          : (option.value.workspaceRoot === null
+              ? Effect.succeed(null)
+              : repositoryIdentityResolver.resolve(option.value.workspaceRoot)
+            ).pipe(
+              Effect.map((repositoryIdentity) =>
+                Option.some(mapProjectShellRow(option.value, repositoryIdentity)),
               ),
+            ),
       ),
     );
 
@@ -2376,7 +2396,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           ),
         ),
       );
-      if (Option.isNone(threadRow)) {
+      if (Option.isNone(threadRow) || threadRow.value.workspaceRoot === null) {
         return Option.none<ProjectionThreadCheckpointContext>();
       }
 
@@ -2418,15 +2438,19 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           ),
         ),
         Effect.map(
-          Option.map((row) => ({
-            threadId: row.threadId,
-            projectId: row.projectId,
-            workspaceRoot: row.workspaceRoot,
-            workjetRole: row.workjetConfig.role,
-            branch: row.branch,
-            worktreePath: row.worktreePath,
-            archivedAt: row.archivedAt,
-          })),
+          Option.flatMap((row) =>
+            row.workspaceRoot === null
+              ? Option.none()
+              : Option.some({
+                  threadId: row.threadId,
+                  projectId: row.projectId,
+                  workspaceRoot: row.workspaceRoot,
+                  workjetRole: row.workjetConfig.role,
+                  branch: row.branch,
+                  worktreePath: row.worktreePath,
+                  archivedAt: row.archivedAt,
+                }),
+          ),
         ),
       );
 
@@ -2457,7 +2481,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           ),
         ),
       );
-      if (Option.isNone(row)) {
+      if (Option.isNone(row) || row.value.workspaceRoot === null) {
         return Option.none<ProjectionFullThreadDiffContext>();
       }
 

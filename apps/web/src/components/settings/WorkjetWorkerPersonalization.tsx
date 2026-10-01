@@ -286,14 +286,14 @@ export function WorkjetWorkerPersonalizationEditor({
     <section className="overflow-hidden rounded-xl border border-border/60 bg-background/20">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
         <h4 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-          Profile
+          Personality sliders
         </h4>
         <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
           Personalization
           <Switch
             checked={value.enabled}
             onCheckedChange={(enabled) => onChange({ ...value, enabled: Boolean(enabled) })}
-            aria-label="Enable worker personalization"
+            aria-label="Enable Luma personalization"
           />
         </label>
       </div>
@@ -304,7 +304,7 @@ export function WorkjetWorkerPersonalizationEditor({
           return (
             <div
               key={group.id}
-              className="grid min-h-16 grid-cols-[minmax(8rem,1fr)_minmax(12rem,1.5fr)_minmax(8rem,1fr)_1.75rem] items-center gap-3 px-3 py-2"
+              className="grid min-h-16 grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_1.75rem] items-center gap-3 px-3 py-2"
             >
               <span className="text-xs font-medium leading-tight">{group.meta.left}</span>
               <input

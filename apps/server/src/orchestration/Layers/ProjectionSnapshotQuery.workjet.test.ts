@@ -1,4 +1,6 @@
 import {
+  CommandId,
+  CtoxProjectRegistration,
   EnvironmentId,
   ModelSelection,
   ProjectId,
@@ -29,6 +31,7 @@ const DELETED_UNARCHIVED_WORKER_ID = ThreadId.make("thread-workjet-deleted-unarc
 const DELETED_MISMATCHED_WORKER_ID = ThreadId.make("thread-workjet-deleted-mismatched-worker");
 const DELETED_LEGACY_WORKER_ID = ThreadId.make("thread-workjet-deleted-legacy-worker");
 const DELETED_NON_WORKER_ID = ThreadId.make("thread-workjet-deleted-non-worker");
+const encodeRegistration = Schema.encodeSync(Schema.fromJsonString(CtoxProjectRegistration));
 const encodeModelSelection = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 const encodeWorkjetThreadConfig = Schema.encodeSync(Schema.fromJsonString(WorkjetThreadConfig));
 const encodeUnknownJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -84,6 +87,34 @@ const layer = it.layer(
 );
 
 layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
+  it.effect("restores a folder-free project's native intent through all project read paths", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const registration = {
+        instanceId: "managed:welsch",
+        commandId: CommandId.make("logical-native-command"),
+        status: "pending" as const,
+        lastFailure: "timeout",
+      };
+      const projectId = ProjectId.make("folder-free-project");
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, ctox_registration_json, scripts_json, created_at, updated_at
+        ) VALUES (${projectId}, 'Folder free', NULL, ${encodeRegistration(registration)}, '[]', ${NOW}, ${NOW})
+      `;
+      const full = yield* snapshotQuery.getSnapshot();
+      const command = yield* snapshotQuery.getCommandReadModel();
+      const shell = yield* snapshotQuery.getShellSnapshot();
+      for (const projects of [full.projects, command.projects, shell.projects]) {
+        const project = projects.find((candidate) => candidate.id === projectId);
+        assert.isNotNull(project);
+        assert.strictEqual(project?.workspaceRoot, null);
+        assert.deepEqual(project?.ctoxRegistration, registration);
+      }
+    }),
+  );
+
   it.effect("rehydrates persisted configurations through full and shell snapshot paths", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;

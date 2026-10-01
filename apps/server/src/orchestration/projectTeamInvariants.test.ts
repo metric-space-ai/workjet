@@ -47,6 +47,110 @@ const apply = Effect.fn("test.applyTeamCommand")(function* (
 
 describe("durable project teams", () => {
   it.effect(
+    "replays a pending native registration and fences its tenant and command identity",
+    () =>
+      Effect.gen(function* () {
+        const registration = {
+          instanceId: "managed:welsch",
+          commandId: CommandId.make("native-registration"),
+          status: "pending" as const,
+        };
+        const created = yield* apply(createEmptyReadModel(now), {
+          ...create,
+          workspaceRoot: null,
+          ctoxRegistration: registration,
+        });
+        const supervisorId = created.state.threads[0]!.id;
+        const failed = yield* apply(created.state, {
+          type: "project.meta.update",
+          commandId: CommandId.make("record-timeout"),
+          projectId,
+          ctoxRegistration: { ...registration, lastFailure: "timeout" },
+        });
+        const confirmed = yield* apply(failed.state, {
+          type: "project.meta.update",
+          commandId: CommandId.make("record-confirmed"),
+          projectId,
+          ctoxRegistration: { ...registration, status: "confirmed" },
+        });
+        expect(confirmed.state.projects[0]?.ctoxRegistration).toEqual({
+          ...registration,
+          status: "confirmed",
+        });
+        expect(confirmed.state.threads).toHaveLength(1);
+        expect(confirmed.state.threads[0]?.id).toBe(supervisorId);
+        let restarted = createEmptyReadModel(now);
+        let sequence = 0;
+        for (const event of [...created.events, ...failed.events, ...confirmed.events]) {
+          restarted = yield* projectEvent(restarted, {
+            ...event,
+            sequence: ++sequence,
+          } as OrchestrationEvent);
+        }
+        expect(restarted.projects[0]?.ctoxRegistration).toEqual({
+          ...registration,
+          status: "confirmed",
+        });
+        expect(restarted.threads[0]?.id).toBe(supervisorId);
+        for (const ctoxRegistration of [
+          null,
+          { ...registration, instanceId: "managed:other" },
+          { ...registration, commandId: CommandId.make("replacement") },
+        ]) {
+          expect(
+            (yield* Effect.exit(
+              apply(restarted, {
+                type: "project.meta.update",
+                commandId: CommandId.make("attempt-rebind"),
+                projectId,
+                ctoxRegistration,
+              }),
+            ))._tag,
+          ).toBe("Failure");
+        }
+        expect(
+          (yield* Effect.exit(
+            apply(createEmptyReadModel(now), {
+              ...create,
+              workspaceRoot: null,
+              ctoxRegistration: { ...registration, status: "confirmed" },
+            }),
+          ))._tag,
+        ).toBe("Failure");
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps a folder-free project and its supervisor when a working copy is attached", () =>
+    Effect.gen(function* () {
+      const logical = yield* apply(createEmptyReadModel(now), { ...create, workspaceRoot: null });
+      const supervisorId = logical.state.threads[0]!.id;
+      expect(logical.state.projects[0]?.workspaceRoot).toBeNull();
+      const second = yield* apply(logical.state, {
+        ...create,
+        commandId: CommandId.make("second-logical-project"),
+        projectId: ProjectId.make("second-project"),
+        workspaceRoot: null,
+      });
+      expect(second.state.projects).toHaveLength(2);
+      const attached = yield* apply(second.state, {
+        type: "project.meta.update",
+        commandId: CommandId.make("attach-folder"),
+        projectId,
+        workspaceRoot: "/fixture/later-working-copy",
+      });
+      expect(
+        attached.state.projects.find((project) => project.id === projectId)?.workspaceRoot,
+      ).toBe("/fixture/later-working-copy");
+      expect(
+        attached.state.threads.filter((thread) => thread.projectId === projectId),
+      ).toHaveLength(1);
+      expect(attached.state.threads.find((thread) => thread.projectId === projectId)?.id).toBe(
+        supervisorId,
+      );
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect(
     "creates one supervisor in the project transaction and restores it from the same events",
     () =>
       Effect.gen(function* () {

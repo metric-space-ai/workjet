@@ -35,9 +35,10 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
-use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 use crate::person_ranking::compare_person_records;
+use crate::runtime_config::{CtoxRuntimeConfigStore, WebStackContext};
 use crate::sources::{
     self, scrape_bridge, Country, FieldKey, ResearchMode, SourceCtx, SourceHit, SourceModule, Tier,
 };
@@ -111,7 +112,19 @@ struct PersonResearchPlan {
     /// with `pinned_sources = [source_id]`, which honours `fetch_direct`
     /// automatically via Phase 3 plumbing.
     api_path: bool,
+    configured_target: Option<ConfiguredResearchTarget>,
 }
+
+/// A registered adapter selected by the embedding host's authoritative policy.
+/// The opaque registry digest binds its configuration and immutable revision.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ConfiguredResearchTarget {
+    pub target_key: String,
+    pub registry_binding_sha256: String,
+}
+
+pub type ResearchTargetResolver<'a> =
+    dyn FnMut(&str) -> Result<Option<ConfiguredResearchTarget>> + 'a;
 
 // ---------------------------------------------------------------------------
 // Tool entry point
@@ -129,12 +142,83 @@ pub fn run_person_research_tool_with_context(
     context: WebStackContext<'_>,
     request: &PersonResearchRequest,
 ) -> Result<Value> {
+    run_person_research_with_checkpoint(context, request, None, None, None)
+}
+
+/// Resume only the pending providers of a native, command-owned checkpoint.
+/// The caller must obtain `previous` from its authoritative command store,
+/// never from a browser payload or an arbitrary workspace file.
+pub fn resume_ctox_person_research_tool(
+    root: &Path,
+    request: &PersonResearchRequest,
+    previous: &Value,
+) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_person_research_with_checkpoint(
+        WebStackContext::new(root, &store),
+        request,
+        Some(previous),
+        None,
+        None,
+    )
+}
+
+/// Native embedding path: only registered-source execution is delegated to the
+/// host. Planning, input/operation binding, result admission and resume remain
+/// the same implementation used by the CLI-backed public entry points.
+pub fn run_ctox_person_research_with_dispatch(
+    root: &Path,
+    request: &PersonResearchRequest,
+    previous: Option<&Value>,
+    dispatch: &mut scrape_bridge::ScrapeTargetDispatch<'_>,
+) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_person_research_with_checkpoint(
+        WebStackContext::new(root, &store),
+        request,
+        previous,
+        Some(dispatch),
+        None,
+    )
+}
+
+/// Resolve only sources admitted by the normal country/field/private-source
+/// planner. Configured adapters own their outcome; no alternate API, browser,
+/// search or historical result may silently replace them.
+pub fn run_ctox_person_research_with_configured_dispatch(
+    root: &Path,
+    request: &PersonResearchRequest,
+    previous: Option<&Value>,
+    resolver: &mut ResearchTargetResolver<'_>,
+    dispatch: &mut scrape_bridge::ScrapeTargetDispatch<'_>,
+) -> Result<Value> {
+    let store = CtoxRuntimeConfigStore::from_root(root);
+    run_person_research_with_checkpoint(
+        WebStackContext::new(root, &store),
+        request,
+        previous,
+        Some(dispatch),
+        Some(resolver),
+    )
+}
+
+fn run_person_research_with_checkpoint(
+    context: WebStackContext<'_>,
+    request: &PersonResearchRequest,
+    previous: Option<&Value>,
+    mut dispatch: Option<&mut scrape_bridge::ScrapeTargetDispatch<'_>>,
+    mut resolver: Option<&mut ResearchTargetResolver<'_>>,
+) -> Result<Value> {
     let root = context.root;
     let company = normalize_required_company(&request.company)?;
     if matches!(
         request.mode,
         ResearchMode::HaveData | ResearchMode::UpdateInventoryGeneral
     ) {
+        anyhow::ensure!(
+            previous.is_none(),
+            "cannot resume provider work with a skipped research mode"
+        );
         // HaveData → A-block, no research action.
         // UpdateInventoryGeneral → Excel B-block has no source columns
         // populated, so the plan is intentionally empty. We still emit a
@@ -142,8 +226,12 @@ pub fn run_person_research_tool_with_context(
         return Ok(empty_plan_response(&company, request, "mode_skipped"));
     }
 
-    let plans = build_person_research_plan(request);
+    let mut plans = build_person_research_plan(request);
     if plans.is_empty() {
+        anyhow::ensure!(
+            previous.is_none(),
+            "cannot resume provider work without its source plan"
+        );
         return Ok(empty_plan_response(
             &company,
             request,
@@ -151,16 +239,74 @@ pub fn run_person_research_tool_with_context(
         ));
     }
 
-    let mut field_evidence: BTreeMap<FieldKey, Vec<Value>> = BTreeMap::new();
-    let mut search_runs: Vec<Value> = Vec::with_capacity(plans.len());
-    let mut read_runs: Vec<Value> = Vec::new();
-    let mut scrape_runs: Vec<Value> = Vec::new();
-    let mut browser_extract_runs: Vec<Value> = Vec::new();
-    let mut browser_assist_tasks: Vec<Value> = Vec::new();
+    if let Some(resolver) = resolver.as_mut() {
+        anyhow::ensure!(
+            dispatch.is_some(),
+            "configured adapters require native dispatch"
+        );
+        for plan in &mut plans {
+            if let Some(target) = resolver(plan.source_id)? {
+                anyhow::ensure!(
+                    !target.target_key.is_empty()
+                        && target.target_key.len() <= 128
+                        && target
+                            .target_key
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+                        && target.registry_binding_sha256.len() == 64
+                        && target
+                            .registry_binding_sha256
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit()),
+                    "invalid configured research target"
+                );
+                plan.configured_target = Some(target);
+            }
+        }
+    }
+    // Validation depends on addresses discovered by the other sources.
+    // Stable sorting preserves the ordinary tier order within both phases.
+    plans.sort_by_key(is_configured_email_validator);
+    let checkpoint = restore_provider_checkpoint(request, &plans, previous)?;
+    let mut deferred_sources = BTreeSet::new();
+    let mut field_evidence = checkpoint.field_evidence;
+    let mut search_runs = checkpoint.search_runs;
+    let mut read_runs = checkpoint.read_runs;
+    let mut scrape_runs = checkpoint.scrape_runs;
+    let mut browser_extract_runs = checkpoint.browser_extract_runs;
+    let mut browser_assist_tasks = checkpoint.browser_assist_tasks;
     let mut visited_urls: BTreeSet<String> = BTreeSet::new();
     let ctox_bin = scrape_bridge::default_ctox_bin();
 
-    for plan in &plans {
+    'sources: for plan in &plans {
+        if checkpoint.completed_sources.contains(plan.source_id) {
+            // Retain the exact earlier evidence/receipt (including failures).
+            // A provider poll must not rerun completed sources or their APIs.
+            continue;
+        }
+        let validation_emails = if is_configured_email_validator(plan) {
+            if !pending_provider_sources(&scrape_runs).is_empty() {
+                deferred_sources.insert(plan.source_id.to_string());
+                continue;
+            }
+            let emails = configured_validation_emails(request, &field_evidence);
+            if emails.is_empty() || emails.len() > MAX_VALIDATION_EMAILS {
+                scrape_runs.push(json!({
+                    "source_id":plan.source_id,
+                    "target_key":plan.configured_target.as_ref().unwrap().target_key,
+                    "configured_target":plan.configured_target,
+                    "classification":"input_required",
+                    "reason":if emails.is_empty() { "email_validation_requires_candidate" } else { "email_validation_subject_limit_exceeded" },
+                    "subject_count":emails.len(), "subject_limit":MAX_VALIDATION_EMAILS,
+                    "record_count":0,"run_id":null,"repair_queued":false,
+                    "evidence_rejections":[],"attempts":0,"public_browser_fallback":null,
+                }));
+                continue;
+            }
+            emails.into_iter().map(Some).collect::<Vec<_>>()
+        } else {
+            vec![None]
+        };
         // Fields this source's scrape target already produced this iteration.
         // The cascade below intentionally still runs (to supplement fields the
         // scrape target did not cover), but must not re-emit evidence for a
@@ -171,19 +317,54 @@ pub fn run_person_research_tool_with_context(
         // extraction to the universal-scraping pipeline. Drift then flows
         // through `ctox scrape execute --allow-heal` into the repair queue
         // instead of silently failing here.
-        if let Some(module) = sources::find(plan.source_id) {
-            if module.scrape_target_key().is_some() {
-                let result = scrape_bridge::run_via_scrape_target(
-                    module,
-                    &company,
-                    request.country,
-                    root,
-                    &ctox_bin,
-                );
-                if let Some(task) = browser_assist_task_from_scrape_result(plan, module, &result) {
-                    browser_assist_tasks.push(task);
-                }
-                scrape_runs.push(json!({
+        let validation_subject_count = validation_emails.len();
+        for (subject_index, validation_email) in validation_emails.into_iter().enumerate() {
+            if let Some(module) = sources::find(plan.source_id) {
+                if module.scrape_target_key().is_some() || plan.configured_target.is_some() {
+                    let (mut result, verified_email) = if let Some(target) = &plan.configured_target
+                    {
+                        scrape_bridge::run_via_configured_scrape_target(
+                            module,
+                            &target.target_key,
+                            &company,
+                            request.country,
+                            request.workspace.as_deref(),
+                            validation_email.as_deref(),
+                            dispatch.as_deref_mut().expect("checked native dispatch"),
+                        )
+                    } else {
+                        (
+                            scrape_bridge::run_via_scrape_target_with_dispatch(
+                                module,
+                                &company,
+                                request.country,
+                                root,
+                                &ctox_bin,
+                                request.workspace.as_deref(),
+                                match &mut dispatch {
+                                    Some(dispatch) => Some(&mut **dispatch),
+                                    None => None,
+                                },
+                            ),
+                            None,
+                        )
+                    };
+                    // These validators have a synchronous contract. A provider job
+                    // is not a verdict and cannot enter the source-only resume path.
+                    if validation_email.is_some() && result.classification == "awaiting_provider" {
+                        result.initial_classification = Some(result.classification.clone());
+                        result.classification = "adapter_protocol_error".to_string();
+                        result.reason = Some("email_validator_async_unsupported".to_string());
+                        result.fields.clear();
+                    }
+                    if plan.configured_target.is_none() {
+                        if let Some(task) =
+                            browser_assist_task_from_scrape_result(plan, module, &result)
+                        {
+                            browser_assist_tasks.push(task);
+                        }
+                    }
+                    scrape_runs.push(json!({
                     "source_id": plan.source_id,
                     "target_key": result.target_key,
                     "classification": result.classification,
@@ -195,27 +376,78 @@ pub fn run_person_research_tool_with_context(
                     "attempts": result.attempts,
                     "initial_classification": result.initial_classification,
                     "public_browser_fallback": result.public_browser_fallback,
+                    "configured_target": plan.configured_target,
+                    "validation_email": validation_email,
+                    "verified_subject_email": verified_email,
+                    "unattempted_subject_count": if result.classification == "adapter_protocol_error" {
+                        validation_subject_count - subject_index - 1
+                    } else { 0 },
                 }));
-                for (field, ev) in result.fields {
-                    if !request.fields.is_empty() && !request.fields.contains(&field) {
+                    if validation_email.is_some()
+                        && result.classification == "adapter_protocol_error"
+                    {
+                        break;
+                    }
+                    if result.classification == "awaiting_provider" {
+                        // The accepted provider job owns this source's result.
+                        // Do not substitute another API/search/browser attempt.
+                        continue 'sources;
+                    }
+                    for (field, ev) in result.fields {
+                        if plan.configured_target.is_some() && !plan.target_fields.contains(&field)
+                        {
+                            continue;
+                        }
+                        if !request.fields.is_empty() && !request.fields.contains(&field) {
+                            continue;
+                        }
+                        let mut candidate = json!({
+                            "value": ev.value,
+                            "confidence": ev.confidence.as_str(),
+                            "source_id": plan.source_id,
+                            "source_url": ev.source_url,
+                            "tier": tier_label(plan.tier),
+                            "via": "scrape_target",
+                            "note": ev.note,
+                        });
+                        if let Some(email) = verified_email.as_deref() {
+                            candidate["subject_email"] = json!(email);
+                            candidate["run_id"] = json!(result.run_id);
+                            let keys = field_evidence
+                                .get(&FieldKey::PersonEmail)
+                                .into_iter()
+                                .flatten()
+                                .filter(|evidence| {
+                                    evidence["value"].as_str().map(str::trim) == Some(email)
+                                })
+                                .filter_map(|evidence| {
+                                    evidence["person_key"]
+                                        .as_str()
+                                        .or_else(|| evidence["source_url"].as_str())
+                                })
+                                .filter(|key| !key.is_empty())
+                                .collect::<BTreeSet<_>>();
+                            candidate["person_key"] = json!(if keys.len() == 1 {
+                                keys.into_iter().next().unwrap().to_string()
+                            } else {
+                                format!("email:{email}")
+                            });
+                        }
+                        field_evidence.entry(field).or_default().push(candidate);
+                        scrape_covered_fields.insert(field);
+                    }
+                    if plan.configured_target.is_some() {
                         continue;
                     }
-                    field_evidence.entry(field).or_default().push(json!({
-                        "value": ev.value,
-                        "confidence": ev.confidence.as_str(),
-                        "source_id": plan.source_id,
-                        "source_url": ev.source_url,
-                        "tier": tier_label(plan.tier),
-                        "via": "scrape_target",
-                        "note": ev.note,
-                    }));
-                    scrape_covered_fields.insert(field);
+                    // For drift / unreachable / blocked, fall through to the
+                    // search+read path as a safety net; for `succeeded` we
+                    // still run the cascade in case the script returned a
+                    // partial result and the cascade can supplement.
                 }
-                // For drift / unreachable / blocked, fall through to the
-                // search+read path as a safety net; for `succeeded` we
-                // still run the cascade in case the script returned a
-                // partial result and the cascade can supplement.
             }
+        }
+        if plan.configured_target.is_some() {
+            continue;
         }
 
         // Honor the source's `shape_query` for the search-engine query
@@ -457,9 +689,19 @@ pub fn run_person_research_tool_with_context(
         }
     }
 
-    match collect_browser_extract_evidence(root, &company, plans.as_slice(), &request.fields) {
+    let awaiting_provider_sources = pending_provider_sources(&scrape_runs);
+    let capture_plans = plans
+        .iter()
+        .filter(|plan| {
+            !awaiting_provider_sources.contains(plan.source_id)
+                && !checkpoint.completed_sources.contains(plan.source_id)
+                && plan.configured_target.is_none()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    match collect_browser_extract_evidence(root, &company, &capture_plans, &request.fields) {
         Ok((browser_evidence, runs)) => {
-            browser_extract_runs = runs;
+            browser_extract_runs.extend(runs);
             for (field, candidates) in browser_evidence {
                 field_evidence.entry(field).or_default().extend(candidates);
             }
@@ -473,6 +715,14 @@ pub fn run_person_research_tool_with_context(
         }
     }
 
+    // Save pre-ranking evidence: aggregated candidates intentionally contain
+    // only the best person and cannot restore all previously discovered people.
+    let resume_evidence = Value::Object(
+        field_evidence
+            .iter()
+            .map(|(field, candidates)| (field.as_str().to_string(), json!(candidates)))
+            .collect(),
+    );
     let person_records = grouped_person_records(&mut field_evidence, &request.person_priorities);
     let aggregated = aggregate_fields(
         &request.fields,
@@ -481,8 +731,8 @@ pub fn run_person_research_tool_with_context(
         &person_records,
     );
 
-    let payload = json!({
-        "ok": true,
+    let mut payload = json!({
+        "ok": awaiting_provider_sources.is_empty(),
         "tool": "ctox_person_research",
         "company": company,
         "country": request.country.as_iso(),
@@ -498,6 +748,7 @@ pub fn run_person_research_tool_with_context(
                 "source_id": p.source_id,
                 "tier": tier_label(p.tier),
                 "api_path": p.api_path,
+                "configured_target": p.configured_target,
                 "target_fields": p.target_fields.iter().map(|f| f.as_str()).collect::<Vec<_>>(),
             }))
             .collect::<Vec<_>>(),
@@ -510,8 +761,18 @@ pub fn run_person_research_tool_with_context(
         "scrape_runs": scrape_runs,
         "browser_extract_runs": browser_extract_runs,
         "browser_assist_tasks": browser_assist_tasks,
-        "browser_assist_recommendations": browser_assist_recommendations(plans.as_slice()),
+        "browser_assist_recommendations": browser_assist_recommendations(&capture_plans),
     });
+    if !awaiting_provider_sources.is_empty() {
+        payload["status"] = json!("awaiting_provider");
+        payload["awaiting_provider_sources"] = json!(awaiting_provider_sources);
+        payload["provider_resume"] = json!({
+            "schema": "ctox.research.provider_resume.v1",
+            "request_sha256": provider_resume_binding(request, &plans)?,
+            "raw_field_evidence": resume_evidence,
+            "deferred_sources": deferred_sources,
+        });
+    }
 
     if request.persist_workspace {
         let workspace = request
@@ -535,9 +796,213 @@ pub fn run_person_research_tool_with_context(
     Ok(payload)
 }
 
+#[derive(Default)]
+struct RestoredProviderCheckpoint {
+    completed_sources: BTreeSet<String>,
+    field_evidence: BTreeMap<FieldKey, Vec<Value>>,
+    search_runs: Vec<Value>,
+    read_runs: Vec<Value>,
+    scrape_runs: Vec<Value>,
+    browser_extract_runs: Vec<Value>,
+    browser_assist_tasks: Vec<Value>,
+}
+
+fn provider_resume_binding(
+    request: &PersonResearchRequest,
+    plans: &[PersonResearchPlan],
+) -> Result<String> {
+    let workspace = request
+        .workspace
+        .as_ref()
+        .context("provider resume requires native command workspace")?;
+    anyhow::ensure!(
+        !workspace.as_os_str().is_empty(),
+        "provider resume workspace is empty"
+    );
+    let scope = serde_json::to_vec(&json!({
+        "company": request.company.trim(), "country": request.country.as_iso(),
+        "mode": request.mode.as_str(),
+        "fields": request.fields.iter().map(|field| field.as_str()).collect::<Vec<_>>(),
+        "include_private": request.include_private,
+        "person_priorities": request.person_priorities,
+        "known_person_records": request.known_person_records,
+        "plan": plans.iter().map(|plan| {
+            let mut value = json!({
+                "source_id": plan.source_id,
+                "target_fields": plan.target_fields.iter().map(|field| field.as_str()).collect::<Vec<_>>(),
+            });
+            if let Some(target) = &plan.configured_target {
+                value["configured_target"] = json!(target);
+            }
+            value
+        }).collect::<Vec<_>>(),
+    }))?;
+    let mut digest = Sha256::new();
+    digest.update(b"ctox-research-provider-resume-v1");
+    for part in [workspace.as_os_str().as_encoded_bytes(), scope.as_slice()] {
+        digest.update((part.len() as u64).to_be_bytes());
+        digest.update(part);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn is_configured_email_validator(plan: &PersonResearchPlan) -> bool {
+    plan.configured_target.is_some() && matches!(plan.source_id, "experte.de" | "mailtester.com")
+}
+
+const MAX_VALIDATION_EMAILS: usize = 10;
+
+fn configured_validation_emails(
+    request: &PersonResearchRequest,
+    evidence: &BTreeMap<FieldKey, Vec<Value>>,
+) -> Vec<String> {
+    let addresses = request
+        .known_person_records
+        .iter()
+        .filter_map(|person| person.email.as_deref())
+        .chain(
+            evidence
+                .get(&FieldKey::PersonEmail)
+                .into_iter()
+                .flatten()
+                .filter_map(|candidate| candidate["value"].as_str()),
+        )
+        .map(str::trim)
+        .filter(|value| {
+            value.len() <= 254
+                && value.contains('@')
+                && value.contains('.')
+                && !value.contains(char::is_whitespace)
+        })
+        .map(str::to_string)
+        .collect::<BTreeSet<_>>();
+    // Dispatch each exact subject once, even when several people share it.
+    addresses.into_iter().collect()
+}
+
+fn restore_provider_checkpoint(
+    request: &PersonResearchRequest,
+    plans: &[PersonResearchPlan],
+    previous: Option<&Value>,
+) -> Result<RestoredProviderCheckpoint> {
+    let Some(previous) = previous else {
+        return Ok(RestoredProviderCheckpoint::default());
+    };
+    anyhow::ensure!(
+        previous["status"] == "awaiting_provider",
+        "research checkpoint is not waiting"
+    );
+    anyhow::ensure!(
+        previous["provider_resume"]["schema"] == "ctox.research.provider_resume.v1",
+        "unknown research checkpoint schema"
+    );
+    anyhow::ensure!(
+        previous["provider_resume"]["request_sha256"].as_str()
+            == Some(provider_resume_binding(request, plans)?.as_str()),
+        "research checkpoint request changed"
+    );
+    let runs = previous["scrape_runs"]
+        .as_array()
+        .context("checkpoint has no source receipts")?;
+    let pending = pending_provider_sources(runs);
+    anyhow::ensure!(!pending.is_empty(), "checkpoint has no pending provider");
+    anyhow::ensure!(
+        !plans
+            .iter()
+            .any(|plan| is_configured_email_validator(plan) && pending.contains(plan.source_id)),
+        "email_validator_async_unsupported: cannot replay a source-only validator checkpoint"
+    );
+    let source_ids = plans
+        .iter()
+        .map(|plan| plan.source_id.to_string())
+        .collect::<BTreeSet<_>>();
+    anyhow::ensure!(
+        pending.is_subset(&source_ids),
+        "checkpoint contains unplanned provider"
+    );
+    let mut unfinished = pending;
+    if let Some(deferred) = previous["provider_resume"].get("deferred_sources") {
+        for source in deferred
+            .as_array()
+            .context("invalid deferred research sources")?
+        {
+            let id = source
+                .as_str()
+                .context("invalid deferred source identifier")?;
+            anyhow::ensure!(
+                plans
+                    .iter()
+                    .any(|plan| plan.source_id == id && is_configured_email_validator(plan)),
+                "checkpoint contains unplanned deferred validator"
+            );
+            unfinished.insert(id.to_string());
+        }
+    }
+    let completed_sources = source_ids
+        .difference(&unfinished)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let retained = |name: &str| -> Result<Vec<Value>> {
+        Ok(previous[name]
+            .as_array()
+            .with_context(|| format!("checkpoint is missing {name}"))?
+            .iter()
+            .filter(|row| {
+                row["source_id"]
+                    .as_str()
+                    .is_some_and(|id| completed_sources.contains(id))
+            })
+            .cloned()
+            .collect())
+    };
+    let mut field_evidence = BTreeMap::new();
+    for (name, candidates) in previous["provider_resume"]["raw_field_evidence"]
+        .as_object()
+        .context("checkpoint is missing raw evidence")?
+    {
+        let field = FieldKey::from_str(name).context("checkpoint contains unknown field")?;
+        let candidates = candidates
+            .as_array()
+            .context("checkpoint evidence is not an array")?;
+        let retained = candidates
+            .iter()
+            .filter(|candidate| {
+                candidate["source_id"]
+                    .as_str()
+                    .is_some_and(|id| completed_sources.contains(id))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !retained.is_empty() {
+            field_evidence.insert(field, retained);
+        }
+    }
+    Ok(RestoredProviderCheckpoint {
+        search_runs: retained("search_runs")?,
+        read_runs: retained("read_runs")?,
+        scrape_runs: retained("scrape_runs")?,
+        browser_extract_runs: retained("browser_extract_runs")?,
+        browser_assist_tasks: retained("browser_assist_tasks")?,
+        completed_sources,
+        field_evidence,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Plan
 // ---------------------------------------------------------------------------
+
+fn pending_provider_sources(scrape_runs: &[Value]) -> BTreeSet<String> {
+    scrape_runs
+        .iter()
+        .filter(|run| {
+            run.get("classification").and_then(Value::as_str) == Some("awaiting_provider")
+        })
+        .filter_map(|run| run.get("source_id").and_then(Value::as_str))
+        .filter(|source| !source.is_empty())
+        .map(str::to_string)
+        .collect()
+}
 
 fn build_person_research_plan(request: &PersonResearchRequest) -> Vec<PersonResearchPlan> {
     // The "fields wanted" are the explicit request list, or every field
@@ -584,6 +1049,7 @@ fn build_person_research_plan(request: &PersonResearchRequest) -> Vec<PersonRese
                     tier: module.tier(),
                     target_fields: Vec::new(),
                     api_path: probe_api_path(module),
+                    configured_target: None,
                 });
             if !entry.target_fields.contains(field) {
                 entry.target_fields.push(*field);
@@ -615,19 +1081,10 @@ fn is_source_opted_in(module: &'static dyn SourceModule, include_private: &[Stri
     false
 }
 
-/// Heuristic: a module has an API path iff `fetch_direct` returns `Some`
-/// when called with a synthetic context.  We pass a fake root that
-/// doesn't carry credentials, so credential-gated APIs still report
-/// `Some(Err(CredentialMissing))` (which proves the API path exists),
-/// while pure crawl modules return `None`.
+/// Read capability metadata without issuing a synthetic provider query. Public
+/// APIs (notably Zefix) need no credential and would otherwise execute here.
 fn probe_api_path(module: &'static dyn SourceModule) -> bool {
-    let ctx = SourceCtx {
-        root: Path::new(""),
-        runtime_config: &crate::runtime_config::WorkjetRuntimeConfigStore::default(),
-        country: Some(*module.countries().first().unwrap_or(&Country::De)),
-        mode: ResearchMode::NewRecord,
-    };
-    module.fetch_direct(&ctx, "probe").is_some()
+    module.has_direct_api()
 }
 
 fn browser_assist_recommendations(plans: &[PersonResearchPlan]) -> Vec<Value> {
@@ -866,6 +1323,16 @@ fn grouped_person_records(
             });
             if PERSON_RECORD_FIELDS.contains(field) {
                 entry.insert(field.as_str().to_string(), Value::String(value));
+            }
+            // An address-bound validator result is also about a known contact
+            // when this request asks only for validation, not email discovery.
+            // Keep that identity so per-person persistence does not discard it.
+            if *field == FieldKey::PersonEmailValidation {
+                if let Some(email) = candidate.get("subject_email").and_then(Value::as_str) {
+                    entry
+                        .entry("person_email".to_string())
+                        .or_insert_with(|| json!(email));
+                }
             }
             if entry.get("source_url").is_none_or(Value::is_null) && !source_url.is_empty() {
                 entry.insert(
@@ -2637,6 +3104,834 @@ fn slugify(raw: &str) -> String {
 mod tests {
     use super::*;
 
+    struct ConfiguredTestRoot(PathBuf);
+    impl ConfiguredTestRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "configured-research-{}-{}",
+                std::process::id(),
+                rand::random::<u64>()
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for ConfiguredTestRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    struct NoFallbackConfig;
+    impl crate::runtime_config::RuntimeConfigStore for NoFallbackConfig {
+        fn get(&self, key: &str) -> Option<String> {
+            panic!("unexpected API/search configuration lookup: {key}")
+        }
+    }
+    fn configured_request(root: &Path) -> PersonResearchRequest {
+        PersonResearchRequest {
+            company: "Fixture GmbH".into(),
+            country: Country::De,
+            mode: ResearchMode::NewRecord,
+            fields: vec![FieldKey::FirmaName, FieldKey::Mitarbeiter],
+            include_private: vec!["leadfeeder.com".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
+            workspace: Some(root.join("research")),
+            persist_workspace: true,
+        }
+    }
+    fn configured_target(source: &str) -> ConfiguredResearchTarget {
+        ConfiguredResearchTarget {
+            target_key: format!("configured-{}", source.replace('.', "-")),
+            registry_binding_sha256: "a".repeat(64),
+        }
+    }
+    fn configured_receipt(input: &Value, status: &str) -> Value {
+        let source = input["source_id"].as_str().unwrap();
+        let run = format!("scrape_run-{}", source.replace('.', "-"));
+        let records = if source == "leadfeeder.com" && status == "succeeded" {
+            vec![("firma_name", "Fixture GmbH"), ("mitarbeiter", "321")].into_iter().map(|(field, value)| json!({
+                "field":field,"value":value,"company":"Fixture GmbH","confidence":"high",
+                "run_id":run,"source_id":source,"source_url":"https://api.leadfeeder.com/accounts/318555/leads/fixture",
+                "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                "snapshot_hash":"sha256:fixture"
+            })).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        json!({"ok":status=="succeeded","status":status,"run_id":run,"records":records})
+    }
+
+    #[test]
+    fn configured_adapter_fields_persist_without_api_search_or_browser_substitution() {
+        let root = ConfiguredTestRoot::new();
+        let request = configured_request(&root.0);
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut calls = Vec::new();
+        let mut dispatch = |target: &str, input: &Value| {
+            calls.push((target.to_string(), input.clone()));
+            Ok(configured_receipt(
+                input,
+                if input["source_id"] == "leadfeeder.com" {
+                    "succeeded"
+                } else {
+                    "completed_empty"
+                },
+            ))
+        };
+        let result = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut dispatch),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(result["fields"]["mitarbeiter"]["value"], "321");
+        let lead = calls
+            .iter()
+            .filter(|(_, input)| input["source_id"] == "leadfeeder.com")
+            .collect::<Vec<_>>();
+        assert_eq!(lead.len(), 1);
+        assert_eq!(lead[0].0, "configured-leadfeeder-com");
+        assert_eq!(lead[0].1["company"], "Fixture GmbH");
+        assert_eq!(lead[0].1["country"], "DE");
+        assert!(lead[0].1["research_operation_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("research-v1-"));
+        for key in [
+            "search_runs",
+            "read_runs",
+            "browser_extract_runs",
+            "browser_assist_tasks",
+        ] {
+            assert!(result[key].as_array().unwrap().is_empty(), "{key}");
+        }
+        let stored: Value = serde_json::from_slice(
+            &fs::read(request.workspace.unwrap().join("envelope.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stored["fields"], result["fields"]);
+        assert_eq!(stored["scrape_runs"], result["scrape_runs"]);
+        assert!(stored["scrape_runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|run| run["source_id"] == "leadfeeder.com"
+                && run["run_id"] == "scrape_run-leadfeeder-com"
+                && run["record_count"] == 2));
+    }
+
+    #[test]
+    fn configured_adapter_failure_empty_and_wait_keep_their_own_receipts() {
+        for status in ["blocked", "completed_empty", "awaiting_provider", "unknown"] {
+            let root = ConfiguredTestRoot::new();
+            let request = configured_request(&root.0);
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut dispatch = |_: &str, input: &Value| Ok(configured_receipt(input, status));
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert!(result["scrape_runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|run| run["classification"] == status
+                    && run["record_count"] == 0
+                    && run["public_browser_fallback"].is_null()));
+            for key in [
+                "search_runs",
+                "read_runs",
+                "browser_extract_runs",
+                "browser_assist_tasks",
+            ] {
+                assert!(result[key].as_array().unwrap().is_empty());
+            }
+            if status == "awaiting_provider" {
+                assert_eq!(result["ok"], false);
+                assert_eq!(result["status"], status);
+            }
+        }
+    }
+
+    #[test]
+    fn configured_adapter_resume_rejects_registry_or_target_drift_before_dispatch() {
+        let root = ConfiguredTestRoot::new();
+        let request = configured_request(&root.0);
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut dispatch =
+            |_: &str, input: &Value| Ok(configured_receipt(input, "awaiting_provider"));
+        let previous = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut dispatch),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        for change_target in [false, true] {
+            let mut changed = |source: &str| {
+                let mut target = configured_target(source);
+                if source == "leadfeeder.com" {
+                    if change_target {
+                        target.target_key.push_str("-changed");
+                    } else {
+                        target.registry_binding_sha256 = "b".repeat(64);
+                    }
+                }
+                Ok(Some(target))
+            };
+            let mut forbidden =
+                |_: &str, _: &Value| -> Result<Value> { panic!("dispatch after registry drift") };
+            assert!(run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                Some(&previous),
+                Some(&mut forbidden),
+                Some(&mut changed)
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn configured_adapter_resume_retains_completed_fields_without_duplicate_dispatch() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields.push(FieldKey::PersonLinkedin);
+        request.include_private.push("linkedin.com".into());
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut first = |_: &str, input: &Value| {
+            Ok(configured_receipt(
+                input,
+                if input["source_id"] == "linkedin.com" {
+                    "awaiting_provider"
+                } else if input["source_id"] == "leadfeeder.com" {
+                    "succeeded"
+                } else {
+                    "completed_empty"
+                },
+            ))
+        };
+        let previous = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut first),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(previous["status"], "awaiting_provider");
+        let mut calls = Vec::new();
+        let mut resume = |_: &str, input: &Value| {
+            calls.push(input["source_id"].as_str().unwrap().to_string());
+            Ok(configured_receipt(input, "completed_empty"))
+        };
+        let result = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            Some(&previous),
+            Some(&mut resume),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(calls, vec!["linkedin.com"]);
+        assert_ne!(result["status"], "awaiting_provider");
+        assert_eq!(result["fields"]["mitarbeiter"]["value"], "321");
+        assert_eq!(
+            result["scrape_runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["source_id"] == "leadfeeder.com")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn configured_adapter_resolution_keeps_country_field_and_private_source_gates() {
+        let root = ConfiguredTestRoot::new();
+        for country in [Country::De, Country::At, Country::Ch] {
+            let mut request = configured_request(&root.0);
+            request.country = country;
+            request.include_private.clear();
+            request.fields = vec![FieldKey::FirmaName];
+            let mut resolved = Vec::new();
+            let mut resolver = |source: &str| {
+                resolved.push(source.to_string());
+                Ok(Some(configured_target(source)))
+            };
+            let mut dispatch =
+                |_: &str, input: &Value| Ok(configured_receipt(input, "completed_empty"));
+            run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert!(!resolved.iter().any(|source| source == "leadfeeder.com"
+                || source == "linkedin.com"
+                || source == "xing.com"));
+            assert_eq!(
+                resolved.iter().any(|source| source == "zefix.ch"),
+                country == Country::Ch
+            );
+        }
+    }
+
+    #[test]
+    fn configured_validators_wait_for_provider_resume_and_receive_discovered_email() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields.extend([
+            FieldKey::PersonEmail,
+            FieldKey::PersonEmailValidation,
+            FieldKey::PersonLinkedin,
+        ]);
+        request.include_private.push("linkedin.com".into());
+        request.include_private.push("rocketreach.com".into());
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut first = |_: &str, input: &Value| {
+            let source = input["source_id"].as_str().unwrap();
+            assert!(
+                !matches!(source, "experte.de" | "mailtester.com"),
+                "validator ran before pending provider finished"
+            );
+            let mut receipt = configured_receipt(
+                input,
+                if source == "linkedin.com" {
+                    "awaiting_provider"
+                } else if matches!(source, "leadfeeder.com" | "rocketreach.com") {
+                    "succeeded"
+                } else {
+                    "completed_empty"
+                },
+            );
+            if source == "rocketreach.com" {
+                receipt["records"] = json!([{
+                    "field":"person_email","value":"contact@fixture.test","company":"Fixture GmbH","confidence":"high",
+                    "run_id":receipt["run_id"],"source_id":source,"source_url":"https://rocketreach.co/fixture",
+                    "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                    "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                    "snapshot_hash":"sha256:fixture"
+                }]);
+            }
+            Ok(receipt)
+        };
+        let previous = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            None,
+            Some(&mut first),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(previous["status"], "awaiting_provider");
+        assert_eq!(
+            previous["provider_resume"]["deferred_sources"],
+            json!(["experte.de", "mailtester.com"])
+        );
+        let mut validators = Vec::new();
+        let mut resume = |_: &str, input: &Value| {
+            let source = input["source_id"].as_str().unwrap();
+            assert_ne!(source, "leadfeeder.com", "completed address source reran");
+            assert_ne!(source, "rocketreach.com", "completed address source reran");
+            if matches!(source, "experte.de" | "mailtester.com") {
+                assert_eq!(input["email"], "contact@fixture.test");
+                validators.push(source.to_string());
+                return Ok(
+                    json!({"ok":true,"status":"succeeded","run_id":format!("scrape_run-{source}"),"records":[{
+                    "field":"person_email_validation","value":"valid","company":"Fixture GmbH","confidence":"high",
+                    "subject_email":"contact@fixture.test",
+                        "run_id":format!("scrape_run-{source}"),"source_id":source,"source_url":format!("https://{source}/email-check"),
+                        "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                        "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                        "snapshot_hash":"sha256:fixture"
+                    }]}),
+                );
+            }
+            Ok(configured_receipt(input, "completed_empty"))
+        };
+        let result = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            Some(&previous),
+            Some(&mut resume),
+            Some(&mut resolver),
+        )
+        .unwrap();
+        assert_eq!(validators, vec!["experte.de", "mailtester.com"]);
+        assert_eq!(
+            result["fields"]["person_email_validation"]["value"],
+            "valid"
+        );
+        assert_eq!(
+            result["fields"]["person_email_validation"]["person_key"],
+            result["fields"]["person_email"]["person_key"]
+        );
+        assert!(result["fields"]["person_email_validation"]["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["subject_email"] == "contact@fixture.test"));
+        assert!(result["scrape_runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["validation_email"].is_string())
+            .all(|r| r["validation_email"] == "contact@fixture.test"));
+        assert_ne!(result["status"], "awaiting_provider");
+    }
+
+    #[test]
+    fn configured_validators_require_bounded_known_addresses_without_inventing_a_run() {
+        for addresses in [vec![], vec!["one@fixture.test"], vec!["not an address"]] {
+            let root = ConfiguredTestRoot::new();
+            let mut request = configured_request(&root.0);
+            request.fields = vec![FieldKey::PersonEmailValidation];
+            request.known_person_records = addresses
+                .iter()
+                .map(|email| KnownPersonRecord {
+                    email: Some(email.to_string()),
+                    ..Default::default()
+                })
+                .collect();
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut calls = 0;
+            let mut dispatch = |_: &str, input: &Value| {
+                calls += 1;
+                assert_eq!(input["email"], "one@fixture.test");
+                Ok(configured_receipt(input, "completed_empty"))
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            if addresses == vec!["one@fixture.test"] {
+                assert_eq!(calls, 2);
+            } else {
+                assert_eq!(calls, 0);
+                assert!(result["scrape_runs"].as_array().unwrap().iter().all(|r| r
+                    ["classification"]
+                    == "input_required"
+                    && r["run_id"].is_null()
+                    && r["attempts"] == 0));
+            }
+        }
+    }
+
+    #[test]
+    fn configured_validators_keep_each_contact_subject_and_operation_separate() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields = vec![FieldKey::PersonEmailValidation];
+        request.known_person_records = ["one@fixture.test", "two@fixture.test", "one@fixture.test"]
+            .into_iter()
+            .map(|email| KnownPersonRecord {
+                email: Some(email.into()),
+                ..Default::default()
+            })
+            .collect();
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut previous_calls = None;
+        for _ in 0..2 {
+            let mut calls = Vec::new();
+            let mut dispatch = |_: &str, input: &Value| {
+                calls.push(input.clone());
+                let source = input["source_id"].as_str().unwrap();
+                let email = input["email"].as_str().unwrap();
+                let run = format!(
+                    "scrape_run-{}",
+                    input["research_operation_id"].as_str().unwrap()
+                );
+                let verdict = if email == "one@fixture.test" {
+                    "valid"
+                } else {
+                    "invalid"
+                };
+                Ok(
+                    json!({"ok":true,"status":"succeeded","run_id":run,"records":[{
+                        "field":"person_email_validation","value":verdict,"company":"Fixture GmbH","confidence":"high",
+                        "run_id":run,"source_id":source,"source_url":format!("https://{source}/email-check"),
+                        "subject_email":email,"evidence_eligible":true,"verification_status":"verified","http_status":200,
+                        "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                        "snapshot_hash":"sha256:fixture"
+                    }]}),
+                )
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert_eq!(calls.len(), 4);
+            let ids = calls
+                .iter()
+                .map(|input| input["research_operation_id"].as_str().unwrap())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(ids.len(), 4);
+            assert!(calls
+                .iter()
+                .all(|input| input["company"] == "Fixture GmbH" && input["country"] == "DE"));
+            for source in ["experte.de", "mailtester.com"] {
+                let subjects = calls
+                    .iter()
+                    .filter(|input| input["source_id"] == source)
+                    .map(|input| input["email"].as_str().unwrap())
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(
+                    subjects,
+                    BTreeSet::from(["one@fixture.test", "two@fixture.test"])
+                );
+            }
+            let receipts = result["scrape_runs"].as_array().unwrap();
+            assert_eq!(receipts.len(), 4);
+            assert!(receipts
+                .iter()
+                .all(|r| r["record_count"] == 1
+                    && r["verified_subject_email"] == r["validation_email"]));
+            let people = result["person_records"].as_array().unwrap();
+            assert_eq!(people.len(), 2);
+            let candidates = people
+                .iter()
+                .flat_map(|person| {
+                    let email = person["person_email"].as_str().unwrap();
+                    assert_eq!(person["person_key"], format!("email:{email}"));
+                    person["evidence"].as_array().unwrap().iter()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(candidates.len(), 4);
+            for candidate in candidates {
+                let email = candidate["subject_email"].as_str().unwrap();
+                assert_eq!(candidate["person_key"], format!("email:{email}"));
+                assert_eq!(
+                    candidate["value"],
+                    if email == "one@fixture.test" {
+                        "valid"
+                    } else {
+                        "invalid"
+                    }
+                );
+                assert!(receipts
+                    .iter()
+                    .any(|r| r["run_id"] == candidate["run_id"]
+                        && r["verified_subject_email"] == email));
+            }
+            let stored: Value = serde_json::from_slice(
+                &fs::read(request.workspace.as_ref().unwrap().join("envelope.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(stored["scrape_runs"], result["scrape_runs"]);
+            assert_eq!(stored["person_records"], result["person_records"]);
+            if let Some(previous) = previous_calls.as_ref() {
+                assert_eq!(&calls, previous);
+            }
+            previous_calls = Some(calls);
+        }
+    }
+
+    #[test]
+    fn configured_validators_over_limit_and_async_protocol_do_not_spawn_more_work() {
+        for over_limit in [true, false] {
+            let root = ConfiguredTestRoot::new();
+            let mut request = configured_request(&root.0);
+            request.fields = vec![FieldKey::PersonEmailValidation];
+            let count = if over_limit {
+                MAX_VALIDATION_EMAILS + 1
+            } else {
+                2
+            };
+            request.known_person_records = (0..count)
+                .map(|n| KnownPersonRecord {
+                    email: Some(format!("person{n}@fixture.test")),
+                    ..Default::default()
+                })
+                .collect();
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut calls = 0;
+            let mut dispatch = |_: &str, input: &Value| {
+                calls += 1;
+                Ok(configured_receipt(input, "awaiting_provider"))
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert_eq!(calls, if over_limit { 0 } else { 2 });
+            assert_ne!(result["status"], "awaiting_provider");
+            assert!(result["provider_resume"].is_null());
+            assert!(result["fields"]["person_email_validation"]["value"].is_null());
+            for run in result["scrape_runs"].as_array().unwrap() {
+                assert_eq!(run["record_count"], 0);
+                if over_limit {
+                    assert_eq!(run["reason"], "email_validation_subject_limit_exceeded");
+                    assert_eq!(run["subject_count"], count);
+                    assert!(run["run_id"].is_null());
+                } else {
+                    assert_eq!(run["classification"], "adapter_protocol_error");
+                    assert_eq!(run["initial_classification"], "awaiting_provider");
+                    assert_eq!(run["unattempted_subject_count"], 1);
+                    assert!(run["run_id"].is_string());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn configured_validator_legacy_pending_checkpoint_fails_before_dispatch() {
+        let root = ConfiguredTestRoot::new();
+        let mut request = configured_request(&root.0);
+        request.fields = vec![FieldKey::PersonEmailValidation];
+        request.known_person_records = vec![KnownPersonRecord {
+            email: Some("one@fixture.test".into()),
+            ..Default::default()
+        }];
+        let mut plans = build_person_research_plan(&request);
+        for plan in &mut plans {
+            plan.configured_target = Some(configured_target(plan.source_id));
+        }
+        plans.sort_by_key(is_configured_email_validator);
+        let previous = json!({
+            "status":"awaiting_provider",
+            "provider_resume":{"schema":"ctox.research.provider_resume.v1","request_sha256":provider_resume_binding(&request,&plans).unwrap()},
+            "scrape_runs":[{"source_id":"experte.de","classification":"awaiting_provider","run_id":"scrape_run-legacy"}],
+        });
+        let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+        let mut dispatch = |_: &str, _: &Value| -> Result<Value> {
+            panic!("legacy subjectless validator was resubmitted")
+        };
+        let error = run_person_research_with_checkpoint(
+            WebStackContext::new(&root.0, &NoFallbackConfig),
+            &request,
+            Some(&previous),
+            Some(&mut dispatch),
+            Some(&mut resolver),
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("email_validator_async_unsupported"));
+    }
+
+    #[test]
+    fn configured_validators_reject_missing_wrong_and_contradictory_response_subjects() {
+        for subject in [
+            json!({}),
+            json!({"subject_email":"other@fixture.test"}),
+            json!({"subject_email":"one@fixture.test","email":"other@fixture.test"}),
+            json!({"subject_email":"one@fixture.test","provenance":{"email":"other@fixture.test"}}),
+            json!({"subject_email":null}),
+        ] {
+            let root = ConfiguredTestRoot::new();
+            let mut request = configured_request(&root.0);
+            request.fields = vec![FieldKey::PersonEmailValidation];
+            request.known_person_records = vec![KnownPersonRecord {
+                email: Some("one@fixture.test".into()),
+                ..Default::default()
+            }];
+            let mut resolver = |source: &str| Ok(Some(configured_target(source)));
+            let mut calls = 0;
+            let mut dispatch = |_: &str, input: &Value| {
+                calls += 1;
+                let source = input["source_id"].as_str().unwrap();
+                let run = format!("scrape_run-{source}");
+                let mut record = json!({
+                    "field":"person_email_validation","value":"valid","company":"Fixture GmbH","confidence":"high",
+                    "run_id":run,"source_id":source,"source_url":format!("https://{source}/email-check"),
+                    "evidence_eligible":true,"verification_status":"verified","http_status":200,
+                    "checked_at_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                    "snapshot_hash":"sha256:fixture"
+                });
+                record
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(subject.as_object().unwrap().clone());
+                Ok(json!({"ok":true,"status":"succeeded","run_id":run,"records":[record]}))
+            };
+            let result = run_person_research_with_checkpoint(
+                WebStackContext::new(&root.0, &NoFallbackConfig),
+                &request,
+                None,
+                Some(&mut dispatch),
+                Some(&mut resolver),
+            )
+            .unwrap();
+            assert_eq!(calls, 2);
+            assert!(result["fields"]["person_email_validation"]["value"].is_null());
+            assert!(result["scrape_runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|r| r["record_count"] == 0
+                    && r["verified_subject_email"].is_null()
+                    && !r["evidence_rejections"].as_array().unwrap().is_empty()));
+        }
+    }
+
+    #[test]
+    fn configured_planning_api_metadata_never_executes_a_probe() {
+        struct Trap;
+        impl SourceModule for Trap {
+            fn shape_query(&self, _: &str, _: &SourceCtx<'_>) -> Option<sources::ShapedQuery> {
+                None
+            }
+            fn id(&self) -> &'static str {
+                "fixture"
+            }
+            fn tier(&self) -> Tier {
+                Tier::P
+            }
+            fn countries(&self) -> &'static [Country] {
+                &[Country::Ch]
+            }
+            fn authoritative_for(&self) -> &'static [FieldKey] {
+                &[FieldKey::FirmaName]
+            }
+            fn has_direct_api(&self) -> bool {
+                true
+            }
+            fn fetch_direct(
+                &self,
+                _: &SourceCtx<'_>,
+                _: &str,
+            ) -> Option<std::result::Result<Vec<sources::SourceHit>, sources::SourceError>>
+            {
+                panic!("planner performed provider I/O")
+            }
+        }
+        static TRAP: Trap = Trap;
+        assert!(probe_api_path(&TRAP));
+        assert!(probe_api_path(sources::find("zefix.ch").unwrap()));
+    }
+
+    fn provider_resume_fixture() -> (PersonResearchRequest, Vec<PersonResearchPlan>, Value) {
+        let request = PersonResearchRequest {
+            company: "ACME".into(),
+            country: Country::De,
+            mode: ResearchMode::NewRecord,
+            fields: Vec::new(),
+            include_private: vec!["linkedin.com".into()],
+            person_priorities: Vec::new(),
+            known_person_records: Vec::new(),
+            workspace: Some(PathBuf::from("/native/command-one")),
+            persist_workspace: false,
+        };
+        let plans = build_person_research_plan(&request);
+        assert!(plans.iter().any(|plan| plan.source_id == "linkedin.com"));
+        let completed = plans
+            .iter()
+            .find(|plan| plan.source_id != "linkedin.com")
+            .unwrap()
+            .source_id;
+        let payload = json!({
+            "status": "awaiting_provider",
+            "provider_resume": {
+                "schema": "ctox.research.provider_resume.v1",
+                "request_sha256": provider_resume_binding(&request, &plans).unwrap(),
+                "raw_field_evidence": {
+                    "person_vorname": [
+                        {"source_id": completed, "value": "Ada", "person_key": "person-a"},
+                        {"source_id": completed, "value": "Grace", "person_key": "person-b"},
+                        {"source_id": "linkedin.com", "value": "stale-pending-evidence"}
+                    ]
+                }
+            },
+            "scrape_runs": [
+                {"source_id": completed, "classification": "completed_empty", "run_id": "scrape_run-done"},
+                {"source_id": "linkedin.com", "classification": "awaiting_provider", "run_id": "scrape_run-wait"}
+            ],
+            "search_runs": [{"source_id": completed, "query": "original query"}],
+            "read_runs": [], "browser_extract_runs": [], "browser_assist_tasks": []
+        });
+        (request, plans, payload)
+    }
+
+    #[test]
+    fn provider_resume_keeps_completed_receipts_and_all_people_without_requery() {
+        let (request, plans, payload) = provider_resume_fixture();
+        let resumed = restore_provider_checkpoint(&request, &plans, Some(&payload)).unwrap();
+        let active = plans
+            .iter()
+            .filter(|plan| !resumed.completed_sources.contains(plan.source_id))
+            .map(|plan| plan.source_id)
+            .collect::<Vec<_>>();
+        assert_eq!(active, vec!["linkedin.com"]);
+        assert_eq!(resumed.scrape_runs, vec![payload["scrape_runs"][0].clone()]);
+        assert_eq!(
+            resumed.search_runs,
+            payload["search_runs"].as_array().unwrap().clone()
+        );
+        let people = &resumed.field_evidence[&FieldKey::PersonVorname];
+        assert_eq!(people.len(), 2);
+        assert_eq!(people[0]["value"], "Ada");
+        assert_eq!(people[1]["value"], "Grace");
+    }
+
+    #[test]
+    fn provider_resume_rejects_changed_request_workspace_and_unplanned_sources() {
+        let (request, plans, payload) = provider_resume_fixture();
+        for mutation in 0..5 {
+            let mut changed = request.clone();
+            match mutation {
+                0 => changed.company = "Other Company".into(),
+                1 => changed.country = Country::Ch,
+                2 => changed.workspace = Some(PathBuf::from("/native/command-two")),
+                3 => changed.fields = vec![FieldKey::FirmaName],
+                _ => changed.include_private.clear(),
+            }
+            assert!(restore_provider_checkpoint(&changed, &plans, Some(&payload)).is_err());
+        }
+        let mut foreign = payload.clone();
+        foreign["scrape_runs"][1]["source_id"] = json!("foreign.example");
+        assert!(restore_provider_checkpoint(&request, &plans, Some(&foreign)).is_err());
+        let mut terminal = payload;
+        terminal["status"] = json!("completed");
+        assert!(restore_provider_checkpoint(&request, &plans, Some(&terminal)).is_err());
+    }
+
+    #[test]
+    fn provider_resume_fresh_call_has_no_replayed_evidence() {
+        let (request, plans, _) = provider_resume_fixture();
+        let fresh = restore_provider_checkpoint(&request, &plans, None).unwrap();
+        assert!(fresh.completed_sources.is_empty());
+        assert!(fresh.field_evidence.is_empty());
+        assert!(fresh.scrape_runs.is_empty());
+    }
+
+    #[test]
+    fn pending_provider_sources_do_not_relabel_other_source_outcomes() {
+        let pending = pending_provider_sources(&[
+            json!({"source_id":"linkedin.com","classification":"awaiting_provider","run_id":"scrape_run-current"}),
+            json!({"source_id":"northdata.de","classification":"succeeded"}),
+            json!({"source_id":"xing.com","classification":"blocked"}),
+            json!({"source_id":"dnbhoovers.com","classification":"temporary_unreachable"}),
+            json!({"source_id":"linkedin.com","classification":"awaiting_provider"}),
+        ]);
+        assert_eq!(pending, BTreeSet::from(["linkedin.com".to_string()]));
+        assert!(pending_provider_sources(&[]).is_empty());
+    }
+
     #[test]
     fn plan_excludes_tier_c_unless_opted_in() {
         let request = PersonResearchRequest {
@@ -2974,6 +4269,7 @@ mod tests {
             tier: module.tier(),
             target_fields: vec![FieldKey::FirmaName],
             api_path: false,
+            configured_target: None,
         };
         let result = scrape_bridge::ScrapeBridgeResult {
             target_key: "companyhouse-de".to_string(),

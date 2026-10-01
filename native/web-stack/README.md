@@ -90,6 +90,58 @@ blocked until the one-time fixture-history purge is completed and verified.
 
 ## Public scrape fallback
 
+Registered source calls from person research include an opaque
+`research_operation_id` when the host supplies a research workspace. It is
+derived from the workspace, canonical source ID and registered target key;
+Business OS supplies a command-derived workspace. Retries of the same command
+therefore retain their adapter checkpoint identity without exposing the native
+workspace path to scripts. The legacy bridge without a workspace is unchanged.
+The identity is not a filesystem path or authorization token. Adapter storage
+must remain rooted in native-owned state and separately bind the query, so a
+changed company/country in the same operation fails closed instead of triggering
+a second collection. This propagation alone does not implement adapter resume.
+
+A native `awaiting_provider` outcome retains its current scrape run ID in the
+research receipt. That source does not enter the later search/API cascade or
+historical browser-capture collection. Other sources may still contribute their
+own evidence. Research returns `ok: false`, `status: awaiting_provider` and the
+waiting source IDs, rather than claiming completion. CTOX must retrieve the
+validated continuation from its own durable scrape run and resume its existing
+command; this crate neither starts a poller nor invents a new operation.
+
+`resume_ctox_person_research_tool` accepts only the host's authoritative prior
+command result. A pending result includes a `provider_resume` checkpoint bound
+to the request, source plan and command workspace. Resume invokes only waiting
+sources: completed-source receipts (including genuine empty/error outcomes),
+search/read evidence and all pre-ranking person candidates are preserved.
+Completed sources do not repeat API/search/browser calls. Changed query, source
+scope, workspace or missing checkpoint fails before any source execution. The
+host owns bounded deadlines/poll counts and must not accept this checkpoint from
+browser request data or an arbitrary file. No public request field was added.
+
+Configured Experte and MailTester validation runs after address discovery has
+settled. Each distinct exact trimmed address is dispatched sequentially to each
+selected validator with a separate stable subject operation ID. Shared addresses
+are checked once per provider; every admitted verdict retains its actual address,
+run ID and person binding. A request admits at most ten distinct addresses
+(twenty initial validator calls); exceeding this bound emits an explicit
+input-required receipt before any validation calls, without silently choosing a
+subset. Missing addresses also require input rather than inventing a run.
+These two adapters are synchronous. An unexpected pending provider job is
+recorded as an adapter protocol error with its original classification and run
+ID; remaining subjects for that provider are not submitted. Such a job cannot
+enter the source-only asynchronous checkpoint path. Legacy pending validator
+checkpoints fail closed before dispatch. LinkedIn continuation is unchanged.
+
+Native hosts may use `run_ctox_person_research_with_dispatch` to execute the
+registered adapter in-process through their existing authorized scrape engine.
+Only source execution is injected: the same planner, operation/input binding,
+record admission, public-browser fallback and checkpoint restore remain active.
+The callback is supplied by embedding code, not request/browser configuration.
+Default public entry points retain their CLI behavior. This seam also allows a
+real command recovery test to execute native registered fixture scripts rather
+than accidentally relaunching the Rust test harness as a CTOX CLI.
+
 Registered public scrape adapters have one bounded browser fallback for access
 failures. When an adapter classifies a run as `blocked` or
 `temporary_unreachable`, the Web Stack opens the source's public start page in

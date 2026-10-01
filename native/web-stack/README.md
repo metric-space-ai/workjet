@@ -38,6 +38,10 @@ optional global `--root <path>`. Research, search, and durable scrape commands
 remain available through the root CTOX daemon; the focused binary can be built
 with `--no-default-features` without the Research/PDF dependency graph.
 
+The `person_research` module and its root `KnownPersonRecord` re-export require
+the `full` feature. The minimal `ctox-web-stack` CLI retains the browser surface
+without enabling Research/PDF just to resolve a feature-gated export.
+
 `bench/` contains the standalone regression bench for this module. It is
 binary-first and data-driven so fixture and live checks can run against a built
 `ctox` binary without recompiling the whole repository for every iteration.

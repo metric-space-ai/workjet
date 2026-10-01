@@ -29,7 +29,7 @@ export default defineConfig({
   staged: {
     // Formatter only for now — no lint or typecheck on commit.
     "!(*.rs)": "vp fmt --threads 2",
-    "*.rs": "rustfmt --edition 2024 --check",
+    "*.rs": "node scripts/check-staged-rust.mjs",
   },
   fmt: {
     ignorePatterns: [

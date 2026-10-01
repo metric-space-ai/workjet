@@ -870,12 +870,7 @@ pub(crate) fn command_output_with_timeout(
 fn kill_process_tree(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
-        // `process_group(0)` made the child a group leader (pgid == child pid),
-        // so a negative pid signals every process in that group.
-        let pid = child.id() as libc::pid_t;
-        unsafe {
-            libc::kill(-pid, libc::SIGKILL);
-        }
+        terminate_unix_process_tree(child.id());
     }
     #[cfg(not(unix))]
     {
@@ -1785,11 +1780,88 @@ impl PersistentBrowserHandle {
 
 #[cfg(unix)]
 fn terminate_persistent_browser_process_tree(pid: u32) {
-    // The runtime is spawned into a dedicated process group. A negative PID
-    // targets that group, including Chromium children holding the profile.
-    unsafe {
-        libc::kill(-(pid as i32), libc::SIGKILL);
+    terminate_unix_process_tree(pid);
+}
+
+/// Terminate a runner and everything it started. Playwright launches Chromium
+/// detached (own session and process group), so signalling only the runner's
+/// group left Chromium's network service and crashpad handlers running after
+/// the runner died (23 h at 100 % CPU on THESEN, 30.09.2026). Descendants are
+/// collected while the runner is still alive, then their groups get SIGTERM,
+/// a short grace period, and SIGKILL. The caller's own group is never touched.
+#[cfg(unix)]
+fn terminate_unix_process_tree(pid: u32) {
+    let root = pid as libc::pid_t;
+    if root <= 1 {
+        return;
     }
+    let descendants = unix_descendant_pids(pid);
+    let own_group = unsafe { libc::getpgrp() };
+    let mut groups = std::collections::BTreeSet::new();
+    groups.insert(root);
+    for descendant in &descendants {
+        let group = unsafe { libc::getpgid(*descendant as libc::pid_t) };
+        if group > 1 {
+            groups.insert(group);
+        }
+    }
+    groups.remove(&own_group);
+    let signal_all = |signal: libc::c_int| {
+        for group in &groups {
+            unsafe {
+                libc::kill(-*group, signal);
+            }
+        }
+        for descendant in std::iter::once(&pid).chain(descendants.iter()) {
+            unsafe {
+                libc::kill(*descendant as libc::pid_t, signal);
+            }
+        }
+    };
+    signal_all(libc::SIGTERM);
+    let alive = |p: &u32| unsafe { libc::kill(*p as libc::pid_t, 0) } == 0;
+    for _ in 0..10 {
+        if !descendants.iter().any(alive) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    signal_all(libc::SIGKILL);
+}
+
+/// All transitive child PIDs of `root`, read from `ps` so it works on Linux
+/// and macOS alike. Best effort: an unreadable process table yields none.
+#[cfg(unix)]
+fn unix_descendant_pids(root: u32) -> Vec<u32> {
+    let Ok(output) = Command::new("ps")
+        .args(["-A", "-o", "pid=", "-o", "ppid="])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    let mut children: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let mut fields = line.split_whitespace();
+        let (Some(pid), Some(ppid)) = (fields.next(), fields.next()) else {
+            continue;
+        };
+        if let (Ok(pid), Ok(ppid)) = (pid.parse::<u32>(), ppid.parse::<u32>()) {
+            children.entry(ppid).or_default().push(pid);
+        }
+    }
+    let mut found = Vec::new();
+    let mut stack = vec![root];
+    while let Some(parent) = stack.pop() {
+        for child in children.get(&parent).cloned().unwrap_or_default() {
+            if child != root && !found.contains(&child) {
+                found.push(child);
+                stack.push(child);
+            }
+        }
+    }
+    found
 }
 
 #[cfg(windows)]
@@ -2896,8 +2968,11 @@ for await (const line of rl) {{
 	      respond({{ id, ...result }});
 	    }} else if (op === "close") {{
 	      closing = true;
-	      respond({{ id, ok: true }});
+	      // Close Chromium before acknowledging: the host kills the runner right
+	      // after the reply, and a mid-close kill orphaned the network service
+	      // (23 h at 100 % CPU on THESEN, 30.09.2026).
 	      try {{ await context.close(); }} catch {{}}
+	      respond({{ id, ok: true }});
       process.exit(0);
     }} else {{
       respond({{ id, ok: false, error: `unknown op ${{op}}` }});
@@ -3425,6 +3500,64 @@ mod tests {
         assert!(
             exited,
             "an exited runner must not remain in the live-session budget"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn persistent_browser_drop_terminates_detached_grandchildren() {
+        // Playwright starts Chromium in its own session; killing only the
+        // runner's process group orphaned it (THESEN, 30.09.2026).
+        use std::io::BufRead;
+        use std::os::unix::process::CommandExt;
+        use std::thread;
+
+        let runner_path = temp_path("detached-grandchild-runner");
+        fs::write(&runner_path, b"").unwrap();
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("perl -MPOSIX -e 'POSIX::setsid(); exec \"sleep\", \"300\"' & echo $!; while read line; do sleep 300; done")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .process_group(0);
+        let mut child = command.spawn().unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        let grandchild: libc::pid_t = line.trim().parse().unwrap();
+        let alive = |pid: libc::pid_t| unsafe { libc::kill(pid, 0) } == 0;
+        // The grandchild must be in its own session, like Chromium.
+        for _ in 0..40 {
+            if unsafe { libc::getsid(grandchild) } == grandchild {
+                break;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        assert_eq!(unsafe { libc::getsid(grandchild) }, grandchild);
+        assert!(alive(grandchild));
+
+        drop(PersistentBrowserHandle {
+            child,
+            stdin,
+            stdout: reader,
+            next_id: 0,
+            runner_path,
+            profile_dir: None,
+            downloads_dir: None,
+            remove_profile_on_close: false,
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while alive(grandchild) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            !alive(grandchild),
+            "detached grandchild survived runner shutdown"
         );
     }
 

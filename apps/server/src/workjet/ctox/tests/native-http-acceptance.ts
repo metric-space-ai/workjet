@@ -1,5 +1,5 @@
 /** Explicit integration runner: each phase runs in a fresh process against an owned native HTTP MCP fixture.
- * Run: node native-http-acceptance.ts <private-fixture.json> <first|resume|stop|verify>
+ * Run: node native-http-acceptance.ts <private-fixture.json> <first|resume|revoked|stop|verify>
  * This does not establish desktop UI, connection-registry, provider or installed acceptance.
  */
 import * as NodeAssert from "node:assert/strict";
@@ -15,12 +15,16 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { FetchHttpClient, HttpClient } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import * as NodeSqliteClient from "../../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
 import migration61 from "../../../persistence/Migrations/061_WorkjetCtoxNativeTurns.ts";
 import { CtoxNativeRequestError, CtoxNativeRequests } from "../CtoxNativeRequests.ts";
-import { CtoxMcpTransportError, makeCtoxMcpTransport } from "../CtoxMcpTransport.ts";
+import {
+  CtoxMcpTransportError,
+  isCtoxMcpResponseWithinLimit,
+  makeCtoxMcpTransport,
+} from "../CtoxMcpTransport.ts";
 import { makeCtoxNativeTaskClient, nativeTurnKeyForRequestId } from "../CtoxNativeTaskClient.ts";
 
 const Fixture = Schema.Struct({
@@ -67,6 +71,24 @@ const IntentRow = Schema.Struct({
   command_id: Schema.NullOr(Schema.String),
   task_id: Schema.NullOr(Schema.String),
 });
+const LocalIdentity = Schema.Struct({
+  actor: Schema.Literal("mcp:local"),
+  workspace: Schema.Literal("local"),
+  policy: Schema.Struct({
+    enabled: Schema.Literal(true),
+    allow_reads: Schema.Literal(true),
+    allow_writes: Schema.Literal(true),
+    allowed_actors: Schema.Array(Schema.String),
+    allowed_workspaces: Schema.Array(Schema.String),
+  }),
+});
+const JsonRpcRejection = Schema.Struct({
+  jsonrpc: Schema.Literal("2.0"),
+  id: Schema.Number,
+  error: Schema.Struct({ code: Schema.Number, message: Schema.String }),
+});
+const decodeLocalIdentity = Schema.decodeUnknownEffect(LocalIdentity);
+const decodeJsonRpcRejection = Schema.decodeUnknownEffect(Schema.fromJsonString(JsonRpcRejection));
 const decodeFixture = Schema.decodeUnknownSync(Fixture);
 const decodeIntentRow = Schema.decodeUnknownSync(IntentRow);
 const decodeNativeReceipt = Schema.decodeUnknownSync(NativeReceipt);
@@ -77,7 +99,7 @@ const decodeTokenCapture = Schema.decodeUnknownSync(
 const fixtureFile = process.argv[2];
 const phase = process.argv[3];
 NodeAssert.ok(
-  fixtureFile && ["first", "resume", "stop", "verify"].includes(phase ?? ""),
+  fixtureFile && ["first", "resume", "revoked", "stop", "verify"].includes(phase ?? ""),
   "Private fixture and explicit phase required",
 );
 NodeAssert.equal(NodeFS.statSync(fixtureFile).mode & 0o077, 0, "Fixture must be private");
@@ -227,6 +249,33 @@ const program = Effect.gen(function* () {
     ),
   );
   const realTransport = makeCtoxMcpTransport(http);
+  const rejectedTool = Effect.fn("NativeHttpAcceptance.rejectedTool")(
+    function* (name: string, args: Readonly<Record<string, unknown>>, expectedMessage: string) {
+      const response = yield* http.execute(
+        HttpClientRequest.post(target.endpoint).pipe(
+          HttpClientRequest.bodyJsonUnsafe({
+            jsonrpc: "2.0",
+            id: 9001,
+            method: "tools/call",
+            params: { name, arguments: args },
+          }),
+          HttpClientRequest.acceptJson,
+          HttpClientRequest.bearerToken(token),
+        ),
+      );
+      NodeAssert.equal(response.status, 200, "Authorization rejection must be native JSON-RPC");
+      const body = yield* response.text;
+      NodeAssert.ok(isCtoxMcpResponseWithinLimit(body));
+      const rejection = yield* decodeJsonRpcRejection(body);
+      NodeAssert.equal(rejection.id, 9001);
+      NodeAssert.ok(
+        rejection.error.message.includes(expectedMessage),
+        "Exact native authorization denial required",
+      );
+    },
+    Effect.scoped,
+    Effect.timeout("10 seconds"),
+  );
   let dropped = false;
   const transport = {
     ...realTransport,
@@ -275,39 +324,99 @@ const program = Effect.gen(function* () {
     NodeAssert.equal(reference.commandId, null);
     NodeAssert.equal(reference.taskId, null);
     NodeAssert.equal(committedIntent().command_id, null);
+    yield* realTransport.probe(target, ["business_os.status", "business_os.cancel_project_task"]);
+    const status = yield* realTransport.callTool(target, "business_os.status", {});
+    NodeAssert.notEqual(status.isError, true);
+    const local = yield* decodeLocalIdentity(status.structuredContent);
+    NodeAssert.deepEqual(local.policy.allowed_actors, ["mcp:local"]);
+    NodeAssert.deepEqual(local.policy.allowed_workspaces, ["local"]);
+    for (const credential of [null, "deliberately-invalid-fixture-bearer"]) {
+      let request = HttpClientRequest.post(target.endpoint).pipe(
+        HttpClientRequest.acceptJson,
+        HttpClientRequest.bodyJsonUnsafe({ jsonrpc: "2.0", id: 9002, method: "initialize" }),
+      );
+      if (credential !== null) request = HttpClientRequest.bearerToken(credential)(request);
+      const denied = yield* http.execute(request).pipe(Effect.scoped, Effect.timeout("10 seconds"));
+      NodeAssert.equal(
+        denied.status,
+        401,
+        "Missing and wrong bearer must fail at HTTP authentication",
+      );
+    }
+    yield* rejectedTool(
+      "business_os.status",
+      {
+        _context: { actor: "foreign-http-actor", workspace: "local" },
+      },
+      "actor is not allowed for Business OS MCP channel",
+    );
+    yield* rejectedTool(
+      "business_os.status",
+      {
+        _context: { actor: "mcp:local", workspace: "foreign-http-workspace" },
+      },
+      "workspace is not allowed for Business OS MCP channel",
+    );
   } else {
     const saved = decodeSavedReceipt(JSON.parse(NodeFS.readFileSync(proofFile, "utf8")));
     nativeKey = saved.nativeKey;
-    const recovered = yield* client.submitTurn(
-      fixture.scope,
-      fixture.requestId,
-      fixture.projectTask,
-    );
-    NodeAssert.equal(recovered.reference.commandId, saved.commandId);
-    NodeAssert.equal(recovered.reference.taskId, saved.taskId);
-    NodeAssert.equal(committedIntent().command_id, saved.commandId);
-    NodeAssert.equal(committedIntent().task_id, saved.taskId);
-    const beforeDenial = httpCalls;
-    const changed = yield* Effect.flip(
-      client.submitTurn(fixture.scope, fixture.requestId, {
-        ...fixture.projectTask,
-        instruction: "Changed acceptance intent",
-      }),
-    );
-    NodeAssert.equal(changed.reason, "native-request-conflict");
-    const foreign = yield* Effect.flip(
-      client.submitTurn(
-        { ...fixture.scope, instanceId: "another-fixture-instance" },
+    if (phase !== "revoked") {
+      const recovered = yield* client.submitTurn(
+        fixture.scope,
         fixture.requestId,
         fixture.projectTask,
-      ),
-    );
-    NodeAssert.equal(foreign.reason, "connection-instance-mismatch");
-    NodeAssert.equal(
-      httpCalls,
-      beforeDenial,
-      "Conflicting intent and scope must fail before transport",
-    );
+      );
+      NodeAssert.equal(recovered.reference.commandId, saved.commandId);
+      NodeAssert.equal(recovered.reference.taskId, saved.taskId);
+      NodeAssert.equal(committedIntent().command_id, saved.commandId);
+      NodeAssert.equal(committedIntent().task_id, saved.taskId);
+      const beforeDenial = httpCalls;
+      const changed = yield* Effect.flip(
+        client.submitTurn(fixture.scope, fixture.requestId, {
+          ...fixture.projectTask,
+          instruction: "Changed acceptance intent",
+        }),
+      );
+      NodeAssert.equal(changed.reason, "native-request-conflict");
+      const foreign = yield* Effect.flip(
+        client.submitTurn(
+          { ...fixture.scope, instanceId: "another-fixture-instance" },
+          fixture.requestId,
+          fixture.projectTask,
+        ),
+      );
+      NodeAssert.equal(foreign.reason, "connection-instance-mismatch");
+      NodeAssert.equal(
+        httpCalls,
+        beforeDenial,
+        "Conflicting intent and scope must fail before transport",
+      );
+    } else {
+      const reference = yield* requests.get(identity);
+      NodeAssert.equal(reference.commandId, saved.commandId);
+      NodeAssert.equal(reference.taskId, saved.taskId);
+      const before = yield* client.readStatus(identity);
+      NodeAssert.ok(["queued", "running", "waiting"].includes(before.state));
+      yield* rejectedTool(
+        "business_os.cancel_project_task",
+        {
+          target_command_id: saved.commandId,
+          idempotency_key: fixture.cancelKey,
+          reason: "Explicit isolated Workjet HTTP acceptance stop",
+          // Negative probe only: the controller downgraded the actual stored actor to user.
+          _context: { actor: "mcp:local", workspace: "local", role: "admin" },
+        },
+        "project task management denied:",
+      );
+      const after = yield* client.readStatus(identity);
+      NodeAssert.equal(
+        after.state,
+        before.state,
+        "Denied cancellation must not mutate native work",
+      );
+      NodeAssert.equal(after.reference.commandId, saved.commandId);
+      NodeAssert.equal(after.reference.taskId, saved.taskId);
+    }
     if (phase === "stop") {
       const args = {
         target_command_id: saved.commandId,

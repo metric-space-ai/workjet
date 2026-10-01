@@ -3,7 +3,7 @@
 `apps/server/src/workjet/ctox/tests/native-http-acceptance.ts` is an explicit
 integration runner. It uses the real Workjet native task client, real HTTP MCP
 transport and a file-backed Workjet request ledger. Run each phase in a new
-Node process: `first`, `resume`, `stop`, then `verify`.
+Node process: `first`, `resume`, `revoked`, `stop`, then `verify`.
 
 This covers the server client and ledger. The fixture supplies the connection
 target; it does not verify the connection registry, desktop controls, provider
@@ -18,8 +18,14 @@ a new source label. Keep the native root, private token capture, ledger and
 logs under `/Volumes/tmp/dev-artifacts/workjet/pr73-http-acceptance/<run>/`.
 Record the owner, captured server PID/process group, log paths and deadline.
 
-Create the isolated owner and project through native APIs. Enable the native
-MCP policy for that owner/workspace through its supported CLI. Start the
+For this isolated local operator, persist the exact native user `mcp:local`
+as admin with `business-os desktop invite --user mcp:local --role admin`.
+Create the isolated project through native `ctox.workjet.project.upsert` with
+that actual owner. Set the native MCP policy's allowed actor to `mcp:local`
+and workspace to `local`. These are the public channel's no-context defaults;
+the stored native role supplies permission. No caller role or internal command
+session grants start rights. This does not establish a human production identity.
+Start the
 public channel with:
 
 ```text
@@ -63,7 +69,18 @@ every HTTP request, including discovery. `first` discards one real accepted
 start response before it can enter the Workjet receipt ledger. This is a
 controlled transport-boundary fault, not an observed network outage. `resume`
 reopens the ledger in a fresh process and requires the same native IDs/key.
-Changed intent and instance scope must fail without HTTP calls.
+Changed intent and instance scope must fail without HTTP calls. The first
+phase also verifies the real default actor/workspace and exact allowlists,
+HTTP 401 for missing/wrong bearer, and native rejection of foreign actor or
+workspace context. Negative probes require the specific native denial; a
+network failure is not a permission pass.
+
+Before `revoked`, use the same supported native invite command to change the
+stored `mcp:local` role to `user`. This phase reopens the existing ledger without
+replaying a write, attempts cancellation with a deliberately false `admin`
+claim, and requires the actual management denial and unchanged task state.
+Restore the native role to `admin` before `stop`. Positive task/status/stop
+requests never invent actor context.
 
 `stop` calls the explicit public native Ops cancellation with the original
 command and stable key, repeats it and requires an identical receipt. `verify`
@@ -72,7 +89,25 @@ and a cancelled status. Closing a Workjet process is never the stop action.
 The cancel key comes from the fixture; this does not claim a separate Workjet
 cancellation ledger or GUI stop acceptance.
 
-Retain all four phase receipts, source/binary fences and the captured server
+The bounded controller `scripts/native-http-acceptance.py` prepares a fresh
+source clone, native authority/project/policy, owned HTTP server and private
+secret capture. It verifies a supplied current producer receipt, binary hash,
+clean source and an actual own shared lease before creating anything. It awaits
+the server's emitted readiness line and runs all five phases in separate Node
+processes, downgrading/restoring the real role through native authority. The
+complete unit has a 600 second deadline and captured process groups; it removes
+private plaintext captures and a clean owned native fixture after terminal cleanup.
+Run it through the shared admission gate, supplying explicit source identities
+and the native producer receipt:
+
+```text
+greppy bash-smart -- /usr/bin/python3 /Users/michaelwelsch/.codex/bin/dev-heavy-run.py --owner 01a0879f-e692-7361-858c-036208dc53f7 --project workjet --task pr73-native-http -- python3 scripts/native-http-acceptance.py --workjet-source <clean-head> --native-source <producer-head> --native-workjet-pin <native-pin> --native-receipt <producer-receipt.json>
+```
+
+Preparing this controller does not mean its native bootstrap or HTTP phases
+have passed. Do not run it against the old daemon with a new source label.
+
+Retain all five phase receipts, source/binary fences and the captured server
 cleanup proof. A failed phase is a finding. Do not weaken the assertion, add
 automatic write retries, forge an actor, or claim a pass from a prepared runner.
 Stop only the owned captured process tree, await terminal completion, and

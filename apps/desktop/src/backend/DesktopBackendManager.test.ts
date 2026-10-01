@@ -298,6 +298,47 @@ describe("DesktopBackendManager", () => {
     ),
   );
 
+  it.effect("stops a pending service install without opening a blocking recovery dialog", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const installing = yield* Deferred.make<void>();
+        let blockedNotifications = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.die("The attachment owns installation.")),
+          ),
+          run: () =>
+            Effect.gen(function* () {
+              const released = yield* Deferred.make<void>();
+              yield* Effect.addFinalizer(() =>
+                Deferred.succeed(released, undefined).pipe(Effect.asVoid),
+              );
+              yield* Deferred.succeed(installing, undefined);
+              yield* Deferred.await(released);
+              return {
+                code: Option.none(),
+                reason: "first installation stopped while closing the attachment",
+                restart: false,
+              };
+            }),
+          onAttachmentBlocked: () =>
+            Effect.sync(() => {
+              blockedNotifications++;
+            }),
+        });
+        yield* instance.start;
+        yield* Deferred.await(installing);
+        yield* instance.stop();
+        assert.equal(blockedNotifications, 0);
+        const state = yield* instance.snapshot;
+        assert.equal(state.desiredRunning, false);
+        assert.equal(state.ready, false);
+        assert.equal(state.restartScheduled, false);
+      }),
+    ),
+  );
+
   it.effect("spawns the backend with fd3 bootstrap and fd4 telemetry", () =>
     Effect.scoped(
       Effect.gen(function* () {

@@ -911,7 +911,9 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
               if (isCurrentRun && nextState.desiredRunning) {
                 yield* scheduleRestart(reason);
               }
-              if (isCurrentRun && !restart) {
+              // Closing an owned attachment can stop its pending install.
+              // A recovery dialog here would hold normal Quit until dismissed.
+              if (isCurrentRun && !restart && !stopRequested) {
                 yield* spec.onAttachmentBlocked?.(reason) ?? Effect.void;
               }
             }),

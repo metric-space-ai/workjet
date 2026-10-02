@@ -25,7 +25,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { make } from "./WorkjetSessionImport.ts";
 
 const NOW = "2026-10-02T12:00:00.000Z";
-const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const transcript = (title: string, replies: string[] = [], model?: string) =>
   [
     encodeJson({

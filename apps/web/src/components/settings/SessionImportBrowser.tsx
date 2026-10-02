@@ -35,7 +35,7 @@ const inputClass =
 export interface SessionImportBrowserProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  readonly inspection: WorkjetSessionImportInspection | undefined;
+  readonly inspection: WorkjetSessionImportInspection | null | undefined;
   readonly pending: boolean;
   readonly error: string | null;
   readonly query: string;

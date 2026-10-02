@@ -609,6 +609,17 @@ fn rejects_a_named_default_provider_that_has_no_enabled_account() {
     );
 }
 
+#[test]
+fn permits_an_idle_management_host_with_all_accounts_disabled() {
+    let root = tempfile::tempdir().unwrap();
+    let mut config = config(root.path());
+    config.runtime.codex_accounts[0].disabled = true;
+    config.default_provider = None;
+    let validated = config.validate().unwrap();
+    assert!(validated.default_provider.is_none());
+    assert!(validated.runtime.codex_accounts()[0].disabled);
+}
+
 // --- API-key provider accounts ---------------------------------------------
 //
 // An API-key account is an account whose only credential is a user-pasted key

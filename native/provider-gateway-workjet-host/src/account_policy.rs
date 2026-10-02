@@ -26,6 +26,10 @@ pub struct QuotaWindow {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct State {
     #[serde(default)]
+    api_key_fingerprints: BTreeMap<String, String>,
+    #[serde(default)]
+    observations: BTreeMap<String, (u16, i64)>,
+    #[serde(default)]
     affinities: BTreeMap<String, String>,
     #[serde(default)]
     cooldowns: Vec<CooldownStateRecord>,
@@ -39,6 +43,32 @@ pub struct AccountState {
     conductor: Arc<CooldownConductor>,
 }
 impl AccountState {
+    /// Replacing an API credential preserves its session lane and discards
+    /// observations from the previous credential. Plaintext never enters state.
+    pub fn bind_api_key(
+        &self,
+        provider: &str,
+        account: &str,
+        key: &[u8],
+    ) -> Result<(), CooldownStoreError> {
+        let identity = account_key(provider, account);
+        let fingerprint = format!("{:x}", Sha256::digest(key));
+        let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
+        if state.api_key_fingerprints.get(&identity) == Some(&fingerprint) {
+            return Ok(());
+        }
+        let mut next = state.clone();
+        if next.api_key_fingerprints.contains_key(&identity) {
+            next.cooldowns
+                .retain(|r| !(r.provider.eq_ignore_ascii_case(provider) && r.auth_id == account));
+            next.quotas.remove(&identity);
+            next.observations.remove(&identity);
+        }
+        next.api_key_fingerprints.insert(identity, fingerprint);
+        self.persist(&next)?;
+        *state = next;
+        Ok(())
+    }
     fn reference() -> RuntimeSecretRef {
         RuntimeSecretRef {
             scope: ALLOWED_SECRET_SCOPE.to_owned(),
@@ -79,6 +109,14 @@ impl AccountState {
         *state = next;
         Ok(())
     }
+    pub fn observation(&self, provider: &str, account: &str) -> Option<(u16, i64)> {
+        self.state
+            .lock()
+            .ok()?
+            .observations
+            .get(&account_key(provider, account))
+            .copied()
+    }
     pub fn quotas(&self, provider: &str, account: &str) -> Vec<QuotaWindow> {
         self.state
             .lock()
@@ -88,6 +126,17 @@ impl AccountState {
     }
 }
 impl CooldownStateStore for AccountState {
+    fn observe_outcome(&self, result: &AccountExecutionResult) -> Result<(), CooldownStoreError> {
+        let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
+        let mut next = state.clone();
+        next.observations.insert(
+            account_key(&result.provider, &result.auth_id),
+            (result.status, result.observed_at_ms),
+        );
+        self.persist(&next)?;
+        *state = next;
+        Ok(())
+    }
     fn load(&self) -> Result<Vec<CooldownStateRecord>, CooldownStoreError> {
         Ok(self
             .state
@@ -175,7 +224,11 @@ impl AccountPolicy for AccountState {
                         .get(&account_key(provider, &c.auth_id))
                         .is_some_and(|windows| {
                             windows.iter().any(|w| {
-                                (w.name != "seven_day_opus" || requested.to_ascii_lowercase().contains("opus")) && (w.name != "seven_day_sonnet" || requested.to_ascii_lowercase().contains("sonnet")) && now.saturating_sub(w.observed_at_ms) < 300_000
+                                (w.name != "seven_day_opus"
+                                    || requested.to_ascii_lowercase().contains("opus"))
+                                    && (w.name != "seven_day_sonnet"
+                                        || requested.to_ascii_lowercase().contains("sonnet"))
+                                    && now.saturating_sub(w.observed_at_ms) < 300_000
                                     && w.remaining_percent == Some(0.0)
                                     && w.resets_at_ms.is_none_or(|reset| reset > now)
                             })
@@ -211,7 +264,11 @@ impl AccountPolicy for AccountState {
                     .into_iter()
                     .flatten()
                     .filter(|w| {
-                        (w.name != "seven_day_opus" || requested.to_ascii_lowercase().contains("opus")) && (w.name != "seven_day_sonnet" || requested.to_ascii_lowercase().contains("sonnet")) && now.saturating_sub(w.observed_at_ms) < 300_000
+                        (w.name != "seven_day_opus"
+                            || requested.to_ascii_lowercase().contains("opus"))
+                            && (w.name != "seven_day_sonnet"
+                                || requested.to_ascii_lowercase().contains("sonnet"))
+                            && now.saturating_sub(w.observed_at_ms) < 300_000
                             && w.remaining_percent.is_some_and(|r| r > 0.0)
                     })
                     .filter_map(|w| w.resets_at_ms)
@@ -245,6 +302,12 @@ impl AccountPolicy for AccountState {
 }
 struct WeakStore(std::sync::Weak<AccountState>);
 impl CooldownStateStore for WeakStore {
+    fn observe_outcome(&self, result: &AccountExecutionResult) -> Result<(), CooldownStoreError> {
+        self.0
+            .upgrade()
+            .ok_or(CooldownStoreError::Write)?
+            .observe_outcome(result)
+    }
     fn load(&self) -> Result<Vec<CooldownStateRecord>, CooldownStoreError> {
         self.0.upgrade().ok_or(CooldownStoreError::Read)?.load()
     }

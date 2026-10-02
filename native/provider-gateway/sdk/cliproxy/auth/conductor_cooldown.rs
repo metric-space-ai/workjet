@@ -84,6 +84,7 @@ impl CooldownConductor {
             ))
         });
         self.store.save(&records)?;
+        self.store.observe_outcome(&result)?;
         Ok(true)
     }
 

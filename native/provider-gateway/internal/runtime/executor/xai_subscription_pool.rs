@@ -188,14 +188,14 @@ impl XaiSubscriptionAccountPool {
         let options = Self::options(false);
         let auth = member.auth.lock().await.clone();
         match self.executor.execute(Some(&auth), &request, &options).await {
-            Ok(response) => Ok(response.payload),
+            Ok(response) => { if let Some(policy) = &self.policy { policy.outcome("xai", &member.id, model, 200, account_policy_now_ms()); } Ok(response.payload) },
             Err(XaiExecutionError::Status(status)) if status.status == 401 => {
-                let refreshed = self.refreshed(member).await?;
+                let refreshed = self.refreshed(member).await.map_err(|error| { if let Some(policy) = &self.policy { policy.outcome("xai", &member.id, model, 401, account_policy_now_ms()); } error })?;
                 self.executor
                     .execute(Some(&refreshed), &request, &options)
                     .await
                     .map(|response| response.payload)
-                    .map_err(map_execution_error)
+                    .map_err(|error| { let mapped = map_execution_error(error); let status = match &mapped { XaiPoolError::Upstream(status) => *status, _ => 502 }; if let Some(policy) = &self.policy { policy.outcome("xai", &member.id, model, status, account_policy_now_ms()); } mapped })
             }
             Err(error) => {
                 let mapped = map_execution_error(error);
@@ -221,14 +221,14 @@ impl XaiSubscriptionAccountPool {
             .execute_stream(Some(&auth), &request, &options)
             .await
         {
-            Ok(stream) => Ok(stream.chunks),
+            Ok(stream) => { if let Some(policy) = &self.policy { policy.outcome("xai", &member.id, model, 200, account_policy_now_ms()); } Ok(stream.chunks) },
             Err(XaiExecutionError::Status(status)) if status.status == 401 => {
-                let refreshed = self.refreshed(member).await?;
+                let refreshed = self.refreshed(member).await.map_err(|error| { if let Some(policy) = &self.policy { policy.outcome("xai", &member.id, model, 401, account_policy_now_ms()); } error })?;
                 self.executor
                     .execute_stream(Some(&refreshed), &request, &options)
                     .await
                     .map(|stream| stream.chunks)
-                    .map_err(map_execution_error)
+                    .map_err(|error| { let mapped = map_execution_error(error); let status = match &mapped { XaiPoolError::Upstream(status) => *status, _ => 502 }; if let Some(policy) = &self.policy { policy.outcome("xai", &member.id, model, status, account_policy_now_ms()); } mapped })
             }
             Err(error) => {
                 let mapped = map_execution_error(error);

@@ -61,6 +61,7 @@ import {
   decodeModelDefinitions,
   decodeRuntimeConfigSummary,
   decodeRuntimeStatus,
+  decodeAccountHealth,
 } from "./ProviderGatewayManagement.ts";
 import {
   InvalidGatewayUsageQuery,
@@ -1354,7 +1355,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         activeProvider:
           activeProvider !== undefined && isGatewayProvider(activeProvider) ? activeProvider : null,
         providers,
-        accountHealth: "not-reported-by-host",
+        accountHealth: decodeAccountHealth(status) === undefined ? "not-reported-by-host" : "reported",
+        accounts: decodeAccountHealth(status) ?? [],
         capacity: "not-reported-by-host",
       };
     };

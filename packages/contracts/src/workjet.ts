@@ -1318,12 +1318,38 @@ export type WorkjetGatewayProviderHealth = typeof WorkjetGatewayProviderHealth.T
  * capacity figure anywhere. Both therefore read `not-reported-by-host` until
  * the host grows a route for them.
  */
+export const WorkjetGatewayQuotaWindow = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  remainingPercent: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isBetween(0, 100)))),
+  resetsAtMs: Schema.NullOr(NonNegativeInt),
+  observedAtMs: NonNegativeInt,
+});
+export type WorkjetGatewayQuotaWindow = typeof WorkjetGatewayQuotaWindow.Type;
+
+export const WorkjetGatewayAccountHealth = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+  provider: WorkjetGatewayProvider,
+  authentication: Schema.Literals(["authenticated", "rejected", "unknown"]),
+  disabled: Schema.Boolean,
+  usable: Schema.Boolean,
+  cooldownUntilMs: Schema.NullOr(NonNegativeInt),
+  errorCode: Schema.NullOr(TrimmedNonEmptyString),
+  httpStatus: Schema.NullOr(NonNegativeInt),
+  observedAtMs: Schema.NullOr(NonNegativeInt),
+  quota: Schema.Array(WorkjetGatewayQuotaWindow),
+  quotaSupported: Schema.Boolean,
+  quotaRefreshing: Schema.Boolean,
+  quotaError: Schema.NullOr(Schema.Literals(["unavailable", "provider-error"])),
+});
+export type WorkjetGatewayAccountHealth = typeof WorkjetGatewayAccountHealth.Type;
+
 export const WorkjetGatewayHealth = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   observedAtMs: NonNegativeInt,
   activeProvider: Schema.NullOr(WorkjetGatewayProvider),
   providers: Schema.Array(WorkjetGatewayProviderHealth),
   accountHealth: WorkjetGatewayHealthAvailability,
+  accounts: Schema.Array(WorkjetGatewayAccountHealth).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   capacity: WorkjetGatewayHealthAvailability,
 });
 export type WorkjetGatewayHealth = typeof WorkjetGatewayHealth.Type;

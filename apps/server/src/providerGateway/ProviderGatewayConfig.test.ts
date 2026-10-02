@@ -47,6 +47,21 @@ const validConfiguration = () => ({
 });
 
 describe("ProviderGatewayConfig", () => {
+  it("keeps management available when the last account is disabled", () => {
+    const configuration = validConfiguration();
+    configuration.accounts[0]!.enabled = false;
+    const decoded = decodeProviderGatewayConfiguration(configuration);
+    expect(decoded).toBeDefined();
+    const host = rustHostConfiguration(decoded!, "/private/secrets") as { defaultProvider?: string };
+    expect(host.defaultProvider).toBeUndefined();
+  });
+
+  it("chooses an enabled default when the configured default loses its account", () => {
+    const configuration = validConfiguration();
+    const decoded = decodeProviderGatewayConfiguration({ ...configuration, defaultProvider: "claude" });
+    expect(decoded?.defaultProvider).toBe("codex");
+  });
+
   it("decodes a secret-reference-only catalog", () => {
     const decoded = decodeProviderGatewayConfiguration(validConfiguration());
     expect(decoded).toBeDefined();

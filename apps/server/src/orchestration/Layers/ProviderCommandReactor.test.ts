@@ -216,6 +216,7 @@ describe("ProviderCommandReactor", () => {
 
   async function createHarness(input?: {
     readonly baseDir?: string;
+    readonly projectWorkspaceRoot?: string | null;
     readonly threadModelSelection?: ModelSelection;
     readonly threadWorkjetConfig?: WorkjetThreadConfig;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
@@ -525,7 +526,10 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-project-create"),
         projectId: asProjectId("project-1"),
         title: "Provider Project",
-        workspaceRoot: "/tmp/provider-project",
+        workspaceRoot:
+          input?.projectWorkspaceRoot === undefined
+            ? "/tmp/provider-project"
+            : input.projectWorkspaceRoot,
         defaultModelSelection: modelSelection,
         createdAt: now,
       }),
@@ -677,6 +681,102 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("starts folder-free conversations in a shared durable project directory and isolates other projects", async () => {
+    const sessions = new Map<string, Deferred.Deferred<ProviderSession>>(
+      ["thread-1", "thread-2", "thread-3"].map((id) => [
+        id,
+        Effect.runSync(Deferred.make<ProviderSession>()),
+      ]),
+    );
+    const harness = await createHarness({
+      projectWorkspaceRoot: null,
+      startSessionEffect: (session) =>
+        Deferred.succeed(sessions.get(session.threadId)!, session).pipe(Effect.as(session)),
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+    const start = async (id: string) => {
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`folder-free-start-${id}`),
+          threadId: ThreadId.make(id),
+          message: {
+            messageId: asMessageId(`folder-free-message-${id}`),
+            role: "user",
+            text: "Plan this project",
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        }),
+      );
+      const session = await harness.runEffect(Deferred.await(sessions.get(id)!));
+      await harness.drain();
+      return session;
+    };
+    const first = await start("thread-1");
+    expect(first.cwd).toBeDefined();
+    const cwd = first.cwd!;
+    expect(NodePath.dirname(cwd)).toBe(NodePath.join(harness.stateDir, "project-workspaces"));
+    expect(NodePath.basename(cwd)).toMatch(/^[0-9a-f]{64}$/u);
+    expect(NodeFS.statSync(cwd).isDirectory()).toBe(true);
+    NodeFS.writeFileSync(NodePath.join(cwd, "retained.txt"), "project context");
+
+    for (const [id, projectId] of [
+      ["thread-2", "project-1"],
+      ["thread-3", "../project-1"],
+    ] as const) {
+      if (projectId !== "project-1")
+        await harness.runEffect(
+          harness.engine.dispatch({
+            type: "project.create",
+            commandId: CommandId.make("folder-free-other-project"),
+            projectId: asProjectId(projectId),
+            title: "Other project",
+            workspaceRoot: null,
+            defaultModelSelection: createModelSelection(
+              ProviderInstanceId.make("codex"),
+              "gpt-5-codex",
+            ),
+            createdAt: now,
+          }),
+        );
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`folder-free-create-${id}`),
+          threadId: ThreadId.make(id),
+          projectId: asProjectId(projectId),
+          title: id,
+          modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5-codex"),
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          runtimeMode: "approval-required",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+        }),
+      );
+      const session = await start(id);
+      if (projectId === "project-1") {
+        expect(session.cwd).toBe(cwd);
+        expect(NodeFS.readFileSync(NodePath.join(session.cwd!, "retained.txt"), "utf8")).toBe(
+          "project context",
+        );
+      } else {
+        expect(session.cwd).not.toBe(cwd);
+        expect(NodePath.dirname(session.cwd!)).toBe(
+          NodePath.join(harness.stateDir, "project-workspaces"),
+        );
+      }
+    }
+    expect(harness.sendTurn).toHaveBeenCalledTimes(3);
+    expect(
+      (await harness.readModel()).projects.every((project) => project.workspaceRoot === null),
+    ).toBe(true);
   });
 
   it("starts a fresh provider session for each claimed Crew turn", async () => {

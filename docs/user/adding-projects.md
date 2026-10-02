@@ -4,6 +4,11 @@ Select the instance that should own the project, choose **Add project**, then
 enter its name. The project keeps one Supervisor conversation. A computer and
 working folder can be attached later.
 
+Until you attach a working folder, the project's Lumas use a private project
+directory on the connected Workjet server. Its contents remain available to
+that project across sessions and restarts. An attached working folder takes
+precedence for new sessions.
+
 If the instance requires a separate sign-in, choose **Sign in to instance**.
 Workjet opens that instance in **Business OS**. After signing in, return to
 **Code** to continue. A project waiting for registration is not confirmation

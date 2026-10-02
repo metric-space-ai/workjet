@@ -28,6 +28,8 @@ struct State {
     #[serde(default)]
     api_key_fingerprints: BTreeMap<String, String>,
     #[serde(default)]
+    oauth_fingerprints: BTreeMap<String, String>,
+    #[serde(default)]
     observations: BTreeMap<String, (u16, i64)>,
     #[serde(default)]
     affinities: BTreeMap<String, String>,
@@ -43,6 +45,29 @@ pub struct AccountState {
     conductor: Arc<CooldownConductor>,
 }
 impl AccountState {
+    /// OAuth token replacement keeps the stable account's quota and session affinity.
+    /// Only a one-way token fingerprint is stored; old authentication outcomes expire.
+    pub fn bind_oauth(
+        &self,
+        provider: &str,
+        account: &str,
+        token: &[u8],
+    ) -> Result<(), CooldownStoreError> {
+        let identity = account_key(provider, account);
+        let fingerprint = format!("{:x}", Sha256::digest(token));
+        let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
+        if state.oauth_fingerprints.get(&identity) == Some(&fingerprint) {
+            return Ok(());
+        }
+        let mut next = state.clone();
+        next.cooldowns
+            .retain(|r| !(r.provider.eq_ignore_ascii_case(provider) && r.auth_id == account));
+        next.observations.remove(&identity);
+        next.oauth_fingerprints.insert(identity, fingerprint);
+        self.persist(&next)?;
+        *state = next;
+        Ok(())
+    }
     /// Replacing an API credential preserves its session lane and discards
     /// observations from the previous credential. Plaintext never enters state.
     pub fn bind_api_key(

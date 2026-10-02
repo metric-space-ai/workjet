@@ -1,4 +1,49 @@
 #[test]
+fn oauth_relogin_clears_rejection_preserves_affinity_and_known_quota() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = vec![candidate("a"), candidate("b")];
+    state.bind_oauth("codex", "a", b"old-oauth-access").unwrap();
+    state
+        .observe_quota("codex", "a", quota(5000, 1000, 50.0))
+        .unwrap();
+    let body = br#"{"session_id":"oauth-session"}"#;
+    assert_eq!(
+        state
+            .select("codex", Some("gpt-5"), 1000, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    state.outcome("codex", "a", "gpt-5", 401, 1001);
+    assert_eq!(state.observation("codex", "a").unwrap().0, 401);
+    state.bind_oauth("codex", "a", b"new-oauth-access").unwrap();
+    assert!(state.observation("codex", "a").is_none());
+    assert!(state.load().unwrap().is_empty());
+    assert_eq!(state.quotas("codex", "a")[0].remaining_percent, Some(50.0));
+    let restarted = open(dir.path());
+    assert_eq!(
+        restarted
+            .select("codex", Some("gpt-5"), 1002, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    // Loading the identical token cannot erase a subsequent genuine rejection.
+    restarted.outcome("codex", "a", "gpt-5", 401, 1003);
+    restarted
+        .bind_oauth("codex", "a", b"new-oauth-access")
+        .unwrap();
+    assert_eq!(restarted.observation("codex", "a").unwrap().0, 401);
+    let snapshot = std::fs::read_to_string(
+        dir.path()
+            .join("workjet-provider-gateway.account-policy-state.v1.bin"),
+    )
+    .unwrap();
+    assert!(!snapshot.contains("oauth-access"));
+    assert!(!snapshot.contains("oauth-session"));
+}
+#[test]
 fn api_key_replacement_clears_old_health_without_moving_other_sessions() {
     let dir = tempfile::tempdir().unwrap();
     let state = open(dir.path());

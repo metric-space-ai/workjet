@@ -174,6 +174,7 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
   opencode: "opencode",
   "grok-cli": "grok",
   "cursor-agent": "cursor-agent",
+  greppy: "greppy",
   "pi-code": "pi",
 };
 

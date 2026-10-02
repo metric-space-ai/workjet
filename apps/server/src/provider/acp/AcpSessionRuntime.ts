@@ -66,6 +66,8 @@ export interface AcpSessionRuntimeOptions {
   readonly sessionLoadTimeout?: Duration.Input;
   readonly sessionLoadReplayIdleGap?: Duration.Input;
   readonly clientCapabilities?: EffectAcpSchema.InitializeRequest["clientCapabilities"];
+  /** Keep the prompt pending until the agent acknowledges cancellation in its response. */
+  readonly cancelPromptMode?: "interrupt" | "await-response";
   readonly clientInfo: {
     readonly name: string;
     readonly version: string;
@@ -772,6 +774,10 @@ export const make = (
       cancel: getStartedState.pipe(
         Effect.flatMap((started) =>
           Effect.gen(function* () {
+            if (options.cancelPromptMode === "await-response") {
+              yield* acp.agent.cancel({ sessionId: started.sessionId });
+              return;
+            }
             const activePromptFiber = yield* Ref.get(activePromptFiberRef);
             if (Option.isSome(activePromptFiber)) {
               yield* Fiber.interrupt(activePromptFiber.value).pipe(Effect.ignore);

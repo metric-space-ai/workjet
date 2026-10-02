@@ -6,7 +6,6 @@ import * as NodePath from "node:path";
 
 import {
   CommandId,
-  DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   ProjectId,
@@ -66,6 +65,7 @@ interface ImportedMessage {
 
 interface ParsedSession {
   readonly title: string;
+  readonly model: string | null;
   readonly workspaceRoot: string;
   readonly createdAt: string;
   readonly updatedAt: string;
@@ -99,6 +99,11 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 
 const asString = (value: unknown): string | null => (typeof value === "string" ? value : null);
+const recordedModel = (value: unknown): string | null => {
+  const model = asString(value)?.trim();
+  return model && model !== "<synthetic>" ? model : null;
+};
+
 const isWorkjetSessionImportError = Schema.is(WorkjetSessionImportError);
 
 const isoOr = (value: unknown, fallback: string): string => {
@@ -146,6 +151,7 @@ export const parseCodexSessionTranscript = (
 ): ParsedSession | null => {
   let workspaceRoot = "";
   let createdAt = fallbackIso;
+  let model: string | null = null;
   const messages: ImportedMessage[] = [];
   for (const line of lines) {
     let value: unknown;
@@ -160,6 +166,11 @@ export const parseCodexSessionTranscript = (
       if (payload.parent_thread_id || payload.agent_path) return null;
       workspaceRoot = asString(payload.cwd) ?? workspaceRoot;
       createdAt = isoOr(payload.timestamp ?? record.timestamp, createdAt);
+      model = recordedModel(payload.model) ?? model;
+      continue;
+    }
+    if (record?.type === "turn_context" && payload) {
+      model = recordedModel(payload.model) ?? model;
       continue;
     }
     if (record?.type !== "response_item" || payload?.type !== "message") continue;
@@ -178,6 +189,7 @@ export const parseCodexSessionTranscript = (
   const title = messages.find((message) => message.role === "user")?.text ?? "Codex session";
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Codex session",
+    model,
     workspaceRoot,
     createdAt,
     updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
@@ -191,6 +203,7 @@ export const parseClaudeSessionTranscript = (
 ): ParsedSession | null => {
   let workspaceRoot = "";
   let title = "";
+  let model: string | null = null;
   const messages: ImportedMessage[] = [];
   for (const line of lines) {
     let value: unknown;
@@ -207,6 +220,7 @@ export const parseClaudeSessionTranscript = (
     const message = asRecord(record.message);
     const role = message?.role;
     if (role !== "user" && role !== "assistant") continue;
+    if (role === "assistant") model = recordedModel(message?.model) ?? model;
     const text = visibleText(message?.content, "text").trim();
     if (!text) continue;
     messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
@@ -218,6 +232,7 @@ export const parseClaudeSessionTranscript = (
   title ||= messages.find((message) => message.role === "user")?.text ?? "Claude Code session";
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Claude Code session",
+    model,
     workspaceRoot,
     createdAt: messages[0]?.createdAt ?? fallbackIso,
     updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
@@ -458,6 +473,7 @@ export const make = Effect.gen(function* () {
           if (preview) {
             parsed = {
               title: preview.title,
+              model: preview.model,
               workspaceRoot: preview.workspaceRoot,
               createdAt: preview.createdAt,
               updatedAt: preview.updatedAt,
@@ -635,7 +651,7 @@ export const make = Effect.gen(function* () {
             reason: "source_changed",
             subject: candidateId,
           });
-        const driver = file.source === "codex" ? "codex" : "claudeAgent";
+
         yield* engine.dispatch({
           type: "thread.create",
           commandId: CommandId.make(NodeCrypto.randomUUID()),
@@ -644,7 +660,7 @@ export const make = Effect.gen(function* () {
           title: parsed.title,
           modelSelection: {
             instanceId: file.providerInstanceId,
-            model: DEFAULT_MODEL_BY_PROVIDER[ProviderDriverKind.make(driver)] ?? "default",
+            model: parsed.model ?? "unknown",
           },
           runtimeMode: "approval-required",
           interactionMode: "default",

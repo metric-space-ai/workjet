@@ -24,11 +24,11 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { make } from "./WorkjetSessionImport.ts";
 
 const NOW = "2026-10-02T12:00:00.000Z";
-const transcript = (title: string, replies: string[] = []) =>
+const transcript = (title: string, replies: string[] = [], model?: string) =>
   [
     JSON.stringify({
       type: "session_meta",
-      payload: { cwd: "/source/folder-no-longer-present" },
+      payload: { cwd: "/source/folder-no-longer-present", ...(model ? { model } : {}) },
       timestamp: NOW,
     }),
     JSON.stringify({
@@ -91,6 +91,7 @@ const withFixture = <A, E>(
                 id: command.threadId,
                 projectId: command.projectId,
                 title: command.title,
+                modelSelection: command.modelSelection,
                 messages: [],
               } as unknown as OrchestrationThread);
             if (command.type === "thread.history.import") {
@@ -221,7 +222,7 @@ describe("project-directed static session imports", () => {
             ),
           ).size,
         ).toBe(5);
-        const found = yield* service.inspect({ query: "older", source: "codex" });
+        const found = yield* service.inspect({ query: "older selected", source: "codex" });
         expect(found.candidates.map(({ title }) => title)).toEqual(["Older selected work"]);
         expect(found.candidates[0]?.previewMessages?.[0]?.text).toBe("Older selected work");
         expect((yield* service.inspect({ source: "claude-code" })).candidates).toEqual([]);
@@ -264,6 +265,68 @@ describe("project-directed static session imports", () => {
           expect([...threads.values()][0]?.messages[0]?.text).toBe("Original");
         }),
       ),
+  );
+  it.effect("keeps recorded Codex and Claude models and marks missing metadata as unknown", () =>
+    withFixture(({ root, service, commands }) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          Fsp.writeFile(
+            NodePath.join(root, "sessions", "known.jsonl"),
+            transcript("Recorded Codex", ["Historical reply"], "gpt-5.4"),
+          ),
+        );
+        yield* Effect.promise(() =>
+          Fsp.writeFile(
+            NodePath.join(root, "sessions", "unknown.jsonl"),
+            transcript("Unrecorded model"),
+          ),
+        );
+        const claude = NodePath.join(root, "..", "claude", "projects", "fixture");
+        yield* Effect.promise(() => Fsp.mkdir(claude, { recursive: true }));
+        yield* Effect.promise(() =>
+          Fsp.writeFile(
+            NodePath.join(claude, "known.jsonl"),
+            [
+              JSON.stringify({
+                type: "user",
+                cwd: "/claude/source",
+                timestamp: NOW,
+                message: { role: "user", content: "Recorded Claude" },
+              }),
+              JSON.stringify({
+                type: "assistant",
+                timestamp: NOW,
+                message: {
+                  role: "assistant",
+                  model: "claude-sonnet-4-20250514",
+                  content: [{ type: "text", text: "Historical reply" }],
+                },
+              }),
+            ].join("\n") + "\n",
+          ),
+        );
+        const candidates = (yield* service.inspect()).candidates;
+        const result = yield* service.importSessions({
+          candidateIds: candidates.map(({ candidateId }) => candidateId),
+          projectId: ProjectId.make("project-a"),
+        });
+        expect(result.items.map(({ status }) => status)).toEqual([
+          "imported",
+          "imported",
+          "imported",
+        ]);
+        const models = Object.fromEntries(
+          commands.flatMap((command) =>
+            command.type === "thread.create" ? [[command.title, command.modelSelection.model]] : [],
+          ),
+        );
+        expect(models).toEqual({
+          "Recorded Codex": "gpt-5.4",
+          "Recorded Claude": "claude-sonnet-4-20250514",
+          "Unrecorded model": "unknown",
+        });
+      }),
+    ),
   );
   it.effect(
     "discovers and imports an archived Codex conversation without changing its source",

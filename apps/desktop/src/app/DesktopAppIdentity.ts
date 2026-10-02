@@ -23,6 +23,13 @@ export class DesktopAppIdentity extends Context.Service<
   DesktopAppIdentity,
   {
     readonly resolveUserDataPath: Effect.Effect<string>;
+    /**
+     * This build's commit hash, normalized to twelve lowercase hex
+     * characters, or `None` in an unpackaged build that has none embedded.
+     * Same value the About panel shows; exposed so crash metadata and the
+     * support bundle name the exact build without re-deriving it.
+     */
+    readonly commitHash: Effect.Effect<Option.Option<string>>;
     readonly configure: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/app/DesktopAppIdentity") {}
@@ -133,6 +140,7 @@ export const make = Effect.gen(function* () {
 
   return DesktopAppIdentity.of({
     resolveUserDataPath: userDataPath,
+    commitHash: resolveAboutCommitHash,
     configure,
   });
 });

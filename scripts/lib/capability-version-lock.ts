@@ -202,7 +202,11 @@ const contractVersionForCapability = (
         .map((tool) => tool.contractVersion),
     ),
   ].sort();
-  return versions.length === 1 ? (versions[0] as string) : versions.length === 0 ? null : versions.join("|");
+  return versions.length === 1
+    ? (versions[0] as string)
+    : versions.length === 0
+      ? null
+      : versions.join("|");
 };
 
 const schemasForCapability = (
@@ -341,11 +345,7 @@ export const resolveCapabilityVersionLock = (
           codeRevision,
           ctoxRevision,
         ),
-        artifactHash: dimensionRecord(
-          policy.dimensions.artifactHash,
-          codeArtifact,
-          ctoxArtifact,
-        ),
+        artifactHash: dimensionRecord(policy.dimensions.artifactHash, codeArtifact, ctoxArtifact),
       },
     } satisfies CapabilityLockRecord;
   });
@@ -412,9 +412,7 @@ export const findCapabilityLockDivergences = (
 export const renderCapabilityVersionLock = (document: CapabilityVersionLockDocument): string =>
   `${JSON.stringify(document, null, 2)}\n`;
 
-export const describeCapabilityLockDivergence = (
-  divergence: CapabilityLockDivergence,
-): string =>
+export const describeCapabilityLockDivergence = (divergence: CapabilityLockDivergence): string =>
   divergence.dimension === "artifactHash"
     ? `${divergence.capabilityId}: the Code capability contract artifact (${divergence.codeSource}, sha256 ${divergence.codeValue}) is not byte-current with the CTOX artifact (${divergence.ctoxSource}, sha256 ${divergence.ctoxValue}). Run 'node packages/workjet-capabilities/scripts/generate-web-stack-contract.mjs' and commit the result.`
     : `${divergence.capabilityId}: hosts resolve different ${divergence.dimension}. Code (${divergence.codeSource}) = ${divergence.codeValue}; CTOX (${divergence.ctoxSource}) = ${divergence.ctoxValue}.`;

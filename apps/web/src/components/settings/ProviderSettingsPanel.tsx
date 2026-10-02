@@ -90,6 +90,7 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { WorkjetGatewayAccountsSectionView } from "./WorkjetGatewayAccounts";
+import { WorkjetGatewayPoolsSectionView } from "./WorkjetGatewayPools";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
   buildProviderEnvironmentOptions,
@@ -321,7 +322,17 @@ export function WorkjetGatewayAccountsSection({
   readonly environmentId: EnvironmentId | null;
 }) {
   const gateway = useWorkjetGatewaySection(environmentId);
-  return <WorkjetGatewayAccountsSectionView {...gateway} />;
+  return (
+    <>
+      <WorkjetGatewayAccountsSectionView {...gateway} />
+      {/*
+        Pools, health, and model discovery sit beside the account list rather
+        than inside it: they describe how the gateway uses those accounts, and
+        the account list stays the place where accounts are added.
+      */}
+      <WorkjetGatewayPoolsSectionView {...gateway.pools} />
+    </>
+  );
 }
 
 function SelectedEnvironmentProviderSettings({

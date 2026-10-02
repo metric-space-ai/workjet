@@ -6,6 +6,7 @@ import type {
   EnvironmentId,
   WorkjetGatewayApiKeyProvider,
   WorkjetGatewayOauthProvider,
+  WorkjetGatewayUpdateRoutingInput,
 } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -24,6 +25,10 @@ import {
   type WorkjetGatewayLoginState,
   type WorkjetGatewaySectionState,
 } from "./WorkjetGatewayAccounts";
+import type {
+  WorkjetGatewayPoolsSectionState,
+  WorkjetGatewayRoutingState,
+} from "./WorkjetGatewayPools";
 
 /**
  * Runtime state for the Workjet provider-gateway account surface.
@@ -36,7 +41,7 @@ import {
  */
 export function useWorkjetGatewaySection(
   environmentId: EnvironmentId | null,
-): WorkjetGatewaySectionState {
+): WorkjetGatewaySectionState & { readonly pools: WorkjetGatewayPoolsSectionState } {
   const statusQuery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -47,6 +52,19 @@ export function useWorkjetGatewaySection(
       ? null
       : serverEnvironment.workjetGatewayCatalog({ environmentId, input: {} }),
   );
+  const healthQuery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetGatewayHealth({ environmentId, input: {} }),
+  );
+  const modelsQuery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetGatewayModels({ environmentId, input: {} }),
+  );
+  const updateRouting = useAtomCommand(serverEnvironment.updateWorkjetGatewayRouting, {
+    reportFailure: false,
+  });
   const startGateway = useAtomCommand(serverEnvironment.startWorkjetGateway, {
     reportFailure: false,
   });
@@ -80,10 +98,45 @@ export function useWorkjetGatewaySection(
     [],
   );
 
+  const [routing, setRouting] = useState<WorkjetGatewayRoutingState>({ status: "idle" });
+  const routingRef = useRef(false);
+
   const refresh = useCallback(() => {
     statusQuery.refresh();
     catalogQuery.refresh();
-  }, [catalogQuery, statusQuery]);
+    healthQuery.refresh();
+    modelsQuery.refresh();
+  }, [catalogQuery, healthQuery, modelsQuery, statusQuery]);
+
+  /**
+   * Persist the pool edit. The server rewrites the gateway configuration and
+   * reloads the host, so the catalog only reflects the change after a fresh
+   * read; the command's own refresh handles that.
+   */
+  const saveRouting = useCallback(
+    (input: WorkjetGatewayUpdateRoutingInput) => {
+      if (environmentId === null || routingRef.current) return;
+      routingRef.current = true;
+      setRouting({ status: "saving" });
+      void (async () => {
+        const result = await updateRouting({ environmentId, input });
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result)) {
+            setRouting({
+              status: "failed",
+              message: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
+            });
+          }
+          return;
+        }
+        setRouting({ status: "completed" });
+        refresh();
+      })().finally(() => {
+        routingRef.current = false;
+      });
+    },
+    [environmentId, refresh, updateRouting],
+  );
 
   const retry = useCallback(() => {
     if (environmentId === null || operationRef.current) return;
@@ -235,7 +288,11 @@ export function useWorkjetGatewaySection(
     status: statusQuery.data,
     catalog: catalogQuery.data,
     isInitialLoading: statusQuery.isPending && statusQuery.data === null,
-    isRefreshing: statusQuery.isPending || catalogQuery.isPending,
+    isRefreshing:
+      statusQuery.isPending ||
+      catalogQuery.isPending ||
+      healthQuery.isPending ||
+      modelsQuery.isPending,
     statusError: statusQuery.error,
     catalogError: catalogQuery.error,
     isOperating,
@@ -246,5 +303,19 @@ export function useWorkjetGatewaySection(
     onCancelLogin: cancelLogin,
     apiKey,
     onAddApiKey: addApiKey,
+    pools: {
+      catalog: catalogQuery.data,
+      health: healthQuery.data,
+      models: modelsQuery.data,
+      healthError: healthQuery.error,
+      modelsError: modelsQuery.error,
+      // Rendered once per commit rather than on a timer: the surface refreshes
+      // on every gateway action, and an age that ticks on its own would
+      // re-render the whole settings panel for no new information.
+      nowMs: Date.now(),
+      canEdit: environmentId !== null && !isOperating && statusQuery.data !== null,
+      routing,
+      onSaveRouting: saveRouting,
+    },
   };
 }

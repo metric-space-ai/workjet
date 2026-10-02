@@ -53,6 +53,17 @@ export const GREPPY_RUNTIME_INSPECT_STALE_TIME_MS = 15_000;
  */
 export const WORKJET_GATEWAY_STATUS_STALE_TIME_MS = 5_000;
 export const WORKJET_GATEWAY_CATALOG_STALE_TIME_MS = 5_000;
+/**
+ * Health is a live reading of the running host and the surface shows its age,
+ * so it may go stale sooner than the configuration-derived catalog.
+ */
+export const WORKJET_GATEWAY_HEALTH_STALE_TIME_MS = 5_000;
+/**
+ * Model discovery answers from the host's compiled-in catalog plus the stored
+ * account models; neither moves while the gateway runs, so this is cached for
+ * far longer than the live reads.
+ */
+export const WORKJET_GATEWAY_MODELS_STALE_TIME_MS = 60_000;
 
 /**
  * The mesh roster changes only when this machine exchanges mail with a peer it
@@ -90,6 +101,17 @@ export const WORKJET_HANDOFF_INBOX_STALE_TIME_MS = 10_000;
  * happening now".
  */
 export const WORKJET_CROSS_MODE_LINK_STALE_TIME_MS = 30_000;
+
+/**
+ * How long the legacy-import offer stays fresh.
+ *
+ * The longest window of the set, and deliberately so: the answer is a decision
+ * about a file that is never rewritten, and it changes at most ONCE in this
+ * environment's life — when the operator accepts or declines. The command that
+ * causes that change refreshes the read itself, so nothing here has to poll for
+ * it.
+ */
+export const WORKJET_LEGACY_IMPORT_STALE_TIME_MS = 300_000;
 
 export type ServerUpdateState =
   | { readonly status: "idle" }
@@ -754,8 +776,19 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGatewayCatalog,
     staleTimeMs: WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
   });
-  // Every lifecycle and login transition changes both the runtime phase and the
-  // configured accounts, so refresh the pair instead of a single read.
+  const workjetGatewayHealth = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:health",
+    tag: WS_METHODS.workjetGatewayHealth,
+    staleTimeMs: WORKJET_GATEWAY_HEALTH_STALE_TIME_MS,
+  });
+  const workjetGatewayModels = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:models",
+    tag: WS_METHODS.workjetGatewayDiscoverModels,
+    staleTimeMs: WORKJET_GATEWAY_MODELS_STALE_TIME_MS,
+  });
+  // Every lifecycle and login transition changes the runtime phase, the
+  // configured accounts, the health snapshot, and the model answer, so refresh
+  // the set instead of a single read.
   const refreshWorkjetGateway = (
     { environmentId }: { readonly environmentId: EnvironmentId },
     registry: AtomRegistry.AtomRegistry,
@@ -763,6 +796,8 @@ export function createServerEnvironmentAtoms<R, E>(
     Effect.sync(() => {
       registry.refresh(workjetGatewayStatus({ environmentId, input: {} }));
       registry.refresh(workjetGatewayCatalog({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayHealth({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayModels({ environmentId, input: {} }));
     });
   const workjetGatewayConcurrency = {
     mode: "singleFlight" as const,
@@ -806,6 +841,43 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGatewayAddApiKeyAccount,
     concurrency: workjetGatewayConcurrency,
     onSuccess: refreshWorkjetGateway,
+  });
+  // Pool editing rewrites the configuration and reloads the host, so it shares
+  // the gateway's single-flight key with every other lifecycle command.
+  const updateWorkjetGatewayRouting = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:update-routing",
+    tag: WS_METHODS.workjetGatewayUpdateRouting,
+    concurrency: workjetGatewayConcurrency,
+    onSuccess: refreshWorkjetGateway,
+  });
+
+  // The one-shot legacy Swift configuration import.
+  //
+  // A read and a terminal write, both keyed per ENVIRONMENT because that is
+  // what the decision is about: the legacy document lives on the machine each
+  // server runs on, and the import lands in that server's own settings.
+  const workjetLegacyImport = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:legacy-import:inspect",
+    tag: WS_METHODS.workjetLegacyImportInspect,
+    staleTimeMs: WORKJET_LEGACY_IMPORT_STALE_TIME_MS,
+  });
+  // Answering the offer patches `settings.workjet` and records a TERMINAL
+  // marker, so it is single-flighted per environment — two concurrent answers
+  // are exactly the race the server refuses. On success only the OFFER is
+  // refreshed, because it is now a recorded decision; the patched settings
+  // arrive on their own through the server's config stream, exactly as they do
+  // for every other settings write.
+  const decideWorkjetLegacyImport = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:legacy-import:decide",
+    tag: WS_METHODS.workjetLegacyImportDecide,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId }) => environmentId,
+    },
+    onSuccess: ({ environmentId }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(workjetLegacyImport({ environmentId, input: {} }));
+      }),
   });
 
   // The recipient roster the composer picks from: a bounded, redacted read of
@@ -978,12 +1050,17 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetMeshOverview,
     workjetGatewayStatus,
     workjetGatewayCatalog,
+    workjetGatewayHealth,
+    workjetGatewayModels,
     startWorkjetGateway,
     stopWorkjetGateway,
     startWorkjetGatewayOauth,
     pollWorkjetGatewayOauth,
     cancelWorkjetGatewayOauth,
     addWorkjetGatewayApiKeyAccount,
+    updateWorkjetGatewayRouting,
+    workjetLegacyImport,
+    decideWorkjetLegacyImport,
     settingsValueAtom,
     providersValueAtom,
     traceDiagnostics: createEnvironmentRpcQueryAtomFamily(runtime, {

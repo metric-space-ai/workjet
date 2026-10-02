@@ -31,6 +31,7 @@ import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
 import * as CtoxManagedLaunch from "./ctox/CtoxManagedLaunch.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
+import * as ElectronCrashReporter from "./electron/ElectronCrashReporter.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
 import * as ElectronMenu from "./electron/ElectronMenu.ts";
 import * as ElectronPowerMonitor from "./electron/ElectronPowerMonitor.ts";
@@ -61,6 +62,8 @@ import * as DesktopClientSettings from "./settings/DesktopClientSettings.ts";
 import * as DesktopSavedEnvironments from "./settings/DesktopSavedEnvironments.ts";
 import * as DesktopAppSettings from "./settings/DesktopAppSettings.ts";
 import * as DesktopPreReadyPlatform from "./app/DesktopPreReadyPlatform.ts";
+import * as DesktopCrashReporting from "./support/DesktopCrashReporting.ts";
+import * as DesktopSupportBundle from "./support/DesktopSupportBundle.ts";
 import * as DesktopShellEnvironment from "./shell/DesktopShellEnvironment.ts";
 import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
@@ -126,6 +129,7 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
 
 const electronLayer = Layer.mergeAll(
   ElectronApp.layer,
+  ElectronCrashReporter.layer,
   ElectronDialog.layer,
   ElectronMenu.layer,
   ElectronPowerMonitor.layer,
@@ -208,6 +212,13 @@ const desktopCtoxControlLayer = Layer.mergeAll(
 
 const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
 
+// The support bundle reads the migration decision and the crash-reporter
+// state, so it hangs off the same graph the application menu resolves from;
+// the menu item and the renderer IPC method share this one instance.
+const desktopSupportLayer = DesktopSupportBundle.layer.pipe(
+  Layer.provideMerge(DesktopCrashReporting.layer),
+);
+
 const desktopApplicationLayer = Layer.mergeAll(
   DesktopLifecycle.layer,
   DesktopApplicationMenu.layer,
@@ -217,6 +228,10 @@ const desktopApplicationLayer = Layer.mergeAll(
   desktopCtoxLayer,
   desktopSshLayer,
 ).pipe(
+  // provideMerge, not mergeAll: the application menu resolves the bundle
+  // service, and the IPC handler resolves the same instance from the
+  // re-exported context.
+  Layer.provideMerge(desktopSupportLayer),
   Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopWslBackendLayer),
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),

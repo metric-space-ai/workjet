@@ -39,6 +39,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
+import { SupportBundleSection } from "./SupportBundleSection";
 import { SettingsPageContainer, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
 
@@ -994,6 +995,8 @@ export function DiagnosticsSettingsPanel() {
 
   return (
     <SettingsPageContainer className="max-w-6xl gap-10">
+      <SupportBundleSection />
+
       <ResourceTelemetryDiagnostics />
 
       <SettingsSection

@@ -1,4 +1,8 @@
-import type { CapabilityAdapter, CapabilityManifestV1, WorkjetCapabilityId } from "@t3tools/contracts";
+import type {
+  CapabilityAdapter,
+  CapabilityManifestV1,
+  WorkjetCapabilityId,
+} from "@t3tools/contracts";
 
 import { GREPPY_RUNTIME_PIN } from "./greppyRuntime.ts";
 import { builtInCapabilityManifests } from "./manifests.ts";
@@ -64,8 +68,7 @@ export const dualHostCapabilities: ReadonlyArray<DualHostCapability> = Object.fr
       },
     }))
     .filter(
-      ({ adaptersByHost }) =>
-        adaptersByHost.code.length > 0 && adaptersByHost.ctox.length > 0,
+      ({ adaptersByHost }) => adaptersByHost.code.length > 0 && adaptersByHost.ctox.length > 0,
     ),
 );
 
@@ -73,9 +76,7 @@ export const dualHostCapabilityIds: ReadonlyArray<WorkjetCapabilityId> = Object.
   dualHostCapabilities.map(({ manifest }) => manifest.id),
 );
 
-export const findDualHostCapability = (
-  capabilityId: string,
-): DualHostCapability | undefined =>
+export const findDualHostCapability = (capabilityId: string): DualHostCapability | undefined =>
   dualHostCapabilities.find(({ manifest }) => manifest.id === capabilityId);
 
 /**
@@ -172,7 +173,8 @@ const WEB_STACK_CONTRACT_SOURCE = "native/web-stack/schema/web-stack-tools.v1.js
 const WEB_STACK_FIXTURE_SOURCE = "native/web-stack/fixtures/capability-adapter-v1.json";
 const WEB_STACK_BIN_SOURCE = "native/web-stack/src/bin/workjet-web-stack.rs";
 const CATALOG_SOURCE = "packages/workjet-capabilities/src/manifests.ts";
-const GENERATED_CONTRACT_SOURCE = "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts";
+const GENERATED_CONTRACT_SOURCE =
+  "packages/workjet-capabilities/src/generated/web-stack-tools.v1.ts";
 const GREPPY_PIN_SOURCE = "packages/workjet-capabilities/src/greppyRuntime.ts";
 const CODE_SURFACE_SOURCE = "apps/server/src/mcp/toolkits/workjet";
 
@@ -247,9 +249,7 @@ export const capabilityLockPolicies: ReadonlyArray<CapabilityLockPolicy> = Objec
   webStackLockPolicy("web-stack-browser"),
 ] as const satisfies ReadonlyArray<CapabilityLockPolicy>);
 
-export const findCapabilityLockPolicy = (
-  capabilityId: string,
-): CapabilityLockPolicy | undefined =>
+export const findCapabilityLockPolicy = (capabilityId: string): CapabilityLockPolicy | undefined =>
   capabilityLockPolicies.find((policy) => policy.capabilityId === capabilityId);
 
 /**
@@ -283,8 +283,7 @@ export const CANONICAL_CAPABILITY_ERROR_CLASSES = [
   "capability-not-granted",
   "execution-failed",
 ] as const;
-export type CanonicalCapabilityErrorClass =
-  (typeof CANONICAL_CAPABILITY_ERROR_CLASSES)[number];
+export type CanonicalCapabilityErrorClass = (typeof CANONICAL_CAPABILITY_ERROR_CLASSES)[number];
 
 /**
  * How the CTOX host's half of the conformance comparison is obtained for each

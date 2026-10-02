@@ -61,6 +61,8 @@ const catalog = (parts: Partial<WorkjetGatewayCatalog> = {}): WorkjetGatewayCata
   pools: [],
   routes: [],
   models: [],
+  routingStrategy: "round-robin",
+  providerPools: [],
   ...parts,
 });
 

@@ -3,6 +3,7 @@ import {
   isAtomCommandInterrupted,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { resolveCapabilityCatalogForHost } from "@metric-space-ai/workjet-capabilities";
 import { WrenchIcon } from "lucide-react";
 
 import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
@@ -17,10 +18,47 @@ import {
 
 const GREPPY_CAPABILITY_ID = "greppy" satisfies WorkjetCapabilityId;
 
+/**
+ * The composer's Tools menu renders THE CATALOG, not a second description of
+ * it. Every label, description, and membership decision below is resolved from
+ * `@metric-space-ai/workjet-capabilities` through the same function Business OS
+ * uses for its instance-policy view, so a capability renamed in the manifest is
+ * renamed here without touching this file.
+ *
+ * Only the activation copy is UI-owned, because per-thread activation is a
+ * Code-host policy rather than a property of the capability.
+ */
+export const WORKJET_CODE_HOST_ADAPTER = "t3-mcp" as const;
+
+export const workjetComposerCapabilities = (
+  enabledCapabilityIds: ReadonlyArray<string>,
+): ReturnType<typeof resolveCapabilityCatalogForHost> =>
+  resolveCapabilityCatalogForHost({
+    adapter: WORKJET_CODE_HOST_ADAPTER,
+    enabledCapabilityIds,
+  });
+
+const greppyCapability = workjetComposerCapabilities([]).find(
+  ({ manifest }) => manifest.id === GREPPY_CAPABILITY_ID,
+)?.manifest;
+
+if (!greppyCapability) {
+  throw new Error(`The catalog exposes no ${WORKJET_CODE_HOST_ADAPTER} adapter for Greppy.`);
+}
+
+export const WORKJET_GREPPY_DISPLAY_NAME = greppyCapability.metadata.displayName;
+export const WORKJET_GREPPY_DESCRIPTION = greppyCapability.metadata.description;
+
+/**
+ * Code-host activation policy. Not capability metadata: it says where an
+ * activation applies, which the catalog deliberately does not describe.
+ */
+export const WORKJET_GREPPY_ACTIVATION_NOTE = `${WORKJET_GREPPY_DISPLAY_NAME} is activated only for this thread. Its runtime and store are shared by all threads on this server.`;
+
 export const WORKJET_GREPPY_FAILURE_TOAST = {
   type: "error",
-  title: "Could not update Greppy",
-  description: "Greppy was left unchanged for this thread.",
+  title: `Could not update ${WORKJET_GREPPY_DISPLAY_NAME}`,
+  description: `${WORKJET_GREPPY_DISPLAY_NAME} was left unchanged for this thread.`,
   data: { hideCopyButton: true },
 } as const;
 
@@ -108,12 +146,12 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
         variant="switch"
         checked={props.greppyEnabled}
         disabled={disabled}
-        aria-label="Greppy for this thread"
+        aria-label={`${WORKJET_GREPPY_DISPLAY_NAME} for this thread`}
         aria-busy={props.busy || undefined}
         onCheckedChange={(checked) => props.onGreppyEnabledChange(checked === true)}
       >
         <span className="inline-flex items-center gap-2">
-          <span>Greppy</span>
+          <span>{WORKJET_GREPPY_DISPLAY_NAME}</span>
           {props.busy ? (
             <span className="text-muted-foreground text-xs" aria-hidden="true">
               Updating…
@@ -122,8 +160,7 @@ export function WorkjetCapabilityMenuContent(props: WorkjetCapabilityMenuProps) 
         </span>
       </MenuCheckboxItem>
       <p className="max-w-72 px-2 pb-1.5 pt-1 text-muted-foreground text-xs leading-4">
-        Greppy is activated only for this thread. Its runtime and store are shared by all threads on
-        this server.
+        {WORKJET_GREPPY_DESCRIPTION} {WORKJET_GREPPY_ACTIVATION_NOTE}
       </p>
     </MenuGroup>
   );

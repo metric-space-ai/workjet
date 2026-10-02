@@ -212,7 +212,11 @@ export const checkCapabilityVersionLock = Effect.fn("checkCapabilityVersionLock"
     if (!(yield* fs.exists(lockPath))) {
       return yield* new CapabilityLockOutOfDateError({ lockPath, reason: "missing" });
     }
-    if ((yield* fs.readFileString(lockPath)) !== rendered) {
+    // Compared by CONTENT, not by bytes: `vp fmt` runs repo-wide and reflows
+    // this file, and a lock that went stale on whitespace would train everyone
+    // to regenerate it without reading what changed.
+    const committed = yield* decodeJsonDocument(yield* fs.readFileString(lockPath));
+    if (canonicalCapabilityJson(committed) !== canonicalCapabilityJson(document)) {
       return yield* new CapabilityLockOutOfDateError({ lockPath, reason: "stale" });
     }
     yield* Effect.log(

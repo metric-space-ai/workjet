@@ -13,6 +13,7 @@ export const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 export const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 export const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
+export const CREATE_SUPPORT_BUNDLE_CHANNEL = "desktop:create-support-bundle";
 export const GET_USER_DATA_MIGRATION_OFFER_CHANNEL = "desktop:get-user-data-migration-offer";
 export const ACCEPT_USER_DATA_MIGRATION_CHANNEL = "desktop:accept-user-data-migration";
 export const DECLINE_USER_DATA_MIGRATION_CHANNEL = "desktop:decline-user-data-migration";

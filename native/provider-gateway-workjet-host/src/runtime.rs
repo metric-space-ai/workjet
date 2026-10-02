@@ -42,11 +42,11 @@ use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_handl
     OpenAiResponsesAntigravityHandler, OpenAiResponsesClaudeHandler, OpenAiResponsesCodexHandler,
     OpenAiResponsesProviderRouter,
 };
-use workjet_provider_gateway::sdk::pluginapi::HostHttpClient;
-use workjet_provider_gateway::sdk::translator::builtin::registry as builtin_registry;
 use workjet_provider_gateway::sdk::cliproxy::auth::{
     AccountRouter, CooldownConductor, CooldownStateRecord, CooldownStateStore, CooldownStoreError,
 };
+use workjet_provider_gateway::sdk::pluginapi::HostHttpClient;
+use workjet_provider_gateway::sdk::translator::builtin::registry as builtin_registry;
 
 use crate::secret_store::{SecretResolveError, WorkjetSecretStore};
 
@@ -539,10 +539,7 @@ impl HostManagementSource {
             (
                 provider.to_owned(),
                 accounts.len(),
-                accounts
-                    .iter()
-                    .filter(|account| !account.disabled)
-                    .count(),
+                accounts.iter().filter(|account| !account.disabled).count(),
                 accounts
                     .iter()
                     .flat_map(|account| account.models.iter().cloned())

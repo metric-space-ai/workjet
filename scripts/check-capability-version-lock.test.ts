@@ -30,7 +30,9 @@ const repoRoot = new URL("..", import.meta.url).pathname;
 
 const sha256 = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
 
-const realInputs = readCapabilityVersionLockInputs(repoRoot).pipe(Effect.provide(NodeServices.layer));
+const realInputs = readCapabilityVersionLockInputs(repoRoot).pipe(
+  Effect.provide(NodeServices.layer),
+);
 
 /** Mutate one on-disk artifact, run the real gate, then restore the bytes. */
 const withMutatedFile = Effect.fn("withMutatedFile")(function* <A, E, R>(
@@ -45,7 +47,9 @@ const withMutatedFile = Effect.fn("withMutatedFile")(function* <A, E, R>(
   const mutated = mutate(original);
   assert.notStrictEqual(mutated, original, `mutation of ${relativePath} changed nothing`);
   yield* fs.writeFileString(absolute, mutated);
-  return yield* Effect.onExit(body, () => fs.writeFileString(absolute, original).pipe(Effect.orDie));
+  return yield* Effect.onExit(body, () =>
+    fs.writeFileString(absolute, original).pipe(Effect.orDie),
+  );
 });
 
 describe("capability version lock — canonical resolution", () => {
@@ -257,6 +261,15 @@ describe("capability version lock — mutation proofs (the gate bites)", () => {
         assert.strictEqual(failure._tag, "CapabilityLockDivergedError");
         assert.match(failure.message, /web-search: hosts resolve different manifest/u);
       }),
+    ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("does not go stale on formatting alone", () =>
+    withMutatedFile(
+      CAPABILITY_VERSION_LOCK_FILENAME,
+      // `vp fmt` runs repo-wide and reflows this file; only content may matter.
+      (original) => original.replaceAll("\n  ", "\n      "),
+      checkCapabilityVersionLock(repoRoot, true),
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 

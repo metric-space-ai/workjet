@@ -346,16 +346,49 @@ both modes.
       surface only.
 - [x] Add adapter conformance tests proving the same manifest and JSON schemas
       are visible from T3 and CTOX.
-- [ ] Enforce one canonical capability version lock for both hosts in release
+- [x] Enforce one canonical capability version lock for both hosts in release
       assembly; fail the build when Code and CTOX resolve different manifests,
-      schemas, implementation revisions, or artifact hashes.
-- [ ] Add a cross-host conformance gate that invokes every dual-host capability
+      schemas, implementation revisions, or artifact hashes. Done 2026-08-20
+      (commits `66e0ee4fc`, `21b5c6466`): dual-host membership is DERIVED from
+      each manifest's `supportedAdapters` (never a second list); the committed
+      `capability-version-lock.json` is checked by a repo test AND enforced
+      inside release assembly, so a divergent artifact is refused before
+      packaging. All four dimensions are genuinely enforced for the two
+      web-stack capabilities (Code's TS catalog/generated schemas/compiled
+      surface strings vs the crate's published fixture, schema and Rust
+      source). HONEST GAP, not faked: Greppy is `unenforceable` on all four —
+      CTOX runs its own Greppy runtime and this repo pins Greppy for the Code
+      host only, so there IS no second value; the check refuses to compare a
+      value with itself and a test asserts every unenforceable dimension
+      carries its reason. Mutation-verified with 8 proofs, four of them
+      editing the real on-disk artifacts and restoring them.
+- [x] Add a cross-host conformance gate that invokes every dual-host capability
       through both adapters against the same fixtures and compares canonical
       success/error projections while allowing only documented host-policy
-      differences.
-- [ ] Make capability availability visible in both UIs from the same catalog:
-      per-thread toggles/settings in Code and instance-policy-derived controls
-      or status in Business OS, without duplicating capability metadata.
+      differences. Done 2026-08-20 (commit `fea754053`): 26 cases across all
+      three dual-host capabilities. The Code leg really calls the production
+      tool registrations (an unregistered tool surfaces as a defect instead of
+      being laundered into a conforming refusal); the CTOX leg reads the
+      crate's OWN published fixture — the same file the Rust side is
+      independently held to — so there is no private copy. Host-policy
+      differences must be declared with a reason (response budget 2 MiB vs
+      256 KiB, runtime config store, Greppy's Code-only cwd precondition);
+      an undeclared difference fails, and a new dual-host capability with no
+      declared coverage fails rather than being skipped. Mutation-verified on
+      all three capabilities. Limitation stated: the gate compares
+      projections, not two running binaries.
+- [~] Make capability availability visible in both UIs from the same catalog:
+  per-thread toggles/settings in Code and instance-policy-derived controls
+  or status in Business OS, without duplicating capability metadata. Code
+  side done 2026-08-20 (commit `935f5e0ec`): one resolver answers the
+  question for both hosts and returns the manifest BY REFERENCE, never
+  copies; the composer's Tools menu now takes its label, description,
+  aria-label and failure toast from the catalog — the hardcoded Greppy
+  strings are gone. Availability stays separate from activation, and a
+  pinned-but-uninstalled version reports `incompatible` instead of
+  silently resolving another. Business OS side needs the CTOX repo: a
+  settings surface rendering `CapabilityAvailabilityView[]` plus an MCP
+  control method to read those views and write instance activation.
 
 ### First capabilities
 
@@ -572,8 +605,44 @@ Tasks:
       credentials and state.
 - [ ] Remove the portable duplicate from CTOX only after its pinned dependency
       passes CTOX provider and Business OS tests.
-- [ ] Add release artifacts for macOS arm64/x64, Linux x64/arm64, and Windows
-      x64/arm64 as required by Workjet and CTOX packaging.
+- [~] Add release artifacts for macOS arm64/x64, Linux x64/arm64, and Windows
+  x64/arm64 as required by Workjet and CTOX packaging. Pipeline + contract
+  done 2026-08-20 (commits `34ba5de64`…): one source of truth for tag,
+  naming (`workjet-provider-gateway-host-<version>-<triple>`), the six
+  triples, a release manifest mirroring the CTOX-shell shape
+  (sourceCommit + per-artifact sha256) and a consumer pin whose URLs are
+  locked to this repo, so a tampered manifest cannot redirect anyone. The
+  release is all-or-nothing — `collect` refuses a manifest missing a
+  triple (verified). Desktop resolution order: env override, then a
+  digest-verified pinned artifact, else local build in development and a
+  HARD FAILURE when packaged. TWO targets genuinely built and verified
+  here with independently reproduced digests, byte-identical on rebuild
+  (aarch64/x86_64-apple-darwin); the four Linux/Windows triples are
+  workflow-only and NOT faked — the end-to-end collect/verify/pin run used
+  clearly labelled placeholders outside the repo whose digests appear
+  nowhere in it. Still open: running the workflow (needs a tag), the two
+  unverified ARM runner labels, and wiring the resolver into server
+  startup + packaging.
+  PIPELINE LANDED 2026-08-20, NO RELEASE TAGGED YET. The artifact contract
+  (six target triples, asset naming, detached manifest, sha256sums, tag
+  `provider-gateway-host-v*` which cannot collide with `release.yml`'s
+  `v*.*.*`) lives in `scripts/lib/provider-gateway-host-artifacts.ts`;
+  `scripts/provider-gateway-host-artifacts.ts` stages/collects/verifies/pins
+  and is exactly what `.github/workflows/provider-gateway-host-release.yml`
+  calls. Consumer side mirrors the CTOX-shell precedent:
+  `apps/desktop/resources/provider-gateway/host-release.pin.json` +
+  `apps/desktop/src/providerGateway/ProviderGatewayHostArtifact.ts`
+  (packaged builds accept ONLY a digest-verified pinned artifact;
+  development falls back to the existing local build and says why).
+  VERIFIED LOCALLY: `aarch64-apple-darwin` (17 311 904 B, sha256
+  `bebddae6…95ec1`) and `x86_64-apple-darwin` (18 693 696 B, sha256
+  `db8d6ea2…6b7f9`) built and digest-checked; the other four triples cannot
+  be built on macOS and were NOT faked — only the workflow covers them. See
+  `docs/workjet-provider-gateway-host-artifacts.md` and its
+  `.local-builds.md` evidence file. STILL OPEN: tag the first release, then
+  replace the `unreleased` pin with the workflow's emitted pin — that is
+  what unblocks the CTOX pinned dependency and the portable-duplicate
+  removal above.
 
 Mandatory regression gates:
 
@@ -696,6 +765,18 @@ adapter conformance suite.
 
 Goal: turn the stored role metadata into real local and remote orchestration.
 
+Reconciliation audit 2026-08-20: every unchecked item in this section and in
+the mailbox subsection below was re-read against the code and its tests, and
+each box now carries either the files/tests that justify a tick, the precise
+remaining delta behind a `[~]`, or a "verified open" note naming what is
+actually missing. Acceptance evidence for the audit itself:
+`pnpm test run src/workjet/` in `apps/server` → 32 files, 489 tests, all
+green. Four claims in this section were found to be WRONG rather than merely
+stale and are marked CORRECTION in place: the `pools`/`routes` "dead schema"
+verdict, the "completion/cancellation/retry/remote coordination remain future
+work" clause on fire-and-forget dispatch, the thread-UI reassign-port
+follow-up, and the superseded "Open" list on the provider-account surface.
+
 - [x] Add a radio-style `Code | Orchestrator` control without replacing the
       existing provider-specific Plan/Build control. Done 2026-08-20 (commit
       `934b3d029`): the composer's left cluster now carries a role radio next
@@ -716,11 +797,14 @@ Goal: turn the stored role metadata into real local and remote orchestration.
       2026-08-20 (commit `934b3d029`): navigates to the EXISTING
       Settings → Workjet surface as a plain push, so the settings screen's own
       back/Escape returns to the thread. No second configuration surface.
-- [ ] Port the Swift Workjet configuration model into versioned Code-mode
-      contracts and migrations: orchestrator prompt, progress-board policy,
-      worker catalog, provider/model selection, computer target, telemetry,
-      execution limits, and verification state. Do not make the Electron
-      renderer or the legacy Swift application an authority for these values.
+- [~] Port the Swift Workjet configuration model into versioned Code-mode
+  contracts and migrations: orchestrator prompt, progress-board policy,
+  worker catalog, provider/model selection, computer target, telemetry,
+  execution limits, and verification state. Do not make the Electron
+  renderer or the legacy Swift application an authority for these values.
+  Audited 2026-08-20: six of the seven sub-items are landed and verified;
+  the only remaining gap is the last sub-item below (progress-board policy
+  and verification state have no field and no code at all).
   - [x] Add a versioned, server-authoritative Workjet configuration contract
         and whole-object settings persistence with typed defaults and focused
         migration/round-trip coverage.
@@ -768,13 +852,38 @@ Goal: turn the stored role metadata into real local and remote orchestration.
         boundary; a decode failure would have discarded all of settings.json,
         so the v1 field is read leniently). The editor consumes gateway
         catalog accounts; pools remain future work.
-  - [ ] Port the progress-board policy, verification state, provider capacity,
-        and inspectable one-shot migration/version steps from the Swift model.
-- [ ] Replace the current Greppy-only `/settings/workjet` page with the native
-      CTOX Code configuration surface covering Prompt, Providers, Computers,
-      Telemetry, Execution, and the editable worker catalog. Preserve the
-      existing per-thread provider/model controls rather than hiding them
-      behind global Workjet defaults.
+  - [~] Port the progress-board policy, verification state, provider capacity,
+    and inspectable one-shot migration/version steps from the Swift model.
+    Audited 2026-08-20, one of four done. DONE — inspectable one-shot
+    migration/version steps: `WORKJET_CONFIGURATION_SCHEMA_VERSION = 2` and
+    the versioned decode transform in
+    `packages/contracts/src/workjet.ts:202-218`, the exported pure step
+    `migrateWorkjetLlmRouteV1ToV2` (`:123-129`) and the lenient persisted
+    reader `WorkjetLlmRoutePersisted` (`:137-153`), covered by
+    `packages/contracts/src/workjet.test.ts` describe "Workjet
+    configuration migration step 2 (LLM route reference retype)" (four
+    tests, incl. "upgrades a persisted v1 configuration to v2 while
+    carrying route ids over"). PARTIAL — provider capacity: the only
+    capacity field is a PRESENCE FLAG, `WorkjetGatewayHealth.capacity:
+"reported" | "not-reported-by-host"` (`workjet.ts:588-592`, `:632`),
+    hardcoded to `not-reported-by-host` by
+    `apps/server/src/providerGateway/ProviderGatewayService.ts:1123-1124`
+    because the Rust host publishes no route for it; there is no capacity
+    FIGURE anywhere and `WorkjetExecutionConfiguration`
+    (`workjet.ts:183-188`) carries only probe/turn timeouts and
+    `degradationAllowed` — no parallel-worker ceiling. OPEN — progress-board
+    policy and verification state: neither exists as a field on
+    `WorkjetConfigurationValue` (`workjet.ts:221-233`) and a repo-wide grep
+    for `progressBoard`/`progress-board`/`verificationState` returns zero
+    Workjet code hits (the `verificationState` hits are web-research result
+    metadata in `apps/server/src/mcp/toolkits/workjet/WebStackResearch.ts`).
+- [~] Replace the current Greppy-only `/settings/workjet` page with the native
+  CTOX Code configuration surface covering Prompt, Providers, Computers,
+  Telemetry, Execution, and the editable worker catalog. Preserve the
+  existing per-thread provider/model controls rather than hiding them
+  behind global Workjet defaults. Audited 2026-08-20: the surface itself is
+  complete (three sub-items ticked below); what remains is the live provider
+  round trip and live harness availability, both sub-items below.
   - [x] Replace the Greppy-only page with compact Workers, Computers, LLM
         routes, Prompt, Telemetry, Execution, and Capabilities tabs that use
         the existing Code settings layout and search/deep-link behavior.
@@ -785,36 +894,141 @@ Goal: turn the stored role metadata into real local and remote orchestration.
         contracts/shared/web typechecks, a complete desktop build, and an
         Electron UI pass at 1100 px and 840 px without page-level horizontal
         overflow.
-  - [ ] Add the real provider-account surface backed by the shared Rust
-        provider gateway, environment-scoped secure credentials, account
-        pools, health/capacity, and model discovery. Do not reuse the existing
-        Codex/Claude/Grok provider-driver list as the LLM provider catalog.
-        Progress 2026-08-18: the OAuth login pipeline is implemented end to
-        end below the UI. The workjet gateway host exposes canonical
-        management OAuth routes (begin `…/anthropic|codex|antigravity-auth-url`,
-        `oauth/status`, cancel, loopback callback on the same listener) plus a
-        one-time management-key-gated
-        `POST /v0/management/oauth/session/<state>/claim` whose per-provider
-        payloads match the host's own secret-store serialization
-        byte-for-byte; the host also boots in a zero-account bootstrap mode
-        (management/OAuth only, provider endpoint refuses with 503) so the
-        first login is possible (commits `72fb47a6f`, `683f4df8a`,
-        `553a59ef1`; host 5+8 tests, portable suite 2513 green, clippy/fmt
-        clean). The Node server drives begin/poll/claim, persists claimed
-        tokens into the ServerSecretStore, appends the account to
-        `provider-gateway.json` (decode-validated, token material never in
-        config), reloads the gateway, and exposes
-        `workjet.providerGateway.oauthStart|oauthPoll|oauthCancel` RPCs behind
-        the orchestration-operate scope; a missing configuration file now
-        yields the bootstrap state (commits `100a2f3b5`, `fb4effbb2`; 12
-        focused service tests). Open: settings UI + client-runtime wiring (in
-        flight), live provider round trip (dynamic loopback redirect port
-        unverified against real OAuth client registrations), pools/weights
-        editing, health/capacity, model discovery beyond configured models,
-        and harness routing through the gateway.
+  - [~] Add the real provider-account surface backed by the shared Rust
+    provider gateway, environment-scoped secure credentials, account
+    pools, health/capacity, and model discovery. Do not reuse the existing
+    Codex/Claude/Grok provider-driver list as the LLM provider catalog.
+    AUDIT 2026-08-20 — five of the six gaps this entry lists as "Open"
+    below are in fact CLOSED; only the live provider round trip stands.
+    Closed and verified: settings UI + client-runtime wiring
+    (`packages/client-runtime/src/state/server.ts:768-836`, exported
+    `:1013-1021`;
+    `apps/web/src/components/settings/useWorkjetGatewaySection.ts:45-83`;
+    mounted in `ProviderSettingsPanel.tsx:314-333` and
+    `WorkjetSettings.tsx:939`); pools/weights editing
+    (`WorkjetGatewayAccountRoutingUpdate` in `workjet.ts:678-701`, RPC
+    `workjet.providerGateway.updateRouting`,
+    `ProviderGatewayService.ts:1220-1245` re-decodes before writing, UI
+    `WorkjetGatewayPools.tsx:142-205` with tests "offers a weight field
+    only where the gateway reads weights"); health (RPC + service
+    `ProviderGatewayService.ts:159`, aged reading in
+    `WorkjetGatewayPools.tsx:214-260`, test "ages a reading rather than
+    presenting it as live"); model discovery (`workjet.ts:643-675`, RPC
+    `discoverModels`, test "separates catalog models from configured models
+    and names a missing catalog"); and harness routing through the gateway
+    — a real agent session now routes its LLM calls through it:
+    `routeViaGateway` on the provider instance
+    (`packages/contracts/src/providerInstance.ts:142`), toggle in
+    `ProviderInstanceCard.tsx:499-504`,
+    `resolveGatewayRoutedEnvironment` in
+    `apps/server/src/provider/ProviderGatewayRouting.ts:414-460` called at
+    session start by all four drivers (Claude/Codex/Grok/OpenCode), the
+    model's provider carried as `X-CTOX-Provider`, and a typed
+    `ProviderGatewayRoutingError` instead of any silent fallback to the
+    CLI's own credentials (nine tests in
+    `apps/server/src/provider/ProviderGatewayRouting.test.ts`).
+    CORRECTION 2026-08-20 — the "DEAD SCHEMA" verdict below is WRONG.
+    `WorkjetGatewayCatalog.pools`/`.routes` (`workjet.ts:562-581`) are
+    live, load-bearing, and user-visible. They are parsed and validated
+    from `provider-gateway.json`
+    (`ProviderGatewayConfig.ts:400-446` `parsePools`, `:448-…`
+    `parseRoutes`, `:544-546`), copied into the emitted catalog
+    (`:676-677`), and PRESERVED across every account append and routing
+    update (`ProviderGatewayService.ts:901-902`, `:1017-1018`,
+    `:1233-1234`). They are honoured on the hot path:
+    `resolveWorkjetGatewayModelRoute`
+    (`packages/contracts/src/workjetGatewayRouting.ts:170-233`) resolves
+    routes first, then pools, and
+    `apps/server/src/provider/ProviderGatewayRouting.ts:396-409` calls it
+    at EVERY routed session start, failing the session typed on
+    `route-ambiguous`/`model-ambiguous`. They are user-visible through
+    `WorkjetGatewayModelRoutes.tsx:32-70`, mounted at
+    `WorkjetSettings.tsx:939`, which names the route/pool a model resolved
+    through. Seven contract tests in `workjetGatewayRouting.test.ts` plus
+    `ProviderGatewayRouting.test.ts` "lets an explicit route override which
+    provider the model resolves to" pin the behaviour. The claim was
+    already false when written: the routing resolver landed in
+    `801ef24e4` at 02:14 on 2026-08-20, the "dead schema" note in
+    `5bd652f55` at 11:20 the same day. What IS true — and all the sibling
+    actually proved — is that the RUST HOST has no named pool object and
+    never receives `pools`/`routes` (`rustHostConfiguration` omits them),
+    and that no UI writes them: they are an operator-authored, Node-side
+    routing table.
+    Pools, health and model discovery done 2026-08-20 (commits
+    `5bd652f55`, `0a358ba3b`) — each limited to what the host can actually
+    answer, verified against its source. Pools: the host has NO named pool
+    object, one per provider only, so the contract's `pools`/`routes` are
+    not honoured BY THE HOST — `rustHostConfiguration` omits them, and no UI
+    writes them (KORREKTUR to an earlier wording here that called them
+    "dead schema": that was wrong. The composer's route resolver landed
+    hours earlier and DOES honour them on the hot path at every routed
+    session start, failing typed on ambiguity — see the correction note
+    above); exposed
+    instead are the host's real semantics — a single runtime-wide routing
+    strategy (Node was hardcoding round-robin, so `weight` had been inert),
+    priority-exclusive OAuth pools vs round-robin API-key pools, and
+    `weightHonored` only where the host reads it, so the UI shows no weight
+    field where it would do nothing. Health: endpoint phase and per-provider
+    counts are published and shown with honest ages; per-account cooldown,
+    rate-limit and capacity are `not-reported-by-host` — the host HAS that
+    state in an in-process store but publishes no route for it. Discovery:
+    the host's model catalog is a COMPILE-TIME list, not an upstream call,
+    and every model is labelled accordingly; zai and minimax have no
+    channel at all and say so rather than showing an empty list.
+    Environment scoping is PROVED on both sides (decode refuses foreign
+    scopes and traversal; two gateways side by side touch only their own
+    state). Real gap fixed: Node accepted a bare `.` secret name the host
+    refuses — that combination wrote a config the host would not start on.
+    Progress 2026-08-18: the OAuth login pipeline is implemented end to
+    end below the UI. The workjet gateway host exposes canonical
+    management OAuth routes (begin `…/anthropic|codex|antigravity-auth-url`,
+    `oauth/status`, cancel, loopback callback on the same listener) plus a
+    one-time management-key-gated
+    `POST /v0/management/oauth/session/<state>/claim` whose per-provider
+    payloads match the host's own secret-store serialization
+    byte-for-byte; the host also boots in a zero-account bootstrap mode
+    (management/OAuth only, provider endpoint refuses with 503) so the
+    first login is possible (commits `72fb47a6f`, `683f4df8a`,
+    `553a59ef1`; host 5+8 tests, portable suite 2513 green, clippy/fmt
+    clean). The Node server drives begin/poll/claim, persists claimed
+    tokens into the ServerSecretStore, appends the account to
+    `provider-gateway.json` (decode-validated, token material never in
+    config), reloads the gateway, and exposes
+    `workjet.providerGateway.oauthStart|oauthPoll|oauthCancel` RPCs behind
+    the orchestration-operate scope; a missing configuration file now
+    yields the bootstrap state (commits `100a2f3b5`, `fb4effbb2`; 12
+    focused service tests). Open (superseded list — see the AUDIT note at
+    the top of this item; only the first entry still stands as of
+    2026-08-20): settings UI + client-runtime wiring (in
+    flight), live provider round trip (dynamic loopback redirect port
+    unverified against real OAuth client registrations), pools/weights
+    editing, health/capacity, model discovery beyond configured models,
+    and harness routing through the gateway.
+    REMAINING 2026-08-20, verified: (1) the live provider round trip —
+    `apps/server/src/providerGateway/` has no e2e/live-host harness and no
+    recorded successful OAuth login against a real client registration;
+    (2) per-account capacity, cooldown, and rate-limit stay
+    `not-reported-by-host` because the Rust host publishes no route for
+    them; (3) harness routing is proven at the environment/argv layer
+    against a test gateway layer, not by an executed completion through a
+    running host — the same residue as (1).
   - [ ] Replace declared harness availability with live environment-scoped
         inspect/install/update/remove actions and consume the resulting truth
         during worker validation and dispatch.
+        Verified open 2026-08-20: availability is still a hand-toggled static
+        boolean — `WorkjetHarnessConfiguration = { harness, available:
+Schema.Boolean (default false), executableOverride? }`
+        (`packages/contracts/src/workjet.ts:50-55`), flipped by a Switch in
+        `apps/web/src/components/settings/WorkjetComputerEditor.tsx:246-254`
+        under the copy "Declare what is available on this existing
+        environment". Its ONLY consumer is a client-side advisory warning in
+        `WorkjetWorkerEditor.tsx:126-129` that does not block the save; the
+        server never reads it (`apps/server/src/workjet/WorkerDispatch.ts` and
+        `apps/server/src/mcp/toolkits/workjet/WorkerTool.ts` contain zero
+        harness references). No harness inspect/install/update/remove RPC
+        exists — the Workjet RPC surface (`packages/contracts/src/rpc.ts:330-345`)
+        has `workjet.greppy.inspect|install` (a capability runtime, not a
+        harness) and `workjet.worktrees.inspect`, and nothing else.
 - [x] Add an orchestrator-scoped worker overview showing child threads grouped
       under their parent with task, harness/model, environment/computer,
       delivery/turn state, completion/result state, and actionable links to
@@ -831,9 +1045,39 @@ Goal: turn the stored role metadata into real local and remote orchestration.
       orchestrator overview is closed. Verified 2026-08-19: the sidebar does no
       role-based filtering; a test asserts worker threads stay in the source
       thread list independent of the overview.
-- [ ] Migrate existing Swift Workjet configurations through a one-shot,
-      inspectable import/export path; after parity is proven, CTOX Code must
-      not require the Swift runtime or its local store.
+- [~] Migrate existing Swift Workjet configurations through a one-shot,
+  inspectable import/export path; after parity is proven, CTOX Code must
+  not require the Swift runtime or its local store. Reader, mapping and
+  runner done 2026-08-20 (commits `e89873c6a`, `b23729f49`, `a6b2c5e1b`,
+  47 tests). The format was NOT guessed: the real
+  `~/Library/Application Support/Workjet/config.v1.json` (62 KB) plus six
+  dated backups were read READ-ONLY, and the complete key universe and
+  every enum raw value were recovered from the shipped app binary's
+  CodingKeys tables — two keys exist there that appear in no live
+  document, which is why the sample alone was not enough. All seven real
+  documents decode with ZERO unknown fields. The reader fails closed and
+  never silently drops: 74 source leaves are each mapped, folded into the
+  managed prompt, or dropped WITH a reason (46), and 5 sourceless
+  destinations state their default. A wrong first assumption
+  (`reasoningEffort: ""` meaning automatic) was caught by the real data —
+  the key is simply absent — which is what fail-closed is for. DECISIVE
+  FINDING: computer→environment, provider→gateway-account and pool→route
+  cannot be carried over at all (the Swift ids are UUIDs and CLIProxy
+  hashes; no value would ever resolve), so they are operator BINDINGS and
+  unbound records land in `pending` instead of a silent partial import —
+  on the real config: 3 computers, 7 providers, 4 pools, 12 workers. The
+  runner lives server-side because the authority is `settings.workjet` in
+  each environment's own settings and the legacy file belongs to the
+  machine that server runs on. Remaining: no offer surface is wired — the
+  service exposes decision/offer/accept/decline but no RPC or settings
+  panel calls it yet, and `make` resolves the decision eagerly, which
+  wants a look before it goes on the boot path.
+  Verified open 2026-08-20: nothing exists. There is no import/export RPC
+  in `packages/contracts/src/rpc.ts`, no importer/exporter module anywhere
+  under `apps/` or `packages/`, and no Swift source or Swift Workjet store
+  in the tree. The only migration machinery is the in-schema
+  `migrateWorkjetLlmRouteV1ToV2`, which migrates T3's OWN v1 config to v2,
+  not a Swift document.
 - [x] Compile deterministic Workjet role instructions through the existing
       managed-prompt path used by Codex, Claude Code, and Grok.
 - [x] Keep user/developer instructions clearly separated from managed Workjet
@@ -841,18 +1085,149 @@ Goal: turn the stored role metadata into real local and remote orchestration.
 - [x] Create the first same-environment worker thread through normal T3
       `thread.create` and `thread.turn.start` commands, exposed only through the
       orchestrator-scoped `workjet_dispatch_worker` MCP boundary.
-- [ ] Store parent/child references and worker status as durable events.
-- [ ] Add bounded dispatch, cancellation, retry, timeout, and result-return
-      semantics.
-- [ ] Treat worker completion as an event, not as a UI-only observation.
+- [~] Store parent/child references and worker status as durable events.
+  Audited 2026-08-20 — the two halves differ, and the wording matters.
+  PARENT/CHILD: genuinely durable EVENTS. The worker variant of
+  `WorkjetThreadConfig` makes `parent` mandatory
+  (`packages/contracts/src/workjet.ts:401-406`), and that config travels in
+  the orchestration event log — the `thread.created` event payload carries
+  `workjetConfig` (`apps/server/src/orchestration/decider.ts:370-383`,
+  projected at `projector.ts:290-305`) and every later change is a
+  `thread.workjet-config-set` event (`decider.ts:915-932`,
+  `projector.ts:493-506`). WORKER STATUS: not an event, in either
+  mechanism. (a) For threads created by `workjet_dispatch_worker`, status
+  is derived CLIENT-SIDE by `resolveWorkerTurnState`
+  (`apps/web/src/components/WorkjetWorkerOverview.tsx:58-71`) from the
+  projected `latestTurn.state` plus `session.status`; nothing durable
+  records "this worker's status" and nothing addresses the parent. (b) For
+  delegations, status is a MUTABLE ROW COLUMN — `workjet_delegations.state`
+  in `apps/server/src/persistence/Migrations/042_WorkjetMailbox.ts`, moved
+  by `transitionDelegationState` inside one transaction. There is no
+  append-only delegation-state event table anywhere in migrations 042-052.
+  The durable events that do exist are DERIVED and BEST-EFFORT: each
+  `appendActivity` is a separate `thread.activity.append` dispatch piped
+  through `Effect.ignore`
+  (`apps/server/src/workjet/mailbox/WorkjetDelegationExecutor.ts:574-601`,
+  `WorkjetMailboxDelivery.ts:503-527`), and the redacted audit stream is
+  IN-MEMORY ONLY — a 128-entry ring buffer plus a sliding PubSub in
+  `WorkjetMailboxAuditEmitter.ts`, with no table behind it. Remaining
+  delta: an append-only per-delegation state event log (or an equivalent
+  transactional trace), and any durable status record for
+  dispatch-workers.
+- [~] Add bounded dispatch, cancellation, retry, timeout, and result-return
+  semantics.
+  Audited 2026-08-20: all five exist for the DELEGATION path and none
+  exist for the `workjet_dispatch_worker` path. Delegations — bounded
+  dispatch: `WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE = 32` and one turn per
+  thread per cycle (`WorkjetDelegationExecutor.ts:109-115`; test "starts
+  only one turn per thread per cycle even with two delivered
+  delegations"); cancellation: the `cancelled` terminal state and
+  `workjet.mailbox.updateDelegation` (`WorkjetMailboxStore.test.ts`
+  "rejects an illegal transition and keeps a terminal delegation
+  immutable", delivery test "cancels a delegation with no graph edge");
+  retry: a turn-start command id derived from the delegation id so a retry
+  is idempotent by command receipt, transient failures retried and
+  non-retryable engine rejections made terminal (tests "retries an
+  accepted row with the same command id after a transient rejection",
+  "fails a delegation the engine rejects for a non-retryable reason");
+  timeout: the delegation budget's `expiresAt`
+  (`packages/contracts/src/workjetMailbox.ts:376`) swept in one
+  transaction (store test "sweeps overdue outbox, inbox, and non-terminal
+  delegation rows in one pass") plus a 60 s per-cycle guard; result-return:
+  migration 047 plus the executor's completion path. `workjet_dispatch_worker`
+  (`apps/server/src/mcp/toolkits/workjet/WorkerTool.ts`,
+  `apps/server/src/workjet/WorkerDispatch.ts`) still only creates a thread
+  and starts its first turn — it has no cancel, no retry, no timeout, and
+  no result return, and the tool description says so ("returns immediately
+  after dispatch and does not wait for completion"). Remaining delta:
+  either give the dispatch-worker path the same semantics or retire it in
+  favour of a delegation.
+- [~] Treat worker completion as an event, not as a UI-only observation.
+  Audited 2026-08-20. For DELEGATIONS this is largely met: the executor's
+  running-scan completes only the exact turn it dispatched (message-id +
+  turn-id + session correlation), writes a durable
+  `WorkjetDelegationResult` row (migration 047), and then returns it — as a
+  durable `workjet.delegation.result` thread activity on a
+  same-environment source (`WorkjetDelegationExecutor.ts:131`, `:1026-1044`)
+  or as a signed pending-outbound result envelope cross-environment, with
+  migration-049 markers making redelivery exactly-once (tests "completes a
+  running delegation whose dispatched turn ended and returns the result",
+  "enqueues a result envelope outbound for a cross-environment source",
+  "retries a transiently failed result enqueue on the next cycle, exactly
+  once"). Precise remaining delta, in order of weight: (1) for
+  `workjet_dispatch_worker` workers there is STILL no completion event of
+  any kind — the orchestrator learns of completion only by the client
+  re-deriving `latestTurn.state` in
+  `WorkjetWorkerOverview.tsx:58-71`, which is exactly the UI-only
+  observation this line forbids; (2) even for delegations the completion
+  EVENT is best-effort (`Effect.ignore`), so a failed append leaves a
+  completed delegation with no timeline trace while the row stands; (3)
+  the `delegation-completed` audit event is in-memory only.
 - [x] Support initial fire-and-forget worker dispatch in the same environment;
       completion, cancellation, retry, and remote coordination remain future work.
-- [ ] Add cross-environment dispatch only after a durable server-to-server
+      CORRECTION 2026-08-20: the trailing clause is no longer true. Completion,
+      cancellation, retry, and cross-machine coordination all landed for the
+      delegation path (see the three items above and the mailbox section); they
+      remain absent only for `workjet_dispatch_worker` itself.
+- [x] Add cross-environment dispatch only after a durable server-to-server
       coordinator exists; current client-only federation is insufficient.
-- [ ] Never copy the old Swift SSH/snapshot remote protocol into T3. T3 remains
+      Gate MET and cross-environment dispatch SHIPPED, verified 2026-08-20.
+      The coordinator is durable at both ends and lives in the SERVER, not a
+      client: migration 042 gives every server its own transactional
+      outbox/inbox/delegation tables with idempotent dedup, bounded
+      backoff-to-dead-letter, and an expiry sweep; and
+      `apps/server/src/server.ts:542-561` merges `WorkjetMailboxTransport.layer`
+      and the single `WorkjetDelegationExecutorLive` into the routes layer as
+      background loops with no request scope — they run whether or not any
+      browser or desktop is open, which is precisely what "client-only
+      federation is insufficient" was written against. The carrier is
+      deliberately dumb: the local CTOX daemon replicates opaque bounded blobs,
+      while signature verification, key binding, idempotent insertion, and all
+      delegation effects stay in the Workjet server
+      (`WorkjetMailboxTransport.ts` `ingest` → `applyDeliveredDelegation` in
+      `WorkjetMailboxDelivery.ts:406-421`). The loop closes end to end: a
+      cross-env delegation's prompt bytes travel sealed and are
+      digest-reverified into the receiver's snapshot store BEFORE the
+      delegation row is written (transport test "stores received snapshot bytes
+      and makes the delegation executable"), the receiving executor runs it as
+      a normal `thread.turn.start`, and a signed result envelope is enqueued
+      back with durable redelivery markers (migration 049). QUALIFICATION, so
+      the tick is not read as more than it is: this is not a server-to-server
+      SOCKET. The hop is server → local daemon loopback → CTOX room peer →
+      remote daemon → remote server, so by the 2026-08-18 owner decision (no
+      relay) the two daemons must be online at overlapping times; an envelope
+      waits durably in the local outbox meanwhile. And the whole path is proven
+      in-process and at the two-daemon level only — never between two real
+      machines (see the E2E item at the end of the mailbox section).
+- [x] Never copy the old Swift SSH/snapshot remote protocol into T3. T3 remains
       the workspace and remote-environment authority.
-- [ ] Preserve direct activation of LLM/provider combinations on orchestrator
-      and worker threads.
+      Invariant verified HELD 2026-08-20 (this is a constraint, not a
+      deliverable): the only `ssh` token in the Workjet contracts is the
+      presentation-only literal in `WorkjetComputerPresentationKind`
+      (`packages/contracts/src/workjet.ts:41-48`), carrying the comment
+      "Presentation only. The referenced Code environment remains transport
+      authority." There is no SSH reference anywhere under
+      `apps/server/src/workjet/`; the actual remote protocol is the CTOX daemon
+      loopback plus the replicated envelope collection.
+- [~] Preserve direct activation of LLM/provider combinations on orchestrator
+  and worker threads.
+  Audited 2026-08-20: structurally true, not yet assertable. No role gating
+  exists on the provider/model path — `ProviderModelPicker` in
+  `apps/web/src/components/chat/ChatComposer.tsx:3026-3049` takes no
+  `workjetRole` prop at all, the only `disabled` logic in
+  `WorkjetRoleControl.tsx:214-215` disables the ROLE radio (not any
+  provider control), and the server applies `command.modelSelection`
+  (`apps/server/src/orchestration/decider.ts:834`) with no Workjet role
+  check, `thread.workjet-config.set` being a wholly separate case. Workers
+  keep an explicit per-worker combination:
+  `apps/server/src/workjet/WorkerDispatch.ts:162` (`input.modelSelection ??
+parent.modelSelection`) applied to both create and turn-start, proven by
+  `WorkerDispatch.test.ts` "accepts a capability subset and canonical model
+  override including options". Remaining delta: no test asserts the
+  PICKER itself stays rendered and enabled on an orchestrator or worker
+  thread — `ComposerFooterControls.test.tsx` proves co-existence with
+  Plan/Build, which is a different control one level down. Make the
+  invariant assertable the way the role/Plan-Build one deliberately was.
 
 ### Distributed worker mailbox and delegation graph
 
@@ -950,113 +1325,149 @@ durable lifecycle. Sending “message + task” creates both in one atomic comma
 running | needs-input | review-requested | changes-requested | completed |
 failed | cancelled | expired`. Done in the same commit
       (`WorkjetDelegationState`, terminal set exported).
-- [ ] Persist source outbox, target inbox, delegation state, and thread-visible
-      message/delegation events transactionally on their authoritative servers.
-      Progress 2026-08-19 (commits `d7aae00b2`, `3d48fd5f4`): migration 042 and
-      the standalone `WorkjetMailboxStore` are done — transactional outbox
-      (pending|delivered|dead with bounded exponential backoff to a queryable
-      dead-letter state), idempotent inbox insertion mirroring the delivery
-      receipt statuses (accepted-new / duplicate-ignored / expired, expiry
-      checked before dedup), the enforced delegation state machine (single
-      transaction, no TOCTOU; `running → completed` legal for zero-review-round
-      budgets), a one-transaction expiry sweep, and corrupt-row surfacing as
-      typed errors (19 focused tests). Progress 2026-08-19, slice 3
-      (commit `837331d58`): the store is wired into the server routes layer,
-      `WorkjetMailboxDelivery` implements the same-environment local fast path
-      (enqueue → idempotent inbound → delivered receipt; cross-environment
-      sends stay pending outbound; duplicate envelopes skip delegation
-      effects — exactly-once effects under at-least-once delivery), and
-      thread-visible durable traces ride the existing
-      `thread.activity-appended` event as four `workjet.message/delegation.*`
-      activity kinds with payload-material canary tests. MCP tools
-      `workjet_send_message` and `workjet_delegate_task` are registered
-      orchestrator-scoped (least privilege until the reply/ACL items land).
-      Progress 2026-08-19, slice 4 (commits `4f37e2202`, `d47dcbdf5`,
-      `69535cb0e`): routing envelopes are now Ed25519-signed against a durable
-      per-environment mesh identity (private key create-once in the
-      ServerSecretStore, never exported; domain-tagged canonical
-      serialization exported for the transport slice; local inbound verifies
-      before insertion and rejects `invalid-signature`); the source workspace
-      id comes from the identity service, not the caller (generated mesh id
-      documented as the pre-pairing fallback until the CTOX-room-derived
-      identity lands); and `workjet_delegate_task` takes bounded prompt TEXT,
-      stores it in the content-addressed immutable snapshot store beneath the
-      server state root (digest-sharded, atomic, reverified on read), and
-      pins the delegation to the digest the server itself wrote. Still open:
-      payload sealing (encryption) to the target environment key, peer-key
-      distribution, the CTOX-Sync transport itself, the reconciler, and the
-      thread UI.
-- [ ] Replicate the per-machine durable mailboxes and the redacted activity
-      projection over the CTOX Sync WebRTC data plane between the user's own
-      machines (primary transport per the 2026-08-18 owner decision), joined
-      through the existing CTOX pairing invite flow (room + room password +
-      signaling URLs) with the engine's capability/session layer and
-      device-scoped revocation; signaling via ctox.dev or the user's own
-      instances. No new relay service and no T3 Connect identity reuse for
-      mesh membership; an always-on user-owned CTOX instance covers
-      store-and-forward if ever needed.
-      Transport architecture (2026-08-19, docking decision): the Workjet
-      server does NOT embed its own WebRTC peer. Each machine's LOCAL CTOX
-      daemon carries a dedicated `workjet_mailbox_envelopes` synced collection
-      and replicates it through its existing native peer, room membership,
-      capability/session layer, and device revocation — the sync engine is
-      reused as-is. The Workjet Code server exchanges envelopes with its local
-      daemon over a loopback intake/outtake surface only (bounded, no
-      Business-OS data access), and remains the sole authority over its own
-      outbox/inbox semantics: envelope signature verification, idempotent
-      insertion, and delegation effects all stay in the Workjet mailbox store.
-      The daemon treats envelope payloads as opaque bounded blobs.
-      PROVEN 2026-08-19 at the two-daemon level: CTOX rc-branch commits
-      `0faa62a12` (native peer presents its capability token in the
-      ctoxProtocol handshake), `b4fedd2ba` (a room-joining native peer
-      initiates offers — the symmetric handler otherwise waits forever),
-      `caa12db8f` (`ctox workjet mesh join|status|leave`, membership under
-      the state root 0600, own-room guard, mailbox-only session scope), and
-      `eeb62b667` (loopback writes carried malformed revisions and
-      schema-invalid tombstones — updates and retirements were silently
-      dropped by every peer, browsers included; fixed). The decisive test
-      `two_daemons_replicate_only_the_mailbox_across_a_mesh_join` runs two
-      real daemons on two storage roots against a real signaling server:
-      envelope A→B, envelope B→A, and an expiry tombstone all replicate
-      (11.3 s; independently re-verified). Client auth satisfies the
-      serving daemon's real signaling-partition and capability validators —
-      nothing serving-side was relaxed. Trust binding resolved 2026-08-20
-      (commits `ce4ceb09f`…, migration 050): the room-derived MAC was
-      investigated and REJECTED as security theater — writing into the
-      replicated collection already requires the room secret, so a MAC keyed
-      on it proves nothing more. Instead a REAL live hole was found and
-      closed: `payload_json` was unsigned, so any room member could republish
-      an honest envelope with a substituted X25519 encryption key and read
-      every later sealed reply. Wrapper v3 adds a detached Ed25519
-      `keyBinding` over {envelope, addresses, both public keys}, verified
-      against the envelope's signer before any pin; downgrades are refused
-      (`binding-downgrade`) and audited (`mesh-peer-binding-rejected`); the
-      roster and send panel show the honest trust level (`tofu` |
-      `self-signed` — nothing shipped earns "room-bound"). REMAINING,
-      honestly: pure first-contact impersonation (attacker reaches an
-      environment id first with a key it holds) needs a CTOX-daemon device
-      attestation — out of Workjet's reach. Follow-up once the fleet emits
-      v3: refuse v1/v2 wrappers outright. Still open: a live (non-test)
-      two-machine run.
-      Progress 2026-08-19: both sides are implemented. CTOX rc-branch commit
-      `9518d2ae0` adds the replicated `workjet_mailbox_envelopes` collection
-      (bounds/charset validation only, payload ceiling 200 000 B derived from
-      the real 262 144-B replication chunk budget, tombstoning expiry sweep)
-      plus the authenticated loopback publish/pending/consumed routes on the
-      MCP-channel listener, landed line-count-neutrally against the exact
-      module-size ratchets. Workjet commits `062922610` + `c6f0e0f3d` add
-      migration 043 (peer-key pinning) and `WorkjetMailboxTransport`: 10-s
-      jittered poll loop that idles cleanly until descriptor+token resolve
-      (token via CTOX's first-class `ctox secret get
+- [~] Persist source outbox, target inbox, delegation state, and thread-visible
+  message/delegation events transactionally on their authoritative servers.
+  AUDIT 2026-08-20: the first three are done and transactional; the FOURTH
+  is not, and the word "transactionally" is where the gap sits. Outbox,
+  inbox, and delegation state all live in migration 042 with
+  single-transaction transitions and a one-pass expiry sweep (store tests
+  "encodes the transition table exactly as documented", "walks the full
+  legal delegation lifecycle", "sweeps overdue outbox, inbox, and
+  non-terminal delegation rows in one pass"). The thread-visible
+  message/delegation events are NOT in that transaction: every
+  `appendActivity` is a separate engine dispatch piped through
+  `Effect.ignore` (`WorkjetMailboxDelivery.ts:503-527`,
+  `WorkjetDelegationExecutor.ts:574-601`), deliberately, so a refused
+  append cannot turn an executed delegation into a reported failure — but
+  the consequence is that a row can land with no timeline trace. Second
+  gap: the cross-environment INBOUND path appends no thread activity at
+  all. The shared helper `applyDeliveredDelegation`
+  (`WorkjetMailboxDelivery.ts:406-421`) only transitions the row, and
+  `WorkjetMailboxTransport.ts` contains no `thread.activity.append`
+  anywhere, so `workjet.delegation.received` / `workjet.message.received`
+  are emitted only by the same-environment fast path. A remotely delivered
+  delegation first appears on the target timeline as the executor's
+  `workjet.delegation.started`.
+  Progress 2026-08-19 (commits `d7aae00b2`, `3d48fd5f4`): migration 042 and
+  the standalone `WorkjetMailboxStore` are done — transactional outbox
+  (pending|delivered|dead with bounded exponential backoff to a queryable
+  dead-letter state), idempotent inbox insertion mirroring the delivery
+  receipt statuses (accepted-new / duplicate-ignored / expired, expiry
+  checked before dedup), the enforced delegation state machine (single
+  transaction, no TOCTOU; `running → completed` legal for zero-review-round
+  budgets), a one-transaction expiry sweep, and corrupt-row surfacing as
+  typed errors (19 focused tests). Progress 2026-08-19, slice 3
+  (commit `837331d58`): the store is wired into the server routes layer,
+  `WorkjetMailboxDelivery` implements the same-environment local fast path
+  (enqueue → idempotent inbound → delivered receipt; cross-environment
+  sends stay pending outbound; duplicate envelopes skip delegation
+  effects — exactly-once effects under at-least-once delivery), and
+  thread-visible durable traces ride the existing
+  `thread.activity-appended` event as four `workjet.message/delegation.*`
+  activity kinds with payload-material canary tests. MCP tools
+  `workjet_send_message` and `workjet_delegate_task` are registered
+  orchestrator-scoped (least privilege until the reply/ACL items land).
+  Progress 2026-08-19, slice 4 (commits `4f37e2202`, `d47dcbdf5`,
+  `69535cb0e`): routing envelopes are now Ed25519-signed against a durable
+  per-environment mesh identity (private key create-once in the
+  ServerSecretStore, never exported; domain-tagged canonical
+  serialization exported for the transport slice; local inbound verifies
+  before insertion and rejects `invalid-signature`); the source workspace
+  id comes from the identity service, not the caller (generated mesh id
+  documented as the pre-pairing fallback until the CTOX-room-derived
+  identity lands); and `workjet_delegate_task` takes bounded prompt TEXT,
+  stores it in the content-addressed immutable snapshot store beneath the
+  server state root (digest-sharded, atomic, reverified on read), and
+  pins the delegation to the digest the server itself wrote. Still open:
+  payload sealing (encryption) to the target environment key, peer-key
+  distribution, the CTOX-Sync transport itself, the reconciler, and the
+  thread UI.
+- [~] Replicate the per-machine durable mailboxes and the redacted activity
+  projection over the CTOX Sync WebRTC data plane between the user's own
+  machines (primary transport per the 2026-08-18 owner decision), joined
+  through the existing CTOX pairing invite flow (room + room password +
+  signaling URLs) with the engine's capability/session layer and
+  device-scoped revocation; signaling via ctox.dev or the user's own
+  instances. No new relay service and no T3 Connect identity reuse for
+  mesh membership; an always-on user-owned CTOX instance covers
+  store-and-forward if ever needed.
+  Transport architecture (2026-08-19, docking decision): the Workjet
+  server does NOT embed its own WebRTC peer. Each machine's LOCAL CTOX
+  daemon carries a dedicated `workjet_mailbox_envelopes` synced collection
+  and replicates it through its existing native peer, room membership,
+  capability/session layer, and device revocation — the sync engine is
+  reused as-is. The Workjet Code server exchanges envelopes with its local
+  daemon over a loopback intake/outtake surface only (bounded, no
+  Business-OS data access), and remains the sole authority over its own
+  outbox/inbox semantics: envelope signature verification, idempotent
+  insertion, and delegation effects all stay in the Workjet mailbox store.
+  The daemon treats envelope payloads as opaque bounded blobs.
+  PROVEN 2026-08-19 at the two-daemon level: CTOX rc-branch commits
+  `0faa62a12` (native peer presents its capability token in the
+  ctoxProtocol handshake), `b4fedd2ba` (a room-joining native peer
+  initiates offers — the symmetric handler otherwise waits forever),
+  `caa12db8f` (`ctox workjet mesh join|status|leave`, membership under
+  the state root 0600, own-room guard, mailbox-only session scope), and
+  `eeb62b667` (loopback writes carried malformed revisions and
+  schema-invalid tombstones — updates and retirements were silently
+  dropped by every peer, browsers included; fixed). The decisive test
+  `two_daemons_replicate_only_the_mailbox_across_a_mesh_join` runs two
+  real daemons on two storage roots against a real signaling server:
+  envelope A→B, envelope B→A, and an expiry tombstone all replicate
+  (11.3 s; independently re-verified). Client auth satisfies the
+  serving daemon's real signaling-partition and capability validators —
+  nothing serving-side was relaxed. Trust binding resolved 2026-08-20
+  (commits `ce4ceb09f`…, migration 050): the room-derived MAC was
+  investigated and REJECTED as security theater — writing into the
+  replicated collection already requires the room secret, so a MAC keyed
+  on it proves nothing more. Instead a REAL live hole was found and
+  closed: `payload_json` was unsigned, so any room member could republish
+  an honest envelope with a substituted X25519 encryption key and read
+  every later sealed reply. Wrapper v3 adds a detached Ed25519
+  `keyBinding` over {envelope, addresses, both public keys}, verified
+  against the envelope's signer before any pin; downgrades are refused
+  (`binding-downgrade`) and audited (`mesh-peer-binding-rejected`); the
+  roster and send panel show the honest trust level (`tofu` |
+  `self-signed` — nothing shipped earns "room-bound"). REMAINING,
+  honestly: pure first-contact impersonation (attacker reaches an
+  environment id first with a key it holds) needs a CTOX-daemon device
+  attestation — out of Workjet's reach. Follow-up once the fleet emits
+  v3: refuse v1/v2 wrappers outright. Still open: a live (non-test)
+  two-machine run.
+  Progress 2026-08-19: both sides are implemented. CTOX rc-branch commit
+  `9518d2ae0` adds the replicated `workjet_mailbox_envelopes` collection
+  (bounds/charset validation only, payload ceiling 200 000 B derived from
+  the real 262 144-B replication chunk budget, tombstoning expiry sweep)
+  plus the authenticated loopback publish/pending/consumed routes on the
+  MCP-channel listener, landed line-count-neutrally against the exact
+  module-size ratchets. Workjet commits `062922610` + `c6f0e0f3d` add
+  migration 043 (peer-key pinning) and `WorkjetMailboxTransport`: 10-s
+  jittered poll loop that idles cleanly until descriptor+token resolve
+  (token via CTOX's first-class `ctox secret get
 business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
-      pending outbound with the existing backoff-to-dead-letter, pulls and
-      verifies inbound (signature against the sender key with TOFU key
-      continuity as the DOCUMENTED interim until CTOX-room-derived identity
-      binding; poison envelopes consumed, never looped), and reuses the local
-      fast path's delegation semantics via a shared helper. Still open: the
-      real two-instance replication proof, inbound thread-activity traces,
-      in-cycle cursor following for >50 backlogs, payload sealing, and the
-      key-rotation path.
+  pending outbound with the existing backoff-to-dead-letter, pulls and
+  verifies inbound (signature against the sender key with TOFU key
+  continuity as the DOCUMENTED interim until CTOX-room-derived identity
+  binding; poison envelopes consumed, never looped), and reuses the local
+  fast path's delegation semantics via a shared helper. Still open: the
+  real two-instance replication proof, inbound thread-activity traces,
+  in-cycle cursor following for >50 backlogs, payload sealing, and the
+  key-rotation path.
+  AUDIT 2026-08-20, re-verified against this tree. CLOSED since that note:
+  payload sealing (see the sealing item below) and cross-machine snapshot
+  transfer. STILL OPEN, each confirmed in code: (1) the live two-machine
+  run — nothing in this repo boots two hosts, every transport test drives a
+  fake daemon `HttpClient` stub, and the cited
+  `two_daemons_replicate_only_the_mailbox_across_a_mesh_join` is two
+  processes on one host in the CTOX repo; (2) inbound thread-activity
+  traces — `WorkjetMailboxTransport.ts` appends no thread activity at all
+  (see the item above); (3) in-cycle cursor following — `next_cursor` is
+  decoded (`WorkjetMailboxTransport.ts:595`) and then never used, so a
+  backlog drains one `WORKJET_TRANSPORT_PULL_LIMIT = 50` page per 10 s
+  cycle (`:173-176`, `pull` at `:1581-1636`); (4) key ROTATION is refused,
+  not supported — the tests "rejects and consumes an envelope whose sender
+  key rotated" and "…whose ENCRYPTION key rotated" pin the refusal, and no
+  re-pin path exists.
 - [~] Add the typed thread-handoff contract and flow (immutable prompt/context
   snapshot, bounded artifact references, pushed or sync-bundled Git branch,
   durable source-thread link); the target machine continues in a new
@@ -1074,6 +1485,24 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   push — never silent); cross-env acceptance notification has no envelope
   kind yet; the REAL machine-A→machine-B proof needs the live two-machine
   mesh run.
+  AUDIT 2026-08-20: all three stated gaps re-verified as real and accurately
+  described — the box correctly stays `[~]`. (a) `WorkjetHandoffBranchRef`
+  (`packages/contracts/src/workjetMailbox.ts:617-627`) has `headCommit` as an
+  optionalKey that nothing ever writes; `handoffBranchOf`
+  (`WorkjetMailboxRpc.ts:383-404`) takes only the projection's branch NAME plus
+  a boolean, and `remoteConfigured` comes from a local config read that "never
+  runs `git ls-remote` and never pushes" (`apps/server/src/ws.ts:467-490`);
+  tests "never claims the branch was pushed and never leaks a filesystem path",
+  "says the head is unknown rather than inventing one". (b)
+  `WorkjetMailboxEnvelopeKind`
+  (`packages/contracts/src/workjetMailbox.ts:687-694`) is
+  `message|delegation|receipt|result|review|handoff` — no acknowledgement kind;
+  `WorkjetMailboxDelivery.ts:1497-1500` says so in place, and the gap is pinned
+  by the test "never appends an acceptance activity onto a thread another
+  machine owns". Consequence to keep visible: after a cross-machine handoff,
+  machine A never learns machine B continued the work. (c) every cross-env
+  handoff test runs against the fake daemon HTTP stub; no script or fixture in
+  the tree boots two hosts.
 - [x] Add the global multi-computer activity overview on the replicated
       redacted projection, including last known state of offline machines.
       Done 2026-08-20 (commits `3b9e49d2b`, `3e12960cf`): a `/machines` route
@@ -1100,16 +1529,84 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       (migration 044); exactly one first-contact envelope per peer travels
       plain inside the room trust boundary and is counted. Local fast path
       stays plaintext by design.
-- [ ] Add narrowly scoped server credentials and ACL checks for send, receive,
-      reply, cancel, reassign, and review operations; account co-membership
-      alone must not grant cross-project or cross-environment execution rights.
-- [ ] Guarantee at-least-once transport with stable envelope IDs, idempotent
-      inbox insertion, acknowledgements, bounded retry/backoff, expiry, and a
-      dead-letter state visible to the user. Never promise exactly-once network
-      delivery; guarantee exactly-once delegation effects by deduplication.
-- [ ] Add a server-side mailbox reconciler that resumes after restart, applies
+- [~] Add narrowly scoped server credentials and ACL checks for send, receive,
+  reply, cancel, reassign, and review operations; account co-membership
+  alone must not grant cross-project or cross-environment execution rights.
+  Audited 2026-08-20. The SECOND sentence is fully enforced, structurally:
+  cross-environment reassignment is refused with `unknown-target` before
+  any effect, the executor refuses foreign-environment targets outright
+  (test "skips a delegation whose target thread lives in another
+  environment"), and every routing envelope must carry an Ed25519 signature
+  that verifies against a pinned per-environment mesh identity before
+  insertion. The FIRST sentence is not: there is one coarse gate, not six
+  narrow ones. Every mailbox RPC — sendMessage, delegateTask, reply,
+  requestReview, updateDelegation, reassignDelegation, sendHandoff,
+  acceptHandoff — passes through the same two steps: the transport scope
+  `orchestration:operate` from the RPC authorization table, then the single
+  `requireOrchestratorSource` check
+  (`apps/server/src/workjet/mailbox/WorkjetMailboxRpc.ts:169-181`), which
+  collapses "thread missing", "thread deleted", and "not an orchestrator"
+  into one `unauthorized`. The MCP side is the same decision:
+  `requireWorkjetOrchestrator` on all five tools. The module says so itself
+  at `WorkjetMailboxRpc.ts:58-62` — "Worker-initiated traffic
+  (`workjet_reply`, delegation updates) and per-operation ACLs are separate,
+  still-open plan items". Remaining delta: per-operation scopes/credentials,
+  and a path for a WORKER thread (not just an orchestrator) to reply or
+  update its own delegation — today a worker cannot use the mailbox RPCs at
+  all. Related still-open item: "Scope T3 MCP tools to the current
+  session/thread and capability grants" later in this plan.
+- [~] Guarantee at-least-once transport with stable envelope IDs, idempotent
+  inbox insertion, acknowledgements, bounded retry/backoff, expiry, and a
+  dead-letter state visible to the user. Never promise exactly-once network
+  delivery; guarantee exactly-once delegation effects by deduplication.
+  Audited 2026-08-20: everything except the last clause is done. Stable
+  envelope ids (minted once at send, the PRIMARY KEY of both outbox and
+  inbox, migration 042); idempotent inbox insertion with expiry checked
+  BEFORE dedup (store test "inserts an inbound envelope idempotently and
+  rejects an expired one"); acknowledgements (delivery-receipt statuses,
+  `markOutboundDelivered` — test "marks an outbound envelope delivered
+  exactly once" — and the daemon-side `consumed` call); bounded
+  retry/backoff to dead-letter (tests "backs off exponentially and
+  dead-letters after the attempt budget", "caps the exponential backoff");
+  expiry (one-pass sweep across all three tables); and exactly-once
+  delegation effects by deduplication (transport test "consumes a replayed
+  envelope without repeating its delegation effects", delivery test "treats
+  a replayed envelope as a duplicate without a second inbound activity").
+  Remaining delta — "visible to the user": no UI reads the dead-letter
+  state. The executor's counters are annotated "for later UI exposure"
+  (`WorkjetDelegationExecutor.ts:197-199`), and the redacted audit stream
+  reaches a client-runtime atom
+  (`packages/client-runtime/src/state/server.ts:1044-1046`) that no
+  component renders. A dead-lettered DELEGATION does surface indirectly,
+  because its source row reconciles to `failed`/`delivery-dead-lettered`
+  with a source-thread trace (test "fails a source delegation whose
+  outbound envelope dead-lettered"); a dead-lettered plain MESSAGE surfaces
+  nowhere at all.
+- [x] Add a server-side mailbox reconciler that resumes after restart, applies
       backpressure, orders events per delegation, and queues target prompts
       while a thread already has an active turn.
+      Done 2026-08-19, verified 2026-08-20:
+      `apps/server/src/workjet/mailbox/WorkjetDelegationExecutor.ts`, whose
+      module docstring cites this exact line. All four properties, each with a
+      test in `WorkjetDelegationExecutor.test.ts`: resumes after restart —
+      "resumes rows a previous process left in delivered and in accepted";
+      backpressure and target-prompt queueing are the SAME mechanism, since the
+      loop is the queue and a busy target simply stays `delivered` with no
+      second table — "holds a delegation in delivered while the target turn
+      runs, then executes it" and "starts only one turn per thread per cycle
+      even with two delivered delegations", with "treats both a running latest
+      turn and a live session as an active turn" defining busy; ordering per
+      delegation — `listDelegationRowsByState` scans `ORDER BY
+state_changed_at_ms ASC, delegation_id ASC`
+      (`WorkjetMailboxStore.ts:1816`) and the cycle scans `running` before any
+      accept moves a fresh row into `running`. Bounded at 32 rows per state per
+      cycle, 10 s cadence, 60 s cycle timeout, with a resilient per-row scan so
+      one version-skewed row is counted and skipped rather than aborting the
+      cycle (test "skips a version-skewed delegation row while still running
+      its readable neighbour"). Exactly one instance runs, provided as a single
+      shared layer constant in `apps/server/src/server.ts:477-487` and `:561`.
+      Honest caveat: the restart test seeds rows in the same in-memory database
+      rather than killing a process.
 - [x] Expose harness-neutral MCP tools `workjet_send_message`,
       `workjet_delegate_task`, `workjet_reply`, `workjet_request_review`, and
       `workjet_update_delegation`; all harnesses receive the same schemas and
@@ -1131,6 +1628,13 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       cycle), and resumes `delivered`/`accepted` rows after restart. 13
       focused tests. Same-environment only — cross-machine snapshot transfer
       and completion/result-return remain open.
+      CORRECTION 2026-08-20: that last sentence no longer holds. Cross-machine
+      snapshot transfer landed (commit `ee82c5ac2`; transport test "stores
+      received snapshot bytes and makes the delegation executable") and
+      completion/result-return landed (commit `c4c5d8851`, migration 047, with
+      durable redelivery via migration 049). The executor's own module
+      docstring still carries the superseded "SAME-ENVIRONMENT delegations
+      only" scope note — a stale code comment, not a behavioural limit.
 - [x] Preserve the delegation link when a result returns to the source thread;
       allow the source worker to ask a follow-up, request independent review,
       or send `changes-requested` back to the original worker without creating
@@ -1180,6 +1684,19 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
   per-turn cost figure exists anywhere reachable; the cost ceiling remains
   enforced at the store. Granularity caveats: provider-driven snapshot
   cadence and the 10 s cycle allow bounded overshoot between reports.
+  AUDIT 2026-08-20: all six gates the line names are present and tested —
+  typed edges (migration 045, store tests "inserts a delegation-graph edge
+  idempotently on its stable id", "lists every edge touching a delegation as
+  from or to, in creation order"), max depth, max review rounds, the TIME
+  budget as `WorkjetDelegationBudget.expiresAt`
+  (`packages/contracts/src/workjetMailbox.ts:376`) enforced by the one-pass
+  expiry sweep, `maxTokens`, `maxCostMicros`, and `requiresApproval` (store
+  tests "gates a requiresApproval delegation as pending until approved",
+  "rejection cancels the delegation terminally and keeps it non-executable").
+  The box stays `[~]` for exactly one reason: the COST ceiling can never fire,
+  because no per-turn cost figure exists to charge against it, so
+  `maxCostMicros` is enforced machinery over an input that is always zero.
+  Everything else on this line is closed.
 - [x] Add interruption, cancellation, reassignment, target-offline, deleted-
       thread, and target-version-skew handling with explicit terminal or
       recoverable states; never silently drop a message or start it elsewhere.
@@ -1195,47 +1712,92 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       aborting the cycle; an interrupted turn fails with explicit
       `turn-interrupted`. Cancellation existed already. No contract changes
       were needed.
-- [ ] Transfer context by immutable prompt snapshots and bounded references to
-      artifacts, diffs, files, and Greppy results instead of copying complete
-      chat histories. All Code-mode threads on one server continue to share its
-      single Greppy store; remote servers resolve references against their own
-      authorized environment state.
-- [~] Add thread UI for “Nachricht” versus “Nachricht + Auftrag”, recipient
-  selection across connected computers, delivery/state badges, linked
-  source/target navigation, reply, follow-up, review, cancel, and reassign.
-  Send + render done (commits `68e42c912`…`b5908195c`): the four
-  `workjet.*` activity kinds render as compact timeline cards with delivery
-  dispositions, delegation-state badges, and same-environment thread links;
-  orchestrator threads get the composer “Send to worker” panel (Message /
-  Message + Task tabs) behind `workjet.mailbox.sendMessage|delegateTask`
-  RPCs (operate scope + handler-side orchestrator validation collapsing
-  refusals to `unauthorized`). Lifecycle actions done 2026-08-19 (commits
-  `bb3283c60`, `72475c418`, `754907a47`, and the ChatView wire): reply,
-  request-review, cancel, and reviewer approve / request-changes are
-  state-gated action affordances on the delegation cards behind
-  `workjet.mailbox.reply|requestReview|updateDelegation` RPCs, wired
-  through ChatView. Cross-machine recipient picker done 2026-08-19 (commits
-  `483749f7d`…`3200a6537` + ChatView wire `85eb60bb6`): a redacted
-  `workjet.mesh.roster` RPC (read scope) lists TOFU-pinned peers —
-  workspace/environment ids, first-contact timestamp, and a derived
-  sealed-delivery-ready flag; the panel's "Another machine" mode offers a
-  "Remote environments" group (honest "first contact" label, NO invented
-  online state), a required bounded thread-id input ("this machine cannot
-  list another machine's threads"), per-peer prefill, and the old silent
-  environment-id-as-thread-id fallback was removed as a guess dressed as a
-  default. Zero-peer/no-roster/truncated states covered. Follow-up/revise/
-  reassign + compact composer done 2026-08-20 (commits `9b08253e0`,
-  `026f95471`): follow-up on running (optional bounded note sent as a reply
-  FIRST — an undeliverable note never precedes a silent state change), revise
-  on changes-requested, reassign on delivered/needs-input via the new
-  `workjet.mailbox.reassignDelegation` RPC (operate scope; cross-env →
-  `unknown-target` before any effect) with the send panel's local-target
-  list, refusal reasons rendered on the card; the send-to-worker control now
-  also renders in the composer's compact footer as an icon-popover (it was
-  previously absent there entirely). Known follow-up: the ws layer satisfies
-  the reassign port with the store write — providing WorkjetDelegationExecutor
-  through server.ts and swapping the port keeps guard+reconciler in one
-  place. The thread-UI item is functionally COMPLETE.
+- [~] Transfer context by immutable prompt snapshots and bounded references to
+  artifacts, diffs, files, and Greppy results instead of copying complete
+  chat histories. All Code-mode threads on one server continue to share its
+  single Greppy store; remote servers resolve references against their own
+  authorized environment state.
+  Audited 2026-08-20. DONE — the snapshot half, thoroughly: prompt text is
+  written into the content-addressed immutable store beneath the server
+  state root (`WorkjetSnapshotStore.ts`: digest-sharded, atomic, reverified
+  on read), the delegation is pinned to the digest the server itself wrote,
+  and cross-machine transfer carries the bytes sealed and digest-reverified
+  into the receiver's store before the delegation row is written; a thread
+  handoff carries a bounded composed snapshot (40 msgs / 8k chars / 256KiB,
+  no events, tools, or paths). No complete chat history ever travels.
+  PARTIAL — the reference half: `WorkjetArtifactReferences`
+  (`packages/contracts/src/workjetMailbox.ts:308-314`) is modelled and
+  carried on the wire, but nothing POPULATES it. The executor writes
+  `artifacts: { schemaVersion: 1, commitHashes: [], paths: [] }` on every
+  result (`WorkjetDelegationExecutor.ts:914`, with the comment at `:880`
+  conceding "a later slice can lift it into `artifacts`") and
+  `WorkjetMailboxRpc.ts:471` does the same. OPEN — there is no diff
+  reference type and no Greppy reference type at all, and nothing resolves
+  a reference against a remote server's own authorized environment state;
+  that clause is unimplemented and untested. Remaining delta: populate
+  `artifacts` from the completed turn's worktree, add the diff/Greppy
+  reference kinds, and prove one resolution on the receiving side.
+- [x] Add thread UI for “Nachricht” versus “Nachricht + Auftrag”, recipient
+      selection across connected computers, delivery/state badges, linked
+      source/target navigation, reply, follow-up, review, cancel, and reassign.
+      Send + render done (commits `68e42c912`…`b5908195c`): the four
+      `workjet.*` activity kinds render as compact timeline cards with delivery
+      dispositions, delegation-state badges, and same-environment thread links;
+      orchestrator threads get the composer “Send to worker” panel (Message /
+      Message + Task tabs) behind `workjet.mailbox.sendMessage|delegateTask`
+      RPCs (operate scope + handler-side orchestrator validation collapsing
+      refusals to `unauthorized`). Lifecycle actions done 2026-08-19 (commits
+      `bb3283c60`, `72475c418`, `754907a47`, and the ChatView wire): reply,
+      request-review, cancel, and reviewer approve / request-changes are
+      state-gated action affordances on the delegation cards behind
+      `workjet.mailbox.reply|requestReview|updateDelegation` RPCs, wired
+      through ChatView. Cross-machine recipient picker done 2026-08-19 (commits
+      `483749f7d`…`3200a6537` + ChatView wire `85eb60bb6`): a redacted
+      `workjet.mesh.roster` RPC (read scope) lists TOFU-pinned peers —
+      workspace/environment ids, first-contact timestamp, and a derived
+      sealed-delivery-ready flag; the panel's "Another machine" mode offers a
+      "Remote environments" group (honest "first contact" label, NO invented
+      online state), a required bounded thread-id input ("this machine cannot
+      list another machine's threads"), per-peer prefill, and the old silent
+      environment-id-as-thread-id fallback was removed as a guess dressed as a
+      default. Zero-peer/no-roster/truncated states covered. Follow-up/revise/
+      reassign + compact composer done 2026-08-20 (commits `9b08253e0`,
+      `026f95471`): follow-up on running (optional bounded note sent as a reply
+      FIRST — an undeliverable note never precedes a silent state change), revise
+      on changes-requested, reassign on delivered/needs-input via the new
+      `workjet.mailbox.reassignDelegation` RPC (operate scope; cross-env →
+      `unknown-target` before any effect) with the send panel's local-target
+      list, refusal reasons rendered on the card; the send-to-worker control now
+      also renders in the composer's compact footer as an icon-popover (it was
+      previously absent there entirely).
+      TICKED 2026-08-20 after audit. CORRECTION: the "Known follow-up" this entry
+      used to carry — "the ws layer satisfies the reassign port with the store
+      write" — is DONE, and the sentence was already contradicted by the
+      result-return item above. `apps/server/src/server.ts:477-487` defines ONE
+      shared `WorkjetDelegationExecutorLive` constant (Effect memoizes a layer by
+      reference), provided both to `websocketRpcRouteLayer` at `:517` and as the
+      background loop at `:561`; `apps/server/src/ws.ts:464` sets
+      `reassign: workjetDelegationExecutor.reassign`, not a store write, and the
+      only `store.reassignDelegation` call site in the repo is inside the executor
+      (`WorkjetDelegationExecutor.ts:1774`). Test: "satisfies the mailbox RPC's
+      reassignment port with its own guard". Every affordance this line names is
+      present with a test: Message / Message+Task tabs plus the third Hand-off tab
+      (`WorkjetSendToWorkerPanel.test.tsx` "shows all three tabs and marks the
+      active one", "hides every task field until the task tab is chosen");
+      cross-computer recipient selection ("groups the roster peers under a remote
+      environments group, newest first", "requires the remote thread id and says
+      why it cannot be picked"); delivery/state badges
+      (`WorkjetMailboxActivityCard.test.tsx` "names every delivery disposition and
+      treats an absent one as queued", "tones every delegation state literal in the
+      contract"); source/target navigation ("links a same-environment peer thread
+      and calls back with its address", "names but never links a peer on another
+      machine"); reply; follow-up; review (request, approve, request-changes);
+      cancel; reassign ("offers reassign only on the two pending states, and only
+      with local targets"); and the compact footer popover ("collapses to an icon
+      button that still names itself, keeping the same popover"). Residual, minor
+      and previously unstated: no test asserts that `server.ts` hands the ws layer
+      the SAME executor instance as the loop — that rests on the shared constant
+      plus Effect's reference memoization, verified by reading.
 - [x] Add redacted audit/observability events and user notifications without
       storing prompts, secrets, provider payloads, or artifact contents in
       relay logs, traces, push notifications, or crash reports. Done 2026-08-19
@@ -1255,6 +1817,31 @@ business_os/mcp_inbound_auth_token` path, operator-overridable), pushes
       Codex -> Claude Code, Claude Code -> Grok, and Grok -> Codex, including
       offline delivery, duplicate envelopes, restart recovery, busy targets,
       review/changes-requested cycles, cancellation races, and revoked access.
+      Verified open 2026-08-20 — this is now the single largest unproven claim
+      in the section, and nothing else on the list substitutes for it. No test
+      boots a real harness session: `WorkjetDelegationExecutor.test.ts:290-341`
+      drives a hand-rolled recording engine, and even
+      `apps/server/src/workjet/WorkerDispatch.e2e.test.ts:36-38` states "No
+      provider harness is booted… nothing spawns an LLM session". The
+      mixed-harness dimension is not merely untested but currently untestable
+      at this layer: the worker address deliberately carries no harness field,
+      and grepping `codex|claude-code|grok` across
+      `apps/server/src/workjet/` finds only fixture provider-instance ids.
+      Cross-COMPUTER is not proven anywhere in this repo. Scenario coverage as
+      of today, all in one process against doubles: duplicate envelopes YES;
+      busy targets YES; review/changes-requested cycles YES (store and delivery
+      level, plus the card tests); offline delivery PARTIAL (a fake daemon that
+      refuses, never a second server that is down); restart recovery PARTIAL
+      (rows seeded in the same in-memory database, no process killed);
+      cancellation races NO — cancellation itself is covered but a grep for
+      `race` across the mailbox tests returns zero hits and no concurrent
+      cancel-versus-dispatch test exists (the only proven race is the handoff
+      accept claim); revoked access NO at this layer — zero `revoke` hits in the
+      mailbox tests, and device-scoped revocation lives in the CTOX daemon.
+      NOTE, so this item is not confused with a neighbour:
+      `WorkjetCrossModeProofMatrix.test.ts` is NOT this proof — it proves the
+      Cross-mode workflow bridge item in an earlier section and touches no
+      delegation.
 
 Abuse and reliability tests must cover duplicate dispatch, stale parent,
 deleted worker, server restart, network loss, cancellation race, terminal
@@ -1562,12 +2149,23 @@ ElectronSafeStorage.ts` with the Linux backend guard in
   `open-url` paths are unimplemented (`DesktopClerk.ts:142` handles
   `second-instance` for Clerk only). Confirmation is therefore not merely
   missing UI — the OS-originated link path it would guard does not exist.
-- [ ] Port support-bundle redaction and crash-report metadata without secrets.
-      Verified open 2026-08-20: nothing exists — no support/diagnostic bundle
-      builder, no `crashReporter` call, and no crash-metadata surface anywhere
-      under `apps/`, `packages/`, or `scripts/` (case-insensitive search for
-      `support-bundle`, `diagnostics bundle`, `crashReporter`,
-      `setUploadToServer` returns zero implementation hits).
+- [x] Port support-bundle redaction and crash-report metadata without secrets.
+      Done 2026-08-20 (commits `726decaeb`…`7999e8986`): a single JSON support
+      bundle with a DECLARED 59-field inventory that the builder test asserts
+      by set equality in both directions — an undeclared field fails, and so
+      does a declared field that stopped being emitted. One deny-biased
+      redaction gate (admission → substitution → residue check → bound); an
+      over-long value is OMITTED, never truncated, because a truncated secret
+      is a leaked prefix. The load-bearing decision: a log line is never
+      carried as free text but projected onto four named fields, so
+      `annotations.text` — where backend stdout could hold a prompt or a
+      provider payload — is dropped BY CONSTRUCTION. Crash metadata is
+      local-only: `uploadToServer: false` and NO `submitURL` at all, so no
+      later edit can quietly enable uploading, with exactly six gated keys and
+      no `addExtraParameter` path. Reachable from Help and from Diagnostics
+      settings; the bundle lands at a stated path and nothing is ever sent.
+      Canaries cover nine secret shapes plus six planted in a real temp state
+      directory, each asserted absent from the written file.
 - [x] Port permission denial, safe external navigation, launch-origin checks,
       secret scrubbing, and HTTP data/resource guards. Verified 2026-08-20,
       all five in place with tests. Permission denial: default-deny
@@ -2135,25 +2733,208 @@ CtoxManagedDiscovery.ts:12}`, all of which are wire contracts that must stay),
 
 ## 12. Security invariants
 
-- [ ] No Business OS HTTP data bridge or fallback.
+An item here is ticked only when A TEST EXISTS THAT FAILS IF THE INVARIANT IS
+VIOLATED. Reading the code and concluding "looks right" does not qualify:
+several of these were already true in code but unguarded, and an unguarded
+invariant regresses silently. Every guard named below was mutation-verified —
+the property was inverted, the guard was observed to fail, and the inversion
+was reverted. Audited 2026-08-20.
+
+- [x] No Business OS HTTP data bridge or fallback. Four independent guards:
+      the contract's `httpDataProxy` is a `Schema.Literal(false)`, so "the
+      proxy is on" is not a representable state
+      (`packages/contracts/src/ctox.test.ts:97`, and
+      `WorkjetCrossModeProofMatrix.test.ts` → `invariant B no http data bridge`);
+      that same test source-scans the cross-mode server path for a second data
+      route; the Electron guest cancels Business OS data requests at the
+      `webRequest` layer (`CtoxGuestManager.test.ts` → "allows shell/control
+      resources but blocks Business OS HTTP data routes"); and the managed
+      launch refuses a config advertising the bridge
+      (`CtoxManagedLaunch.test.ts` → "rejects non-WebRTC and HTTP-bridge launch
+      configurations"). SCOPE NOTE: the source scan covers
+      `apps/server/src/workjet/crossmode/` only — it guards the cross-mode path,
+      not every module in the repository. The pairing FALLBACK path is guarded
+      by two independent defences (a deep key scan and the schema literal),
+      both now exercised through the real `http_bridge_available` field in
+      `CtoxInstanceRegistry.test.ts` → "rejects expired, bridged, oversized,
+      malformed-room, and dangerous URL inputs"; previously only a synthetic
+      nested `http_bridge` key was covered.
 - [ ] No raw provider, pairing, capability, sudo, or SSH secrets in Git,
       browser storage, thread events, instance registries, logs, crash reports, or
       support bundles.
-- [ ] Separate Electron session partitions for CTOX instances.
-- [ ] Default-deny guest permissions; explicitly allow only required safe
-      capabilities.
-- [ ] Deny untrusted guest navigation and window creation; open validated
-      external URLs through the OS.
-- [ ] Pin managed launch-config requests to the authenticated ctox.dev origin.
-- [ ] Require confirmation for external pairing and instance-switch links.
+      KORREKTUR 2026-08-20 — this was VIOLATED, not merely unguarded, and is
+      now partly fixed. The support-bundle gate recognized provider and pairing
+      secrets but leaked three of the five kinds this line names: an OpenSSH
+      private key passed through verbatim with or without its PEM markers
+      (a key body is mostly letters and `A` padding, so its digit density falls
+      BELOW the generic entropy threshold — the heuristic that catches an
+      opaque token is anti-correlated with real key material); a sudo password
+      answered at a `[sudo] password for <user>:` prompt missed the assignment
+      rule; and every camel-cased secret name (`capabilityToken`) escaped the
+      word-boundary anchor. Fixed in `SupportBundleRedaction.ts` with canaries
+      for all three plus a set-equality check tying the canary table to the
+      kinds this line declares (`SupportBundleRedaction.test.ts`).
+      Still unticked because two named sinks have no test: GIT (no
+      secret-scanning gate over tracked files) and BROWSER STORAGE. The other
+      sinks are guarded — logs and support bundles by the canary table and the
+      log projection, crash reports by `DesktopCrashReporting.test.ts`
+      ("attaches exactly the declared metadata keys", "gates every metadata
+      value, so no secret can reach extra"), the bundle's field surface by the
+      `SUPPORT_BUNDLE_FIELD_INVENTORY` set equality in
+      `DesktopSupportBundle.test.ts`, and instance registries by
+      `CtoxInstanceRegistry.test.ts`, which asserts the room secret and
+      capability token appear in neither the public document nor the persisted
+      file.
+- [x] Separate Electron session partitions for CTOX instances.
+      `CtoxElectronSessions.test.ts` proves deterministic per-instance
+      partitions for managed, invited, manually paired, and SSH-managed
+      sources, that each differs from the control plane and from the others,
+      that mismatched or forged descriptors are refused before Electron is
+      reached, and that clearing storage touches only the selected partition.
+- [x] Default-deny guest permissions; explicitly allow only required safe
+      capabilities. NEWLY GUARDED. The existing test enumerated four
+      permissions it expected to be denied, which left the ALLOW-LIST ITSELF
+      unguarded: adding `media` or `usb` to `ALLOWED_INSTANCE_PERMISSIONS` kept
+      every assertion green. `CtoxElectronSessions.test.ts` → "grants exactly
+      the declared permissions and denies the rest of the surface" now drives
+      Electron's whole permission surface plus unknown strings through both
+      handlers, holds the grant set to an exact declared value, requires the
+      two handlers to agree, and proves the control plane grants nothing.
+- [x] Deny untrusted guest navigation and window creation; open validated
+      external URLs through the OS. NEWLY GUARDED. The predicates were tested;
+      the WIRING was not — deleting the `setWindowOpenHandler` call or the
+      `will-navigate` `preventDefault` left every predicate assertion green
+      while the guest gained popups and free navigation. `CtoxGuestManager.test.ts`
+      → "denies every guest-opened window and routes only safe URLs to the OS"
+      drives the handlers the guest actually installed: every window is denied
+      including same-origin, same-origin navigation proceeds, foreign
+      navigation is prevented, and `file:`/`javascript:` are neither loaded nor
+      handed to the shell.
+- [x] Pin managed launch-config requests to the authenticated ctox.dev origin.
+      `CtoxManagedLaunch.test.ts` → "pins the credential-bearing launch config
+      POST to the exact control-plane origin": a `launchConfigUrl` naming a
+      foreign origin fails the launch, and the credential-bearing POST is never
+      sent (exactly one fetch happened).
+      CORRECTION — the line is accurate but INCOMPLETE, and reads as a stronger
+      claim than what holds. Two different URLs are bounded differently. The
+      launch-CONFIG request is pinned to the exact control origin
+      (`CtoxManagedLaunch.ts:258-264`). The launch TARGET the guest then loads
+      is only bounded to the control host or a subdomain of it
+      (`isTrustedManagedLaunchTarget`, `CtoxManagedLaunch.ts:169-179`), because
+      the server names its own tenant URL and forcing a desktop-chosen path
+      broke every managed activation when the deploy retired `/business-os/`.
+      That weaker bound is itself guarded — `CtoxManagedLaunch.test.ts` →
+      "refuses a launch URL outside the control plane's own domain", which also
+      covers the `ctox.dev.attacker.example` suffix-confusion case.
+- [x] Require confirmation for external pairing and instance-switch links.
+      `DesktopDeepLinkRouter` never acts on an OS link: it parses, queues
+      (capped, malformed dropped, foreign schemes left to their owners) and
+      offers it to the renderer, and `DeepLinkConfirmationDialog.test.tsx` →
+      "navigates through the supplied callback only when the user confirms" is
+      the gate that turns one into a navigation.
+      CORRECTION — the line names a surface that only partly exists. Pairing is
+      NOT reachable through an OS deep link: the `ctox-business-os-desktop://pair`
+      invite format is not among the schemes this app claims
+      (`desktopSchemes.ts:39-44`), and `importInvite` is reached only by
+      explicit entry in `CtoxModeShell`. No instance-switch deep-link route
+      exists at all. Rewrite the line to describe OS-delivered links generally
+      when this section is next revised.
 - [ ] Preserve Web Stack SSRF, redirect, content-size, and untrusted-content
       defenses.
-- [ ] Scope T3 MCP tools to the current session/thread and capability grants.
+      Untrusted-content and content-size are guarded:
+      `web_search.rs` → `model_facing_context_fences_untrusted_page_content`
+      drives adversarial fixtures and asserts hostile strings land inside the
+      fence while trusted framing stays outside;
+      `local_fixture_rejects_over_limit_body_without_truncation` and the
+      capability response budget (`capability_contract.rs` →
+      `public_search_projection_is_exact_and_honors_both_host_budgets`) cover
+      size.
+      Unticked for three reasons found on 2026-08-20:
+      (1) SSRF is INCOMPLETE, not merely untested. Three production `ureq`
+      agents in `native/web-stack/src/scholarly_search.rs`
+      (`annas_archive_search`, `augment_results_with_open_access_pdfs`,
+      `fetch_json`) do not install `SsrfResolver`; `fetch_json` fetches an
+      arbitrary caller-supplied URL. They are enumerated in
+      `KNOWN_UNRESOLVED_AGENTS` in `WebStackEgressWiring.test.ts` so the gap is
+      visible and a NEW unguarded agent fails, but they are not fixed — that
+      needs a full crate build and a decision about which configured hosts must
+      stay reachable, as `web_search.rs` already grants a self-hosted SearXNG
+      base.
+      (2) There is NO max-redirect limit anywhere in the crate; the hop cap is
+      whatever `ureq` defaults to, so a dependency bump could change it
+      unnoticed. The plan line asserts a redirect defense that does not exist as
+      such — redirect TARGETS are re-validated per hop through the resolver,
+      which is a different (and weaker) property than a bounded chain.
+      (3) The TypeScript stdout byte budget (`WebStackSearch.ts:90`,
+      `WebStackBrowser.ts:275`, `WebStackResearch.ts:421`) has no test.
+      NEWLY GUARDED in the meantime: that the SSRF policy is INSTALLED at all.
+      `egress.rs` proved the policy correct, but every HTTP fixture test
+      allow-lists `127.0.0.1`, so deleting `.resolver(...)` from an agent left
+      the entire Rust suite green. `WebStackEgressWiring.test.ts` now holds
+      every production agent to installing it.
+- [x] Scope T3 MCP tools to the current session/thread and capability grants.
+      Behaviour is covered (`McpInvocationContext.test.ts`,
+      `WorkerTool.test.ts` and `MailboxTool.test.ts` → "denies direct calls for
+      standard, worker, and missing roles", `McpHttpServer.test.ts` → tools/list
+      filtered by the authoritative bearer scope). NEWLY GUARDED: every one of
+      those tests names a tool that exists TODAY, so a new `addTool` whose
+      handler never checks scope was reachable with the whole suite green.
+      `WorkjetToolScopeGate.test.ts` scans the registrations per-registration
+      (so one guarded tool cannot vouch for four unguarded siblings), holds
+      them to a declared inventory, and pins that the enforcers still refuse and
+      that the scope still carries `threadId` and `providerSessionId`.
+      RESIDUAL: no confused-deputy test exists — nothing proves a valid
+      credential for thread A cannot act on thread B's resources. The property
+      holds structurally (tools take the thread from the invocation scope, never
+      from the payload — `WorkerDispatch.ts:139`), but that is unproven.
 - [ ] Authenticate remote worker dispatch and prevent cross-environment
       authority escalation. Require signed, end-to-end encrypted delegation
       envelopes, target-side capability checks, bounded payloads, expiry, and
       revocable environment credentials.
+      Verified open 2026-08-20. Two of the six required properties are covered
+      well — SIGNED (`WorkjetMeshIdentity.test.ts`,
+      `WorkjetMailboxTransport.test.ts` → "rejects and consumes a tampered
+      signature", plus key-binding verification) and END-TO-END ENCRYPTED
+      (ephemeral X25519 → HKDF → AES-256-GCM with the envelope id bound through
+      the AAD). The other four are not:
+      • TARGET-SIDE CAPABILITY CHECKS do not exist. Only a target ROLE check
+      does (`WorkjetDelegationExecutor.ts:857`). The parent-superset grant
+      check exists solely on the LOCAL path (`WorkerDispatch.ts:152-160`),
+      never on the remote one.
+      • REVOCABLE ENVIRONMENT CREDENTIALS do not exist in this repository.
+      There is no `revokePeer`, `forgetPeer`, or `rotateMeshKey`; key rotation
+      is treated as a rejection, not a supported revocation path. Revocation
+      is explicitly deferred to the CTOX daemon, outside this repo.
+      • BOUNDED PAYLOADS are enforced and tested OUTBOUND only (the 200 000-byte
+      wire ceiling); nothing asserts the receiver refuses an oversized wrapper
+      pushed at it, and the 1 MiB seal-field bound has no test.
+      • EXPIRY has one bundled assertion sharing a test with two unrelated
+      conditions; no test covers the boundary, or a validly-signed but expired
+      envelope being refused before unsealing.
 - [ ] Redact provider traffic metadata and never log request bodies by default.
+      Verified open 2026-08-20. The second half holds and is guarded: bodies are
+      captured only on the error path (`response_writer_test.rs` →
+      `error_only_success_does_not_call_disabled_logger`), management routes are
+      never request-logged, and the TypeScript ACP layer logs structure only
+      (`AcpNativeLogging.test.ts` → "records bounded request and protocol
+      diagnostics without raw payloads", which feeds a canary through every
+      field and asserts it never appears).
+      The FIRST half is VIOLATED on one path. `HomeRequestLogPayload::new`
+      (`native/provider-gateway/internal/logging/request_logger_home.rs:35-43`)
+      builds its `headers` map with `clone_headers`, which filters only empty
+      names and applies NO masking — so while the `request_log` blob it ships
+      is redacted, the sibling `headers` field carries a raw
+      `Authorization: Bearer …` off-box to the home sink. This is
+      COUNTER-TESTED: `request_logger_home_test.rs` →
+      `bound_home_sink_replaces_local_request_log_output` asserts the raw token
+      IS present, so any fix breaks that test.
+      OWNER: decide whether the home sink is a trusted destination that may
+      receive unmasked credentials, or a leak to close. Not changed here —
+      flipping a deliberately pinned behaviour needs that decision first.
+      Also untested: that the host never selects `RequestLoggingPolicy::full`
+      (all seven call sites use `error_only_scoped`; switching one breaks no
+      test), that `sdk_config.request_log` defaults to `false`, and that
+      `commercial_mode` suppresses upstream capture.
 
 ## 13. Licensing policy and release gate
 
@@ -2200,40 +2981,276 @@ generated notices remains a release gate.
 ## 14. Upstream maintenance strategy
 
 - [x] Keep `upstream/main` configured and fetch it regularly.
-- [ ] Maintain a short, ordered Workjet patch stack: contracts, orchestration,
-      capabilities, provider integration, CTOX services, shell UI, branding.
-- [ ] Prefer additive files and adapters over invasive rewrites of T3 core.
-- [ ] Avoid changing internal T3 identifiers that are not user-visible.
+- [~] Maintain a short, ordered Workjet patch stack: contracts, orchestration,
+  capabilities, provider integration, CTOX services, shell UI, branding.
+  **Measured false, 2026-08-20; recommended for removal.** The stack is 485 commits (348
+  first-parent) and fully interleaved: every theme spans nearly the whole
+  chain (contracts #6→#305, capabilities #14→#322, provider #3→#332, CTOX
+  #5→#315, shell UI #35→#284 of 348). There is no ordered stack to rebase
+  and reordering 485 commits does not pay for itself against 43 conflict
+  hunks per upstream cycle. The additive-file shape below already delivers
+  what the ordering was meant to buy.
+- [x] Prefer additive files and adapters over invasive rewrites of T3 core.
+      **Verified 2026-08-20**: 1900 added / 206 modified / 1 deleted / 0 renamed
+      across 2107 changed paths (90.2% additive). Of the 206 modified T3 core
+      files only 25 conflict against 172 upstream commits — a 12% collision
+      rate, and zero conflicts on Workjet-added files.
+- [x] Avoid changing internal T3 identifiers that are not user-visible.
+      **Verified 2026-08-20**: zero removals or renames across 78 desktop IPC
+      channel literals, 228 `Schema.Literal` values, 13 `Schema.TaggedStruct`
+      tags, 11 `_tag` literals, 18 `CREATE TABLE` names, 2 `localStorage` keys,
+      5 `@t3tools/*` package names, and the `com.t3tools.t3code` bundle id. The
+      copy sweep only added identifiers; the CTOX URL scheme is registered
+      alongside the legacy `t3code` scheme, not in place of it.
 - [ ] Rebase or merge upstream at the end of every completed wave and run the
       affected regression suite.
 - [x] Track conflicts and recurring upstream hot spots in this document.
-  - [ ] Reconnect sanitized Workjet baseline `39d3a27d3` to its tree-identical
-        public T3 baseline `6ae44b418` before a normal merge or pull request;
-        the current 225-commit downstream stack has no Git ancestry link.
-  - [ ] Reconcile the Workjet patch stack with refreshed `upstream/main`
-        `d484735c6` and record recurring conflicts after the first replay.
+  - [x] **Reconnect technique chosen and proven on a scratch branch,
+        2026-08-20**; execution on the real branch is still pending an owner
+        decision. Premise re-verified: `39d3a27d3` and `6ae44b418` are
+        tree-identical (both `7a67bc947…`, `git diff` empty) with no ancestry
+        (`git merge-base` rc 1) and disjoint roots; the sanitized side is a full
+        2516-commit parallel rewrite, not a truncated import. **KORREKTUR:** the
+        downstream stack is **485** commits, not the 225 this plan claimed.
+        Technique: re-parent replay (`git commit-tree` over
+        `39d3a27d3..tip` with `39d3a27d3` → `6ae44b418`), preserving every tree.
+        Proven as `scratch/ancestry-probe` `98cd9ef0f`: `git diff` against
+        today's tip empty, ancestry rc 0, and a PR to `origin/main` would list
+        **485** commits instead of today's **3001**. `git replace --graft` was
+        rejected (local-only; GitHub never honours replace refs — the probe ref
+        was created and deleted in the same run) and a tip-level `-s ours` merge
+        was rejected (works, but still lists 3002 commits).
+        Cost to accept: all 485 commit ids change; re-point every agent branch
+        in the same pass.
+  - [x] **First replay against refreshed upstream recorded, 2026-08-20.**
+        **KORREKTUR:** `upstream/main` is now `beab6886f`, not `d484735c6`
+        (which remains an ancestor, 62 commits back; 172 commits past
+        `6ae44b418`). Once ancestry exists the reconciliation is an ordinary
+        three-way merge: **25 conflicted files, 43 hunks, 1 modify/delete** —
+        13 files / 27 hunks structural, 11 files / 16 hunks incidental,
+        independently reproduced with `git merge-tree`. Full map, per-file
+        recurrence counts, mitigations and environment traps:
+        `docs/workjet-upstream-conflict-map.md`.
+  - [ ] OWNER: decide whether to execute the reconnect (rewrites the 485 commit
+        ids once) or keep the fork permanently unmergeable to upstream.
+  - [ ] OWNER: confirm dropping the "short, ordered patch stack" goal above, or
+        fund rebuilding 485 interleaved commits into ordered theme branches.
+  - [ ] OWNER: `apps/web/src/orchestrationEventEffects.test.ts` — upstream
+        deleted it in `277322933` "test: remove redundant and stale tests
+        (#6267)"; Workjet still edits it. Keep the Workjet copy or drop it.
+  - [ ] Land the three cheap conflict mitigations from the map: a single
+        trailing `workjet*` barrel import in `ChatView.tsx`, `ChatComposer.tsx`,
+        `SidebarChrome.tsx` and `packages/contracts/src/settings.ts`; a marked
+        Workjet section at the end of `apps/desktop/src/ipc/channels.ts`; and
+        extraction of the Workjet turn-option threading out of
+        `CodexSessionRuntime.ts` (5 of 43 hunks, guaranteed to repeat).
 - [ ] Contribute generally useful, non-Workjet-specific fixes upstream where
       practical.
 - [ ] Never commit `.deps`, build output, local databases, credentials, or
       generated agent worktrees.
 
+### Upstream conflict hot spots (measured 2026-08-20, `beab6886f`)
+
+Structural — Workjet owns the behaviour, expect these every cycle:
+`CodexSessionRuntime.ts` (5 hunks, worst offender),
+`apps/desktop/scripts/electron-launcher.mjs` (4),
+`scripts/build-desktop-artifact.ts` (4), `SidebarChrome.tsx` (3),
+`ProviderService.ts` (2), `build-desktop-artifact.test.ts` (2), plus one hunk
+each in `DesktopEnvironment.ts`, `DesktopAppIdentity.test.ts`,
+`DesktopLifecycle.test.ts`, `DesktopApplicationMenu.test.ts`,
+`electron-launcher.test.mjs`, `DiagnosticsSettings.tsx`, `scripts/package.json`.
+
+Incidental — both sides appended to the same import block or constant list,
+resolution is "keep both": `ChatComposer.tsx` (3), `ChatView.tsx` (2),
+`threadSidebarWidth.test.ts` (2), `pnpm-lock.yaml` (2, regenerate with
+`pnpm install --lockfile-only`, never hand-merge), and one hunk each in
+`apps/desktop/src/ipc/channels.ts`, `packages/contracts/src/settings.ts`,
+`CodexDeveloperInstructions.ts`, `ProviderInstanceRegistryLive.ts`,
+`ProviderService.test.ts`, `MessagesTimeline.tsx`, `desktopUpdate.logic.ts`.
+
+Traps: `origin/main` of the fork is the public T3 commit `6ae44b418`, so any
+`origin/main..` count above 3000 is the missing-ancestry problem, not a real
+diff. macOS BSD `grep` treats several of these `.tsx` files as binary — count
+conflict hunks with `grep -a` or the map undercounts (39 vs the true 43). The
+stack has 4 root commits (T3 plus three imported repositories), which breaks
+`git rebase` and `git filter-branch` but not the re-parent replay.
+
 ## 15. Test and release matrix
 
 Every wave uses targeted tests while developing. Before a public Workjet beta:
 
-- [ ] Full contracts, server, client-runtime, web, and desktop typecheck.
-- [ ] Full relevant T3 test suites.
-- [ ] Provider-gateway Rust test, clippy, fmt, differential, and real-account
-      opt-in gates.
-- [ ] Web Stack Rust, fixture, SSRF, search, browser, and E2E gates.
-- [ ] Workjet orchestration restart, cancellation, duplicate, and remote tests.
-- [ ] CTOX WebRTC data-plane guard and Business OS launch tests.
-- [ ] Desktop managed/local/SSH/invite/session/keychain parity matrix.
+MEASURED 2026-08-20 at `f60f69674` (clean tree, so every failure below is
+PRE-EXISTING and none of it was caused by the measurement). Host: macOS
+Darwin 25.2.0 / Apple Silicon, Node v26.6.0, cargo 1.97.0, pnpm 11.10.0,
+checkout on `/Volumes/tmp`. Every verdict below is backed by a log under
+`/Volumes/tmp/workjet/logs/gate-<name>.log`; the mechanically re-runnable
+command list lives in `docs/workjet-release-gate-status.md`. Disk on
+`/Volumes/tmp`: 84 GiB free before, 74 GiB after (two macOS packages plus
+three cargo target dirs). `vp` is not on PATH — use `./node_modules/.bin/vp`.
+
+- [~] Full contracts, server, client-runtime, web, and desktop typecheck.
+  `./node_modules/.bin/vp run --filter <pkg> typecheck` per package:
+  contracts PASS (exit 0), client-runtime PASS, web PASS, desktop PASS,
+  server (`--filter t3`) FAIL exit 1 with exactly **57** `error TS` — the
+  documented pre-existing baseline, unchanged. The repo-wide CI form
+  `vp run -r --concurrency-limit 2 typecheck` FAILS (exit 1, 2:29) on two
+  tasks: `t3` (57) and `@t3tools/mobile` (**8** errors, all
+  "`workjetConfig` is missing" on `EnvironmentThreadShell` fixtures — the
+  contract made the field required without updating the mobile fixtures).
+  Mobile is not named in this gate line but is what makes CI's
+  `vpr typecheck` red. Logs: `gate-typecheck-contracts.log`,
+  `gate-typecheck-client-runtime.log`, `gate-typecheck-web.log`,
+  `gate-typecheck-desktop.log`, `gate-typecheck-server-cli.log`,
+  `gate-typecheck-mobile.log`, `gate-typecheck-all.log`.
+- [x] Full relevant T3 test suites. `./node_modules/.bin/vp run -r test` →
+      exit 0, 15/15 tasks, **950 test files (+2 skipped), 9 605 tests passed
+      (+7 skipped)**, 5:41. Log `gate-t3-full-test-rerun.log`. Caveat: the
+      same command run while a cargo build competed for CPU failed (exit 1) —
+      `scripts/lib/cli-external-packages.test.ts` hit its 60 000 ms timeout and
+      aborted web/mobile/desktop (`gate-t3-full-test.log`). Run it unloaded.
+- [~] Provider-gateway Rust test, clippy, fmt, differential, and real-account
+  opt-in gates. **test PASS**, run in `native/provider-gateway` with
+  `CARGO_TARGET_DIR=/Volumes/tmp/workjet/cargo-target-rg`:
+  `cargo test -p workjet-provider-gateway --no-fail-fast -- --test-threads=1`
+  → exit 0,
+  **2 553 passed, 0 failed, 3 ignored**. **clippy FAIL** (pre-existing):
+  `cargo clippy -p workjet-provider-gateway --all-targets -- -D warnings`
+  → exit 101, 1 error, `unnecessary_get_then_check` at
+  `internal/auth/codex/openai_auth_test.rs:121`. **fmt FAIL**
+  (pre-existing):
+  `cargo fmt --check --manifest-path native/provider-gateway/Cargo.toml`
+  → exit 1, 16 hunks in 4 files, all
+  introduced by `e9028a3ae`. **differential NOT-RUNNABLE-HERE**: the 26
+  `scripts/run_*_differential.sh` need the Go CLIProxyAPI upstream at
+  `$repo_dir/runtime/cliproxyapi-upstream`, and their `repo_dir` is
+  computed as `$crate_dir/../../../..` — two levels ABOVE the Workjet repo
+  root; neither that path nor `<repo>/runtime/` exists (Go itself is
+  installed). **real-account NOT-RUNNABLE-HERE**: needs live subscription
+  logins; no opt-in runner exists in the repo. Logs:
+  `gate-provider-gateway-test-serial.log`, `gate-provider-gateway-clippy.log`,
+  `gate-provider-gateway-fmt.log`. NOTE: under load
+  the four `--test plugin_supervisor` tests fail with `Err(Handshake)`
+  (child Unix-socket callback times out); green serially
+  (`gate-provider-gateway-plugin-supervisor-retry.log`).
+- [~] Web Stack Rust, fixture, SSRF, search, browser, and E2E gates.
+  **Rust/fixture/SSRF PASS**, run in `native/web-stack` with
+  `CARGO_TARGET_DIR=/Volumes/tmp/workjet/cargo-target-webstack`:
+  `cargo test --all-features --no-fail-fast -- --test-threads=1` → exit 0,
+  **463 passed, 0 failed, 23 ignored** (lib 454, `capability_contract` 2,
+  `scrape_target_fixtures` 6, one long integration test). SSRF is the 7
+  `src/egress.rs` tests plus `apps/server/.../WebStackEgressWiring.test.ts`.
+  `cargo fmt --check` and
+  `cargo clippy --all-targets --all-features -- -D warnings`
+  both PASS. **search/browser/E2E NOT-RUNNABLE-HERE**:
+  `scripts/test_web_search_e2e.sh` and `scripts/test_web_unlock_e2e.sh`
+  both require a built **`ctox`** binary at
+  `$ROOT/runtime/build/cargo-target/{debug,release}/ctox` (CTOX repo, not
+  vendored here), live network, and a patchright + Chromium runtime. Logs:
+  `gate-web-stack-test-serial.log`, `gate-web-stack-clippy-fmt.log`,
+  `gate-web-stack-test-retry3.log`. Three lib
+  tests are load-flaky (loopback fixture servers); green serially.
+- [x] Workjet orchestration restart, cancellation, duplicate, and remote tests.
+      `cd apps/server && ../../node_modules/.bin/vp test run src/workjet/` →
+      exit 0, **20 files, 384 tests**, 119.6 s.
+      Log `gate-workjet-orchestration.log`. (Supersedes the "32 files, 489
+      tests" figure recorded in section 8 — that count does not reproduce.)
+- [x] CTOX WebRTC data-plane guard and Business OS launch tests.
+      In `apps/desktop`:
+      `../../node_modules/.bin/vp test run src/ctox/ src/ipc/methods/ctox.test.ts`
+      → exit 0, **14 files, 195 tests**.
+      Log `gate-ctox-webrtc-businessos.log`.
+- [x] Desktop managed/local/SSH/invite/session/keychain parity matrix.
+      `./node_modules/.bin/vp run --filter @t3tools/desktop test` → exit 0,
+      **83 files, 816 tests**, 85.7 s. Log `gate-desktop-parity.log`.
 - [ ] Real end-to-end user stories for Code mode and CTOX mode.
-- [ ] Packaged macOS arm64 and x64 tests first; then Linux and Windows targets.
-- [ ] Signing, notarization, update, checksum, and provenance verification.
-- [ ] Fresh-install, upgrade, rollback, and legacy-settings import tests.
-- [ ] No tracked dependency/build/runtime artifacts.
+      **NO RUNNABLE GATE EXISTS.** `apps/web` declares a single vitest project
+      (`unit`); there is no Playwright/WebDriver harness and no scripted
+      version of either story below. Closest artefacts:
+      `apps/server/integration/OrchestrationEngineHarness.integration.ts`
+      (in-process, no UI) and `apps/desktop/scripts/smoke-test.mjs` (an 8 s
+      launch-and-grep). What must be built: a driver that boots the app
+      against a disposable state directory and asserts delivery receipts,
+      durable status, result return, cancellation, and restart recovery.
+- [~] Packaged macOS arm64 and x64 tests first; then Linux and Windows targets.
+  **macOS arm64 PASS**: `./node_modules/.bin/vp run dist:desktop:dmg:arm64`
+  → exit 0, 4:29, `release/CTOX-Desktop-App-0.0.33-arm64.dmg`
+  (282 703 523 B) + `.zip` (273 376 002 B) + blockmaps.
+  **macOS x64 PASS**: `dist:desktop:dmg:x64` → exit 0, 3:18, matching
+  `-x64` artifacts. Both UNSIGNED (no credentials here) and neither emits
+  a `latest-mac*.yml` update manifest locally — CI's "Collect release
+  assets" step does that. Prerequisite CI steps also PASS:
+  `vp run build:desktop` (exit 0, 28 s) plus the preload contract greps,
+  and `vp run --filter @t3tools/desktop smoke-test` (Electron launches,
+  "Desktop smoke test passed."). **Linux NOT-RUNNABLE-HERE**:
+  `dist:desktop:linux` AppImage from macOS needs a Linux container
+  toolchain that is not installed. **Windows NOT-RUNNABLE-HERE**:
+  `dist:desktop:win` needs NSIS plus the `wsl-prebuild/pty.node` artifact
+  from the release workflow's `build_wsl_node_pty` job. Logs
+  `gate-package-mac-{arm64,x64}.log`, `gate-desktop-build-smoke.log`.
+- [~] Signing, notarization, update, checksum, and provenance verification.
+  **Signing / notarization NOT-RUNNABLE-HERE**: no `CSC_LINK`,
+  `CSC_KEY_PASSWORD`, `APPLE_TEAM_ID`, `MACOS_PROVISIONING_PROFILE`, or
+  App Store Connect key locally. Proven on the artifact built above:
+  `codesign -dv` → "code object is not signed at all" (exit 1),
+  `spctl -a` → "rejected" (exit 3), `xcrun stapler validate` → "does not
+  have a ticket stapled to it" (`gate-signing-check.log`).
+  **Update/checksum FAIL — GATE-RUNNER BUG, not a product defect**:
+  `node scripts/release-smoke.ts` exits 1. Its fixed `workspaceFiles`
+  list omits `packages/workjet-capabilities/package.json`, so the temp-root
+  `vp install --lockfile-only` dies with
+  `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND` — "In apps/server:
+  @metric-space-ai/workjet-capabilities@workspace:\* is in the dependencies but
+  no package named @metric-space-ai/workjet-capabilities is present in the
+  workspace". Reproduced by hand; the one-line fix is to add that
+  path. Underlying unit coverage is green:
+  `vp run --filter @t3tools/scripts test` → exit 0, 23 files, 304 tests,
+  including `merge-update-manifests.test.ts` and
+  `mock-update-server.test.ts`. **Provenance NOT-RUNNABLE-HERE**:
+  `apps/desktop/resources/provider-gateway/host-release.pin.json` is
+  `"status": "unreleased"`, so
+  `node scripts/provider-gateway-host-artifacts.ts verify --dir <dir>` has
+  nothing to verify. Logs: `gate-release-smoke.log`,
+  `gate-test-scripts.log`, `gate-gateway-host-artifact-verify.log`.
+- [~] Fresh-install, upgrade, rollback, and legacy-settings import tests.
+  **Legacy-settings import PASS**: the four
+  `apps/server/src/workjet/legacy/*.test.ts` files are green inside the
+  20-file/384-test run above. **Fresh-install / upgrade / rollback: NO
+  RUNNABLE GATE EXISTS.** Update _logic_ is unit-tested
+  (`apps/desktop/src/updates/*`, `ElectronUpdater.test.ts`,
+  `apps/web/src/components/desktopUpdate.*`) and
+  `scripts/mock-update-server.ts` exists, but nothing installs a packaged
+  build into a clean prefix, upgrades it, forces a rollback, and asserts
+  the settings store survives.
+- [x] No tracked dependency/build/runtime artifacts.
+      `git ls-files` filtered for `node_modules/`, `dist/`, `dist-electron/`,
+      `out/`, `target/`, `.vite-plus/`, `.venv/` → 0 hits; filtered for
+      `^runtime/` → 0 hits. Seven tracked binaries remain, all inherited from
+      upstream T3 mobile vendoring (`ab63ef1cd`): one `.tgz`, two
+      `libghostty-fat.a`, four `libghostty-vt.so`. Log
+      `gate-no-tracked-artifacts.log`.
+
+Adjacent gates measured at the same time, because CI runs them on the same
+commit:
+
+- [ ] CI `Check` step — `./node_modules/.bin/vp check` → FAIL exit 1,
+      **143 tracked files** unformatted (82 `native/web-stack`, 35
+      `native/provider-gateway`, 13 `experiments/kundenpipeline-module`, 5
+      `native/pdf-parse`, 5 `apps/server`, 2 `apps/web`, 1
+      `docs/kundenpipeline-board.md`). Fixable with `vp check --fix`.
+      Log `gate-vp-check.log`.
+- [x] resource-monitor —
+      `cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check`
+      and
+      `cargo test --locked --manifest-path native/resource-monitor/Cargo.toml`
+      → both exit 0, 15 tests. Log `gate-resource-monitor.log`.
+- [x] Licensing release gate (section 13) —
+      `node scripts/generate-release-notice.ts --check` and
+      `node scripts/check-capability-version-lock.ts --check` → both exit 0.
+      Log `gate-notice-capabilities.log`.
+- [x] `node --test .github/scripts/thread-transfer-report.test.cjs` → exit 0,
+      6/6 tests. **KORREKTUR**: this suite was believed broken since
+      2026-08-07; it is green at `f60f69674`.
+      Log `gate-thread-transfer-report.log`.
 
 Representative Code-mode E2E:
 

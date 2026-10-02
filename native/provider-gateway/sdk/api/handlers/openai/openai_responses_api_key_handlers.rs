@@ -213,7 +213,7 @@ impl ApiKeyAccountPool {
         self.executor
             .execute(request)
             .await
-            .map(|response| response.payload)
+            .map(|response| { if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, 200, account_policy_now_ms()); } response.payload })
             .map_err(|error| {
                 let status = error.downcast_ref::<crate::internal::runtime::executor::openai_compat_executor::OpenAiCompatError>().map_or(502, |error| error.status_code);
                 if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, status, account_policy_now_ms()); }
@@ -231,7 +231,7 @@ impl ApiKeyAccountPool {
         self.executor
             .execute_stream(request)
             .await
-            .map(|response| response.chunks)
+            .map(|response| { if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, 200, account_policy_now_ms()); } response.chunks })
             .map_err(|error| {
                 let status = error.downcast_ref::<crate::internal::runtime::executor::openai_compat_executor::OpenAiCompatError>().map_or(502, |error| error.status_code);
                 if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, status, account_policy_now_ms()); }

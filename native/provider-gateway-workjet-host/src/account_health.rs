@@ -159,9 +159,13 @@ impl AccountHealthSource {
                     .as_ref()
                     .and_then(|s| s.get(&format!("{}:{}", a.provider, a.auth_id)))
                     .copied();
-                let status = latest
-                    .and_then(|r| r.last_error.as_ref().and_then(|e| e.http_status))
-                    .or(probe.map(|p| p.0));
+                let generation = self.state.observation(&a.provider, &a.auth_id);
+                let status = generation
+                    .into_iter()
+                    .chain(probe)
+                    .max_by_key(|o| o.1)
+                    .map(|o| o.0)
+                    .or(latest.and_then(|r| r.last_error.as_ref().and_then(|e| e.http_status)));
                 let authentication = match status {
                     Some(401 | 403) => "rejected",
                     Some(200..=299) => "authenticated",
@@ -169,7 +173,8 @@ impl AccountHealthSource {
                 };
                 let quotas = self.state.quotas(&a.provider, &a.auth_id);
                 let exhausted = quotas.iter().any(|w| {
-                    now.saturating_sub(w.observed_at_ms) < 300_000
+                    !matches!(w.name.as_str(), "seven_day_opus" | "seven_day_sonnet")
+                        && now.saturating_sub(w.observed_at_ms) < 300_000
                         && w.remaining_percent == Some(0.0)
                         && w.resets_at_ms.is_none_or(|r| r > now)
                 });
@@ -188,6 +193,7 @@ impl AccountHealthSource {
                         .map(|r| r.updated_at_ms)
                         .into_iter()
                         .chain(probe.map(|p| p.1))
+                        .chain(generation.map(|p| p.1))
                         .max(),
                     quota: quotas,
                     quota_supported: matches!(a.provider.as_str(), "codex" | "claude"),
@@ -268,8 +274,14 @@ async fn probe_read(
     let mut headers = BTreeMap::new();
     if let Some(reference) = &probe.id_token {
         let token = store.resolve_text(reference).ok()?;
-        let claims = workjet_provider_gateway::internal::auth::codex::parse_jwt_token(&token).ok()?;
-        if !claims.account_id().is_empty() { headers.insert("ChatGPT-Account-Id".into(), vec![claims.account_id().to_owned()]); }
+        let claims =
+            workjet_provider_gateway::internal::auth::codex::parse_jwt_token(&token).ok()?;
+        if !claims.account_id().is_empty() {
+            headers.insert(
+                "ChatGPT-Account-Id".into(),
+                vec![claims.account_id().to_owned()],
+            );
+        }
     }
     headers.insert(
         "Authorization".into(),

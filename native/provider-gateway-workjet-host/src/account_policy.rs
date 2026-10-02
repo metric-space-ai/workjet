@@ -33,6 +33,21 @@ pub struct QuotaWindow {
     pub resets_at_ms: Option<i64>,
     pub observed_at_ms: i64,
 }
+/// Monetary API balance is a direct provider reading, never a usage percentage.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountBalance {
+    pub available_balance: f64,
+    pub currency: String,
+    pub cash_balance: Option<f64>,
+    pub voucher_balance: Option<f64>,
+    pub observed_at_ms: i64,
+}
+pub fn balance_is_exhausted(balance: &AccountBalance, now: i64) -> bool {
+    balance.available_balance <= 0.0
+        && now >= balance.observed_at_ms
+        && now.saturating_sub(balance.observed_at_ms) < 300_000
+}
 /// Only an explicitly applicable LLM bucket can affect inference selection.
 pub fn quota_applies(window: &QuotaWindow, model: &str) -> bool {
     !window.tool_only
@@ -67,6 +82,8 @@ struct State {
     cooldowns: Vec<CooldownStateRecord>,
     #[serde(default)]
     quotas: BTreeMap<String, Vec<QuotaWindow>>,
+    #[serde(default)]
+    balances: BTreeMap<String, AccountBalance>,
 }
 
 pub struct AccountState {
@@ -117,6 +134,7 @@ impl AccountState {
             next.cooldowns
                 .retain(|r| !(r.provider.eq_ignore_ascii_case(provider) && r.auth_id == account));
             next.quotas.remove(&identity);
+            next.balances.remove(&identity);
             next.observations.remove(&identity);
         }
         next.api_key_fingerprints.insert(identity, fingerprint);
@@ -163,6 +181,28 @@ impl AccountState {
         self.persist(&next)?;
         *state = next;
         Ok(())
+    }
+    pub fn observe_balance(
+        &self,
+        provider: &str,
+        account: &str,
+        balance: AccountBalance,
+    ) -> Result<(), CooldownStoreError> {
+        let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
+        let mut next = state.clone();
+        next.balances
+            .insert(account_key(provider, account), balance);
+        self.persist(&next)?;
+        *state = next;
+        Ok(())
+    }
+    pub fn balance(&self, provider: &str, account: &str) -> Option<AccountBalance> {
+        self.state
+            .lock()
+            .ok()?
+            .balances
+            .get(&account_key(provider, account))
+            .cloned()
     }
     pub fn observation(&self, provider: &str, account: &str) -> Option<(u16, i64)> {
         self.state
@@ -274,6 +314,10 @@ impl AccountPolicy for AccountState {
                                     .is_some_and(|m| canonical_model_key(m) == requested))
                             && !r.is_available_at(now)
                     })
+                    && !state
+                        .balances
+                        .get(&account_key(provider, &c.auth_id))
+                        .is_some_and(|balance| balance_is_exhausted(balance, now))
                     && !state
                         .quotas
                         .get(&account_key(provider, &c.auth_id))

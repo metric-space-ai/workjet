@@ -15,12 +15,84 @@ const account: WorkjetGatewayAccountHealth = {
   generationHttpStatus: null,
   observedAtMs: null,
   quota: [],
+  balance: null,
   quotaSupported: true,
   quotaRefreshing: false,
   quotaError: null,
 };
 
 describe("Models account recovery", () => {
+  it("shows direct regional balances without a percentage or refill time", () => {
+    for (const currency of ["USD", "CNY"] as const) {
+      const balance = {
+        availableBalance: 49.58894,
+        currency,
+        cashBalance: -3,
+        voucherBalance: 49.58894,
+        observedAtMs: 1000,
+      };
+      const health = modelsAccountHealth(
+        { ...account, provider: "kimi", authentication: "authenticated", balance },
+        1001,
+      );
+      expect(health.balance).toEqual({
+        availableBalance: 49.58894,
+        currency,
+        observedAtMs: 1000,
+        fresh: true,
+      });
+      expect(health.windows).toEqual([]);
+      expect(health.retryAtMs).toBeNull();
+      expect(health.status).toBe("ready");
+    }
+  });
+  it("blocks only fresh nonpositive balance and labels old readings stale", () => {
+    for (const availableBalance of [0, -1]) {
+      const balance = {
+        availableBalance,
+        currency: "USD" as const,
+        cashBalance: null,
+        voucherBalance: null,
+        observedAtMs: 1000,
+      };
+      const fresh = modelsAccountHealth({ ...account, provider: "kimi", balance }, 1001);
+      expect(fresh.status).toBe("unavailable");
+      expect(fresh.message).toContain("balance is exhausted");
+      expect(fresh.retryAtMs).toBeNull();
+      const stale = modelsAccountHealth({ ...account, provider: "kimi", balance }, 301000);
+      expect(stale.balance?.fresh).toBe(false);
+      expect(stale.balance?.availableBalance).toBe(availableBalance);
+      expect(stale.status).toBe("unknown");
+      expect(modelsAccountHealth({ ...account, balance }, 999).status).toBe("unknown");
+    }
+  });
+  it.each([401, 403, 429])(
+    "keeps a balance-probe %s separate from generation authentication",
+    (httpStatus) => {
+      const balance = {
+        availableBalance: 1,
+        currency: "CNY" as const,
+        cashBalance: null,
+        voucherBalance: null,
+        observedAtMs: 1000,
+      };
+      const health = modelsAccountHealth(
+        {
+          ...account,
+          provider: "kimi",
+          authentication: "authenticated",
+          generationHttpStatus: 200,
+          httpStatus,
+          quotaError: "provider-error",
+          balance,
+        },
+        2000,
+      );
+      expect(health.status).toBe("ready");
+      expect(health.quotaError).toBe("provider-error");
+    },
+  );
+
   it("shows a model absent from the subscription separately without claiming inference failure", () => {
     const health = modelsAccountHealth(
       {

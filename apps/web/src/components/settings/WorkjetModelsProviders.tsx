@@ -428,7 +428,7 @@ function AccountRow({
               onChange={(event) => {
                 void state.onEditAccount(account, { enabled: event.target.checked });
               }}
-              className="peer sr-only"
+              className="peer absolute inset-0 z-10 m-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
             />
             <span
               aria-hidden

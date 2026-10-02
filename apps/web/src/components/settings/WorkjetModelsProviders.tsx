@@ -238,6 +238,7 @@ function KeyForm({
   const [error, setError] = useState<string | null>(null);
   return (
     <form
+      data-settings-inline-editor=""
       className="grid min-w-0 gap-2 border-t border-border/50 py-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,2fr)_auto]"
       onSubmit={(event) => {
         event.preventDefault();

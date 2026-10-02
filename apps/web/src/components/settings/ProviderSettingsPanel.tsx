@@ -92,6 +92,7 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { WorkjetModelsProviders } from "./WorkjetModelsProviders";
+import { WorkjetModelsUsage } from "./WorkjetModelsUsage";
 import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
@@ -364,6 +365,7 @@ function ScopedWorkjetGatewayAccountsSection({
   return (
     <>
       <WorkjetModelsProviders {...gateway} />
+      <WorkjetModelsUsage environmentId={environmentId} />
     </>
   );
 }

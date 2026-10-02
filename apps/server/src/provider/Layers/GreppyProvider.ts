@@ -31,7 +31,7 @@ import {
 const PRESENTATION = {
   displayName: "Greppy",
   showInteractionModeToggle: false,
-  requiresNewThreadForModelChange: true,
+  requiresNewThreadForModelChange: false,
 } as const;
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
@@ -63,11 +63,11 @@ const probeMessage = (settings: GreppySettings, version: string | null): string 
   return notes.join(" ");
 };
 
-const runVersion = (binary: string, environment: NodeJS.ProcessEnv) =>
+const runCli = (binary: string, args: readonly string[], environment: NodeJS.ProcessEnv) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const child = yield* spawner.spawn(
-      ChildProcess.make(binary, ["--version"], {
+      ChildProcess.make(binary, args, {
         env: environment,
         extendEnv: false,
         shell: false,
@@ -141,7 +141,7 @@ export const checkGreppyProviderStatus = Effect.fn("checkGreppyProviderStatus")(
   }
 
   const binary = settings.binaryPath || "greppy";
-  const probed = yield* runVersion(binary, environment).pipe(
+  const probed = yield* runCli(binary, ["--version"], environment).pipe(
     Effect.timeoutOption("8 seconds"),
     Effect.result,
   );
@@ -157,7 +157,9 @@ export const checkGreppyProviderStatus = Effect.fn("checkGreppyProviderStatus")(
         version: null,
         status: "error",
         auth: { status: "unknown" },
-        message: missing ? GREPPY_MISSING_MESSAGE : "Failed to execute Greppy (`greppy --version`).",
+        message: missing
+          ? GREPPY_MISSING_MESSAGE
+          : "Failed to execute Greppy (`greppy --version`).",
       },
     });
   }
@@ -212,7 +214,35 @@ export const checkGreppyProviderStatus = Effect.fn("checkGreppyProviderStatus")(
   }
 
   const parsed = version.kind === "supported" ? version.version : null;
-  const needsAttention = parsed === null || settings.model.trim().length === 0 || plainHttpEndpoint(settings.endpoint) === null;
+  const acp = yield* runCli(binary, ["agent", "stdio", "--help"], environment).pipe(
+    Effect.timeoutOption("8 seconds"),
+    Effect.result,
+  );
+  const hasAcp =
+    Result.isSuccess(acp) &&
+    Option.isSome(acp.success) &&
+    acp.success.value.code === 0 &&
+    acp.success.value.stdout.includes("greppy agent stdio");
+  if (!hasAcp) {
+    return buildServerProvider({
+      presentation: PRESENTATION,
+      enabled: true,
+      checkedAt,
+      models,
+      probe: {
+        installed: true,
+        version: parsed,
+        status: "error",
+        auth: { status: "unknown" },
+        message:
+          "This Greppy installation does not expose ACP (`greppy agent stdio`). Install a build with ACP support before starting a thread.",
+      },
+    });
+  }
+  const needsAttention =
+    parsed === null ||
+    settings.model.trim().length === 0 ||
+    plainHttpEndpoint(settings.endpoint) === null;
   return buildServerProvider({
     presentation: PRESENTATION,
     enabled: true,

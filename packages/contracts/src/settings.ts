@@ -524,48 +524,14 @@ export const GreppySettings = makeProviderSettingsSchema(
           "Maximum model turns for one prompt. The hosted session has no wall-clock deadline.",
       }),
     ),
-    noSandbox: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
-      Schema.annotateKey({
-        title: "No sandbox",
-        description:
-          "Turn off Greppy's filesystem sandbox. Leave this off unless a tool cannot run inside the sandbox.",
-        providerSettingsForm: { control: "switch" },
-      }),
-    ),
-    skipSelfCheck: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
-      Schema.annotateKey({
-        title: "Skip self-check",
-        description:
-          "Skip Greppy's startup self-check. Greppy may still index the isolated workspace it creates for the thread.",
-        providerSettingsForm: { control: "switch" },
-      }),
-    ),
-    applyOnSessionStop: Schema.Boolean.pipe(
-      Schema.withDecodingDefault(Effect.succeed(false)),
-      Schema.annotateKey({
-        title: "Apply on session stop",
-        description:
-          "After the thread stops, apply Greppy's saved proposal onto the checkout. The git index stays unchanged. A dirty checkout is left untouched and the proposal is kept.",
-        providerSettingsForm: { control: "switch" },
-      }),
-    ),
+
     customModels: Schema.Array(Schema.String).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: [
-      "binaryPath",
-      "endpoint",
-      "model",
-      "maxTurns",
-      "noSandbox",
-      "skipSelfCheck",
-      "applyOnSessionStop",
-    ],
+    order: ["binaryPath", "endpoint", "model", "maxTurns"],
   },
 );
 export type GreppySettings = typeof GreppySettings.Type;
@@ -817,9 +783,7 @@ const GreppySettingsPatch = Schema.Struct({
   endpoint: Schema.optionalKey(TrimmedString),
   model: Schema.optionalKey(TrimmedString),
   maxTurns: Schema.optionalKey(Schema.Int),
-  noSandbox: Schema.optionalKey(Schema.Boolean),
-  skipSelfCheck: Schema.optionalKey(Schema.Boolean),
-  applyOnSessionStop: Schema.optionalKey(Schema.Boolean),
+
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 

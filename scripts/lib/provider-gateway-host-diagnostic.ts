@@ -15,6 +15,31 @@ import {
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const nativePaths = ["native/provider-gateway-workjet-host", "native/provider-gateway"];
+export function parseDiagnosticHostBuildOptions(args: readonly string[]): {
+  arch: "arm64" | "x64";
+  outDir: string;
+} {
+  const usage = "Expected --arch arm64|x64 --out-dir <absolute artifact directory>.";
+  if (args.length !== 4) throw new Error(usage);
+  const options = new Map<string, string>();
+  for (let index = 0; index < args.length; index += 2) {
+    const flag = args[index];
+    const value = args[index + 1];
+    if (
+      (flag !== "--arch" && flag !== "--out-dir") ||
+      !value ||
+      value.startsWith("--") ||
+      options.has(flag)
+    )
+      throw new Error(usage);
+    options.set(flag, value);
+  }
+  const arch = options.get("--arch");
+  const outDir = options.get("--out-dir");
+  if ((arch !== "arm64" && arch !== "x64") || !outDir || !NodePath.isAbsolute(outDir))
+    throw new Error(usage);
+  return { arch, outDir };
+}
 export async function captureDiagnosticNativeSource(repoRoot: string) {
   const git = async (...args: string[]) =>
     (await execFile("git", args, { cwd: repoRoot, maxBuffer: 1024 * 1024 })).stdout.trim();

@@ -10,10 +10,30 @@ import { decodeProviderGatewayHostDiagnostic } from "@workjet/shared/providerGat
 import {
   assertDiagnosticMachO,
   captureDiagnosticNativeSource,
+  parseDiagnosticHostBuildOptions,
   prepareDiagnosticProviderGatewayHost,
   stageDiagnosticProviderGatewayHost,
 } from "./provider-gateway-host-diagnostic.ts";
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
+it("validates build arguments before compiling or writing artifacts", () => {
+  const outDir = NodePath.resolve("diagnostic-output");
+  NodeAssert.deepEqual(parseDiagnosticHostBuildOptions(["--arch", "arm64", "--out-dir", outDir]), {
+    arch: "arm64",
+    outDir,
+  });
+  NodeAssert.deepEqual(parseDiagnosticHostBuildOptions(["--out-dir", outDir, "--arch", "x64"]), {
+    arch: "x64",
+    outDir,
+  });
+  for (const args of [
+    ["--out-dir", "--arch", "arm64", outDir],
+    ["--arch", "arm64", "--out-dir", "relative-output"],
+    ["--arch", "arm64", "--arch", "x64"],
+    ["--arch", "universal", "--out-dir", outDir],
+    ["--arch", "arm64", "--out-dir", outDir, "unexpected"],
+  ])
+    NodeAssert.throws(() => parseDiagnosticHostBuildOptions(args), /Expected --arch/u);
+});
 function executable(arch: "arm64" | "x64" = "arm64") {
   const bytes = Buffer.alloc(64);
   bytes.writeUInt32LE(0xfeedfacf, 0);

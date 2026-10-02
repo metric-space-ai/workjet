@@ -8,7 +8,18 @@ const WINDOW_LABELS: Readonly<Record<string, string>> = {
   seven_day_sonnet: "Sonnet · 7 days",
   primary_window: "Short-term limit",
   secondary_window: "Long-term limit",
+  general_interval: "Short-term limit",
+  general_weekly: "7 days",
 };
+
+function quotaWindowLabel(name: string, index: number, count: number): string {
+  if (/^TOKENS_LIMIT_\d+$/u.test(name))
+    return count === 1 ? "Usage limit" : `Usage limit ${index + 1}`;
+  const modelWindow = /^(MiniMax-M.+)_(interval|weekly)$/u.exec(name);
+  if (modelWindow)
+    return `${modelWindow[1]} · ${modelWindow[2] === "weekly" ? "7 days" : "Short-term limit"}`;
+  return WINDOW_LABELS[name] ?? name.replaceAll("_", " ");
+}
 
 export function modelsAccountHealth(
   account: WorkjetGatewayAccountHealth,
@@ -55,31 +66,29 @@ export function modelsAccountHealth(
               ? "Model unavailable. Check the model names above."
               : "Provider temporarily unavailable. Try checking again."
         : null;
+  const visibleWindows = account.quota.filter((window) => !window.toolOnly);
   return {
     status,
     message,
     retryAtMs: blocked ? Math.max(account.cooldownUntilMs ?? 0, quotaRetry ?? 0) : quotaRetry,
-    windows: account.quota
-      .filter((window) => !window.toolOnly)
-      .map((window) => ({
-        label: WINDOW_LABELS[window.name] ?? window.name.replaceAll("_", " "),
-        notInPlan: window.notInPlan && now - window.observedAtMs < 300_000,
-        unlimited: window.unlimited && now - window.observedAtMs < 300_000,
-        remainingPercent:
-          (now - window.observedAtMs > 300_000 &&
-            !(
-              !window.notInPlan &&
-              !window.unlimited &&
-              window.remainingPercent === 0 &&
-              window.resetsAtMs !== null &&
-              window.resetsAtMs > now
-            )) ||
-          (window.resetsAtMs !== null && window.resetsAtMs <= now)
-            ? null
-            : window.remainingPercent,
-        resetsAtMs:
-          window.resetsAtMs !== null && window.resetsAtMs > now ? window.resetsAtMs : null,
-      })),
+    windows: visibleWindows.map((window, index) => ({
+      label: quotaWindowLabel(window.name, index, visibleWindows.length),
+      notInPlan: window.notInPlan && now - window.observedAtMs < 300_000,
+      unlimited: window.unlimited && now - window.observedAtMs < 300_000,
+      remainingPercent:
+        (now - window.observedAtMs > 300_000 &&
+          !(
+            !window.notInPlan &&
+            !window.unlimited &&
+            window.remainingPercent === 0 &&
+            window.resetsAtMs !== null &&
+            window.resetsAtMs > now
+          )) ||
+        (window.resetsAtMs !== null && window.resetsAtMs <= now)
+          ? null
+          : window.remainingPercent,
+      resetsAtMs: window.resetsAtMs !== null && window.resetsAtMs > now ? window.resetsAtMs : null,
+    })),
     observedAtMs: account.quota.length
       ? Math.min(...account.quota.map((window) => window.observedAtMs))
       : null,

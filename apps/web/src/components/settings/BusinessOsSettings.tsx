@@ -8,24 +8,28 @@ import type {
   WorkjetManagedDeviceInviteManualConnectionResult,
 } from "@workjet/contracts";
 import {
-  BriefcaseBusinessIcon,
+  ArrowRightIcon,
   CircleAlertIcon,
   CopyIcon,
   EyeIcon,
   EyeOffIcon,
-  LaptopIcon,
   PlusIcon,
   RefreshCwIcon,
   SmartphoneIcon,
+  UnplugIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import type { CrossModeTarget } from "../../crossMode/crossModeTarget";
 
-import { usePrimarySettings } from "../../hooks/useSettings";
 import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
-import { CtoxInstanceSelectOption } from "../ctox/CtoxInstanceSelectOption";
-import { CtoxSidebarShell, useCtoxMode } from "../ctox/CtoxModeShell";
+import {
+  canActivateCtoxInstance,
+  isRemovableCtoxInstance,
+  useCtoxMode,
+} from "../ctox/CtoxModeShell";
+import { INSTANCE_SETTINGS_NAV_ITEMS } from "./settingsNavigation";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -39,6 +43,14 @@ import {
 import { QRCodeSvg } from "../ui/qr-code";
 import { Spinner } from "../ui/spinner";
 import {
+  AlertDialog,
+  AlertDialogPopup,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+} from "../ui/alert-dialog";
+import {
   businessOsDeviceControlErrorMessage,
   createBusinessOsDeviceInvite,
   type BusinessOsWebRtcDeviceInvite,
@@ -47,9 +59,10 @@ import {
   revokeBusinessOsDeviceInvite,
 } from "./businessOsDeviceControl";
 import { formatMobileInviteExpiry } from "./businessOsPairing";
-import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type BusinessOsDiscovery = "loading" | CtoxDiscoveryResult;
+const EMPTY_DEVICES: readonly WorkjetDeviceBindingSummary[] = [];
 
 /** The instance registry contains actual CTOX backends, including those hosted over SSH. */
 export function visibleBusinessOsInstances(
@@ -340,8 +353,8 @@ export function BusinessOsSettingsView({
   activeInstanceId,
   loading = false,
   refreshDisabled = false,
-  computerCount = 0,
-  devices = [],
+
+  devices = EMPTY_DEVICES,
   devicesLoading = false,
   devicesError = null,
   deviceManagementBlockedReason = null,
@@ -358,18 +371,19 @@ export function BusinessOsSettingsView({
   onRevokeInvite,
   onLoadManualConnection,
   revokingInvite = false,
-  connectionManagement,
+  onRemoveInstance,
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
   readonly loading?: boolean;
   readonly refreshDisabled?: boolean;
-  readonly computerCount?: number;
+
   readonly devices?: readonly WorkjetDeviceBindingSummary[];
   readonly devicesLoading?: boolean;
   readonly devicesError?: string | null;
   readonly deviceManagementBlockedReason?: string | null;
-  readonly onSelectInstance?: (instanceId: string) => void;
+  readonly onSelectInstance?: (instanceId: string) => void | Promise<boolean>;
+  readonly onRemoveInstance?: (instance: CtoxManagedInstance) => Promise<string | null>;
   readonly onRefresh?: () => void;
   readonly onAddDevice?: () => void;
   readonly onRevokeDevice?: (devicePairingId: string) => void;
@@ -382,28 +396,55 @@ export function BusinessOsSettingsView({
   readonly onRevokeInvite?: () => void;
   readonly onLoadManualConnection?: () => Promise<WorkjetManagedDeviceInviteManualConnectionResult>;
   readonly revokingInvite?: boolean;
-  readonly connectionManagement?: ReactNode;
 }) {
   const selected = instances.find((instance) => instance.id === activeInstanceId) ?? null;
   const selectedDisplayName = selected === null ? null : ctoxInstanceDisplayTitle(selected);
+  const navigate = useNavigate();
+  const [switchingInstanceId, setSwitchingInstanceId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [removalTarget, setRemovalTarget] = useState<CtoxManagedInstance | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [removalError, setRemovalError] = useState<string | null>(null);
+
+  const chooseInstance = async (instance: CtoxManagedInstance) => {
+    if (onSelectInstance === undefined) return;
+    setSwitchingInstanceId(instance.id);
+    setSelectionError(null);
+    try {
+      if ((await onSelectInstance(instance.id)) === false) {
+        setSelectionError("The instance switch could not be confirmed. Please try again.");
+      }
+    } catch {
+      setSelectionError("The instance could not be selected. Please try again.");
+    } finally {
+      setSwitchingInstanceId(null);
+    }
+  };
+
+  const confirmRemoval = async () => {
+    if (removalTarget === null || onRemoveInstance === undefined) return;
+    setRemoving(true);
+    setRemovalError(null);
+    try {
+      const error = await onRemoveInstance(removalTarget);
+      if (error === null) setRemovalTarget(null);
+      else setRemovalError(error);
+    } catch {
+      setRemovalError("The connection could not be removed. Please try again.");
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   return (
     <SettingsPageContainer className="gap-6">
-      <div className="px-3 sm:px-4">
-        <h1 className="text-xl font-semibold tracking-[-0.025em]">Instances</h1>
-        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Each CTOX instance owns its network and serves Ops. Manage access to the selected instance
-          here.
-        </p>
-      </div>
-
       <SettingsSection
-        title="CTOX instances"
+        title="Instances"
         headerAction={
           <div className="flex items-center gap-2">
             <Button
               size="sm"
-              variant="outline"
+              variant="ghost"
               onClick={onRefresh}
               disabled={refreshDisabled || onRefresh === undefined}
             >
@@ -417,7 +458,10 @@ export function BusinessOsSettingsView({
           </div>
         }
       >
-        <div className="max-w-3xl rounded-xl border border-border/80 bg-card/30 p-4 sm:p-5">
+        <p className="px-3 text-[13px] text-muted-foreground sm:px-4">
+          Manage your CTOX instances and open their settings.
+        </p>
+        <div>
           {loading ? (
             <p className="text-sm text-muted-foreground" role="status">
               Loading CTOX instances …
@@ -433,33 +477,104 @@ export function BusinessOsSettingsView({
               </div>
             </div>
           ) : (
-            <label className="block text-sm font-medium text-foreground">
-              Active instance
-              <select
-                className="mt-2 h-10 w-full rounded-md border border-input bg-popover px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={selected?.id ?? ""}
-                onChange={(event) => onSelectInstance?.(event.target.value)}
-                aria-label="Select CTOX instance"
-              >
-                {selected === null ? <option value="">Select an instance</option> : null}
-                {instances.map((instance) => (
-                  <CtoxInstanceSelectOption key={instance.id} instance={instance} />
-                ))}
-              </select>
-              {selected === null ? null : (
-                <span className="mt-2 flex items-center gap-2 text-sm font-normal text-muted-foreground">
-                  <BriefcaseBusinessIcon className="size-4" aria-hidden />
-                  {instanceStatus(selected)}
-                  {selected.domain === undefined ? null : ` · ${selected.domain}`}
-                </span>
-              )}
-            </label>
+            <ul aria-label="CTOX instances" className="divide-y divide-border/60">
+              {instances.map((instance) => (
+                <li key={instance.id}>
+                  <SettingsRow
+                    title={ctoxInstanceDisplayTitle(instance)}
+                    description={
+                      instance.domain ??
+                      (instance.source === "local_daemon" ? "This computer" : undefined)
+                    }
+                    status={instanceStatus(instance)}
+                    control={
+                      <>
+                        {instance.id === activeInstanceId ? (
+                          <span
+                            className="px-2 text-xs font-medium text-primary"
+                            aria-label="Active instance"
+                          >
+                            Active
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={
+                              onSelectInstance === undefined ||
+                              switchingInstanceId !== null ||
+                              removing ||
+                              !canActivateCtoxInstance(instance)
+                            }
+                            onClick={() => void chooseInstance(instance)}
+                          >
+                            {switchingInstanceId === instance.id ? (
+                              <Spinner className="size-3.5" />
+                            ) : null}
+                            {switchingInstanceId === instance.id ? "Selecting …" : "Select"}
+                          </Button>
+                        )}
+                        {onRemoveInstance !== undefined && isRemovableCtoxInstance(instance) ? (
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            disabled={switchingInstanceId !== null || removing}
+                            aria-label={`Remove connection to ${ctoxInstanceDisplayTitle(instance)}`}
+                            onClick={() => {
+                              setRemovalError(null);
+                              setRemovalTarget(instance);
+                            }}
+                          >
+                            <UnplugIcon aria-hidden />
+                          </Button>
+                        ) : null}
+                      </>
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+          {selectionError === null ? null : (
+            <p className="px-4 py-2 text-sm text-destructive" role="alert">
+              {selectionError}
+            </p>
           )}
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Workjet devices">
-        <div className="max-w-3xl rounded-xl border border-border/80 bg-card/20 p-4 sm:p-5">
+      <SettingsSection
+        title={
+          instances.length > 1 && selectedDisplayName !== null
+            ? `Settings for ${selectedDisplayName}`
+            : "Settings"
+        }
+      >
+        {selected === null ? (
+          <p className="px-3 text-sm text-muted-foreground sm:px-4" role="status">
+            Select an instance first.
+          </p>
+        ) : (
+          <div className="grid gap-1 sm:grid-cols-2">
+            {INSTANCE_SETTINGS_NAV_ITEMS.map((item) => (
+              <button
+                key={item.to}
+                type="button"
+                className="flex min-h-11 min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
+                onClick={() => void navigate({ to: item.to })}
+              >
+                <item.icon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              </button>
+            ))}
+          </div>
+        )}
+      </SettingsSection>
+
+      <details className="mx-3 border-t border-border/60 sm:mx-4" data-workjet-instance-devices="">
+        <summary className="cursor-pointer py-3 text-sm font-medium">Connected devices</summary>
+        <div className="pb-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
               <SmartphoneIcon
@@ -556,35 +671,37 @@ export function BusinessOsSettingsView({
             </ul>
           )}
         </div>
-      </SettingsSection>
+      </details>
 
-      <SettingsSection title="Computers for Code">
-        <div className="max-w-3xl rounded-xl border border-border/80 bg-card/20 p-4 sm:p-5">
-          <div className="flex items-start gap-3">
-            <LaptopIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <div>
-              <p className="text-sm font-medium">
-                {selectedDisplayName === null
-                  ? "Select an instance"
-                  : `Assignments for ${selectedDisplayName}`}
+      <AlertDialog
+        open={removalTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !removing) setRemovalTarget(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove instance connection?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removalTarget === null ? "" : ctoxInstanceDisplayTitle(removalTarget)} will be
+              removed from Workjet. The instance and its data will be preserved.
+            </AlertDialogDescription>
+            {removalError === null ? null : (
+              <p role="alert" className="text-sm text-destructive">
+                {removalError}
               </p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                {computerCount === 0
-                  ? "No computers have been set up in the global computer inventory."
-                  : `${computerCount} computers are configured. Assign them to this CTOX instance in the computer inventory.`}
-              </p>
-              <a
-                className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
-                href="#/settings/computers"
-              >
-                Open computer inventory
-              </a>
-            </div>
-          </div>
-        </div>
-      </SettingsSection>
-
-      {connectionManagement}
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button variant="outline" disabled={removing} onClick={() => setRemovalTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={removing} onClick={() => void confirmRemoval()}>
+              {removing ? "Removing …" : "Remove connection"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
       <DevicePairingDialog
         instanceName={selectedDisplayName}
         invite={activeInvite}
@@ -621,7 +738,6 @@ export async function importBusinessOsSettingsInvite(
 }
 
 export function BusinessOsSettings() {
-  const settings = usePrimarySettings();
   const {
     bridge,
     discovery,
@@ -629,6 +745,8 @@ export function BusinessOsSettings() {
     refreshing,
     selectedId: activeInstanceId,
     select,
+    removePairedInstance,
+    removeSshManagedInstance,
   } = useCtoxMode();
   const instances = useMemo(() => visibleBusinessOsInstances(discovery), [discovery]);
   const [devices, setDevices] = useState<readonly WorkjetDeviceBindingSummary[]>([]);
@@ -642,9 +760,16 @@ export function BusinessOsSettings() {
   const deviceControlAvailable =
     activeInstanceId !== null && bridge?.requestDeviceControl !== undefined;
 
-  const selectInstance = (instanceId: string) => {
+  const selectInstance = async (instanceId: string) => {
     const instance = instances.find((candidate) => candidate.id === instanceId);
-    if (instance !== undefined) select(instance);
+    return instance !== undefined && (await select(instance));
+  };
+
+  const removeInstance = async (instance: CtoxManagedInstance): Promise<string | null> => {
+    const result = await (instance.source === "ssh_managed"
+      ? removeSshManagedInstance(instance)
+      : removePairedInstance(instance));
+    return result.ok ? null : result.message;
   };
 
   useEffect(() => {
@@ -795,12 +920,12 @@ export function BusinessOsSettings() {
       activeInstanceId={activeInstanceId}
       loading={discovery === "loading"}
       refreshDisabled={bridge === undefined || refreshing}
-      computerCount={settings.workjet.computers.length}
       devices={devices}
       devicesLoading={devicesLoading}
       devicesError={devicesError}
       deviceManagementBlockedReason={deviceManagementBlockedReason}
       onSelectInstance={selectInstance}
+      onRemoveInstance={removeInstance}
       onRefresh={() => void refresh()}
       {...(!deviceControlAvailable ? {} : { onAddDevice: () => void createDeviceInvite() })}
       addingDevice={addingDevice}
@@ -817,14 +942,6 @@ export function BusinessOsSettings() {
             onLoadManualConnection: async () => activeInvite.manualConnection,
           })}
       revokingInvite={revokingInvite}
-      connectionManagement={
-        <details data-workjet-instance-management="">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-            Manage instance connections
-          </summary>
-          <CtoxSidebarShell showChrome={false} />
-        </details>
-      }
     />
   );
 }

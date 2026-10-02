@@ -15,7 +15,13 @@ function settingsBreadcrumbLabel(pathname: string): string | null {
   return SETTINGS_BREADCRUMB_LABELS[normalizedPathname] ?? null;
 }
 
-export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
+export function SettingsBreadcrumb({
+  pathname,
+  activeInstanceName = null,
+}: {
+  pathname: string;
+  activeInstanceName?: string | null;
+}) {
   const sectionLabel = settingsBreadcrumbLabel(pathname);
 
   return (
@@ -24,6 +30,14 @@ export function SettingsBreadcrumb({ pathname }: { pathname: string }) {
         <>
           <WorkspaceBreadcrumbItem>Settings</WorkspaceBreadcrumbItem>
           <WorkspaceBreadcrumbSeparator />
+          {activeInstanceName !== null && pathname !== "/settings/business-os" ? (
+            <>
+              <WorkspaceBreadcrumbItem className="truncate">
+                {activeInstanceName}
+              </WorkspaceBreadcrumbItem>
+              <WorkspaceBreadcrumbSeparator />
+            </>
+          ) : null}
         </>
       ) : null}
       <WorkspaceBreadcrumbItem current className="truncate">

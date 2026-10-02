@@ -14,10 +14,12 @@ import { WorkjetHeaderSlotContext } from "./WorkjetHeaderSlots";
 export function WorkjetHeaderFrame({
   mode,
   sidebarAvailable,
+  showInstanceSelector = true,
   children,
 }: {
   readonly mode: WorkjetProductMode;
   readonly sidebarAvailable: boolean;
+  readonly showInstanceSelector?: boolean;
   readonly children: ReactNode;
 }) {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
@@ -36,7 +38,9 @@ export function WorkjetHeaderFrame({
           data-workjet-header-navigation=""
         >
           {sidebarAvailable ? <SidebarTrigger aria-label="Toggle main sidebar" /> : null}
-          {isElectron ? <ActiveCtoxInstanceSelector placement="header" /> : null}
+          {isElectron && showInstanceSelector ? (
+            <ActiveCtoxInstanceSelector placement="header" />
+          ) : null}
           {isElectron ? (
             <WorkjetProductModeSwitch
               mode={mode}

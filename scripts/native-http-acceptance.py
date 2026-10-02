@@ -121,6 +121,7 @@ def main():
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         output = BASE / stamp
         output.mkdir(parents=True, mode=0o700)
+        os.environ["NODE_COMPILE_CACHE"] = str(output / "node-compile-cache")
         saved = DURABLE / ("native-http-acceptance-" + stamp)
         saved.mkdir(mode=0o700)
         report.update(output=str(output), binary=str(binary), binary_sha256=producer["sha256"], producer_receipt_sha256=checksum(args.native_receipt), started_at=stamp)

@@ -70,6 +70,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetGatewayAddApiKeyAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayRemoveAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayHealth]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayDiscoverModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayUpdateRouting]: AuthOrchestrationOperateScope,
   // Looking at the one-shot legacy import offer is a read; answering it writes

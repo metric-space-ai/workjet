@@ -1328,6 +1328,34 @@ export const WorkjetGatewayHealth = Schema.Struct({
 });
 export type WorkjetGatewayHealth = typeof WorkjetGatewayHealth.Type;
 
+/** Environment-owned inference receipts, grouped in the requested timezone. */
+export const WorkjetGatewayUsageInput = Schema.Struct({
+  days: Schema.Literals([7, 30]),
+  timeZone: Schema.optional(Schema.String),
+});
+export type WorkjetGatewayUsageInput = typeof WorkjetGatewayUsageInput.Type;
+export const WorkjetGatewayUsageCounters = Schema.Struct({
+  requests: NonNegativeInt, errors: NonNegativeInt,
+  inputTokens: Schema.NullOr(NonNegativeInt), outputTokens: Schema.NullOr(NonNegativeInt),
+  cacheReadTokens: Schema.NullOr(NonNegativeInt), cacheWriteTokens: Schema.NullOr(NonNegativeInt),
+  inputMeasuredRequests: NonNegativeInt, outputMeasuredRequests: NonNegativeInt,
+  cacheReadMeasuredRequests: NonNegativeInt, cacheWriteMeasuredRequests: NonNegativeInt,
+  responseModelRequests: NonNegativeInt,
+});
+export type WorkjetGatewayUsageCounters = typeof WorkjetGatewayUsageCounters.Type;
+export const WorkjetGatewayUsage = Schema.Struct({
+  schemaVersion: Schema.Literal(1), observedAtMs: NonNegativeInt,
+  days: Schema.Literals([7, 30]), timeZone: Schema.String,
+  startDate: Schema.String, endDate: Schema.String,
+  availability: Schema.Literals(["recorded", "not-collected-yet"]),
+  daily: Schema.Array(Schema.Struct({ date: Schema.String, model: Schema.NullOr(Schema.String), provider: Schema.String, ...WorkjetGatewayUsageCounters.fields })),
+  modelTotals: Schema.Array(Schema.Struct({ model: Schema.NullOr(Schema.String), ...WorkjetGatewayUsageCounters.fields })),
+  providerTotals: Schema.Array(Schema.Struct({ provider: Schema.String, ...WorkjetGatewayUsageCounters.fields })),
+  totals: WorkjetGatewayUsageCounters,
+});
+export type WorkjetGatewayUsage = typeof WorkjetGatewayUsage.Type;
+
+
 /**
  * Where a model id came from. `gateway-catalog` is the host's own pinned model
  * catalog (`GET /v0/management/model-definitions/<channel>`);

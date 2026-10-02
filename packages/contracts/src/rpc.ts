@@ -204,6 +204,8 @@ import {
   WorkjetGatewaySetGrantResult,
   WorkjetGatewayAccessError,
   WorkjetGatewayHealth,
+  WorkjetGatewayUsage,
+  WorkjetGatewayUsageInput,
   WorkjetGatewayModelDiscovery,
   WorkjetGatewayOauthPollInput,
   WorkjetGatewayOauthPollResult,
@@ -391,6 +393,7 @@ export const WS_METHODS = {
   workjetGatewayAddApiKeyAccount: "workjet.providerGateway.addApiKeyAccount",
   workjetGatewayRemoveAccount: "workjet.providerGateway.removeAccount",
   workjetGatewayHealth: "workjet.providerGateway.health",
+  workjetGatewayUsage: "workjet.providerGateway.usage",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
 
@@ -763,7 +766,14 @@ export const WsWorkjetGatewayHealthRpc = Rpc.make(WS_METHODS.workjetGatewayHealt
   error: WorkjetGatewayRpcError,
 });
 
-/** Models the host's own catalog serves, merged with the configured account models. */
+export const WsWorkjetGatewayUsageRpc = Rpc.make(WS_METHODS.workjetGatewayUsage, {
+  payload: WorkjetGatewayUsageInput,
+  success: WorkjetGatewayUsage,
+  error: WorkjetGatewayRpcError,
+});
+
+/** Models the host
+'s own catalog serves, merged with the configured account models. */
 export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGatewayDiscoverModels, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayModelDiscovery,
@@ -1624,6 +1634,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayAddApiKeyAccountRpc,
   WsWorkjetGatewayRemoveAccountRpc,
   WsWorkjetGatewayHealthRpc,
+  WsWorkjetGatewayUsageRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetLegacyImportInspectRpc,

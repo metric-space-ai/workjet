@@ -301,7 +301,9 @@ function normalizeSearchText(value: string): string {
  */
 const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
   Object.entries(SETTINGS_SECTION_LABELS) as ReadonlyArray<[SettingsPath, string]>
-).map(([path, label]) => ({ id: path, title: label, to: path }));
+)
+  .filter(([path]) => path !== "/settings/keybindings")
+  .map(([path, label]) => ({ id: path, title: label, to: path }));
 
 export function searchSettings(
   query: string,
@@ -310,10 +312,12 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  const matches = items.filter((item) =>
-    [item.title, ...(item.searchAliases ?? [])].some((label) =>
-      normalizeSearchText(label).includes(normalizedQuery),
-    ),
+  const matches = items.filter(
+    (item) =>
+      item.to !== "/settings/keybindings" &&
+      [item.title, ...(item.searchAliases ?? [])].some((label) =>
+        normalizeSearchText(label).includes(normalizedQuery),
+      ),
   );
   // Page results lead, minus pages an equally titled item already represents
   // (e.g. the "Computers" catalog entry that lands on /settings/computers).

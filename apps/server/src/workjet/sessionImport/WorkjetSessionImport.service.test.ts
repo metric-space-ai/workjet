@@ -14,6 +14,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
@@ -24,20 +25,21 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { make } from "./WorkjetSessionImport.ts";
 
 const NOW = "2026-10-02T12:00:00.000Z";
+const encodeJson = Schema.encodeSync(Schema.UnknownFromJsonString);
 const transcript = (title: string, replies: string[] = [], model?: string) =>
   [
-    JSON.stringify({
+    encodeJson({
       type: "session_meta",
       payload: { cwd: "/source/folder-no-longer-present", ...(model ? { model } : {}) },
       timestamp: NOW,
     }),
-    JSON.stringify({
+    encodeJson({
       type: "response_item",
       timestamp: NOW,
       payload: { type: "message", role: "user", content: [{ type: "input_text", text: title }] },
     }),
     ...replies.map((text) =>
-      JSON.stringify({
+      encodeJson({
         type: "response_item",
         timestamp: NOW,
         payload: { type: "message", role: "assistant", content: [{ type: "output_text", text }] },
@@ -143,8 +145,13 @@ const withFixture = <A, E>(
         Effect.provideService(OrchestrationEngineService, engine),
         Effect.provideService(ProjectionSnapshotQuery, query),
         Effect.provideService(ServerSettingsService, {
+          start: Effect.void,
+          ready: Effect.void,
           getSettings: Effect.succeed(settings),
-        } as ServerSettingsService["Service"]),
+          updateSettings: () => Effect.die("fixture settings are read-only"),
+          streamChanges: Stream.empty,
+          subscribeChanges: Effect.succeed(Stream.empty),
+        }),
         Effect.provide(Layer.merge(Sqlite.layerMemory(), NodeServices.layer)),
       );
     }),
@@ -287,13 +294,13 @@ describe("project-directed static session imports", () => {
           Fsp.writeFile(
             NodePath.join(claude, "known.jsonl"),
             [
-              JSON.stringify({
+              encodeJson({
                 type: "user",
                 cwd: "/claude/source",
                 timestamp: NOW,
                 message: { role: "user", content: "Recorded Claude" },
               }),
-              JSON.stringify({
+              encodeJson({
                 type: "assistant",
                 timestamp: NOW,
                 message: {

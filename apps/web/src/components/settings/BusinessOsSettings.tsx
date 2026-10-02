@@ -352,6 +352,7 @@ function DevicePairingDialog({
 export function BusinessOsSettingsView({
   instances,
   activeInstanceId,
+  requiresInstanceSelection = true,
   loading = false,
   refreshDisabled = false,
 
@@ -376,6 +377,7 @@ export function BusinessOsSettingsView({
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
+  readonly requiresInstanceSelection?: boolean;
   readonly loading?: boolean;
   readonly refreshDisabled?: boolean;
 
@@ -555,7 +557,7 @@ export function BusinessOsSettingsView({
             : "Einstellungen"
         }
       >
-        {selected === null ? (
+        {selected === null && requiresInstanceSelection ? (
           <p className="px-3 text-sm text-muted-foreground sm:px-4" role="status">
             Wähle zuerst eine Instanz aus.
           </p>
@@ -924,6 +926,7 @@ export function BusinessOsSettings() {
     <BusinessOsSettingsView
       instances={instances}
       activeInstanceId={activeInstanceId}
+      requiresInstanceSelection={bridge !== undefined}
       loading={discovery === "loading"}
       refreshDisabled={bridge === undefined || refreshing}
       devices={devices}

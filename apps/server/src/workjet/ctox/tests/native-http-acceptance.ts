@@ -106,6 +106,35 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const decodeStoredIntent = Schema.decodeUnknownSync(
   Schema.fromJsonString(Schema.Struct({ request: Schema.Unknown })),
 );
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+const fieldType = (value: unknown) =>
+  value === undefined ? "missing" : value === null ? "null" : typeof value;
+
+/** Fixed fields and comparisons only: never retain reply text, context or credentials. */
+function describeStatusResponse(value: unknown, row: typeof IntentRow.Type, projectId: string) {
+  const record = isRecord(value) && isRecord(value.record) ? value.record : {};
+  const data = isRecord(record.data) ? record.data : {};
+  return {
+    responseIsRecord: isRecord(value),
+    okIsTrue: isRecord(value) && value.ok === true,
+    recordIsPresent: isRecord(record.data),
+    collectionMatches: record.collection === "business_commands",
+    recordCommandMatches: record.id === row.command_id,
+    commandMatches: data.command_id === row.command_id,
+    taskMatches: data.task_id === row.task_id,
+    moduleMatches: data.module === "ctox",
+    commandTypeMatches: data.command_type === "business_os.chat.task",
+    projectMatches: isRecord(data.payload) && data.payload.project_id === projectId,
+    recordIdType: fieldType(data.record_id),
+    recordIdIsEmpty: data.record_id === "",
+    recordStatusType: fieldType(record.status),
+    dataStatusType: fieldType(data.status),
+    taskStatusType: fieldType(data.task_status),
+    statusNoteType: fieldType(data.status_note),
+    statusesMatch: record.status === data.status,
+  };
+}
 const fixtureFile = process.argv[2];
 const phase = process.argv[3];
 NodeAssert.ok(
@@ -165,6 +194,27 @@ const execution = Effect.gen(function* () {
     nativeRoot.startsWith(directory + path.sep),
     "Native root must be inside the owned fixture",
   );
+  const identityFile = path.join(nativeRoot, "runtime", "business-os-instance-id");
+  NodeAssert.equal(
+    yield* fs.realPath(identityFile),
+    identityFile,
+    "Native identity cannot be a symlink",
+  );
+  NodeAssert.equal(
+    (yield* fs.stat(identityFile)).mode & 0o077,
+    0,
+    "Native identity must be private",
+  );
+  const nativeInstanceId = (yield* fs.readFileString(identityFile)).trim();
+  NodeAssert.match(
+    nativeInstanceId,
+    /^biz_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  NodeAssert.equal(
+    fixture.scope.instanceId,
+    nativeInstanceId,
+    "Bind the actual stable native instance",
+  );
   const serverCommand = yield* commandOutput("ps", [
     "-p",
     String(fixture.serverPid),
@@ -196,6 +246,8 @@ const execution = Effect.gen(function* () {
   const identity = { ...fixture.scope, requestKey: key };
   let httpCalls = 0;
   let nativeKey: string | null = null;
+  let lastOperation: string | null = null;
+  let responseDiagnostic: ReturnType<typeof describeStatusResponse> | null = null;
 
   function committedIntent() {
     const db = new NodeSqlite.DatabaseSync(database, { readOnly: true });
@@ -272,8 +324,17 @@ const execution = Effect.gen(function* () {
     const transport = {
       ...realTransport,
       callTool: (...args: Parameters<typeof realTransport.callTool>) =>
-        realTransport.callTool(...args).pipe(
+        Effect.sync(() => {
+          lastOperation = args[1];
+        }).pipe(
+          Effect.andThen(realTransport.callTool(...args)),
           Effect.flatMap((result) => {
+            if (args[1] === "business_os.get_command_status")
+              responseDiagnostic = describeStatusResponse(
+                result.structuredContent,
+                committedIntent(),
+                fixture.projectTask.project_id,
+              );
             if (phase !== "first" || args[1] !== "business_os.start_project_task" || dropped)
               return Effect.succeed(result);
             NodeAssert.notEqual(
@@ -495,6 +556,8 @@ const execution = Effect.gen(function* () {
       workjetSource: fixture.workjetSource,
       nativeSource: fixture.nativeSource,
       httpCalls,
+      lastOperation,
+      responseDiagnostic,
     };
     yield* fs.writeFileString(
       path.join(directory, `workjet-${phase}-result.json`),

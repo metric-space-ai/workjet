@@ -5,6 +5,8 @@ import datetime
 import hashlib
 import json
 import os
+import re
+import stat
 from pathlib import Path
 import selectors
 import shutil
@@ -190,9 +192,16 @@ def main():
             private_files.append(token_file)
             native("07-private-token", ["secret", "get", "--scope", "business_os", "--name", "mcp_inbound_auth_token"], private=token_file)
             assert isinstance(json.loads(token_file.read_text())["value"], str)
+            identity_file = native_root / "runtime" / "business-os-instance-id"
+            identity_stat = identity_file.lstat()
+            assert stat.S_ISREG(identity_stat.st_mode) and identity_stat.st_mode & 0o077 == 0, "Native identity must be a private regular file"
+            native_instance = identity_file.read_text().strip()
+            assert re.fullmatch(r"biz_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", native_instance), "Canonical native instance identity required"
+            report["native_instance_id"] = native_instance
+            save()
             fixture_file = output / "private-fixture.json"
             private_files.append(fixture_file)
-            fixture = {"workjetSource": args.workjet_source, "nativeSource": args.native_source, "nativeWorkjetPin": args.native_workjet_pin, "nativeBinarySha256": producer["sha256"], "serverPid": server.pid, "directory": str(output), "nativeRoot": str(native_root), "endpoint": endpoint, "tokenFile": str(token_file), "scope": {"threadId": "workjet-http-thread-" + stamp.lower(), "connectionId": "workjet-http-connection-" + stamp.lower(), "instanceId": "workjet-http-instance-" + stamp.lower()}, "requestId": "workjet-http-turn-" + stamp.lower(), "projectTask": {"project_id": project, "title": "Isolated durable native HTTP task", "instruction": "Keep this queued task across a lost response and fresh Workjet processes; no provider execution requested."}, "cancelKey": "workjet-http-cancel-" + stamp.lower()}
+            fixture = {"workjetSource": args.workjet_source, "nativeSource": args.native_source, "nativeWorkjetPin": args.native_workjet_pin, "nativeBinarySha256": producer["sha256"], "serverPid": server.pid, "directory": str(output), "nativeRoot": str(native_root), "endpoint": endpoint, "tokenFile": str(token_file), "scope": {"threadId": "workjet-http-thread-" + stamp.lower(), "connectionId": "workjet-http-connection-" + stamp.lower(), "instanceId": native_instance}, "requestId": "workjet-http-turn-" + stamp.lower(), "projectTask": {"project_id": project, "title": "Isolated durable native HTTP task", "instruction": "Keep this queued task across a lost response and fresh Workjet processes; no provider execution requested."}, "cancelKey": "workjet-http-cancel-" + stamp.lower()}
             fixture_file.write_text(json.dumps(fixture))
             fixture_file.chmod(0o600)
             for phase in ("first", "resume", "revoked", "stop", "verify"):
@@ -213,6 +222,15 @@ def main():
         # Private native/HTTP output remains only in the owned tmp fixture. Never emit raw errors/secrets.
         report["failure_class"] = type(error).__name__
         report["failed_stage"] = report["stages"][-1]["stage"] if report["stages"] else "preflight"
+        if output and report["failed_stage"].startswith("workjet-"):
+            detail_file = output / (report["failed_stage"] + "-result.json")
+            if detail_file.is_file() and detail_file.stat().st_size <= 262144:
+                detail = json.loads(detail_file.read_text())
+                diagnostics = detail.get("responseDiagnostic")
+                keys = ("responseIsRecord", "okIsTrue", "recordIsPresent", "collectionMatches", "recordCommandMatches", "commandMatches", "taskMatches", "moduleMatches", "commandTypeMatches", "projectMatches", "recordIdType", "recordIdIsEmpty", "recordStatusType", "dataStatusType", "taskStatusType", "statusNoteType", "statusesMatch")
+                safe = {key: diagnostics[key] for key in keys if isinstance(diagnostics, dict) and key in diagnostics and (type(diagnostics[key]) is bool or diagnostics[key] in ("missing", "null", "string", "number", "boolean", "object", "undefined", "bigint", "symbol", "function"))}
+                operation = detail.get("lastOperation")
+                report["failure_detail"] = {"last_operation": operation if operation in ("business_os.start_project_task", "business_os.get_command_status") else None, "response_diagnostic": safe}
     finally:
         signal.alarm(0)
         for child, row in reversed(processes):

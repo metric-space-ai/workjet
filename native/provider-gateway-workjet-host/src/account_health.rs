@@ -17,7 +17,9 @@ mod provenance_tests {
             super::authentication(Some((200, 1)), Some((401, 2))),
             "authenticated"
         );
-        assert_eq!(super::authentication(None, Some((401, 2))), "unknown");
+        for status in [401, 403, 429] {
+            assert_eq!(super::authentication(None, Some((status, 2))), "unknown");
+        }
         assert_eq!(
             super::authentication(Some((401, 1)), Some((200, 2))),
             "rejected"
@@ -73,6 +75,7 @@ pub struct AccountHealth {
     pub cooldown_until_ms: Option<i64>,
     pub error_code: Option<String>,
     pub http_status: Option<u16>,
+    pub generation_http_status: Option<u16>,
     pub observed_at_ms: Option<i64>,
     pub quota: Vec<QuotaWindow>,
     pub quota_supported: bool,
@@ -211,6 +214,9 @@ impl AccountHealthSource {
                         .and_then(|r| r.last_error.as_ref())
                         .map(|e| e.code.clone()),
                     http_status: status.filter(|status| (100..=599).contains(status)),
+                    generation_http_status: generation
+                        .map(|o| o.0)
+                        .filter(|s| (100..=599).contains(s)),
                     observed_at_ms: latest
                         .map(|r| r.updated_at_ms)
                         .into_iter()

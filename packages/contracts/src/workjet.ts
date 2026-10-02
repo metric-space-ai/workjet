@@ -1333,6 +1333,7 @@ export const WorkjetGatewayAccountHealth = Schema.Struct({
   cooldownUntilMs: Schema.NullOr(NonNegativeInt),
   errorCode: Schema.NullOr(TrimmedNonEmptyString),
   httpStatus: Schema.NullOr(NonNegativeInt),
+  generationHttpStatus: Schema.NullOr(NonNegativeInt).pipe(Schema.withDecodingDefault(() => null)),
   observedAtMs: Schema.NullOr(NonNegativeInt),
   quota: Schema.Array(WorkjetGatewayQuotaWindow),
   quotaSupported: Schema.Boolean,

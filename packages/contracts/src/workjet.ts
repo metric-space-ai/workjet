@@ -1096,6 +1096,7 @@ export const WorkjetGatewayAccountSummary = Schema.Struct({
   priority: Schema.Number,
   weight: PositiveInt,
   modelIds: Schema.Array(TrimmedNonEmptyString),
+  credentialKind: Schema.optionalKey(Schema.Literals(["oauth", "api-key"])),
   /**
    * Last few characters of an API-key account's credential, for recognition
    * only; `null` for OAuth accounts and whenever no suffix was recorded. This
@@ -1373,6 +1374,8 @@ export type WorkjetGatewayModelDiscovery = typeof WorkjetGatewayModelDiscovery.T
 /** One account's pool membership edit. Every field is replaced, never merged. */
 export const WorkjetGatewayAccountRoutingUpdate = Schema.Struct({
   accountId: WorkjetGatewayAccountId,
+  /** A display label; changing it never changes the credential/account identity. */
+  label: Schema.optionalKey(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160)))),
   enabled: Schema.Boolean,
   priority: Schema.Int.check(
     Schema.isGreaterThanOrEqualTo(-WORKJET_GATEWAY_MAX_ACCOUNT_PRIORITY),
@@ -1436,6 +1439,8 @@ export type WorkjetGatewayOauthSession = typeof WorkjetGatewayOauthSession.Type;
 
 export const WorkjetGatewayOauthStartInput = Schema.Struct({
   provider: WorkjetGatewayOauthProvider,
+  /** Re-authenticate this existing account, retaining its label and routing. */
+  accountId: Schema.optionalKey(WorkjetGatewayAccountId),
 });
 export type WorkjetGatewayOauthStartInput = typeof WorkjetGatewayOauthStartInput.Type;
 
@@ -1454,7 +1459,14 @@ export const WORKJET_GATEWAY_API_KEY_MAX_LENGTH = 512;
  */
 export const WorkjetGatewayAddApiKeyAccountInput = Schema.Struct({
   provider: WorkjetGatewayApiKeyProvider,
+  /** Replace a credential in place; omitted when adding another account. */
+  accountId: Schema.optionalKey(WorkjetGatewayAccountId),
   label: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160))),
+  models: Schema.optionalKey(
+    Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128)))).pipe(
+      Schema.check(Schema.isMaxLength(128)),
+    ),
+  ),
   apiKey: TrimmedNonEmptyString.pipe(
     Schema.check(Schema.isMaxLength(WORKJET_GATEWAY_API_KEY_MAX_LENGTH)),
   ),

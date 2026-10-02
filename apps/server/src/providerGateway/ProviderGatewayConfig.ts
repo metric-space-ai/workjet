@@ -715,6 +715,7 @@ export const gatewayCatalog = (
     modelIds: account.models,
     // The only credential-derived value any read route carries.
     credentialSuffix: isApiKeyAccount(account) ? (account.credentialSuffix ?? null) : null,
+    credentialKind: isApiKeyAccount(account) ? "api-key" : "oauth",
   }));
   const modelMap = new Map<
     string,

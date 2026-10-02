@@ -10,16 +10,28 @@ import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
 const mockAgentPath = NodePath.resolve(
   NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
-  "../../../scripts/acp-mock-agent.ts",
+  "../../../scripts/acp-cooperative-cancel-mock.mjs",
 );
 
 describe("ACP cooperative cancellation", () => {
   it.effect("keeps a prompt pending until the agent responds, then accepts a follow-up", () =>
     Effect.gen(function* () {
-      const requestStarted = yield* Deferred.make<void>();
+      const permissionReceived = yield* Deferred.make<void>();
+      const cancelReceived = yield* Deferred.make<void>();
+      const permissionResponse = yield* Deferred.make<{
+        readonly outcome: { readonly outcome: "cancelled" };
+      }>();
       const settled = yield* Deferred.make<void>();
       return yield* Effect.gen(function* () {
         const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+        yield* runtime.handleRequestPermission(() =>
+          Deferred.succeed(permissionReceived, undefined).pipe(
+            Effect.andThen(Deferred.await(permissionResponse)),
+          ),
+        );
+        yield* runtime.handleReadTextFile(() =>
+          Deferred.succeed(cancelReceived, undefined).pipe(Effect.as({ content: "receipt" })),
+        );
         yield* runtime.start();
         const prompt = yield* runtime
           .prompt({ prompt: [{ type: "text", text: "first" }] })
@@ -27,10 +39,12 @@ describe("ACP cooperative cancellation", () => {
             Effect.ensuring(Deferred.succeed(settled, undefined)),
             Effect.forkChild({ startImmediately: true }),
           );
-        yield* Deferred.await(requestStarted);
+        yield* Deferred.await(permissionReceived);
         yield* runtime.cancel;
+        yield* Deferred.await(cancelReceived);
         expect(yield* Deferred.isDone(settled)).toBe(false);
-        expect(yield* Fiber.join(prompt)).toMatchObject({ stopReason: "end_turn" });
+        yield* Deferred.succeed(permissionResponse, { outcome: { outcome: "cancelled" } });
+        expect(yield* Fiber.join(prompt)).toMatchObject({ stopReason: "cancelled" });
         expect(
           yield* runtime.prompt({ prompt: [{ type: "text", text: "follow-up" }] }),
         ).toMatchObject({
@@ -42,16 +56,12 @@ describe("ACP cooperative cancellation", () => {
             spawn: {
               command: process.execPath,
               args: [mockAgentPath],
-              env: { WORKJET_ACP_PROMPT_DELAY_MS: "1000" },
             },
             cwd: process.cwd(),
             clientInfo: { name: "workjet-test", version: "0" },
             authMethodId: "test",
             cancelPromptMode: "await-response",
-            requestLogger: (event) =>
-              event.method === "session/prompt" && event.status === "started"
-                ? Deferred.succeed(requestStarted, undefined).pipe(Effect.asVoid)
-                : Effect.void,
+            clientCapabilities: { fs: { readTextFile: true } },
           }),
         ),
         Effect.scoped,

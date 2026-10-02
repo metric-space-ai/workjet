@@ -480,6 +480,96 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
 );
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+export const GreppySettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("greppy").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "Path to the Greppy binary.",
+        providerSettingsForm: { placeholder: "greppy", clearWhenEmpty: "omit" },
+      }),
+    ),
+    endpoint: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("http://127.0.0.1:8317")),
+      Schema.annotateKey({
+        title: "Gateway endpoint",
+        description:
+          "Plain HTTP gateway root. Greppy calls /v1/messages and /v1/models on it. HTTPS is not supported.",
+        providerSettingsForm: {
+          placeholder: "http://127.0.0.1:8317",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    model: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Model",
+        description: "Model id sent to the gateway unchanged. Greppy has no built-in model list.",
+        providerSettingsForm: {
+          placeholder: "model id",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    maxTurns: Schema.Int.pipe(
+      Schema.withDecodingDefault(Effect.succeed(40)),
+      Schema.annotateKey({
+        title: "Max turns",
+        description:
+          "Maximum model turns for one prompt. The hosted session has no wall-clock deadline.",
+      }),
+    ),
+    noSandbox: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "No sandbox",
+        description:
+          "Turn off Greppy's filesystem sandbox. Leave this off unless a tool cannot run inside the sandbox.",
+        providerSettingsForm: { control: "switch" },
+      }),
+    ),
+    skipSelfCheck: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Skip self-check",
+        description:
+          "Skip Greppy's startup self-check. Greppy may still index the isolated workspace it creates for the thread.",
+        providerSettingsForm: { control: "switch" },
+      }),
+    ),
+    applyOnSessionStop: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({
+        title: "Apply on session stop",
+        description:
+          "After the thread stops, apply Greppy's saved proposal onto the checkout. The git index stays unchanged. A dirty checkout is left untouched and the proposal is kept.",
+        providerSettingsForm: { control: "switch" },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: [
+      "binaryPath",
+      "endpoint",
+      "model",
+      "maxTurns",
+      "noSandbox",
+      "skipSelfCheck",
+      "applyOnSessionStop",
+    ],
+  },
+);
+export type GreppySettings = typeof GreppySettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -615,6 +705,7 @@ export const ServerSettings = Schema.Struct({
     cursor: CursorSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     grok: GrokSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    greppy: GreppySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
   // are `ProviderInstanceConfig` envelopes. The driver-specific config blob
@@ -720,6 +811,18 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const GreppySettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  endpoint: Schema.optionalKey(TrimmedString),
+  model: Schema.optionalKey(TrimmedString),
+  maxTurns: Schema.optionalKey(Schema.Int),
+  noSandbox: Schema.optionalKey(Schema.Boolean),
+  skipSelfCheck: Schema.optionalKey(Schema.Boolean),
+  applyOnSessionStop: Schema.optionalKey(Schema.Boolean),
+  customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   // Server settings
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
@@ -761,6 +864,7 @@ export const ServerSettingsPatch = Schema.Struct({
       cursor: Schema.optionalKey(CursorSettingsPatch),
       grok: Schema.optionalKey(GrokSettingsPatch),
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
+      greppy: Schema.optionalKey(GreppySettingsPatch),
     }),
   ),
   // Whole-map replacement for the new instance config. Patching individual

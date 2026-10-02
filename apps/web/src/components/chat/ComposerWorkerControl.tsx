@@ -27,6 +27,8 @@ export function providerInstanceIdForHarness(harness: WorkjetHarness): string | 
       return "grok";
     case "cursor-agent":
       return "cursor";
+    case "greppy":
+      return "greppy";
     default:
       return null;
   }

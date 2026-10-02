@@ -81,6 +81,7 @@ export const WorkjetHarness = Schema.Literals([
   "opencode",
   "grok-cli",
   "cursor-agent",
+  "greppy",
   "pi-code",
 ]);
 export type WorkjetHarness = typeof WorkjetHarness.Type;

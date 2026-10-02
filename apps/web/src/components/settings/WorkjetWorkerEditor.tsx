@@ -48,6 +48,7 @@ export const WORKJET_HARNESS_OPTIONS: ReadonlyArray<{
   { id: "opencode", label: "OpenCode" },
   { id: "grok-cli", label: "Grok CLI" },
   { id: "cursor-agent", label: "Cursor Agent" },
+  { id: "greppy", label: "Greppy" },
   { id: "pi-code", label: "Pi Code" },
 ];
 

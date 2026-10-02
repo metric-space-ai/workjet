@@ -11,8 +11,8 @@ pub fn api_quota_endpoint(provider: &str, base: &str) -> Option<&'static str> {
         ("minimax", "https://api.minimax.io/v1") => {
             Some("https://www.minimax.io/v1/token_plan/remains")
         }
-        ("minimax", "https://api.minimaxi.com/v1") => {
-            Some("https://api.minimaxi.com/v1/token_plan/remains")
+        ("minimax", "https://api.minimax.cn/v1") => {
+            Some("https://api.minimax.cn/v1/token_plan/remains")
         }
         ("zai", "https://api.z.ai/api/coding/paas/v4" | "https://api.z.ai/api/paas/v4") => {
             Some("https://api.z.ai/api/monitor/usage/quota/limit")

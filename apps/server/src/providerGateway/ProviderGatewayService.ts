@@ -1480,6 +1480,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         throw safeError("invalid-configuration");
       });
       currentCatalog = gatewayCatalog(decoded);
+      const reloadRequired = input.strategy !== existing.routingStrategy || existing.accounts.some((account) => {
+        const update = updates.get(account.id);
+        return update !== undefined && (update.enabled !== account.enabled || update.priority !== account.priority || update.weight !== account.weight || (update.models !== undefined && JSON.stringify(update.models) !== JSON.stringify(account.models)));
+      });
+      // Display-name edits do not interrupt an in-flight inference stream.
+      if (!reloadRequired) return { schemaVersion: 1, catalog: currentCatalog };
       try {
         await stopSingleFlight();
         await startSingleFlight();

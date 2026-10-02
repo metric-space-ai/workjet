@@ -32,7 +32,7 @@ import type {
   WorkjetGatewayPoolsSectionState,
   WorkjetGatewayRoutingState,
 } from "./WorkjetGatewayPools";
-import type { ModelsManagementState } from "./WorkjetModelsProviders";
+import type { ModelsAccountHealth, ModelsManagementState } from "./WorkjetModelsProviders";
 
 /**
  * Runtime state for the Workjet provider-gateway account surface.
@@ -112,11 +112,18 @@ export function useWorkjetGatewaySection(
 
   const [routing, setRouting] = useState<WorkjetGatewayRoutingState>({ status: "idle" });
   const routingRef = useRef(false);
+  const quotaPollAttempts = useRef(0);
+  useEffect(() => {
+    if (!(healthQuery.data?.accounts ?? []).some((account) => account.quotaRefreshing) || quotaPollAttempts.current >= 30) return;
+    const timer = setTimeout(() => { quotaPollAttempts.current += 1; healthQuery.refresh(); }, 2_000);
+    return () => clearTimeout(timer);
+  }, [healthQuery]);
   const clearAccountError = (accountId: string) => setAccountErrors((previous) => {
     const next = { ...previous }; delete next[accountId]; return next;
   });
 
   const refresh = useCallback(() => {
+    quotaPollAttempts.current = 0;
     statusQuery.refresh();
     catalogQuery.refresh();
     healthQuery.refresh();
@@ -378,7 +385,22 @@ export function useWorkjetGatewaySection(
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
     loginAccountId,
     accountErrors,
-    accountHealth: {},
+    accountHealth: Object.fromEntries((healthQuery.data?.accounts ?? []).map((account) => {
+      const now = Date.now();
+      const exhausted = account.quota.some((window) => window.remainingPercent === 0 && window.resetsAtMs !== null && window.resetsAtMs > now && !["seven_day_opus", "seven_day_sonnet"].includes(window.name));
+      const status: ModelsAccountHealth["status"] = account.disabled ? "disabled" : account.authentication === "rejected" ? "auth-required" : account.httpStatus === 429 || exhausted ? "cooldown" : (account.cooldownUntilMs !== null && account.cooldownUntilMs > now) || (account.httpStatus !== null && account.httpStatus >= 400 && account.httpStatus !== 429) ? "unavailable" : account.authentication === "authenticated" ? "ready" : "unknown";
+      const labels: Readonly<Record<string, string>> = { five_hour: "5 Stunden", seven_day: "7 Tage", seven_day_opus: "Opus · 7 Tage", seven_day_sonnet: "Sonnet · 7 Tage", primary_window: "Kurzzeitlimit", secondary_window: "Langzeitlimit" };
+      return [account.accountId, {
+        status,
+        message: status === "auth-required" ? "Anmeldung abgelaufen oder Zugangsdaten abgelehnt." : status === "unavailable" ? account.httpStatus === 402 ? "Abo oder Guthaben prüfen." : account.httpStatus === 403 ? "Der Anbieter verweigert den Zugriff. Account und Abo prüfen." : "Anbieter vorübergehend nicht verfügbar. Erneut prüfen." : null,
+        retryAtMs: account.cooldownUntilMs ?? (exhausted ? account.quota.filter((window) => window.remainingPercent === 0).reduce<number | null>((reset, window) => window.resetsAtMs !== null && window.resetsAtMs > now ? Math.max(reset ?? 0, window.resetsAtMs) : reset, null) : null),
+        windows: account.quota.map((window) => ({ label: labels[window.name] ?? window.name.replaceAll("_", " "), remainingPercent: window.remainingPercent, resetsAtMs: window.resetsAtMs })),
+        observedAtMs: account.observedAtMs,
+        quotaSupported: account.quotaSupported,
+        quotaRefreshing: account.quotaRefreshing,
+        quotaError: account.quotaError,
+      } satisfies ModelsAccountHealth];
+    })),
     mutationBusy: routing.status === "saving" || apiKey.status === "saving" || isOperating || isDeleting || login.status === "starting" || login.status === "pending",
     pools: {
       catalog: catalogQuery.data,

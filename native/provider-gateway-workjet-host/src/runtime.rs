@@ -139,18 +139,15 @@ pub struct ProviderRoutes {
     pub messages: Option<Arc<dyn ClaudeMessagesRouteHandler>>,
     pub auxiliary: Option<Arc<dyn AuxiliaryRouteHandler>>,
     pub models: ClaudeMessagesHttpResponse,
+    pub account_state: Arc<crate::account_policy::AccountState>,
 }
 
 fn state_authorities(
-    config: &ValidatedRuntimeConfig,
+    state: Arc<crate::account_policy::AccountState>,
 ) -> (Arc<AccountRouter>, Arc<CooldownConductor>) {
-    let store = Arc::new(MemoryCooldownStore::default());
     (
-        Arc::new(AccountRouter::with_strategy(
-            store.clone(),
-            config.routing_strategy(),
-        )),
-        Arc::new(CooldownConductor::new(store)),
+        Arc::new(AccountRouter::new(state.clone()).with_policy(state.clone())),
+        state.conductor(),
     )
 }
 
@@ -179,6 +176,8 @@ pub fn build_provider_routes(
     let Some(default_provider) = default_provider else {
         return Ok(None);
     };
+    let state = crate::account_policy::AccountState::open(store.clone())
+        .map_err(|_| RuntimeBuildError::Configuration)?;
     let account_clock: Arc<dyn AccountStateClock> = Arc::new(SystemAccountClock);
     let mut auxiliary_handlers: Vec<Arc<dyn AuxiliaryRouteHandler>> = Vec::new();
 
@@ -186,7 +185,7 @@ pub fn build_provider_routes(
     let claude = if config.claude_accounts().is_empty() {
         None
     } else {
-        let (router, conductor) = state_authorities(config);
+        let (router, conductor) = state_authorities(state.clone());
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.claude_accounts() {
@@ -261,7 +260,7 @@ pub fn build_provider_routes(
     let codex = if config.codex_accounts().is_empty() {
         None
     } else {
-        let (router, conductor) = state_authorities(config);
+        let (router, conductor) = state_authorities(state.clone());
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.codex_accounts() {
@@ -330,7 +329,7 @@ pub fn build_provider_routes(
             )
             .map_err(|_| RuntimeBuildError::Configuration)?,
         )));
-        let (router, conductor) = state_authorities(config);
+        let (router, conductor) = state_authorities(state.clone());
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.antigravity_accounts() {
@@ -423,7 +422,8 @@ pub fn build_provider_routes(
                 );
             }
             let pool = ApiKeyAccountPool::new(provider, accounts, registry.clone())
-                .map_err(|_| RuntimeBuildError::Configuration)?;
+                .map_err(|_| RuntimeBuildError::Configuration)?
+                .with_policy(state.clone());
             api_key_handlers.insert(
                 provider.to_owned(),
                 Arc::new(OpenAiResponsesApiKeyHandler::new(Arc::new(pool))),
@@ -501,6 +501,7 @@ pub fn build_provider_routes(
         );
         let pool = XaiSubscriptionAccountPool::new(accounts, executor, auth)
             .map_err(|_| RuntimeBuildError::Configuration)?
+            .with_policy(state.clone())
             .with_persist(Arc::new(XaiSecretPersist {
                 store: store.clone(),
                 refs: persist_refs,
@@ -533,6 +534,7 @@ pub fn build_provider_routes(
         messages: Some(messages),
         auxiliary,
         models: claude_models_response(&model_catalog(config), false),
+        account_state: state,
     }))
 }
 
@@ -619,6 +621,7 @@ pub struct HostManagementSource {
     management_endpoint: String,
     default_provider: Option<String>,
     summary: ManagementRuntimeConfigSummary,
+    account_health: Option<Arc<crate::account_health::AccountHealthSource>>,
 }
 
 impl HostManagementSource {
@@ -738,11 +741,20 @@ impl HostManagementSource {
                 providers,
             },
             default_provider,
+            account_health: None,
         }
     }
 }
 
 impl HostManagementSource {
+    pub fn with_account_health(
+        mut self,
+        source: Arc<crate::account_health::AccountHealthSource>,
+    ) -> Self {
+        self.account_health = Some(source);
+        self
+    }
+
     /// A host without any provider account is up but has nothing to route to.
     fn provider_phase(&self) -> ManagementRuntimePhase {
         if self.default_provider.is_some() {
@@ -754,6 +766,9 @@ impl HostManagementSource {
 }
 
 impl ManagementRuntimeStatusSource for HostManagementSource {
+    fn account_health(&self) -> Option<serde_json::Value> {
+        self.account_health.as_ref().map(|s| s.snapshot())
+    }
     fn snapshot(&self) -> ManagementRuntimeStatus {
         ManagementRuntimeStatus {
             schema: "workjet.provider-gateway.runtime-status.v1".to_owned(),

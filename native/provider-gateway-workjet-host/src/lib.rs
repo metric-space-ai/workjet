@@ -1,3 +1,4 @@
+pub mod account_health;
 pub mod account_policy;
 pub mod config;
 pub mod loopback;
@@ -147,19 +148,30 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
     let routes = build_provider_routes(
         &config.runtime,
         config.default_provider.as_deref(),
-        store,
+        store.clone(),
         config.antigravity_oauth,
     )
     .map_err(|_| HostError::Runtime)?
     .map(Arc::new);
     let provider_endpoint = format!("http://{provider_address}");
     let management_endpoint = format!("http://{management_address}");
-    let management_source = Arc::new(HostManagementSource::new(
-        provider_endpoint.clone(),
-        management_endpoint.clone(),
-        config.default_provider,
-        &config.runtime,
-    ));
+    let account_state = match routes.as_ref() {
+        Some(routes) => routes.account_state.clone(),
+        None => {
+            account_policy::AccountState::open(store.clone()).map_err(|_| HostError::Runtime)?
+        }
+    };
+    let account_health =
+        account_health::AccountHealthSource::new(account_state, store, &config.runtime);
+    let management_source = Arc::new(
+        HostManagementSource::new(
+            provider_endpoint.clone(),
+            management_endpoint.clone(),
+            config.default_provider,
+            &config.runtime,
+        )
+        .with_account_health(account_health),
+    );
     let authenticator = Arc::new(
         ManagementAuthenticator::new(
             management_key.as_str(),

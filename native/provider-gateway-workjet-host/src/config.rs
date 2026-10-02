@@ -122,12 +122,10 @@ impl HostConfig {
         if bootstrap && default_provider.is_some() {
             return Err(HostConfigError::InvalidDefaultProvider);
         }
-        let runtime = if bootstrap {
-            self.runtime.validate_for_extension_host()
-        } else {
-            self.runtime.validate()
-        }
-        .map_err(|_| HostConfigError::InvalidRuntime)?;
+        let runtime = self
+            .runtime
+            .validate_for_extension_host()
+            .map_err(|_| HostConfigError::InvalidRuntime)?;
         let runtime_refs_allowed = runtime.claude_accounts().iter().all(|account| {
             reference_allowed(&account.access_token_secret)
                 && reference_allowed(&account.refresh_token_secret)
@@ -215,7 +213,13 @@ impl HostConfig {
                             .any(|account| !account.disabled))
             }
             Some(_) => false,
-            None => configured_accounts == 0,
+            None => {
+                runtime.claude_accounts().iter().all(|a| a.disabled)
+                    && runtime.codex_accounts().iter().all(|a| a.disabled)
+                    && runtime.antigravity_accounts().iter().all(|a| a.disabled)
+                    && runtime.api_key_accounts().iter().all(|a| a.disabled)
+                    && runtime.xai_accounts().iter().all(|a| a.disabled)
+            }
         };
         if !default_is_enabled {
             return Err(HostConfigError::InvalidDefaultProvider);

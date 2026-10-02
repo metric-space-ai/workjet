@@ -1,3 +1,20 @@
+fn authentication(generation: Option<(u16, i64)>, probe: Option<(u16, i64)>) -> &'static str {
+    // Usage permission failures do not establish inference credential rejection.
+    match generation.map(|o| o.0).or_else(|| probe.filter(|p| (200..=299).contains(&p.0)).map(|p| p.0)) {
+        Some(401) => "rejected",
+        Some(200..=299) => "authenticated",
+        _ => "unknown",
+    }
+}
+#[cfg(test)]
+mod provenance_tests {
+    #[test]
+    fn usage_permission_failure_does_not_reject_inference_authentication() {
+        assert_eq!(super::authentication(Some((200, 1)), Some((401, 2))), "authenticated");
+        assert_eq!(super::authentication(None, Some((401, 2))), "unknown");
+        assert_eq!(super::authentication(Some((401, 1)), Some((200, 2))), "rejected");
+    }
+}
 //! Bounded on-demand subscription usage reads. No periodic worker or CLI scraping.
 use crate::{
     account_policy::{AccountState, QuotaWindow},
@@ -166,15 +183,7 @@ impl AccountHealthSource {
                     .max_by_key(|o| o.1)
                     .map(|o| o.0)
                     .or(latest.and_then(|r| r.last_error.as_ref().and_then(|e| e.http_status)));
-                // Usage permissions do not establish inference authentication failure.
-                let auth_status = generation
-                    .map(|o| o.0)
-                    .or_else(|| probe.filter(|p| (200..=299).contains(&p.0)).map(|p| p.0));
-                let authentication = match auth_status {
-                    Some(401) => "rejected",
-                    Some(200..=299) => "authenticated",
-                    _ => "unknown",
-                };
+                let authentication = authentication(generation, probe);
                 let quotas = self.state.quotas(&a.provider, &a.auth_id);
                 let exhausted = quotas.iter().any(|w| {
                     !matches!(w.name.as_str(), "seven_day_opus" | "seven_day_sonnet")

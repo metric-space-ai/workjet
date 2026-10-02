@@ -1,6 +1,9 @@
 fn authentication(generation: Option<(u16, i64)>, probe: Option<(u16, i64)>) -> &'static str {
     // Usage permission failures do not establish inference credential rejection.
-    match generation.map(|o| o.0).or_else(|| probe.filter(|p| (200..=299).contains(&p.0)).map(|p| p.0)) {
+    match generation
+        .map(|o| o.0)
+        .or_else(|| probe.filter(|p| (200..=299).contains(&p.0)).map(|p| p.0))
+    {
         Some(401) => "rejected",
         Some(200..=299) => "authenticated",
         _ => "unknown",
@@ -10,12 +13,18 @@ fn authentication(generation: Option<(u16, i64)>, probe: Option<(u16, i64)>) -> 
 mod provenance_tests {
     #[test]
     fn usage_permission_failure_does_not_reject_inference_authentication() {
-        assert_eq!(super::authentication(Some((200, 1)), Some((401, 2))), "authenticated");
+        assert_eq!(
+            super::authentication(Some((200, 1)), Some((401, 2))),
+            "authenticated"
+        );
         assert_eq!(super::authentication(None, Some((401, 2))), "unknown");
-        assert_eq!(super::authentication(Some((401, 1)), Some((200, 2))), "rejected");
+        assert_eq!(
+            super::authentication(Some((401, 1)), Some((200, 2))),
+            "rejected"
+        );
     }
 }
-//! Bounded on-demand subscription usage reads. No periodic worker or CLI scraping.
+// Bounded on-demand subscription usage reads. No periodic worker or CLI scraping.
 use crate::{
     account_policy::{AccountState, QuotaWindow},
     secret_store::WorkjetSecretStore,

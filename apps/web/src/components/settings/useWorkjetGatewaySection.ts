@@ -32,7 +32,8 @@ import type {
   WorkjetGatewayPoolsSectionState,
   WorkjetGatewayRoutingState,
 } from "./WorkjetGatewayPools";
-import type { ModelsAccountHealth, ModelsManagementState } from "./WorkjetModelsProviders";
+import type { ModelsManagementState } from "./WorkjetModelsProviders";
+import { modelsAccountHealth } from "./WorkjetModelsHealth";
 
 /**
  * Runtime state for the Workjet provider-gateway account surface.
@@ -224,7 +225,10 @@ export function useWorkjetGatewaySection(
           }
           return;
         }
-        if (token.aborted) return;
+        if (token.aborted) {
+          void cancelGatewayOauth({ environmentId, input: { state: started.value.state } });
+          return;
+        }
         const session = started.value;
         setLogin({
           status: "pending",
@@ -281,7 +285,7 @@ export function useWorkjetGatewaySection(
         if (loginRef.current === token) loginRef.current = null;
       });
     },
-    [environmentId, pollGatewayOauth, refresh, startGatewayOauth],
+    [cancelGatewayOauth, environmentId, pollGatewayOauth, refresh, startGatewayOauth],
   );
 
   /**
@@ -323,11 +327,12 @@ export function useWorkjetGatewaySection(
   );
 
   const cancelLogin = useCallback(() => {
-    if (login.status !== "pending") return;
+    if (login.status === "idle" || login.status === "completed") return;
     if (loginRef.current) loginRef.current.aborted = true;
     loginRef.current = null;
     setLogin({ status: "idle" });
-    if (environmentId === null) return;
+    setLoginAccountId(null);
+    if (environmentId === null || login.status !== "pending") return;
     void cancelGatewayOauth({ environmentId, input: { state: login.state } });
   }, [cancelGatewayOauth, environmentId, login]);
 
@@ -385,22 +390,7 @@ export function useWorkjetGatewaySection(
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
     loginAccountId,
     accountErrors,
-    accountHealth: Object.fromEntries((healthQuery.data?.accounts ?? []).map((account) => {
-      const now = Date.now();
-      const exhausted = account.quota.some((window) => window.remainingPercent === 0 && window.resetsAtMs !== null && window.resetsAtMs > now && !["seven_day_opus", "seven_day_sonnet"].includes(window.name));
-      const status: ModelsAccountHealth["status"] = account.disabled ? "disabled" : account.authentication === "rejected" ? "auth-required" : account.httpStatus === 429 || exhausted ? "cooldown" : (account.cooldownUntilMs !== null && account.cooldownUntilMs > now) || (account.httpStatus !== null && account.httpStatus >= 400 && account.httpStatus !== 429) ? "unavailable" : account.authentication === "authenticated" ? "ready" : "unknown";
-      const labels: Readonly<Record<string, string>> = { five_hour: "5 Stunden", seven_day: "7 Tage", seven_day_opus: "Opus · 7 Tage", seven_day_sonnet: "Sonnet · 7 Tage", primary_window: "Kurzzeitlimit", secondary_window: "Langzeitlimit" };
-      return [account.accountId, {
-        status,
-        message: status === "auth-required" ? "Anmeldung abgelaufen oder Zugangsdaten abgelehnt." : status === "unavailable" ? account.httpStatus === 402 ? "Abo oder Guthaben prüfen." : account.httpStatus === 403 ? "Der Anbieter verweigert den Zugriff. Account und Abo prüfen." : "Anbieter vorübergehend nicht verfügbar. Erneut prüfen." : null,
-        retryAtMs: account.cooldownUntilMs ?? (exhausted ? account.quota.filter((window) => window.remainingPercent === 0).reduce<number | null>((reset, window) => window.resetsAtMs !== null && window.resetsAtMs > now ? Math.max(reset ?? 0, window.resetsAtMs) : reset, null) : null),
-        windows: account.quota.map((window) => ({ label: labels[window.name] ?? window.name.replaceAll("_", " "), remainingPercent: window.remainingPercent, resetsAtMs: window.resetsAtMs })),
-        observedAtMs: account.observedAtMs,
-        quotaSupported: account.quotaSupported,
-        quotaRefreshing: account.quotaRefreshing,
-        quotaError: account.quotaError,
-      } satisfies ModelsAccountHealth];
-    })),
+    accountHealth: Object.fromEntries((healthQuery.data?.accounts ?? []).map((account) => [account.accountId, modelsAccountHealth(account, Date.now())])),
     mutationBusy: routing.status === "saving" || apiKey.status === "saving" || isOperating || isDeleting || login.status === "starting" || login.status === "pending",
     pools: {
       catalog: catalogQuery.data,

@@ -169,18 +169,19 @@ function AccountRow({ account, state }: { readonly account: WorkjetGatewayAccoun
       {!authRequired && health.status === "unavailable" && <button className="underline underline-offset-2" onClick={state.onRefresh}>Erneut prüfen</button>}
     </div>}
     {state.accountErrors[account.id] && <p role="alert" className="pl-1 text-xs text-destructive">{state.accountErrors[account.id]}</p>}
-    {loginHere && <LoginMessage state={state} />}
+    {loginHere && <LoginMessage state={state} onRetry={() => state.onRelogin(account.provider as WorkjetGatewayOauthProvider, account.id)} />}
     {replaceKey && isWorkjetGatewayApiKeyProvider(account.provider) && <KeyForm provider={account.provider} account={account} models={account.modelIds} state={state} onClose={() => setReplaceKey(false)} />}
     {confirmDelete && <div className="flex flex-wrap items-center gap-2 rounded-md bg-destructive/5 p-2 text-xs"><span>Account und gespeicherte Zugangsdaten permanent entfernen?</span><Button size="sm" variant="destructive" disabled={state.mutationBusy} onClick={() => { void state.onDeleteAccount(account.id).then((removed) => { if (removed) setConfirmDelete(false); }); }}>Entfernen</Button><Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>Abbrechen</Button></div>}
   </div>;
 }
 
-function LoginMessage({ state }: { readonly state: WorkjetGatewaySectionState }) {
+function LoginMessage({ state, onRetry, onCancel }: { readonly state: WorkjetGatewaySectionState; readonly onRetry?: () => void; readonly onCancel?: () => void }) {
   const login = state.login;
-  if (login.status === "starting") return <p role="status" className="py-2 text-xs text-muted-foreground">Anmeldung wird geöffnet …</p>;
-  if (login.status === "failed") return <p role="alert" className="py-2 text-xs text-destructive">{login.message}</p>;
+  const cancel = onCancel ?? state.onCancelLogin;
+  if (login.status === "starting") return <div role="status" className="flex items-center gap-3 py-2 text-xs text-muted-foreground">Anmeldung wird geöffnet …<button onClick={cancel}>Abbrechen</button></div>;
+  if (login.status === "failed") return <div role="alert" className="flex flex-wrap items-center gap-3 py-2 text-xs text-destructive"><span>{login.message}</span><button onClick={onRetry ?? (() => state.onAddAccount(login.provider))} className="underline underline-offset-2">Anmeldung erneut starten</button><button onClick={cancel}>Abbrechen</button></div>;
   if (login.status !== "pending") return null;
-  return <div role="status" className="flex flex-wrap items-center gap-3 py-2 text-xs text-muted-foreground"><span>Anmeldung im Browser abschließen. Dieser Account wird danach automatisch angezeigt.</span><a href={login.authorizationUrl} target="_blank" rel="noreferrer" className="text-foreground underline underline-offset-2">Anmeldung öffnen</a><button onClick={state.onCancelLogin} className="text-foreground">Abbrechen</button></div>;
+  return <div role="status" className="flex flex-wrap items-center gap-3 py-2 text-xs text-muted-foreground"><span>Anmeldung im Browser abschließen.</span><a href={login.authorizationUrl} target="_blank" rel="noreferrer" className="text-foreground underline underline-offset-2">Anmeldung öffnen</a><button onClick={cancel} className="text-foreground">Abbrechen</button></div>;
 }
 
 export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & ModelsManagementState) {
@@ -188,6 +189,10 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
   const [adding, setAdding] = useState<WorkjetGatewayProvider | null>(null);
   const [keyProvider, setKeyProvider] = useState<WorkjetGatewayApiKeyProvider | null>(null);
   const accounts = state.catalog?.accounts ?? [];
+  useEffect(() => {
+    const login = state.login;
+    if (login.status === "completed" && accounts.some((account) => account.provider === login.provider)) setAdding(null);
+  }, [accounts, state.login]);
   const providers = WORKJET_GATEWAY_PROVIDERS.filter((provider) => accounts.some((account) => account.provider === provider) || adding === provider || (state.login.status !== "idle" && state.login.provider === provider));
   const startAdd = (provider: WorkjetGatewayProvider) => {
     setPickerOpen(false); setAdding(provider); setKeyProvider(null);
@@ -199,7 +204,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
   const fault = state.statusError ?? state.catalogError ?? (state.status?.phase === "faulted" ? "Provider-Verbindung unterbrochen." : null);
   return <section className="space-y-4" aria-label="LLM-Anbieter" data-testid="models-providers">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-lg font-semibold">LLM-Anbieter</h2><p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><span className={cn("size-1.5 rounded-full", state.status?.phase === "ready" ? "bg-emerald-500" : "bg-muted-foreground")} />{state.isInitialLoading ? "Verbindung wird geladen …" : `${accounts.filter((account) => account.enabled).length} aktive Accounts · ${state.catalog?.models.length ?? 0} Modelle`}</p></div>
+      <div><h2 className="text-lg font-semibold">LLM-Anbieter</h2><p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><span className={cn("size-1.5 rounded-full", state.status?.phase === "ready" ? "bg-emerald-500" : "bg-muted-foreground")} />{state.isInitialLoading ? "Verbindung wird geladen …" : `${accounts.filter((account) => account.enabled).length} aktive Accounts`}</p></div>
       <div className="relative flex gap-1"><Button size="icon" variant="ghost" aria-label="Anbieterstatus aktualisieren" disabled={state.isRefreshing} onClick={state.onRefresh}><RefreshCwIcon className="size-4" /></Button><Popover open={pickerOpen} onOpenChange={setPickerOpen}><PopoverTrigger render={<Button size="sm" variant="outline" disabled={state.mutationBusy} />}><PlusIcon className="size-4" /> Anbieter hinzufügen</PopoverTrigger>
         <PopoverPopup align="end" aria-label="Anbieter auswählen" viewportClassName="p-1">{WORKJET_GATEWAY_PROVIDERS.map((provider) => { const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider]; return <button key={provider} type="button" onClick={() => startAdd(provider)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"><Icon className="size-4" />{WORKJET_GATEWAY_PROVIDER_LABELS[provider]}</button>; })}</PopoverPopup></Popover>
       </div>
@@ -223,7 +228,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             {providerAccounts.length > 0 && models.length === 0 && <p role="status" className="py-1 text-xs text-amber-500">Keine Modelle zugeordnet. Modell-IDs oben eingeben, damit Workjet diesen Anbieter nutzen kann.</p>}
             {adding === provider && provider === "xai" && keyProvider === null && !loginHere && <div className="flex gap-2 py-2"><Button size="sm" variant="outline" onClick={() => state.onAddAccount("xai")}>Mit Abo anmelden</Button><Button size="sm" variant="outline" onClick={() => setKeyProvider("xai")}>API-Key hinzufügen</Button></div>}
             {keyProvider === provider && isWorkjetGatewayApiKeyProvider(provider) && <KeyForm provider={provider} models={models} state={state} onClose={() => { setAdding(null); setKeyProvider(null); }} />}
-            {loginHere && <LoginMessage state={state} />}
+            {loginHere && <LoginMessage state={state} onCancel={() => { state.onCancelLogin(); setAdding(null); }} />}
           </div>
         </div>;
       })}

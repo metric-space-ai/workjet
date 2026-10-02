@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { decodeAccountHealth } from "./ProviderGatewayManagement.ts";
 const account = { accountId: "a", provider: "codex", authentication: "unknown", disabled: false, usable: true,
-  cooldownUntilMs: null, errorCode: null, httpStatus: null, observedAtMs: null, quota: [], quotaSupported: true,
+  cooldownUntilMs: null, errorCode: null, httpStatus: null, generationHttpStatus: null, observedAtMs: null, quota: [], quotaSupported: true,
   quotaRefreshing: true, quotaError: null };
 const status = (accounts: unknown) => ({ account_health: { schema: "workjet.provider-gateway.account-health.v1", accounts } });
 describe("gateway account health", () => {

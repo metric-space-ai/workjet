@@ -111,6 +111,10 @@ export async function preparePortableNode(input: {
               Effect.tryPromise(() => NodeFSP.open(archivePath, "wx", 0o600)),
               (handle) => Effect.promise(() => handle.close()),
             );
+            // Network chunks can be only a few KiB. Awaiting a filesystem operation
+            // for each one throttles the response; keep one bounded write buffer.
+            const buffer = new Uint8Array(1024 * 1024);
+            let buffered = 0;
             yield* Stream.runForEach(response.stream, (chunk) =>
               Effect.gen(function* () {
                 size += chunk.byteLength;
@@ -118,9 +122,21 @@ export async function preparePortableNode(input: {
                   return yield* new PortableNodeDownloadError({
                     message: "Portable Node archive exceeds its size limit.",
                   });
-                yield* Effect.tryPromise(() => file.writeFile(chunk));
+                let offset = 0;
+                while (offset < chunk.byteLength) {
+                  const count = Math.min(buffer.byteLength - buffered, chunk.byteLength - offset);
+                  buffer.set(chunk.subarray(offset, offset + count), buffered);
+                  buffered += count;
+                  offset += count;
+                  if (buffered === buffer.byteLength) {
+                    yield* Effect.tryPromise(() => file.writeFile(buffer));
+                    buffered = 0;
+                  }
+                }
               }),
             );
+            if (buffered > 0)
+              yield* Effect.tryPromise(() => file.writeFile(buffer.subarray(0, buffered)));
           }),
         ).pipe(
           Effect.timeout("180 seconds"),

@@ -7,7 +7,7 @@ import * as NodePath from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Context from "effect/Context";
 import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/hostProcess";
-import { managedNodeArchive } from "@workjet/ssh/remoteNode";
+import * as RemoteNode from "@workjet/ssh/remoteNode";
 import { preparePortableNode, stageVerifiedNodeArchive } from "./prepare-portable-node.ts";
 
 const hostContext = Context.empty();
@@ -22,10 +22,11 @@ async function fixture(
     arch: hostArchitecture,
     electron: null,
   },
+  paddingBytes: number = 0,
 ) {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-portable-node-test-"));
   try {
-    const pin = managedNodeArchive(hostPlatform, hostArchitecture);
+    const pin = RemoteNode.managedNodeArchive(hostPlatform, hostArchitecture);
     const source = NodePath.join(root, pin.directoryName);
     await NodeFSP.mkdir(NodePath.join(source, "bin"), { recursive: true });
     // This fixture models the metadata protocol, not a real Node runtime.
@@ -39,6 +40,11 @@ async function fixture(
       await NodeFSP.mkdir(NodePath.join(source, entry), { recursive: true });
       await NodeFSP.writeFile(NodePath.join(source, entry, "fixture"), entry);
     }
+    if (paddingBytes > 0)
+      await NodeFSP.writeFile(
+        NodePath.join(source, "padding"),
+        NodeCrypto.randomBytes(paddingBytes),
+      );
     const archivePath = NodePath.join(root, "node.tar.gz");
     NodeChildProcess.execFileSync("tar", ["-czf", archivePath, "-C", root, pin.directoryName], {
       timeout: 10_000,
@@ -94,6 +100,57 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
         false,
       );
     });
+  });
+
+  it("downloads a valid archive in tiny chunks and preserves full buffers plus the final tail", async () => {
+    await fixture(
+      async (input, root) => {
+        const pin = vi.spyOn(RemoteNode, "managedNodeArchive").mockReturnValue(input.pin);
+        try {
+          const bytes = await NodeFSP.readFile(input.archivePath);
+          expect(bytes.byteLength).toBeGreaterThan(2 * 1024 * 1024);
+          let offset = 0;
+          download.mockResolvedValue(
+            new Response(
+              new ReadableStream({
+                pull(controller) {
+                  if (offset === bytes.byteLength) {
+                    controller.close();
+                    return;
+                  }
+                  const width = offset < 8192 ? 137 : 2053;
+                  const end = Math.min(offset + width, bytes.byteLength);
+                  controller.enqueue(bytes.subarray(offset, end));
+                  offset = end;
+                },
+              }),
+            ),
+          );
+          const executable = await preparePortableNode({
+            destination: input.destination,
+            platform: hostPlatform,
+            arch: hostArchitecture,
+          });
+          expect(await NodeFSP.readFile(executable, "utf8")).toContain("IDENTITY");
+          expect(await NodeFSP.readFile(NodePath.join(input.destination, "padding"))).toEqual(
+            await NodeFSP.readFile(NodePath.join(root, input.pin.directoryName, "padding")),
+          );
+          expect(await NodeFSP.readFile(NodePath.join(input.destination, "LICENSE"), "utf8")).toBe(
+            "Fixture notice\n",
+          );
+          expect(
+            (await NodeFSP.readdir(root)).some(
+              (entry) => entry.startsWith(".node-download-") || entry.startsWith(".node-stage-"),
+            ),
+          ).toBe(false);
+          expect(download).toHaveBeenCalledOnce();
+        } finally {
+          pin.mockRestore();
+        }
+      },
+      undefined,
+      2 * 1024 * 1024 + 8191,
+    );
   });
 
   it("rejects corrupted bytes before creating an extraction stage", async () => {

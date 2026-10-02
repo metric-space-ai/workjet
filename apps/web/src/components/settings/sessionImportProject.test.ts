@@ -108,10 +108,12 @@ describe("session import destination preparation", () => {
   });
   it("keeps a failed CTOX registration retryable on the same project id", async () => {
     const ids: string[] = [];
+    const localProjects: OrchestrationProjectShell[] = [];
     const deps = {
       ...port(),
       createLocalProject: async (created: SessionImportProject) => {
         ids.push(created.id);
+        localProjects.push(created as unknown as OrchestrationProjectShell);
       },
       confirmLogicalProject: async () => {
         throw new Error("CTOX offline");
@@ -125,13 +127,13 @@ describe("session import destination preparation", () => {
         title: "Imported work",
         workspaceRoot: "/workspace/new",
       },
-      localProjects: [],
+      localProjects,
       port: deps,
     };
     await expect(prepareSessionImportProject(input)).rejects.toThrow("CTOX offline");
     await expect(prepareSessionImportProject(input)).rejects.toThrow("CTOX offline");
-    expect(ids).toHaveLength(2);
-    expect(ids[0]).toBe(ids[1]);
+    expect(ids).toHaveLength(1);
+    expect(localProjects[0]?.id).toBe(ids[0]);
   });
   it("creates named Code projects without requiring a desktop CTOX bridge", async () => {
     const deps = port();

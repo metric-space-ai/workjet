@@ -143,7 +143,7 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
               <Button
                 size="xs"
                 variant="ghost"
-                disabled={busy || candidates.length === 0}
+                disabled={busy || props.readOnly || candidates.length === 0}
                 onClick={() => candidates.forEach((candidate) => props.onSelect(candidate, true))}
               >
                 Select page

@@ -246,10 +246,45 @@ describe("project-directed static session imports", () => {
           const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
           yield* service.importSessions(input);
           yield* Effect.promise(() => Fsp.writeFile(file, transcript("Changed prefix")));
-          const refused = yield* service.importSessions(input);
+          yield* Effect.promise(() =>
+            Fsp.writeFile(
+              NodePath.join(root, "sessions", "second.jsonl"),
+              transcript("Another conversation"),
+            ),
+          );
+          const secondId = (yield* service.inspect()).candidates.find(
+            ({ title }) => title === "Another conversation",
+          )!.candidateId;
+          const refused = yield* service.importSessions({
+            ...input,
+            candidateIds: [candidateId, secondId],
+          });
           expect(refused.items[0]?.status).toBe("failed");
+          expect(refused.items[1]?.status).toBe("imported");
           expect([...threads.values()][0]?.messages[0]?.text).toBe("Original");
         }),
       ),
+  );
+  it.effect("creates a fresh copy when an imported thread was deleted", () =>
+    withFixture(({ root, service, threads }) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          Fsp.writeFile(
+            NodePath.join(root, "sessions", "conversation.jsonl"),
+            transcript("Copy me", ["Reply"]),
+          ),
+        );
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
+        const first = yield* service.importSessions(input);
+        threads.delete(first.items[0]!.threadId!);
+        expect((yield* service.inspect()).candidates[0]?.importedCopies).toEqual([]);
+        const restored = yield* service.importSessions(input);
+        expect(restored.items[0]?.status).toBe("imported");
+        expect(restored.items[0]?.threadId).not.toBe(first.items[0]?.threadId);
+        expect(threads.get(restored.items[0]!.threadId!)?.messages).toHaveLength(2);
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
+      }),
+    ),
   );
 });

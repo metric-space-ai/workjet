@@ -525,15 +525,12 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const importOne = (candidateId: string, destinationProjectId?: ProjectId) =>
+  const importOne = (
+    candidateId: string,
+    file: SourceFile | undefined,
+    destinationProjectId?: ProjectId,
+  ) =>
     Effect.gen(function* () {
-      const settings = yield* settingsService.getSettings;
-      const locations = resolveLocations(settings, path);
-      const files = yield* Effect.tryPromise({
-        try: () => discoverFiles(locations),
-        catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
-      });
-      const file = files.find((entry) => entry.sourceKey === candidateId);
       if (!file)
         return yield* new WorkjetSessionImportError({
           reason: "candidate_expired",
@@ -748,11 +745,37 @@ export const make = Effect.gen(function* () {
     );
 
   const importSessions: WorkjetSessionImportShape["importSessions"] = (input) =>
-    Effect.forEach([...new Set(input.candidateIds)], (candidateId) =>
-      importOne(candidateId, input.projectId).pipe(
-        Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),
+    Effect.gen(function* () {
+      const settings = yield* settingsService.getSettings;
+      const locations = resolveLocations(settings, path);
+      const files = yield* Effect.tryPromise({
+        try: () => discoverFiles(locations),
+        catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
+      });
+      const byId = new Map(files.map((file) => [file.sourceKey, file]));
+      const items = yield* Effect.forEach([...new Set(input.candidateIds)], (candidateId) =>
+        importOne(candidateId, byId.get(candidateId), input.projectId).pipe(
+          Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),
+        ),
+      );
+      return { items };
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.succeed({
+          items: [...new Set(input.candidateIds)].map((candidateId) =>
+            toFailure(
+              candidateId,
+              isWorkjetSessionImportError(error)
+                ? error
+                : new WorkjetSessionImportError({
+                    reason: "source_unavailable",
+                    subject: candidateId,
+                  }),
+            ),
+          ),
+        }),
       ),
-    ).pipe(Effect.map((items) => ({ items })));
+    );
 
   return { inspect, importSessions } satisfies WorkjetSessionImportShape;
 });

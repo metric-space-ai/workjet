@@ -1,3 +1,4 @@
+pub mod account_policy;
 pub mod config;
 pub mod loopback;
 pub mod oauth;

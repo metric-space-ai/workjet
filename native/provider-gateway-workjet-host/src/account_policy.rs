@@ -300,7 +300,6 @@ impl AccountPolicy for AccountState {
                             || requested.to_ascii_lowercase().contains("opus"))
                             && (w.name != "seven_day_sonnet"
                                 || requested.to_ascii_lowercase().contains("sonnet"))
-                            && now.saturating_sub(w.observed_at_ms) < 300_000
                             && w.remaining_percent.is_some_and(|r| r > 0.0)
                     })
                     .filter_map(|w| w.resets_at_ms)

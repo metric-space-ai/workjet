@@ -1348,7 +1348,9 @@ export const WorkjetGatewayHealth = Schema.Struct({
   activeProvider: Schema.NullOr(WorkjetGatewayProvider),
   providers: Schema.Array(WorkjetGatewayProviderHealth),
   accountHealth: WorkjetGatewayHealthAvailability,
-  accounts: Schema.Array(WorkjetGatewayAccountHealth).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  accounts: Schema.Array(WorkjetGatewayAccountHealth).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   capacity: WorkjetGatewayHealthAvailability,
 });
 export type WorkjetGatewayHealth = typeof WorkjetGatewayHealth.Type;
@@ -1531,7 +1533,11 @@ export const WorkjetGatewayAddApiKeyAccountInput = Schema.Struct({
   /** Replace a credential in place; omitted when adding another account. */
   accountId: Schema.optionalKey(WorkjetGatewayAccountId),
   label: TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160))),
-  models: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128)))).pipe(Schema.check(Schema.isMaxLength(128)))),
+  models: Schema.optionalKey(
+    Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128)))).pipe(
+      Schema.check(Schema.isMaxLength(128)),
+    ),
+  ),
   apiKey: TrimmedNonEmptyString.pipe(
     Schema.check(Schema.isMaxLength(WORKJET_GATEWAY_API_KEY_MAX_LENGTH)),
   ),

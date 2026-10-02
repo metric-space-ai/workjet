@@ -46,7 +46,8 @@ import { modelsAccountHealth } from "./WorkjetModelsHealth";
  */
 export function useWorkjetGatewaySection(
   environmentId: EnvironmentId | null,
-): WorkjetGatewaySectionState & ModelsManagementState & { readonly pools: WorkjetGatewayPoolsSectionState } {
+): WorkjetGatewaySectionState &
+  ModelsManagementState & { readonly pools: WorkjetGatewayPoolsSectionState } {
   const statusQuery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -93,7 +94,9 @@ export function useWorkjetGatewaySection(
   const [accountErrors, setAccountErrors] = useState<Readonly<Record<string, string>>>({});
   const [editedCatalog, setEditedCatalog] = useState<WorkjetGatewayCatalog | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  useEffect(() => { setEditedCatalog(null); }, [catalogQuery.data]);
+  useEffect(() => {
+    setEditedCatalog(null);
+  }, [catalogQuery.data]);
   const [apiKey, setApiKey] = useState<WorkjetGatewayApiKeyState>({ status: "idle" });
   // Guards a second submit while one key is in flight; the value itself is
   // never held here.
@@ -115,26 +118,56 @@ export function useWorkjetGatewaySection(
   const routingRef = useRef(false);
   const quotaPollAttempts = useRef(0);
   useEffect(() => {
-    if (!(healthQuery.data?.accounts ?? []).some((account) => account.quotaRefreshing) || quotaPollAttempts.current >= 30) return;
-    const timer = setTimeout(() => { quotaPollAttempts.current += 1; healthQuery.refresh(); }, 2_000);
+    if (
+      !(healthQuery.data?.accounts ?? []).some((account) => account.quotaRefreshing) ||
+      quotaPollAttempts.current >= 30
+    )
+      return;
+    const timer = setTimeout(() => {
+      quotaPollAttempts.current += 1;
+      healthQuery.refresh();
+    }, 2_000);
     return () => clearTimeout(timer);
   }, [healthQuery]);
   useEffect(() => {
-    if (environmentId === null || statusQuery.data?.phase !== "ready" || healthQuery.data === null || healthQuery.isPending) return;
+    if (
+      environmentId === null ||
+      statusQuery.data?.phase !== "ready" ||
+      healthQuery.data === null ||
+      healthQuery.isPending
+    )
+      return;
     const now = Date.now();
-    const deadlines = healthQuery.data.accounts.flatMap((account) => [
-      account.cooldownUntilMs,
-      ...account.quota.flatMap((window) => [window.resetsAtMs, window.observedAtMs + 300_000]),
-    ]).filter((deadline): deadline is number => deadline !== null && deadline > now);
+    const deadlines = healthQuery.data.accounts
+      .flatMap((account) => [
+        account.cooldownUntilMs,
+        ...account.quota.flatMap((window) => [window.resetsAtMs, window.observedAtMs + 300_000]),
+      ])
+      .filter((deadline): deadline is number => deadline !== null && deadline > now);
     // One owned timer while this page is mounted. Reset and freshness boundaries
     // refresh real readings; unmounting or a new response cancels the timer.
-    const delay = Math.max(1_000, Math.min(300_000, ...deadlines.map((deadline) => deadline - now)));
-    const timer = setTimeout(() => { quotaPollAttempts.current = 0; healthQuery.refresh(); }, delay);
+    const delay = Math.max(
+      1_000,
+      Math.min(300_000, ...deadlines.map((deadline) => deadline - now)),
+    );
+    const timer = setTimeout(() => {
+      quotaPollAttempts.current = 0;
+      healthQuery.refresh();
+    }, delay);
     return () => clearTimeout(timer);
-  }, [environmentId, healthQuery.data, healthQuery.isPending, healthQuery.refresh, statusQuery.data?.phase]);
-  const clearAccountError = (accountId: string) => setAccountErrors((previous) => {
-    const next = { ...previous }; delete next[accountId]; return next;
-  });
+  }, [
+    environmentId,
+    healthQuery.data,
+    healthQuery.isPending,
+    healthQuery.refresh,
+    statusQuery.data?.phase,
+  ]);
+  const clearAccountError = (accountId: string) =>
+    setAccountErrors((previous) => {
+      const next = { ...previous };
+      delete next[accountId];
+      return next;
+    });
 
   const refresh = useCallback(() => {
     quotaPollAttempts.current = 0;
@@ -175,28 +208,55 @@ export function useWorkjetGatewaySection(
     [environmentId, refresh, updateRouting],
   );
 
-  const editAccounts = useCallback(async (accounts: ReadonlyArray<WorkjetGatewayAccountSummary>, patch: { readonly label?: string; readonly enabled?: boolean; readonly models?: ReadonlyArray<string> }): Promise<boolean> => {
-    if (environmentId === null || routingRef.current || accounts.length === 0) return false;
-    routingRef.current = true;
-    setRouting({ status: "saving" });
-    for (const account of accounts) clearAccountError(account.id);
-    try {
-      const result = await updateRouting({ environmentId, input: {
-        strategy: "fill-first",
-        accounts: accounts.map((account) => ({ accountId: account.id, enabled: patch.enabled ?? account.enabled, priority: account.priority, weight: account.weight, ...(patch.label !== undefined ? { label: patch.label } : {}), ...(patch.models !== undefined ? { models: patch.models } : {}) })),
-      } });
-      if (result._tag === "Failure") {
-        const message = isAtomCommandInterrupted(result) ? "Änderung unterbrochen. Erneut speichern." : workjetGatewayFailureDescription(squashAtomCommandFailure(result));
-        setAccountErrors((previous) => ({ ...previous, ...Object.fromEntries(accounts.map((account) => [account.id, message])) }));
-        setRouting({ status: "failed", message });
-        return false;
+  const editAccounts = useCallback(
+    async (
+      accounts: ReadonlyArray<WorkjetGatewayAccountSummary>,
+      patch: {
+        readonly label?: string;
+        readonly enabled?: boolean;
+        readonly models?: ReadonlyArray<string>;
+      },
+    ): Promise<boolean> => {
+      if (environmentId === null || routingRef.current || accounts.length === 0) return false;
+      routingRef.current = true;
+      setRouting({ status: "saving" });
+      for (const account of accounts) clearAccountError(account.id);
+      try {
+        const result = await updateRouting({
+          environmentId,
+          input: {
+            strategy: "fill-first",
+            accounts: accounts.map((account) => ({
+              accountId: account.id,
+              enabled: patch.enabled ?? account.enabled,
+              priority: account.priority,
+              weight: account.weight,
+              ...(patch.label !== undefined ? { label: patch.label } : {}),
+              ...(patch.models !== undefined ? { models: patch.models } : {}),
+            })),
+          },
+        });
+        if (result._tag === "Failure") {
+          const message = isAtomCommandInterrupted(result)
+            ? "Änderung unterbrochen. Erneut speichern."
+            : workjetGatewayFailureDescription(squashAtomCommandFailure(result));
+          setAccountErrors((previous) => ({
+            ...previous,
+            ...Object.fromEntries(accounts.map((account) => [account.id, message])),
+          }));
+          setRouting({ status: "failed", message });
+          return false;
+        }
+        setEditedCatalog(result.value.catalog);
+        setRouting({ status: "completed" });
+        refresh();
+        return true;
+      } finally {
+        routingRef.current = false;
       }
-      setEditedCatalog(result.value.catalog);
-      setRouting({ status: "completed" });
-      refresh();
-      return true;
-    } finally { routingRef.current = false; }
-  }, [environmentId, refresh, updateRouting]);
+    },
+    [environmentId, refresh, updateRouting],
+  );
 
   const retry = useCallback(() => {
     if (environmentId === null || operationRef.current) return;
@@ -231,7 +291,13 @@ export function useWorkjetGatewaySection(
       void (async () => {
         // The server autostarts the gateway for this call, so the surface never
         // needs a start button ahead of it.
-        const started = await startGatewayOauth({ environmentId, input: { provider, ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}) } });
+        const started = await startGatewayOauth({
+          environmentId,
+          input: {
+            provider,
+            ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}),
+          },
+        });
         if (started._tag === "Failure") {
           if (!isAtomCommandInterrupted(started)) {
             fail(workjetGatewayFailureDescription(squashAtomCommandFailure(started)));
@@ -308,14 +374,26 @@ export function useWorkjetGatewaySection(
    * contract's own bounded copy.
    */
   const addApiKey = useCallback(
-    async (provider: WorkjetGatewayApiKeyProvider, value: string, label = WORKJET_GATEWAY_PROVIDER_LABELS[provider], models?: ReadonlyArray<string>, accountId?: string): Promise<boolean> => {
+    async (
+      provider: WorkjetGatewayApiKeyProvider,
+      value: string,
+      label = WORKJET_GATEWAY_PROVIDER_LABELS[provider],
+      models?: ReadonlyArray<string>,
+      accountId?: string,
+    ): Promise<boolean> => {
       if (environmentId === null || apiKeyRef.current) return false;
       apiKeyRef.current = true;
       setApiKey({ status: "saving", provider });
       try {
         const result = await addApiKeyAccount({
           environmentId,
-          input: { provider, label, apiKey: value, ...(models !== undefined ? { models } : {}), ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}) },
+          input: {
+            provider,
+            label,
+            apiKey: value,
+            ...(models !== undefined ? { models } : {}),
+            ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}),
+          },
         });
         if (result._tag === "Failure") {
           if (!isAtomCommandInterrupted(result)) {
@@ -362,7 +440,12 @@ export function useWorkjetGatewaySection(
           input: { accountId: WorkjetGatewayAccountId.make(accountId) },
         });
         if (result._tag === "Failure") {
-          setAccountErrors((previous) => ({ ...previous, [accountId]: isAtomCommandInterrupted(result) ? "Entfernen unterbrochen. Erneut versuchen." : workjetGatewayFailureDescription(squashAtomCommandFailure(result)) }));
+          setAccountErrors((previous) => ({
+            ...previous,
+            [accountId]: isAtomCommandInterrupted(result)
+              ? "Entfernen unterbrochen. Erneut versuchen."
+              : workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
+          }));
           return false;
         }
         setEditedCatalog(null);
@@ -403,8 +486,19 @@ export function useWorkjetGatewaySection(
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
     loginAccountId,
     accountErrors,
-    accountHealth: Object.fromEntries((healthQuery.data?.accounts ?? []).map((account) => [account.accountId, modelsAccountHealth(account, Date.now())])),
-    mutationBusy: routing.status === "saving" || apiKey.status === "saving" || isOperating || isDeleting || login.status === "starting" || login.status === "pending",
+    accountHealth: Object.fromEntries(
+      (healthQuery.data?.accounts ?? []).map((account) => [
+        account.accountId,
+        modelsAccountHealth(account, Date.now()),
+      ]),
+    ),
+    mutationBusy:
+      routing.status === "saving" ||
+      apiKey.status === "saving" ||
+      isOperating ||
+      isDeleting ||
+      login.status === "starting" ||
+      login.status === "pending",
     pools: {
       catalog: catalogQuery.data,
       health: healthQuery.data,

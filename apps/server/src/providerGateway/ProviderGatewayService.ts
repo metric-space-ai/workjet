@@ -809,7 +809,14 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
 
     // Re-login targets are bound to the opaque host session, never accepted
     // from the later claim call. A bounded lifetime matches the UI login window.
-    const oauthTargets = new Map<string, { readonly accountId?: string; readonly provider: WorkjetGatewayOauthProvider; readonly expiresAt: number }>();
+    const oauthTargets = new Map<
+      string,
+      {
+        readonly accountId?: string;
+        readonly provider: WorkjetGatewayOauthProvider;
+        readonly expiresAt: number;
+      }
+    >();
     const runOauthStart = async (
       input: WorkjetGatewayOauthStartInput,
     ): Promise<WorkjetGatewayOauthSession> => {
@@ -820,7 +827,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       if (input.accountId !== undefined) {
         const config = await loadConfiguration();
         const account = config.accounts.find((entry) => entry.id === input.accountId);
-        if (account === undefined || account.provider !== input.provider || isApiKeyAccount(account)) {
+        if (
+          account === undefined ||
+          account.provider !== input.provider ||
+          isApiKeyAccount(account)
+        ) {
           throw safeError("invalid-configuration");
         }
       }
@@ -852,7 +863,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         throw safeError("oauth-unavailable");
       }
       if (oauthTargets.has(state)) throw safeError("oauth-session-invalid");
-      oauthTargets.set(state, { ...(input.accountId !== undefined ? { accountId: input.accountId } : {}), provider: input.provider, expiresAt: platform.now() + 10 * 60_000 });
+      oauthTargets.set(state, {
+        ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
+        provider: input.provider,
+        expiresAt: platform.now() + 10 * 60_000,
+      });
       return { schemaVersion: 1, provider: input.provider, state, authorizationUrl };
     };
 
@@ -935,12 +950,22 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       targetAccountId?: string,
     ): Promise<ReadonlyArray<string>> => {
       const existing = await loadConfiguration();
-      if (targetAccountId !== undefined && (claimed.length !== 1 || !existing.accounts.some((account) => account.id === targetAccountId && account.provider === claimed[0]?.provider && !isApiKeyAccount(account)))) {
+      if (
+        targetAccountId !== undefined &&
+        (claimed.length !== 1 ||
+          !existing.accounts.some(
+            (account) =>
+              account.id === targetAccountId &&
+              account.provider === claimed[0]?.provider &&
+              !isApiKeyAccount(account),
+          ))
+      ) {
         throw safeError("oauth-session-invalid");
       }
       const accounts: Array<GatewayAccount> = [...(existing?.accounts ?? [])];
       const usedIds = new Set(accounts.map((account) => account.id));
       const createdIds: Array<string> = [];
+      const pendingSecrets = new Map<string, string>();
       for (const credential of claimed) {
         if (credential.provider === "antigravity" && existing?.antigravityOauth === undefined) {
           // Without the OAuth client secrets the resulting configuration could
@@ -948,11 +973,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           throw safeError("invalid-configuration");
         }
         const writeSecret = async (ref: GatewaySecretReference, value: string): Promise<void> => {
-          await runPromise(secrets.set(secretStoreName(ref), textEncoder.encode(value))).catch(
-            () => {
-              throw safeError("secret-unavailable");
-            },
-          );
+          pendingSecrets.set(secretStoreName(ref), value);
         };
         // RE-LOGIN heals in place. Logging into the same identity again means
         // "these tokens replaced those tokens" — so the fresh secrets are
@@ -963,7 +984,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         const relogin = accounts.find(
           (account) =>
             account.provider === credential.provider &&
-            (targetAccountId === undefined ? account.label === credential.label : account.id === targetAccountId) &&
+            (targetAccountId === undefined
+              ? account.label === credential.label
+              : account.id === targetAccountId) &&
             "accessTokenSecret" in account,
         );
         if (relogin !== undefined && "accessTokenSecret" in relogin) {
@@ -1058,11 +1081,41 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
       const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));
       if (decoded === undefined) throw safeError("invalid-configuration");
-      await platform
-        .writePrivateText(configurationPath, `${JSON.stringify(candidate, null, 2)}\n`)
-        .catch(() => {
-          throw safeError("invalid-configuration");
-        });
+      // Validate the entire configuration and snapshot existing secrets before
+      // changing any credential. A failed re-login cannot leave mixed tokens.
+      const previousSecrets = new Map<string, Option.Option<Uint8Array>>();
+      for (const name of pendingSecrets.keys()) {
+        previousSecrets.set(
+          name,
+          await runPromise(secrets.get(name)).catch(() => {
+            throw safeError("secret-unavailable");
+          }),
+        );
+      }
+      const attempted: string[] = [];
+      try {
+        for (const [name, value] of pendingSecrets) {
+          attempted.push(name);
+          await runPromise(secrets.set(name, textEncoder.encode(value))).catch(() => {
+            throw safeError("secret-unavailable");
+          });
+        }
+        await platform
+          .writePrivateText(configurationPath, `${JSON.stringify(candidate, null, 2)}\n`)
+          .catch(() => {
+            throw safeError("invalid-configuration");
+          });
+      } catch (error) {
+        for (const name of attempted.reverse()) {
+          const previous = previousSecrets.get(name)!;
+          await runPromise(
+            Option.isSome(previous) ? secrets.set(name, previous.value) : secrets.remove(name),
+          ).catch(() => {
+            throw safeError("secret-unavailable");
+          });
+        }
+        throw error;
+      }
       return createdIds;
     };
 
@@ -1115,7 +1168,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         throw safeError("oauth-session-invalid");
       }
       const credentials = decodeClaim(claim);
-      if (credentials.some((credential) => credential.provider !== target.provider)) throw safeError("oauth-session-invalid");
+      if (credentials.some((credential) => credential.provider !== target.provider))
+        throw safeError("oauth-session-invalid");
       const createdIds = await persistClaimedAccounts(credentials, target.accountId);
       oauthTargets.delete(input.state);
       // Reload the gateway so the new account is served; a failed restart is
@@ -1149,19 +1203,32 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const apiKey = input.apiKey.trim();
       const existing = await loadConfiguration();
       const accounts: Array<GatewayAccount> = [...(existing?.accounts ?? [])];
-      const replacement = input.accountId === undefined ? undefined : accounts.find((account) => account.id === input.accountId);
-      if (input.accountId !== undefined && (replacement === undefined || replacement.provider !== input.provider || !isApiKeyAccount(replacement))) {
+      const replacement =
+        input.accountId === undefined
+          ? undefined
+          : accounts.find((account) => account.id === input.accountId);
+      if (
+        input.accountId !== undefined &&
+        (replacement === undefined ||
+          replacement.provider !== input.provider ||
+          !isApiKeyAccount(replacement))
+      ) {
         throw safeError("invalid-configuration");
       }
-      const apiReplacement = replacement !== undefined && isApiKeyAccount(replacement) ? replacement : undefined;
+      const apiReplacement =
+        replacement !== undefined && isApiKeyAccount(replacement) ? replacement : undefined;
       const usedIds = new Set(accounts.map((account) => account.id));
       const base = `${input.provider}-${secretSlug(input.label)}`;
       let id = replacement?.id ?? base;
-      if (replacement === undefined) for (let suffix = 2; usedIds.has(id); suffix += 1) id = `${base}-${suffix}`;
-      const apiKeySecret: GatewaySecretReference = replacement !== undefined && isApiKeyAccount(replacement) ? replacement.apiKeySecret : {
-        scope: GATEWAY_SECRET_SCOPE,
-        name: `account-${id}-api-key`,
-      };
+      if (replacement === undefined)
+        for (let suffix = 2; usedIds.has(id); suffix += 1) id = `${base}-${suffix}`;
+      const apiKeySecret: GatewaySecretReference =
+        replacement !== undefined && isApiKeyAccount(replacement)
+          ? replacement.apiKeySecret
+          : {
+              scope: GATEWAY_SECRET_SCOPE,
+              name: `account-${id}-api-key`,
+            };
       const suffix = credentialSuffix(apiKey);
       const nextAccount: GatewayAccount = {
         id,
@@ -1170,9 +1237,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         enabled: replacement?.enabled ?? true,
         priority: replacement?.priority ?? 0,
         weight: replacement?.weight ?? 1,
-        models: input.models ?? replacement?.models ?? accounts.find((account) => account.provider === input.provider)?.models ?? [],
+        models:
+          input.models ??
+          replacement?.models ??
+          accounts.find((account) => account.provider === input.provider)?.models ??
+          [],
         apiKeySecret,
-        ...(apiReplacement?.upstreamBaseUrl ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl } : {}),
+        ...(apiReplacement?.upstreamBaseUrl
+          ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
+          : {}),
         ...(suffix ? { credentialSuffix: suffix } : {}),
       };
       if (replacement === undefined) accounts.push(nextAccount);
@@ -1197,17 +1270,25 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       ) {
         throw safeError("invalid-configuration");
       }
-      const previousSecret = await runPromise(secrets.get(secretStoreName(apiKeySecret))).catch(() => {
-        throw safeError("secret-unavailable");
-      });
-      await runPromise(secrets.set(secretStoreName(apiKeySecret), textEncoder.encode(apiKey))).catch(() => {
+      const previousSecret = await runPromise(secrets.get(secretStoreName(apiKeySecret))).catch(
+        () => {
+          throw safeError("secret-unavailable");
+        },
+      );
+      await runPromise(
+        secrets.set(secretStoreName(apiKeySecret), textEncoder.encode(apiKey)),
+      ).catch(() => {
         throw safeError("secret-unavailable");
       });
       try {
         await platform.writePrivateText(configurationPath, serialized);
       } catch {
         // Keep the old credential paired with its old configuration on failure.
-        await runPromise(Option.isSome(previousSecret) ? secrets.set(secretStoreName(apiKeySecret), previousSecret.value) : secrets.remove(secretStoreName(apiKeySecret)));
+        await runPromise(
+          Option.isSome(previousSecret)
+            ? secrets.set(secretStoreName(apiKeySecret), previousSecret.value)
+            : secrets.remove(secretStoreName(apiKeySecret)),
+        );
         throw safeError("invalid-configuration");
       }
       // Reload so the new account is served. A failed restart is visible
@@ -1357,7 +1438,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         activeProvider:
           activeProvider !== undefined && isGatewayProvider(activeProvider) ? activeProvider : null,
         providers,
-        accountHealth: decodeAccountHealth(status) === undefined ? "not-reported-by-host" : "reported",
+        accountHealth:
+          decodeAccountHealth(status) === undefined ? "not-reported-by-host" : "reported",
         accounts: decodeAccountHealth(status) ?? [],
         capacity: "not-reported-by-host",
       };
@@ -1488,10 +1570,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         throw safeError("invalid-configuration");
       });
       currentCatalog = gatewayCatalog(decoded);
-      const reloadRequired = input.strategy !== existing.routingStrategy || existing.accounts.some((account) => {
-        const update = updates.get(account.id);
-        return update !== undefined && (update.enabled !== account.enabled || update.priority !== account.priority || update.weight !== account.weight || (update.models !== undefined && JSON.stringify(update.models) !== JSON.stringify(account.models)));
-      });
+      const reloadRequired =
+        input.strategy !== existing.routingStrategy ||
+        existing.accounts.some((account) => {
+          const update = updates.get(account.id);
+          return (
+            update !== undefined &&
+            (update.enabled !== account.enabled ||
+              update.priority !== account.priority ||
+              update.weight !== account.weight ||
+              (update.models !== undefined &&
+                JSON.stringify(update.models) !== JSON.stringify(account.models)))
+          );
+        });
       // Display-name edits do not interrupt an in-flight inference stream.
       if (!reloadRequired) return { schemaVersion: 1, catalog: currentCatalog };
       try {

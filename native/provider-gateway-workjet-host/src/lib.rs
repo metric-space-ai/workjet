@@ -121,8 +121,14 @@ impl Drop for RunningHost {
 }
 
 pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError> {
-    let directory = config.secret_root.parent().ok_or(HostError::Runtime)?.join("provider-gateway-usage");
-    tokio::fs::create_dir_all(&directory).await.map_err(|_| HostError::Runtime)?;
+    let directory = config
+        .secret_root
+        .parent()
+        .ok_or(HostError::Runtime)?
+        .join("provider-gateway-usage");
+    tokio::fs::create_dir_all(&directory)
+        .await
+        .map_err(|_| HostError::Runtime)?;
     let journal = usage::UsageJournal::new(directory);
     let usage_default_provider = config.default_provider.clone().unwrap_or_default();
     let store = Arc::new(

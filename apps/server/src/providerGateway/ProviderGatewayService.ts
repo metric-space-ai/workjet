@@ -62,7 +62,11 @@ import {
   decodeRuntimeConfigSummary,
   decodeRuntimeStatus,
 } from "./ProviderGatewayManagement.ts";
-import { readGatewayUsage, USAGE_JOURNAL_MAX_BYTES } from "./ProviderGatewayUsage.ts";
+import {
+  InvalidGatewayUsageQuery,
+  readGatewayUsage,
+  USAGE_JOURNAL_MAX_BYTES,
+} from "./ProviderGatewayUsage.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
 import {
   decodeGatewayGrants,
@@ -198,7 +202,9 @@ export interface ProviderGatewayServiceShape {
    * reported as unavailable rather than filled in from configuration.
    */
   readonly health: () => Effect.Effect<WorkjetGatewayHealth, WorkjetGatewayOperationError>;
-  readonly usage: (input: WorkjetGatewayUsageInput) => Effect.Effect<WorkjetGatewayUsage, WorkjetGatewayOperationError>;
+  readonly usage: (
+    input: WorkjetGatewayUsageInput,
+  ) => Effect.Effect<WorkjetGatewayUsage, WorkjetGatewayOperationError>;
   /**
    * Models the host's own catalog serves per provider, merged with the models
    * recorded on the accounts. The host performs no upstream capability query,
@@ -1636,17 +1642,31 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("management-unavailable"),
         }),
-      usage: (input) => Effect.tryPromise({
-        try: () => readGatewayUsage(input, platform.now(), async (day) => {
-          try {
-            return await platform.readText(platform.joinPath(serverConfig.stateDir, "provider-gateway-usage", `${day}.jsonl`), USAGE_JOURNAL_MAX_BYTES);
-          } catch (error) {
-            if (isRecord(error) && error.code === "ENOENT") return null;
-            throw error;
-          }
+      usage: (input) =>
+        Effect.tryPromise({
+          try: () =>
+            readGatewayUsage(input, platform.now(), async (day) => {
+              try {
+                return await platform.readText(
+                  platform.joinPath(
+                    serverConfig.stateDir,
+                    "provider-gateway-usage",
+                    `${day}.jsonl`,
+                  ),
+                  USAGE_JOURNAL_MAX_BYTES,
+                );
+              } catch (error) {
+                if (isRecord(error) && error.code === "ENOENT") return null;
+                throw error;
+              }
+            }),
+          catch: (error) =>
+            safeError(
+              error instanceof InvalidGatewayUsageQuery
+                ? "invalid-usage-query"
+                : "usage-unavailable",
+            ),
         }),
-        catch: () => safeError("management-unavailable"),
-      }),
       discoverModels: () =>
         Effect.tryPromise({
           try: runDiscoverModels,

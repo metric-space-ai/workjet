@@ -6,6 +6,7 @@ import {
   ThreadId,
   WorkjetSessionImportCandidate,
   WorkjetSessionImportInput,
+  WorkjetSessionImportInspectInput,
 } from "./index.ts";
 
 describe("Workjet static session import contracts", () => {
@@ -37,5 +38,20 @@ describe("Workjet static session import contracts", () => {
         ),
       }),
     ).toThrow();
+  });
+
+  it("validates paging and search while retaining legacy candidate-only imports", () => {
+    const inspect = Schema.decodeUnknownSync(WorkjetSessionImportInspectInput);
+    expect(
+      inspect({ offset: 100, query: "older conversation", source: "claude-code" }).offset,
+    ).toBe(100);
+    expect(() => inspect({ offset: -1 })).toThrow();
+    expect(() => inspect({ source: "unknown" })).toThrow();
+    const candidateIds = ["wjsi_0123456789abcdef0123456789abcdef"];
+    const imported = Schema.decodeUnknownSync(WorkjetSessionImportInput);
+    expect(imported({ candidateIds })).toEqual({ candidateIds });
+    expect(imported({ candidateIds, projectId: "chosen-project" }).projectId).toBe(
+      "chosen-project",
+    );
   });
 });

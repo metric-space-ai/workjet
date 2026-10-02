@@ -326,6 +326,20 @@ export function resolveSelectableProviderInstance(
   return resolveSelectableProviderInstanceEntry(entries, instanceId)?.instanceId;
 }
 
+/** New project team members use the explicitly configured standard route.
+ * Imported selections remain untouched by this resolver.
+ */
+export function resolveProjectTeamModelSelection(
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection | null {
+  const model = "gpt-6.1-sol";
+  const candidates = deriveProviderInstanceEntries(providers).filter((entry) =>
+    entry.models.some((candidate) => candidate.slug === model),
+  );
+  const entry = resolveSelectableProviderInstanceEntry(candidates, undefined);
+  return entry ? { instanceId: entry.instanceId, model } : null;
+}
+
 /**
  * Resolve the model selection persisted for a project or new thread. A valid
  * stored selection is preserved byte-for-byte. Falling back to another

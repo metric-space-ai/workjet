@@ -7,7 +7,12 @@ import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environ
 import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
 import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import { RegistryContext } from "@effect/atom-react";
-import type { CommandId, ProjectOverview } from "@workjet/contracts";
+import {
+  DEFAULT_RUNTIME_MODE,
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  type CommandId,
+  type ProjectOverview,
+} from "@workjet/contracts";
 import { buildProjectGallery, type GalleryProject } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -38,10 +43,11 @@ import {
 import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { resolveNativeProjectOpening } from "../nativeProjectOpening";
-import { resolveDefaultProviderModelSelection } from "../providerInstances";
+import { resolveProjectTeamModelSelection } from "../providerInstances";
+import { threadEnvironment } from "../state/threads";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
-import { cn, newCommandId } from "~/lib/utils";
+import { cn, newCommandId, newThreadId } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import {
   readWorkjetProjectRegistry,
@@ -84,8 +90,13 @@ function IndexDraftLanding() {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const openingNative = useRef(false);
-  const nativeAttempt = useRef<{ key: string; commandId: CommandId } | null>(null);
+  const nativeAttempt = useRef<{
+    key: string;
+    commandId: CommandId;
+    threadId: ReturnType<typeof newThreadId>;
+  } | null>(null);
   const [nativeOpenState, setNativeOpenState] = useState({
     pending: false,
     error: null as string | null,
@@ -197,7 +208,14 @@ function IndexDraftLanding() {
       setNativeOpenState({ pending: false, error: plan.message });
       return false;
     }
-    if (plan._tag === "existing" && overview === undefined) return true;
+    const needsSupervisor =
+      plan._tag === "existing" &&
+      overview === undefined &&
+      findProjectSupervisor(
+        threads,
+        scopeProjectRef(plan.project.environmentId, plan.project.id),
+      ) === null;
+    if (plan._tag === "existing" && overview === undefined && !needsSupervisor) return true;
     const target =
       plan._tag === "existing"
         ? {
@@ -208,11 +226,19 @@ function IndexDraftLanding() {
         : plan;
     const key = JSON.stringify([instanceId, target.environmentId, target.projectId]);
     if (nativeAttempt.current?.key !== key)
-      nativeAttempt.current = { key, commandId: newCommandId() };
+      nativeAttempt.current = { key, commandId: newCommandId(), threadId: newThreadId() };
     const commandId = nativeAttempt.current.commandId;
     openingNative.current = true;
     setNativeOpenState({ pending: true, error: null });
     try {
+      const modelSelection = resolveProjectTeamModelSelection(
+        environments.find((environment) => environment.environmentId === target.environmentId)
+          ?.serverConfig?.providers ?? [],
+      );
+      if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)
+        throw new Error(
+          "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+        );
       if (plan._tag === "create") {
         const result = await createProject({
           environmentId: target.environmentId,
@@ -222,10 +248,38 @@ function IndexDraftLanding() {
             title: target.title,
             workspaceRoot: null,
             ctoxRegistration: { instanceId, commandId, status: "pending" },
-            defaultModelSelection: resolveDefaultProviderModelSelection(
-              primaryEnvironment?.serverConfig?.providers ?? [],
-              null,
-            ),
+            defaultModelSelection: modelSelection,
+          },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      }
+      if (needsSupervisor && modelSelection !== null) {
+        const threadId = nativeAttempt.current.threadId;
+        const createdAt = new Date().toISOString();
+        const result = await createThread({
+          environmentId: target.environmentId,
+          input: {
+            threadId,
+            projectId: target.projectId,
+            title: "Project supervisor",
+            modelSelection,
+            runtimeMode: DEFAULT_RUNTIME_MODE,
+            interactionMode: "default",
+            workjetConfig: {
+              ...DEFAULT_WORKJET_THREAD_CONFIG,
+              role: "orchestrator",
+              team: {
+                role: "supervisor",
+                projectId: target.projectId,
+                threadId,
+                parentThreadId: null,
+                goal: `Coordinate the goals of ${target.title}`,
+                createdAt,
+              },
+            },
+            branch: null,
+            worktreePath: null,
+            createdAt,
           },
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -255,7 +309,10 @@ function IndexDraftLanding() {
     }
   };
 
-  if (landingProject !== null)
+  if (
+    landingProject !== null &&
+    !(selectedNative !== null && landingProject.ctoxRegistration != null && supervisor === null)
+  )
     return startState.failed ? (
       <DraftStartError
         onRetry={() =>

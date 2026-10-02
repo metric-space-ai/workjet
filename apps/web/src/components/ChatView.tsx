@@ -190,7 +190,10 @@ import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import {
+  NO_PROVIDER_MODEL_SELECTION,
+  resolveProjectTeamModelSelection,
+} from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -7114,6 +7117,15 @@ function ChatViewContent(props: ChatViewProps) {
               return result._tag === "Success";
             }}
             onCreateSupervisor={async () => {
+              const modelSelection = resolveProjectTeamModelSelection(providerStatuses);
+              if (modelSelection === null) {
+                toastManager.add({
+                  type: "error",
+                  title: "Project Luma model unavailable",
+                  description: "Configure an available gpt-6.1-sol model in Models.",
+                });
+                return false;
+              }
               const threadId = newThreadId();
               const createdAt = new Date().toISOString();
               const result = await createThread({
@@ -7122,7 +7134,7 @@ function ChatViewContent(props: ChatViewProps) {
                   threadId,
                   projectId: activeServerThread.projectId,
                   title: "Project supervisor",
-                  modelSelection: activeServerThread.modelSelection,
+                  modelSelection,
                   runtimeMode: activeServerThread.runtimeMode,
                   interactionMode: "default",
                   workjetConfig: {
@@ -7147,6 +7159,15 @@ function ChatViewContent(props: ChatViewProps) {
             onAddSpecialist={async (domain, goal) => {
               const config = activeServerThread.workjetConfig;
               if (config.schemaVersion !== 2 || config.team?.role !== "supervisor") return false;
+              const modelSelection = resolveProjectTeamModelSelection(providerStatuses);
+              if (modelSelection === null) {
+                toastManager.add({
+                  type: "error",
+                  title: "Project Luma model unavailable",
+                  description: "Configure an available gpt-6.1-sol model in Models.",
+                });
+                return false;
+              }
               const threadId = newThreadId();
               const createdAt = new Date().toISOString();
               const result = await createThread({
@@ -7155,7 +7176,7 @@ function ChatViewContent(props: ChatViewProps) {
                   threadId,
                   projectId: activeServerThread.projectId,
                   title: domain,
-                  modelSelection: activeServerThread.modelSelection,
+                  modelSelection,
                   runtimeMode: activeServerThread.runtimeMode,
                   interactionMode: "default",
                   workjetConfig: {

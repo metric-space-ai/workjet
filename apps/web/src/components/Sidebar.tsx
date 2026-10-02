@@ -1990,17 +1990,18 @@ export default function Sidebar() {
           threads,
           scopeProjectRef(localProject.environmentId, localProject.id),
         );
-        if (supervisor === null) {
-          toastManager.add({
-            type: "error",
-            title: "Supervisor is not available yet",
-            description: "The saved project remains available. Try opening it again.",
-          });
-          return;
-        }
         projectSwitchPending.current = true;
         setIsSwitchingProject(true);
         try {
+          if (supervisor === null) {
+            if (project === undefined)
+              throw new Error("Refresh this instance’s project catalog to open its supervisor.");
+            if (!selectWorkjetProject(instanceId, project.id)) return;
+            setProjectScopeKey(null);
+            await router.navigate({ to: "/" });
+            if (isMobile) setOpenMobile(false);
+            return;
+          }
           await router.navigate({
             to: "/$environmentId/$threadId",
             params: buildThreadRouteParams(scopeThreadRef(supervisor.environmentId, supervisor.id)),
@@ -3709,33 +3710,32 @@ export default function Sidebar() {
                 </Tooltip>
               </div>
             </div>
+            <SidebarMenuButton
+              type="button"
+              data-workjet-action="project.overview"
+              disabled={isSwitchingProject}
+              className="w-full focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+              onClick={() => {
+                const instanceId = workjetProjectRegistry.presentationInstanceId;
+                if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
+                setProjectScopeKey(null);
+                setProjectScopeMenuOpen(false);
+                if (isMobile) setOpenMobile(false);
+                void router.navigate({ to: "/" }).catch((error) => {
+                  toastManager.add({
+                    type: "error",
+                    title: "Could not open project overview",
+                    description: error instanceof Error ? error.message : "Please try again.",
+                  });
+                });
+              }}
+            >
+              <FolderIcon aria-hidden className="size-4 shrink-0" />
+              <span>All projects</span>
+            </SidebarMenuButton>
             {projectGroups.length > 0 || workjetProjects.length > 0 ? (
               <div className="space-y-1">
-                <div className="flex items-center justify-between px-2">
-                  <p className="text-[11px] text-sidebar-muted-foreground">Project</p>
-                  <button
-                    type="button"
-                    data-workjet-action="project.overview"
-                    disabled={isSwitchingProject}
-                    className="rounded px-1 py-0.5 text-[11px] text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-ring"
-                    onClick={() => {
-                      const instanceId = workjetProjectRegistry.presentationInstanceId;
-                      if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
-                      setProjectScopeKey(null);
-                      setProjectScopeMenuOpen(false);
-                      if (isMobile) setOpenMobile(false);
-                      void router.navigate({ to: "/" }).catch((error) => {
-                        toastManager.add({
-                          type: "error",
-                          title: "Could not open project overview",
-                          description: error instanceof Error ? error.message : "Please try again.",
-                        });
-                      });
-                    }}
-                  >
-                    All projects
-                  </button>
-                </div>
+                <p className="px-2 text-[11px] text-sidebar-muted-foreground">Project</p>
                 <div className="flex items-center gap-1">
                   <Menu
                     open={projectScopeMenuOpen}

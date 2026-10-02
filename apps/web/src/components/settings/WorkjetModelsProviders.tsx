@@ -193,7 +193,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
     const login = state.login;
     if (login.status === "completed" && accounts.some((account) => account.provider === login.provider)) setAdding(null);
   }, [accounts, state.login]);
-  const providers = WORKJET_GATEWAY_PROVIDERS.filter((provider) => accounts.some((account) => account.provider === provider) || adding === provider || (state.login.status !== "idle" && state.login.provider === provider));
+  const providers = WORKJET_GATEWAY_PROVIDERS.filter((provider) => accounts.some((account) => account.provider === provider) || adding === provider || (["starting", "pending", "failed"].includes(state.login.status) && state.login.status !== "idle" && state.login.provider === provider));
   const startAdd = (provider: WorkjetGatewayProvider) => {
     setPickerOpen(false); setAdding(provider); setKeyProvider(null);
     if (provider !== "xai") {
@@ -217,7 +217,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
         const models = [...new Set(providerAccounts.flatMap((account) => account.modelIds))];
         const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
         const title = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
-        const loginHere = state.login.status !== "idle" && state.login.provider === provider && state.loginAccountId === null;
+        const loginHere = ["starting", "pending", "failed"].includes(state.login.status) && state.login.status !== "idle" && state.login.provider === provider && state.loginAccountId === null;
         return <div key={provider} className="py-4 first:pt-1" data-provider={provider}>
           <div className="mb-1.5 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,2fr)_auto]">
             <div className="flex items-center gap-2 pt-1"><Icon className="size-5 shrink-0" /><h3 className="text-sm font-semibold">{title}</h3><span className="text-xs text-muted-foreground">{providerAccounts.length}</span></div>
@@ -225,7 +225,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             <Button size="icon" variant="ghost" className="col-start-2 row-start-1 sm:col-start-3" aria-label={`Account zu ${title} hinzufügen`} disabled={state.mutationBusy || state.login.status === "pending" || state.login.status === "starting"} onClick={() => startAdd(provider)}><PlusIcon className="size-4" /></Button>
           </div>
           <div className="pl-0 sm:pl-6">{providerAccounts.map((account) => <AccountRow key={account.id} account={account} state={state} />)}
-            {providerAccounts.length > 0 && models.length === 0 && <p role="status" className="py-1 text-xs text-amber-500">Keine Modelle zugeordnet. Modell-IDs oben eingeben, damit Workjet diesen Anbieter nutzen kann.</p>}
+            {providerAccounts.length > 0 && models.length === 0 && <p role="status" className="py-1 text-xs text-muted-foreground">No model filter. Add model IDs above to make them available in Workjet.</p>}
             {adding === provider && provider === "xai" && keyProvider === null && !loginHere && <div className="flex gap-2 py-2"><Button size="sm" variant="outline" onClick={() => state.onAddAccount("xai")}>Mit Abo anmelden</Button><Button size="sm" variant="outline" onClick={() => setKeyProvider("xai")}>API-Key hinzufügen</Button></div>}
             {keyProvider === provider && isWorkjetGatewayApiKeyProvider(provider) && <KeyForm provider={provider} models={models} state={state} onClose={() => { setAdding(null); setKeyProvider(null); }} />}
             {loginHere && <LoginMessage state={state} onCancel={() => { state.onCancelLogin(); setAdding(null); }} />}

@@ -15,6 +15,7 @@ import {
 import type {
   ContextMenuItem,
   ModelSelection,
+  ProjectOverview,
   ProviderDriverKind,
   SidebarProjectGroupingMode,
   WorkjetProjectFileScript,
@@ -73,6 +74,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectOverviewEditor } from "../ProjectOverviewEditor";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -303,6 +305,7 @@ export function ProjectSettingsPanel({ projectKey }: { projectKey: string }) {
 
 function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const navigate = useNavigate();
+  const { environments } = useEnvironments();
   const settings = usePrimarySettings();
   const updateClientSettings = useUpdateClientSettings();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -366,6 +369,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         defaultModelSelection: ModelSelection | null;
         defaultThreadEnvMode: ThreadEnvMode | null;
         faviconPath: string | null;
+        overview: ProjectOverview | null;
       }>,
       failureTitle: string,
     ): Promise<AtomCommandResult<void, unknown>> => {
@@ -811,6 +815,34 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 </Button>
               </div>
             }
+          />
+        </SettingsSection>
+
+        <SettingsSection title="Project overview">
+          <p className="mb-3 text-sm text-muted-foreground">
+            Choose a website and three fields for this project’s card.
+          </p>
+          <ProjectOverviewEditor
+            key={group.projectKey}
+            overview={representative.overview}
+            onSave={async (overview) => {
+              if (
+                !group.memberProjects.every((member) =>
+                  environments.some(
+                    (environment) =>
+                      environment.environmentId === member.environmentId &&
+                      environment.connection.phase === "connected" &&
+                      environment.serverConfig?.projectOverview === true,
+                  ),
+                )
+              )
+                return false;
+              const result = await updateAllMembers(
+                { overview },
+                "Failed to save project overview",
+              );
+              return result._tag === "Success";
+            }}
           />
         </SettingsSection>
 

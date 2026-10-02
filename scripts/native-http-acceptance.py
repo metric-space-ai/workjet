@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--native-source", required=True)
     parser.add_argument("--native-workjet-pin", required=True)
     parser.add_argument("--native-receipt", type=Path, required=True)
+    parser.add_argument("--preserved-producer-receipt", type=Path)
     args = parser.parse_args()
     start = time.monotonic()
     deadline = start + 600
@@ -116,6 +117,12 @@ def main():
         assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=native_checkout, text=True, timeout=10).strip() == args.native_source
         assert not subprocess.check_output(["git", "status", "--porcelain"], cwd=native_checkout, text=True, timeout=10).strip()
         binary = Path(producer["executable"]).resolve()
+        if args.preserved_producer_receipt is not None:
+            preserved = json.loads(args.preserved_producer_receipt.read_text())
+            assert preserved["source"] == args.native_source and preserved["workjet_pin"] == args.native_workjet_pin, "Preserved producer binding mismatch"
+            assert preserved["sha256"] == producer["sha256"], "Preserved producer hash mismatch"
+            assert Path(preserved["source_bound_build_receipt"]).resolve() == args.native_receipt.resolve(), "Preserved producer receipt mismatch"
+            binary = Path(preserved["executable"]).resolve()
         assert binary.is_relative_to("/Volumes/tmp/dev-artifacts/ctox")
         assert checksum(binary) == producer["sha256"], "Producer executable hash mismatch"
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -125,6 +132,8 @@ def main():
         saved = DURABLE / ("native-http-acceptance-" + stamp)
         saved.mkdir(mode=0o700)
         report.update(output=str(output), binary=str(binary), binary_sha256=producer["sha256"], producer_receipt_sha256=checksum(args.native_receipt), started_at=stamp)
+        if args.preserved_producer_receipt is not None:
+            report["preserved_producer_receipt_sha256"] = checksum(args.preserved_producer_receipt)
         save()
         native_root = output / "native-root"
         run("01-source-clone", ["git", "clone", "--shared", "--no-checkout", str(native_checkout), str(native_root)], 120)

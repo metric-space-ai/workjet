@@ -11,6 +11,7 @@ import {
   CtoxProjectRegistration,
   ModelSelection,
   ProjectId,
+  ProjectOverview,
   ProjectScript,
   ThreadEnvMode,
 } from "@workjet/contracts";
@@ -29,6 +30,7 @@ export const ProjectionProject = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
   faviconPath: Schema.optional(Schema.NullOr(Schema.String)),
+  overview: Schema.optional(Schema.NullOr(ProjectOverview)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

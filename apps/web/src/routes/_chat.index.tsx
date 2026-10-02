@@ -7,7 +7,9 @@ import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environ
 import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
 import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import { RegistryContext } from "@effect/atom-react";
-import type { CommandId } from "@workjet/contracts";
+import type { CommandId, ProjectOverview } from "@workjet/contracts";
+import { buildProjectGallery, type GalleryProject } from "../projectOverview";
+import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -30,6 +32,7 @@ import {
   useBusinessOsScopedEnvironments,
   usePrimaryEnvironment,
   usePrimaryEnvironmentId,
+  useEnvironments,
 } from "../state/environments";
 import { environmentProjects, projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -75,8 +78,10 @@ function IndexDraftLanding() {
   const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
   const projectStore = useContext(RegistryContext);
   const primaryEnvironment = usePrimaryEnvironment();
+  const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
+  const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const openingNative = useRef(false);
   const nativeAttempt = useRef<{ key: string; commandId: CommandId } | null>(null);
   const [nativeOpenState, setNativeOpenState] = useState({
@@ -94,6 +99,16 @@ function IndexDraftLanding() {
   > | null>(null);
   const selectedNative =
     registry.projects.find((project) => project.id === registry.selectedProjectId) ?? null;
+  const galleryProjects = useMemo(
+    () =>
+      buildProjectGallery({
+        projects: sortScopedProjectsForSidebar(projects, threads, "updated_at"),
+        nativeProjects: registry.projects,
+        instanceId: activeCtoxInstanceId,
+        primaryEnvironmentId,
+      }),
+    [projects, threads, registry.projects, activeCtoxInstanceId, primaryEnvironmentId],
+  );
   useEffect(() => {
     setNativeOpenState({ pending: openingNative.current, error: null });
   }, [activeCtoxInstanceId, selectedNative?.id]);
@@ -108,14 +123,19 @@ function IndexDraftLanding() {
             project.ctoxRegistration?.instanceId === activeCtoxInstanceId,
         ) ?? null
       );
-    if (activeCtoxInstanceId !== null || selectedLegacyProject === null) return null;
-    return (
+    if (selectedLegacyProject === null) return null;
+    const local =
       ordered.find(
         (project) =>
           project.id === selectedLegacyProject.projectId &&
           project.environmentId === selectedLegacyProject.environmentId,
-      ) ?? null
-    );
+      ) ?? null;
+    return local !== null &&
+      (activeCtoxInstanceId === null
+        ? local.ctoxRegistration == null
+        : local.ctoxRegistration?.instanceId === activeCtoxInstanceId)
+      ? local
+      : null;
   }, [
     activeCtoxInstanceId,
     bootstrapped,
@@ -226,27 +246,42 @@ function IndexDraftLanding() {
         error={nativeOpenState.error}
       />
     );
-  if (registry.projects.length > 0)
+  if (galleryProjects.length > 0)
     return (
       <ProjectGallery
-        projects={registry.projects.map((project) => ({
-          key: project.id,
-          title: project.title,
+        projects={galleryProjects.map((project) => ({
+          ...project,
           onOpen: () => {
-            if (activeCtoxInstanceId !== null)
+            if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return;
+            if (project.native && activeCtoxInstanceId !== null)
               selectWorkjetProject(activeCtoxInstanceId, project.id);
+            else if (project.local !== null)
+              setSelectedLegacyProject(
+                scopeProjectRef(project.local.environmentId, project.local.id),
+              );
           },
-        }))}
-      />
-    );
-  if (activeCtoxInstanceId === null && bootstrapped && projects.length > 0)
-    return (
-      <ProjectGallery
-        projects={sortScopedProjectsForSidebar(projects, threads, "updated_at").map((project) => ({
-          key: `${project.environmentId}:${project.id}`,
-          title: project.title,
-          onOpen: () =>
-            setSelectedLegacyProject(scopeProjectRef(project.environmentId, project.id)),
+          onSave:
+            project.local === null ||
+            !environments.some(
+              (environment) =>
+                environment.environmentId === project.local?.environmentId &&
+                environment.connection.phase === "connected" &&
+                environment.serverConfig?.projectOverview === true,
+            )
+              ? undefined
+              : async (overview: ProjectOverview) => {
+                  const local = project.local;
+                  if (
+                    local === null ||
+                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+                  )
+                    return false;
+                  const result = await updateProject({
+                    environmentId: local.environmentId,
+                    input: { projectId: local.id, overview },
+                  });
+                  return result._tag === "Success";
+                },
         }))}
       />
     );
@@ -271,11 +306,10 @@ function IndexDraftLanding() {
 function ProjectGallery({
   projects,
 }: {
-  readonly projects: readonly {
-    readonly key: string;
-    readonly title: string;
+  readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
-  }[];
+    readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
+  })[];
 }) {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
 
@@ -295,17 +329,12 @@ function ProjectGallery({
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {projects.map((project) => (
-              <button
+              <ProjectOverviewCard
                 key={project.key}
-                type="button"
-                data-workjet-action={`project.open.gallery:${project.key}`}
-                aria-label={`Open ${project.title}`}
-                onClick={project.onOpen}
-                className="flex min-h-36 flex-col items-start justify-between gap-6 rounded-xl border border-border bg-card p-5 text-left hover:bg-accent focus-visible:outline focus-visible:outline-ring"
-              >
-                <span className="text-lg font-medium">{project.title}</span>
-                <span className="text-sm text-muted-foreground">Open project</span>
-              </button>
+                project={project}
+                onOpen={project.onOpen}
+                onSave={project.onSave}
+              />
             ))}
           </div>
         </div>

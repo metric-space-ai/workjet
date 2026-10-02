@@ -117,6 +117,11 @@ greppy bash-smart -- /usr/bin/python3 /Users/michaelwelsch/.codex/bin/dev-heavy-
 
 Preparing this controller does not mean its native bootstrap or HTTP phases
 have passed. Do not run it against the old daemon with a new source label.
+When the producer retains its exact executable separately from a mutable Cargo
+target, pass `--preserved-producer-receipt <retention-receipt.json>` alongside
+the original `--native-receipt`. The controller requires the same source, pin,
+SHA and original receipt path, then rehashes the retained executable before
+and after the run. It records both receipt hashes and never rebuilds a producer.
 The first admitted run at Workjet `a969489555` and native `1538a4c2ca` passed
 admin invitation but failed project dispatch because `user_threads` was not
 initialized. No HTTP phase ran. That failure remains evidence of the fresh-root

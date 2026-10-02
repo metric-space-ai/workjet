@@ -69,6 +69,7 @@ export const providerGatewayTestLayer = (
       addApiKeyAccount: () => unsupported(),
       removeAccount: () => unsupported(),
       health: () => unsupported(),
+      usage: () => unsupported(),
       discoverModels: () => unsupported(),
       updateRouting: () => unsupported(),
     }),

@@ -109,11 +109,8 @@ impl HostConfig {
         if !reference_allowed(&self.management_secret) {
             return Err(HostConfigError::InvalidSecretReference);
         }
-        // A bootstrap host carries no account at all. The portable runtime
-        // already models this as an outer-host runtime whose routes live
-        // outside the portable account lists; every other configuration keeps
-        // the strict portable validation, so an all-disabled account set still
-        // fails exactly as before.
+        // Workjet keeps management available with no inference accounts,
+        // including when every configured account has been disabled.
         let bootstrap = self.runtime.claude_accounts.is_empty()
             && self.runtime.codex_accounts.is_empty()
             && self.runtime.antigravity_accounts.is_empty()
@@ -122,12 +119,10 @@ impl HostConfig {
         if bootstrap && default_provider.is_some() {
             return Err(HostConfigError::InvalidDefaultProvider);
         }
-        let runtime = if bootstrap {
-            self.runtime.validate_for_extension_host()
-        } else {
-            self.runtime.validate()
-        }
-        .map_err(|_| HostConfigError::InvalidRuntime)?;
+        let runtime = self
+            .runtime
+            .validate_for_extension_host()
+            .map_err(|_| HostConfigError::InvalidRuntime)?;
         let runtime_refs_allowed = runtime.claude_accounts().iter().all(|account| {
             reference_allowed(&account.access_token_secret)
                 && reference_allowed(&account.refresh_token_secret)
@@ -180,15 +175,7 @@ impl HostConfig {
             (None, None) if runtime.antigravity_accounts().is_empty() => None,
             _ => return Err(HostConfigError::InvalidSecretReference),
         };
-        // A host that carries no account at all is a legitimate bootstrap
-        // state: the management surface must come up so the very first OAuth
-        // login can happen. Any configured account still demands a named,
-        // enabled default provider, so established deployments are unchanged.
-        let configured_accounts = runtime.claude_accounts().len()
-            + runtime.codex_accounts().len()
-            + runtime.antigravity_accounts().len()
-            + runtime.api_key_accounts().len()
-            + runtime.xai_accounts().len();
+        // Disabled accounts keep the authenticated management host available.
         let default_is_enabled = match default_provider.as_deref() {
             Some("claude") => runtime
                 .claude_accounts()
@@ -215,7 +202,13 @@ impl HostConfig {
                             .any(|account| !account.disabled))
             }
             Some(_) => false,
-            None => configured_accounts == 0,
+            None => {
+                runtime.claude_accounts().iter().all(|a| a.disabled)
+                    && runtime.codex_accounts().iter().all(|a| a.disabled)
+                    && runtime.antigravity_accounts().iter().all(|a| a.disabled)
+                    && runtime.api_key_accounts().iter().all(|a| a.disabled)
+                    && runtime.xai_accounts().iter().all(|a| a.disabled)
+            }
         };
         if !default_is_enabled {
             return Err(HostConfigError::InvalidDefaultProvider);

@@ -370,6 +370,7 @@ const providerGatewayTestLayer = Layer.succeed(
     removeAccount: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     health: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    usage: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     discoverModels: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     updateRouting: () =>

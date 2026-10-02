@@ -2021,6 +2021,10 @@ const makeWsRpcLayer = (
             providerGateway.removeAccount(input),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        [WS_METHODS.workjetGatewayUsage]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayUsage, providerGateway.usage(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
         [WS_METHODS.workjetGatewayHealth]: (_input) =>
           observeRpcEffect(WS_METHODS.workjetGatewayHealth, providerGateway.health(), {
             "rpc.aggregate": "workjet-provider-gateway",

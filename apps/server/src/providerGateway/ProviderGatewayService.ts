@@ -12,6 +12,8 @@ import {
   type WorkjetGatewayDiscoveredModel,
   type WorkjetGatewayFailureReason,
   type WorkjetGatewayHealth,
+  type WorkjetGatewayUsage,
+  type WorkjetGatewayUsageInput,
   type WorkjetGatewayModelDiscovery,
   type WorkjetGatewayOauthPollInput,
   type WorkjetGatewayOauthPollResult,
@@ -59,7 +61,13 @@ import {
   decodeModelDefinitions,
   decodeRuntimeConfigSummary,
   decodeRuntimeStatus,
+  decodeAccountHealth,
 } from "./ProviderGatewayManagement.ts";
+import {
+  InvalidGatewayUsageQuery,
+  readGatewayUsage,
+  USAGE_JOURNAL_MAX_BYTES,
+} from "./ProviderGatewayUsage.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
 import {
   decodeGatewayGrants,
@@ -195,6 +203,9 @@ export interface ProviderGatewayServiceShape {
    * reported as unavailable rather than filled in from configuration.
    */
   readonly health: () => Effect.Effect<WorkjetGatewayHealth, WorkjetGatewayOperationError>;
+  readonly usage: (
+    input: WorkjetGatewayUsageInput,
+  ) => Effect.Effect<WorkjetGatewayUsage, WorkjetGatewayOperationError>;
   /**
    * Models the host's own catalog serves per provider, merged with the models
    * recorded on the accounts. The host performs no upstream capability query,
@@ -1331,16 +1342,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
      * Reads the two management routes the host genuinely serves and reports
      * exactly what they say.
      *
-     * What is deliberately NOT here: per-account cooldown, rate-limit class,
-     * last failure and quota state. The host tracks all of that in a
-     * `CooldownStateRecord` held by an in-process store, and its management
-     * surface publishes no route for it — `/v0/management/api-key-usage` and
-     * `/v0/management/usage-queue` answer 404 on this host because it attaches
-     * no source for them, and there is no read route for cooldown state at all.
-     * The host also exposes no concurrency or capacity figure anywhere. Both
-     * are therefore reported as `not-reported-by-host` instead of being
-     * reconstructed from configuration, which would look like health while
-     * being nothing of the kind.
+     * Updated hosts attach typed account observations to runtime status.
+     * Older hosts keep explicit unreported availability; no account health
+     * or quota is reconstructed from configuration or token accounting.
+     * Capacity remains unreported until the host exposes that dimension.
      */
     const runHealth = async (): Promise<WorkjetGatewayHealth> => {
       const { endpoint, key } = requireManagement();
@@ -1393,7 +1398,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         activeProvider:
           activeProvider !== undefined && isGatewayProvider(activeProvider) ? activeProvider : null,
         providers,
-        accountHealth: "not-reported-by-host",
+        accountHealth:
+          decodeAccountHealth(status) === undefined ? "not-reported-by-host" : "reported",
+        accounts: decodeAccountHealth(status) ?? [],
         capacity: "not-reported-by-host",
       };
     };
@@ -1523,6 +1530,21 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         throw safeError("invalid-configuration");
       });
       currentCatalog = gatewayCatalog(decoded);
+      const reloadRequired =
+        input.strategy !== existing.routingStrategy ||
+        existing.accounts.some((account) => {
+          const update = updates.get(account.id);
+          return (
+            update !== undefined &&
+            (update.enabled !== account.enabled ||
+              update.priority !== account.priority ||
+              update.weight !== account.weight ||
+              (update.models !== undefined &&
+                JSON.stringify(update.models) !== JSON.stringify(account.models)))
+          );
+        });
+      // Display-name edits do not interrupt an in-flight inference stream.
+      if (!reloadRequired) return { schemaVersion: 1, catalog: currentCatalog };
       try {
         await stopSingleFlight();
         await startSingleFlight();
@@ -1680,6 +1702,31 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           try: runHealth,
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("management-unavailable"),
+        }),
+      usage: (input) =>
+        Effect.tryPromise({
+          try: () =>
+            readGatewayUsage(input, platform.now(), async (day) => {
+              try {
+                return await platform.readText(
+                  platform.joinPath(
+                    serverConfig.stateDir,
+                    "provider-gateway-usage",
+                    `${day}.jsonl`,
+                  ),
+                  USAGE_JOURNAL_MAX_BYTES,
+                );
+              } catch (error) {
+                if (isRecord(error) && error.code === "ENOENT") return null;
+                throw error;
+              }
+            }),
+          catch: (error) =>
+            safeError(
+              error instanceof InvalidGatewayUsageQuery
+                ? "invalid-usage-query"
+                : "usage-unavailable",
+            ),
         }),
       discoverModels: () =>
         Effect.tryPromise({

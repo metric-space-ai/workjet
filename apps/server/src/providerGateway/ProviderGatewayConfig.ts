@@ -599,13 +599,9 @@ export const decodeProviderGatewayConfiguration = (
   const accounts = value.accounts.map(parseAccount);
   if (accounts.some((account) => account === undefined)) return undefined;
   const typedAccounts = accounts as ReadonlyArray<GatewayAccount>;
-  // An empty account list is a valid bootstrap state: the host starts with
-  // only the management/OAuth surface so the first login can happen at all.
-  if (
-    !unique(typedAccounts.map((account) => account.id)) ||
-    (typedAccounts.length > 0 &&
-      !typedAccounts.some((account) => account.enabled && account.provider === defaultProvider))
-  ) {
+  // Empty and all-disabled account lists keep the management/OAuth surface
+  // available. An enabled provider is selected as fallback when possible.
+  if (!unique(typedAccounts.map((account) => account.id))) {
     return undefined;
   }
   const pools = parsePools(value.pools ?? [], typedAccounts);
@@ -629,7 +625,13 @@ export const decodeProviderGatewayConfiguration = (
   }
   return {
     schemaVersion: 1,
-    defaultProvider,
+    defaultProvider: typedAccounts.some(
+      (account) => account.enabled && account.provider === defaultProvider,
+    )
+      ? defaultProvider
+      : ([...typedAccounts]
+          .filter((account) => account.enabled)
+          .sort((a, b) => a.id.localeCompare(b.id))[0]?.provider ?? defaultProvider),
     accounts: typedAccounts,
     pools,
     routes,
@@ -766,7 +768,9 @@ export const rustHostConfiguration = (
     : {}),
   // A bootstrap host with zero accounts must not name a default provider; the
   // host rejects that combination.
-  ...(configuration.accounts.length > 0 ? { defaultProvider: configuration.defaultProvider } : {}),
+  ...(configuration.accounts.some((account) => account.enabled)
+    ? { defaultProvider: configuration.defaultProvider }
+    : {}),
   runtime: {
     request_timeout_ms: 30_000,
     // The host's own kebab-case `SchedulerStrategy` values; the configured

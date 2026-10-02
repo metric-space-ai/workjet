@@ -33,6 +33,7 @@ import type {
   WorkjetGatewayRoutingState,
 } from "./WorkjetGatewayPools";
 import type { ModelsManagementState } from "./WorkjetModelsProviders";
+import { modelsAccountHealth } from "./WorkjetModelsHealth";
 
 /**
  * Runtime state for the Workjet provider-gateway account surface.
@@ -115,6 +116,19 @@ export function useWorkjetGatewaySection(
 
   const [routing, setRouting] = useState<WorkjetGatewayRoutingState>({ status: "idle" });
   const routingRef = useRef(false);
+  const quotaPollAttempts = useRef(0);
+  useEffect(() => {
+    if (
+      !(healthQuery.data?.accounts ?? []).some((account) => account.quotaRefreshing) ||
+      quotaPollAttempts.current >= 30
+    )
+      return;
+    const timer = setTimeout(() => {
+      quotaPollAttempts.current += 1;
+      healthQuery.refresh();
+    }, 2_000);
+    return () => clearTimeout(timer);
+  }, [healthQuery]);
   const clearAccountError = (accountId: string) =>
     setAccountErrors((previous) => {
       const next = { ...previous };
@@ -123,6 +137,7 @@ export function useWorkjetGatewaySection(
     });
 
   const refresh = useCallback(() => {
+    quotaPollAttempts.current = 0;
     statusQuery.refresh();
     catalogQuery.refresh();
     healthQuery.refresh();
@@ -263,7 +278,10 @@ export function useWorkjetGatewaySection(
           }
           return;
         }
-        if (token.aborted) return;
+        if (token.aborted) {
+          void cancelGatewayOauth({ environmentId, input: { state: started.value.state } });
+          return;
+        }
         const session = started.value;
         setLogin({
           status: "pending",
@@ -320,7 +338,7 @@ export function useWorkjetGatewaySection(
         if (loginRef.current === token) loginRef.current = null;
       });
     },
-    [environmentId, pollGatewayOauth, refresh, startGatewayOauth],
+    [cancelGatewayOauth, environmentId, pollGatewayOauth, refresh, startGatewayOauth],
   );
 
   /**
@@ -374,11 +392,12 @@ export function useWorkjetGatewaySection(
   );
 
   const cancelLogin = useCallback(() => {
-    if (login.status !== "pending") return;
+    if (login.status === "idle" || login.status === "completed") return;
     if (loginRef.current) loginRef.current.aborted = true;
     loginRef.current = null;
     setLogin({ status: "idle" });
-    if (environmentId === null) return;
+    setLoginAccountId(null);
+    if (environmentId === null || login.status !== "pending") return;
     void cancelGatewayOauth({ environmentId, input: { state: login.state } });
   }, [cancelGatewayOauth, environmentId, login]);
 
@@ -441,9 +460,19 @@ export function useWorkjetGatewaySection(
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
     loginAccountId,
     accountErrors,
-    accountHealth: {},
+    accountHealth: Object.fromEntries(
+      (healthQuery.data?.accounts ?? []).map((account) => [
+        account.accountId,
+        modelsAccountHealth(account, Date.now()),
+      ]),
+    ),
     mutationBusy:
-      routing.status === "saving" || apiKey.status === "saving" || isOperating || isDeleting,
+      routing.status === "saving" ||
+      apiKey.status === "saving" ||
+      isOperating ||
+      isDeleting ||
+      login.status === "starting" ||
+      login.status === "pending",
     pools: {
       catalog: catalogQuery.data,
       health: healthQuery.data,

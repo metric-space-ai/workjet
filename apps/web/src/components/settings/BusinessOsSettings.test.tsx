@@ -121,6 +121,21 @@ describe("Business OS settings scope", () => {
     expect(markup).not.toContain("environment-alpha");
   });
 
+  it("distinguishes a discovery failure from an empty registry and explains retry", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[]}
+        activeInstanceId={null}
+        discoveryFailed
+        onRefresh={() => undefined}
+      />,
+    );
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("Could not load CTOX instances");
+    expect(markup).toContain("Refresh");
+    expect(markup).not.toContain("No CTOX instance connected");
+  });
+
   it("keeps the connected-host settings hub available without native discovery", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView

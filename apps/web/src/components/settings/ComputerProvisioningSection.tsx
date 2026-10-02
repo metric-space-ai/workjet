@@ -137,8 +137,7 @@ export function ComputerProvisioningSection({
   }, [operation]);
 
   const completedId = useRef<string | null>(null);
-  const running =
-    busy || (operation !== null && operation.state !== "completed" && operation.state !== "failed");
+  const running = busy || operation?.state === "queued" || operation?.state === "running";
   useEffect(() => {
     onBusyChange?.(running);
     return () => onBusyChange?.(false);
@@ -370,7 +369,7 @@ export function ComputerProvisioningSection({
                   {busy ? <Spinner className="size-4" /> : <ShieldCheckIcon className="size-4" />}{" "}
                   Confirm and connect
                 </Button>
-                <Button type="button" variant="outline" onClick={reset}>
+                <Button type="button" variant="outline" disabled={busy} onClick={reset}>
                   Cancel
                 </Button>
               </div>
@@ -443,7 +442,7 @@ export function ComputerProvisioningSection({
                   {busy ? <Spinner className="size-4" /> : <ServerCogIcon className="size-4" />}{" "}
                   Install selected components
                 </Button>
-                <Button type="button" variant="outline" onClick={reset}>
+                <Button type="button" variant="outline" disabled={busy} onClick={reset}>
                   Back
                 </Button>
               </div>

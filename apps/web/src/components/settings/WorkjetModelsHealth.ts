@@ -17,6 +17,9 @@ export function modelsAccountHealth(
   const generationStatus = account.generationHttpStatus;
   const exhaustedWindows = account.quota.filter(
     (window) =>
+      !window.unlimited &&
+      !window.toolOnly &&
+      window.modelPattern === null &&
       window.remainingPercent === 0 &&
       !["seven_day_opus", "seven_day_sonnet"].includes(window.name) &&
       (window.resetsAtMs !== null ? window.resetsAtMs > now : now - window.observedAtMs < 300_000),
@@ -57,10 +60,11 @@ export function modelsAccountHealth(
     retryAtMs: blocked ? Math.max(account.cooldownUntilMs ?? 0, quotaRetry ?? 0) : quotaRetry,
     windows: account.quota.map((window) => ({
       label: WINDOW_LABELS[window.name] ?? window.name.replaceAll("_", " "),
+      unlimited: window.unlimited && now - window.observedAtMs < 300_000,
       remainingPercent:
         (now - window.observedAtMs > 300_000 &&
           !(
-            window.remainingPercent === 0 &&
+            !window.unlimited && window.remainingPercent === 0 &&
             window.resetsAtMs !== null &&
             window.resetsAtMs > now
           )) ||

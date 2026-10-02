@@ -1,4 +1,67 @@
 #[test]
+fn scoped_api_quota_blocks_only_matching_model_and_never_unlimited_or_tools() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = ["a", "b"].map(|id| AccountCandidate {
+        provider: "minimax".into(),
+        supported_models: vec!["MiniMax-M*".into()],
+        ..candidate(id)
+    });
+    let windows = parse_usage(
+        "minimax",
+        br#"{"model_remains":[
+      {"model_name":"MiniMax-M3","current_interval_remaining_percent":0,"end_time":1000000},
+      {"model_name":"video","current_interval_remaining_percent":0,"end_time":1000000},
+      {"model_name":"general","current_interval_status":3,"current_interval_remaining_percent":0}
+    ]}"#,
+        1000,
+    )
+    .unwrap();
+    state.observe_quota("minimax", "a", windows).unwrap();
+    assert_eq!(
+        state
+            .select(
+                "minimax",
+                Some("MiniMax-M2.7"),
+                400000,
+                &accounts,
+                &[],
+                br#"{"session_id":"scoped"}"#
+            )
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    assert_eq!(
+        state
+            .select(
+                "minimax",
+                Some("MiniMax-M3"),
+                400000,
+                &accounts,
+                &[],
+                br#"{"session_id":"blocked"}"#
+            )
+            .unwrap()
+            .auth_id,
+        "b"
+    );
+    assert_eq!(
+        open(dir.path())
+            .select(
+                "minimax",
+                Some("MiniMax-M2.7"),
+                400001,
+                &accounts,
+                &[],
+                br#"{"session_id":"scoped"}"#
+            )
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+}
+#[test]
 fn oauth_relogin_clears_rejection_preserves_affinity_and_known_quota() {
     let dir = tempfile::tempdir().unwrap();
     let state = open(dir.path());
@@ -118,6 +181,7 @@ fn quota(reset: i64, observed: i64, remaining: f64) -> Vec<QuotaWindow> {
         remaining_percent: Some(remaining),
         resets_at_ms: Some(reset),
         observed_at_ms: observed,
+        ..Default::default()
     }]
 }
 #[test]
@@ -283,6 +347,7 @@ fn known_exhaustion_survives_read_freshness_until_reset() {
                 remaining_percent: Some(0.0),
                 resets_at_ms: None,
                 observed_at_ms: 1000,
+                ..Default::default()
             }],
         )
         .unwrap();

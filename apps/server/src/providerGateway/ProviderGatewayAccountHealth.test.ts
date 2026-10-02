@@ -42,7 +42,7 @@ describe("gateway account health", () => {
     for (const patch of [
       { provider: "fake" },
       { observedAtMs: -1 },
-      { quota: [{ name: "primary", remainingPercent: 101, resetsAtMs: null, observedAtMs: 1 }] },
+      { quota: [{ name: "primary", remainingPercent: -1, resetsAtMs: null, observedAtMs: 1 }] },
     ]) {
       expect(decodeAccountHealth(status([{ ...account, ...patch }]))).toBeUndefined();
     }

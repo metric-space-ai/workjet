@@ -8,8 +8,8 @@ fn destination_allowlist_never_sends_vendor_keys_to_unrelated_quota_hosts() {
     assert!(api_quota_endpoint("zai", "https://api.z.ai:444/api/paas/v4").is_none());
     assert!(api_quota_endpoint("zai", "https://api.z.ai/custom").is_none());
     assert_eq!(
-        api_quota_endpoint("minimax", "https://api.minimaxi.com/v1"),
-        Some("https://api.minimaxi.com/v1/token_plan/remains")
+        api_quota_endpoint("minimax", "https://api.minimax.cn/v1"),
+        Some("https://api.minimax.cn/v1/token_plan/remains")
     );
     assert_eq!(
         api_quota_endpoint("zai", "https://open.bigmodel.cn/api/coding/paas/v4"),

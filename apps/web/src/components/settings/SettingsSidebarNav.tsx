@@ -1,31 +1,21 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ComponentType,
   type KeyboardEvent,
 } from "react";
-import {
-  ActivityIcon,
-  ArchiveIcon,
-  ArrowLeftIcon,
-  BriefcaseBusinessIcon,
-  GitBranchIcon,
-  KeyboardIcon,
-  MonitorIcon,
-  PaletteIcon,
-  SearchIcon,
-  SparklesIcon,
-  TerminalIcon,
-  Settings2Icon,
-  WrenchIcon,
-  XIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
+import { ActiveCtoxInstanceSelector } from "../ActiveCtoxInstanceSelector";
+import { useCtoxMode } from "../ctox/CtoxModeShell";
+import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
+import { SETTINGS_NAV_ITEMS, SETTINGS_SECTION_ICONS } from "./settingsNavigation";
+export { SETTINGS_NAV_ITEMS } from "./settingsNavigation";
 import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
 import {
@@ -49,39 +39,18 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 
-const SETTINGS_SECTION_ICONS: Readonly<
-  Record<SettingsPath, ComponentType<{ className?: string }>>
-> = {
-  "/settings/business-os": BriefcaseBusinessIcon,
-  "/settings/general": Settings2Icon,
-  "/settings/appearance": PaletteIcon,
-  "/settings/keybindings": KeyboardIcon,
-  // Harnesses are CLI runtimes; models are the LLM accounts behind them.
-  "/settings/harnesses": TerminalIcon,
-  "/settings/models": SparklesIcon,
-  "/settings/computers": MonitorIcon,
-  "/settings/workjet": WrenchIcon,
-  "/settings/source-control": GitBranchIcon,
-  "/settings/diagnostics": ActivityIcon,
-  "/settings/archived": ArchiveIcon,
-};
-
-export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
-  label: string;
-  to: SettingsPath;
-  icon: ComponentType<{ className?: string }>;
-}> = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsPath[]).map((to) => ({
-  to,
-  label: SETTINGS_SECTION_LABELS[to],
-  icon: SETTINGS_SECTION_ICONS[to],
-}));
-
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
   return <Icon className="mt-0.5 size-3.5 shrink-0 text-sidebar-muted-foreground/60" />;
 }
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
+  const { discovery, selectedId } = useCtoxMode();
+  const instanceContext = resolveSettingsInstanceContext(
+    discovery,
+    selectedId,
+    typeof window !== "undefined" && window.desktopBridge?.ctox !== undefined,
+  );
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
   const canGoBack = useCanGoBack();
@@ -135,12 +104,13 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
 
   const handleSectionClick = useCallback(
     (to: SettingsPath) => {
+      if (to !== "/settings/business-os" && !instanceContext.canEditInstanceSettings) return;
       if (isMobile) {
         setOpenMobile(false);
       }
       void navigate({ to, hash: "", replace: true, hashScrollIntoView: false });
     },
-    [isMobile, navigate, setOpenMobile],
+    [instanceContext.canEditInstanceSettings, isMobile, navigate, setOpenMobile],
   );
   const clearSearch = useCallback(() => {
     setQuery("");
@@ -148,6 +118,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   }, []);
   const handleSearchResultClick = useCallback(
     (item: SettingsSearchItem) => {
+      if (item.to !== "/settings/business-os" && !instanceContext.canEditInstanceSettings) return;
       clearSearch();
       if (isMobile) {
         setOpenMobile(false);
@@ -159,7 +130,15 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       }
       void navigate({ to: item.to, hash: targetId, replace: true, hashScrollIntoView: false });
     },
-    [clearSearch, currentHash, isMobile, navigate, pathname, setOpenMobile],
+    [
+      clearSearch,
+      currentHash,
+      instanceContext.canEditInstanceSettings,
+      isMobile,
+      navigate,
+      pathname,
+      setOpenMobile,
+    ],
   );
   const handleSearchKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
@@ -274,6 +253,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       className="h-auto min-h-10 items-start gap-2 rounded-md px-2 py-2 text-left hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                       onMouseMove={() => setActiveResultIndex(index)}
                       onClick={() => handleSearchResultClick(item)}
+                      disabled={
+                        item.to !== "/settings/business-os" &&
+                        !instanceContext.canEditInstanceSettings
+                      }
                     >
                       <SettingsSectionIcon to={item.to} />
                       <span className="min-w-0 flex-1">
@@ -287,19 +270,47 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))
-              : SETTINGS_NAV_ITEMS.map((item) => {
+              : SETTINGS_NAV_ITEMS.map((item, index) => {
                   const Icon = item.icon;
                   const isActive = pathname === item.to || pathname.startsWith(`${item.to}/`);
                   return (
-                    <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        onClick={() => handleSectionClick(item.to)}
-                      >
-                        <Icon />
-                        <span className="truncate">{item.label}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                    <Fragment key={item.to}>
+                      {index === 1 && instanceContext.isMultiInstance ? (
+                        <SidebarMenuItem
+                          role="presentation"
+                          className="mt-3 border-t border-sidebar-border pt-3 pb-1"
+                        >
+                          <p
+                            className="px-2 text-[11px] font-medium text-sidebar-muted-foreground"
+                            data-settings-instance-context=""
+                          >
+                            Einstellungen für
+                            <span className="mt-0.5 block truncate text-sm text-sidebar-foreground">
+                              {instanceContext.activeInstanceName ?? "Instanz auswählen"}
+                            </span>
+                          </p>
+                        </SidebarMenuItem>
+                      ) : null}
+                      <SidebarMenuItem>
+                        <SidebarMenuButton
+                          isActive={isActive}
+                          aria-current={isActive ? "page" : undefined}
+                          onClick={() => handleSectionClick(item.to)}
+                          disabled={
+                            item.to !== "/settings/business-os" &&
+                            !instanceContext.canEditInstanceSettings
+                          }
+                        >
+                          <Icon />
+                          <span className="truncate">{item.label}</span>
+                        </SidebarMenuButton>
+                        {item.to === "/settings/business-os" &&
+                        instanceContext.requiresInstanceSelection &&
+                        (instanceContext.isMultiInstance || !instanceContext.hasActiveInstance) ? (
+                          <ActiveCtoxInstanceSelector placement="settings" />
+                        ) : null}
+                      </SidebarMenuItem>
+                    </Fragment>
                   );
                 })}
           </SidebarMenu>

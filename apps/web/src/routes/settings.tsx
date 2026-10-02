@@ -1,5 +1,6 @@
 import { RotateCcwIcon } from "lucide-react";
 import {
+  Navigate,
   Outlet,
   createFileRoute,
   redirect,
@@ -42,7 +43,10 @@ function SettingsContentLayout() {
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const [restoreSignal, setRestoreSignal] = useState(0);
-  const showRestoreDefaults = location.pathname === "/settings/general";
+  const isInstanceManagement = location.pathname === "/settings/business-os";
+  const canShowSettings = isInstanceManagement || instanceContext.hasActiveInstance;
+  const showRestoreDefaults =
+    location.pathname === "/settings/general" && instanceContext.hasActiveInstance;
   const handleRestored = () => setRestoreSignal((value) => value + 1);
   const navigateBackWithinApp = useCallback(() => {
     if (canGoBack) {
@@ -106,7 +110,15 @@ function SettingsContentLayout() {
         </WorkjetHeaderContent>
 
         <div key={restoreSignal} className="min-h-0 flex flex-1 flex-col">
-          <Outlet />
+          {canShowSettings ? (
+            <Outlet />
+          ) : discovery === "loading" ? (
+            <p role="status" className="px-6 py-8 text-sm text-muted-foreground">
+              Instanzen werden geladen …
+            </p>
+          ) : (
+            <Navigate to="/settings/business-os" replace />
+          )}
         </div>
       </div>
     </SidebarInset>

@@ -101,7 +101,7 @@ export function WorkjetModelsUsageView({
         <div>
           <h2 className="text-lg font-semibold">Modellnutzung</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Alle Anbieter und Workjet-Worker ·{" "}
+            Requests through this hub ·{" "}
             {usage ? `${number(usage.totals.requests)} Aufrufe` : "Nutzung wird geladen"}
           </p>
         </div>
@@ -113,6 +113,7 @@ export function WorkjetModelsUsageView({
                 type="button"
                 aria-pressed={days === range}
                 onClick={() => onDaysChange(range)}
+                data-workjet-action={`models.usage.${range}`}
                 className={`rounded-sm px-3 py-1 text-xs ${days === range ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
               >
                 {range} Tage

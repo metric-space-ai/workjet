@@ -28,7 +28,7 @@ mod provenance_tests {
 }
 // Bounded on-demand subscription usage reads. No periodic worker or CLI scraping.
 use crate::{
-    account_policy::{AccountState, QuotaWindow},
+    account_policy::{quota_is_exhausted, AccountState, QuotaWindow},
     secret_store::WorkjetSecretStore,
 };
 use serde::Serialize;
@@ -199,9 +199,7 @@ impl AccountHealthSource {
                 let quotas = self.state.quotas(&a.provider, &a.auth_id);
                 let exhausted = quotas.iter().any(|w| {
                     !matches!(w.name.as_str(), "seven_day_opus" | "seven_day_sonnet")
-                        && now.saturating_sub(w.observed_at_ms) < 300_000
-                        && w.remaining_percent == Some(0.0)
-                        && w.resets_at_ms.is_none_or(|r| r > now)
+                        && quota_is_exhausted(w, now)
                 });
                 AccountHealth {
                     account_id: a.auth_id.clone(),

@@ -2,12 +2,12 @@ import type { WorkjetGatewayAccountHealth } from "@workjet/contracts";
 import type { ModelsAccountHealth } from "./WorkjetModelsProviders";
 
 const WINDOW_LABELS: Readonly<Record<string, string>> = {
-  five_hour: "5 Stunden",
-  seven_day: "7 Tage",
-  seven_day_opus: "Opus · 7 Tage",
-  seven_day_sonnet: "Sonnet · 7 Tage",
-  primary_window: "Kurzzeitlimit",
-  secondary_window: "Langzeitlimit",
+  five_hour: "5 hours",
+  seven_day: "7 days",
+  seven_day_opus: "Opus · 7 days",
+  seven_day_sonnet: "Sonnet · 7 days",
+  primary_window: "Short-term limit",
+  secondary_window: "Long-term limit",
 };
 
 export function modelsAccountHealth(
@@ -23,6 +23,11 @@ export function modelsAccountHealth(
   );
   const exhausted = exhaustedWindows.length > 0;
   const blocked = account.cooldownUntilMs !== null && account.cooldownUntilMs > now;
+  const quotaRetry = exhaustedWindows.reduce<number | null>(
+    (reset, window) =>
+      window.resetsAtMs !== null ? Math.max(reset ?? 0, window.resetsAtMs) : reset,
+    null,
+  );
   const status: ModelsAccountHealth["status"] = account.disabled
     ? "disabled"
     : account.authentication === "rejected"
@@ -36,26 +41,20 @@ export function modelsAccountHealth(
             : "unknown";
   const message =
     status === "auth-required"
-      ? "Anmeldung abgelaufen oder Zugangsdaten abgelehnt."
+      ? "Sign-in expired or credentials rejected."
       : status === "unavailable"
         ? generationStatus === 402
-          ? "Abo oder Guthaben prüfen."
+          ? "Check your subscription or balance."
           : generationStatus === 403
-            ? "Der Anbieter verweigert den Zugriff. Account und Abo prüfen."
+            ? "The provider denied access. Check this account and subscription."
             : account.errorCode?.includes("model")
-              ? "Modell nicht verfügbar. Modellnamen oben prüfen."
-              : "Anbieter vorübergehend nicht verfügbar. Erneut prüfen."
+              ? "Model unavailable. Check the model names above."
+              : "Provider temporarily unavailable. Try checking again."
         : null;
   return {
     status,
     message,
-    retryAtMs:
-      account.cooldownUntilMs ??
-      exhaustedWindows.reduce<number | null>(
-        (reset, window) =>
-          window.resetsAtMs !== null ? Math.max(reset ?? 0, window.resetsAtMs) : reset,
-        null,
-      ),
+    retryAtMs: blocked ? Math.max(account.cooldownUntilMs ?? 0, quotaRetry ?? 0) : quotaRetry,
     windows: account.quota.map((window) => ({
       label: WINDOW_LABELS[window.name] ?? window.name.replaceAll("_", " "),
       remainingPercent:
@@ -68,7 +67,7 @@ export function modelsAccountHealth(
         (window.resetsAtMs !== null && window.resetsAtMs <= now)
           ? null
           : window.remainingPercent,
-      resetsAtMs: window.resetsAtMs,
+      resetsAtMs: window.resetsAtMs !== null && window.resetsAtMs > now ? window.resetsAtMs : null,
     })),
     observedAtMs: account.quota.length
       ? Math.min(...account.quota.map((window) => window.observedAtMs))

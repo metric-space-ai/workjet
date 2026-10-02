@@ -811,22 +811,26 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     // from the later claim call. A bounded lifetime matches the UI login window.
     const oauthTargets = new Map<
       string,
-      { readonly accountId: string; readonly expiresAt: number }
+      {
+        readonly accountId?: string;
+        readonly provider: WorkjetGatewayOauthProvider;
+        readonly expiresAt: number;
+      }
     >();
     const runOauthStart = async (
       input: WorkjetGatewayOauthStartInput,
     ): Promise<WorkjetGatewayOauthSession> => {
       for (const [state, target] of oauthTargets) {
-        if (target.expiresAt <= Date.now()) oauthTargets.delete(state);
+        if (target.expiresAt <= platform.now()) oauthTargets.delete(state);
       }
+      if (oauthTargets.size >= 64) throw safeError("oauth-unavailable");
       if (input.accountId !== undefined) {
         const config = await loadConfiguration();
         const account = config.accounts.find((entry) => entry.id === input.accountId);
         if (
           account === undefined ||
           account.provider !== input.provider ||
-          isApiKeyAccount(account) ||
-          oauthTargets.size >= 64
+          isApiKeyAccount(account)
         ) {
           throw safeError("invalid-configuration");
         }
@@ -858,12 +862,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       ) {
         throw safeError("oauth-unavailable");
       }
-      if (input.accountId !== undefined) {
-        oauthTargets.set(state, {
-          accountId: input.accountId,
-          expiresAt: Date.now() + 10 * 60_000,
-        });
-      }
+      if (oauthTargets.has(state)) throw safeError("oauth-session-invalid");
+      oauthTargets.set(state, {
+        ...(input.accountId !== undefined ? { accountId: input.accountId } : {}),
+        provider: input.provider,
+        expiresAt: platform.now() + 10 * 60_000,
+      });
       return { schemaVersion: 1, provider: input.provider, state, authorizationUrl };
     };
 
@@ -961,6 +965,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const accounts: Array<GatewayAccount> = [...(existing?.accounts ?? [])];
       const usedIds = new Set(accounts.map((account) => account.id));
       const createdIds: Array<string> = [];
+      const pendingSecrets = new Map<string, string>();
       for (const credential of claimed) {
         if (credential.provider === "antigravity" && existing?.antigravityOauth === undefined) {
           // Without the OAuth client secrets the resulting configuration could
@@ -968,11 +973,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           throw safeError("invalid-configuration");
         }
         const writeSecret = async (ref: GatewaySecretReference, value: string): Promise<void> => {
-          await runPromise(secrets.set(secretStoreName(ref), textEncoder.encode(value))).catch(
-            () => {
-              throw safeError("secret-unavailable");
-            },
-          );
+          pendingSecrets.set(secretStoreName(ref), value);
         };
         // RE-LOGIN heals in place. Logging into the same identity again means
         // "these tokens replaced those tokens" — so the fresh secrets are
@@ -1080,17 +1081,54 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
       const decoded = decodeProviderGatewayConfiguration(JSON.parse(JSON.stringify(candidate)));
       if (decoded === undefined) throw safeError("invalid-configuration");
-      await platform
-        .writePrivateText(configurationPath, `${JSON.stringify(candidate, null, 2)}\n`)
-        .catch(() => {
-          throw safeError("invalid-configuration");
-        });
+      // Validate the entire configuration and snapshot existing secrets before
+      // changing any credential. A failed re-login cannot leave mixed tokens.
+      const previousSecrets = new Map<string, Option.Option<Uint8Array>>();
+      for (const name of pendingSecrets.keys()) {
+        previousSecrets.set(
+          name,
+          await runPromise(secrets.get(name)).catch(() => {
+            throw safeError("secret-unavailable");
+          }),
+        );
+      }
+      const attempted: string[] = [];
+      try {
+        for (const [name, value] of pendingSecrets) {
+          attempted.push(name);
+          await runPromise(secrets.set(name, textEncoder.encode(value))).catch(() => {
+            throw safeError("secret-unavailable");
+          });
+        }
+        await platform
+          .writePrivateText(configurationPath, `${JSON.stringify(candidate, null, 2)}\n`)
+          .catch(() => {
+            throw safeError("invalid-configuration");
+          });
+      } catch (error) {
+        for (const name of attempted.reverse()) {
+          const previous = previousSecrets.get(name)!;
+          await runPromise(
+            Option.isSome(previous) ? secrets.set(name, previous.value) : secrets.remove(name),
+          ).catch(() => {
+            throw safeError("secret-unavailable");
+          });
+        }
+        throw error;
+      }
       return createdIds;
     };
 
     const runOauthPoll = async (
       input: WorkjetGatewayOauthPollInput,
     ): Promise<WorkjetGatewayOauthPollResult> => {
+      const target = oauthTargets.get(input.state);
+      // Unknown, cancelled and expired sessions must never become untargeted
+      // imports, even after another login has pruned their old binding.
+      if (target === undefined || target.expiresAt <= platform.now()) {
+        oauthTargets.delete(input.state);
+        throw safeError("oauth-session-invalid");
+      }
       const { endpoint, key } = requireManagement();
       let response: unknown;
       try {
@@ -1125,12 +1163,14 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       } catch {
         throw safeError("oauth-session-invalid");
       }
-      const target = oauthTargets.get(input.state);
-      if (target !== undefined && target.expiresAt <= Date.now()) {
+      if (oauthTargets.get(input.state) !== target || target.expiresAt <= platform.now()) {
         oauthTargets.delete(input.state);
         throw safeError("oauth-session-invalid");
       }
-      const createdIds = await persistClaimedAccounts(decodeClaim(claim), target?.accountId);
+      const credentials = decodeClaim(claim);
+      if (credentials.some((credential) => credential.provider !== target.provider))
+        throw safeError("oauth-session-invalid");
+      const createdIds = await persistClaimedAccounts(credentials, target.accountId);
       oauthTargets.delete(input.state);
       // Reload the gateway so the new account is served; a failed restart is
       // visible through status() and must not undo the successful login.

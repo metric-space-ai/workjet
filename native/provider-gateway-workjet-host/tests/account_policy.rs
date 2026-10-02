@@ -258,6 +258,65 @@ fn exhausted_quota_and_disabled_accounts_are_not_selected() {
     );
 }
 #[test]
+fn known_exhaustion_survives_read_freshness_until_reset() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = vec![candidate("a")];
+    state
+        .observe_quota("codex", "a", quota(1_000_000, 1000, 0.0))
+        .unwrap();
+    assert!(state
+        .select("codex", Some("gpt-5"), 400_000, &accounts, &[], b"{}")
+        .is_err());
+    assert!(open(dir.path())
+        .select("codex", Some("gpt-5"), 400_000, &accounts, &[], b"{}")
+        .is_err());
+    assert!(state
+        .select("codex", Some("gpt-5"), 1_000_000, &accounts, &[], b"{}")
+        .is_ok());
+    state
+        .observe_quota(
+            "codex",
+            "a",
+            vec![QuotaWindow {
+                name: "primary".into(),
+                remaining_percent: Some(0.0),
+                resets_at_ms: None,
+                observed_at_ms: 1000,
+            }],
+        )
+        .unwrap();
+    assert!(state
+        .select("codex", Some("gpt-5"), 400_000, &accounts, &[], b"{}")
+        .is_ok());
+}
+#[test]
+fn known_future_resets_still_prioritize_new_sessions_after_read_aging() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = vec![candidate("a"), candidate("b")];
+    state
+        .observe_quota("codex", "a", quota(900_000, 1000, 50.0))
+        .unwrap();
+    state
+        .observe_quota("codex", "b", quota(600_000, 1000, 50.0))
+        .unwrap();
+    assert_eq!(
+        state
+            .select(
+                "codex",
+                Some("gpt-5"),
+                400_000,
+                &accounts,
+                &[],
+                br#"{"session_id":"aged-new-session"}"#
+            )
+            .unwrap()
+            .auth_id,
+        "b"
+    );
+}
+#[test]
 fn authentic_quota_parsers_keep_missing_values_unknown() {
     let codex=parse_usage("codex",br#"{"rate_limit":{"primary_window":{"used_percent":42,"reset_at":123},"secondary_window":null}}"#,1000).unwrap();
     assert_eq!(codex[0].remaining_percent, Some(58.0));

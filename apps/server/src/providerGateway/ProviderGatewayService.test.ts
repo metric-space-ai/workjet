@@ -532,6 +532,7 @@ describe("ProviderGatewayService", () => {
     const platform: ProviderGatewayPlatform = {
       ...harness.platform,
       managementGet: async (endpoint, route, key, maximumBytes) => {
+        if (route.endsWith("-auth-url")) return { state: "state-x", authorization_url: "https://auth.example/authorize" };
         if (route.startsWith("/v0/management/oauth/status")) {
           return { pending: false, error: "denied", credentials: [] };
         }
@@ -544,11 +545,62 @@ describe("ProviderGatewayService", () => {
     await runGateway(platform, (gateway) =>
       Effect.gen(function* () {
         yield* gateway.start();
-        const result = yield* gateway.oauthPoll({ state: "state-x" });
+        const session = yield* gateway.oauthStart({ provider: "codex" });
+        const result = yield* gateway.oauthPoll({ state: session.state });
         expect(result.failed).toBe(true);
         expect(result.completedAccountIds).toEqual([]);
       }),
     );
+  });
+
+  it.each(["unknown", "expired", "cancelled"] as const)("rejects %s OAuth bindings before polling or claiming", async (kind) => {
+    const harness = readyHarness();
+    let now = 1_700_000_000_000;
+    let begins = 0;
+    const claims: string[] = [];
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      now: () => now,
+      managementGet: async (endpoint, route, key, maximumBytes) => {
+        if (route.endsWith("-auth-url")) return { state: `state-${++begins}`, authorization_url: "https://auth.example/authorize" };
+        if (route.startsWith("/v0/management/oauth/status")) throw new Error("invalid session must not reach the host");
+        return harness.platform.managementGet(endpoint, route, key, maximumBytes);
+      },
+      managementRequest: async (_endpoint, route, _key, method) => { claims.push(`${method} ${route}`); return {}; },
+    };
+    await runGateway(platform, (gateway) => Effect.gen(function* () {
+      yield* gateway.start();
+      const session = yield* gateway.oauthStart({ provider: "codex", accountId: WorkjetGatewayAccountId.make("codex-primary") });
+      if (kind === "expired") {
+        now += 10 * 60_000;
+        // A second start prunes the expired binding: the stale poll must still
+        // fail rather than being interpreted as an add-account operation.
+        yield* gateway.oauthStart({ provider: "codex" });
+      } else if (kind === "cancelled") yield* gateway.oauthCancel({ state: session.state });
+      const failure = yield* gateway.oauthPoll({ state: kind === "unknown" ? "foreign-state" : session.state }).pipe(Effect.flip);
+      expect(failure.reason).toBe("oauth-session-invalid");
+    }));
+    expect(claims.every((claim) => claim.startsWith("DELETE "))).toBe(true);
+  });
+
+  it("rejects a credential claim from a different provider than the bound OAuth session", async () => {
+    const harness = readyHarness();
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      managementGet: async (endpoint, route, key, maximumBytes) => {
+        if (route.endsWith("-auth-url")) return { state: "bound-state", authorization_url: "https://auth.example/authorize" };
+        if (route.startsWith("/v0/management/oauth/status")) return { pending: false, credentials: [{}] };
+        return harness.platform.managementGet(endpoint, route, key, maximumBytes);
+      },
+      managementRequest: async () => ({ credentials: [{ account: { provider: "claude", label: "account@example.test", models: [] }, secrets: { access_token_secret: "fake-access", refresh_token_secret: "fake-refresh" } }] }),
+    };
+    await runGateway(platform, (gateway) => Effect.gen(function* () {
+      yield* gateway.start();
+      const session = yield* gateway.oauthStart({ provider: "codex" });
+      const failure = yield* gateway.oauthPoll({ state: session.state }).pipe(Effect.flip);
+      expect(failure.reason).toBe("oauth-session-invalid");
+    }));
+    expect(harness.writes.join("\n")).not.toContain("account@example.test");
   });
 
   it("rejects malformed readiness as a redacted protocol failure", async () => {
@@ -962,6 +1014,17 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(result.catalog.accounts.find((entry) => entry.id === "claude-a")?.label).toBe("Renamed account");
   });
 
+  it("saves a display-name edit without restarting an in-flight host", async () => {
+    const harness = readyHarness();
+    await runGateway(harness.platform, (gateway) => Effect.gen(function* () {
+      yield* gateway.start();
+      const result = yield* gateway.updateRouting({ strategy: "fill-first", accounts: [{ accountId: WorkjetGatewayAccountId.make("codex-primary"), enabled: true, priority: 0, weight: 1, label: "Renamed account" }] });
+      expect(result.catalog.accounts[0]?.label).toBe("Renamed account");
+      expect(harness.spawnCount()).toBe(1);
+      expect(harness.kills).toEqual([]);
+    }));
+  });
+
   it("refuses an edit naming an account the configuration does not have", async () => {
     const harness = poolHarness();
     const failure = await runPools(harness, (gateway) =>
@@ -984,9 +1047,9 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(JSON.parse(harness.configuration())).toMatchObject({ routingStrategy: "round-robin" });
   });
 
-  it("refuses an edit that would leave the default provider with no enabled account", async () => {
+  it("allows disabling all default-provider accounts without losing them", async () => {
     const harness = poolHarness();
-    const failure = await runPools(harness, (gateway) =>
+    const result = await runPools(harness, (gateway) =>
       gateway
         .updateRouting({
           strategy: "round-robin",
@@ -1004,17 +1067,14 @@ describe("ProviderGatewayService pools, health, and models", () => {
               weight: 1,
             },
           ],
-        })
-        .pipe(Effect.flip),
+        }),
     );
-    expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
-    // The edit was not applied: the host would have refused to start on it.
-    // (`start()` itself persists the allocated provider port, so the document
-    // is compared by content rather than byte-for-byte.)
     const document = JSON.parse(harness.configuration()) as {
       accounts: ReadonlyArray<{ id: string; enabled: boolean }>;
     };
-    expect(document.accounts.every((account) => account.enabled)).toBe(true);
+    expect(document.accounts).toHaveLength(3);
+    expect(document.accounts.filter((account) => account.id.startsWith("claude")).every((account) => !account.enabled)).toBe(true);
+    expect(result.catalog.accounts.filter((account) => account.provider === "claude").every((account) => !account.enabled)).toBe(true);
   });
 });
 

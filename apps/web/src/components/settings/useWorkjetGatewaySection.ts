@@ -119,6 +119,19 @@ export function useWorkjetGatewaySection(
     const timer = setTimeout(() => { quotaPollAttempts.current += 1; healthQuery.refresh(); }, 2_000);
     return () => clearTimeout(timer);
   }, [healthQuery]);
+  useEffect(() => {
+    if (environmentId === null || statusQuery.data?.phase !== "ready" || healthQuery.data === null || healthQuery.isPending) return;
+    const now = Date.now();
+    const deadlines = healthQuery.data.accounts.flatMap((account) => [
+      account.cooldownUntilMs,
+      ...account.quota.flatMap((window) => [window.resetsAtMs, window.observedAtMs + 300_000]),
+    ]).filter((deadline): deadline is number => deadline !== null && deadline > now);
+    // One owned timer while this page is mounted. Reset and freshness boundaries
+    // refresh real readings; unmounting or a new response cancels the timer.
+    const delay = Math.max(1_000, Math.min(300_000, ...deadlines.map((deadline) => deadline - now)));
+    const timer = setTimeout(() => { quotaPollAttempts.current = 0; healthQuery.refresh(); }, delay);
+    return () => clearTimeout(timer);
+  }, [environmentId, healthQuery.data, healthQuery.isPending, healthQuery.refresh, statusQuery.data?.phase]);
   const clearAccountError = (accountId: string) => setAccountErrors((previous) => {
     const next = { ...previous }; delete next[accountId]; return next;
   });

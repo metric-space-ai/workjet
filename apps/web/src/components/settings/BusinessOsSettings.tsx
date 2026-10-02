@@ -354,6 +354,7 @@ export function BusinessOsSettingsView({
   activeInstanceId,
   requiresInstanceSelection = true,
   loading = false,
+  discoveryFailed = false,
   refreshDisabled = false,
 
   devices = EMPTY_DEVICES,
@@ -379,6 +380,7 @@ export function BusinessOsSettingsView({
   readonly activeInstanceId: string | null;
   readonly requiresInstanceSelection?: boolean;
   readonly loading?: boolean;
+  readonly discoveryFailed?: boolean;
   readonly refreshDisabled?: boolean;
 
   readonly devices?: readonly WorkjetDeviceBindingSummary[];
@@ -471,6 +473,16 @@ export function BusinessOsSettingsView({
             <p className="text-sm text-muted-foreground" role="status">
               CTOX-Instanzen werden geladen …
             </p>
+          ) : discoveryFailed ? (
+            <div className="flex items-start gap-3" role="alert">
+              <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <div>
+                <p className="text-sm font-medium">Instanzen konnten nicht geladen werden</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Prüfe die Verbindung und wähle „Aktualisieren“, um es erneut zu versuchen.
+                </p>
+              </div>
+            </div>
           ) : instances.length === 0 ? (
             <div className="flex items-start gap-3" role="status">
               <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
@@ -929,6 +941,9 @@ export function BusinessOsSettings() {
       activeInstanceId={activeInstanceId}
       requiresInstanceSelection={bridge !== undefined}
       loading={discovery === "loading"}
+      discoveryFailed={
+        bridge !== undefined && discovery !== "loading" && discovery._tag === "failed"
+      }
       refreshDisabled={bridge === undefined || refreshing}
       devices={devices}
       devicesLoading={devicesLoading}

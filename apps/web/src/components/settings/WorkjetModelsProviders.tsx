@@ -132,6 +132,8 @@ function InlineField({
     },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         cancelledBlur.current = true;
         setDraft(value);
         setFailed(false);

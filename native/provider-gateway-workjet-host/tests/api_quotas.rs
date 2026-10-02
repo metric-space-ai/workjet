@@ -1,3 +1,16 @@
+#[test]
+fn no_subscription_bucket_is_distinct_from_tools_unlimited_and_inference_failure() {
+    let windows = parse_usage("minimax", br#"{"model_remains":[
+        {"model_name":"MiniMax-M3","current_interval_total_count":0,"current_weekly_total_count":0,
+         "current_interval_status":3,"current_weekly_status":3,"current_interval_remaining_percent":100}
+    ]}"#,1000).unwrap();
+    assert!(windows
+        .iter()
+        .all(|w| w.not_in_plan && !w.tool_only && !w.unlimited));
+    assert!(windows.iter().all(|w| w.remaining_percent.is_none()));
+    assert!(!quota_is_exhausted(&windows[0], 1001));
+    assert!(!quota_applies(&windows[0], "MiniMax-M3"));
+}
 use workjet_provider_gateway_host::account_health::{api_quota_endpoint, parse_usage};
 use workjet_provider_gateway_host::account_policy::{quota_applies, quota_is_exhausted};
 

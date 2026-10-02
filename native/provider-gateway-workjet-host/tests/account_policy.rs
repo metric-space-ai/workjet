@@ -1,4 +1,51 @@
 #[test]
+#[cfg(unix)]
+fn failed_durable_probe_write_reports_refresh_error_without_changing_auth_or_affinity() {
+    use std::os::unix::fs::PermissionsExt;
+    use workjet_provider_gateway_host::account_health::observe_usage;
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = [candidate("a")];
+    let body = br#"{"session_id":"persist-session"}"#;
+    assert_eq!(
+        state
+            .select("codex", Some("gpt-5"), 1000, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    state.outcome("codex", "a", "gpt-5", 200, 1001);
+    assert_eq!(
+        observe_usage(
+            &state,
+            "codex",
+            "a",
+            br#"{"rate_limit":{"primary_window":{"used_percent":50,"reset_at":1000}}}"#,
+            1002
+        ),
+        200
+    );
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+    let status = observe_usage(
+        &state,
+        "codex",
+        "a",
+        br#"{"rate_limit":{"primary_window":{"used_percent":100,"reset_at":1000}}}"#,
+        1003,
+    );
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(status, 0);
+    assert_eq!(state.quotas("codex", "a")[0].remaining_percent, Some(50.0));
+    assert_eq!(state.observation("codex", "a"), Some((200, 1001)));
+    assert_eq!(
+        state
+            .select("codex", Some("gpt-5"), 1004, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+}
+#[test]
 fn scoped_api_quota_blocks_only_matching_model_and_never_unlimited_or_tools() {
     let dir = tempfile::tempdir().unwrap();
     let state = open(dir.path());

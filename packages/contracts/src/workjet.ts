@@ -1326,6 +1326,7 @@ export const WorkjetGatewayQuotaWindow = Schema.Struct({
   ),
   modelPattern: Schema.NullOr(TrimmedNonEmptyString).pipe(Schema.withDecodingDefault(() => null)),
   toolOnly: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  notInPlan: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
   unlimited: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
   boostPermille: Schema.NullOr(NonNegativeInt).pipe(Schema.withDecodingDefault(() => null)),
   resetsAtMs: Schema.NullOr(NonNegativeInt),

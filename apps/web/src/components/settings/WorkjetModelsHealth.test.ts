@@ -21,6 +21,32 @@ const account: WorkjetGatewayAccountHealth = {
 };
 
 describe("Models account recovery", () => {
+  it("shows a model absent from the subscription separately without claiming inference failure", () => {
+    const health = modelsAccountHealth(
+      {
+        ...account,
+        quota: [
+          {
+            name: "MiniMax-M3_interval",
+            modelPattern: "MiniMax-M3",
+            toolOnly: false,
+            notInPlan: true,
+            unlimited: false,
+            boostPermille: null,
+            remainingPercent: null,
+            resetsAtMs: null,
+            observedAtMs: 1000,
+          },
+        ],
+      },
+      2000,
+    );
+    expect(health.status).toBe("unknown");
+    expect(health.windows).toHaveLength(1);
+    expect(health.windows[0]?.notInPlan).toBe(true);
+    expect(health.windows[0]?.unlimited).toBe(false);
+  });
+
   it("preserves boosted and unlimited readings without exhausting an account for scoped tools/models", () => {
     const quota = [
       {
@@ -29,6 +55,7 @@ describe("Models account recovery", () => {
         resetsAtMs: 5000,
         observedAtMs: 1000,
         modelPattern: null,
+        notInPlan: false,
         toolOnly: false,
         unlimited: false,
         boostPermille: 1500,
@@ -39,6 +66,7 @@ describe("Models account recovery", () => {
         resetsAtMs: null,
         observedAtMs: 1000,
         modelPattern: null,
+        notInPlan: false,
         toolOnly: false,
         unlimited: true,
         boostPermille: null,
@@ -49,6 +77,7 @@ describe("Models account recovery", () => {
         resetsAtMs: 5000,
         observedAtMs: 1000,
         modelPattern: "MiniMax-M3",
+        notInPlan: false,
         toolOnly: false,
         unlimited: false,
         boostPermille: null,
@@ -59,6 +88,7 @@ describe("Models account recovery", () => {
         resetsAtMs: 5000,
         observedAtMs: 1000,
         modelPattern: "video",
+        notInPlan: false,
         toolOnly: true,
         unlimited: false,
         boostPermille: null,
@@ -69,6 +99,7 @@ describe("Models account recovery", () => {
     expect(health.windows[0]?.remainingPercent).toBe(135);
     expect(health.windows[1]?.unlimited).toBe(true);
     expect(health.windows[2]?.label).toContain("MiniMax-M3");
+    expect(health.windows).toHaveLength(3);
   });
   it.each([401, 403, 429])("does not offer re-login for a usage-only %s", (httpStatus) => {
     expect(
@@ -93,6 +124,7 @@ describe("Models account recovery", () => {
       quota: [
         {
           modelPattern: null,
+          notInPlan: false,
           toolOnly: false,
           unlimited: false,
           boostPermille: null,
@@ -119,6 +151,7 @@ describe("Models account recovery", () => {
       quota: [
         {
           modelPattern: null,
+          notInPlan: false,
           toolOnly: false,
           unlimited: false,
           boostPermille: null,
@@ -142,6 +175,7 @@ describe("Models account recovery", () => {
           quota: [
             {
               modelPattern: null,
+              notInPlan: false,
               toolOnly: false,
               unlimited: false,
               boostPermille: null,

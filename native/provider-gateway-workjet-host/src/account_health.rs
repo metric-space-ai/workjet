@@ -1,3 +1,20 @@
+/// A successful quota HTTP response is useful only after its reading is durable.
+/// Zero is the existing unavailable probe sentinel, never a generation status.
+pub fn observe_usage(
+    state: &AccountState,
+    provider: &str,
+    account: &str,
+    body: &[u8],
+    observed: i64,
+) -> u16 {
+    parse_usage(provider, body, observed)
+        .filter(|windows| {
+            state
+                .observe_quota(provider, account, windows.clone())
+                .is_ok()
+        })
+        .map_or(0, |_| 200)
+}
 fn quota_authorization(provider: &str, token: &str) -> String {
     if provider == "zai" {
         token.to_owned()
@@ -87,7 +104,8 @@ fn parse_api_quota(
                 result.push(QuotaWindow {
                     name: format!("{model}_{period}"),
                     model_pattern: (model != "general").then(|| model.to_owned()),
-                    tool_only: !llm || no_bucket,
+                    tool_only: !llm,
+                    not_in_plan: no_bucket,
                     unlimited: unlimited && !no_bucket,
                     boost_permille: boost,
                     remaining_percent: if no_bucket || unlimited {
@@ -440,21 +458,16 @@ impl AccountHealthSource {
                 let status = match response {
                     Ok(Some(response)) => {
                         if response.status_code == 200 {
-                            if let Some(windows) =
-                                parse_usage(&probe.provider, &response.body, observed)
-                            {
-                                let _ = state.observe_quota(&probe.provider, &probe.id, windows);
-                            } else {
-                                if let Ok(mut statuses) = statuses.lock() {
-                                    statuses.insert(
-                                        format!("{}:{}", probe.provider, probe.id),
-                                        (0, observed),
-                                    );
-                                }
-                                continue;
-                            }
+                            observe_usage(
+                                &state,
+                                &probe.provider,
+                                &probe.id,
+                                &response.body,
+                                observed,
+                            )
+                        } else {
+                            response.status_code
                         }
-                        response.status_code
                     }
                     _ => 0,
                 };

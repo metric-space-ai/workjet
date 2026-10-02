@@ -11,7 +11,7 @@ boost permille and unlimited status. Counts have changed meaning between API
 versions, so the host never derives percentages from counts. Unknown fields stay
 unknown. Zero-total/no-plan buckets are not presented as unlimited. Only general
 and MiniMax-M model buckets affect LLM selection; model-specific buckets affect
-only matching models. Other buckets remain visible without blocking LLM use.
+only matching models. Tool buckets remain in health data but are hidden from compact LLM limits.\nAn absent LLM subscription bucket has separate not-in-plan metadata and display;\nit does not establish a pay-as-you-go inference failure.
 
 Z.ai uses the raw key in Authorization at `/api/monitor/usage/quota/limit`.
 TOKENS_LIMIT percentage is used percentage; TIME_LIMIT is MCP/tool quota.

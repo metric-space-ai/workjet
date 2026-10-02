@@ -17,6 +17,7 @@ export function modelsAccountHealth(
   const generationStatus = account.generationHttpStatus;
   const exhaustedWindows = account.quota.filter(
     (window) =>
+      !window.notInPlan &&
       !window.unlimited &&
       !window.toolOnly &&
       window.modelPattern === null &&
@@ -58,22 +59,27 @@ export function modelsAccountHealth(
     status,
     message,
     retryAtMs: blocked ? Math.max(account.cooldownUntilMs ?? 0, quotaRetry ?? 0) : quotaRetry,
-    windows: account.quota.map((window) => ({
-      label: WINDOW_LABELS[window.name] ?? window.name.replaceAll("_", " "),
-      unlimited: window.unlimited && now - window.observedAtMs < 300_000,
-      remainingPercent:
-        (now - window.observedAtMs > 300_000 &&
-          !(
-            !window.unlimited &&
-            window.remainingPercent === 0 &&
-            window.resetsAtMs !== null &&
-            window.resetsAtMs > now
-          )) ||
-        (window.resetsAtMs !== null && window.resetsAtMs <= now)
-          ? null
-          : window.remainingPercent,
-      resetsAtMs: window.resetsAtMs !== null && window.resetsAtMs > now ? window.resetsAtMs : null,
-    })),
+    windows: account.quota
+      .filter((window) => !window.toolOnly)
+      .map((window) => ({
+        label: WINDOW_LABELS[window.name] ?? window.name.replaceAll("_", " "),
+        notInPlan: window.notInPlan && now - window.observedAtMs < 300_000,
+        unlimited: window.unlimited && now - window.observedAtMs < 300_000,
+        remainingPercent:
+          (now - window.observedAtMs > 300_000 &&
+            !(
+              !window.notInPlan &&
+              !window.unlimited &&
+              window.remainingPercent === 0 &&
+              window.resetsAtMs !== null &&
+              window.resetsAtMs > now
+            )) ||
+          (window.resetsAtMs !== null && window.resetsAtMs <= now)
+            ? null
+            : window.remainingPercent,
+        resetsAtMs:
+          window.resetsAtMs !== null && window.resetsAtMs > now ? window.resetsAtMs : null,
+      })),
     observedAtMs: account.quota.length
       ? Math.min(...account.quota.map((window) => window.observedAtMs))
       : null,

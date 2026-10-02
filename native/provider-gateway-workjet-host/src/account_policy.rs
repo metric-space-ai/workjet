@@ -24,6 +24,8 @@ pub struct QuotaWindow {
     #[serde(default)]
     pub tool_only: bool,
     #[serde(default)]
+    pub not_in_plan: bool,
+    #[serde(default)]
     pub unlimited: bool,
     #[serde(default)]
     pub boost_permille: Option<u32>,
@@ -34,6 +36,7 @@ pub struct QuotaWindow {
 /// Only an explicitly applicable LLM bucket can affect inference selection.
 pub fn quota_applies(window: &QuotaWindow, model: &str) -> bool {
     !window.tool_only
+        && !window.not_in_plan
         && window
             .model_pattern
             .as_ref()
@@ -42,7 +45,8 @@ pub fn quota_applies(window: &QuotaWindow, model: &str) -> bool {
 /// A known exhausted window stays exhausted until its actual reset. Read
 /// freshness only expires an exhausted observation with no known reset.
 pub fn quota_is_exhausted(window: &QuotaWindow, now: i64) -> bool {
-    !window.unlimited
+    !window.not_in_plan
+        && !window.unlimited
         && window.remaining_percent == Some(0.0)
         && match window.resets_at_ms {
             Some(reset) => reset > now,

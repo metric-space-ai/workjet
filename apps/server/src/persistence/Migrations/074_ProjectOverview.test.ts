@@ -44,22 +44,22 @@ it.effect(
           before.map((row) => ({ ...row, overview_json: null })),
         );
         const repo = yield* ProjectionProjectRepository;
-        const existing = yield* repo.getById({ projectId: ProjectId.makeUnsafe("legacy") });
+        const existing = yield* repo.getById({ projectId: ProjectId.make("legacy") });
         assert.ok(Option.isSome(existing));
         yield* repo.upsert({ ...existing.value, overview });
       }).pipe(Effect.provide(runtime()));
       yield* Effect.gen(function* () {
         const repo = yield* ProjectionProjectRepository;
-        const reopened = yield* repo.getById({ projectId: ProjectId.makeUnsafe("legacy") });
+        const reopened = yield* repo.getById({ projectId: ProjectId.make("legacy") });
         assert.ok(Option.isSome(reopened));
         assert.deepEqual(reopened.value.overview, overview);
         assert.equal(reopened.value.workspaceRoot, null);
         yield* repo.upsert({ ...reopened.value, title: "Renamed" });
-        const renamed = yield* repo.getById({ projectId: ProjectId.makeUnsafe("legacy") });
+        const renamed = yield* repo.getById({ projectId: ProjectId.make("legacy") });
         assert.ok(Option.isSome(renamed));
         assert.deepEqual(renamed.value.overview, overview);
         yield* repo.upsert({ ...renamed.value, overview: null });
-        const cleared = yield* repo.getById({ projectId: ProjectId.makeUnsafe("legacy") });
+        const cleared = yield* repo.getById({ projectId: ProjectId.make("legacy") });
         assert.ok(Option.isSome(cleared));
         assert.equal(cleared.value.overview, null);
         assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 74 }), []);

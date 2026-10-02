@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { CommandId, EnvironmentId, ProjectId, type ProjectOverview } from "@workjet/contracts";
 import {
   buildProjectGallery,
@@ -12,16 +12,16 @@ const local = (
   instance: string | null,
   environment: string = "local",
 ): GalleryLocalProject => ({
-  id: ProjectId.makeUnsafe(id),
+  id: ProjectId.make(id),
   title: id,
-  environmentId: EnvironmentId.makeUnsafe(environment),
+  environmentId: EnvironmentId.make(environment),
   updatedAt: "2026-10-02T00:00:00.000Z",
   ctoxRegistration:
     instance === null
       ? null
       : {
           instanceId: instance,
-          commandId: CommandId.makeUnsafe("registration"),
+          commandId: CommandId.make("registration"),
           status: "pending",
         },
 });

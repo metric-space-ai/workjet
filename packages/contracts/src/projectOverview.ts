@@ -10,7 +10,9 @@ export const ProjectWebsiteUrl = TrimmedNonEmptyString.check(
         ((url.protocol === "https:" || url.protocol === "http:") &&
           url.username === "" &&
           url.password === "" &&
-          !/[\u0000-\u001f\u007f]/u.test(value)) ||
+          !Array.from(value).some(
+            (character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127,
+          )) ||
         "Use an absolute HTTP or HTTPS URL without credentials."
       );
     } catch {

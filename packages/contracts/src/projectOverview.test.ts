@@ -1,9 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import { ProjectOverview, ProjectWebsiteUrl } from "./projectOverview.ts";
 import { OrchestrationProject, OrchestrationCommand } from "./orchestration.ts";
 
 const decode = Schema.decodeUnknownSync(ProjectOverview);
+const decodeUrl = Schema.decodeUnknownSync(ProjectWebsiteUrl);
+const decodeProject = Schema.decodeUnknownSync(OrchestrationProject);
+const decodeCommand = Schema.decodeUnknownSync(OrchestrationCommand);
 describe("project overview wire contract", () => {
   it("accepts three independently typed or empty slots", () => {
     const overview = {
@@ -31,7 +34,6 @@ describe("project overview wire contract", () => {
       expect(() => decode({ websiteUrl: null, slots })).toThrow();
   });
   it("rejects unsafe URLs and non-finite metrics at the wire boundary", () => {
-    const url = Schema.decodeUnknownSync(ProjectWebsiteUrl);
     for (const value of [
       "javascript:alert(1)",
       "file:///etc/passwd",
@@ -39,7 +41,7 @@ describe("project overview wire contract", () => {
       "https://user:secret@example.org",
       "not a URL",
     ])
-      expect(() => url(value)).toThrow();
+      expect(() => decodeUrl(value)).toThrow();
     expect(() =>
       decode({
         websiteUrl: null,
@@ -58,16 +60,16 @@ describe("project overview wire contract", () => {
       updatedAt: "2026-10-02T00:00:00.000Z",
       deletedAt: null,
     };
-    expect(Schema.decodeUnknownSync(OrchestrationProject)(project).overview).toBeUndefined();
+    expect(decodeProject(project).overview).toBeUndefined();
     const command = {
       type: "project.meta.update",
       commandId: "overview-change",
       projectId: "legacy",
       overview: { websiteUrl: null, slots: [null, null, null] },
     };
-    expect(Schema.decodeUnknownSync(OrchestrationCommand)(command)).toEqual(command);
+    expect(decodeCommand(command)).toEqual(command);
     expect(() =>
-      Schema.decodeUnknownSync(OrchestrationCommand)({
+      decodeCommand({
         ...command,
         overview: { websiteUrl: null, slots: [null] },
       }),

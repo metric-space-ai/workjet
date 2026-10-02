@@ -65,35 +65,38 @@ export function ProjectOverviewCard({
         </div>
       )}
       <dl className="grid grid-cols-3 gap-3" data-workjet-project-card-slots="">
-        {slots.map((slot, index) => (
-          <div key={index} className="min-w-0" data-workjet-project-card-slot={index + 1}>
-            <dt className="truncate text-xs text-muted-foreground">
-              {slot?.label ?? `Field ${index + 1}`}
-            </dt>
-            <dd className="mt-1 break-words text-sm">
-              {slot === null ? (
-                <span className="text-muted-foreground">Not configured</span>
-              ) : slot.kind === "link" ? (
-                <a
-                  href={slot.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-primary underline"
-                >
-                  Open link
-                </a>
-              ) : slot.kind === "updated" ? (
-                <time dateTime={project.local?.updatedAt} title={project.local?.updatedAt}>
-                  {projectUpdateAge(project.local?.updatedAt ?? null)}
-                </time>
-              ) : slot.kind === "metric" ? (
-                `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
-              ) : (
-                slot.value
-              )}
-            </dd>
-          </div>
-        ))}
+        {(["first", "second", "third"] as const).map((position, index) => {
+          const slot = slots[index] ?? null;
+          return (
+            <div key={position} className="min-w-0" data-workjet-project-card-slot={index + 1}>
+              <dt className="truncate text-xs text-muted-foreground">
+                {slot?.label ?? `Field ${index + 1}`}
+              </dt>
+              <dd className="mt-1 break-words text-sm">
+                {slot === null ? (
+                  <span className="text-muted-foreground">Not configured</span>
+                ) : slot.kind === "link" ? (
+                  <a
+                    href={slot.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-primary underline"
+                  >
+                    Open link
+                  </a>
+                ) : slot.kind === "updated" ? (
+                  <time dateTime={project.local?.updatedAt} title={project.local?.updatedAt}>
+                    {projectUpdateAge(project.local?.updatedAt ?? null)}
+                  </time>
+                ) : slot.kind === "metric" ? (
+                  `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+                ) : (
+                  slot.value
+                )}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
       <div className="mt-auto flex flex-wrap gap-2">
         <Button size="sm" onClick={onOpen}>

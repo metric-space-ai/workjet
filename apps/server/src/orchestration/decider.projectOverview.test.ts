@@ -11,7 +11,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { decideOrchestrationCommand } from "./decider.ts";
 import { createEmptyReadModel, projectEvent } from "./projector.ts";
 const now = "2026-10-02T00:00:00.000Z";
-const projectId = ProjectId.makeUnsafe("overview-project");
+const projectId = ProjectId.make("overview-project");
 const overview: ProjectOverview = {
   websiteUrl: "https://example.org",
   slots: [
@@ -25,14 +25,14 @@ it.layer(NodeServices.layer)("project overview events", (it) => {
     Effect.gen(function* () {
       let model = yield* projectEvent(createEmptyReadModel(now), {
         sequence: 1,
-        eventId: EventId.makeUnsafe("create-overview"),
+        eventId: EventId.make("create-overview"),
         aggregateKind: "project",
         aggregateId: projectId,
         type: "project.created",
         occurredAt: now,
-        commandId: CommandId.makeUnsafe("create-overview"),
+        commandId: CommandId.make("create-overview"),
         causationEventId: null,
-        correlationId: CommandId.makeUnsafe("create-overview"),
+        correlationId: CommandId.make("create-overview"),
         metadata: {},
         payload: {
           projectId,
@@ -54,7 +54,7 @@ it.layer(NodeServices.layer)("project overview events", (it) => {
             readModel,
             command: {
               type: "project.meta.update",
-              commandId: CommandId.makeUnsafe(`update-${sequence}`),
+              commandId: CommandId.make(`update-${sequence}`),
               projectId,
               ...change,
             },

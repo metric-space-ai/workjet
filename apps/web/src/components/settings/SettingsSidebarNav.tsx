@@ -100,12 +100,13 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
 
   const handleSectionClick = useCallback(
     (to: SettingsPath) => {
+      if (to !== "/settings/business-os" && !instanceContext.hasActiveInstance) return;
       if (isMobile) {
         setOpenMobile(false);
       }
       void navigate({ to, hash: "", replace: true, hashScrollIntoView: false });
     },
-    [isMobile, navigate, setOpenMobile],
+    [instanceContext.hasActiveInstance, isMobile, navigate, setOpenMobile],
   );
   const clearSearch = useCallback(() => {
     setQuery("");
@@ -113,6 +114,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   }, []);
   const handleSearchResultClick = useCallback(
     (item: SettingsSearchItem) => {
+      if (item.to !== "/settings/business-os" && !instanceContext.hasActiveInstance) return;
       clearSearch();
       if (isMobile) {
         setOpenMobile(false);
@@ -124,7 +126,15 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       }
       void navigate({ to: item.to, hash: targetId, replace: true, hashScrollIntoView: false });
     },
-    [clearSearch, currentHash, isMobile, navigate, pathname, setOpenMobile],
+    [
+      clearSearch,
+      currentHash,
+      instanceContext.hasActiveInstance,
+      isMobile,
+      navigate,
+      pathname,
+      setOpenMobile,
+    ],
   );
   const handleSearchKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {

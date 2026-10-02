@@ -1334,26 +1334,44 @@ export const WorkjetGatewayUsageInput = Schema.Struct({
 });
 export type WorkjetGatewayUsageInput = typeof WorkjetGatewayUsageInput.Type;
 export const WorkjetGatewayUsageCounters = Schema.Struct({
-  requests: NonNegativeInt, errors: NonNegativeInt,
-  inputTokens: Schema.NullOr(NonNegativeInt), outputTokens: Schema.NullOr(NonNegativeInt),
-  cacheReadTokens: Schema.NullOr(NonNegativeInt), cacheWriteTokens: Schema.NullOr(NonNegativeInt),
-  inputMeasuredRequests: NonNegativeInt, outputMeasuredRequests: NonNegativeInt,
-  cacheReadMeasuredRequests: NonNegativeInt, cacheWriteMeasuredRequests: NonNegativeInt,
+  requests: NonNegativeInt,
+  errors: NonNegativeInt,
+  inputTokens: Schema.NullOr(NonNegativeInt),
+  outputTokens: Schema.NullOr(NonNegativeInt),
+  cacheReadTokens: Schema.NullOr(NonNegativeInt),
+  cacheWriteTokens: Schema.NullOr(NonNegativeInt),
+  inputMeasuredRequests: NonNegativeInt,
+  outputMeasuredRequests: NonNegativeInt,
+  cacheReadMeasuredRequests: NonNegativeInt,
+  cacheWriteMeasuredRequests: NonNegativeInt,
   responseModelRequests: NonNegativeInt,
 });
 export type WorkjetGatewayUsageCounters = typeof WorkjetGatewayUsageCounters.Type;
 export const WorkjetGatewayUsage = Schema.Struct({
-  schemaVersion: Schema.Literal(1), observedAtMs: NonNegativeInt,
-  days: Schema.Literals([7, 30]), timeZone: Schema.String,
-  startDate: Schema.String, endDate: Schema.String,
+  schemaVersion: Schema.Literal(1),
+  observedAtMs: NonNegativeInt,
+  days: Schema.Literals([7, 30]),
+  timeZone: Schema.String,
+  startDate: Schema.String,
+  endDate: Schema.String,
   availability: Schema.Literals(["recorded", "not-collected-yet"]),
-  daily: Schema.Array(Schema.Struct({ date: Schema.String, model: Schema.NullOr(Schema.String), provider: Schema.String, ...WorkjetGatewayUsageCounters.fields })),
-  modelTotals: Schema.Array(Schema.Struct({ model: Schema.NullOr(Schema.String), ...WorkjetGatewayUsageCounters.fields })),
-  providerTotals: Schema.Array(Schema.Struct({ provider: Schema.String, ...WorkjetGatewayUsageCounters.fields })),
+  daily: Schema.Array(
+    Schema.Struct({
+      date: Schema.String,
+      model: Schema.NullOr(Schema.String),
+      provider: Schema.String,
+      ...WorkjetGatewayUsageCounters.fields,
+    }),
+  ),
+  modelTotals: Schema.Array(
+    Schema.Struct({ model: Schema.NullOr(Schema.String), ...WorkjetGatewayUsageCounters.fields }),
+  ),
+  providerTotals: Schema.Array(
+    Schema.Struct({ provider: Schema.String, ...WorkjetGatewayUsageCounters.fields }),
+  ),
   totals: WorkjetGatewayUsageCounters,
 });
 export type WorkjetGatewayUsage = typeof WorkjetGatewayUsage.Type;
-
 
 /**
  * Where a model id came from. `gateway-catalog` is the host's own pinned model
@@ -1536,6 +1554,8 @@ export const WorkjetGatewayFailureReason = Schema.Literals([
   "startup-timeout",
   "invalid-readiness",
   "management-unavailable",
+  "usage-unavailable",
+  "invalid-usage-query",
   "process-exit",
   "shutdown-timeout",
   "gateway-not-ready",
@@ -1573,6 +1593,10 @@ export class WorkjetGatewayOperationError extends Schema.TaggedErrorClass<Workje
         return "The Workjet provider gateway did not become ready in time.";
       case "invalid-readiness":
         return "The Workjet provider gateway returned an invalid readiness record.";
+      case "usage-unavailable":
+        return "The Workjet provider gateway usage history is unavailable.";
+      case "invalid-usage-query":
+        return "The Workjet provider gateway usage query has an invalid timezone.";
       case "management-unavailable":
         return "The Workjet provider gateway control plane is unavailable.";
       case "process-exit":

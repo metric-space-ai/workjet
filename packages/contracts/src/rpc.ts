@@ -772,8 +772,7 @@ export const WsWorkjetGatewayUsageRpc = Rpc.make(WS_METHODS.workjetGatewayUsage,
   error: WorkjetGatewayRpcError,
 });
 
-/** Models the host
-'s own catalog serves, merged with the configured account models. */
+/** Models the host's own catalog serves, merged with the configured account models. */
 export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGatewayDiscoverModels, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayModelDiscovery,

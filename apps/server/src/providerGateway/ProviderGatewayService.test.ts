@@ -140,6 +140,45 @@ const readyHarness = () => {
 };
 
 describe("ProviderGatewayService", () => {
+  it("reads durable environment usage while the host is stopped and never starts it", async () => {
+    const now = Date.parse("2026-10-02T12:00:00Z");
+    const day = Math.floor(now / 86_400_000);
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      now: () => now,
+      spawn: () => {
+        throw new Error("must not spawn");
+      },
+      readText: async (path) => {
+        if (path === `/state/provider-gateway-usage/${day}.jsonl`)
+          return `${JSON.stringify({ completedAtMs: now - 1000, provider: "codex", model: "gpt-6", modelSource: "response", error: false, inputTokens: 7, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null })}\n`;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+    };
+    const result = await runGateway(platform, (gateway) =>
+      gateway.usage({ days: 7, timeZone: "Europe/Berlin" }),
+    );
+    expect(result.totals.requests).toBe(1);
+    expect(result.totals.inputTokens).toBe(7);
+    expect(result.timeZone).toBe("Europe/Berlin");
+  });
+
+  it("reports usage-specific query and storage failures", async () => {
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      readText: async () => {
+        throw Object.assign(new Error("denied"), { code: "EACCES" });
+      },
+    };
+    const query = await runGateway(platform, (gateway) =>
+      gateway.usage({ days: 7, timeZone: "Invalid/Zone" }).pipe(Effect.flip),
+    );
+    expect(query.reason).toBe("invalid-usage-query");
+    const storage = await runGateway(platform, (gateway) =>
+      gateway.usage({ days: 7 }).pipe(Effect.flip),
+    );
+    expect(storage.reason).toBe("usage-unavailable");
+  });
   it("persists a scoped grant without copying credentials to another computer", async () => {
     const files = new Map<string, string>([["/state/provider-gateway.json", configuration]]);
     const platform: ProviderGatewayPlatform = {

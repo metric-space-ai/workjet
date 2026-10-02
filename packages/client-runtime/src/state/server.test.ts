@@ -138,10 +138,14 @@ describe("Workjet provider gateway client wiring", () => {
     expect(server.workjetGatewayStatus({ environmentId: second, input: {} })).not.toBe(
       server.workjetGatewayStatus({ environmentId: first, input: {} }),
     );
-    expect(server.workjetGatewayUsage({ environmentId: first, input: { days: 7, timeZone: "UTC" } })).not.toBe(
+    expect(
+      server.workjetGatewayUsage({ environmentId: first, input: { days: 7, timeZone: "UTC" } }),
+    ).not.toBe(
       server.workjetGatewayUsage({ environmentId: second, input: { days: 7, timeZone: "UTC" } }),
     );
-    expect(server.workjetGatewayUsage({ environmentId: first, input: { days: 7, timeZone: "UTC" } })).not.toBe(
+    expect(
+      server.workjetGatewayUsage({ environmentId: first, input: { days: 7, timeZone: "UTC" } }),
+    ).not.toBe(
       server.workjetGatewayUsage({ environmentId: first, input: { days: 30, timeZone: "UTC" } }),
     );
     // The catalog is a separate read, so it must never collapse onto the status atom.

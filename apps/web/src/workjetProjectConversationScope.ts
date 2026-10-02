@@ -1,43 +1,28 @@
-import type {
-  CtoxWorkjetProjectProjection,
-  EnvironmentId,
-  ProjectId,
-  WorkjetComputer,
-} from "@workjet/contracts";
-import { workjetWorkingCopyMatchesDraftSession } from "./availableProjects";
+import type { CtoxWorkjetProjectProjection, WorkjetComputer } from "@workjet/contracts";
+import {
+  resolveProjectHistoryBindings,
+  type ProjectHistoryIdentity,
+} from "./workjetProjectIdentity";
 
-/**
- * A selected logical project can have different physical IDs on each computer.
- * Its confirmed working copies determine the visible conversations; a missing
- * selection is empty, never an implicit request for every project.
- */
+/** One selected project's retained supervisor and proven physical histories. */
 export function workjetProjectConversationKeys(input: {
+  readonly instanceId: string | null;
   readonly project: CtoxWorkjetProjectProjection | null;
+  readonly nativeProjects?: readonly CtoxWorkjetProjectProjection[];
   readonly computers: readonly WorkjetComputer[];
-  readonly projects: readonly {
-    readonly id: ProjectId;
-    readonly environmentId: EnvironmentId;
-    readonly workspaceRoot: string | null;
-  }[];
+  readonly projects: readonly ProjectHistoryIdentity[];
 }): ReadonlySet<string> {
   const keys = new Set<string>();
   if (input.project === null) return keys;
-  for (const physical of input.projects) {
-    if (
-      !workjetWorkingCopyMatchesDraftSession({
-        project: input.project,
-        computers: input.computers,
-        draftSession: {
-          environmentId: physical.environmentId,
-          projectId: physical.id,
-          worktreePath: physical.workspaceRoot,
-        },
-      })
-    )
-      continue;
-    keys.add(`${physical.environmentId}:${physical.id}`);
-    // An unsent draft may still carry the logical ID until server promotion.
-    keys.add(`${physical.environmentId}:${input.project.id}`);
+  for (const binding of resolveProjectHistoryBindings({
+    instanceId: input.instanceId,
+    nativeProjects: input.nativeProjects ?? [input.project],
+    computers: input.computers,
+    projects: input.projects,
+  })) {
+    if (binding.nativeProjectId !== input.project.id) continue;
+    keys.add(`${binding.environmentId}:${binding.projectId}`);
+    keys.add(`${binding.environmentId}:${input.project.id}`);
   }
   return keys;
 }

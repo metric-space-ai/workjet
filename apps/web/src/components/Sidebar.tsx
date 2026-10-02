@@ -181,7 +181,7 @@ import {
   type ComposerThreadDraftState,
   type DraftSessionState,
 } from "../composerDraftStore";
-import { selectWorkjetProject } from "../workjetProjectRegistry";
+import { selectWorkjetProject, refreshWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import { workjetProjectConversationKeys } from "../workjetProjectConversationScope";
 import {
   buildAvailableProjects,
@@ -2028,31 +2028,13 @@ export default function Sidebar() {
         return;
       }
       if (project === undefined) return;
-      const target = buildAvailableProjects({
-        projects: [],
-        workjetProjects: [project],
-        computer: selectedWorkjetComputer ?? sidebarComputer,
-      })[0];
       projectSwitchPending.current = true;
       setIsSwitchingProject(true);
       try {
-        if (target === undefined) {
-          selectWorkjetProject(instanceId, project.id);
-          setProjectScopeKey(null);
-          await router.navigate({ to: "/" });
-        } else {
-          const opened = await newThreadContext.handleNewThread(target);
-          if (opened === null) return;
-          selectWorkjetProject(instanceId, project.id);
-          const group = projectGroups.find((candidate) =>
-            candidate.memberProjects.some(
-              (member) =>
-                member.environmentId === target.environmentId &&
-                member.workspaceRoot === target.path,
-            ),
-          );
-          setProjectScopeKey(group?.projectKey ?? null);
-        }
+        selectWorkjetProject(instanceId, project.id);
+        setProjectScopeKey(null);
+        // The landing route opens the retained supervisor; never create a draft on selection.
+        await router.navigate({ to: "/" });
         if (isMobile) setOpenMobile(false);
       } catch (error) {
         toastManager.add({
@@ -2067,12 +2049,9 @@ export default function Sidebar() {
     },
     [
       isMobile,
-      newThreadContext,
       projectGroups,
       router,
-      selectedWorkjetComputer,
       setOpenMobile,
-      sidebarComputer,
       workjetProjectRegistry.presentationInstanceId,
       sidebarProjects,
       threads,
@@ -2091,7 +2070,11 @@ export default function Sidebar() {
     null;
   const scopedProjectKeys = useMemo(() => {
     if (
-      legacyScopedProjectGroup?.memberProjects.some((project) => project.ctoxRegistration != null)
+      selectedWorkjetProject === null &&
+      legacyScopedProjectGroup?.memberProjects.some(
+        (project) =>
+          project.ctoxRegistration?.instanceId === workjetProjectRegistry.presentationInstanceId,
+      )
     ) {
       return new Set(
         legacyScopedProjectGroup.memberProjectRefs.map(
@@ -2101,7 +2084,9 @@ export default function Sidebar() {
     }
     if (workjetProjects.length > 0) {
       return workjetProjectConversationKeys({
+        instanceId: workjetProjectRegistry.presentationInstanceId,
         project: selectedWorkjetProject,
+        nativeProjects: workjetProjects,
         computers: workjetConfiguration.computers,
         projects: sidebarProjects,
       });
@@ -2117,7 +2102,8 @@ export default function Sidebar() {
     sidebarProjects,
     workjetConfiguration.computers,
     workjetProjectRegistry.phase,
-    workjetProjects.length,
+    workjetProjectRegistry.presentationInstanceId,
+    workjetProjects,
   ]);
   const scopedProjectGroup = useMemo(
     () =>
@@ -2143,7 +2129,9 @@ export default function Sidebar() {
     if (lastMatchedWorkjetRoute.current === routeKey) return;
     const matches = workjetProjects.filter((project) =>
       workjetProjectConversationKeys({
+        instanceId,
         project,
+        nativeProjects: workjetProjects,
         computers: workjetConfiguration.computers,
         projects: sidebarProjects,
       }).has(`${activeProjectEnvironmentId}:${activeProjectId}`),
@@ -3749,7 +3737,16 @@ export default function Sidebar() {
                   </button>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Menu open={projectScopeMenuOpen} onOpenChange={setProjectScopeMenuOpen}>
+                  <Menu
+                    open={projectScopeMenuOpen}
+                    onOpenChange={(open) => {
+                      setProjectScopeMenuOpen(open);
+                      if (open)
+                        refreshWorkjetProjectRegistry(
+                          workjetProjectRegistry.presentationInstanceId,
+                        );
+                    }}
+                  >
                     <MenuTrigger
                       render={
                         <SidebarMenuButton
@@ -3762,8 +3759,8 @@ export default function Sidebar() {
                     >
                       <FolderIcon aria-hidden className="size-4 shrink-0" />
                       <span className="min-w-0 flex-1 truncate">
-                        {selectedLocalLogicalProject?.title ??
-                          selectedWorkjetProject?.title ??
+                        {selectedWorkjetProject?.title ??
+                          selectedLocalLogicalProject?.title ??
                           scopedProjectGroup?.displayName ??
                           "Choose project"}
                       </span>
@@ -3773,7 +3770,7 @@ export default function Sidebar() {
                       <MenuRadioGroup
                         value={
                           selectableWorkjetProjects.length > 0
-                            ? (selectedLocalLogicalProject?.id ?? selectedWorkjetProject?.id ?? "")
+                            ? (selectedWorkjetProject?.id ?? selectedLocalLogicalProject?.id ?? "")
                             : (projectScopeKey ?? "")
                         }
                         onValueChange={(value) => {

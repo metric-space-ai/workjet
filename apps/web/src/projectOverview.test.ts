@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { CommandId, EnvironmentId, ProjectId, type ProjectOverview } from "@workjet/contracts";
+import {
+  CommandId,
+  EnvironmentId,
+  ProjectId,
+  WorkjetComputerId,
+  type ProjectOverview,
+} from "@workjet/contracts";
 import {
   buildProjectGallery,
   decodeOverviewDraft,
@@ -86,6 +92,47 @@ describe("real project overview", () => {
         primaryEnvironmentId: null,
       }).map((card) => card.key),
     ).toEqual(["local:same", "other:same"]);
+  });
+  it("shows the canonical native title and retained preview through a proven physical alias", () => {
+    const physical = {
+      ...local("retained-history", null),
+      workspaceRoot: "/work/source",
+      overview: { websiteUrl: "https://example.org", slots: [null, null, null] } as ProjectOverview,
+    };
+    const canonical = {
+      id: ProjectId.make("canonical"),
+      title: "New canonical name",
+      workingCopies: [
+        {
+          id: "copy",
+          computerId: WorkjetComputerId.make("computer"),
+          path: "/work/source",
+          status: "active" as const,
+        },
+      ],
+    };
+    const older = { id: ProjectId.make("older"), title: physical.title, workingCopies: [] };
+    const cards = buildProjectGallery({
+      projects: [physical],
+      nativeProjects: [canonical, older],
+      instanceId: "a",
+      primaryEnvironmentId: physical.environmentId,
+      computers: [
+        {
+          id: WorkjetComputerId.make("computer"),
+          environmentId: physical.environmentId,
+          label: "Local",
+          presentationKind: "local",
+          harnesses: [],
+        },
+      ],
+    });
+    expect(cards.map((card) => card.id)).toEqual(["canonical", "older"]);
+    expect(cards[0]?.title).toBe("New canonical name");
+    expect(cards[0]?.local).toBe(physical);
+    expect(cards[0]?.local?.overview?.websiteUrl).toBe("https://example.org");
+    expect(cards[1]?.local).toBeNull();
+    expect(physical.id).toBe("retained-history");
   });
   it("derives age from actual project time and never invents an unavailable timestamp", () => {
     const now = Date.parse("2026-10-02T02:00:00Z");

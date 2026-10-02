@@ -3,8 +3,10 @@ import {
   type CtoxWorkjetProjectProjection,
   type EnvironmentId,
   type OrchestrationProjectShell,
+  type WorkjetComputer,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
+import { resolveProjectHistoryBindings } from "./workjetProjectIdentity";
 
 export type OverviewSlotDraft = {
   kind: "empty" | "text" | "link" | "updated" | "metric";
@@ -63,7 +65,10 @@ export function projectUpdateAge(updatedAt: string | null, now: number = Date.no
 export type GalleryLocalProject = Pick<
   OrchestrationProjectShell,
   "id" | "title" | "updatedAt" | "overview" | "ctoxRegistration"
-> & { readonly environmentId: EnvironmentId };
+> & {
+  readonly environmentId: EnvironmentId;
+  readonly workspaceRoot?: string | null | undefined;
+};
 export type GalleryProject = {
   readonly key: string;
   readonly id: string;
@@ -77,11 +82,23 @@ export function buildProjectGallery(input: {
   readonly nativeProjects: readonly CtoxWorkjetProjectProjection[];
   readonly instanceId: string | null;
   readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly computers?: readonly WorkjetComputer[];
 }): readonly GalleryProject[] {
+  const bindings = resolveProjectHistoryBindings({
+    instanceId: input.instanceId,
+    nativeProjects: input.nativeProjects,
+    projects: input.projects,
+    computers: input.computers ?? [],
+  });
+  const bindingFor = (local: GalleryLocalProject) =>
+    bindings.find(
+      (binding) => binding.environmentId === local.environmentId && binding.projectId === local.id,
+    );
   const eligible = input.projects.filter((project) =>
     input.instanceId === null
       ? project.ctoxRegistration == null
-      : project.ctoxRegistration?.instanceId === input.instanceId,
+      : project.ctoxRegistration?.instanceId === input.instanceId ||
+        bindingFor(project) !== undefined,
   );
   if (input.instanceId === null)
     return eligible.map((local) => ({
@@ -92,15 +109,22 @@ export function buildProjectGallery(input: {
       native: false,
     }));
   const native = input.nativeProjects.map((project) => {
-    const candidates = eligible.filter((local) => local.id === project.id);
+    const candidates = eligible.filter(
+      (local) => bindingFor(local)?.nativeProjectId === project.id,
+    );
     const local =
+      candidates.find(
+        (candidate) =>
+          candidate.id === project.id && candidate.environmentId === input.primaryEnvironmentId,
+      ) ??
+      candidates.find((candidate) => candidate.id === project.id) ??
       candidates.find((candidate) => candidate.environmentId === input.primaryEnvironmentId) ??
       candidates[0] ??
       null;
     return {
       key: `${input.instanceId}:${project.id}`,
       id: project.id,
-      title: local?.title ?? project.title,
+      title: project.title,
       local,
       native: true,
     };
@@ -108,6 +132,7 @@ export function buildProjectGallery(input: {
   const ids = new Set(native.map((project) => project.id));
   const result: GalleryProject[] = [...native];
   for (const local of eligible) {
+    if (bindingFor(local) !== undefined) continue;
     if (ids.has(local.id)) continue;
     ids.add(local.id);
     result.push({

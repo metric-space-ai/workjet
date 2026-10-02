@@ -23,6 +23,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { usePrimarySettings } from "../hooks/useSettings";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
@@ -74,6 +75,7 @@ function ChatIndexRouteView() {
  */
 function IndexDraftLanding() {
   const projects = useProjects();
+  const computers = usePrimarySettings((settings) => settings.workjet.computers);
   const { selectedInstanceId: activeCtoxInstanceId } = useActiveWorkjetScope();
   const registry = useWorkjetProjectRegistry(activeCtoxInstanceId);
   const projectStore = useContext(RegistryContext);
@@ -106,8 +108,9 @@ function IndexDraftLanding() {
         nativeProjects: registry.projects,
         instanceId: activeCtoxInstanceId,
         primaryEnvironmentId,
+        computers,
       }),
-    [projects, threads, registry.projects, activeCtoxInstanceId, primaryEnvironmentId],
+    [projects, threads, registry.projects, activeCtoxInstanceId, primaryEnvironmentId, computers],
   );
   useEffect(() => {
     setNativeOpenState({ pending: openingNative.current, error: null });
@@ -173,14 +176,18 @@ function IndexDraftLanding() {
     });
   }, [handleNewThread, landingProject, navigate, startState.retryRequest, supervisor]);
 
-  const openNativeSupervisor = async () => {
-    if (openingNative.current || selectedNative === null || activeCtoxInstanceId === null) return;
+  const openNativeSupervisor = async (
+    nativeProject = selectedNative,
+    overview?: ProjectOverview,
+  ): Promise<boolean> => {
+    if (openingNative.current || nativeProject === null || activeCtoxInstanceId === null)
+      return false;
     const instanceId = activeCtoxInstanceId;
     const scope = readActiveWorkjetScope();
-    if (scope.selectedInstanceId !== instanceId) return;
+    if (scope.selectedInstanceId !== instanceId) return false;
     const plan = resolveNativeProjectOpening({
       instanceId,
-      project: selectedNative,
+      project: nativeProject,
       localEnvironmentId: primaryEnvironmentId,
       localConnected:
         bootstrapped && canCreateProjectInEnvironment(primaryEnvironment?.connection.phase),
@@ -188,41 +195,60 @@ function IndexDraftLanding() {
     });
     if (plan._tag === "blocked") {
       setNativeOpenState({ pending: false, error: plan.message });
-      return;
+      return false;
     }
-    if (plan._tag === "existing") return;
-    const key = JSON.stringify([instanceId, plan.environmentId, plan.projectId]);
+    if (plan._tag === "existing" && overview === undefined) return true;
+    const target =
+      plan._tag === "existing"
+        ? {
+            environmentId: plan.project.environmentId,
+            projectId: plan.project.id,
+            title: nativeProject.title,
+          }
+        : plan;
+    const key = JSON.stringify([instanceId, target.environmentId, target.projectId]);
     if (nativeAttempt.current?.key !== key)
       nativeAttempt.current = { key, commandId: newCommandId() };
     const commandId = nativeAttempt.current.commandId;
     openingNative.current = true;
     setNativeOpenState({ pending: true, error: null });
     try {
-      const result = await createProject({
-        environmentId: plan.environmentId,
-        input: {
-          projectId: plan.projectId,
-          commandId,
-          title: plan.title,
-          workspaceRoot: null,
-          ctoxRegistration: { instanceId, commandId, status: "pending" },
-          defaultModelSelection: resolveDefaultProviderModelSelection(
-            primaryEnvironment?.serverConfig?.providers ?? [],
-            null,
-          ),
-        },
-      });
-      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      if (plan._tag === "create") {
+        const result = await createProject({
+          environmentId: target.environmentId,
+          input: {
+            projectId: target.projectId,
+            commandId,
+            title: target.title,
+            workspaceRoot: null,
+            ctoxRegistration: { instanceId, commandId, status: "pending" },
+            defaultModelSelection: resolveDefaultProviderModelSelection(
+              primaryEnvironment?.serverConfig?.providers ?? [],
+              null,
+            ),
+          },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      }
+      if (overview !== undefined) {
+        const saved = await updateProject({
+          environmentId: target.environmentId,
+          input: { projectId: target.projectId, overview },
+        });
+        if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
+      }
+      return true;
     } catch (error) {
       if (
         readActiveWorkjetScope().selectionRevision === scope.selectionRevision &&
-        readWorkjetProjectRegistry(instanceId).selectedProjectId === selectedNative.id
+        readWorkjetProjectRegistry(instanceId).selectedProjectId === nativeProject.id
       )
         setNativeOpenState({
           pending: false,
           error:
             error instanceof Error ? error.message : "Couldn’t open this supervisor. Try again.",
         });
+      return false;
     } finally {
       openingNative.current = false;
       setNativeOpenState((state) => ({ ...state, pending: false }));
@@ -260,28 +286,38 @@ function IndexDraftLanding() {
                 scopeProjectRef(project.local.environmentId, project.local.id),
               );
           },
-          onSave:
-            project.local === null ||
-            !environments.some(
-              (environment) =>
-                environment.environmentId === project.local?.environmentId &&
-                environment.connection.phase === "connected" &&
-                environment.serverConfig?.projectOverview === true,
-            )
-              ? undefined
-              : async (overview: ProjectOverview) => {
-                  const local = project.local;
-                  if (
-                    local === null ||
-                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
-                  )
-                    return false;
-                  const result = await updateProject({
-                    environmentId: local.environmentId,
-                    input: { projectId: local.id, overview },
-                  });
-                  return result._tag === "Success";
-                },
+          onSave: (
+            project.local === null
+              ? !project.native ||
+                !bootstrapped ||
+                primaryEnvironment?.serverConfig?.projectOverview !== true ||
+                !canCreateProjectInEnvironment(primaryEnvironment?.connection.phase)
+              : !environments.some(
+                  (environment) =>
+                    environment.environmentId === project.local?.environmentId &&
+                    environment.connection.phase === "connected" &&
+                    environment.serverConfig?.projectOverview === true,
+                )
+          )
+            ? undefined
+            : async (overview: ProjectOverview) => {
+                const local = project.local;
+                if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId)
+                  return false;
+                if (local === null) {
+                  const nativeProject = registry.projects.find(
+                    (candidate) => candidate.id === project.id,
+                  );
+                  return nativeProject === undefined
+                    ? false
+                    : openNativeSupervisor(nativeProject, overview);
+                }
+                const result = await updateProject({
+                  environmentId: local.environmentId,
+                  input: { projectId: local.id, overview },
+                });
+                return result._tag === "Success";
+              },
         }))}
       />
     );

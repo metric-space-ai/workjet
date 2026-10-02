@@ -66,7 +66,7 @@ export function ActiveCtoxInstanceSelector({
   placement = "sidebar",
 }: {
   /** The shared header renders this compactly; the sidebar keeps its own band. */
-  readonly placement?: "header" | "sidebar";
+  readonly placement?: "header" | "sidebar" | "settings";
 } = {}) {
   const navigate = useNavigate();
   const { discovery, selectedId, select, showNetwork, refresh } = useCtoxMode();
@@ -117,7 +117,9 @@ export function ActiveCtoxInstanceSelector({
       className={
         placement === "header"
           ? "no-drag relative min-w-0 w-40 shrink sm:w-48"
-          : "relative order-[-1] min-w-0 shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
+          : placement === "settings"
+            ? "relative min-w-0 pl-6 pb-1"
+            : "relative order-[-1] min-w-0 shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
       }
       data-active-ctox-instance-selector=""
       data-active-ctox-instance-id={activeId ?? ""}

@@ -11,6 +11,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { SettingsBreadcrumb } from "../components/settings/SettingsBreadcrumb";
+import { useCtoxMode } from "../components/ctox/CtoxModeShell";
+import { resolveSettingsInstanceContext } from "../components/settings/settingsInstanceContext";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
@@ -34,6 +36,8 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
 }
 
 function SettingsContentLayout() {
+  const { discovery, selectedId } = useCtoxMode();
+  const instanceContext = resolveSettingsInstanceContext(discovery, selectedId);
   const location = useLocation();
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
@@ -87,7 +91,12 @@ function SettingsContentLayout() {
           )}
         >
           <div className="flex w-full min-w-0 items-center gap-2">
-            <SettingsBreadcrumb pathname={location.pathname} />
+            <SettingsBreadcrumb
+              pathname={location.pathname}
+              activeInstanceName={
+                instanceContext.isMultiInstance ? instanceContext.activeInstanceName : null
+              }
+            />
             {showRestoreDefaults ? (
               <div className="no-drag ms-auto flex items-center gap-2">
                 <RestoreDefaultsButton onRestored={handleRestored} />

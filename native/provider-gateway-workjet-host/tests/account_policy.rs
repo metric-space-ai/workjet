@@ -1,4 +1,114 @@
 #[test]
+#[cfg(unix)]
+fn failed_durable_probe_write_reports_refresh_error_without_changing_auth_or_affinity() {
+    use std::os::unix::fs::PermissionsExt;
+    use workjet_provider_gateway_host::account_health::observe_usage;
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = [candidate("a")];
+    let body = br#"{"session_id":"persist-session"}"#;
+    assert_eq!(
+        state
+            .select("codex", Some("gpt-5"), 1000, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    state.outcome("codex", "a", "gpt-5", 200, 1001);
+    assert_eq!(
+        observe_usage(
+            &state,
+            "codex",
+            "a",
+            br#"{"rate_limit":{"primary_window":{"used_percent":50,"reset_at":1000}}}"#,
+            1002
+        ),
+        200
+    );
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+    let status = observe_usage(
+        &state,
+        "codex",
+        "a",
+        br#"{"rate_limit":{"primary_window":{"used_percent":100,"reset_at":1000}}}"#,
+        1003,
+    );
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(status, 0);
+    assert_eq!(state.quotas("codex", "a")[0].remaining_percent, Some(50.0));
+    assert_eq!(state.observation("codex", "a"), Some((200, 1001)));
+    assert_eq!(
+        state
+            .select("codex", Some("gpt-5"), 1004, &accounts, &[], body)
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+}
+#[test]
+fn scoped_api_quota_blocks_only_matching_model_and_never_unlimited_or_tools() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = open(dir.path());
+    let accounts = ["a", "b"].map(|id| AccountCandidate {
+        provider: "minimax".into(),
+        supported_models: vec!["MiniMax-M*".into()],
+        ..candidate(id)
+    });
+    let windows = parse_usage(
+        "minimax",
+        br#"{"model_remains":[
+      {"model_name":"MiniMax-M3","current_interval_remaining_percent":0,"end_time":1000000},
+      {"model_name":"video","current_interval_remaining_percent":0,"end_time":1000000},
+      {"model_name":"general","current_interval_status":3,"current_interval_remaining_percent":0}
+    ]}"#,
+        1000,
+    )
+    .unwrap();
+    state.observe_quota("minimax", "a", windows).unwrap();
+    assert_eq!(
+        state
+            .select(
+                "minimax",
+                Some("MiniMax-M2.7"),
+                400000,
+                &accounts,
+                &[],
+                br#"{"session_id":"scoped"}"#
+            )
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+    assert_eq!(
+        state
+            .select(
+                "minimax",
+                Some("MiniMax-M3"),
+                400000,
+                &accounts,
+                &[],
+                br#"{"session_id":"blocked"}"#
+            )
+            .unwrap()
+            .auth_id,
+        "b"
+    );
+    assert_eq!(
+        open(dir.path())
+            .select(
+                "minimax",
+                Some("MiniMax-M2.7"),
+                400001,
+                &accounts,
+                &[],
+                br#"{"session_id":"scoped"}"#
+            )
+            .unwrap()
+            .auth_id,
+        "a"
+    );
+}
+#[test]
 fn oauth_relogin_clears_rejection_preserves_affinity_and_known_quota() {
     let dir = tempfile::tempdir().unwrap();
     let state = open(dir.path());
@@ -118,6 +228,7 @@ fn quota(reset: i64, observed: i64, remaining: f64) -> Vec<QuotaWindow> {
         remaining_percent: Some(remaining),
         resets_at_ms: Some(reset),
         observed_at_ms: observed,
+        ..Default::default()
     }]
 }
 #[test]
@@ -283,6 +394,7 @@ fn known_exhaustion_survives_read_freshness_until_reset() {
                 remaining_percent: Some(0.0),
                 resets_at_ms: None,
                 observed_at_ms: 1000,
+                ..Default::default()
             }],
         )
         .unwrap();

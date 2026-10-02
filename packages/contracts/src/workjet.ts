@@ -1321,7 +1321,17 @@ export type WorkjetGatewayProviderHealth = typeof WorkjetGatewayProviderHealth.T
  */
 export const WorkjetGatewayQuotaWindow = Schema.Struct({
   name: TrimmedNonEmptyString,
-  remainingPercent: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isBetween(0, 100)))),
+  remainingPercent: Schema.NullOr(
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  modelPattern: Schema.NullOr(TrimmedNonEmptyString).pipe(Schema.withDecodingDefault(() => null)),
+  toolOnly: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  notInPlan: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  unlimited: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  boostPermille: Schema.NullOr(NonNegativeInt).pipe(Schema.withDecodingDefault(() => null)),
   resetsAtMs: Schema.NullOr(NonNegativeInt),
   observedAtMs: NonNegativeInt,
 });

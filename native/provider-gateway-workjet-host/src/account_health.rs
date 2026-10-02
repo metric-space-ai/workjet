@@ -1,3 +1,161 @@
+/// A successful quota HTTP response is useful only after its reading is durable.
+/// Zero is the existing unavailable probe sentinel, never a generation status.
+pub fn observe_usage(
+    state: &AccountState,
+    provider: &str,
+    account: &str,
+    body: &[u8],
+    observed: i64,
+) -> u16 {
+    parse_usage(provider, body, observed)
+        .filter(|windows| {
+            state
+                .observe_quota(provider, account, windows.clone())
+                .is_ok()
+        })
+        .map_or(0, |_| 200)
+}
+fn quota_authorization(provider: &str, token: &str) -> String {
+    if provider == "zai" {
+        token.to_owned()
+    } else {
+        format!("Bearer {token}")
+    }
+}
+/// Only recognized vendor origins receive the account credential.
+pub fn api_quota_endpoint(provider: &str, base: &str) -> Option<&'static str> {
+    match (provider, base.trim_end_matches('/')) {
+        ("minimax", "https://api.minimax.io/v1") => {
+            Some("https://www.minimax.io/v1/token_plan/remains")
+        }
+        ("minimax", "https://api.minimax.cn/v1") => {
+            Some("https://api.minimax.cn/v1/token_plan/remains")
+        }
+        ("zai", "https://api.z.ai/api/coding/paas/v4" | "https://api.z.ai/api/paas/v4") => {
+            Some("https://api.z.ai/api/monitor/usage/quota/limit")
+        }
+        (
+            "zai",
+            "https://open.bigmodel.cn/api/coding/paas/v4" | "https://open.bigmodel.cn/api/paas/v4",
+        ) => Some("https://open.bigmodel.cn/api/monitor/usage/quota/limit"),
+        _ => None,
+    }
+}
+fn parse_api_quota(
+    provider: &str,
+    value: &serde_json::Value,
+    observed: i64,
+) -> Option<Vec<QuotaWindow>> {
+    let mut result = Vec::new();
+    if provider == "minimax" {
+        if value
+            .pointer("/base_resp/status_code")
+            .and_then(|v| v.as_i64())
+            .is_some_and(|v| v != 0)
+        {
+            return None;
+        }
+        for item in value.get("model_remains")?.as_array()? {
+            let Some(model) = item
+                .get("model_name")
+                .and_then(|v| v.as_str())
+                .filter(|v| !v.is_empty())
+            else {
+                continue;
+            };
+            let llm = model == "general" || model.starts_with("MiniMax-M");
+            for (period, percent, reset, status) in [
+                (
+                    "interval",
+                    "current_interval_remaining_percent",
+                    "end_time",
+                    "current_interval_status",
+                ),
+                (
+                    "weekly",
+                    "current_weekly_remaining_percent",
+                    "weekly_end_time",
+                    "current_weekly_status",
+                ),
+            ] {
+                // usage_count is ambiguous across provider versions; never infer a percentage.
+                let remaining = item
+                    .get(percent)
+                    .and_then(|v| v.as_f64())
+                    .filter(|v| v.is_finite() && (0.0..=100.0).contains(v));
+                let unlimited = item.get(status).and_then(|v| v.as_i64()) == Some(3);
+                let no_bucket = item
+                    .get("current_interval_total_count")
+                    .and_then(|v| v.as_i64())
+                    == Some(0)
+                    && item
+                        .get("current_weekly_total_count")
+                        .and_then(|v| v.as_i64())
+                        == Some(0)
+                    && item.get("current_interval_status").and_then(|v| v.as_i64()) == Some(3)
+                    && item.get("current_weekly_status").and_then(|v| v.as_i64()) == Some(3);
+                let boost = (period == "weekly")
+                    .then(|| {
+                        item.get("weekly_boost_permille")
+                            .and_then(|v| v.as_u64())
+                            .and_then(|v| u32::try_from(v).ok())
+                    })
+                    .flatten();
+                result.push(QuotaWindow {
+                    name: format!("{model}_{period}"),
+                    model_pattern: (model != "general").then(|| model.to_owned()),
+                    tool_only: !llm,
+                    not_in_plan: no_bucket,
+                    unlimited: unlimited && !no_bucket,
+                    boost_permille: boost,
+                    remaining_percent: if no_bucket || unlimited {
+                        None
+                    } else {
+                        remaining.map(|v| v * f64::from(boost.unwrap_or(1000)) / 1000.0)
+                    },
+                    resets_at_ms: item.get(reset).and_then(|v| v.as_i64()).filter(|v| *v > 0),
+                    observed_at_ms: observed,
+                });
+            }
+        }
+    } else if provider == "zai" {
+        if value.get("success").and_then(|v| v.as_bool()) == Some(false)
+            || value
+                .get("code")
+                .and_then(|v| v.as_i64())
+                .is_some_and(|v| v != 200)
+        {
+            return None;
+        }
+        for (index, item) in value
+            .pointer("/data/limits")?
+            .as_array()?
+            .iter()
+            .enumerate()
+        {
+            let Some(kind) = item.get("type").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            // The vendor plugin identifies TOKENS_LIMIT as LLM, TIME_LIMIT as MCP.
+            let used = item
+                .get("percentage")
+                .and_then(|v| v.as_f64())
+                .filter(|v| (0.0..=100.0).contains(v));
+            result.push(QuotaWindow {
+                name: format!("{kind}_{index}"),
+                tool_only: kind != "TOKENS_LIMIT",
+                remaining_percent: used.map(|v| 100.0 - v),
+                // Vendor contract does not establish reset timestamp semantics.
+                resets_at_ms: None,
+                observed_at_ms: observed,
+                ..Default::default()
+            });
+        }
+    } else {
+        return None;
+    }
+    Some(result)
+}
 fn authentication(generation: Option<(u16, i64)>, probe: Option<(u16, i64)>) -> &'static str {
     // Usage permission failures do not establish inference credential rejection.
     match generation
@@ -11,6 +169,18 @@ fn authentication(generation: Option<(u16, i64)>, probe: Option<(u16, i64)>) -> 
 }
 #[cfg(test)]
 mod provenance_tests {
+    #[test]
+    fn quota_authorization_uses_vendor_credential_contract() {
+        assert_eq!(
+            super::quota_authorization("zai", "fixture.key"),
+            "fixture.key"
+        );
+        assert_eq!(
+            super::quota_authorization("minimax", "fixture-key"),
+            "Bearer fixture-key"
+        );
+    }
+
     #[test]
     fn usage_permission_failure_does_not_reject_inference_authentication() {
         assert_eq!(
@@ -127,7 +297,7 @@ impl AccountHealthSource {
             priority: a.priority,
             ..Default::default()
         }));
-        let probes = config
+        let mut probes: Vec<Probe> = config
             .codex_accounts()
             .iter()
             .filter(|a| !a.disabled)
@@ -154,6 +324,20 @@ impl AccountHealthSource {
                     }),
             )
             .collect();
+        for account in config.api_key_accounts().iter().filter(|a| !a.disabled) {
+            if let Ok(base) = account.base_url() {
+                if let Some(url) = api_quota_endpoint(&account.provider, &base) {
+                    probes.push(Probe {
+                        provider: account.provider.clone(),
+                        id: account.id.clone(),
+                        access: account.api_key_secret.clone(),
+                        proxy: account.proxy_url_secret.clone(),
+                        url,
+                        id_token: None,
+                    });
+                }
+            }
+        }
         Arc::new(Self {
             state,
             store,
@@ -198,7 +382,9 @@ impl AccountHealthSource {
                 let authentication = authentication(generation, probe);
                 let quotas = self.state.quotas(&a.provider, &a.auth_id);
                 let exhausted = quotas.iter().any(|w| {
-                    !matches!(w.name.as_str(), "seven_day_opus" | "seven_day_sonnet")
+                    !w.tool_only
+                        && w.model_pattern.is_none()
+                        && !matches!(w.name.as_str(), "seven_day_opus" | "seven_day_sonnet")
                         && quota_is_exhausted(w, now)
                 });
                 AccountHealth {
@@ -222,7 +408,11 @@ impl AccountHealthSource {
                         .chain(generation.map(|p| p.1))
                         .max(),
                     quota: quotas,
-                    quota_supported: matches!(a.provider.as_str(), "codex" | "claude"),
+                    quota_supported: matches!(a.provider.as_str(), "codex" | "claude")
+                        || self
+                            .probes
+                            .iter()
+                            .any(|p| p.provider == a.provider && p.id == a.auth_id),
                     quota_refreshing: refreshing
                         && !a.disabled
                         && self
@@ -268,13 +458,16 @@ impl AccountHealthSource {
                 let status = match response {
                     Ok(Some(response)) => {
                         if response.status_code == 200 {
-                            if let Some(windows) =
-                                parse_usage(&probe.provider, &response.body, observed)
-                            {
-                                let _ = state.observe_quota(&probe.provider, &probe.id, windows);
-                            }
+                            observe_usage(
+                                &state,
+                                &probe.provider,
+                                &probe.id,
+                                &response.body,
+                                observed,
+                            )
+                        } else {
+                            response.status_code
                         }
-                        response.status_code
                     }
                     _ => 0,
                 };
@@ -316,7 +509,7 @@ async fn probe_read(
     }
     headers.insert(
         "Authorization".into(),
-        vec![format!("Bearer {}", token.as_str())],
+        vec![quota_authorization(&probe.provider, token.as_str())],
     );
     headers.insert("Accept".into(), vec!["application/json".into()]);
     if probe.provider == "claude" {
@@ -337,6 +530,9 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
         return None;
     }
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    if matches!(provider, "minimax" | "zai") {
+        return parse_api_quota(provider, &value, observed);
+    }
     let mut windows = Vec::new();
     if provider == "codex" {
         for name in ["primary_window", "secondary_window"] {
@@ -360,6 +556,7 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
                 remaining_percent: used.map(|v| 100.0 - v),
                 resets_at_ms: reset,
                 observed_at_ms: observed,
+                ..Default::default()
             });
         }
     } else if provider == "claude" {
@@ -386,6 +583,7 @@ pub fn parse_usage(provider: &str, body: &[u8], observed: i64) -> Option<Vec<Quo
                 remaining_percent: used.map(|v| 100.0 - v),
                 resets_at_ms: reset,
                 observed_at_ms: observed,
+                ..Default::default()
             });
         }
     } else {

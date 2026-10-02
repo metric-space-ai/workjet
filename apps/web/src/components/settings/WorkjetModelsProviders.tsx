@@ -24,6 +24,8 @@ export interface ModelsAccountHealth {
   readonly retryAtMs: number | null;
   readonly windows: ReadonlyArray<{
     readonly label: string;
+    readonly unlimited?: boolean;
+    readonly notInPlan?: boolean;
     readonly remainingPercent: number | null;
     readonly resetsAtMs: number | null;
   }>;
@@ -197,9 +199,7 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
           ? "Checking limits …"
           : health?.quotaError
             ? "Limits currently unavailable"
-            : health?.quotaSupported === false
-              ? "Provider does not report limits"
-              : "Limits unavailable"}
+            : "Limits are not reported to this hub."}
       </span>
     );
   return (
@@ -215,11 +215,15 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
         <span key={window.label} className="inline-flex items-center gap-1.5">
           <span className="text-muted-foreground">{window.label}</span>
           <span>
-            {window.remainingPercent === null
-              ? "Remaining unknown"
-              : `${window.remainingPercent > 0 && window.remainingPercent < 1 ? "< 1" : Math.floor(window.remainingPercent)} % remaining`}
+            {window.notInPlan
+              ? "Not in subscription plan"
+              : window.unlimited
+                ? "Unlimited"
+                : window.remainingPercent === null
+                  ? "Remaining unknown"
+                  : `${window.remainingPercent > 0 && window.remainingPercent < 1 ? "< 1" : Math.floor(window.remainingPercent)} % remaining`}
           </span>
-          {window.remainingPercent !== null && (
+          {!window.notInPlan && !window.unlimited && window.remainingPercent !== null && (
             <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-muted">
               <span
                 className="block h-full bg-emerald-500/80"

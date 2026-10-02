@@ -46,7 +46,11 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const { discovery, selectedId } = useCtoxMode();
-  const instanceContext = resolveSettingsInstanceContext(discovery, selectedId);
+  const instanceContext = resolveSettingsInstanceContext(
+    discovery,
+    selectedId,
+    typeof window !== "undefined" && window.desktopBridge?.ctox !== undefined,
+  );
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
   const canGoBack = useCanGoBack();
@@ -100,13 +104,13 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
 
   const handleSectionClick = useCallback(
     (to: SettingsPath) => {
-      if (to !== "/settings/business-os" && !instanceContext.hasActiveInstance) return;
+      if (to !== "/settings/business-os" && !instanceContext.canEditInstanceSettings) return;
       if (isMobile) {
         setOpenMobile(false);
       }
       void navigate({ to, hash: "", replace: true, hashScrollIntoView: false });
     },
-    [instanceContext.hasActiveInstance, isMobile, navigate, setOpenMobile],
+    [instanceContext.canEditInstanceSettings, isMobile, navigate, setOpenMobile],
   );
   const clearSearch = useCallback(() => {
     setQuery("");
@@ -114,7 +118,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   }, []);
   const handleSearchResultClick = useCallback(
     (item: SettingsSearchItem) => {
-      if (item.to !== "/settings/business-os" && !instanceContext.hasActiveInstance) return;
+      if (item.to !== "/settings/business-os" && !instanceContext.canEditInstanceSettings) return;
       clearSearch();
       if (isMobile) {
         setOpenMobile(false);
@@ -129,7 +133,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
     [
       clearSearch,
       currentHash,
-      instanceContext.hasActiveInstance,
+      instanceContext.canEditInstanceSettings,
       isMobile,
       navigate,
       pathname,
@@ -250,7 +254,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       onMouseMove={() => setActiveResultIndex(index)}
                       onClick={() => handleSearchResultClick(item)}
                       disabled={
-                        item.to !== "/settings/business-os" && !instanceContext.hasActiveInstance
+                        item.to !== "/settings/business-os" &&
+                        !instanceContext.canEditInstanceSettings
                       }
                     >
                       <SettingsSectionIcon to={item.to} />
@@ -293,13 +298,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                           onClick={() => handleSectionClick(item.to)}
                           disabled={
                             item.to !== "/settings/business-os" &&
-                            !instanceContext.hasActiveInstance
+                            !instanceContext.canEditInstanceSettings
                           }
                         >
                           <Icon />
                           <span className="truncate">{item.label}</span>
                         </SidebarMenuButton>
                         {item.to === "/settings/business-os" &&
+                        instanceContext.requiresInstanceSelection &&
                         (instanceContext.isMultiInstance || !instanceContext.hasActiveInstance) ? (
                           <ActiveCtoxInstanceSelector placement="settings" />
                         ) : null}

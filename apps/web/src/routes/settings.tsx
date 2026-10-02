@@ -38,15 +38,19 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
 
 function SettingsContentLayout() {
   const { discovery, selectedId } = useCtoxMode();
-  const instanceContext = resolveSettingsInstanceContext(discovery, selectedId);
+  const instanceContext = resolveSettingsInstanceContext(
+    discovery,
+    selectedId,
+    typeof window !== "undefined" && window.desktopBridge?.ctox !== undefined,
+  );
   const location = useLocation();
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   const [restoreSignal, setRestoreSignal] = useState(0);
   const isInstanceManagement = location.pathname === "/settings/business-os";
-  const canShowSettings = isInstanceManagement || instanceContext.hasActiveInstance;
+  const canShowSettings = isInstanceManagement || instanceContext.canEditInstanceSettings;
   const showRestoreDefaults =
-    location.pathname === "/settings/general" && instanceContext.hasActiveInstance;
+    location.pathname === "/settings/general" && instanceContext.canEditInstanceSettings;
   const handleRestored = () => setRestoreSignal((value) => value + 1);
   const navigateBackWithinApp = useCallback(() => {
     if (canGoBack) {

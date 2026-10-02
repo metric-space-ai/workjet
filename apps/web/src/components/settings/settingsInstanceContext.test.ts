@@ -39,6 +39,7 @@ describe("settings instance context", () => {
     for (const id of [null, "removed-instance"]) {
       expect(resolveSettingsInstanceContext(discovery, id)).toMatchObject({
         hasActiveInstance: false,
+        canEditInstanceSettings: false,
         activeInstanceName: null,
       });
     }
@@ -47,6 +48,22 @@ describe("settings instance context", () => {
       resolveSettingsInstanceContext({ _tag: "failed", code: "network_error" }, "alpha")
         .hasActiveInstance,
     ).toBe(false);
+  });
+
+  it("keeps browser settings available for their connected host without a desktop instance registry", () => {
+    const discovery = { _tag: "failed" as const, code: "network_error" as const };
+    expect(resolveSettingsInstanceContext(discovery, null, false)).toMatchObject({
+      requiresInstanceSelection: false,
+      canEditInstanceSettings: true,
+      hasActiveInstance: false,
+      activeInstanceName: null,
+    });
+    expect(resolveSettingsInstanceContext(discovery, null, true).canEditInstanceSettings).toBe(
+      false,
+    );
+    expect(resolveSettingsInstanceContext("loading", null, false).canEditInstanceSettings).toBe(
+      true,
+    );
   });
 
   it("counts identities, even when discovery repeats an instance or labels coincide", () => {

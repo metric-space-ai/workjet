@@ -5,12 +5,15 @@ import { ctoxInstanceDisplayTitle } from "../ctox/ctoxInstanceDisplayTitle";
 export function resolveSettingsInstanceContext(
   discovery: "loading" | CtoxDiscoveryResult,
   selectedId: string | null,
+  requiresInstanceSelection = true,
 ) {
   const instances =
     discovery !== "loading" && discovery._tag === "ready" ? discovery.instances : [];
   const instanceCount = new Set(instances.map((instance) => instance.id)).size;
   const active = instances.find((instance) => instance.id === selectedId);
   return {
+    requiresInstanceSelection,
+    canEditInstanceSettings: !requiresInstanceSelection || active !== undefined,
     instanceCount,
     isMultiInstance: instanceCount > 1,
     hasActiveInstance: active !== undefined,

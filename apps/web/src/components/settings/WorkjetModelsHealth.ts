@@ -64,7 +64,8 @@ export function modelsAccountHealth(
       remainingPercent:
         (now - window.observedAtMs > 300_000 &&
           !(
-            !window.unlimited && window.remainingPercent === 0 &&
+            !window.unlimited &&
+            window.remainingPercent === 0 &&
             window.resetsAtMs !== null &&
             window.resetsAtMs > now
           )) ||

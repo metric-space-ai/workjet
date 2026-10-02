@@ -1,3 +1,10 @@
+fn quota_authorization(provider: &str, token: &str) -> String {
+    if provider == "zai" {
+        token.to_owned()
+    } else {
+        format!("Bearer {token}")
+    }
+}
 /// Only recognized vendor origins receive the account credential.
 pub fn api_quota_endpoint(provider: &str, base: &str) -> Option<&'static str> {
     match (provider, base.trim_end_matches('/')) {
@@ -144,6 +151,18 @@ fn authentication(generation: Option<(u16, i64)>, probe: Option<(u16, i64)>) -> 
 }
 #[cfg(test)]
 mod provenance_tests {
+    #[test]
+    fn quota_authorization_uses_vendor_credential_contract() {
+        assert_eq!(
+            super::quota_authorization("zai", "fixture.key"),
+            "fixture.key"
+        );
+        assert_eq!(
+            super::quota_authorization("minimax", "fixture-key"),
+            "Bearer fixture-key"
+        );
+    }
+
     #[test]
     fn usage_permission_failure_does_not_reject_inference_authentication() {
         assert_eq!(
@@ -477,11 +496,7 @@ async fn probe_read(
     }
     headers.insert(
         "Authorization".into(),
-        vec![if probe.provider == "zai" {
-            token.to_string()
-        } else {
-            format!("Bearer {}", token.as_str())
-        }],
+        vec![quota_authorization(&probe.provider, token.as_str())],
     );
     headers.insert("Accept".into(), vec!["application/json".into()]);
     if probe.provider == "claude" {

@@ -18,6 +18,12 @@ a new source label. Keep the native root, private token capture, ledger and
 logs under `/Volumes/tmp/dev-artifacts/workjet/pr73-http-acceptance/<run>/`.
 Record the owner, captured server PID/process group, log paths and deadline.
 
+Initialize the fresh root with `ctox business-os rxdb init --root <owned-native-root>`
+before creating authority or dispatching project commands. The supplied source-bound
+producer must include that public command. It registers canonical schemas without
+domain records or an app and rejects skipped collections. Missing or failed bootstrap
+ends the fixture; never create tables directly or substitute a prepared database.
+
 For this isolated local operator, persist the exact native user `mcp:local`
 as admin with `business-os desktop invite --user mcp:local --role admin`.
 Create the isolated project through native `ctox.workjet.project.upsert` with
@@ -106,6 +112,10 @@ greppy bash-smart -- /usr/bin/python3 /Users/michaelwelsch/.codex/bin/dev-heavy-
 
 Preparing this controller does not mean its native bootstrap or HTTP phases
 have passed. Do not run it against the old daemon with a new source label.
+The first admitted run at Workjet `a969489555` and native `1538a4c2ca` passed
+admin invitation but failed project dispatch because `user_threads` was not
+initialized. No HTTP phase ran. That failure remains evidence of the fresh-root
+gap; the new explicit init requires a new verified native producer receipt.
 
 Retain all five phase receipts, source/binary fences and the captured server
 cleanup proof. A failed phase is a finding. Do not weaken the assertion, add

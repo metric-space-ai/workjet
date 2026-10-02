@@ -134,6 +134,10 @@ def main():
         def native(label, command, private=None):
             return run(label, [str(binary), *command, "--root", str(native_root)], private=private, execution_env=native_env)
 
+        # Fresh roots need the native canonical schema bootstrap before domain commands.
+        # A missing or rejected init is terminal; never synthesize tables or domain rows.
+        native("02-native-schema", ["business-os", "rxdb", "init"])
+
         def authority(label, role):
             invite = output / (label + "-invite.json")
             private_files.append(invite)

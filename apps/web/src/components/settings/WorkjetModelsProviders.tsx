@@ -24,6 +24,7 @@ export interface ModelsAccountHealth {
   readonly retryAtMs: number | null;
   readonly windows: ReadonlyArray<{
     readonly label: string;
+    readonly unlimited?: boolean;
     readonly remainingPercent: number | null;
     readonly resetsAtMs: number | null;
   }>;
@@ -213,9 +214,11 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
         <span key={window.label} className="inline-flex items-center gap-1.5">
           <span className="text-muted-foreground">{window.label}</span>
           <span>
-            {window.remainingPercent === null
-              ? "Rest unbekannt"
-              : `${window.remainingPercent > 0 && window.remainingPercent < 1 ? "< 1" : Math.floor(window.remainingPercent)} % frei`}
+            {window.unlimited
+              ? "Unbegrenzt"
+              : window.remainingPercent === null
+                ? "Rest unbekannt"
+                : `${window.remainingPercent > 0 && window.remainingPercent < 1 ? "< 1" : Math.floor(window.remainingPercent)} % frei`}
           </span>
           {window.remainingPercent !== null && (
             <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-muted">

@@ -15,18 +15,35 @@ use workjet_provider_gateway::sdk::cliproxy::auth::{
     CooldownStateRecord, CooldownStateStore, CooldownStoreError,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct QuotaWindow {
     pub name: String,
+    #[serde(default)]
+    pub model_pattern: Option<String>,
+    #[serde(default)]
+    pub tool_only: bool,
+    #[serde(default)]
+    pub unlimited: bool,
+    #[serde(default)]
+    pub boost_permille: Option<u32>,
     pub remaining_percent: Option<f64>,
     pub resets_at_ms: Option<i64>,
     pub observed_at_ms: i64,
 }
+/// Only an explicitly applicable LLM bucket can affect inference selection.
+pub fn quota_applies(window: &QuotaWindow, model: &str) -> bool {
+    !window.tool_only
+        && window
+            .model_pattern
+            .as_ref()
+            .is_none_or(|p| model_entry_matches(p, &canonical_model_key(model)))
+}
 /// A known exhausted window stays exhausted until its actual reset. Read
 /// freshness only expires an exhausted observation with no known reset.
 pub fn quota_is_exhausted(window: &QuotaWindow, now: i64) -> bool {
-    window.remaining_percent == Some(0.0)
+    !window.unlimited
+        && window.remaining_percent == Some(0.0)
         && match window.resets_at_ms {
             Some(reset) => reset > now,
             None => now.saturating_sub(window.observed_at_ms) < 300_000,
@@ -258,8 +275,9 @@ impl AccountPolicy for AccountState {
                         .get(&account_key(provider, &c.auth_id))
                         .is_some_and(|windows| {
                             windows.iter().any(|w| {
-                                (w.name != "seven_day_opus"
-                                    || requested.to_ascii_lowercase().contains("opus"))
+                                quota_applies(w, &requested)
+                                    && (w.name != "seven_day_opus"
+                                        || requested.to_ascii_lowercase().contains("opus"))
                                     && (w.name != "seven_day_sonnet"
                                         || requested.to_ascii_lowercase().contains("sonnet"))
                                     && quota_is_exhausted(w, now)
@@ -296,8 +314,10 @@ impl AccountPolicy for AccountState {
                     .into_iter()
                     .flatten()
                     .filter(|w| {
-                        (w.name != "seven_day_opus"
-                            || requested.to_ascii_lowercase().contains("opus"))
+                        quota_applies(w, &requested)
+                            && !w.unlimited
+                            && (w.name != "seven_day_opus"
+                                || requested.to_ascii_lowercase().contains("opus"))
                             && (w.name != "seven_day_sonnet"
                                 || requested.to_ascii_lowercase().contains("sonnet"))
                             && w.remaining_percent.is_some_and(|r| r > 0.0)

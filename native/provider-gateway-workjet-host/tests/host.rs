@@ -679,6 +679,22 @@ fn every_api_key_provider_is_an_acceptable_default_provider() {
             api_key_config(root.path(), provider).validate().is_ok(),
             "{provider} must validate as a default provider"
         );
+        // Disabling every account keeps management available, but a disabled
+        // provider cannot remain the default inference provider.
+        let mut disabled = api_key_config(root.path(), provider);
+        disabled.runtime.api_key_accounts[0].disabled = true;
+        assert_eq!(
+            disabled.validate().err().unwrap(),
+            workjet_provider_gateway_host::config::HostConfigError::InvalidDefaultProvider,
+            "disabled {provider} must not serve as the default provider"
+        );
+        let mut idle = api_key_config(root.path(), provider);
+        idle.runtime.api_key_accounts[0].disabled = true;
+        idle.default_provider = None;
+        assert!(
+            idle.validate().is_ok(),
+            "disabled {provider} must still permit a management-only host"
+        );
     }
     // A provider outside the allow-list is still refused.
     let mut unsupported = api_key_config(root.path(), "zai");
@@ -686,16 +702,6 @@ fn every_api_key_provider_is_an_acceptable_default_provider() {
     assert_eq!(
         unsupported.validate().err().unwrap(),
         workjet_provider_gateway_host::config::HostConfigError::InvalidDefaultProvider
-    );
-    // Naming an API-key provider that has no enabled account still fails.
-    // A configuration whose only account is disabled fails in the portable
-    // runtime validation (`NoEnabledAccounts`), exactly as for an OAuth
-    // provider, so the host reports it as an invalid runtime.
-    let mut disabled = api_key_config(root.path(), "xai");
-    disabled.runtime.api_key_accounts[0].disabled = true;
-    assert_eq!(
-        disabled.validate().err().unwrap(),
-        workjet_provider_gateway_host::config::HostConfigError::InvalidRuntime
     );
 }
 

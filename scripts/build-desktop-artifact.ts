@@ -21,7 +21,7 @@ import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import { verifyBundledServerSource } from "./lib/bundled-server-source.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
-
+import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
 import {
   CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
   findInlinedExternalPackages,
@@ -163,6 +163,7 @@ interface BuildCliInput {
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
+  readonly diagnosticProviderGatewayHost?: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -766,6 +767,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
+  readonly diagnosticProviderGatewayHost?: string;
 }
 
 interface StagePackageJson {
@@ -844,7 +846,8 @@ export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
  *
  * The standalone builder always supplies the directory returned by
  * prepareProviderGatewayHost after verifying the pinned release manifest and
- * executable. An unreleased pin fails preparation before packaging begins.
+ * executable, or an explicitly requested source-matching Mac diagnostic receipt.
+ * An unreleased release pin still fails the normal packaging path.
  * The optional argument remains available to callers constructing only the
  * resource list; it is not a runtime fallback for a standalone build.
  */
@@ -1586,6 +1589,9 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
 
   const wslPrebuild =
     Option.getOrUndefined(input.wslPrebuild) ?? Option.getOrUndefined(env.wslPrebuild);
+  const diagnosticProviderGatewayHost = Option.getOrUndefined(
+    input.diagnosticProviderGatewayHost ?? Option.none(),
+  );
 
   return {
     platform,
@@ -1600,6 +1606,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslPrebuild,
+    ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2486,7 +2493,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
   const providerGatewayHost = yield* Effect.tryPromise({
     try: () =>
-      prepareProviderGatewayHost({ repoRoot, platform: options.platform, arch: options.arch }),
+      options.diagnosticProviderGatewayHost === undefined
+        ? prepareProviderGatewayHost({ repoRoot, platform: options.platform, arch: options.arch })
+        : prepareDiagnosticProviderGatewayHost({
+            repoRoot,
+            platform: options.platform,
+            arch: options.arch,
+            manifestPath: options.diagnosticProviderGatewayHost,
+          }),
     catch: (cause) => new ProviderGatewayHostPreparationError({ cause }),
   });
   const businessOsShell = yield* Effect.tryPromise({
@@ -3085,6 +3099,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   mockUpdateServerPort: Flag.integer("mock-update-server-port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
     Flag.withDescription("Mock update server port (env: WORKJET_DESKTOP_MOCK_UPDATE_SERVER_PORT)."),
+    Flag.optional,
+  ),
+  diagnosticProviderGatewayHost: Flag.string("diagnostic-provider-gateway-host").pipe(
+    Flag.withDescription(
+      "Explicit source-matching local Mac host receipt; does not publish or replace the six-platform release pin.",
+    ),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(

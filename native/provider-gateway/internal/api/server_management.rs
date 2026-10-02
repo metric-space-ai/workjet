@@ -78,7 +78,9 @@ pub struct ManagementRuntimeStatus {
 pub trait ManagementRuntimeStatusSource: Send + Sync {
     fn snapshot(&self) -> ManagementRuntimeStatus;
     /// Optional host-owned account observations on the authenticated status route.
-    fn account_health(&self) -> Option<serde_json::Value> { None }
+    fn account_health(&self) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -60,6 +60,11 @@ fn candidate(id: &str) -> AccountCandidate {
     }
 }
 fn open(dir: &std::path::Path) -> Arc<AccountState> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
     AccountState::open(Arc::new(WorkjetSecretStore::new(dir.to_owned()).unwrap())).unwrap()
 }
 fn quota(reset: i64, observed: i64, remaining: f64) -> Vec<QuotaWindow> {

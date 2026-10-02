@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use workjet_provider_gateway::internal::api::server_management::{
@@ -52,27 +52,11 @@ use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_handl
 };
 use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_xai_handlers::OpenAiResponsesXaiHandler;
 use workjet_provider_gateway::sdk::cliproxy::auth::Auth;
-use workjet_provider_gateway::sdk::cliproxy::auth::{
-    AccountRouter, CooldownConductor, CooldownStateRecord, CooldownStateStore, CooldownStoreError,
-};
+use workjet_provider_gateway::sdk::cliproxy::auth::{AccountRouter, CooldownConductor};
 use workjet_provider_gateway::sdk::pluginapi::HostHttpClient;
 use workjet_provider_gateway::sdk::translator::builtin::registry as builtin_registry;
 
 use crate::secret_store::{SecretResolveError, WorkjetSecretStore};
-
-#[derive(Default)]
-struct MemoryCooldownStore(Mutex<Vec<CooldownStateRecord>>);
-
-impl CooldownStateStore for MemoryCooldownStore {
-    fn load(&self) -> Result<Vec<CooldownStateRecord>, CooldownStoreError> {
-        Ok(self.0.lock().map_err(|_| CooldownStoreError::Read)?.clone())
-    }
-
-    fn save(&self, records: &[CooldownStateRecord]) -> Result<(), CooldownStoreError> {
-        *self.0.lock().map_err(|_| CooldownStoreError::Write)? = records.to_vec();
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 struct SystemAccountClock;

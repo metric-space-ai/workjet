@@ -1243,16 +1243,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
      * Reads the two management routes the host genuinely serves and reports
      * exactly what they say.
      *
-     * What is deliberately NOT here: per-account cooldown, rate-limit class,
-     * last failure and quota state. The host tracks all of that in a
-     * `CooldownStateRecord` held by an in-process store, and its management
-     * surface publishes no route for it — `/v0/management/api-key-usage` and
-     * `/v0/management/usage-queue` answer 404 on this host because it attaches
-     * no source for them, and there is no read route for cooldown state at all.
-     * The host also exposes no concurrency or capacity figure anywhere. Both
-     * are therefore reported as `not-reported-by-host` instead of being
-     * reconstructed from configuration, which would look like health while
-     * being nothing of the kind.
+     * Updated hosts attach typed account observations to runtime status.
+     * Older hosts keep explicit unreported availability; no account health
+     * or quota is reconstructed from configuration or token accounting.
+     * Capacity remains unreported until the host exposes that dimension.
      */
     const runHealth = async (): Promise<WorkjetGatewayHealth> => {
       const { endpoint, key } = requireManagement();

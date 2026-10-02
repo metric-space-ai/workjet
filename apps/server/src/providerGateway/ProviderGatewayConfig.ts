@@ -599,8 +599,8 @@ export const decodeProviderGatewayConfiguration = (
   const accounts = value.accounts.map(parseAccount);
   if (accounts.some((account) => account === undefined)) return undefined;
   const typedAccounts = accounts as ReadonlyArray<GatewayAccount>;
-  // An empty account list is a valid bootstrap state: the host starts with
-  // only the management/OAuth surface so the first login can happen at all.
+  // Empty and all-disabled account lists keep the management/OAuth surface
+  // available. An enabled provider is selected as fallback when possible.
   if (
     !unique(typedAccounts.map((account) => account.id))
   ) {

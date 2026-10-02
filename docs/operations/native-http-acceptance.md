@@ -18,8 +18,13 @@ a new source label. Keep the native root, private token capture, ledger and
 logs under `/Volumes/tmp/dev-artifacts/workjet/pr73-http-acceptance/<run>/`.
 Record the owner, captured server PID/process group, log paths and deadline.
 
-Initialize the fresh root with `ctox business-os rxdb init --root <owned-native-root>`
-before creating authority or dispatching project commands. The supplied source-bound
+Before creating authority or dispatching project commands, initialize the fresh root
+with `ctox business-os rxdb init`, using the existing
+`CTOX_ROOT` and `CTOX_STATE_ROOT` overrides and the owned native root as its working
+directory. The current init parser rejects trailing `--root`; the controller checks
+the returned database remains inside the owned root, `user_threads` is registered,
+zero records were seeded and no peer starts. Other native calls retain explicit root.
+The supplied source-bound
 producer must include that public command. It registers canonical schemas without
 domain records or an app and rejects skipped collections. Missing or failed bootstrap
 ends the fixture; never create tables directly or substitute a prepared database.

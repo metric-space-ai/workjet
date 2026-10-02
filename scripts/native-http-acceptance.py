@@ -136,7 +136,11 @@ def main():
 
         # Fresh roots need the native canonical schema bootstrap before domain commands.
         # A missing or rejected init is terminal; never synthesize tables or domain rows.
-        native("02-native-schema", ["business-os", "rxdb", "init"])
+        # This CLI requires only the subcommand; its existing CTOX_ROOT resolver
+        # supplies our verified source root. Check the returned database boundary.
+        initialized = json.loads(run("02-native-schema", [str(binary), "business-os", "rxdb", "init"], cwd=native_root, execution_env=native_env).read_text())
+        assert Path(initialized["database"]).resolve().is_relative_to(native_root.resolve()), "Native schema database escaped owned root"
+        assert "user_threads" in initialized["collections"] and initialized["records_seeded"] == 0 and initialized["starts_peer"] is False, "Native schema bootstrap contract"
 
         def authority(label, role):
             invite = output / (label + "-invite.json")

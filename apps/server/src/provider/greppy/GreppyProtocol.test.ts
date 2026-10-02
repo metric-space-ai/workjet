@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { GreppySettings } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { buildGreppyAcpSpawnInput } from "../acp/GreppyAcpSupport.ts";

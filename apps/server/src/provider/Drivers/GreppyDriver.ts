@@ -1,6 +1,8 @@
 import { GreppySettings, ProviderDriverKind, type ServerProvider } from "@workjet/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
@@ -45,6 +47,8 @@ const UPDATE = makeStaticProviderMaintenanceResolver(
 
 export type GreppyDriverEnv =
   | Crypto.Crypto
+  | FileSystem.FileSystem
+  | Path.Path
   | ProviderGatewayService
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner

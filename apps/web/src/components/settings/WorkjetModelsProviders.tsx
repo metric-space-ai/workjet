@@ -8,6 +8,7 @@ import { PlusIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import { Button } from "../ui/button";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { cn } from "../../lib/utils";
 import {
   isWorkjetGatewayApiKeyProvider,
@@ -27,6 +28,9 @@ export interface ModelsAccountHealth {
     readonly resetsAtMs: number | null;
   }>;
   readonly observedAtMs: number | null;
+  readonly quotaSupported: boolean;
+  readonly quotaRefreshing: boolean;
+  readonly quotaError: string | null;
 }
 
 export interface ModelsManagementState {
@@ -97,7 +101,7 @@ function resetLabel(at: number | null) {
 }
 
 function AccountLimits({ health }: { readonly health: ModelsAccountHealth | undefined }) {
-  if (!health || health.windows.length === 0) return <span className="text-xs text-muted-foreground">Limits nicht verfügbar</span>;
+  if (!health || health.windows.length === 0) return <span className="text-xs text-muted-foreground">{health?.quotaRefreshing ? "Limits werden geprüft …" : health?.quotaError ? "Limits derzeit nicht abrufbar" : health?.quotaSupported === false ? "Anbieter meldet keine Limits" : "Limits nicht verfügbar"}</span>;
   return <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums" title={health.observedAtMs === null ? undefined : `Stand: ${new Date(health.observedAtMs).toLocaleString()}`}>
     {health.windows.map((window) => <span key={window.label} className="inline-flex items-center gap-1.5">
       <span className="text-muted-foreground">{window.label}</span>
@@ -196,8 +200,8 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
   return <section className="space-y-4" aria-label="LLM-Anbieter" data-testid="models-providers">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 className="text-lg font-semibold">LLM-Anbieter</h2><p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground"><span className={cn("size-1.5 rounded-full", state.status?.phase === "ready" ? "bg-emerald-500" : "bg-muted-foreground")} />{state.isInitialLoading ? "Verbindung wird geladen …" : `${accounts.filter((account) => account.enabled).length} aktive Accounts · ${state.catalog?.models.length ?? 0} Modelle`}</p></div>
-      <div className="relative flex gap-1"><Button size="icon" variant="ghost" aria-label="Anbieterstatus aktualisieren" disabled={state.isRefreshing} onClick={state.onRefresh}><RefreshCwIcon className="size-4" /></Button><Button size="sm" variant="outline" aria-expanded={pickerOpen} onClick={() => setPickerOpen(!pickerOpen)}><PlusIcon className="size-4" /> Anbieter hinzufügen</Button>
-        {pickerOpen && <div className="absolute right-0 top-full z-20 mt-1 min-w-56 rounded-lg border bg-popover p-1 shadow-lg" role="menu" aria-label="Anbieter auswählen">{WORKJET_GATEWAY_PROVIDERS.map((provider) => { const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider]; return <button key={provider} role="menuitem" onClick={() => startAdd(provider)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"><Icon className="size-4" />{WORKJET_GATEWAY_PROVIDER_LABELS[provider]}</button>; })}</div>}
+      <div className="relative flex gap-1"><Button size="icon" variant="ghost" aria-label="Anbieterstatus aktualisieren" disabled={state.isRefreshing} onClick={state.onRefresh}><RefreshCwIcon className="size-4" /></Button><Popover open={pickerOpen} onOpenChange={setPickerOpen}><PopoverTrigger render={<Button size="sm" variant="outline" disabled={state.mutationBusy} />}><PlusIcon className="size-4" /> Anbieter hinzufügen</PopoverTrigger>
+        <PopoverPopup align="end" aria-label="Anbieter auswählen" viewportClassName="p-1">{WORKJET_GATEWAY_PROVIDERS.map((provider) => { const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider]; return <button key={provider} type="button" onClick={() => startAdd(provider)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"><Icon className="size-4" />{WORKJET_GATEWAY_PROVIDER_LABELS[provider]}</button>; })}</PopoverPopup></Popover>
       </div>
     </div>
     {fault && <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-amber-500/30 p-3 text-sm"><span>{fault}</span><Button size="sm" variant="outline" disabled={state.isOperating} onClick={state.onRetry}>Verbindung wiederherstellen</Button></div>}

@@ -379,7 +379,7 @@ export function useWorkjetGatewaySection(
     loginAccountId,
     accountErrors,
     accountHealth: {},
-    mutationBusy: routing.status === "saving" || apiKey.status === "saving" || isOperating || isDeleting,
+    mutationBusy: routing.status === "saving" || apiKey.status === "saving" || isOperating || isDeleting || login.status === "starting" || login.status === "pending",
     pools: {
       catalog: catalogQuery.data,
       health: healthQuery.data,

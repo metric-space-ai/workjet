@@ -350,7 +350,7 @@ describe("ProviderGatewayService", () => {
     expect(harness.spawnCount()).toBe(1);
   });
 
-  it("runs begin, poll, claim, persist, and reload for a provider login", async () => {
+  it.each([false, true])("runs begin, poll, claim, persist, and reload (targeted re-login: %s)", async (targeted) => {
     const storedSecrets = new Map<string, string>();
     const secretStore = ServerSecretStore.ServerSecretStore.of({
       get: () => Effect.succeed(Option.some(new TextEncoder().encode("provider-secret"))),
@@ -448,7 +448,7 @@ describe("ProviderGatewayService", () => {
       Effect.gen(function* () {
         const gateway = yield* make({ platform, executable: "/gateway-host" });
         yield* gateway.start();
-        const session = yield* gateway.oauthStart({ provider: "codex" });
+        const session = yield* gateway.oauthStart({ provider: "codex", ...(targeted ? { accountId: WorkjetGatewayAccountId.make("codex-primary") } : {}) });
         expect(session.state).toBe("state-1");
         expect(session.authorizationUrl.startsWith("https://")).toBe(true);
         const first = yield* gateway.oauthPoll({ state: session.state });
@@ -456,7 +456,7 @@ describe("ProviderGatewayService", () => {
         const second = yield* gateway.oauthPoll({ state: session.state });
         expect(second.pending).toBe(false);
         expect(second.failed).toBe(false);
-        expect(second.completedAccountIds).toEqual(["codex-user-example.test"]);
+        expect(second.completedAccountIds).toEqual([targeted ? "codex-primary" : "codex-user-example.test"]);
       }),
     ).pipe(
       Effect.provideService(ServerConfig.ServerConfig, testConfig),
@@ -466,17 +466,22 @@ describe("ProviderGatewayService", () => {
 
     expect(claims).toEqual(["POST /v0/management/oauth/session/state-1/claim"]);
     expect(
-      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-access-token"),
+      storedSecrets.get(targeted ? "workjet-provider-gateway.codex.access" : "workjet-provider-gateway.account-codex-user-example.test-access-token"),
     ).toBe("access-token-material");
     expect(
-      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-id-token"),
+      storedSecrets.get(targeted ? "workjet-provider-gateway.codex.id" : "workjet-provider-gateway.account-codex-user-example.test-id-token"),
     ).toBe("id-token-material");
     expect(
-      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-refresh-token"),
+      storedSecrets.get(targeted ? "workjet-provider-gateway.codex.refresh" : "workjet-provider-gateway.account-codex-user-example.test-refresh-token"),
     ).toBe("refresh-token-material");
     const configWrite = writes.findLast((entry) => entry.path.endsWith("provider-gateway.json"));
     expect(configWrite).toBeDefined();
-    expect(configWrite?.content).toContain('"codex-user-example.test"');
+    expect(configWrite?.content).toContain(targeted ? '"codex-primary"' : '"codex-user-example.test"');
+    if (targeted) {
+      const persisted = JSON.parse(configWrite!.content);
+      expect(persisted.accounts).toHaveLength(1);
+      expect(persisted.accounts[0]).toMatchObject({ id: "codex-primary", label: "Primary Codex", models: ["gpt-test"] });
+    }
     expect(configWrite?.content).not.toContain("access-token-material");
     expect(configWrite?.content).not.toContain("refresh-token-material");
     // The login reloads the gateway so the new account is served.
@@ -618,6 +623,37 @@ describe("ProviderGatewayService · API-key accounts", () => {
       expect(result.accountId).toBe(`${provider}-key`);
       expect(harness.writes.join("\n")).not.toContain(API_KEY);
     }
+  });
+
+  it("replaces a key in place without losing disabled state, models or stable identity", async () => {
+    const harness = apiKeyHarness();
+    const account = { id: "zai-stable", provider: "zai", label: "Team", enabled: false, priority: 0, weight: 1, models: ["glm-test"], apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" }, credentialSuffix: "old1" };
+    const document = { ...JSON.parse(configuration), accounts: [...JSON.parse(configuration).accounts, account] };
+    harness.platform = { ...harness.platform, readText: async () => JSON.stringify(document) };
+    const result = await runWithSecrets(harness, (gateway) => gateway.addApiKeyAccount({ accountId: WorkjetGatewayAccountId.make("zai-stable"), provider: "zai", label: "Team", apiKey: API_KEY }));
+    expect(result.accountId).toBe("zai-stable");
+    const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(stored.accounts.filter((entry: { provider: string }) => entry.provider === "zai")).toEqual([{ ...account, credentialSuffix: "abcd" }]);
+    expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("restores the previous key if persisting its new configuration fails", async () => {
+    const harness = apiKeyHarness();
+    const account = { id: "zai-stable", provider: "zai", label: "Team", models: ["glm-test"], apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" } };
+    harness.platform = { ...harness.platform, readText: async () => JSON.stringify({ ...JSON.parse(configuration), accounts: [...JSON.parse(configuration).accounts, account] }), writePrivateText: async () => { throw new Error("fixture write failed"); } };
+    const failure = await runWithSecrets(harness, (gateway) => gateway.addApiKeyAccount({ accountId: WorkjetGatewayAccountId.make("zai-stable"), provider: "zai", label: "Team", apiKey: API_KEY }).pipe(Effect.flip));
+    expect(failure.reason).toBe("invalid-configuration");
+    expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe("provider-secret");
+    expect(harness.spawnCount()).toBe(0);
+  });
+
+  it("rejects replacement of another provider before touching any secret", async () => {
+    const harness = apiKeyHarness();
+    const failure = await runWithSecrets(harness, (gateway) => gateway.addApiKeyAccount({ accountId: WorkjetGatewayAccountId.make("codex-primary"), provider: "zai", label: "Team", apiKey: API_KEY }).pipe(Effect.flip));
+    expect(failure.reason).toBe("invalid-configuration");
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes).toEqual([]);
   });
 
   it("refuses an out-of-bounds or control-character key without writing anything", async () => {
@@ -876,6 +912,15 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(
       harness.writes.some((entry) => entry.includes('"routing_strategy":"weighted-round-robin"')),
     ).toBe(true);
+  });
+
+  it("edits display label and models while preserving the account and secret references", async () => {
+    const harness = poolHarness();
+    const before = JSON.parse(harness.configuration()).accounts.find((entry: { id: string }) => entry.id === "claude-a");
+    const result = await runPools(harness, (gateway) => gateway.updateRouting({ strategy: "fill-first", accounts: [{ accountId: WorkjetGatewayAccountId.make("claude-a"), enabled: true, priority: 0, weight: 1, label: "Renamed account", models: ["claude-test"] }] }));
+    const after = JSON.parse(harness.configuration()).accounts.find((entry: { id: string }) => entry.id === "claude-a");
+    expect(after).toEqual({ ...before, label: "Renamed account", enabled: true, priority: 0, weight: 1, models: ["claude-test"] });
+    expect(result.catalog.accounts.find((entry) => entry.id === "claude-a")?.label).toBe("Renamed account");
   });
 
   it("refuses an edit naming an account the configuration does not have", async () => {

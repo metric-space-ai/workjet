@@ -567,6 +567,7 @@ export function BusinessOsSettingsView({
               <button
                 key={item.to}
                 type="button"
+                data-workjet-action={`instance-hub:${item.to}`}
                 className="flex min-h-11 min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
                 onClick={() => void navigate({ to: item.to })}
               >

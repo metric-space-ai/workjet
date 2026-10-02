@@ -22,6 +22,12 @@ export interface ModelsAccountHealth {
   readonly status: "ready" | "disabled" | "auth-required" | "cooldown" | "unavailable" | "unknown";
   readonly message: string | null;
   readonly retryAtMs: number | null;
+  readonly balance: {
+    readonly availableBalance: number;
+    readonly currency: "USD" | "CNY";
+    readonly observedAtMs: number;
+    readonly fresh: boolean;
+  } | null;
   readonly windows: ReadonlyArray<{
     readonly label: string;
     readonly unlimited?: boolean;
@@ -190,6 +196,30 @@ function resetLabel(at: number | null) {
 }
 
 function AccountLimits({ health }: { readonly health: ModelsAccountHealth | undefined }) {
+  if (health?.balance)
+    return (
+      <span
+        className="inline-flex flex-wrap gap-x-2 text-xs tabular-nums"
+        title={`Reported: ${new Date(health.balance.observedAtMs).toLocaleString()}`}
+      >
+        <span className="text-muted-foreground">
+          {health.balance.fresh ? "Available API balance" : "Last reported API balance"}
+        </span>
+        <span>
+          {health.balance.currency}{" "}
+          {health.balance.availableBalance.toLocaleString(undefined, {
+            maximumSignificantDigits: 10,
+          })}
+        </span>
+        {!health.balance.fresh && (
+          <span className="text-muted-foreground">Stale · check again</span>
+        )}
+        {health.quotaRefreshing && <span className="text-muted-foreground">Checking…</span>}
+        {health.quotaError && (
+          <span className="text-amber-500">Balance could not be refreshed.</span>
+        )}
+      </span>
+    );
   if (!health || health.windows.length === 0)
     return (
       <span className="text-xs text-muted-foreground">

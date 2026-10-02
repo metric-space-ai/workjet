@@ -38,8 +38,60 @@ pub fn api_quota_endpoint(provider: &str, base: &str) -> Option<&'static str> {
             "zai",
             "https://open.bigmodel.cn/api/coding/paas/v4" | "https://open.bigmodel.cn/api/paas/v4",
         ) => Some("https://open.bigmodel.cn/api/monitor/usage/quota/limit"),
+        ("kimi", "https://api.moonshot.ai/v1") => {
+            Some("https://api.moonshot.ai/v1/users/me/balance")
+        }
+        ("kimi", "https://api.moonshot.cn/v1") => {
+            Some("https://api.moonshot.cn/v1/users/me/balance")
+        }
         _ => None,
     }
+}
+/// Currency comes from the exact regional destination, never from exchange-rate inference.
+pub fn parse_balance(url: &str, body: &[u8], observed: i64) -> Option<AccountBalance> {
+    let currency = match url {
+        "https://api.moonshot.ai/v1/users/me/balance" => "USD",
+        "https://api.moonshot.cn/v1/users/me/balance" => "CNY",
+        _ => return None,
+    };
+    if body.len() > 256 * 1024 || observed < 0 {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    if value.get("code").and_then(|v| v.as_i64()) != Some(0)
+        || value.get("status").and_then(|v| v.as_bool()) != Some(true)
+        || value.get("scode").and_then(|v| v.as_str()) != Some("0x0")
+    {
+        return None;
+    }
+    let number = |field: &str| {
+        value
+            .pointer(field)
+            .and_then(|v| v.as_f64())
+            .filter(|v| v.is_finite())
+    };
+    Some(AccountBalance {
+        available_balance: number("/data/available_balance")?,
+        currency: currency.into(),
+        cash_balance: number("/data/cash_balance"),
+        voucher_balance: number("/data/voucher_balance").filter(|v| *v >= 0.0),
+        observed_at_ms: observed,
+    })
+}
+pub fn observe_balance(
+    state: &AccountState,
+    account: &str,
+    url: &str,
+    body: &[u8],
+    observed: i64,
+) -> u16 {
+    parse_balance(url, body, observed)
+        .filter(|balance| {
+            state
+                .observe_balance("kimi", account, balance.clone())
+                .is_ok()
+        })
+        .map_or(0, |_| 200)
 }
 fn parse_api_quota(
     provider: &str,
@@ -198,7 +250,9 @@ mod provenance_tests {
 }
 // Bounded on-demand subscription usage reads. No periodic worker or CLI scraping.
 use crate::{
-    account_policy::{quota_is_exhausted, AccountState, QuotaWindow},
+    account_policy::{
+        balance_is_exhausted, quota_is_exhausted, AccountBalance, AccountState, QuotaWindow,
+    },
     secret_store::WorkjetSecretStore,
 };
 use serde::Serialize;
@@ -248,6 +302,7 @@ pub struct AccountHealth {
     pub generation_http_status: Option<u16>,
     pub observed_at_ms: Option<i64>,
     pub quota: Vec<QuotaWindow>,
+    pub balance: Option<AccountBalance>,
     pub quota_supported: bool,
     pub quota_refreshing: bool,
     pub quota_error: Option<&'static str>,
@@ -381,12 +436,16 @@ impl AccountHealthSource {
                     .or(latest.and_then(|r| r.last_error.as_ref().and_then(|e| e.http_status)));
                 let authentication = authentication(generation, probe);
                 let quotas = self.state.quotas(&a.provider, &a.auth_id);
-                let exhausted = quotas.iter().any(|w| {
-                    !w.tool_only
-                        && w.model_pattern.is_none()
-                        && !matches!(w.name.as_str(), "seven_day_opus" | "seven_day_sonnet")
-                        && quota_is_exhausted(w, now)
-                });
+                let balance = self.state.balance(&a.provider, &a.auth_id);
+                let exhausted = balance
+                    .as_ref()
+                    .is_some_and(|b| balance_is_exhausted(b, now))
+                    || quotas.iter().any(|w| {
+                        !w.tool_only
+                            && w.model_pattern.is_none()
+                            && !matches!(w.name.as_str(), "seven_day_opus" | "seven_day_sonnet")
+                            && quota_is_exhausted(w, now)
+                    });
                 AccountHealth {
                     account_id: a.auth_id.clone(),
                     provider: a.provider.clone(),
@@ -408,6 +467,7 @@ impl AccountHealthSource {
                         .chain(generation.map(|p| p.1))
                         .max(),
                     quota: quotas,
+                    balance,
                     quota_supported: matches!(a.provider.as_str(), "codex" | "claude")
                         || self
                             .probes
@@ -457,7 +517,9 @@ impl AccountHealthSource {
                     tokio::time::timeout(Duration::from_secs(3), probe_read(&probe, &store)).await;
                 let status = match response {
                     Ok(Some(response)) => {
-                        if response.status_code == 200 {
+                        if response.status_code == 200 && probe.provider == "kimi" {
+                            observe_balance(&state, &probe.id, probe.url, &response.body, observed)
+                        } else if response.status_code == 200 {
                             observe_usage(
                                 &state,
                                 &probe.provider,

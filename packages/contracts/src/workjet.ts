@@ -1337,6 +1337,21 @@ export const WorkjetGatewayQuotaWindow = Schema.Struct({
 });
 export type WorkjetGatewayQuotaWindow = typeof WorkjetGatewayQuotaWindow.Type;
 
+/** Direct monetary account reading; no percentage, inferred reset or exchange rate. */
+export const WorkjetGatewayAccountBalance = Schema.Struct({
+  availableBalance: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+  currency: Schema.Literals(["USD", "CNY"]),
+  cashBalance: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
+  voucherBalance: Schema.NullOr(
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+  ),
+  observedAtMs: NonNegativeInt,
+});
+export type WorkjetGatewayAccountBalance = typeof WorkjetGatewayAccountBalance.Type;
+
 export const WorkjetGatewayAccountHealth = Schema.Struct({
   accountId: WorkjetGatewayAccountId,
   provider: WorkjetGatewayProvider,
@@ -1349,6 +1364,7 @@ export const WorkjetGatewayAccountHealth = Schema.Struct({
   generationHttpStatus: Schema.NullOr(NonNegativeInt).pipe(Schema.withDecodingDefault(() => null)),
   observedAtMs: Schema.NullOr(NonNegativeInt),
   quota: Schema.Array(WorkjetGatewayQuotaWindow),
+  balance: Schema.NullOr(WorkjetGatewayAccountBalance).pipe(Schema.withDecodingDefault(() => null)),
   quotaSupported: Schema.Boolean,
   quotaRefreshing: Schema.Boolean,
   quotaError: Schema.NullOr(Schema.Literals(["unavailable", "provider-error"])),

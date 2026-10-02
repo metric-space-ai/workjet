@@ -12,6 +12,7 @@ const account = {
   generationHttpStatus: null,
   observedAtMs: null,
   quota: [],
+  balance: null,
   quotaSupported: true,
   quotaRefreshing: true,
   quotaError: null,
@@ -20,6 +21,33 @@ const status = (accounts: unknown) => ({
   account_health: { schema: "workjet.provider-gateway.account-health.v1", accounts },
 });
 describe("gateway account health", () => {
+  it("defaults older hosts to unknown balance and validates monetary readings", () => {
+    const { balance: omitted, ...older } = account;
+    expect(omitted).toBeNull();
+    expect(decodeAccountHealth(status([older]))?.[0]?.balance).toBeNull();
+    const balance = {
+      availableBalance: -1,
+      currency: "CNY",
+      cashBalance: -1,
+      voucherBalance: 0,
+      observedAtMs: 1000,
+    };
+    expect(
+      decodeAccountHealth(status([{ ...account, provider: "kimi", balance }]))?.[0]?.balance,
+    ).toEqual(balance);
+    for (const patch of [
+      { currency: "unknown" },
+      { availableBalance: Number.NaN },
+      { availableBalance: Number.POSITIVE_INFINITY },
+      { voucherBalance: -1 },
+      { observedAtMs: -1 },
+    ]) {
+      expect(
+        decodeAccountHealth(status([{ ...account, balance: { ...balance, ...patch } }])),
+      ).toBeUndefined();
+    }
+  });
+
   it("keeps an absent observation unknown and accepts genuine provider readings", () => {
     expect(decodeAccountHealth(status([account]))).toEqual([account]);
     expect(

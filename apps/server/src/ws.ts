@@ -2056,7 +2056,7 @@ const makeWsRpcLayer = (
         [WS_METHODS.workjetSessionImportInspect]: (input) =>
           observeRpcEffect(
             WS_METHODS.workjetSessionImportInspect,
-            workjetSessionImport.inspect(input.limit),
+            workjetSessionImport.inspect(input),
             { "rpc.aggregate": "workjet-session-import" },
           ),
         [WS_METHODS.workjetSessionImport]: (input) =>

@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { IsoDateTime, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const WORKJET_SESSION_IMPORT_MAX_CANDIDATES = 100;
@@ -25,6 +25,17 @@ export const WorkjetSessionImportCandidate = Schema.Struct({
   sourceSizeBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   importedThreadId: Schema.NullOr(ThreadId),
   workspaceAvailable: Schema.Boolean,
+  previewMessages: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        role: Schema.Literals(["user", "assistant"]),
+        text: Schema.String.check(Schema.isMaxLength(1_000)),
+      }),
+    ).check(Schema.isMaxLength(3)),
+  ),
+  importedCopies: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ projectId: ProjectId, threadId: ThreadId })),
+  ),
 });
 export type WorkjetSessionImportCandidate = typeof WorkjetSessionImportCandidate.Type;
 
@@ -37,6 +48,11 @@ export const WorkjetSessionImportSourceSummary = Schema.Struct({
 export type WorkjetSessionImportSourceSummary = typeof WorkjetSessionImportSourceSummary.Type;
 
 export const WorkjetSessionImportInspectInput = Schema.Struct({
+  offset: Schema.optionalKey(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(5_000)),
+  ),
+  query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
+  source: Schema.optionalKey(WorkjetSessionImportSource),
   limit: Schema.optionalKey(
     Schema.Int.check(
       Schema.isGreaterThanOrEqualTo(1),
@@ -52,10 +68,13 @@ export const WorkjetSessionImportInspection = Schema.Struct({
     Schema.isMaxLength(WORKJET_SESSION_IMPORT_MAX_CANDIDATES),
   ),
   truncated: Schema.Boolean,
+  nextOffset: Schema.optionalKey(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
+  discoveryLimitReached: Schema.optionalKey(Schema.Boolean),
 });
 export type WorkjetSessionImportInspection = typeof WorkjetSessionImportInspection.Type;
 
 export const WorkjetSessionImportInput = Schema.Struct({
+  projectId: Schema.optionalKey(ProjectId),
   candidateIds: Schema.Array(CandidateId).check(
     Schema.isMinLength(1),
     Schema.isMaxLength(WORKJET_SESSION_IMPORT_MAX_SELECTION),
@@ -87,6 +106,7 @@ export const WorkjetSessionImportErrorReason = Schema.Literals([
   "source_changed",
   "session_too_large",
   "import_failed",
+  "project_unavailable",
 ]);
 export type WorkjetSessionImportErrorReason = typeof WorkjetSessionImportErrorReason.Type;
 
@@ -99,6 +119,8 @@ export class WorkjetSessionImportError extends Schema.TaggedErrorClass<WorkjetSe
 ) {
   override get message(): string {
     switch (this.reason) {
+      case "project_unavailable":
+        return "The selected destination project is no longer available on this computer.";
       case "source_unavailable":
         return "The selected session source is unavailable on this environment.";
       case "candidate_expired":

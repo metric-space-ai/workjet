@@ -8,6 +8,44 @@ import {
 const NOW = "2026-08-25T12:00:00.000Z";
 
 describe("static Workjet session transcript parsing", () => {
+  it("uses the actual request after Codex Page context and preserves text in a mixed message", () => {
+    const parsed = parseCodexSessionTranscript(
+      [
+        JSON.stringify({ type: "session_meta", payload: { cwd: "/workspace" } }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: '<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>',
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: '<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>\nImprove the importer',
+              },
+            ],
+          },
+        }),
+      ],
+      NOW,
+    );
+    expect(parsed?.title).toBe("Improve the importer");
+    expect(parsed?.messages).toEqual([
+      { role: "user", text: "Improve the importer", createdAt: NOW },
+    ]);
+  });
   it("copies only visible Codex user and assistant text", () => {
     const parsed = parseCodexSessionTranscript(
       [

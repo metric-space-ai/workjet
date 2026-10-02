@@ -1311,12 +1311,10 @@ export type WorkjetGatewayProviderHealth = typeof WorkjetGatewayProviderHealth.T
  * A health snapshot read from the running gateway host, with the time it was
  * read so the surface can age it honestly.
  *
- * `accountHealth` and `capacity` are availability flags, not data. The host
- * tracks per-credential cooldown state (`CooldownStateRecord`: status, reason,
- * next retry, quota, last error) but keeps it in an in-process store that its
- * management surface never publishes, and it exposes no concurrency or
- * capacity figure anywhere. Both therefore read `not-reported-by-host` until
- * the host grows a route for them.
+ * `accountHealth` and `capacity` are availability flags. Updated hosts
+ * publish typed account observations separately in `accounts`; older hosts
+ * decode to an empty array and explicit unreported availability. Quota nulls
+ * remain unknown and every genuine window carries its observation time.
  */
 export const WorkjetGatewayQuotaWindow = Schema.Struct({
   name: TrimmedNonEmptyString,

@@ -151,6 +151,9 @@ impl AccountRouter {
         now_ms: i64,
         candidates: &[AccountCandidate],
     ) -> Result<AccountCandidate, AccountRoutingError> {
+        if self.policy.is_some() {
+            return self.select_for_request(provider, model, now_ms, candidates, &[]);
+        }
         self.select_with_options(
             provider,
             model,

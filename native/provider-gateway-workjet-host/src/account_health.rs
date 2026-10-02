@@ -167,7 +167,7 @@ impl AccountHealthSource {
                     .map(|o| o.0)
                     .or(latest.and_then(|r| r.last_error.as_ref().and_then(|e| e.http_status)));
                 let authentication = match status {
-                    Some(401 | 403) => "rejected",
+                    Some(401) => "rejected",
                     Some(200..=299) => "authenticated",
                     _ => "unknown",
                 };
@@ -188,7 +188,7 @@ impl AccountHealthSource {
                     error_code: latest
                         .and_then(|r| r.last_error.as_ref())
                         .map(|e| e.code.clone()),
-                    http_status: status,
+                    http_status: status.filter(|status| (100..=599).contains(status)),
                     observed_at_ms: latest
                         .map(|r| r.updated_at_ms)
                         .into_iter()

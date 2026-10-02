@@ -109,11 +109,8 @@ impl HostConfig {
         if !reference_allowed(&self.management_secret) {
             return Err(HostConfigError::InvalidSecretReference);
         }
-        // A bootstrap host carries no account at all. The portable runtime
-        // already models this as an outer-host runtime whose routes live
-        // outside the portable account lists; every other configuration keeps
-        // the strict portable validation, so an all-disabled account set still
-        // fails exactly as before.
+        // Workjet keeps management available with no inference accounts,
+        // including when every configured account has been disabled.
         let bootstrap = self.runtime.claude_accounts.is_empty()
             && self.runtime.codex_accounts.is_empty()
             && self.runtime.antigravity_accounts.is_empty()

@@ -351,6 +351,7 @@ function DevicePairingDialog({
 export function BusinessOsSettingsView({
   instances,
   activeInstanceId,
+  requiresInstanceSelection = true,
   loading = false,
   refreshDisabled = false,
 
@@ -375,6 +376,7 @@ export function BusinessOsSettingsView({
 }: {
   readonly instances: readonly CtoxManagedInstance[];
   readonly activeInstanceId: string | null;
+  readonly requiresInstanceSelection?: boolean;
   readonly loading?: boolean;
   readonly refreshDisabled?: boolean;
 
@@ -550,7 +552,7 @@ export function BusinessOsSettingsView({
             : "Settings"
         }
       >
-        {selected === null ? (
+        {selected === null && requiresInstanceSelection ? (
           <p className="px-3 text-sm text-muted-foreground sm:px-4" role="status">
             Select an instance first.
           </p>
@@ -560,6 +562,7 @@ export function BusinessOsSettingsView({
               <button
                 key={item.to}
                 type="button"
+                data-workjet-action={`instance-hub:${item.to}`}
                 className="flex min-h-11 min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-4"
                 onClick={() => void navigate({ to: item.to })}
               >
@@ -918,6 +921,7 @@ export function BusinessOsSettings() {
     <BusinessOsSettingsView
       instances={instances}
       activeInstanceId={activeInstanceId}
+      requiresInstanceSelection={bridge !== undefined}
       loading={discovery === "loading"}
       refreshDisabled={bridge === undefined || refreshing}
       devices={devices}

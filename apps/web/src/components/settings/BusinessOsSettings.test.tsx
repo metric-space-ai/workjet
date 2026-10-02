@@ -121,6 +121,21 @@ describe("Business OS settings scope", () => {
     expect(markup).not.toContain("environment-alpha");
   });
 
+  it("keeps the connected-host settings hub available without native discovery", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[]}
+        activeInstanceId={null}
+        requiresInstanceSelection={false}
+      />,
+    );
+    expect(markup).toContain("Models");
+    expect(markup).toContain("Harnesses");
+    expect(markup).toContain("Computers");
+    expect(markup).toContain("Worker");
+    expect(markup).not.toContain("Wähle zuerst eine Instanz aus.");
+  });
+
   it("makes instance management primary and links to the selected instance settings", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView

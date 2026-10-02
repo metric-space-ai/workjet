@@ -287,6 +287,19 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
   }
 }
 
+export class PortableNodePreparationError extends Schema.TaggedErrorClass<PortableNodePreparationError>()(
+  "PortableNodePreparationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    const detail =
+      this.cause instanceof Error
+        ? this.cause.message || this.cause.name
+        : "unknown download failure";
+    return `Could not prepare the pinned portable Node runtime: ${detail}`;
+  }
+}
+
 export class BundledServerSourceVerificationError extends Schema.TaggedErrorClass<BundledServerSourceVerificationError>()(
   "BundledServerSourceVerificationError",
   { cause: Schema.Defect() },
@@ -2671,7 +2684,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
           platform: hostPlatform,
           arch: hostArchitecture,
         }),
-      catch: (cause) => new BundledServerSourceVerificationError({ cause }),
+      catch: (cause) => new PortableNodePreparationError({ cause }),
     });
     yield* runCommand(
       ChildProcess.make(

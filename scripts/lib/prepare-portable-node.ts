@@ -13,6 +13,7 @@ import { managedNodeArchive } from "@workjet/ssh/remoteNode";
 
 class PortableNodeDownloadError extends Data.TaggedError("PortableNodeDownloadError")<{
   readonly message: string;
+  readonly cause?: unknown;
 }> {}
 
 /** Extract only after checking a trusted release pin; destination must be a new build stage. */
@@ -94,37 +95,46 @@ export async function preparePortableNode(input: {
   );
   try {
     const archivePath = NodePath.join(download, "node.tar.gz");
-    // Bound both the response body and on-disk temporary archive, including chunked responses.
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const response = yield* HttpClient.get(pin.url);
-          if (response.status < 200 || response.status >= 300)
-            return yield* new PortableNodeDownloadError({
-              message: `Portable Node download failed (${response.status}).`,
-            });
-          const file = yield* Effect.acquireRelease(
-            Effect.tryPromise(() => NodeFSP.open(archivePath, "wx", 0o600)),
-            (handle) => Effect.promise(() => handle.close()),
-          );
-          let size = 0;
-          yield* Stream.runForEach(response.stream, (chunk) =>
-            Effect.gen(function* () {
-              size += chunk.byteLength;
-              if (size > 100 * 1024 * 1024)
-                return yield* new PortableNodeDownloadError({
-                  message: "Portable Node archive exceeds its size limit.",
-                });
-              yield* Effect.tryPromise(() => file.writeFile(chunk));
-            }),
-          );
-        }),
-      ).pipe(
-        Effect.timeout("180 seconds"),
-        Effect.provide(FetchHttpClient.layer),
-        Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
-      ),
-    );
+    // Preserve progress before the failed download's private stage is removed.
+    let size = 0;
+    try {
+      // Bound both the response body and temporary archive, including chunked responses.
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const response = yield* HttpClient.get(pin.url);
+            if (response.status < 200 || response.status >= 300)
+              return yield* new PortableNodeDownloadError({
+                message: `Portable Node download failed (${response.status}).`,
+              });
+            const file = yield* Effect.acquireRelease(
+              Effect.tryPromise(() => NodeFSP.open(archivePath, "wx", 0o600)),
+              (handle) => Effect.promise(() => handle.close()),
+            );
+            yield* Stream.runForEach(response.stream, (chunk) =>
+              Effect.gen(function* () {
+                size += chunk.byteLength;
+                if (size > 100 * 1024 * 1024)
+                  return yield* new PortableNodeDownloadError({
+                    message: "Portable Node archive exceeds its size limit.",
+                  });
+                yield* Effect.tryPromise(() => file.writeFile(chunk));
+              }),
+            );
+          }),
+        ).pipe(
+          Effect.timeout("180 seconds"),
+          Effect.provide(FetchHttpClient.layer),
+          Effect.provideService(FetchHttpClient.RequestInit, { redirect: "error" }),
+        ),
+      );
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message || cause.name : String(cause);
+      throw new PortableNodeDownloadError({
+        message: `Could not download pinned portable Node ${pin.directoryName} from ${pin.url} (${size} bytes received): ${detail}`,
+        cause,
+      });
+    }
     return await stageVerifiedNodeArchive({ archivePath, destination: input.destination, pin });
   } finally {
     await NodeFSP.rm(download, { recursive: true, force: true });

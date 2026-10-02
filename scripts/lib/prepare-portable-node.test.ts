@@ -155,6 +155,65 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
     }
   });
 
+  it("reports a transport failure with its pinned target and removes its private stage", async () => {
+    const root = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "workjet-node-transport-test-"),
+    );
+    download.mockRejectedValue(new Error("simulated offline transport"));
+    try {
+      await expect(
+        preparePortableNode({
+          destination: NodePath.join(root, "node"),
+          platform: hostPlatform,
+          arch: hostArchitecture,
+        }),
+      ).rejects.toThrow(
+        /Could not download pinned portable Node .* from https:\/\/nodejs\.org\/.*\(0 bytes received\)/,
+      );
+      expect(await NodeFSP.readdir(root)).toEqual([]);
+      expect(download).toHaveBeenCalledOnce();
+    } finally {
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("cancels a stalled download at its deadline and leaves no partial stage", async () => {
+    const root = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "workjet-node-timeout-test-"),
+    );
+    let cancelled = false;
+    download.mockImplementation(
+      (_request, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            "abort",
+            () => {
+              cancelled = true;
+              reject(new DOMException("aborted", "AbortError"));
+            },
+            { once: true },
+          );
+        }),
+    );
+    vi.useFakeTimers();
+    try {
+      const pending = preparePortableNode({
+        destination: NodePath.join(root, "node"),
+        platform: hostPlatform,
+        arch: hostArchitecture,
+      });
+      const rejected = expect(pending).rejects.toThrow(/0 bytes received.*TimeoutError/);
+      await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(180_001);
+      await rejected;
+      expect(cancelled).toBe(true);
+      expect(await NodeFSP.readdir(root)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+      await NodeFSP.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects an unsuccessful HTTP response and cleans its download stage", async () => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-node-http-test-"));
     download.mockResolvedValue(new Response("unavailable", { status: 503 }));

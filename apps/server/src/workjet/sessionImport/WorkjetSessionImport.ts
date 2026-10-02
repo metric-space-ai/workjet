@@ -294,15 +294,24 @@ const resolveLocations = (settings: ServerSettings, path: Path.Path): SourceLoca
       root,
     });
   }
-  return locations.filter(
-    (location, index, all) =>
-      all.findIndex(
-        (candidate) =>
-          candidate.source === location.source &&
-          candidate.providerInstanceId === location.providerInstanceId &&
-          candidate.root === location.root,
-      ) === index,
-  );
+  return locations
+    .flatMap((location) =>
+      location.source === "codex"
+        ? [
+            location,
+            { ...location, root: path.join(path.dirname(location.root), "archived_sessions") },
+          ]
+        : [location],
+    )
+    .filter(
+      (location, index, all) =>
+        all.findIndex(
+          (candidate) =>
+            candidate.source === location.source &&
+            candidate.providerInstanceId === location.providerInstanceId &&
+            candidate.root === location.root,
+        ) === index,
+    );
 };
 
 const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<SourceFile[]> => {

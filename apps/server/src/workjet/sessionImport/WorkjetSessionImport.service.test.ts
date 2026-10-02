@@ -265,6 +265,28 @@ describe("project-directed static session imports", () => {
         }),
       ),
   );
+  it.effect(
+    "discovers and imports an archived Codex conversation without changing its source",
+    () =>
+      withFixture(({ root, service, threads }) =>
+        Effect.gen(function* () {
+          const archive = NodePath.join(root, "archived_sessions");
+          const file = NodePath.join(archive, "conversation.jsonl");
+          const original = transcript("Archived planning", ["Saved reply"]);
+          yield* Effect.promise(() => Fsp.mkdir(archive, { recursive: true }));
+          yield* Effect.promise(() => Fsp.writeFile(file, original));
+          const inspected = yield* service.inspect({ query: "Archived planning" });
+          expect(inspected.candidates).toHaveLength(1);
+          const imported = yield* service.importSessions({
+            candidateIds: [inspected.candidates[0]!.candidateId],
+            projectId: ProjectId.make("project-b"),
+          });
+          expect(imported.items[0]?.status).toBe("imported");
+          expect(threads.get(imported.items[0]!.threadId!)?.projectId).toBe("project-b");
+          expect(yield* Effect.promise(() => Fsp.readFile(file, "utf8"))).toBe(original);
+        }),
+      ),
+  );
   it.effect("creates a fresh copy when an imported thread was deleted", () =>
     withFixture(({ root, service, threads }) =>
       Effect.gen(function* () {

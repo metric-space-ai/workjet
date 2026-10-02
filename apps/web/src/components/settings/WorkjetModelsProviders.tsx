@@ -567,7 +567,7 @@ function LoginMessage({
         rel="noreferrer"
         className="text-foreground underline underline-offset-2"
       >
-        Anmeldung öffnen
+        Open sign-in
       </a>
       <button onClick={cancel} className="text-foreground">
         Cancel
@@ -609,12 +609,12 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
   const fault =
     state.statusError ??
     state.catalogError ??
-    (state.status?.phase === "faulted" ? "Provider-Verbindung unterbrochen." : null);
+    (state.status?.phase === "faulted" ? "Provider connection interrupted." : null);
   return (
-    <section className="space-y-4" aria-label="LLM-Anbieter" data-testid="models-providers">
+    <section className="space-y-4" aria-label="LLM providers" data-testid="models-providers">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">LLM-Anbieter</h2>
+          <h2 className="text-lg font-semibold">LLM providers</h2>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
             <span
               className={cn(
@@ -623,15 +623,15 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
               )}
             />
             {state.isInitialLoading
-              ? "Verbindung wird geladen …"
-              : `${accounts.filter((account) => account.enabled).length} aktive Accounts`}
+              ? "Loading connection …"
+              : `${accounts.filter((account) => account.enabled).length} active accounts`}
           </p>
         </div>
         <div className="relative flex gap-1">
           <Button
             size="icon"
             variant="ghost"
-            aria-label="Anbieterstatus aktualisieren"
+            aria-label="Refresh provider status"
             disabled={state.isRefreshing}
             onClick={state.onRefresh}
           >

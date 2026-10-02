@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 
 const number = (value: number) =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
-const modelName = (value: string | null) => value ?? "Modell unbekannt";
+const modelName = (value: string | null) => value ?? "Unknown model";
 const color = (model: string | null) => {
   let hash = 0;
   for (const character of model ?? "unknown")
@@ -54,8 +54,8 @@ function Tokens({
     <span
       title={
         value === null
-          ? "Vom Anbieter nicht gemeldet"
-          : `Gemessen bei ${number(count)} von ${number(counters.requests)} Aufrufen`
+          ? "Not reported by the provider"
+          : `Measured in ${number(count)} of ${number(counters.requests)} requests`
       }
     >
       {value === null ? "—" : `${count < counters.requests ? "≥ " : ""}${number(value)}`}
@@ -94,19 +94,19 @@ export function WorkjetModelsUsageView({
   return (
     <section
       className="mt-8 space-y-4 border-t border-border/60 pt-5"
-      aria-label="Modellnutzung"
+      aria-label="Model usage"
       data-testid="models-usage"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Modellnutzung</h2>
+          <h2 className="text-lg font-semibold">Model usage</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Requests through this hub ·{" "}
-            {usage ? `${number(usage.totals.requests)} Aufrufe` : "Nutzung wird geladen"}
+            {usage ? `${number(usage.totals.requests)} requests` : "Loading usage"}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-md bg-muted/50 p-0.5" aria-label="Zeitraum">
+          <div className="flex rounded-md bg-muted/50 p-0.5" aria-label="Period">
             {([7, 30] as const).map((range) => (
               <button
                 key={range}
@@ -116,14 +116,14 @@ export function WorkjetModelsUsageView({
                 data-workjet-action={`models.usage.${range}`}
                 className={`rounded-sm px-3 py-1 text-xs ${days === range ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
               >
-                {range} Tage
+                {range} days
               </button>
             ))}
           </div>
           <Button
             size="icon"
             variant="ghost"
-            aria-label="Nutzungsstatistik aktualisieren"
+            aria-label="Refresh usage statistics"
             disabled={pending}
             onClick={onRefresh}
           >
@@ -133,20 +133,20 @@ export function WorkjetModelsUsageView({
       </div>
       {error ? (
         <p role="alert" className="flex items-center gap-3 text-sm text-destructive">
-          Nutzungsdaten konnten nicht geladen werden.
+          Could not load usage data.
           <button className="underline underline-offset-2" onClick={onRefresh}>
-            Erneut versuchen
+            Try again
           </button>
         </p>
       ) : usage === null ? (
         <p role="status" className="text-sm text-muted-foreground">
-          Nutzungsdaten werden geladen …
+          Loading usage data …
         </p>
       ) : usage.totals.requests === 0 ? (
         <p className="py-5 text-sm text-muted-foreground">
           {usage.availability === "not-collected-yet"
-            ? "Noch keine Nutzungsdaten. Neue Anfragen über den Hub werden nach dem ersten Aufruf hier sichtbar."
-            : "In diesem Zeitraum wurden keine Aufrufe erfasst."}
+            ? "No usage yet. New requests through this hub appear here after the first request."
+            : "No requests were recorded during this period."}
         </p>
       ) : (
         <>
@@ -155,12 +155,12 @@ export function WorkjetModelsUsageView({
               <span>
                 {dateLabel(usage.startDate)} – {dateLabel(usage.endDate)}
               </span>
-              <span>Aufrufe pro Tag</span>
+              <span>Requests per day</span>
             </div>
             <svg
               viewBox="0 0 760 190"
               role="img"
-              aria-label={`Tägliche Modellaufrufe über ${days} Tage`}
+              aria-label={`Daily model requests over ${days} days`}
               className="w-full overflow-visible"
             >
               {[0, 0.5, 1].map((fraction) => (
@@ -197,7 +197,7 @@ export function WorkjetModelsUsageView({
                 }));
                 if (hasOther)
                   segments.push({
-                    model: "Weitere Modelle",
+                    model: "Other models",
                     count: [...day.models]
                       .filter(([model]) => !chartModels.includes(model))
                       .reduce((sum, [, count]) => sum + count, 0),
@@ -217,7 +217,7 @@ export function WorkjetModelsUsageView({
                           height={height}
                           fill={segment.fill}
                         >
-                          <title>{`${dateLabel(day.date)} · ${modelName(segment.model)} · ${number(segment.count)} Aufrufe`}</title>
+                          <title>{`${dateLabel(day.date)} · ${modelName(segment.model)} · ${number(segment.count)} requests`}</title>
                         </rect>
                       );
                     })}
@@ -244,24 +244,24 @@ export function WorkjetModelsUsageView({
                   {modelName(model)}
                 </span>
               ))}
-              {hasOther && <span className="text-muted-foreground">Weitere Modelle</span>}
+              {hasOther && <span className="text-muted-foreground">Other models</span>}
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs tabular-nums">
               <caption className="sr-only">
-                Modellnutzung über alle Anbieter, nach Anzahl der Aufrufe sortiert
+                Model usage across all providers, sorted by request count
               </caption>
               <thead className="text-muted-foreground">
                 <tr>
                   {[
-                    "Modell",
-                    "Aufrufe",
-                    "Anteil",
-                    "Fehler",
-                    "Input-Token",
-                    "Output-Token",
-                    "Cache-Read",
+                    "Model",
+                    "requests",
+                    "Share",
+                    "Errors",
+                    "Input tokens",
+                    "Output tokens",
+                    "Cache reads",
                   ].map((label, index) => (
                     <th
                       key={label}
@@ -315,10 +315,10 @@ export function WorkjetModelsUsageView({
             </table>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Tokenwerte stammen aus gemeldeten Antworten. ≥ kennzeichnet teilweise gemessene Werte; —
-            bedeutet nicht verfügbar. Aufrufe vor Beginn der Erfassung sind nicht enthalten.
+            Token counts come from reported responses. ≥ marks partially measured values; — means
+            unavailable. Requests before collection began are not included.
             {usage.totals.responseModelRequests < usage.totals.requests &&
-              " Wo die Antwort keine verlässliche Modell-ID liefert, wird die angeforderte Modell-ID gezählt."}
+              " When a response does not provide a reliable model ID, the requested model ID is counted."}
           </p>
         </>
       )}

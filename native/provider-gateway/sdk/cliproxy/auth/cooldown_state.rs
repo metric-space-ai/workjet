@@ -128,7 +128,12 @@ impl fmt::Debug for CooldownErrorState {
 pub trait CooldownStateStore: Send + Sync {
     fn load(&self) -> Result<Vec<CooldownStateRecord>, CooldownStoreError>;
     fn save(&self, records: &[CooldownStateRecord]) -> Result<(), CooldownStoreError>;
-    fn observe_outcome(&self, _result: &super::conductor_cooldown::AccountExecutionResult) -> Result<(), CooldownStoreError> { Ok(()) }
+    fn observe_outcome(
+        &self,
+        _result: &super::conductor_cooldown::AccountExecutionResult,
+    ) -> Result<(), CooldownStoreError> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

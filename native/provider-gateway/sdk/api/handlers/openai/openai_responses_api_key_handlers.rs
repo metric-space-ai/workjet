@@ -150,7 +150,13 @@ impl ApiKeyAccountPool {
         })
     }
 
-    pub fn with_policy(mut self, policy: Arc<dyn crate::sdk::cliproxy::auth::conductor_execution::AccountPolicy>) -> Self { self.policy = Some(policy); self }
+    pub fn with_policy(
+        mut self,
+        policy: Arc<dyn crate::sdk::cliproxy::auth::conductor_execution::AccountPolicy>,
+    ) -> Self {
+        self.policy = Some(policy);
+        self
+    }
 
     pub fn provider(&self) -> &str {
         &self.provider
@@ -161,8 +167,28 @@ impl ApiKeyAccountPool {
     /// usable account for the requested model.
     fn select(&self, model: &str, body: &[u8]) -> Option<&ApiKeyAccount> {
         if let Some(policy) = &self.policy {
-            let candidates = self.accounts.iter().map(|a| crate::sdk::cliproxy::auth::AccountCandidate { auth_id: a.id.clone(), provider: self.provider.clone(), priority: a.priority, disabled: a.disabled, supported_models: a.models.clone(), ..Default::default() }).collect::<Vec<_>>();
-            let selected = policy.select(&self.provider, Some(model), account_policy_now_ms(), &candidates, &[], body).ok()?;
+            let candidates = self
+                .accounts
+                .iter()
+                .map(|a| crate::sdk::cliproxy::auth::AccountCandidate {
+                    auth_id: a.id.clone(),
+                    provider: self.provider.clone(),
+                    priority: a.priority,
+                    disabled: a.disabled,
+                    supported_models: a.models.clone(),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            let selected = policy
+                .select(
+                    &self.provider,
+                    Some(model),
+                    account_policy_now_ms(),
+                    &candidates,
+                    &[],
+                    body,
+                )
+                .ok()?;
             return self.accounts.iter().find(|a| a.id == selected.auth_id);
         }
         let mut eligible: Vec<&ApiKeyAccount> = self
@@ -241,7 +267,11 @@ impl ApiKeyAccountPool {
 }
 
 fn account_policy_now_ms() -> i64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().and_then(|d| i64::try_from(d.as_millis()).ok()).unwrap_or(i64::MAX)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(i64::MAX)
 }
 
 impl std::fmt::Debug for ApiKeyAccountPool {

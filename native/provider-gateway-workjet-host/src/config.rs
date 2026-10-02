@@ -175,15 +175,7 @@ impl HostConfig {
             (None, None) if runtime.antigravity_accounts().is_empty() => None,
             _ => return Err(HostConfigError::InvalidSecretReference),
         };
-        // A host that carries no account at all is a legitimate bootstrap
-        // state: the management surface must come up so the very first OAuth
-        // login can happen. Any configured account still demands a named,
-        // enabled default provider, so established deployments are unchanged.
-        let configured_accounts = runtime.claude_accounts().len()
-            + runtime.codex_accounts().len()
-            + runtime.antigravity_accounts().len()
-            + runtime.api_key_accounts().len()
-            + runtime.xai_accounts().len();
+        // Disabled accounts keep the authenticated management host available.
         let default_is_enabled = match default_provider.as_deref() {
             Some("claude") => runtime
                 .claude_accounts()

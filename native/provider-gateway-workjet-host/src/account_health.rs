@@ -166,7 +166,11 @@ impl AccountHealthSource {
                     .max_by_key(|o| o.1)
                     .map(|o| o.0)
                     .or(latest.and_then(|r| r.last_error.as_ref().and_then(|e| e.http_status)));
-                let authentication = match status {
+                // Usage permissions do not establish inference authentication failure.
+                let auth_status = generation
+                    .map(|o| o.0)
+                    .or_else(|| probe.filter(|p| (200..=299).contains(&p.0)).map(|p| p.0));
+                let authentication = match auth_status {
                     Some(401) => "rejected",
                     Some(200..=299) => "authenticated",
                     _ => "unknown",
@@ -197,7 +201,12 @@ impl AccountHealthSource {
                         .max(),
                     quota: quotas,
                     quota_supported: matches!(a.provider.as_str(), "codex" | "claude"),
-                    quota_refreshing: refreshing,
+                    quota_refreshing: refreshing
+                        && !a.disabled
+                        && self
+                            .probes
+                            .iter()
+                            .any(|p| p.provider == a.provider && p.id == a.auth_id),
                     quota_error: match probe {
                         Some((200..=299, _)) | None => None,
                         Some((0, _)) => Some("unavailable"),

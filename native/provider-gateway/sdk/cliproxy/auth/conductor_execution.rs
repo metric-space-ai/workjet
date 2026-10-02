@@ -121,10 +121,24 @@ pub struct AccountRouter {
 
 /// Optional embedding-host policy. Portable callers retain their scheduler.
 pub trait AccountPolicy: Send + Sync {
-    fn select(&self, provider: &str, model: Option<&str>, now_ms: i64,
-        candidates: &[AccountCandidate], cooldowns: &[super::CooldownStateRecord],
-        body: &[u8]) -> Result<AccountCandidate, AccountSelectionError>;
-    fn outcome(&self, _provider: &str, _account_id: &str, _model: &str, _status: u16, _now_ms: i64) {}
+    fn select(
+        &self,
+        provider: &str,
+        model: Option<&str>,
+        now_ms: i64,
+        candidates: &[AccountCandidate],
+        cooldowns: &[super::CooldownStateRecord],
+        body: &[u8],
+    ) -> Result<AccountCandidate, AccountSelectionError>;
+    fn outcome(
+        &self,
+        _provider: &str,
+        _account_id: &str,
+        _model: &str,
+        _status: u16,
+        _now_ms: i64,
+    ) {
+    }
 }
 
 impl AccountRouter {
@@ -182,11 +196,18 @@ impl AccountRouter {
         self
     }
 
-    pub fn select_for_request(&self, provider: &str, model: Option<&str>, now_ms: i64,
-        candidates: &[AccountCandidate], body: &[u8]) -> Result<AccountCandidate, AccountRoutingError> {
+    pub fn select_for_request(
+        &self,
+        provider: &str,
+        model: Option<&str>,
+        now_ms: i64,
+        candidates: &[AccountCandidate],
+        body: &[u8],
+    ) -> Result<AccountCandidate, AccountRoutingError> {
         if let Some(policy) = &self.policy {
             let cooldowns = self.store.load().map_err(AccountRoutingError::Store)?;
-            return policy.select(provider, model, now_ms, candidates, &cooldowns, body)
+            return policy
+                .select(provider, model, now_ms, candidates, &cooldowns, body)
                 .map_err(AccountRoutingError::Selection);
         }
         self.select(provider, model, now_ms, candidates)

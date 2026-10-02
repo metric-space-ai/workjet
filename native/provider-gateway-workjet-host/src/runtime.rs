@@ -173,6 +173,12 @@ pub fn build_provider_routes(
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.claude_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("claude", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             let refresh = Arc::new(
                 AnthropicHttpTransport::new(configured_proxy.as_deref().map(String::as_str))
@@ -248,6 +254,12 @@ pub fn build_provider_routes(
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.codex_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("codex", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             let refresh = Arc::new(
                 CodexHttpTransport::new(configured_proxy.as_deref().map(String::as_str))
@@ -317,6 +329,12 @@ pub fn build_provider_routes(
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.antigravity_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("antigravity", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             let refresh = Arc::new(
                 AntigravityHttpTransport::new(configured_proxy.as_deref().map(String::as_str))
@@ -428,6 +446,12 @@ pub fn build_provider_routes(
         let mut accounts = Vec::new();
         let mut persist_refs = HashMap::new();
         for account in config.xai_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("xai", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             match &pool_proxy {
                 None => pool_proxy = Some(configured_proxy),

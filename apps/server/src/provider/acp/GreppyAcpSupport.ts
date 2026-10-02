@@ -40,6 +40,7 @@ export const makeGreppyAcpRuntime = Effect.fn("makeGreppyAcpRuntime")(function* 
       ...input,
       spawn: buildGreppyAcpSpawnInput(input.config, input.cwd, input.environment, input.model),
       authMethodId: "greppy.env",
+      cancelPromptMode: "await-response",
       mcpServers: [],
     }).pipe(Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.spawner))),
   );

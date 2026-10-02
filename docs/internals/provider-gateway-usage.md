@@ -47,8 +47,9 @@ without changing inference delivery; their unavailable counters stay unknown.
 The read path examines only UTC journals overlapping the selected window and
 limits each journal to 16 MiB. A read/parse/size failure is `usage-unavailable`,
 not an empty successful history; an invalid timezone is `invalid-usage-query`.
-A concurrently appended final line is deferred to the next read. Journals are
-retained; this change does not silently erase older usage. No journal in the
+A concurrently appended final line is deferred to the next read. The host retains today plus 35 completed UTC days, providing a boundary margin
+for every supported local 30-day window. Cleanup runs at most once per UTC day
+under the append lock and removes only recognized old numeric day journals. No journal in the
 window yields `not-collected-yet`. Native storage-write failure emits a
 content-free error; successful inference delivery is preserved, and those
 receipts cannot be recovered retrospectively.

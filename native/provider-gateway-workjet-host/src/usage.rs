@@ -280,20 +280,20 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for ObservedStream<'_, S> {
 #[derive(Clone)]
 pub struct UsageJournal {
     directory: PathBuf,
-    lock: Arc<Mutex<()>>,
+    lock: Arc<Mutex<Option<u64>>>,
 }
 impl UsageJournal {
     pub fn new(directory: PathBuf) -> Self {
         Self {
             directory,
-            lock: Arc::new(Mutex::new(())),
+            lock: Arc::new(Mutex::new(None)),
         }
     }
     pub async fn append(&self, receipt: Receipt) -> io::Result<()> {
         let journal = self.clone();
         tokio::task::spawn_blocking(move || {
             use std::io::{Read, Seek, SeekFrom, Write};
-            let _guard = journal
+            let mut last_pruned_day = journal
                 .lock
                 .lock()
                 .map_err(|_| io::Error::other("usage lock"))?;
@@ -329,15 +329,49 @@ impl UsageJournal {
             let mut bytes = serde_json::to_vec(&receipt)?;
             bytes.push(b'\n');
             file.write_all(&bytes)?;
-            file.sync_data()
+            file.sync_data()?;
+            let day = receipt.completed_at_ms / 86_400_000;
+            if *last_pruned_day != Some(day) {
+                *last_pruned_day = Some(day);
+                // Cleanup never turns a successfully persisted receipt into a
+                // failed append. Retry at the next day's bounded cleanup.
+                if prune_old_journals(&journal.directory, day).is_err() {
+                    eprintln!("provider gateway usage retention failed");
+                }
+            }
+            Ok(())
         })
         .await
         .map_err(|_| io::Error::other("usage writer"))?
     }
 }
 
+/// Keep today and 35 completed UTC days, covering every 30-day local window.
+fn prune_old_journals(directory: &std::path::Path, today: u64) -> io::Result<()> {
+    let cutoff = today.saturating_sub(35);
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(stem) = name.strip_suffix(".jsonl") else {
+            continue;
+        };
+        let Ok(day) = stem.parse::<u64>() else {
+            continue;
+        };
+        if stem == day.to_string() && day < cutoff {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+
     use super::*;
     #[test]
     fn streamed_usage_is_replaced_not_added_and_actual_model_wins() {
@@ -376,7 +410,56 @@ mod tests {
         assert_eq!(r.cache_read_tokens, None);
         assert_eq!(r.model_source, "request");
     }
+    #[tokio::test]
+    async fn retention_preserves_window_boundary_and_unrelated_files() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "64.jsonl",
+            "65.jsonl",
+            "66.jsonl",
+            "100.jsonl",
+            "metadata.json",
+            "0064.jsonl",
+            "64.jsonl.backup",
+        ] {
+            std::fs::write(dir.path().join(name), b"\n").unwrap();
+        }
+        std::fs::create_dir(dir.path().join("63.jsonl")).unwrap();
+        let journal = UsageJournal::new(dir.path().into());
+        journal
+            .append(Receipt {
+                completed_at_ms: 100 * 86_400_000,
+                provider: "codex".into(),
+                ..Receipt::default()
+            })
+            .await
+            .unwrap();
+        assert!(!dir.path().join("64.jsonl").exists());
+        for name in [
+            "65.jsonl",
+            "66.jsonl",
+            "100.jsonl",
+            "metadata.json",
+            "0064.jsonl",
+            "64.jsonl.backup",
+            "63.jsonl",
+        ] {
+            assert!(dir.path().join(name).exists(), "{name}");
+        }
+        // A second receipt that day does not rescan the directory.
+        std::fs::write(dir.path().join("64.jsonl"), b"\n").unwrap();
+        journal
+            .append(Receipt {
+                completed_at_ms: 100 * 86_400_000 + 1,
+                provider: "codex".into(),
+                ..Receipt::default()
+            })
+            .await
+            .unwrap();
+        assert!(dir.path().join("64.jsonl").exists());
+    }
     struct FakeResponses;
+
     impl OpenAiResponsesRouteHandler for FakeResponses {
         fn handle_provider_route<'a>(
             &'a self,

@@ -753,7 +753,7 @@ impl CodexSubscriptionAccountPool {
         while !remaining.is_empty() {
             let selected = self
                 .router
-                .select("codex", Some(model), self.clock.now_ms(), &remaining)
+                .select_for_request("codex", Some(model), self.clock.now_ms(), &remaining, &body)
                 .map_err(CodexAccountPoolError::Routing)?;
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
@@ -808,7 +808,7 @@ impl CodexSubscriptionAccountPool {
         while !remaining.is_empty() {
             let selected = self
                 .router
-                .select("codex", Some(model), self.clock.now_ms(), &remaining)
+                .select_for_request("codex", Some(model), self.clock.now_ms(), &remaining, &body)
                 .map_err(CodexAccountPoolError::Routing)?;
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());

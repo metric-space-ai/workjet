@@ -50,7 +50,7 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
   if (Result.isFailure(versionResult)) return snapshot({ installed: !isCommandMissingCause(versionResult.failure), version: null, status: "error", auth: { status: "unknown" }, message: "MiniMax Code could not be started. Install the pinned official CLI or choose its executable path on this computer." });
   if (Option.isNone(versionResult.success)) return snapshot({ installed: true, version: null, status: "error", auth: { status: "unknown" }, message: "MiniMax Code version probe timed out." });
   const version = /(?:^|\s)v?(\d+\.\d+\.\d+)(?:\s|$)/.exec(versionResult.success.value.stdout)?.[1] ?? null;
-  if (versionResult.success.value.code !== 0 || version !== MINIMAX_CODE_RELEASE.version) return snapshot({ installed: true, version, status: "error", auth: { status: "unknown" }, message: `This adapter is verified against MiniMax Code ${MINIMAX_CODE_RELEASE.version}. Select the pinned executable before starting a session.` });
+  if (versionResult.success.value.code !== 0 || version !== MINIMAX_CODE_RELEASE.version) return snapshot({ installed: true, version, status: "error", auth: { status: "unknown" }, message: `This adapter requires MiniMax Code ${MINIMAX_CODE_RELEASE.version}. Select the pinned executable before starting a session.` });
   // ACP exposes model options only on session setup. Reuse one dedicated status
   // session between refreshes and application restarts.
 

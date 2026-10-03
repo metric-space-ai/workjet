@@ -169,7 +169,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         return content && !ctx.cancelled ? { action: "accept" as const, content } : { action: "cancel" as const };
       }));
       const started = yield* withDeadline("session/start", acp.start().pipe(Effect.mapError((cause) => mapAcpToAdapterError(PROVIDER, input.threadId, "session/start", cause))));
-      if (started.initializeResult.agentInfo?.name !== "minimax-code" || started.initializeResult.agentInfo.version !== MINIMAX_CODE_RELEASE.version) return yield* error("startSession", `Select the verified MiniMax Code ${MINIMAX_CODE_RELEASE.version} executable.`);
+      if (started.initializeResult.agentInfo?.name !== "minimax-code" || started.initializeResult.agentInfo.version !== MINIMAX_CODE_RELEASE.version) return yield* error("startSession", `Select MiniMax Code ${MINIMAX_CODE_RELEASE.version} executable.`);
       yield* withDeadline("session/set_config_option", applyModel(acp, input.threadId, model, selection?.options));
       const createdAt = yield* now;
       const session: ProviderSession = { provider: PROVIDER, providerInstanceId: options.instanceId, threadId: input.threadId, cwd: input.cwd, runtimeMode: input.runtimeMode, model, status: "ready", resumeCursor: { protocol: "minimax-acp", sessionId: started.sessionId, profileKey }, createdAt, updatedAt: createdAt };

@@ -51,7 +51,7 @@ import {
   resolveMiniMaxModelValue,
   MINIMAX_CODE_RELEASE,
 } from "../minimax/MiniMaxProtocol.ts";
-import { miniMaxElicitationForm } from "../minimax/MiniMaxElicitation.ts";
+import { miniMaxElicitationForm, MiniMaxElicitationRequest } from "../minimax/MiniMaxElicitation.ts";
 import {
   terminateProviderProcesses,
   trackedChildProcess,
@@ -409,7 +409,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
               };
             }),
           );
-          yield* acp.handleElicitation((params) =>
+          yield* acp.handleExtRequest("elicitation/create", MiniMaxElicitationRequest, (params) =>
             Effect.gen(function* () {
               const ctx = sessions.get(input.threadId);
               if (
@@ -432,7 +432,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
               inputs.set(requestId, { answer, form });
               yield* emit(input.threadId, {
                 type: "user-input.requested",
-                turnId: ctx.turnId,
+                ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
                 requestId: RuntimeRequestId.make(requestId),
                 payload: { questions: form.questions },
               });
@@ -441,7 +441,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
               );
               yield* emit(input.threadId, {
                 type: "user-input.resolved",
-                turnId: ctx.turnId,
+                ...(ctx.turnId ? { turnId: ctx.turnId } : {}),
                 requestId: RuntimeRequestId.make(requestId),
                 payload: { answers },
               });
@@ -712,9 +712,10 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
         }
         yield* emit(input.threadId, { type: "turn.started", turnId, payload: { model } });
+        const inputText = input.input ?? "";
         const text = ctx.managedPrompt
-          ? `<workjet_managed_instructions>\n${ctx.managedPrompt}\n</workjet_managed_instructions>\n\n${input.input}`
-          : input.input;
+          ? `<workjet_managed_instructions>\n${ctx.managedPrompt}\n</workjet_managed_instructions>\n\n${inputText}`
+          : inputText;
         const prompt = [{ type: "text" as const, text }];
         const result = yield* ctx.acp
           .prompt({ prompt })
@@ -742,7 +743,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     capabilities: { sessionModelSwitch: "in-session" as const },
     startSession,
     sendTurn,
-    interruptTurn: (threadId, turnId) =>
+    interruptTurn: (threadId, turnId = undefined) =>
       lock.withPermit(
         Effect.gen(function* () {
           const ctx = yield* requireSession(threadId);

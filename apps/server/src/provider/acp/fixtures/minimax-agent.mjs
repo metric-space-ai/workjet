@@ -180,7 +180,7 @@ NodeReadline.createInterface({ input: process.stdin }).on("line", async (line) =
         break;
       }
       if (text.includes("ask-question")) {
-        const answer = await request("session/elicitation", {
+        const answer = await request("elicitation/create", {
           mode: "form",
           sessionId,
           message: "Scope",

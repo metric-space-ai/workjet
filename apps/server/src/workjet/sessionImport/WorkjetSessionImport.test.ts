@@ -8,6 +8,186 @@ import {
 const NOW = "2026-08-25T12:00:00.000Z";
 
 describe("static Workjet session transcript parsing", () => {
+  it("retains ordinary requests that discuss Codex context markers", () => {
+    for (const request of [
+      "Explain how <recommended_plugins> is handled.",
+      "Review # AGENTS.md instructions in the attached document.",
+      "Describe the <permissions instructions> marker in a transcript.",
+      "Keep a request that quotes <environment_context>.",
+    ]) {
+      const parsed = parseCodexSessionTranscript(
+        [
+          JSON.stringify({
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: request }],
+            },
+          }),
+        ],
+        NOW,
+      );
+      expect(parsed?.title).toBe(request);
+      expect(parsed?.messages).toEqual([{ role: "user", text: request, createdAt: NOW }]);
+    }
+  });
+
+  it("still excludes generated context prefixes with leading whitespace", () => {
+    for (const context of [
+      "<recommended_plugins>hidden</recommended_plugins>",
+      "# AGENTS.md instructions for /workspace",
+      "<permissions instructions>hidden</permissions instructions>",
+      "<environment_context>hidden</environment_context>",
+    ]) {
+      expect(
+        parseCodexSessionTranscript(
+          [
+            JSON.stringify({
+              type: "response_item",
+              payload: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: "\n  " + context }],
+              },
+            }),
+          ],
+          NOW,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("retains readable histories without a recorded source folder", () => {
+    const codex = parseCodexSessionTranscript(
+      [
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "Keep this Codex conversation" }],
+          },
+        }),
+      ],
+      NOW,
+    );
+    const claude = parseClaudeSessionTranscript(
+      [
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "Keep this Claude conversation" },
+        }),
+      ],
+      NOW,
+    );
+    expect(codex).toMatchObject({
+      workspaceRoot: null,
+      title: "Keep this Codex conversation",
+      messages: [{ role: "user", text: "Keep this Codex conversation" }],
+    });
+    expect(claude).toMatchObject({
+      workspaceRoot: null,
+      title: "Keep this Claude conversation",
+      messages: [{ role: "user", text: "Keep this Claude conversation" }],
+    });
+  });
+
+  it("retains the latest Codex model and ignores synthetic Claude model markers", () => {
+    const user = JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Historical request" }],
+      },
+    });
+    const meta = JSON.stringify({
+      type: "session_meta",
+      payload: { cwd: "/workspace", model: "gpt-4.1" },
+    });
+    expect(
+      parseCodexSessionTranscript(
+        [meta, JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.4" } }), user],
+        NOW,
+      )?.model,
+    ).toBe("gpt-5.4");
+    expect(
+      parseCodexSessionTranscript(
+        [JSON.stringify({ type: "session_meta", payload: { cwd: "/workspace" } }), user],
+        NOW,
+      )?.model,
+    ).toBeNull();
+    const claudeUser = JSON.stringify({
+      type: "user",
+      cwd: "/workspace",
+      message: { role: "user", content: "Historical request" },
+    });
+    const synthetic = JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "Local notice" }],
+      },
+    });
+    expect(
+      parseClaudeSessionTranscript(
+        [
+          claudeUser,
+          JSON.stringify({
+            type: "assistant",
+            message: {
+              role: "assistant",
+              model: "claude-sonnet-4-20250514",
+              content: [{ type: "text", text: "Historical reply" }],
+            },
+          }),
+          synthetic,
+        ],
+        NOW,
+      )?.model,
+    ).toBe("claude-sonnet-4-20250514");
+    expect(parseClaudeSessionTranscript([claudeUser, synthetic], NOW)?.model).toBeNull();
+  });
+  it("uses the actual request after Codex Page context and preserves text in a mixed message", () => {
+    const parsed = parseCodexSessionTranscript(
+      [
+        JSON.stringify({ type: "session_meta", payload: { cwd: "/workspace" } }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: '<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>',
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: '<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>\nImprove the importer',
+              },
+            ],
+          },
+        }),
+      ],
+      NOW,
+    );
+    expect(parsed?.title).toBe("Improve the importer");
+    expect(parsed?.messages).toEqual([
+      { role: "user", text: "Improve the importer", createdAt: NOW },
+    ]);
+  });
   it("copies only visible Codex user and assistant text", () => {
     const parsed = parseCodexSessionTranscript(
       [

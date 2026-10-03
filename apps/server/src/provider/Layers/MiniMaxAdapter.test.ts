@@ -200,9 +200,17 @@ describe("MiniMax Code adapter protocol fixture", () => {
       const unauthenticated = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_AUTH_REQUIRED: "1" }, undefined, cwd);
       expect(unauthenticated.auth.status).toBe("unauthenticated");
       expect(unauthenticated.models).toEqual([]);
+      const stderrVersion = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_VERSION_STDERR: "1" }, undefined, cwd);
+      expect(stderrVersion.status).toBe("ready");
+      expect(stderrVersion.version).toBe("0.6.2");
       const unsupported = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_VERSION: "0.5.0" }, undefined, cwd);
       expect(unsupported.status).toBe("error");
       expect(unsupported.version).toBe("0.5.0");
+      const incompatibleCache = NodePath.join(cwd, "incompatible-probe.json");
+      const incompatible = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_AGENT_VERSION: "0.5.0" }, incompatibleCache, cwd);
+      expect(incompatible.status).toBe("error");
+      expect(incompatible.models).toEqual([]);
+      expect(NodeFS.existsSync(incompatibleCache)).toBe(false);
       const noModels = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_NO_MODELS: "1" }, undefined, cwd);
       expect(noModels.auth.status).toBe("authenticated");
       expect(noModels.status).toBe("warning");

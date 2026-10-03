@@ -78,7 +78,7 @@ export function miniMaxEffortValue(
   if (requested === undefined || requested === "automatic") return undefined;
   const option = options.find((entry) => entry.id === "thinkingEffort");
   const allowed = option ? collectSessionConfigOptionValues(option) : [];
-  if (typeof requested !== "string" || !allowed.includes(requested) ||
+  if (typeof requested !== "string" || requested === "none" || requested === "disabled" || !allowed.includes(requested) ||
       (model === MINIMAX_PREVIEW_MODEL && !MINIMAX_THINKING_EFFORTS.some((effort) => effort === requested))) {
     throw new Error(`MiniMax Code does not advertise thinking effort ${String(requested)} for ${model}.`);
   }
@@ -92,14 +92,14 @@ export function miniMaxModelsFromConfig(options: readonly AcpSchema.SessionConfi
   return [...new Set(choices.map((choice) => choice.modelId))].map((model) => {
     const routes = choices.filter((choice) => choice.modelId === model);
     const efforts = model === current?.modelId && effort
-      ? collectSessionConfigOptionValues(effort).filter((value) => model !== MINIMAX_PREVIEW_MODEL || MINIMAX_THINKING_EFFORTS.some((entry) => entry === value))
+      ? collectSessionConfigOptionValues(effort).filter((value) => value !== "none" && value !== "disabled" && (model !== MINIMAX_PREVIEW_MODEL || MINIMAX_THINKING_EFFORTS.some((entry) => entry === value)))
       : [];
     return {
       slug: model,
       name: model,
       isCustom: false,
       capabilities: createModelCapabilities({ optionDescriptors: [
-        ...(efforts.length ? [{ id: "thinkingEffort", label: "Thinking effort", type: "select" as const, options: efforts.map((value) => ({ id: value, label: value })), ...(typeof effort?.currentValue === "string" ? { currentValue: effort.currentValue } : {}) }] : []),
+        ...(efforts.length ? [{ id: "thinkingEffort", label: "Thinking effort", type: "select" as const, options: efforts.map((value) => ({ id: value, label: value })), ...(typeof effort?.currentValue === "string" && efforts.includes(effort.currentValue) ? { currentValue: effort.currentValue } : {}) }] : []),
         { id: "providerRoute", label: "Provider route", type: "select", options: routes.map((route) => ({ id: route.value, label: route.providerId + (route.variant === undefined ? "" : ` · ${route.variant}`) })), ...(current?.modelId === model ? { currentValue: current.value } : {}) },
       ] }),
     };

@@ -4,9 +4,11 @@ import {
   CursorSettings,
   GrokSettings,
   OpenCodeSettings,
+  MiniMaxSettings,
   ProviderDriverKind,
 } from "@workjet/contracts";
 import type * as Schema from "effect/Schema";
+import { TerminalIcon } from "lucide-react";
 import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
 
 type ProviderSettingsSchema = {
@@ -35,6 +37,7 @@ export interface ProviderClientDefinition {
 }
 
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
+  { value: ProviderDriverKind.make("minimax"), label: "MiniMax Code", icon: TerminalIcon, settingsSchema: MiniMaxSettings },
   {
     value: ProviderDriverKind.make("codex"),
     label: "Codex",

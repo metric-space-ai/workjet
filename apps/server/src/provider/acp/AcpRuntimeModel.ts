@@ -81,6 +81,7 @@ export interface AcpPermissionRequest {
 }
 
 export type AcpParsedSessionEvent =
+  | { readonly _tag: "ThoughtDelta"; readonly text: string; readonly rawPayload: unknown }
   | {
       readonly _tag: "ModeChanged";
       readonly modeId: string;
@@ -562,6 +563,10 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
           rawPayload: params,
         });
       }
+      break;
+    }
+    case "agent_thought_chunk": {
+      if (upd.content.type === "text" && upd.content.text.length > 0) events.push({ _tag: "ThoughtDelta", text: upd.content.text, rawPayload: params });
       break;
     }
     case "agent_message_chunk": {

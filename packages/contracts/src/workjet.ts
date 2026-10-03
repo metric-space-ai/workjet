@@ -83,6 +83,7 @@ export const WorkjetHarness = Schema.Literals([
   "grok-cli",
   "cursor-agent",
   "greppy",
+  "minimax-code",
   "pi-code",
 ]);
 export type WorkjetHarness = typeof WorkjetHarness.Type;

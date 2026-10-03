@@ -482,10 +482,34 @@ export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
 export const MiniMaxSettings = makeProviderSettingsSchema(
   {
-    enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true)), Schema.annotateKey({ providerSettingsForm: { hidden: true } })),
-    binaryPath: makeBinaryPathSetting("mcode").pipe(Schema.annotateKey({ title: "Binary path", description: "MiniMax Code executable on this computer.", providerSettingsForm: { placeholder: "mcode", clearWhenEmpty: "omit" } })),
-    dataDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("")), Schema.annotateKey({ title: "Profile directory", description: "Optional existing MiniMax Code data directory on this computer. Empty uses the CLI profile.", providerSettingsForm: { clearWhenEmpty: "omit" } })),
-    model: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("MiniMax-M3.1-Flash-Preview")), Schema.annotateKey({ title: "Preferred model", description: "Must be advertised by the authenticated runtime. No fallback model is selected." })),
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("mcode").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description: "MiniMax Code executable on this computer.",
+        providerSettingsForm: { placeholder: "mcode", clearWhenEmpty: "omit" },
+      }),
+    ),
+    dataDirectory: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Profile directory",
+        description:
+          "Optional existing MiniMax Code data directory on this computer. Empty uses the CLI profile.",
+        providerSettingsForm: { clearWhenEmpty: "omit" },
+      }),
+    ),
+    model: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("MiniMax-M3.1-Flash-Preview")),
+      Schema.annotateKey({
+        title: "Preferred model",
+        description:
+          "Must be advertised by the authenticated runtime. No fallback model is selected.",
+      }),
+    ),
   },
   { order: ["binaryPath", "dataDirectory", "model"] },
 );
@@ -789,7 +813,12 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
-const MiniMaxSettingsPatch = Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean), binaryPath: Schema.optionalKey(TrimmedString), dataDirectory: Schema.optionalKey(TrimmedString), model: Schema.optionalKey(TrimmedString) });
+const MiniMaxSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  dataDirectory: Schema.optionalKey(TrimmedString),
+  model: Schema.optionalKey(TrimmedString),
+});
 
 const GreppySettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),

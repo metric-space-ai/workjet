@@ -37,7 +37,12 @@ export interface ProviderClientDefinition {
 }
 
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
-  { value: ProviderDriverKind.make("minimax"), label: "MiniMax Code", icon: TerminalIcon, settingsSchema: MiniMaxSettings },
+  {
+    value: ProviderDriverKind.make("minimax"),
+    label: "MiniMax Code",
+    icon: TerminalIcon,
+    settingsSchema: MiniMaxSettings,
+  },
   {
     value: ProviderDriverKind.make("codex"),
     label: "Codex",

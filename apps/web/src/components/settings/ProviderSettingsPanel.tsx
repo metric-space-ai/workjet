@@ -999,8 +999,28 @@ export function EnvironmentProviderSettings({
                       }
                     : undefined
                 }
-                onInstallPinnedRuntime={row.driver === "minimax" && !row.instance.routeViaGateway && !readOnly && liveProvider?.versionAdvisory?.updateCommand && (!liveProvider.installed || liveProvider.version !== "0.6.2") ? () => { void runProviderUpdate({ driver: row.driver, instanceId: row.instanceId }); } : undefined}
-                isUpdating={row.driver === "minimax" ? updatingProviderDrivers.has(row.driver) || serverProviders.some((provider) => provider.driver === row.driver && isProviderUpdateActive(provider)) : showInlineUpdateButton ? isDriverUpdateRunning : undefined}
+                onInstallPinnedRuntime={
+                  row.driver === "minimax" &&
+                  !row.instance.routeViaGateway &&
+                  !readOnly &&
+                  liveProvider?.versionAdvisory?.updateCommand &&
+                  (!liveProvider.installed || liveProvider.version !== "0.6.2")
+                    ? () => {
+                        void runProviderUpdate({ driver: row.driver, instanceId: row.instanceId });
+                      }
+                    : undefined
+                }
+                isUpdating={
+                  row.driver === "minimax"
+                    ? updatingProviderDrivers.has(row.driver) ||
+                      serverProviders.some(
+                        (provider) =>
+                          provider.driver === row.driver && isProviderUpdateActive(provider),
+                      )
+                    : showInlineUpdateButton
+                      ? isDriverUpdateRunning
+                      : undefined
+                }
               />
             );
           })}

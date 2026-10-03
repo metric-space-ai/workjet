@@ -644,7 +644,21 @@ export function ProviderInstanceCard({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {titleHeadNode}
               {versionCodeNode}
-              {onInstallPinnedRuntime ? <Button type="button" size="xs" variant="outline" disabled={isUpdating} onClick={onInstallPinnedRuntime}>{isUpdating ? "Installing" : liveProvider?.installed ? "Install supported version" : "Install MiniMax Code"}</Button> : null}
+              {onInstallPinnedRuntime ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={isUpdating}
+                  onClick={onInstallPinnedRuntime}
+                >
+                  {isUpdating
+                    ? "Installing"
+                    : liveProvider?.installed
+                      ? "Install supported version"
+                      : "Install MiniMax Code"}
+                </Button>
+              ) : null}
               {versionAdvisory ? (
                 <Popover>
                   <PopoverTrigger

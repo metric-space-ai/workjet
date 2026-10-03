@@ -49,9 +49,14 @@ the normal native client sends an inference request to the fixture.
 3. Launch the source-bound common app once, identify its real isolated authority,
    and visibly open Settings → Models. Bind stories to the actual app/profile and
    instance, with `Fixture Primary`, `Fixture Secondary` and `Fixture Other`
-   labels. Select `fixture-shared-model` through the normal worker controls before
-   inference. Request `What is 297 + 306?` and check the real streamed reply 603,
-   receipt, reload and normal Quit/reopen persistence. This is fixture transport
+   labels. For a Models selection chapter, select `fixture-shared-model` through
+   the normal worker controls before inference. New project-team creation instead
+   retains the production resolver's required `gpt-6.1-sol` default. The fixture
+   advertises that ID as a clearly recorded local transport alias so the normal
+   creation path can run without changing its model guard or a persisted team.
+   It does not execute GPT or prove real-provider availability. Request
+   `What is 297 + 306?` and check the real streamed reply 603,
+   requested-model receipt, reload and normal Quit/reopen persistence. This is fixture transport
    acceptance, not evidence of real-provider availability or token consumption.
 
 Limits and balance are deliberately unknown. The fixture supplies no measured

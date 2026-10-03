@@ -29,11 +29,13 @@ keys = {
     'fixture-secondary-not-a-real-key-s002',
     'fixture-other-not-a-real-key-o003',
 }
+models = ('gpt-6.1-sol', 'fixture-model-before', 'fixture-model-one', 'fixture-model-two', 'fixture-shared-model')
 record = dict(schema='workjet.models.local-provider-fixture.v1', owner=args.owner,
               pid=os.getpid(), process_group=os.getpgrp(), purpose='Sanitized loopback inference fixture',
               output=str(root), started_unix=started, deadline_unix=started + args.seconds,
               stop_condition='SIGTERM or <=900s wall deadline; at most 200 accepted inference requests',
-              requests=0, terminal=False)
+              requests=0, terminal=False,
+              model_execution='Deterministic local transport only; gpt-6.1-sol is a test alias, no external model executes')
 
 def save():
     (root / 'receipt.json').write_text(json.dumps(record, indent=2) + '\n')
@@ -70,7 +72,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if urlsplit(self.path).path == '/v1/models':
-            self.send_json(200, dict(object='list', data=[dict(id=model, object='model', owned_by='local-fixture') for model in ['fixture-model-before', 'fixture-model-one', 'fixture-model-two', 'fixture-shared-model']]))
+            self.send_json(200, dict(object='list', data=[dict(id=model, object='model', owned_by='local-fixture') for model in models]))
         else:
             self.send_json(404, dict(error=dict(message='Local fixture route unavailable')))
 
@@ -96,9 +98,12 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, OSError):
             self.send_json(400, dict(error=dict(message='Invalid bounded fixture request')))
             return
+        model = body.get('model')
+        if not isinstance(model, str) or model not in models:
+            self.send_json(400, dict(error=dict(message='Choose a model advertised by the local fixture', code='model_not_found')))
+            return
         question = re.search(r'\bWhat is\s+(\d{1,12})\s*\+\s*(\d{1,12})\s*\?', user_text(body))
         reply = str(int(question[1]) + int(question[2])) if question else 'fixture reply'
-        model = 'fixture-shared-model'
         record['requests'] += 1
         number = record['requests']
         identity = 'fixture-response-' + str(number)

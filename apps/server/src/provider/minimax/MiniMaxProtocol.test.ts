@@ -44,7 +44,7 @@ describe("MiniMax Code runtime selection", () => {
   });
   it("blocks disabled thinking for every model and omits invalid current effort", () => {
     const otherModel = "native-other-model";
-    const advertised = options([`m:minimax_oauth:${otherModel}:u`]).map((option) => ({ ...option, currentValue: option.id === "thinkingEffort" ? "none" : option.currentValue }));
+    const advertised = options([`m:minimax_oauth:${otherModel}:u`]).map((option) => option.type === "select" && option.id === "thinkingEffort" ? { ...option, currentValue: "none" } : option);
     for (const effort of ["none", "disabled"]) expect(() => miniMaxEffortValue(advertised, otherModel, [{ id: "thinkingEffort", value: effort }])).toThrow("does not advertise thinking effort");
     const descriptor = miniMaxModelsFromConfig(advertised)[0]?.capabilities.optionDescriptors?.find((entry) => entry.id === "thinkingEffort");
     if (descriptor?.type === "select") {

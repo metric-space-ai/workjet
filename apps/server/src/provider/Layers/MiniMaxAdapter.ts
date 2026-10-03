@@ -260,7 +260,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   });
   const adapter = {
     provider: PROVIDER, capabilities: { sessionModelSwitch: "in-session" as const }, startSession, sendTurn,
-    interruptTurn: (threadId, turnId) => Effect.gen(function* () {
+    interruptTurn: (threadId, turnId) => lock.withPermit(Effect.gen(function* () {
       const ctx = yield* requireSession(threadId);
       if (!ctx.turnId || (turnId && ctx.turnId !== turnId)) return;
       const settled = ctx.turnSettled;
@@ -273,7 +273,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         if (ctx.turnId) yield* finish(ctx, ctx.turnId, "error", cause.message);
         yield* stop(ctx);
       })));
-    }),
+    })),
     respondToRequest: (threadId, requestId, decision) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.pending.get(requestId); if (!request || ctx.cancelled) return yield* error("respondToRequest", "This MiniMax Code permission request is no longer pending."); const accepted = yield* Deferred.succeed(request, decision); if (!accepted) return yield* error("respondToRequest", "This MiniMax Code permission request has already been answered."); }),
     respondToUserInput: (threadId, requestId, answers) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.inputs.get(requestId); if (!request || ctx.cancelled) return yield* error("respondToUserInput", "This MiniMax Code question is no longer pending."); yield* checked("respondToUserInput", () => request.form.content(answers)); const accepted = yield* Deferred.succeed(request.answer, answers); if (!accepted) return yield* error("respondToUserInput", "This MiniMax Code question has already been answered."); }),
     stopSession: (threadId) => lock.withPermit(Effect.flatMap(requireSession(threadId), stop)),

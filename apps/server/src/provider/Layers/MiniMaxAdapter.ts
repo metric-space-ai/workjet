@@ -37,13 +37,18 @@ const error = (method: string, detail: string) => new ProviderAdapterRequestErro
 const checked = <A>(method: string, evaluate: () => A) => Effect.try({ try: evaluate, catch: (cause) => error(method, cause instanceof Error ? cause.message : "Invalid MiniMax Code selection.") });
 const withDeadline = <A>(method: string, operation: Effect.Effect<A, ProviderAdapterError>) => operation.pipe(Effect.timeoutOption("30 seconds"), Effect.flatMap((result) => result._tag === "Some" ? Effect.succeed(result.value) : Effect.fail(error(method, "MiniMax Code did not acknowledge the operation within 30 seconds."))));
 
+interface PendingQuestion {
+  readonly answer: Deferred.Deferred<ProviderUserInputAnswers>;
+  readonly form: ReturnType<typeof miniMaxElicitationForm>;
+}
+
 interface SessionContext {
   session: ProviderSession;
   readonly acp: AcpSessionRuntime["Service"];
   readonly scope: Scope.Closeable;
   readonly processes: ProviderTrackedProcess[];
   readonly pending: Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>;
-  readonly inputs: Map<ApprovalRequestId, Deferred.Deferred<ProviderUserInputAnswers>>;
+  readonly inputs: Map<ApprovalRequestId, PendingQuestion>;
   turns: ProviderThreadTurnSnapshot[];
   turnId: TurnId | undefined;
   cancelled: boolean;
@@ -79,7 +84,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   };
   const cancelPending = (ctx: SessionContext) => Effect.all([
     Effect.forEach(ctx.pending.values(), (pending) => Deferred.succeed(pending, "cancel"), { discard: true }),
-    Effect.forEach(ctx.inputs.values(), (pending) => Deferred.succeed(pending, {}), { discard: true }),
+    Effect.forEach(ctx.inputs.values(), (pending) => Deferred.succeed(pending.answer, {}), { discard: true }),
   ]).pipe(Effect.asVoid);
   const finish = Effect.fn("minimax.finish")(function* (ctx: SessionContext, turnId: TurnId, stopReason: string, errorMessage?: string) {
     if (ctx.turnId !== turnId || ctx.stopped) return;
@@ -126,7 +131,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     const scope = yield* Scope.make("sequential");
     const processes: ProviderTrackedProcess[] = [];
     const pending = new Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>();
-    const inputs = new Map<ApprovalRequestId, Deferred.Deferred<ProviderUserInputAnswers>>();
+    const inputs = new Map<ApprovalRequestId, PendingQuestion>();
     const managed = readMcpProviderSession(input.threadId);
     let childExit: Effect.Effect<unknown, unknown> | undefined;
     let transferred = false;
@@ -161,7 +166,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         const form = yield* Effect.try({ try: () => miniMaxElicitationForm(params), catch: () => new AcpRequestError({ code: -32602, errorMessage: "MiniMax Code supplied an unsupported question form." }) });
         const requestId = ApprovalRequestId.make(randomUUID());
         const answer = yield* Deferred.make<ProviderUserInputAnswers>();
-        inputs.set(requestId, answer);
+        inputs.set(requestId, { answer, form });
         yield* emit(input.threadId, { type: "user-input.requested", turnId: ctx.turnId, requestId: RuntimeRequestId.make(requestId), payload: { questions: form.questions } });
         const answers = yield* Deferred.await(answer).pipe(Effect.ensuring(Effect.sync(() => inputs.delete(requestId))));
         yield* emit(input.threadId, { type: "user-input.resolved", turnId: ctx.turnId, requestId: RuntimeRequestId.make(requestId), payload: { answers } });
@@ -242,8 +247,8 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   const adapter = {
     provider: PROVIDER, capabilities: { sessionModelSwitch: "in-session" as const }, startSession, sendTurn,
     interruptTurn: (threadId, turnId) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); if (!ctx.turnId || (turnId && ctx.turnId !== turnId)) return; ctx.cancelled = true; yield* cancelPending(ctx); yield* withDeadline("session/cancel", ctx.acp.cancel.pipe(Effect.mapError((cause) => mapAcpToAdapterError(PROVIDER, threadId, "session/cancel", cause)))).pipe(Effect.tapError(() => stop(ctx).pipe(Effect.asVoid))); }),
-    respondToRequest: (threadId, requestId, decision) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.pending.get(requestId); if (!request) return yield* error("respondToRequest", "This MiniMax Code permission request is no longer pending."); yield* Deferred.succeed(request, decision); }),
-    respondToUserInput: (threadId, requestId, answers) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.inputs.get(requestId); if (!request) return yield* error("respondToUserInput", "This MiniMax Code question is no longer pending."); yield* Deferred.succeed(request, answers); }),
+    respondToRequest: (threadId, requestId, decision) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.pending.get(requestId); if (!request || ctx.cancelled) return yield* error("respondToRequest", "This MiniMax Code permission request is no longer pending."); const accepted = yield* Deferred.succeed(request, decision); if (!accepted) return yield* error("respondToRequest", "This MiniMax Code permission request has already been answered."); }),
+    respondToUserInput: (threadId, requestId, answers) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.inputs.get(requestId); if (!request || ctx.cancelled) return yield* error("respondToUserInput", "This MiniMax Code question is no longer pending."); yield* checked("respondToUserInput", () => request.form.content(answers)); const accepted = yield* Deferred.succeed(request.answer, answers); if (!accepted) return yield* error("respondToUserInput", "This MiniMax Code question has already been answered."); }),
     stopSession: (threadId) => lock.withPermit(Effect.flatMap(requireSession(threadId), stop)),
     listSessions: () => Effect.sync(() => [...sessions.values()].map((ctx) => ctx.session)),
     hasSession: (threadId) => Effect.sync(() => sessions.has(threadId)),

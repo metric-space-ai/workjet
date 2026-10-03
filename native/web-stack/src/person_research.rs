@@ -807,6 +807,9 @@ fn grouped_person_records(
             continue;
         };
         for candidate in candidates {
+            if !aggregate_candidate_eligible(*field, candidate) {
+                continue;
+            }
             let Some(value) = candidate.get("value").and_then(browser_extract_scalar) else {
                 continue;
             };
@@ -959,6 +962,13 @@ fn assign_name_only_person_keys(raw: &mut BTreeMap<FieldKey, Vec<Value>>) {
             // A sparse field list does not identify which of several people it
             // belongs to. Keep it unbound rather than guessing by its position.
             if person_count > 1 && counts.get(&provenance).copied() != Some(person_count) {
+                continue;
+            }
+            if person_count > 1
+                && names.iter().any(|((key, _), (first, last))| {
+                    key == &provenance && (first.is_empty() || last.is_empty())
+                })
+            {
                 continue;
             }
             let ordinal = ordinals.entry(provenance.clone()).or_default();
@@ -2795,11 +2805,12 @@ mod tests {
             ],
         );
 
+        let records = grouped_person_records(&mut raw, &[]);
         let aggregated = aggregate_fields(
             &[FieldKey::PersonVorname, FieldKey::PersonNachname],
             &[],
             raw,
-            &[],
+            &records,
         );
 
         assert_eq!(aggregated["person_vorname"]["value"], "Frank");
@@ -3552,6 +3563,32 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("unbound:"));
+    }
+
+    #[test]
+    fn incomplete_name_lists_do_not_bind_other_contacts_by_ordinal() {
+        let mut raw = BTreeMap::from([
+            (
+                FieldKey::PersonVorname,
+                vec![
+                    json!({"value":"Ada","source_id":"impressum"}),
+                    json!({"value":"Grace","source_id":"impressum"}),
+                ],
+            ),
+            (
+                FieldKey::PersonNachname,
+                vec![json!({"value":"Hopper","source_id":"impressum"})],
+            ),
+        ]);
+        let records = grouped_person_records(&mut raw, &[]);
+        assert!(records
+            .iter()
+            .all(|record| !(record.get("person_vorname").is_some()
+                && record.get("person_nachname").is_some())));
+        assert!(records.iter().all(|record| record["person_key"]
+            .as_str()
+            .unwrap()
+            .starts_with("unbound:")));
     }
 
     #[test]

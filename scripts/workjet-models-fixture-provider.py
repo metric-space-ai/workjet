@@ -85,7 +85,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(429, dict(error=dict(message='Local fixture request bound reached')))
             return
         record['attempts'] += 1
-        save()
         route = urlsplit(self.path).path
         if route not in ('/v1/chat/completions', '/v1/responses'):
             self.send_json(404, dict(error=dict(message='Local fixture route unavailable')))
@@ -120,6 +119,7 @@ class Handler(BaseHTTPRequestHandler):
                            fixture_account_id=keys[credential], observed_unix=time.time())
             with (root / 'requests.jsonl').open('a') as journal:
                 journal.write(json.dumps(receipt) + '\n')
+            save()
             self.send_json(
                 status, dict(error=dict(message='Synthetic fixture failure: ' + code, code=code)),
                 {'Retry-After': '60'} if status == 429 else None,

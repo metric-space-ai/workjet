@@ -8,14 +8,11 @@ import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { PROVIDER_GATEWAY_DIAGNOSTIC_FILE } from "@workjet/shared/providerGatewayHostDiagnostic";
 import * as Artifact from "./ProviderGatewayHostArtifact.ts";
-async function fixture(run: (data: Awaited<ReturnType<typeof createFixture>>) => Promise<void>) {
-  const data = await createFixture();
-  try {
-    await run(data);
-  } finally {
-    await NodeFSP.rm(data.root, { recursive: true, force: true });
-  }
-}
+
+const fixture = Effect.acquireRelease(Effect.promise(createFixture), (data) =>
+  Effect.promise(() => NodeFSP.rm(data.root, { recursive: true, force: true })),
+);
+
 async function createFixture() {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "host-diagnostic-resolve-"));
   const resource = NodePath.join(root, Artifact.PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY);
@@ -52,70 +49,88 @@ async function createFixture() {
   };
   return { root, executablePath, manifestPath, manifest, input };
 }
-it("resolves an explicit packaged diagnostic host by its own verified receipt", () =>
-  fixture(async ({ input, executablePath }) => {
-    const resolved = await Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input));
-    NodeAssert.equal(resolved.executablePath, executablePath);
-    NodeAssert.equal(resolved.source, "diagnostic-package");
-    NodeAssert.equal(resolved.version, "diagnostic-111111111111");
-  }));
-it("refuses corruption, architecture mismatch and malformed receipt without falling back", () =>
-  fixture(async ({ input, executablePath, manifestPath }) => {
-    await NodeAssert.rejects(
-      Effect.runPromise(
-        Artifact.resolveProviderGatewayHostExecutable({
+
+it.effect("resolves an explicit packaged diagnostic host by its own verified receipt", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { input, executablePath } = yield* fixture;
+      const resolved = yield* Artifact.resolveProviderGatewayHostExecutable(input);
+      NodeAssert.equal(resolved.executablePath, executablePath);
+      NodeAssert.equal(resolved.source, "diagnostic-package");
+      NodeAssert.equal(resolved.version, "diagnostic-111111111111");
+    }),
+  ),
+);
+
+it.effect(
+  "refuses corruption, architecture mismatch and malformed receipt without falling back",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { input, executablePath, manifestPath } = yield* fixture;
+        const architectureFailure = yield* Artifact.resolveProviderGatewayHostExecutable({
           ...input,
           host: { platform: "darwin", arch: "x64" },
-        }),
-      ),
-      /architecture/u,
-    );
-    await NodeFSP.writeFile(executablePath, "corrupted");
-    await NodeAssert.rejects(
-      Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
-      /bytes/u,
-    );
-    await NodeFSP.writeFile(manifestPath, "invalid json");
-    await NodeAssert.rejects(
-      Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
-      /receipt is invalid/u,
-    );
-  }));
-it("ignores diagnostic receipts in development and preserves explicit override priority", () =>
-  fixture(async ({ input }) => {
-    const resolved = await Effect.runPromise(
-      Artifact.resolveProviderGatewayHostExecutable({
-        ...input,
-        environment: { ...input.environment, isPackaged: false },
-        loadDiagnosticPackage: () => {
-          throw new Error("must not read");
-        },
-        resolveWorkspaceBuild: () => undefined,
+        }).pipe(Effect.flip);
+        NodeAssert.match(architectureFailure.message, /architecture/u);
+        yield* Effect.promise(() => NodeFSP.writeFile(executablePath, "corrupted"));
+        const corruptionFailure = yield* Artifact.resolveProviderGatewayHostExecutable(input).pipe(
+          Effect.flip,
+        );
+        NodeAssert.match(corruptionFailure.message, /bytes/u);
+        yield* Effect.promise(() => NodeFSP.writeFile(manifestPath, "invalid json"));
+        const malformedFailure = yield* Artifact.resolveProviderGatewayHostExecutable(input).pipe(
+          Effect.flip,
+        );
+        NodeAssert.match(malformedFailure.message, /receipt is invalid/u);
       }),
-    );
-    NodeAssert.equal(resolved.source, "local-build");
-    const override = await Effect.runPromise(
-      Artifact.resolveProviderGatewayHostExecutable({
-        ...input,
-        executableOverride: "/explicit/host",
-        loadDiagnosticPackage: () => {
-          throw new Error("must not read");
-        },
+    ),
+);
+
+it.effect(
+  "ignores diagnostic receipts in development and preserves explicit override priority",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { input } = yield* fixture;
+        const resolved = yield* Artifact.resolveProviderGatewayHostExecutable({
+          ...input,
+          environment: { ...input.environment, isPackaged: false },
+          loadDiagnosticPackage: () => {
+            throw new Error("must not read");
+          },
+          resolveWorkspaceBuild: () => undefined,
+        });
+        NodeAssert.equal(resolved.source, "local-build");
+        const override = yield* Artifact.resolveProviderGatewayHostExecutable({
+          ...input,
+          executableOverride: "/explicit/host",
+          loadDiagnosticPackage: () => {
+            throw new Error("must not read");
+          },
+        });
+        NodeAssert.equal(override.source, "override");
       }),
-    );
-    NodeAssert.equal(override.source, "override");
-  }));
-it("rejects a symlink or oversized diagnostic receipt", () =>
-  fixture(async ({ input, manifestPath, root }) => {
-    await NodeFSP.writeFile(manifestPath, " ".repeat(20 * 1024));
-    await NodeAssert.rejects(
-      Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
-      /receipt is invalid/u,
-    );
-    await NodeFSP.rm(manifestPath);
-    await NodeFSP.symlink(NodePath.join(root, "missing"), manifestPath);
-    await NodeAssert.rejects(
-      Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
-      /receipt is invalid/u,
-    );
-  }));
+    ),
+);
+
+it.effect("rejects a symlink or oversized diagnostic receipt", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { input, manifestPath, root } = yield* fixture;
+      yield* Effect.promise(() => NodeFSP.writeFile(manifestPath, " ".repeat(20 * 1024)));
+      const oversizedFailure = yield* Artifact.resolveProviderGatewayHostExecutable(input).pipe(
+        Effect.flip,
+      );
+      NodeAssert.match(oversizedFailure.message, /receipt is invalid/u);
+      yield* Effect.promise(async () => {
+        await NodeFSP.rm(manifestPath);
+        await NodeFSP.symlink(NodePath.join(root, "missing"), manifestPath);
+      });
+      const symlinkFailure = yield* Artifact.resolveProviderGatewayHostExecutable(input).pipe(
+        Effect.flip,
+      );
+      NodeAssert.match(symlinkFailure.message, /receipt is invalid/u);
+    }),
+  ),
+);

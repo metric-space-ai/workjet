@@ -1,6 +1,6 @@
 import * as NodeReadline from "node:readline";
 import * as NodeFS from "node:fs";
-if (process.argv.includes("--version")) { process.stdout.write((process.env.MINIMAX_TEST_VERSION || "0.6.2") + "\n"); process.exit(0); }
+if (process.argv.includes("--version")) { (process.env.MINIMAX_TEST_VERSION_STDERR ? process.stderr : process.stdout).write((process.env.MINIMAX_TEST_VERSION || "0.6.2") + "\n"); process.exit(0); }
 const model = "MiniMax-M3.1-Flash-Preview";
 const native = `m:minimax_oauth:${model}:u`;
 let sessionId = "minimax-fixture-session";

@@ -9,7 +9,7 @@ const tokenRoute = `m:minimax_oauth:${model}:u`;
 const apiRoute = `m:minimax_api:${model}:u`;
 const options = (values: readonly string[] = [tokenRoute]): AcpSchema.SessionConfigOption[] => [
   { type: "select", id: "model", category: "model", name: "Model", currentValue: values[0]!, options: values.map((value) => ({ value, name: value })) },
-  { type: "select", id: "thinkingEffort", category: "thought_level", name: "Thinking effort", currentValue: "medium", options: ["low", "medium", "high", "xhigh", "max", "none"].map((value) => ({ value, name: value })) },
+  { type: "select", id: "thinkingEffort", category: "thought_level", name: "Thinking effort", currentValue: "medium", options: ["low", "medium", "high", "xhigh", "max", "none", "disabled"].map((value) => ({ value, name: value })) },
 ];
 
 describe("MiniMax Code runtime selection", () => {
@@ -41,6 +41,16 @@ describe("MiniMax Code runtime selection", () => {
     expect(miniMaxEffortValue(options(), model)).toBeUndefined();
     expect(miniMaxEffortValue(options(), model, [{ id: "effort", value: "automatic" }])).toBeUndefined();
     expect(() => miniMaxEffortValue(options().slice(0, 1), model, [{ id: "effort", value: "high" }])).toThrow();
+  });
+  it("blocks disabled thinking for every model and omits invalid current effort", () => {
+    const otherModel = "native-other-model";
+    const advertised = options([`m:minimax_oauth:${otherModel}:u`]).map((option) => ({ ...option, currentValue: option.id === "thinkingEffort" ? "none" : option.currentValue }));
+    for (const effort of ["none", "disabled"]) expect(() => miniMaxEffortValue(advertised, otherModel, [{ id: "thinkingEffort", value: effort }])).toThrow("does not advertise thinking effort");
+    const descriptor = miniMaxModelsFromConfig(advertised)[0]?.capabilities.optionDescriptors?.find((entry) => entry.id === "thinkingEffort");
+    if (descriptor?.type === "select") {
+      expect(descriptor.options.map((entry) => entry.id)).not.toContain("none");
+      expect(descriptor.currentValue).toBeUndefined();
+    } else throw new Error("Expected advertised thinking options");
   });
   it("publishes only runtime models and only advertised always-on thinking options", () => {
     expect(miniMaxModelsFromConfig([])).toEqual([]);

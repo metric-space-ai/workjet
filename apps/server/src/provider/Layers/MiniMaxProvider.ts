@@ -44,12 +44,12 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const versionResult = yield* Effect.gen(function* () {
     const child = yield* spawner.spawn(ChildProcess.make(settings.binaryPath || "mcode", ["--version"], { env: miniMaxEnvironment(settings, environment), extendEnv: false, shell: false }));
-    const [stdout, , code] = yield* Effect.all([collectStreamAsString(child.stdout), collectStreamAsString(child.stderr), child.exitCode.pipe(Effect.map(Number))], { concurrency: 2 });
-    return { stdout, code };
+    const [stdout, stderr, code] = yield* Effect.all([collectStreamAsString(child.stdout), collectStreamAsString(child.stderr), child.exitCode.pipe(Effect.map(Number))], { concurrency: 2 });
+    return { output: `${stdout}\n${stderr}`, code };
   }).pipe(Effect.scoped, Effect.timeoutOption("8 seconds"), Effect.result);
   if (Result.isFailure(versionResult)) return snapshot({ installed: !isCommandMissingCause(versionResult.failure), version: null, status: "error", auth: { status: "unknown" }, message: "MiniMax Code could not be started. Install the pinned official CLI or choose its executable path on this computer." });
   if (Option.isNone(versionResult.success)) return snapshot({ installed: true, version: null, status: "error", auth: { status: "unknown" }, message: "MiniMax Code version probe timed out." });
-  const version = /(?:^|\s)v?(\d+\.\d+\.\d+)(?:\s|$)/.exec(versionResult.success.value.stdout)?.[1] ?? null;
+  const version = /(?:^|\s)v?(\d+\.\d+\.\d+)(?:\s|$)/.exec(versionResult.success.value.output)?.[1] ?? null;
   if (versionResult.success.value.code !== 0 || version !== MINIMAX_CODE_RELEASE.version) return snapshot({ installed: true, version, status: "error", auth: { status: "unknown" }, message: `This adapter requires MiniMax Code ${MINIMAX_CODE_RELEASE.version}. Select the pinned executable before starting a session.` });
   // ACP exposes model options only on session setup. Reuse one dedicated status
   // session between refreshes and application restarts.
@@ -63,8 +63,8 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
   const discovered = yield* Effect.gen(function* () {
     const acp = yield* makeMiniMaxAcpRuntime({ config: settings, environment, spawner, cwd, clientInfo: { name: "workjet-status", version: "1" }, mcpServers: [], ...(resumeSessionId ? { resumeSessionId, requireLoadResponse: true } : {}) });
     const started = yield* acp.start();
-    if (probeSessionPath) yield* fs.writeFileString(probeSessionPath, JSON.stringify({ sessionId: started.sessionId, profileKey }));
     if (started.initializeResult.agentInfo?.name !== "minimax-code" || started.initializeResult.agentInfo.version !== MINIMAX_CODE_RELEASE.version) return yield* Effect.fail(new MiniMaxProbeCompatibilityError("Unexpected MiniMax Code ACP executable identity."));
+    if (probeSessionPath) yield* fs.writeFileString(probeSessionPath, JSON.stringify({ sessionId: started.sessionId, profileKey }));
     const configOptions = yield* acp.getConfigOptions;
     const initialModels = miniMaxModelsFromConfig(configOptions);
     if (initialModels.some((entry) => entry.slug === settings.model)) {

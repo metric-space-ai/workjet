@@ -61,6 +61,7 @@ const HEALTH: WorkjetGatewayHealth = {
   schemaVersion: 1,
   observedAtMs: NOW_MS - 12_000,
   activeProvider: "claude",
+  accounts: [],
   providers: [
     {
       provider: "claude",

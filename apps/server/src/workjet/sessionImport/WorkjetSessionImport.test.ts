@@ -14,6 +14,10 @@ describe("static Workjet session transcript parsing", () => {
       "Review # AGENTS.md instructions in the attached document.",
       "Describe the <permissions instructions> marker in a transcript.",
       "Keep a request that quotes <environment_context>.",
+      "<recommended_plugins> wird hier wörtlich besprochen. Bitte erklären.",
+      "# AGENTS.md instructions sollen als normale Anfrage erhalten bleiben.",
+      "<permissions instructions> ist ein Marker, den ich ändern möchte.",
+      "<environment_context> ist in meinem Prompt falsch. Bitte korrigieren.",
     ]) {
       const parsed = parseCodexSessionTranscript(
         [
@@ -55,6 +59,31 @@ describe("static Workjet session transcript parsing", () => {
           NOW,
         ),
       ).toBeNull();
+    }
+  });
+
+  it("retains requests following generated context in the same user message", () => {
+    const request = "Fix the source parser without losing the conversation.";
+    for (const prefix of [
+      "<environment_context>cwd=/workspace</environment_context>\n",
+      "<recommended_plugins>hidden</recommended_plugins>\n<permissions instructions>hidden</permissions instructions>\n",
+      "# AGENTS.md instructions for /workspace\n<INSTRUCTIONS>hidden</INSTRUCTIONS>\n<environment_context>cwd=/workspace</environment_context>\n",
+    ]) {
+      const parsed = parseCodexSessionTranscript(
+        [
+          JSON.stringify({
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: prefix + request }],
+            },
+          }),
+        ],
+        NOW,
+      );
+      expect(parsed?.title).toBe(request);
+      expect(parsed?.messages).toEqual([{ role: "user", text: request, createdAt: NOW }]);
     }
   });
 

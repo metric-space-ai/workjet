@@ -129,14 +129,29 @@ const visibleText = (
     .join("\n");
 };
 
-const isInjectedCodexContext = (text: string): boolean => {
-  const content = text.trimStart();
-  return (
-    content.startsWith("<recommended_plugins>") ||
-    content.startsWith("# AGENTS.md instructions") ||
-    content.startsWith("<permissions instructions>") ||
-    content.startsWith("<environment_context>")
-  );
+const stripInjectedCodexContext = (text: string): string => {
+  let remaining = text.trimStart();
+  let stripped = false;
+  const header = /^# AGENTS\.md instructions(?: for [^\r\n]+)?(?:\r?\n|$)/u.exec(remaining);
+  if (header) {
+    const body = remaining.slice(header[0].length).trimStart();
+    if (!body) return "";
+    const instructions = /^<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/u.exec(body);
+    if (!instructions) return text;
+    remaining = body.slice(instructions[0].length).trimStart();
+    stripped = true;
+  }
+  for (;;) {
+    const context =
+      /^<(recommended_plugins|permissions instructions|environment_context)>[\s\S]*?<\/\1>/u.exec(
+        remaining,
+      );
+    if (!context) break;
+    remaining = remaining.slice(context[0].length).trimStart();
+    stripped = true;
+  }
+  // A literal marker or unknown envelope remains user text.
+  return stripped ? remaining : text;
 };
 
 // These are UI context messages, not the user's conversation title or history.
@@ -180,10 +195,11 @@ export const parseCodexSessionTranscript = (
     if (record?.type !== "response_item" || payload?.type !== "message") continue;
     const role = payload.role;
     if (role !== "user" && role !== "assistant") continue;
-    const text = stripCodexUiContext(
+    const sourceText = stripCodexUiContext(
       visibleText(payload.content, role === "user" ? "input_text" : "output_text"),
     );
-    if (!text || (role === "user" && isInjectedCodexContext(text))) continue;
+    const text = role === "user" ? stripInjectedCodexContext(sourceText) : sourceText;
+    if (!text) continue;
     messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
   }
   if (!messages.some((message) => message.role === "user")) return null;

@@ -1,11 +1,11 @@
-import { createInterface } from "node:readline";
+import * as NodeReadline from "node:readline";
 
 const sessionId = "cooperative-session";
 let heldPrompt;
 const write = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 const reply = (id, result) => write({ jsonrpc: "2.0", id, result });
 
-const input = createInterface({ input: process.stdin });
+const input = NodeReadline.createInterface({ input: process.stdin });
 input.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize") {

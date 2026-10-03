@@ -1,10 +1,10 @@
 // Run through the shared heavy-job gate with Node24 and an explicitly built Greppy binary.
 // This exercises the real Workjet adapter and Greppy process against a local model fixture.
-import assert from "node:assert/strict";
-import fs from "node:fs/promises";
-import http from "node:http";
-import os from "node:os";
-import path from "node:path";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeHttp from "node:http";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ApprovalRequestId,
@@ -20,12 +20,15 @@ import * as Stream from "effect/Stream";
 import { makeGreppyAdapter } from "../src/provider/Layers/GreppyAdapter.ts";
 
 const binary = process.argv[2];
-assert(binary && path.isAbsolute(binary), "Pass the absolute path to a built ACP Greppy binary.");
-assert(
+NodeAssert.ok(
+  binary && NodePath.isAbsolute(binary),
+  "Pass the absolute path to a built ACP Greppy binary.",
+);
+NodeAssert.ok(
   process.env.TMPDIR?.startsWith("/Volumes/tmp/"),
   "Use the shared admission gate and tmp volume.",
 );
-const root = await fs.mkdtemp(path.join(os.tmpdir(), "greppy-acp-acceptance-"));
+const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "greppy-acp-acceptance-"));
 const requests = [];
 const failures = [];
 const sockets = new Set();
@@ -81,10 +84,10 @@ function answer(response, content, stopReason) {
   response.end();
 }
 
-const server = http.createServer(async (request, response) => {
+const server = NodeHttp.createServer(async (request, response) => {
   try {
-    assert.equal(request.url, "/v1/messages");
-    assert.equal(request.headers["x-api-key"], "fixture-only");
+    NodeAssert.equal(request.url, "/v1/messages");
+    NodeAssert.equal(request.headers["x-api-key"], "fixture-only");
     let raw = "";
     for await (const chunk of request) raw += chunk;
     const body = JSON.parse(raw);
@@ -102,7 +105,7 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (text === "permission-denial") {
-      assert(body.tools?.[0]?.name, "Greppy must advertise its actual tools.");
+      NodeAssert.ok(body.tools?.[0]?.name, "Greppy must advertise its actual tools.");
       answer(response, { type: "tool_use", name: body.tools[0].name }, "tool_use");
       return;
     }
@@ -141,7 +144,7 @@ try {
             Effect.succeed({
               PATH: process.env.PATH,
               TMPDIR: process.env.TMPDIR,
-              GREPPY_STORE_DIR: path.join(root, "store"),
+              GREPPY_STORE_DIR: NodePath.join(root, "store"),
               GREPPY_API_KEY: "fixture-only",
             }),
         },
@@ -167,26 +170,26 @@ try {
       const session = yield* adapter.startSession(start);
       resumeCursor = session.resumeCursor;
       yield* adapter.sendTurn({ threadId, input: "first" });
-      assert.equal((yield* Queue.take(completed)).payload.state, "completed");
+      NodeAssert.equal((yield* Queue.take(completed)).payload.state, "completed");
       yield* adapter.sendTurn({
         threadId,
         input: "follow-up",
         modelSelection: { instanceId, model: "fixture-alt-model" },
       });
-      assert.equal((yield* Queue.take(completed)).payload.state, "completed");
-      assert.equal(requests.at(-1).model, "fixture-alt-model");
-      assert(
+      NodeAssert.equal((yield* Queue.take(completed)).payload.state, "completed");
+      NodeAssert.equal(requests.at(-1).model, "fixture-alt-model");
+      NodeAssert.ok(
         requests.at(-1).messages.some((message) => message.role === "assistant"),
         "Follow-up must include prior assistant history.",
       );
       yield* adapter.sendTurn({ threadId, input: "permission-denial" });
-      assert.equal((yield* Queue.take(completed)).payload.state, "completed");
-      assert(
+      NodeAssert.equal((yield* Queue.take(completed)).payload.state, "completed");
+      NodeAssert.ok(
         seen.some(
           (event) => event.type === "request.resolved" && event.payload.decision === "decline",
         ),
       );
-      assert(
+      NodeAssert.ok(
         requests.some((body) =>
           body.messages.some(
             (message) =>
@@ -202,25 +205,25 @@ try {
       yield* Effect.promise(() => hanging);
       yield* adapter.interruptTurn(threadId);
       yield* Fiber.join(prompt).pipe(Effect.timeout("2 seconds"));
-      assert.equal((yield* Queue.take(completed)).payload.state, "cancelled");
+      NodeAssert.equal((yield* Queue.take(completed)).payload.state, "cancelled");
       yield* adapter.sendTurn({ threadId, input: "after-cancel" });
-      assert.equal((yield* Queue.take(completed)).payload.state, "completed");
+      NodeAssert.equal((yield* Queue.take(completed)).payload.state, "completed");
       yield* adapter.stopSession(threadId);
       const restarted = yield* adapter.startSession({ ...start, resumeCursor });
-      assert.deepEqual(restarted.resumeCursor, resumeCursor);
+      NodeAssert.deepEqual(restarted.resumeCursor, resumeCursor);
       yield* adapter.sendTurn({ threadId, input: "after-restart" });
-      assert.equal((yield* Queue.take(completed)).payload.state, "completed");
-      assert(
+      NodeAssert.equal((yield* Queue.take(completed)).payload.state, "completed");
+      NodeAssert.ok(
         requests
           .at(-1)
           .messages.some((message) => JSON.stringify(message.content).includes("after-cancel")),
         "Restart must restore persisted conversation history.",
       );
-      assert(
+      NodeAssert.ok(
         seen.some((event) => event.type === "content.delta"),
         "Assistant text must reach canonical Workjet events.",
       );
-      assert.deepEqual(failures, []);
+      NodeAssert.deepEqual(failures, []);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.timeout("60 seconds")),
   );
   process.stdout.write(
@@ -229,5 +232,5 @@ try {
 } finally {
   for (const socket of sockets) socket.destroy();
   await new Promise((resolve) => server.close(resolve));
-  await fs.rm(root, { recursive: true, force: true });
+  await NodeFSP.rm(root, { recursive: true, force: true });
 }

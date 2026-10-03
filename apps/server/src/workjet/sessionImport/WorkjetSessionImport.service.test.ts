@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import * as Fsp from "node:fs/promises";
-import * as Os from "node:os";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
@@ -59,11 +59,13 @@ const withFixture = <A, E>(
   Effect.scoped(
     Effect.gen(function* () {
       const root = yield* Effect.acquireRelease(
-        Effect.promise(() => Fsp.mkdtemp(NodePath.join(Os.tmpdir(), "workjet-import-"))),
-        (path) => Effect.promise(() => Fsp.rm(path, { recursive: true, force: true })),
+        Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-import-"))),
+        (path) => Effect.promise(() => NodeFSP.rm(path, { recursive: true, force: true })),
       );
       const codex = NodePath.join(root, "codex");
-      yield* Effect.promise(() => Fsp.mkdir(NodePath.join(codex, "sessions"), { recursive: true }));
+      yield* Effect.promise(() =>
+        NodeFSP.mkdir(NodePath.join(codex, "sessions"), { recursive: true }),
+      );
       const projects = new Map<string, OrchestrationProjectShell>([
         [
           "project-a",
@@ -165,7 +167,7 @@ describe("project-directed static session imports", () => {
         Effect.gen(function* () {
           const file = NodePath.join(root, "sessions", "conversation.jsonl");
           const original = transcript("Review importer", ["Reviewed"]);
-          yield* Effect.promise(() => Fsp.writeFile(file, original));
+          yield* Effect.promise(() => NodeFSP.writeFile(file, original));
           const inspection = yield* service.inspect();
           const candidateId = inspection.candidates[0]!.candidateId;
           expect(inspection.candidates[0]?.workspaceAvailable).toBe(false);
@@ -176,7 +178,7 @@ describe("project-directed static session imports", () => {
           expect(commands.some((command) => command.type === "project.create")).toBe(false);
           expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
           yield* Effect.promise(() =>
-            Fsp.writeFile(file, transcript("Review importer", ["Reviewed", "More detail"])),
+            NodeFSP.writeFile(file, transcript("Review importer", ["Reviewed", "More detail"])),
           );
           const updated = yield* service.importSessions(input);
           expect(updated.items[0]?.status).toBe("updated");
@@ -188,7 +190,7 @@ describe("project-directed static session imports", () => {
           expect(second.items[0]?.status).toBe("imported");
           expect(second.items[0]?.threadId).not.toBe(first.items[0]?.threadId);
           expect(threads.get(second.items[0]!.threadId!)?.messages).toHaveLength(3);
-          expect(yield* Effect.promise(() => Fsp.readFile(file, "utf8"))).toBe(
+          expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(
             transcript("Review importer", ["Reviewed", "More detail"]),
           );
           const copies = (yield* service.inspect()).candidates[0]?.importedCopies;
@@ -207,13 +209,13 @@ describe("project-directed static session imports", () => {
         for (let index = 0; index < 5; index++) {
           const file = NodePath.join(root, "sessions", `${index}.jsonl`);
           yield* Effect.promise(() =>
-            Fsp.writeFile(
+            NodeFSP.writeFile(
               file,
               transcript(index === 0 ? "Older selected work" : `Conversation ${index}`),
             ),
           );
           yield* Effect.promise(() =>
-            Fsp.utimes(file, 1_700_000_000 + index, 1_700_000_000 + index),
+            NodeFSP.utimes(file, 1_700_000_000 + index, 1_700_000_000 + index),
           );
         }
         const first = yield* service.inspect({ limit: 2 });
@@ -243,7 +245,7 @@ describe("project-directed static session imports", () => {
       withFixture(({ root, service, threads }) =>
         Effect.gen(function* () {
           const file = NodePath.join(root, "sessions", "conversation.jsonl");
-          yield* Effect.promise(() => Fsp.writeFile(file, transcript("Original")));
+          yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Original")));
           const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
           const invalid = yield* service.importSessions({
             candidateIds: [candidateId],
@@ -253,9 +255,9 @@ describe("project-directed static session imports", () => {
           expect(threads.size).toBe(0);
           const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
           yield* service.importSessions(input);
-          yield* Effect.promise(() => Fsp.writeFile(file, transcript("Changed prefix")));
+          yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Changed prefix")));
           yield* Effect.promise(() =>
-            Fsp.writeFile(
+            NodeFSP.writeFile(
               NodePath.join(root, "sessions", "second.jsonl"),
               transcript("Another conversation"),
             ),
@@ -277,21 +279,21 @@ describe("project-directed static session imports", () => {
     withFixture(({ root, service, commands }) =>
       Effect.gen(function* () {
         yield* Effect.promise(() =>
-          Fsp.writeFile(
+          NodeFSP.writeFile(
             NodePath.join(root, "sessions", "known.jsonl"),
             transcript("Recorded Codex", ["Historical reply"], "gpt-5.4"),
           ),
         );
         yield* Effect.promise(() =>
-          Fsp.writeFile(
+          NodeFSP.writeFile(
             NodePath.join(root, "sessions", "unknown.jsonl"),
             transcript("Unrecorded model"),
           ),
         );
         const claude = NodePath.join(root, "..", "claude", "projects", "fixture");
-        yield* Effect.promise(() => Fsp.mkdir(claude, { recursive: true }));
+        yield* Effect.promise(() => NodeFSP.mkdir(claude, { recursive: true }));
         yield* Effect.promise(() =>
-          Fsp.writeFile(
+          NodeFSP.writeFile(
             NodePath.join(claude, "known.jsonl"),
             [
               encodeJson({
@@ -343,8 +345,8 @@ describe("project-directed static session imports", () => {
           const archive = NodePath.join(root, "archived_sessions");
           const file = NodePath.join(archive, "conversation.jsonl");
           const original = transcript("Archived planning", ["Saved reply"]);
-          yield* Effect.promise(() => Fsp.mkdir(archive, { recursive: true }));
-          yield* Effect.promise(() => Fsp.writeFile(file, original));
+          yield* Effect.promise(() => NodeFSP.mkdir(archive, { recursive: true }));
+          yield* Effect.promise(() => NodeFSP.writeFile(file, original));
           const inspected = yield* service.inspect({ query: "Archived planning" });
           expect(inspected.candidates).toHaveLength(1);
           const imported = yield* service.importSessions({
@@ -353,7 +355,7 @@ describe("project-directed static session imports", () => {
           });
           expect(imported.items[0]?.status).toBe("imported");
           expect(threads.get(imported.items[0]!.threadId!)?.projectId).toBe("project-b");
-          expect(yield* Effect.promise(() => Fsp.readFile(file, "utf8"))).toBe(original);
+          expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(original);
         }),
       ),
   );
@@ -361,7 +363,7 @@ describe("project-directed static session imports", () => {
     withFixture(({ root, service, threads }) =>
       Effect.gen(function* () {
         yield* Effect.promise(() =>
-          Fsp.writeFile(
+          NodeFSP.writeFile(
             NodePath.join(root, "sessions", "conversation.jsonl"),
             transcript("Copy me", ["Reply"]),
           ),

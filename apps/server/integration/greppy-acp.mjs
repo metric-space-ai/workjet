@@ -29,6 +29,8 @@ NodeAssert.ok(
   "Use the shared admission gate and tmp volume.",
 );
 const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "greppy-acp-acceptance-"));
+const deniedMarker = NodePath.join(root, "denied-tool.txt");
+const approvedMarker = NodePath.join(root, "approved-tool.txt");
 const requests = [];
 const failures = [];
 const sockets = new Set();
@@ -66,12 +68,12 @@ function answer(response, content, stopReason) {
     write("content_block_start", {
       type: "content_block_start",
       index: 0,
-      content_block: { type: "tool_use", id: "fixture-tool", name: content.name, input: {} },
+      content_block: { type: "tool_use", id: content.id, name: content.name, input: {} },
     });
     write("content_block_delta", {
       type: "content_block_delta",
       index: 0,
-      delta: { type: "input_json_delta", partial_json: "{}" },
+      delta: { type: "input_json_delta", partial_json: JSON.stringify(content.arguments) },
     });
   }
   write("content_block_stop", { type: "content_block_stop", index: 0 });
@@ -104,9 +106,23 @@ const server = NodeHttp.createServer(async (request, response) => {
       hangingRequest();
       return;
     }
-    if (text === "permission-denial") {
-      NodeAssert.ok(body.tools?.[0]?.name, "Greppy must advertise its actual tools.");
-      answer(response, { type: "tool_use", name: body.tools[0].name }, "tool_use");
+    if (text === "permission-denial" || text === "permission-approval") {
+      const tool = body.tools?.find((candidate) => candidate.name === "greppy");
+      NodeAssert.ok(tool, "Greppy must advertise its actual greppy tool.");
+      NodeAssert.equal(tool.input_schema.properties.args.type, "array");
+      const approved = text === "permission-approval";
+      answer(
+        response,
+        {
+          type: "tool_use",
+          id: approved ? "fixture-approved-tool" : "fixture-denied-tool",
+          name: tool.name,
+          arguments: {
+            args: ["bash-smart", "--", "/usr/bin/touch", approved ? approvedMarker : deniedMarker],
+          },
+        },
+        "tool_use",
+      );
       return;
     }
     answer(response, { type: "text", text: "Greppy ✓: fixture answer" }, "end_turn");
@@ -125,6 +141,7 @@ const endpoint = `http://127.0.0.1:${server.address().port}`;
 const instanceId = ProviderInstanceId.make("greppy-fixture");
 const threadId = ThreadId.make("greppy-fixture-thread");
 const seen = [];
+let approveNextPermission = false;
 let resumeCursor;
 
 try {
@@ -153,12 +170,15 @@ try {
       yield* adapter.streamEvents.pipe(
         Stream.runForEach((event) => {
           seen.push(event);
-          if (event.type === "request.opened")
+          if (event.type === "request.opened") {
+            const decision = approveNextPermission ? "accept" : "decline";
+            approveNextPermission = false;
             return adapter.respondToRequest(
               threadId,
               ApprovalRequestId.make(event.requestId),
-              "decline",
+              decision,
             );
+          }
           if (event.type === "turn.completed")
             return Queue.offer(completed, event).pipe(Effect.asVoid);
           return Effect.void;
@@ -194,10 +214,42 @@ try {
           body.messages.some(
             (message) =>
               Array.isArray(message.content) &&
-              message.content.some((part) => part.type === "tool_result" && part.is_error === true),
+              message.content.some(
+                (part) =>
+                  part.type === "tool_result" &&
+                  part.tool_use_id === "fixture-denied-tool" &&
+                  part.is_error === true,
+              ),
           ),
         ),
         "Denied tool must produce an error result without execution.",
+      );
+      yield* Effect.promise(() =>
+        NodeAssert.rejects(NodeFSP.stat(deniedMarker), { code: "ENOENT" }),
+      );
+      approveNextPermission = true;
+      yield* adapter.sendTurn({ threadId, input: "permission-approval" });
+      NodeAssert.equal((yield* Queue.take(completed)).payload.state, "completed");
+      yield* Effect.promise(() => NodeFSP.stat(approvedMarker));
+      NodeAssert.ok(
+        seen.some(
+          (event) => event.type === "request.resolved" && event.payload.decision === "accept",
+        ),
+      );
+      NodeAssert.ok(
+        requests.some((body) =>
+          body.messages.some(
+            (message) =>
+              Array.isArray(message.content) &&
+              message.content.some(
+                (part) =>
+                  part.type === "tool_result" &&
+                  part.tool_use_id === "fixture-approved-tool" &&
+                  part.is_error !== true,
+              ),
+          ),
+        ),
+        "Approved tool must execute and return a successful result to the model.",
       );
       const prompt = yield* adapter
         .sendTurn({ threadId, input: "hang" })
@@ -227,7 +279,7 @@ try {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.timeout("60 seconds")),
   );
   process.stdout.write(
-    `${JSON.stringify({ status: "passed", workflow: "greppy-real-process-acp", prompts: requests.length, streamedEvents: seen.length, gates: ["start", "follow-up", "model-switch", "deny", "blocked-model-cancel", "immediate-follow-up", "restart-history"], uiAcceptance: "not-run" })}\n`,
+    `${JSON.stringify({ status: "passed", workflow: "greppy-real-process-acp", prompts: requests.length, streamedEvents: seen.length, gates: ["start", "follow-up", "model-switch", "deny", "allow-once", "blocked-model-cancel", "immediate-follow-up", "restart-history"], uiAcceptance: "not-run" })}\n`,
   );
 } finally {
   for (const socket of sockets) socket.destroy();

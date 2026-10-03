@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import type { MiniMaxSettings } from "@workjet/contracts";
+import { resolveSpawnCommand } from "@workjet/shared/shell";
 import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
 import * as NodeCrypto from "node:crypto";
@@ -43,7 +44,9 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
   if (!settings.enabled) return snapshot({ installed: false, version: null, status: "warning", auth: { status: "unknown" }, message: "MiniMax Code is disabled." });
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const versionResult = yield* Effect.gen(function* () {
-    const child = yield* spawner.spawn(ChildProcess.make(settings.binaryPath || "mcode", ["--version"], { env: miniMaxEnvironment(settings, environment), extendEnv: false, shell: false }));
+    const env = miniMaxEnvironment(settings, environment);
+    const command = yield* resolveSpawnCommand(settings.binaryPath || "mcode", ["--version"], { env, extendEnv: false });
+    const child = yield* spawner.spawn(ChildProcess.make(command.command, command.args, { env, extendEnv: false, shell: command.shell }));
     const [stdout, stderr, code] = yield* Effect.all([collectStreamAsString(child.stdout), collectStreamAsString(child.stderr), child.exitCode.pipe(Effect.map(Number))], { concurrency: 2 });
     return { output: `${stdout}\n${stderr}`, code };
   }).pipe(Effect.scoped, Effect.timeoutOption("8 seconds"), Effect.result);

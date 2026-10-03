@@ -886,7 +886,7 @@ fn grouped_person_records(
         }
     }
 
-    let mut records = coalesce_name_only_person_records(grouped)
+    let mut records = grouped
         .into_values()
         .filter_map(|record| {
             let has_identity = [
@@ -908,72 +908,6 @@ fn grouped_person_records(
         .collect::<Vec<_>>();
     records.sort_by(|left, right| compare_person_records(left, right, priorities));
     records
-}
-
-fn coalesce_name_only_person_records(
-    grouped: BTreeMap<String, serde_json::Map<String, Value>>,
-) -> BTreeMap<String, serde_json::Map<String, Value>> {
-    let mut out = BTreeMap::new();
-    for (key, mut record) in grouped {
-        let first = record
-            .get("person_vorname")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let last = record
-            .get("person_nachname")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let source_url = record
-            .get("source_url")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let target_key = if key.starts_with("name:")
-            && source_url.is_empty()
-            && (!first.is_empty() || !last.is_empty())
-        {
-            format!("name:{}", normalize_person_name(&format!("{first} {last}")))
-        } else {
-            key
-        };
-        if let Some(existing) = out.get_mut(&target_key) {
-            merge_grouped_record(existing, &mut record);
-        } else {
-            record.insert("person_key".to_string(), Value::String(target_key.clone()));
-            out.insert(target_key, record);
-        }
-    }
-    out
-}
-
-fn merge_grouped_record(
-    existing: &mut serde_json::Map<String, Value>,
-    incoming: &mut serde_json::Map<String, Value>,
-) {
-    let incoming_count = incoming
-        .get("evidence_count")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let existing_count = existing
-        .get("evidence_count")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let incoming_evidence = incoming
-        .get("evidence")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    for (field, value) in incoming.iter() {
-        if field != "evidence" && existing.get(field).is_none_or(Value::is_null) {
-            existing.insert(field.clone(), value.clone());
-        }
-    }
-    if let Some(evidence) = existing.get_mut("evidence").and_then(Value::as_array_mut) {
-        evidence.extend(incoming_evidence);
-    }
-    existing.insert(
-        "evidence_count".to_string(),
-        json!(existing_count + incoming_count),
-    );
 }
 
 fn assign_name_only_person_keys(raw: &mut BTreeMap<FieldKey, Vec<Value>>) {
@@ -3596,7 +3530,7 @@ mod tests {
                 "person_nachname":{"value":null,"candidates":[]}
             }
         });
-        let records = ["person-a", "person-b"]
+        let records = ["person-a", "person-b", "name:crm-a", "name:crm-b"]
             .into_iter()
             .flat_map(|key| {
                 [
@@ -3607,12 +3541,17 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap(),
-            4
+            8
         );
         let people = payload["person_records"].as_array().unwrap();
-        assert_eq!(people.len(), 2);
-        assert_eq!(people[0]["person_key"], "person-a");
-        assert_eq!(people[1]["person_key"], "person-b");
+        assert_eq!(people.len(), 4);
+        assert_eq!(
+            people
+                .iter()
+                .map(|person| person["person_key"].as_str().unwrap())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["person-a", "person-b", "name:crm-a", "name:crm-b"])
+        );
         for person in people {
             assert!(person["evidence"]
                 .as_array()

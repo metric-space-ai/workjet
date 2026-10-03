@@ -217,7 +217,14 @@ export function useWorkjetGatewaySection(
         readonly models?: ReadonlyArray<string>;
       },
     ): Promise<boolean> => {
-      if (environmentId === null || routingRef.current || accounts.length === 0) return false;
+      const strategy = (editedCatalog ?? catalogQuery.data)?.routingStrategy;
+      if (
+        environmentId === null ||
+        routingRef.current ||
+        accounts.length === 0 ||
+        strategy === undefined
+      )
+        return false;
       routingRef.current = true;
       setRouting({ status: "saving" });
       for (const account of accounts) clearAccountError(account.id);
@@ -225,7 +232,7 @@ export function useWorkjetGatewaySection(
         const result = await updateRouting({
           environmentId,
           input: {
-            strategy: "fill-first",
+            strategy,
             accounts: accounts.map((account) => ({
               accountId: account.id,
               enabled: patch.enabled ?? account.enabled,
@@ -238,7 +245,7 @@ export function useWorkjetGatewaySection(
         });
         if (result._tag === "Failure") {
           const message = isAtomCommandInterrupted(result)
-            ? "Änderung unterbrochen. Erneut speichern."
+            ? "Change interrupted. Save again."
             : workjetGatewayFailureDescription(squashAtomCommandFailure(result));
           setAccountErrors((previous) => ({
             ...previous,
@@ -255,7 +262,7 @@ export function useWorkjetGatewaySection(
         routingRef.current = false;
       }
     },
-    [environmentId, refresh, updateRouting],
+    [environmentId, refresh, updateRouting, editedCatalog, catalogQuery.data],
   );
 
   const retry = useCallback(() => {
@@ -443,7 +450,7 @@ export function useWorkjetGatewaySection(
           setAccountErrors((previous) => ({
             ...previous,
             [accountId]: isAtomCommandInterrupted(result)
-              ? "Entfernen unterbrochen. Erneut versuchen."
+              ? "Removal interrupted. Try again."
               : workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
           }));
           return false;

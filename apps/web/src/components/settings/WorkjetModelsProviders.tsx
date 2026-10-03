@@ -147,6 +147,8 @@ function InlineField({
     },
     onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
         cancelledBlur.current = true;
         setDraft(value);
         setFailed(false);
@@ -177,7 +179,7 @@ function InlineField({
       )}
       {failed && (
         <span role="alert" className="text-xs text-destructive">
-          Nicht gespeichert. Eingabe prüfen und erneut mit Enter speichern.
+          Not saved. Check your entry and press Enter to try again.
         </span>
       )}
     </div>
@@ -224,12 +226,10 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
     return (
       <span className="text-xs text-muted-foreground">
         {health?.quotaRefreshing
-          ? "Limits werden geprüft …"
+          ? "Checking limits …"
           : health?.quotaError
-            ? "Limits derzeit nicht abrufbar"
-            : health?.quotaSupported === false
-              ? "Limits are not reported to this hub."
-              : "Limits are not reported to this hub."}
+            ? "Limits currently unavailable"
+            : "Limits are not reported to this hub."}
       </span>
     );
   return (
@@ -238,7 +238,7 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
       title={
         health.observedAtMs === null
           ? undefined
-          : `Stand: ${new Date(health.observedAtMs).toLocaleString()}`
+          : `Observed: ${new Date(health.observedAtMs).toLocaleString()}`
       }
     >
       {health.windows.map((window) => (
@@ -248,10 +248,10 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
             {window.notInPlan
               ? "Not in subscription plan"
               : window.unlimited
-                ? "Unbegrenzt"
+                ? "Unlimited"
                 : window.remainingPercent === null
-                  ? "Rest unbekannt"
-                  : `${window.remainingPercent > 0 && window.remainingPercent < 1 ? "< 1" : Math.floor(window.remainingPercent)} % frei`}
+                  ? "Remaining unknown"
+                  : `${window.remainingPercent > 0 && window.remainingPercent < 1 ? "< 1" : Math.floor(window.remainingPercent)} % remaining`}
           </span>
           {!window.notInPlan && !window.unlimited && window.remainingPercent !== null && (
             <span aria-hidden className="h-1 w-12 overflow-hidden rounded-full bg-muted">
@@ -262,7 +262,7 @@ function AccountLimits({ health }: { readonly health: ModelsAccountHealth | unde
             </span>
           )}
           {window.resetsAtMs !== null && (
-            <span className="text-muted-foreground">bis {resetLabel(window.resetsAtMs)}</span>
+            <span className="text-muted-foreground">until {resetLabel(window.resetsAtMs)}</span>
           )}
         </span>
       ))}
@@ -290,6 +290,7 @@ function KeyForm({
   const [error, setError] = useState<string | null>(null);
   return (
     <form
+      data-settings-inline-editor=""
       className="grid min-w-0 gap-2 border-t border-border/50 py-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,2fr)_auto]"
       onSubmit={(event) => {
         event.preventDefault();
@@ -300,7 +301,7 @@ function KeyForm({
           !parsed ||
           (account === undefined && parsed.length === 0)
         ) {
-          setError("Accountname, API-Key und mindestens einen gültigen Modellnamen eingeben.");
+          setError("Enter an account name, API key and at least one valid model name.");
           return;
         }
         const credential = key;
@@ -310,13 +311,13 @@ function KeyForm({
           .onSaveApiKey(provider, credential, label.trim(), parsed, account?.id)
           .then((saved) => {
             if (saved) onClose();
-            else setError("API-Key nicht gespeichert. Erneut eingeben und speichern.");
+            else setError("API key was not saved. Enter it again and retry.");
           });
       }}
     >
       <input
         data-workjet-action={`models.key-form.${account?.id ?? provider}.label`}
-        aria-label="Accountname"
+        aria-label="Account name"
         value={label}
         onChange={(event) => setLabel(event.target.value)}
         maxLength={160}
@@ -325,8 +326,8 @@ function KeyForm({
       <input
         aria-label={
           account
-            ? `API-Key für ${account.label}`
-            : `API-Key für ${WORKJET_GATEWAY_PROVIDER_LABELS[provider]}`
+            ? `API key for ${account.label}`
+            : `API key for ${WORKJET_GATEWAY_PROVIDER_LABELS[provider]}`
         }
         type="password"
         data-workjet-action={`models.key-form.${account?.id ?? provider}.value`}
@@ -344,13 +345,13 @@ function KeyForm({
           size="sm"
           disabled={state.mutationBusy || state.apiKey.status === "saving"}
         >
-          Verbinden
+          Connect
         </Button>
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          aria-label="API-Key Eingabe abbrechen"
+          aria-label="Cancel API key entry"
           onClick={onClose}
         >
           <XIcon className="size-4" />
@@ -358,10 +359,10 @@ function KeyForm({
       </div>
       {!account && (
         <label className="col-span-full grid gap-1 text-xs text-muted-foreground">
-          Modelle
+          Models
           <input
-            aria-label={`Modelle für neuen ${WORKJET_GATEWAY_PROVIDER_LABELS[provider]} Account`}
-            placeholder="Modell-IDs, durch Komma getrennt"
+            aria-label={`Models for a new ${WORKJET_GATEWAY_PROVIDER_LABELS[provider]} account`}
+            placeholder="Model IDs, separated by commas"
             value={modelText}
             onChange={(event) => setModelText(event.target.value)}
             className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
@@ -406,7 +407,7 @@ function AccountRow({
         <div className="min-w-0">
           <InlineField
             action={`models.account.${account.id}.name`}
-            label={`Accountname ${account.label}`}
+            label={`Account name ${account.label}`}
             value={account.label}
             disabled={state.mutationBusy}
             onSave={(label) =>
@@ -418,7 +419,7 @@ function AccountRow({
               type="button"
               onClick={() => setReplaceKey(!replaceKey)}
               className="ml-1 text-xs text-muted-foreground hover:text-foreground"
-              aria-label={`API-Key ${account.label} direkt ändern`}
+              aria-label={`Edit API key for ${account.label}`}
             >
               API-Key{account.credentialSuffix === null ? "" : ` · ••••${account.credentialSuffix}`}
             </button>
@@ -428,7 +429,7 @@ function AccountRow({
           {account.enabled ? (
             <AccountLimits health={health} />
           ) : (
-            <span className="text-xs">Deaktiviert</span>
+            <span className="text-xs">Disabled</span>
           )}
         </div>
         <div className="col-start-2 row-start-1 flex items-center gap-2 sm:col-start-3">
@@ -446,13 +447,13 @@ function AccountRow({
           )}
           <label
             className="relative inline-flex cursor-pointer items-center"
-            title={account.enabled ? "Für Workjet deaktivieren" : "Für Workjet aktivieren"}
+            title={account.enabled ? "Disable for Workjet" : "Enable for Workjet"}
           >
             <input
               type="checkbox"
               data-workjet-action={`models.account.${account.id}.enabled`}
               role="switch"
-              aria-label={`Account ${account.label} verwenden`}
+              aria-label={`Use account ${account.label}`}
               checked={account.enabled}
               disabled={state.mutationBusy}
               onChange={(event) => {
@@ -475,7 +476,7 @@ function AccountRow({
           <Button
             size="icon"
             variant="ghost"
-            aria-label={`Account ${account.label} permanent entfernen`}
+            aria-label={`Permanently remove account ${account.label}`}
             data-workjet-action={`models.account.${account.id}.remove-start`}
             disabled={state.mutationBusy}
             onClick={() => setConfirmDelete(!confirmDelete)}
@@ -492,20 +493,20 @@ function AccountRow({
           <span>
             {health.message ??
               (authRequired
-                ? "Anmeldung abgelaufen."
+                ? "Sign-in expired."
                 : health.status === "cooldown"
-                  ? "Limit erreicht. Andere verfügbare Accounts übernehmen neue Anfragen."
-                  : "Anbieter derzeit nicht erreichbar.")}
-            {health.retryAtMs !== null && ` Erneut verfügbar: ${resetLabel(health.retryAtMs)}.`}
+                  ? "Limit reached. Other available accounts handle new requests."
+                  : "Provider currently unavailable.")}
+            {health.retryAtMs !== null && ` Available again: ${resetLabel(health.retryAtMs)}.`}
           </span>
           {authRequired && isKey && (
             <button className="underline underline-offset-2" onClick={() => setReplaceKey(true)}>
-              API-Key ersetzen
+              Replace API key
             </button>
           )}
           {!authRequired && health.status === "unavailable" && (
             <button className="underline underline-offset-2" onClick={state.onRefresh}>
-              Erneut prüfen
+              Check again
             </button>
           )}
         </div>
@@ -534,7 +535,7 @@ function AccountRow({
       )}
       {confirmDelete && (
         <div className="flex flex-wrap items-center gap-2 rounded-md bg-destructive/5 p-2 text-xs">
-          <span>Account und gespeicherte Zugangsdaten permanent entfernen?</span>
+          <span>Permanently remove this account and its saved credentials?</span>
           <Button
             size="sm"
             variant="destructive"
@@ -546,10 +547,10 @@ function AccountRow({
               });
             }}
           >
-            Entfernen
+            Remove
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
-            Abbrechen
+            Cancel
           </Button>
         </div>
       )}
@@ -571,7 +572,7 @@ function LoginMessage({
   if (login.status === "starting")
     return (
       <div role="status" className="flex items-center gap-3 py-2 text-xs text-muted-foreground">
-        Anmeldung wird geöffnet …<button onClick={cancel}>Abbrechen</button>
+        Opening sign-in …<button onClick={cancel}>Cancel</button>
       </div>
     );
   if (login.status === "failed")
@@ -582,9 +583,9 @@ function LoginMessage({
           onClick={onRetry ?? (() => state.onAddAccount(login.provider))}
           className="underline underline-offset-2"
         >
-          Anmeldung erneut starten
+          Restart sign-in
         </button>
-        <button onClick={cancel}>Abbrechen</button>
+        <button onClick={cancel}>Cancel</button>
       </div>
     );
   if (login.status !== "pending") return null;
@@ -593,17 +594,17 @@ function LoginMessage({
       role="status"
       className="flex flex-wrap items-center gap-3 py-2 text-xs text-muted-foreground"
     >
-      <span>Anmeldung im Browser abschließen.</span>
+      <span>Complete sign-in in your browser.</span>
       <a
         href={login.authorizationUrl}
         target="_blank"
         rel="noreferrer"
         className="text-foreground underline underline-offset-2"
       >
-        Anmeldung öffnen
+        Open sign-in
       </a>
       <button onClick={cancel} className="text-foreground">
-        Abbrechen
+        Cancel
       </button>
     </div>
   );
@@ -642,12 +643,12 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
   const fault =
     state.statusError ??
     state.catalogError ??
-    (state.status?.phase === "faulted" ? "Provider-Verbindung unterbrochen." : null);
+    (state.status?.phase === "faulted" ? "Provider connection interrupted." : null);
   return (
-    <section className="space-y-4" aria-label="LLM-Anbieter" data-testid="models-providers">
+    <section className="space-y-4" aria-label="LLM providers" data-testid="models-providers">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">LLM-Anbieter</h2>
+          <h2 className="text-lg font-semibold">LLM providers</h2>
           <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
             <span
               className={cn(
@@ -656,15 +657,15 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
               )}
             />
             {state.isInitialLoading
-              ? "Verbindung wird geladen …"
-              : `${accounts.filter((account) => account.enabled).length} aktive Accounts`}
+              ? "Loading connection …"
+              : `${accounts.filter((account) => account.enabled).length} active accounts`}
           </p>
         </div>
         <div className="relative flex gap-1">
           <Button
             size="icon"
             variant="ghost"
-            aria-label="Anbieterstatus aktualisieren"
+            aria-label="Refresh provider status"
             disabled={state.isRefreshing}
             onClick={state.onRefresh}
           >
@@ -681,9 +682,9 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                 />
               }
             >
-              <PlusIcon className="size-4" /> Anbieter hinzufügen
+              <PlusIcon className="size-4" /> Add provider
             </PopoverTrigger>
-            <PopoverPopup align="end" aria-label="Anbieter auswählen" viewportClassName="p-1">
+            <PopoverPopup align="end" aria-label="Choose provider" viewportClassName="p-1">
               {WORKJET_GATEWAY_PROVIDERS.map((provider) => {
                 const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
                 return (
@@ -710,13 +711,13 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
         >
           <span>{fault}</span>
           <Button size="sm" variant="outline" disabled={state.isOperating} onClick={state.onRetry}>
-            Verbindung wiederherstellen
+            Reconnect
           </Button>
         </div>
       )}
       {accounts.length === 0 && adding === null && !state.isInitialLoading && (
         <p className="py-4 text-sm text-muted-foreground">
-          Anbieter hinzufügen und per Abo-Anmeldung oder API-Key verbinden.
+          Add a provider and connect through subscription sign-in or an API key.
         </p>
       )}
       <div className="divide-y divide-border/60">
@@ -743,12 +744,12 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                     className="flex items-baseline gap-2"
                     title="Comma-separated model IDs. Changes apply to all accounts for this provider."
                   >
-                    <span className="shrink-0 text-[11px] text-muted-foreground">Modelle</span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">Models</span>
                     <div className="min-w-0 flex-1">
                       {providerAccounts.length > 0 ? (
                         <InlineField
                           action={`models.provider.${provider}.models`}
-                          label={`Modelle ${title}`}
+                          label={`Models ${title}`}
                           value={models.join(", ")}
                           multiline
                           disabled={state.mutationBusy}
@@ -762,7 +763,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                         />
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          Nach dem Verbinden direkt bearbeitbar
+                          Editable after connecting
                         </span>
                       )}
                     </div>
@@ -772,7 +773,7 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                   size="icon"
                   variant="ghost"
                   className="col-start-2 row-start-1 sm:col-start-3"
-                  aria-label={`Account zu ${title} hinzufügen`}
+                  aria-label={`Add account to ${title}`}
                   data-workjet-action={`models.provider.${provider}.add-account`}
                   disabled={
                     state.mutationBusy ||
@@ -799,10 +800,10 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                   !loginHere && (
                     <div className="flex gap-2 py-2">
                       <Button size="sm" variant="outline" onClick={() => state.onAddAccount("xai")}>
-                        Mit Abo anmelden
+                        Sign in with subscription
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => setKeyProvider("xai")}>
-                        API-Key hinzufügen
+                        Add API key
                       </Button>
                     </div>
                   )}

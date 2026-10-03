@@ -14,7 +14,8 @@ vi.mock("../ui/expandable-settings-popup", () => ({
 import { ComposerManualTargetControlsView } from "./ComposerWorkjetTargetControls";
 
 const base = {
-  configuredInstanceIds: new Set(["greppy"]),
+  configuredInstanceIds: new Set(["greppy-fixture"]),
+  configuredDriverKinds: new Set(["greppy"]),
   selectedHarness: "greppy" as const,
   onSelectHarness: () => undefined,
   modelsUnavailableReason: null,

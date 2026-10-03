@@ -4,6 +4,8 @@ Workjet connects to Greppy through ACP over standard input/output, using the sam
 
 In **Settings → Harnesses**, enable Greppy, select its executable if it is not on your PATH, and configure a gateway endpoint and model. The endpoint is a plain HTTP gateway root such as `http://127.0.0.1:8317`. Workjet's configured gateway routing supplies the session environment; API keys travel in the child environment rather than command arguments. The project folder is the child process's working directory.
 
+Named Greppy profiles work in the **Harness** menu. Choosing Greppy keeps your current enabled Greppy profile; when switching from another harness, Workjet uses an enabled default profile or another configured Greppy profile.
+
 For a directly configured endpoint, the **Model** menu lists this Greppy profile's configured models and lets you enter a custom model ID. Configured choices do not establish model availability; the endpoint is checked when a turn starts. If you enable routing through the Workjet gateway for the profile, the menu uses the gateway model catalog.
 
 A Greppy thread accepts text prompts and follow-up messages. Model selection can change within the session. Streaming text and tool activity use Workjet's normal conversation events. In approval mode, tool requests wait for a Workjet permission decision; full-access mode permits the advertised one-time option. Stopping a turn sends ACP cancellation, including while Greppy waits for model output or a permission decision. The adapter remains busy until the prompt settles.

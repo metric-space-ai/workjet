@@ -147,7 +147,7 @@ describe("Business OS settings scope", () => {
     expect(markup).toContain("Models");
     expect(markup).toContain("Harnesses");
     expect(markup).toContain("Computers");
-    expect(markup).toContain("Worker");
+    expect(markup).toContain("Lumas");
     expect(markup).not.toContain("Wähle zuerst eine Instanz aus.");
   });
 

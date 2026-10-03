@@ -31,7 +31,7 @@ import { terminateProviderProcesses, trackedChildProcess, type ProviderAdapterSh
 import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
 
 const PROVIDER = ProviderDriverKind.make("minimax");
-const Resume = Schema.Struct({ protocol: Schema.Literal("minimax-acp"), sessionId: Schema.String, profileKey: Schema.String });
+const Resume = Schema.Struct({ protocol: Schema.Literal("minimax-acp"), sessionId: Schema.String.check(Schema.isPattern(/\S/)), profileKey: Schema.String });
 const decodeResume = Schema.decodeUnknownOption(Resume);
 const error = (method: string, detail: string) => new ProviderAdapterRequestError({ provider: PROVIDER, method, detail });
 const checked = <A>(method: string, evaluate: () => A) => Effect.try({ try: evaluate, catch: (cause) => error(method, cause instanceof Error ? cause.message : "Invalid MiniMax Code selection.") });

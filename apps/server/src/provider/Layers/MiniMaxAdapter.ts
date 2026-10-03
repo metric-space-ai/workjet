@@ -51,7 +51,10 @@ import {
   resolveMiniMaxModelValue,
   MINIMAX_CODE_RELEASE,
 } from "../minimax/MiniMaxProtocol.ts";
-import { miniMaxElicitationForm, MiniMaxElicitationRequest } from "../minimax/MiniMaxElicitation.ts";
+import {
+  miniMaxElicitationForm,
+  MiniMaxElicitationRequest,
+} from "../minimax/MiniMaxElicitation.ts";
 import {
   terminateProviderProcesses,
   trackedChildProcess,

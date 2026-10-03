@@ -113,9 +113,9 @@ describe("MiniMax Code runtime selection", () => {
       expect(() =>
         miniMaxEffortValue(advertised, otherModel, [{ id: "thinkingEffort", value: effort }]),
       ).toThrow("does not advertise thinking effort");
-    const descriptor = miniMaxModelsFromConfig(advertised)[0]?.capabilities?.optionDescriptors?.find(
-      (entry) => entry.id === "thinkingEffort",
-    );
+    const descriptor = miniMaxModelsFromConfig(
+      advertised,
+    )[0]?.capabilities?.optionDescriptors?.find((entry) => entry.id === "thinkingEffort");
     if (descriptor?.type === "select") {
       expect(descriptor.options.map((entry) => entry.id)).not.toContain("none");
       expect(descriptor.currentValue).toBeUndefined();

@@ -26,7 +26,10 @@ const Form = Schema.Struct({
     required: Schema.optional(Schema.Array(Schema.String)),
   }),
 });
-export const MiniMaxElicitationRequest = Schema.Struct({ ...Form.fields, sessionId: Schema.String });
+export const MiniMaxElicitationRequest = Schema.Struct({
+  ...Form.fields,
+  sessionId: Schema.String,
+});
 const decodeForm = Schema.decodeUnknownSync(Form);
 
 function propertyChoices(property: typeof Property.Type) {

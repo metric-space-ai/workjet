@@ -35,7 +35,7 @@ describe("manual harness instance routing", () => {
     const entries = deriveProviderInstanceEntries([provider("greppy-fixture"), provider("greppy")]);
     expect(resolveManualHarnessInstances(entries, selected, null).get("greppy")).toBe(selected);
     expect(
-      resolveManualHarnessInstances([...entries].reverse(), selected, null).get("greppy"),
+      resolveManualHarnessInstances(entries.toReversed(), selected, null).get("greppy"),
     ).toBe(selected);
   });
 

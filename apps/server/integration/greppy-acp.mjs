@@ -95,7 +95,7 @@ const server = NodeHttp.createServer(async (request, response) => {
     for await (const chunk of request) raw += chunk;
     const body = JSON.parse(raw);
     requests.push(body);
-    const user = body.messages.filter((message) => message.role === "user").at(-1);
+    const user = body.messages.findLast((message) => message.role === "user");
     const text =
       typeof user?.content === "string"
         ? user.content
@@ -144,13 +144,14 @@ const instanceId = ProviderInstanceId.make("greppy-fixture");
 const threadId = ThreadId.make("greppy-fixture-thread");
 const seen = [];
 let approveNextPermission = false;
+const decodeGreppySettings = Schema.decodeUnknownSync(GreppySettings);
 let resumeCursor;
 
 try {
   await Effect.runPromise(
     Effect.gen(function* () {
       const adapter = yield* makeGreppyAdapter(
-        Schema.decodeUnknownSync(GreppySettings)({
+        decodeGreppySettings({
           enabled: true,
           binaryPath: binary,
           endpoint,

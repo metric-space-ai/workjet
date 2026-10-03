@@ -195,23 +195,6 @@ export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorker
   };
 }
 
-function Field({
-  id,
-  label,
-  children,
-}: {
-  readonly id: string;
-  readonly label: string;
-  readonly children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-    </div>
-  );
-}
-
 /**
  * The segmented control the Swift Workjet worker panel uses for harness,
  * reasoning and target computer. A dropdown hides the option set behind a
@@ -575,9 +558,9 @@ export function WorkjetWorkerEditor({
                         patchDraft({ capabilityIds });
                         return;
                       }
-                      const automatic = connections.filter(
+                      const automatic = connections.find(
                         (connection) => connection.status === "ready",
-                      )[0];
+                      );
                       patchDraft({
                         capabilityIds,
                         capabilityBindings: next

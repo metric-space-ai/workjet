@@ -108,6 +108,7 @@ interface SessionContext {
   turnSettled: Deferred.Deferred<void> | undefined;
   cancelled: boolean;
   stopped: boolean;
+  readonly stoppedSignal: Deferred.Deferred<void>;
   managedPrompt: string | undefined;
 }
 
@@ -214,6 +215,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     yield* cancelPending(ctx);
     if (ctx.turnId) yield* finish(ctx, ctx.turnId, "cancelled");
     ctx.stopped = true;
+    yield* Deferred.succeed(ctx.stoppedSignal, undefined);
     sessions.delete(ctx.session.threadId);
     const result = yield* terminateProviderProcesses({
       processes: ctx.processes,
@@ -508,6 +510,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
             turnSettled: undefined,
             cancelled: false,
             stopped: false,
+            stoppedSignal: yield* Deferred.make<void>(),
             managedPrompt:
               managed?.compiledManagedPrompt.trim() ||
               input.workjetConfig?.managedInstructions.trim(),
@@ -727,7 +730,11 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/prompt", cause),
             ),
           );
-        yield* ctx.acp.drainEvents;
+        // Stop closes the event consumer. Its signal also releases an in-flight
+        // drain barrier, so a cancelled prompt cannot wait on that closed consumer.
+        yield* Effect.raceFirst(ctx.acp.drainEvents, Deferred.await(ctx.stoppedSignal));
+        if (ctx.stopped)
+          return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
         ctx.managedPrompt = undefined;
         ctx.turns = [...ctx.turns, { id: turnId, items: [{ prompt, result }] }];
         yield* finish(ctx, turnId, result.stopReason);

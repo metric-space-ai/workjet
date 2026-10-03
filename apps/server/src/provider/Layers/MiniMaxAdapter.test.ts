@@ -111,6 +111,27 @@ describe("MiniMax Code adapter protocol fixture", () => {
       expect(yield* adapter.hasSession(threadId)).toBe(false);
     }));
   });
+  it("retains an idle session after a rejected replacement or turn selection", async () => {
+    await runTest((cwd, binaryPath, log) => Effect.gen(function* () {
+      const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), { instanceId, resolveSessionEnvironment: () => environment(log) });
+      const session = yield* adapter.startSession(input(cwd));
+      const rejectedReplacement = yield* adapter.startSession({ ...input(cwd), modelSelection: { instanceId, model: "unavailable-model" } }).pipe(Effect.flip);
+      expect(rejectedReplacement.message).toContain("does not advertise");
+      expect((yield* adapter.listSessions())[0]).toEqual(session);
+      for (const selection of [
+        { ...modelSelection, instanceId: ProviderInstanceId.make("foreign-instance") },
+        { instanceId, model: "unavailable-model" },
+        { ...modelSelection, options: [{ id: "thinkingEffort", value: "none" }] },
+      ]) {
+        yield* adapter.sendTurn({ ...turn("must not be sent"), modelSelection: selection }).pipe(Effect.flip);
+        expect((yield* adapter.listSessions())[0]).toEqual(session);
+      }
+      expect(fs.readFileSync(log, "utf8")).not.toContain('"method":"session/prompt"');
+      yield* adapter.sendTurn(turn("original session remains usable"));
+      expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
+      expect((yield* adapter.listSessions())[0]?.resumeCursor).toEqual(session.resumeCursor);
+    }));
+  });
   it("retains a live session when a resume cursor belongs to another profile", async () => {
     await runTest((cwd, binaryPath, log) => Effect.gen(function* () {
       const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), { instanceId, resolveSessionEnvironment: () => environment(log) });

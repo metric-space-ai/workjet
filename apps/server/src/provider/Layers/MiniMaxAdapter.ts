@@ -127,7 +127,9 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     const profileKey = createHash("sha256").update(JSON.stringify([options.instanceId, config.dataDirectory || environment.MINIMAX_DATA_DIR || environment.MAVIS_DATA_DIR || "default", environment.HOME || ""])).digest("hex");
     if (resume._tag === "Some" && resume.value.profileKey !== profileKey) return yield* error("startSession", "The saved MiniMax Code session belongs to a different profile. Select its original harness profile to resume.");
     const previous = sessions.get(input.threadId);
-    if (previous) yield* stop(previous);
+    // Finish an active turn before loading its persisted history. Keep an idle
+    // session available until its replacement has authenticated and configured.
+    if (previous?.turnId) yield* stop(previous);
     const scope = yield* Scope.make("sequential");
     const processes: ProviderTrackedProcess[] = [];
     const pending = new Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>();
@@ -192,6 +194,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           case "ModeChanged": break;
         }
       })), Effect.forkIn(scope));
+      if (previous && !previous.stopped) yield* stop(previous);
       sessions.set(input.threadId, ctx);
       transferred = true;
       if (childExit) yield* childExit.pipe(Effect.ignore, Effect.andThen(Effect.gen(function* () {
@@ -210,22 +213,25 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   }));
 
   const sendTurn: ProviderAdapterShape<ProviderAdapterError>["sendTurn"] = (input) => Effect.gen(function* () {
-    const { ctx, turnId } = yield* lock.withPermit(Effect.gen(function* () {
+    const { ctx, turnId, model } = yield* lock.withPermit(Effect.gen(function* () {
       const ctx = yield* requireSession(input.threadId);
       if (ctx.session.status === "error") return yield* error("sendTurn", "Resume the saved MiniMax Code session to reconnect.");
       if (ctx.turnId) return yield* error("sendTurn", "MiniMax Code is already answering. Stop the current turn first.");
       if (input.attachments?.length) return yield* error("sendTurn", "This MiniMax Code ACP release advertises text prompts only.");
       if (!input.input?.trim()) return yield* error("sendTurn", "A text prompt is required.");
+      if (input.modelSelection && input.modelSelection.instanceId !== options.instanceId) return yield* error("modelSelection", "The selected model belongs to another harness instance.");
+      const model = input.modelSelection?.model.trim() || ctx.session.model;
+      if (!model) return yield* error("sendTurn", "Choose a MiniMax Code model.");
+      const configOptions = yield* ctx.acp.getConfigOptions;
+      yield* checked("session/set_config_option", () => resolveMiniMaxModelValue(configOptions, model, input.modelSelection?.options));
+      if (model === ctx.session.model) yield* checked("session/set_config_option", () => miniMaxEffortValue(configOptions, model, input.modelSelection?.options));
       const turnId = TurnId.make(randomUUID());
       ctx.cancelled = false; ctx.turnId = turnId;
       ctx.session = { ...ctx.session, status: "running", activeTurnId: turnId, updatedAt: yield* now };
-      return { ctx, turnId };
+      return { ctx, turnId, model };
     }));
     return yield* Effect.gen(function* () {
-      if (input.modelSelection && input.modelSelection.instanceId !== options.instanceId) return yield* error("modelSelection", "The selected model belongs to another harness instance.");
       const selection = input.modelSelection;
-      const model = selection?.model.trim() || ctx.session.model;
-      if (!model) return yield* error("sendTurn", "Choose a MiniMax Code model.");
       yield* withDeadline("session/set_config_option", applyModel(ctx.acp, input.threadId, model, selection?.options));
       ctx.session = { ...ctx.session, model };
       const mode = input.interactionMode === "plan" ? "plan" : "default";

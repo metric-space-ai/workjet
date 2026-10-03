@@ -175,6 +175,9 @@ describe("MiniMax Code adapter protocol fixture", () => {
       const absentCursor = yield* adapter.startSession({ ...input(cwd), resumePolicy: "require-existing" }).pipe(Effect.flip);
       expect(absentCursor.message).toContain("saved MiniMax Code session cursor is required");
       expect((yield* adapter.listSessions())[0]).toEqual(session);
+      const emptyCursor = yield* adapter.startSession({ ...input(cwd), resumeCursor: { protocol: "minimax-acp", sessionId: "", profileKey: "foreign-profile" }, resumePolicy: "require-existing" }).pipe(Effect.flip);
+      expect(emptyCursor.message).toContain("cursor does not identify");
+      expect((yield* adapter.listSessions())[0]).toEqual(session);
       yield* adapter.stopSession(threadId);
       missing = true;
       const missingSession = yield* adapter.startSession({ ...input(cwd), resumeCursor: session.resumeCursor, resumePolicy: "require-existing" }).pipe(Effect.flip);

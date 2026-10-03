@@ -94,8 +94,8 @@ export function miniMaxModelsFromConfig(options: readonly AcpSchema.SessionConfi
       name: model,
       isCustom: false,
       capabilities: createModelCapabilities({ optionDescriptors: [
-        { id: "providerRoute", label: "Provider route", type: "select", options: routes.map((route) => ({ id: route.value, label: route.providerId + (route.variant === undefined ? "" : ` · ${route.variant}`) })), ...(current?.modelId === model ? { currentValue: current.value } : {}) },
         ...(efforts.length ? [{ id: "thinkingEffort", label: "Thinking effort", type: "select" as const, options: efforts.map((value) => ({ id: value, label: value })), ...(typeof effort?.currentValue === "string" ? { currentValue: effort.currentValue } : {}) }] : []),
+        { id: "providerRoute", label: "Provider route", type: "select", options: routes.map((route) => ({ id: route.value, label: route.providerId + (route.variant === undefined ? "" : ` · ${route.variant}`) })), ...(current?.modelId === model ? { currentValue: current.value } : {}) },
       ] }),
     };
   });

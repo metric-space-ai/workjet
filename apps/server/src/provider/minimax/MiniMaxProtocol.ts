@@ -69,19 +69,27 @@ export function resolveMiniMaxModelValue(
   throw new Error(`Choose a MiniMax Code provider route for model ${model}.`);
 }
 
+/** Reject forbidden selections before changing the session or its native model. */
+export function miniMaxRequestedEffort(model: string, selections?: ProviderOptionSelections): string | undefined {
+  const requested = selections?.find((entry) => entry.id === "thinkingEffort" || entry.id === "effort")?.value;
+  if (requested === undefined || requested === "automatic") return undefined;
+  if (typeof requested !== "string" || requested === "none" || requested === "disabled" ||
+      (model === MINIMAX_PREVIEW_MODEL && !MINIMAX_THINKING_EFFORTS.some((effort) => effort === requested))) {
+    throw new Error(`MiniMax Code does not advertise thinking effort ${String(requested)} for ${model}.`);
+  }
+  return requested;
+}
+
 export function miniMaxEffortValue(
   options: readonly AcpSchema.SessionConfigOption[],
   model: string,
   selections?: ProviderOptionSelections,
 ): string | undefined {
-  const requested = selections?.find((entry) => entry.id === "thinkingEffort" || entry.id === "effort")?.value;
-  if (requested === undefined || requested === "automatic") return undefined;
+  const requested = miniMaxRequestedEffort(model, selections);
+  if (requested === undefined) return undefined;
   const option = options.find((entry) => entry.id === "thinkingEffort");
   const allowed = option ? collectSessionConfigOptionValues(option) : [];
-  if (typeof requested !== "string" || requested === "none" || requested === "disabled" || !allowed.includes(requested) ||
-      (model === MINIMAX_PREVIEW_MODEL && !MINIMAX_THINKING_EFFORTS.some((effort) => effort === requested))) {
-    throw new Error(`MiniMax Code does not advertise thinking effort ${String(requested)} for ${model}.`);
-  }
+  if (!allowed.includes(requested)) throw new Error(`MiniMax Code does not advertise thinking effort ${requested} for ${model}.`);
   return requested;
 }
 

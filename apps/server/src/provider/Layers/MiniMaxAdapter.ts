@@ -25,7 +25,7 @@ import { makeAcpAssistantItemEvent, makeAcpContentDeltaEvent, makeAcpPlanUpdated
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
 import type { AcpSessionRuntime } from "../acp/AcpSessionRuntime.ts";
 import { makeMiniMaxAcpRuntime } from "../acp/MiniMaxAcpSupport.ts";
-import { miniMaxEffortValue, resolveMiniMaxModelValue, MINIMAX_CODE_RELEASE } from "../minimax/MiniMaxProtocol.ts";
+import { miniMaxRequestedEffort, miniMaxEffortValue, resolveMiniMaxModelValue, MINIMAX_CODE_RELEASE } from "../minimax/MiniMaxProtocol.ts";
 import { miniMaxElicitationForm } from "../minimax/MiniMaxElicitation.ts";
 import { terminateProviderProcesses, trackedChildProcess, type ProviderAdapterShape, type ProviderThreadTurnSnapshot, type ProviderTrackedProcess } from "../Services/ProviderAdapter.ts";
 import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
@@ -105,6 +105,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     return result;
   });
   const applyModel = Effect.fn("minimax.applyModel")(function* (acp: AcpSessionRuntime["Service"], threadId: ThreadId, model: string, selections?: ProviderOptionSelections) {
+    yield* checked("session/set_config_option", () => miniMaxRequestedEffort(model, selections));
     const configOptions = yield* acp.getConfigOptions;
     const value = yield* checked("session/set_config_option", () => resolveMiniMaxModelValue(configOptions, model, selections));
     yield* acp.setModel(value).pipe(Effect.mapError((cause) => mapAcpToAdapterError(PROVIDER, threadId, "session/set_config_option", cause)));
@@ -123,6 +124,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     if (!model) return yield* error("startSession", "Choose a MiniMax Code model.");
     const resume = decodeResume(input.resumeCursor);
     if (input.resumeCursor !== undefined && resume._tag === "None") return yield* error("startSession", "This cursor does not identify a MiniMax Code ACP session.");
+    if (input.resumePolicy === "require-existing" && resume._tag === "None") return yield* error("startSession", "A saved MiniMax Code session cursor is required. Workjet will not create a replacement session.");
     const environment = yield* options.resolveSessionEnvironment();
     const profileKey = NodeCrypto.createHash("sha256").update(JSON.stringify([options.instanceId, config.dataDirectory || environment.MINIMAX_DATA_DIR || environment.MAVIS_DATA_DIR || "default", environment.HOME || ""])).digest("hex");
     if (resume._tag === "Some" && resume.value.profileKey !== profileKey) return yield* error("startSession", "The saved MiniMax Code session belongs to a different profile. Select its original harness profile to resume.");
@@ -224,6 +226,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
       if (!model) return yield* error("sendTurn", "Choose a MiniMax Code model.");
       const configOptions = yield* ctx.acp.getConfigOptions;
       yield* checked("session/set_config_option", () => resolveMiniMaxModelValue(configOptions, model, input.modelSelection?.options));
+      yield* checked("session/set_config_option", () => miniMaxRequestedEffort(model, input.modelSelection?.options));
       if (model === ctx.session.model) yield* checked("session/set_config_option", () => miniMaxEffortValue(configOptions, model, input.modelSelection?.options));
       const turnId = TurnId.make(NodeCrypto.randomUUID());
       ctx.cancelled = false; ctx.turnId = turnId;

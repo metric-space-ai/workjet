@@ -185,6 +185,14 @@ describe("harness ↔ provider-instance mapping", () => {
     expect(harnessForProviderInstanceId("cursor")).toBe("cursor-agent");
   });
 
+  it("maps named profiles by their actual driver and marks that family configured", () => {
+    expect(harnessForProviderInstanceId("greppy-fixture", "greppy")).toBe("greppy");
+    expect(harnessForProviderInstanceId("codex", "greppy")).toBe("greppy");
+    const options = composerHarnessOptions(new Set(["greppy-fixture"]), new Set(["greppy"]));
+    expect(options.find((option) => option.id === "greppy")?.configured).toBe(true);
+    expect(options.find((option) => option.id === "codex-cli")?.configured).toBe(false);
+  });
+
   it("answers null for an instance no harness maps to", () => {
     expect(harnessForProviderInstanceId("some-custom-instance")).toBeNull();
   });
@@ -340,6 +348,47 @@ describe("the manual target controls", () => {
     expect(markup).toContain("GPT 5.6 Sol");
   });
 
+  it("presents the native MiniMax catalog without claiming gateway service", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        configuredInstanceIds={new Set(["minimax"])}
+        selectedHarness="minimax-code"
+        onSelectHarness={() => undefined}
+        modelSource="native"
+        models={[
+          {
+            id: "MiniMax-M3.1-Flash-Preview",
+            displayName: "MiniMax-M3.1-Flash-Preview",
+            providers: ["minimax"],
+            accountIds: [],
+          },
+        ]}
+        modelsUnavailableReason={null}
+        selectedModelId="MiniMax-M3.1-Flash-Preview"
+        onSelectModel={() => undefined}
+      />,
+    );
+    expect(markup).toContain("MiniMax Code");
+    expect(markup).toContain("MiniMax-M3.1-Flash-Preview");
+    expect(markup).toContain("Models reported by this harness on the selected computer.");
+    expect(markup).not.toContain("Served by the Workjet gateway");
+  });
+  it("does not present an unadvertised native model as an available current choice", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        configuredInstanceIds={new Set(["minimax"])}
+        selectedHarness="minimax-code"
+        onSelectHarness={() => undefined}
+        modelSource="native"
+        models={[]}
+        modelsUnavailableReason="Run mcode login"
+        selectedModelId="foreign-model"
+        onSelectModel={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Choose an advertised model");
+    expect(markup).not.toContain(">foreign-model<");
+  });
   it("shows the unavailable reason instead of a silent blank model menu", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView
@@ -403,6 +452,23 @@ describe("the compact overflow menu", () => {
     onSelectComputer: () => undefined,
     onSelectWorker: () => undefined,
   };
+
+  it("offers a named Greppy profile in the compact harness choices", () => {
+    const text = textOf(
+      ComposerWorkjetCompactMenuContent({
+        ...base,
+        selectedWorkerId: null,
+        manualTarget: {
+          ...manualTarget,
+          configuredInstanceIds: new Set(["greppy-fixture"]),
+          configuredDriverKinds: new Set(["greppy"]),
+          selectedHarness: "greppy",
+        },
+      }),
+    );
+    expect(text).toContain("Greppy");
+    expect(text).not.toContain("Greppy — not configured");
+  });
 
   it("offers Harness and Model in Manual mode — compact must not lose the new bar (K-A2)", () => {
     const text = textOf(

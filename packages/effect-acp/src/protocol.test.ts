@@ -460,36 +460,61 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
       const nativeError = { code: -32002, message: "Resource not found", data: { uri: "saved" } };
       const extension = yield* transport.request("x/private", {}).pipe(Effect.forkScoped);
       yield* Queue.take(output);
-      yield* Queue.offer(input, encoder.encode(`${encodeUnknownJsonString({
-        jsonrpc: "2.0", id: 1, error: nativeError,
-      })}\n`));
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `${encodeUnknownJsonString({
+            jsonrpc: "2.0",
+            id: 1,
+            error: nativeError,
+          })}\n`,
+        ),
+      );
       const failure = yield* Fiber.join(extension).pipe(Effect.flip);
       assert.instanceOf(failure, AcpError.AcpRequestError);
       assert.deepInclude(failure, {
-        code: -32002, errorMessage: "Resource not found", method: "x/private", data: { uri: "saved" },
+        code: -32002,
+        errorMessage: "Resource not found",
+        method: "x/private",
+        data: { uri: "saved" },
       });
       const core = yield* Deferred.make<unknown>();
-      const coreConsumer = yield* transport.clientProtocol.run(0, (message) =>
-        Deferred.succeed(core, message).pipe(Effect.asVoid),
-      ).pipe(Effect.forkScoped);
-      yield* Queue.offer(input, encoder.encode(`${encodeUnknownJsonString({
-        jsonrpc: "2.0", id: 2, error: nativeError,
-      })}\n`));
+      const coreConsumer = yield* transport.clientProtocol
+        .run(0, (message) => Deferred.succeed(core, message).pipe(Effect.asVoid))
+        .pipe(Effect.forkScoped);
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `${encodeUnknownJsonString({
+            jsonrpc: "2.0",
+            id: 2,
+            error: nativeError,
+          })}\n`,
+        ),
+      );
       assert.deepInclude(yield* Deferred.await(core), {
-        _tag: "Exit", requestId: 2,
+        _tag: "Exit",
+        requestId: 2,
         exit: { _tag: "Failure", cause: [{ _tag: "Fail", error: nativeError }] },
       });
       yield* Fiber.interrupt(coreConsumer);
       const explicitDefect = yield* Deferred.make<unknown>();
-      yield* transport.clientProtocol.run(0, (message) =>
-        Deferred.succeed(explicitDefect, message).pipe(Effect.asVoid),
-      ).pipe(Effect.forkScoped);
-      yield* Queue.offer(input, encoder.encode(`${encodeUnknownJsonString({
-        jsonrpc: "2.0", id: 3,
-        error: { _tag: "Cause", data: [{ _tag: "Die", defect: nativeError }] },
-      })}\n`));
+      yield* transport.clientProtocol
+        .run(0, (message) => Deferred.succeed(explicitDefect, message).pipe(Effect.asVoid))
+        .pipe(Effect.forkScoped);
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `${encodeUnknownJsonString({
+            jsonrpc: "2.0",
+            id: 3,
+            error: { _tag: "Cause", data: [{ _tag: "Die", defect: nativeError }] },
+          })}\n`,
+        ),
+      );
       assert.deepInclude(yield* Deferred.await(explicitDefect), {
-        _tag: "Exit", requestId: 3,
+        _tag: "Exit",
+        requestId: 3,
         exit: { _tag: "Failure", cause: [{ _tag: "Die", defect: nativeError }] },
       });
     }),

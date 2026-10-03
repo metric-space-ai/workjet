@@ -130,8 +130,12 @@ const decodeElicitationComplete = Schema.decodeUnknownEffect(
 function normalizeAcpPeerError(frame: unknown): unknown {
   if (Array.isArray(frame)) return frame.map(normalizeAcpPeerError);
   if (
-    typeof frame === "object" && frame !== null && !("method" in frame) &&
-    "error" in frame && isProtocolError(frame.error) && !("_tag" in frame.error)
+    typeof frame === "object" &&
+    frame !== null &&
+    !("method" in frame) &&
+    "error" in frame &&
+    isProtocolError(frame.error) &&
+    !("_tag" in frame.error)
   ) {
     return {
       ...frame,
@@ -153,13 +157,15 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
   const rpcParser = parserFactory.makeUnsafe();
   const framing = RpcSerialization.ndjson.makeUnsafe();
   const parser = {
-    decode: (data: string | Uint8Array) => framing.decode(data).flatMap((frame) =>
-      rpcParser.decode(JSON.stringify(normalizeAcpPeerError(frame))),
-    ),
+    decode: (data: string | Uint8Array) =>
+      framing
+        .decode(data)
+        .flatMap((frame) => rpcParser.decode(JSON.stringify(normalizeAcpPeerError(frame)))),
     encode: (message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded) => {
       const encoded = rpcParser.encode(message);
-      return encoded === undefined ? undefined :
-        `${typeof encoded === "string" ? encoded : new TextDecoder().decode(encoded)}\n`;
+      return encoded === undefined
+        ? undefined
+        : `${typeof encoded === "string" ? encoded : new TextDecoder().decode(encoded)}\n`;
     },
   };
   const serverQueue = yield* Queue.unbounded<RpcMessage.FromClientEncoded>();

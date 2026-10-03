@@ -49,7 +49,7 @@ for name, provider, label, key in [
 ]:
     secret_name = 'fixture-' + name + '.api-key'
     accounts.append(dict(id='fixture-' + name, label=label, provider=provider, enabled=True,
-                         priority=0, weight=1, models=['fixture-model-before', 'fixture-shared-model'],
+                         priority=0, weight=1, models=['gpt-6.1-sol', 'fixture-model-before', 'fixture-shared-model'],
                          apiKeySecret=dict(scope=scope, name=secret_name),
                          upstreamBaseUrl=endpoint, credentialSuffix=key[-4:]))
     secrets.append((scope + '.' + secret_name + '.bin', key))

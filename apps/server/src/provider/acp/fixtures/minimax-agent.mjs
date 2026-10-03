@@ -38,7 +38,7 @@ NodeReadline.createInterface({ input: process.stdin }).on("line", async (line) =
       respond(id, { configOptions: configOptions() }); break;
     case "session/set_mode": mode = params.modeId; notify({ sessionUpdate: "current_mode_update", currentModeId: mode }); respond(id, {}); break;
     case "session/close": respond(id, {}); break;
-    case "session/cancel": if (pendingPrompt !== undefined) { respond(pendingPrompt, { stopReason: process.env.MINIMAX_TEST_CANCEL_END_TURN ? "end_turn" : "cancelled" }); pendingPrompt = undefined; } break;
+    case "session/cancel": if (process.env.MINIMAX_TEST_IGNORE_CANCEL) { notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "cancel-notification-received" } }); break; } if (pendingPrompt !== undefined) { respond(pendingPrompt, { stopReason: process.env.MINIMAX_TEST_CANCEL_END_TURN ? "end_turn" : "cancelled" }); pendingPrompt = undefined; } break;
     case "session/prompt": {
       const text = params.prompt.map((content) => content.text || "").join("");
       notify({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Inspecting fixture repository" } });

@@ -59,6 +59,11 @@ export function resolveMiniMaxModelValue(
   const currentValue = options.find((entry) => entry.category === "model")?.currentValue;
   const current = matching.find((choice) => choice.value === currentValue);
   if (current) return current.value;
+  const nativeCurrent = parseMiniMaxModelValue(currentValue);
+  const currentRoute = nativeCurrent
+    ? matching.filter((choice) => choice.providerId === nativeCurrent.providerId && choice.variant === nativeCurrent.variant)
+    : [];
+  if (currentRoute.length === 1) return currentRoute[0]!.value;
   if (matching.length === 1) return matching[0]!.value;
   if (matching.length === 0) throw new Error(`MiniMax Code does not advertise model ${model} for this account and computer.`);
   throw new Error(`Choose a MiniMax Code provider route for model ${model}.`);

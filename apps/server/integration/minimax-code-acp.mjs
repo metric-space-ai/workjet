@@ -39,7 +39,7 @@ const instanceId = ProviderInstanceId.make("minimax-native-acceptance");
 const threadId = ThreadId.make("minimax-native-session-probe");
 const modelSelection = { instanceId, model: MINIMAX_PREVIEW_MODEL };
 const start = { threadId, cwd, modelSelection, runtimeMode: "approval-required" };
-const config = decodeSettings({ enabled: true, binaryPath, dataDir });
+const config = decodeSettings({ enabled: true, binaryPath, dataDirectory: dataDir });
 
 await Effect.runPromise(
   Effect.gen(function* () {

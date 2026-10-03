@@ -104,6 +104,8 @@ import {
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { getGreppyManualModelCatalog } from "./greppyManualModels";
+import { resolveManualHarnessInstances } from "./manualHarnessInstances";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -1577,32 +1579,41 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       (workjetGatewayCatalogQuery.data === null
         ? "The Workjet gateway catalog is not available — type a model id."
         : "The gateway catalog lists no models — type a model id."));
+  const greppyManualModels = useMemo(
+    () =>
+      getGreppyManualModelCatalog(
+        selectedProviderEntry,
+        settings.providerInstances?.[selectedInstanceId]?.routeViaGateway === true,
+      ),
+    [selectedProviderEntry, selectedInstanceId, settings.providerInstances],
+  );
+  const manualModels = greppyManualModels ?? manualGatewayModels;
   /**
    * The instances a manual harness choice may target: configured in this
    * build, and — on a thread locked to a continuation provider — of the
    * locked driver kind. Everything else renders disabled with the hint.
    */
-  const configuredProviderInstanceIds = useMemo(
+  const manualHarnessInstances = useMemo(
     () =>
-      new Set<string>(
-        providerInstanceEntries
-          .filter((entry) => lockedProvider === null || entry.driverKind === lockedProvider)
-          // A product-disabled instance (Cursor: "not offered for new
-          // sessions") must not look pickable — its menu entry was clickable
-          // with zero effect (Befund F4). Filtered here, the harness option
-          // renders disabled with its reason instead.
-          .filter((entry) => entry.enabled)
-          .map((entry) => entry.instanceId),
-      ),
-    [lockedProvider, providerInstanceEntries],
+      resolveManualHarnessInstances(providerInstanceEntries, selectedInstanceId, lockedProvider),
+    [providerInstanceEntries, selectedInstanceId, lockedProvider],
+  );
+  const configuredProviderInstanceIds = useMemo(
+    () => new Set(manualHarnessInstances.values()),
+    [manualHarnessInstances],
+  );
+  const configuredProviderDriverKinds = useMemo(
+    () => new Set(manualHarnessInstances.keys()),
+    [manualHarnessInstances],
   );
   const handleSelectManualHarness = useCallback(
     (harness: Parameters<typeof providerInstanceIdForHarness>[0]) => {
-      const instanceId = providerInstanceIdForHarness(harness);
-      if (instanceId === null || !configuredProviderInstanceIds.has(instanceId)) return;
-      onProviderModelSelect(ProviderInstanceId.make(instanceId), selectedModel);
+      const driver = providerInstanceIdForHarness(harness);
+      const instanceId = driver === null ? undefined : manualHarnessInstances.get(driver);
+      if (instanceId === undefined) return;
+      onProviderModelSelect(instanceId, selectedModel);
     },
-    [configuredProviderInstanceIds, onProviderModelSelect, selectedModel],
+    [manualHarnessInstances, onProviderModelSelect, selectedModel],
   );
   const handleSelectManualModel = useCallback(
     (modelId: string) => {
@@ -3435,16 +3446,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           },
         }}
         configuredInstanceIds={configuredProviderInstanceIds}
+        configuredDriverKinds={configuredProviderDriverKinds}
         unavailableHint={
           lockedProvider === null
             ? undefined
             : "Locked — this thread continues on its current provider"
         }
-        selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
+        selectedHarness={harnessForProviderInstanceId(selectedInstanceId, selectedProvider)}
         onSelectHarness={handleSelectManualHarness}
-        models={manualGatewayModels}
+        modelSource={greppyManualModels === null ? "gateway" : "configured"}
+        models={manualModels}
         modelsUnavailableReason={
-          manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
+          manualModels.length === 0
+            ? greppyManualModels === null
+              ? manualModelsUnavailableReason
+              : "No models configured for this Greppy profile — enter a model ID."
+            : null
         }
         selectedModelId={selectedModelForPickerWithCustomFallback}
         onSelectModel={handleSelectManualModel}

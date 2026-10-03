@@ -185,6 +185,14 @@ describe("harness ↔ provider-instance mapping", () => {
     expect(harnessForProviderInstanceId("cursor")).toBe("cursor-agent");
   });
 
+  it("maps named profiles by their actual driver and marks that family configured", () => {
+    expect(harnessForProviderInstanceId("greppy-fixture", "greppy")).toBe("greppy");
+    expect(harnessForProviderInstanceId("codex", "greppy")).toBe("greppy");
+    const options = composerHarnessOptions(new Set(["greppy-fixture"]), new Set(["greppy"]));
+    expect(options.find((option) => option.id === "greppy")?.configured).toBe(true);
+    expect(options.find((option) => option.id === "codex-cli")?.configured).toBe(false);
+  });
+
   it("answers null for an instance no harness maps to", () => {
     expect(harnessForProviderInstanceId("some-custom-instance")).toBeNull();
   });
@@ -403,6 +411,23 @@ describe("the compact overflow menu", () => {
     onSelectComputer: () => undefined,
     onSelectWorker: () => undefined,
   };
+
+  it("offers a named Greppy profile in the compact harness choices", () => {
+    const text = textOf(
+      ComposerWorkjetCompactMenuContent({
+        ...base,
+        selectedWorkerId: null,
+        manualTarget: {
+          ...manualTarget,
+          configuredInstanceIds: new Set(["greppy-fixture"]),
+          configuredDriverKinds: new Set(["greppy"]),
+          selectedHarness: "greppy",
+        },
+      }),
+    );
+    expect(text).toContain("Greppy");
+    expect(text).not.toContain("Greppy — not configured");
+  });
 
   it("offers Harness and Model in Manual mode — compact must not lose the new bar (K-A2)", () => {
     const text = textOf(

@@ -34,9 +34,9 @@ describe("manual harness instance routing", () => {
   it("preserves the exact active profile rather than switching endpoints", () => {
     const entries = deriveProviderInstanceEntries([provider("greppy-fixture"), provider("greppy")]);
     expect(resolveManualHarnessInstances(entries, selected, null).get("greppy")).toBe(selected);
-    expect(
-      resolveManualHarnessInstances(entries.toReversed(), selected, null).get("greppy"),
-    ).toBe(selected);
+    expect(resolveManualHarnessInstances(entries.toReversed(), selected, null).get("greppy")).toBe(
+      selected,
+    );
   });
 
   it("prefers the enabled default when entering a different harness family", () => {

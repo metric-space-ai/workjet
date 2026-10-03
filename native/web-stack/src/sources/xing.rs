@@ -150,19 +150,37 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
       const parts = value.split(/\s+/).filter(Boolean);
       if (parts.length >= 2 && parts.length <= 5
           && parts.every(validNameToken)
-          && !relevantCompanyText(value)
+          && !/\b(?:gmbh|ag|kg|ohg|gbr|ltd|sarl|sàrl)\b/i.test(value)
           && !/^(?:profil|profile|kontakt|contacts?|network|xing)\b/i.test(value)) {
         return value;
       }
     }
     return "";
   };
-  const formerEmployment = /\b(?:ehemalige[snr]?\s+unternehmen|ehemalig|former\s+(?:company|employer)|previous\s+(?:company|employer))\b/i;
-  const currentCompanyIndex = (lines) => {
+  const observedAcademicName = (link, personName) => {
+    for (const candidate of [link.text, ...(link.contextLines || []).slice(0, 4)]) {
+      const visible = clean(candidate)
+        .replace(/^(?:profil von|profile of)\s+/i, "")
+        .replace(/\s*[|·]\s*XING\s*$/i, "");
+      const prefix = visible.match(/^((?:(?:dr|prof)\.?\s+)+)/i);
+      if (prefix && personNameKey(visible.slice(prefix[0].length)) === personNameKey(personName)) {
+        return { title: clean(prefix[0]), quote: visible };
+      }
+    }
+    return null;
+  };
+  const formerEmployment = /\b(?:ehemalig(?:e[snr]?)?|former\s+(?:company|employer)|previous\s+(?:company|employer))\b/i;
+  const employmentHeading = /^(?:(?:ehemalige[snr]?|aktuelle[snr]?|derzeitige[snr]?)\s+(?:unternehmen|arbeitgeber)|(?:former|previous|current)\s+(?:company|employer))(?:\s*:|\s*$)/i;
+  const employmentSectionIndex = (lines, index) => lines.slice(0, index + 1).findLastIndex((line) => employmentHeading.test(line));
+  const currentCompanyIndex = (lines, personName) => {
     const matches = lines.map((line, index) => relevantCompanyText(line) ? index : -1).filter((index) => index >= 0);
     return matches.find((index) => {
-      const employmentLabel = lines.slice(Math.max(0, index - 2), index + 1).join(" ");
-      return !formerEmployment.test(employmentLabel);
+      // Role/location/contact lines do not end an employment section.
+      // Only a later explicit current-company heading can supersede a former one.
+      const heading = lines[employmentSectionIndex(lines, index)];
+      const employmentLabel = heading || lines.slice(Math.max(0, index - 2), index + 1).join(" ");
+      return !formerEmployment.test(employmentLabel) && !formerEmployment.test(lines[index])
+        && personNameKey(lines[index]) !== personNameKey(personName);
     }) ?? -1;
   };
   const locationLine = (value) => /(?:^|[,\s])(?:deutschland|germany|österreich|austria|schweiz|switzerland)\s*$/i.test(clean(value));
@@ -173,7 +191,8 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     return contactTerm.test(text) && /\d/.test(text);
   };
   const labelOnlyLine = (value) => /^[^:]{2,80}:\s*$/.test(clean(value));
-  const personNameKey = (value) => normalize(value)
+  const roleSignal = /\b(?:geschäftsführ(?:er|erin|ung)|managing\s+director|chief\s+(?:executive|operating|financial|technology|commercial)\s+officer|ceo|coo|cfo|cto|cmo|vorstand|inhaber(?:in)?|eigentümer(?:in)?|gründer(?:in)?|founder|prokurist(?:in)?|leiter(?:in)?|leitung|head\s+of|director|manager|vertrieb|sales|einkauf|procurement|marketing|produktion|operations|business\s+development|partner)\b/i;
+  const personNameKey = (value) => normalize(clean(value).replace(/^(?:(?:dr|prof)\.?\s+)+/i, ""))
     .replace(/ae/g, "a")
     .replace(/oe/g, "o")
     .replace(/ue/g, "u");
@@ -181,6 +200,7 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     const text = clean(value);
     return text.length >= 2 && text.length <= 160
       && /\p{L}/u.test(text)
+      && roleSignal.test(text)
       && personNameKey(text) !== personNameKey(personName)
       && !relevantCompanyText(text)
       && !formerEmployment.test(text)
@@ -198,6 +218,14 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
     records.push({ field, value: cleanValue, confidence, source_url: url, note });
   };
   const providerLinks = (snapshot) => (snapshot?.links || []).filter((link) => providerUrl(link.url));
+  const memberNames = new Map(providerLinks(memberSearch).map((link) => {
+    const profile = canonicalProfile(link.url);
+    const visibleName = nameFromVisibleResult(link);
+    const slugName = profile ? nameFromSlug(profile.slug) : "";
+    const name = visibleName && (!slugName || personNameKey(visibleName) === personNameKey(slugName))
+      ? visibleName : "";
+    return [profile?.url, name];
+  }).filter(([url, name]) => url && name));
   const companyHit = providerLinks(companySearch).find((link) => {
     const url = providerUrl(link.url);
     return url && /^\/(?:pages|companies)\/[^/]+(?:\/.*)?$/i.test(url.pathname)
@@ -205,7 +233,7 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
   });
   if (companyHit) {
     const visibleName = (companyHit.contextLines || []).find((line) => relevantCompanyText(line))
-      || companyHit.text || companyName;
+      || companyHit.text;
     push("firma_name", visibleName, "high", "XING company search result", companyHit.url);
   }
 
@@ -213,29 +241,51 @@ const XING_BROWSER_RECORD_PARSER: &str = r#"const parseXingRecords = (companyNam
   for (const link of providerLinks(memberSearch)) {
     const profile = canonicalProfile(link.url);
     if (!profile || profiles.some((entry) => entry.profile.url === profile.url)) continue;
-    const lines = (link.contextLines || []).map((line) => clean(line)).filter(Boolean);
-    const companyIndex = currentCompanyIndex(lines);
-    if (companyIndex < 0) continue;
-    const name = nameFromSlug(profile.slug) || nameFromVisibleResult(link);
+    const name = memberNames.get(profile.url) || "";
     const nameParts = name.split(/\s+/).filter(Boolean);
     if (nameParts.length < 2 || !nameParts.every(validNameToken)) continue;
+    const contextLines = (link.contextLines || []).map((line) => clean(line)).filter(Boolean);
+    // Never borrow employer/role lines from the next member card.
+    const neighborIndex = contextLines.findIndex((line) => Array.from(memberNames.entries())
+      .some(([url, otherName]) => url !== profile.url && personNameKey(line) === personNameKey(otherName)));
+    const lines = neighborIndex >= 0 ? contextLines.slice(0, neighborIndex) : contextLines;
+    const companyIndex = currentCompanyIndex(lines, name);
+    if (companyIndex < 0) continue;
+    const employer = lines[companyIndex];
+    if (personNameKey(name) === personNameKey(companyName.replace(/\b(?:gmbh|ag|kg|ohg|gbr|ltd)\b/gi, ""))
+        && !/\b(?:gmbh|ag|kg|ohg|gbr|ltd|sarl|sàrl)\b/i.test(employer)) continue;
     profiles.push({ link, lines, companyIndex, profile, name, nameParts });
     if (profiles.length >= 8) break;
   }
-  if (!companyHit && profiles.length > 0) {
-    push("firma_name", companyName, "medium", "XING member results match company", memberSearch.sourceUrl);
-  }
-  for (const { lines, companyIndex, profile, name, nameParts } of profiles) {
-    push("person_vorname", nameParts[0], "medium", "XING member search result", profile.url);
-    push("person_nachname", nameParts.slice(1).join(" "), "medium", "XING member search result", profile.url);
-    push("person_xing", profile.url, "high", "XING canonical profile URL", profile.url);
+  // Namen ALLER gefundenen Profile: das Zeilenfenster unten kann in die
+  // benachbarte Trefferkarte hineinragen, und deren Personenname darf nie als
+  // Funktion durchgehen. Gemessen am 19.08.2026 (ANGUS Chemie): person_funktion
+  // von Thorsten Bruns wurde "Dr. Sandra Junghänel" — der Name der naechsten
+  // Karte, vom Rollensignal "Dr." als Funktion akzeptiert.
+  const alleProfilNamen = new Set(profiles.map((entry) => personNameKey(entry.name)).filter(Boolean));
+  const sieht_aus_wie_personenname = (text) => {
+    if (alleProfilNamen.has(personNameKey(text))) return true;
+    // Titel + zwei grossgeschriebene Woerter ohne Rollenwort dahinter:
+    // "Dr. Sandra Junghänel", "Prof. Max Muster".
+    return /^(Dr\.|Prof\.|Dipl\.[-\w.]*)\s+\p{Lu}[\p{L}-]+\s+\p{Lu}[\p{L}-]+$/u.test(clean(text));
+  };
+  for (const { link, lines, companyIndex, profile, name, nameParts } of profiles) {
+    const academicName = observedAcademicName(link, name);
+    const employerNote = `XING member result profile name: "${academicName?.quote || name}"; current employer: "${lines[companyIndex]}"`;
+    push("person_vorname", nameParts[0], "medium", employerNote, profile.url);
+    push("person_nachname", nameParts.slice(1).join(" "), "medium", employerNote, profile.url);
+    push("person_xing", profile.url, "high", employerNote, profile.url);
+    if (academicName) {
+      push("person_titel", academicName.title, "medium", employerNote, profile.url);
+    }
 
     const candidateIndexes = [companyIndex - 1, companyIndex - 2, companyIndex + 1, companyIndex + 2]
-      .filter((index) => index >= 0 && index < lines.length);
+      .filter((index) => index >= 0 && index < lines.length
+        && employmentSectionIndex(lines, index) === employmentSectionIndex(lines, companyIndex));
     const functionLine = candidateIndexes.map((index) => lines[index])
-      .find((line) => plausibleFunctionLine(line, name));
+      .find((line) => plausibleFunctionLine(line, name) && !sieht_aus_wie_personenname(line));
     if (functionLine) {
-      push("person_funktion", functionLine, "medium", "XING member result employment context", profile.url);
+      push("person_funktion", functionLine, "medium", `${employerNote}; role: "${functionLine}"`, profile.url);
     }
   }
   return records;
@@ -294,13 +344,25 @@ const captureSearch = async (kind, baseUrl) => {
     const clean = (value, max = 2000) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
     const lines = (value) => String(value || "").split(/\n+/).map((line) => clean(line, 240)).filter(Boolean);
     const contextFor = (link) => {
-      const preferred = link.closest('li, article, [role="listitem"], [data-testid*="result" i], [data-testid*="card" i]');
-      let node = preferred || link.parentElement;
-      let contextLines = lines(node?.innerText || node?.textContent || link.innerText || "");
-      for (let depth = 0; node && depth < 6 && contextLines.join(" ").length < 80; depth += 1) {
-        node = node.parentElement;
-        const candidate = lines(node?.innerText || node?.textContent || "");
-        if (candidate.join(" ").length <= 2000) contextLines = candidate;
+      const identityPath = searchKind === "members" ? /^\/profile\/[^/]+\/?$/i : /^\/(?:pages|companies)\/[^/]+(?:\/.*)?$/i;
+      const identityOf = (raw) => {
+        try {
+          const url = new URL(raw);
+          return /^(?:www\.)?xing\.com$/i.test(url.hostname) && identityPath.test(url.pathname)
+            ? url.pathname.replace(/\/$/, "").toLowerCase() : null;
+        } catch { return null; }
+      };
+      const ownIdentity = identityOf(link.href);
+      if (!ownIdentity) return [];
+      let contextLines = [];
+      for (let node = link.parentElement, depth = 0; node && depth < 6; node = node.parentElement, depth += 1) {
+        const identities = new Set(Array.from(node.querySelectorAll("a[href]"))
+          .map((anchor) => identityOf(anchor.href)).filter(Boolean));
+        if (identities.size !== 1 || !identities.has(ownIdentity)) break;
+        const candidate = lines(node.innerText || node.textContent || "");
+        if (candidate.join(" ").length > 2000) break;
+        contextLines = candidate;
+        if (node.matches('li, article, [role="listitem"], [data-testid*="result" i], [data-testid*="card" i]')) break;
       }
       return contextLines;
     };
@@ -325,6 +387,9 @@ const captureSearch = async (kind, baseUrl) => {
     ...snapshot,
     kind,
     sourceUrl: page.url(),
+    responseUrl: response?.url?.() || "",
+    httpStatus,
+    requestedUrl: targetUrl,
     status: blocked ? "blocked" : (notFound ? "not_found" : "completed"),
   };
 };
@@ -344,12 +409,39 @@ if ([companySearch.status, memberSearch.status].every((status) => status === "bl
   return { status: "blocked", source_url: memberSearch.sourceUrl, country, records: [] };
 }
 
-const records = parseXingRecords(company, companySearch, memberSearch);
+const queryCompletion = (snapshot) => {
+  const matchesQuery = (raw) => {
+    try {
+      const url = new URL(raw);
+      const expected = new URL(snapshot.requestedUrl);
+      return hostAllowed(url.href) && url.pathname === expected.pathname
+        && url.searchParams.get("keywords") === company;
+    } catch { return false; }
+  };
+  return {
+    kind: snapshot.kind,
+    query: company,
+    requested_url: snapshot.requestedUrl || "",
+    response_url: snapshot.responseUrl || "",
+    source_url: snapshot.sourceUrl,
+    http_status: snapshot.httpStatus || 0,
+    response_bound: snapshot.status === "completed" && snapshot.httpStatus === 200
+      && matchesQuery(snapshot.responseUrl) && matchesQuery(snapshot.sourceUrl),
+    result_completion: "unconfirmed",
+  };
+};
+const query_completion = [companySearch, memberSearch].map(queryCompletion);
+const records = parseXingRecords(company,
+  query_completion[0].response_bound ? companySearch : null,
+  query_completion[1].response_bound ? memberSearch : null);
 return {
-  status: records.length > 0 ? "succeeded" : "no_match",
+  // A rendered search response does not prove exhaustive person-query completion.
+  status: records.length > 0 ? "succeeded"
+    : (query_completion.every((item) => item.response_bound) ? "no_extractable_fields" : "capture_incomplete"),
   source_url: memberSearch.status === "completed" ? memberSearch.sourceUrl : companySearch.sourceUrl,
   country,
   records,
+  query_completion,
 };"#;
 
 struct Xing;
@@ -423,6 +515,10 @@ impl SourceModule for Xing {
             query: format!("{query} site:xing.com/profile OR site:xing.com/pages"),
             domains: vec!["xing.com".to_string()],
         })
+    }
+
+    fn has_direct_api(&self) -> bool {
+        true
     }
 
     fn fetch_direct(
@@ -708,6 +804,21 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
+    #[test]
+    fn browser_capture_keeps_profile_bound_evidence_and_response_completion() {
+        let test = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/xing-browser-evidence.mjs");
+        let output = Command::new("node")
+            .arg(test)
+            .output()
+            .expect("Node.js is required for XING evidence tests");
+        assert!(
+            output.status.success(),
+            "XING evidence regressions failed: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     const SEARCH_FIXTURE: &str = include_str!("../../fixtures/sources/xing/users_search.json");
     const DETAIL_FIXTURE: &str = include_str!("../../fixtures/sources/xing/user_detail.json");
     const OPTIONAL_SEARCH_FIXTURE: &str =
@@ -854,13 +965,13 @@ mod tests {
     }
 
     #[test]
-    fn browser_capture_uses_canonical_profile_slug_and_rejects_location_as_function() {
+    fn browser_capture_corroborates_visible_name_and_rejects_location_as_function() {
         let records = parse_browser_records(serde_json::json!([
             {
                 "url": "https://www.xing.com/profile/Anna_Schmidt10?sc_o=search_result",
-                "text": "1",
+                "text": "Anna Schmidt",
                 "contextLines": [
-                    "1",
+                    "Anna Schmidt",
                     "Leiterin Einkauf",
                     "Example Industrial GmbH",
                     "Harthausen, Deutschland"
@@ -868,8 +979,8 @@ mod tests {
             },
             {
                 "url": "https://www.xing.com/profile/Bernd_Mueller7",
-                "text": "2",
-                "contextLines": ["2", "Example Industrial GmbH", "Harthausen, Deutschland"]
+                "text": "Bernd Mueller",
+                "contextLines": ["Bernd Mueller", "Example Industrial GmbH", "Harthausen, Deutschland"]
             }
         ]));
 

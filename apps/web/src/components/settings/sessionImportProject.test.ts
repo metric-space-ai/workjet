@@ -28,6 +28,7 @@ function port(): SessionImportProjectPort {
     isActive: () => true,
     listLogicalProjects: vi.fn(async () => [projection]),
     createLocalProject: vi.fn(async () => {}),
+    attachLocalProjectFolder: vi.fn(async (chosen: SessionImportProject) => chosen),
     confirmLogicalProject: vi.fn(async () => {}),
   };
 }
@@ -152,5 +153,148 @@ describe("session import destination preparation", () => {
     expect(deps.listLogicalProjects).not.toHaveBeenCalled();
     expect(deps.confirmLogicalProject).not.toHaveBeenCalled();
     expect(deps.createLocalProject).toHaveBeenCalledWith(created);
+  });
+  it("ignores unrelated folder-free projects when creating an import destination", async () => {
+    const deps = port();
+    const created = await prepareSessionImportProject({
+      presentationInstanceId: null,
+      environmentId,
+      destination: {
+        kind: "new",
+        title: "Imported work",
+        workspaceRoot: "/workspace/new",
+      },
+      localProjects: [{ ...project, workspaceRoot: null } as unknown as OrchestrationProjectShell],
+      port: deps,
+    });
+    expect(created.workspaceRoot).toBe("/workspace/new");
+    expect(created.id).not.toBe(project.id);
+    expect(deps.createLocalProject).toHaveBeenCalledWith(created);
+  });
+  it("does not register a working copy after local folder binding fails", async () => {
+    const deps = {
+      ...port(),
+      attachLocalProjectFolder: vi.fn(async () => {
+        throw new Error("Folder binding failed");
+      }),
+    };
+    await expect(
+      prepareSessionImportProject({
+        presentationInstanceId: "instance-a",
+        environmentId,
+        destination: { kind: "existing", project },
+        localProjects: [
+          { ...project, workspaceRoot: null } as unknown as OrchestrationProjectShell,
+        ],
+        port: deps,
+      }),
+    ).rejects.toThrow("Folder binding failed");
+    expect(deps.createLocalProject).not.toHaveBeenCalled();
+    expect(deps.confirmLogicalProject).not.toHaveBeenCalled();
+  });
+  it("binds an existing folder-free project before native working-copy confirmation", async () => {
+    const actions: string[] = [];
+    const deps = {
+      ...port(),
+      listLogicalProjects: async () => {
+        actions.push("list");
+        return [projection];
+      },
+      attachLocalProjectFolder: vi.fn(async (chosen: SessionImportProject) => {
+        actions.push("bind");
+        expect(chosen).toEqual(project);
+        return chosen;
+      }),
+      confirmLogicalProject: vi.fn(async (chosen: SessionImportProject) => {
+        actions.push("confirm");
+        expect(chosen).toEqual(project);
+      }),
+    };
+    const result = await prepareSessionImportProject({
+      presentationInstanceId: "instance-a",
+      environmentId,
+      destination: { kind: "existing", project },
+      localProjects: [{ ...project, workspaceRoot: null } as unknown as OrchestrationProjectShell],
+      port: deps,
+    });
+    expect(result).toEqual(project);
+    expect(actions).toEqual(["list", "bind", "confirm"]);
+    expect(deps.createLocalProject).not.toHaveBeenCalled();
+  });
+  it.each([
+    {
+      label: "different project",
+      id: ProjectId.make("different"),
+      workspaceRoot: project.workspaceRoot,
+    },
+    { label: "different folder", id: project.id, workspaceRoot: "/workspace/different" },
+  ])("refuses a confirmed binding for a $label", async ({ id, workspaceRoot }) => {
+    const deps = {
+      ...port(),
+      attachLocalProjectFolder: vi.fn(async () => ({ ...project, id, workspaceRoot })),
+    };
+    await expect(
+      prepareSessionImportProject({
+        presentationInstanceId: "instance-a",
+        environmentId,
+        destination: { kind: "existing", project },
+        localProjects: [
+          { ...project, workspaceRoot: null } as unknown as OrchestrationProjectShell,
+        ],
+        port: deps,
+      }),
+    ).rejects.toThrow("binding was not confirmed");
+    expect(deps.confirmLogicalProject).not.toHaveBeenCalled();
+  });
+  it("stops native confirmation if the active context changes during folder binding", async () => {
+    let active = true;
+    const deps = {
+      ...port(),
+      isActive: () => active,
+      attachLocalProjectFolder: vi.fn(async () => {
+        active = false;
+        return project;
+      }),
+    };
+    await expect(
+      prepareSessionImportProject({
+        presentationInstanceId: "instance-a",
+        environmentId,
+        destination: { kind: "existing", project },
+        localProjects: [
+          { ...project, workspaceRoot: null } as unknown as OrchestrationProjectShell,
+        ],
+        port: deps,
+      }),
+    ).rejects.toThrow("changed");
+    expect(deps.confirmLogicalProject).not.toHaveBeenCalled();
+  });
+  it("retains the local binding when native confirmation fails and reuses it on retry", async () => {
+    const localProjects = [
+      { ...project, workspaceRoot: null } as unknown as OrchestrationProjectShell,
+    ];
+    const deps = {
+      ...port(),
+      attachLocalProjectFolder: vi.fn(async (chosen: SessionImportProject) => {
+        localProjects[0] = chosen as unknown as OrchestrationProjectShell;
+        return chosen;
+      }),
+      confirmLogicalProject: vi.fn(async () => {
+        throw new Error("CTOX offline");
+      }),
+    };
+    const input = {
+      presentationInstanceId: "instance-a",
+      environmentId,
+      destination: { kind: "existing" as const, project },
+      localProjects,
+      port: deps,
+    };
+    await expect(prepareSessionImportProject(input)).rejects.toThrow("CTOX offline");
+    await expect(prepareSessionImportProject(input)).rejects.toThrow("CTOX offline");
+    expect(deps.attachLocalProjectFolder).toHaveBeenCalledTimes(1);
+    expect(deps.confirmLogicalProject).toHaveBeenCalledTimes(2);
+    expect(deps.createLocalProject).not.toHaveBeenCalled();
+    expect(localProjects[0]?.id).toBe(project.id);
   });
 });

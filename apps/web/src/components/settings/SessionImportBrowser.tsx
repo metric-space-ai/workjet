@@ -24,11 +24,13 @@ import type { SessionImportProject } from "./sessionImportProject";
 
 export const sessionImportSourceLabel = (source: WorkjetSessionImportSource) =>
   source === "codex" ? "Codex" : "Claude Code";
-export const sessionImportFolderName = (path: string) =>
+export const sessionImportFolderName = (path: string | null) =>
   path
-    .replace(/[\\/]+$/u, "")
-    .split(/[\\/]/u)
-    .at(-1) || path;
+    ? path
+        .replace(/[\\/]+$/u, "")
+        .split(/[\\/]/u)
+        .at(-1) || path
+    : "No recorded folder";
 const inputClass =
   "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 disabled:opacity-50";
 
@@ -210,7 +212,7 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
                           {sessionImportSourceLabel(candidate.source)}
                         </span>
                         <span aria-hidden>·</span>
-                        <span className="truncate" title={candidate.workspaceRoot}>
+                        <span className="truncate" title={candidate.workspaceRoot ?? undefined}>
                           {sessionImportFolderName(candidate.workspaceRoot)}
                         </span>
                         <span className="ml-auto shrink-0">
@@ -287,13 +289,15 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
                 </p>
                 <p
                   className="mt-2 break-all text-xs text-muted-foreground"
-                  title={first.workspaceRoot}
+                  title={first.workspaceRoot ?? undefined}
                 >
-                  {first.workspaceRoot}
+                  {first.workspaceRoot ?? "No recorded folder"}
                 </p>
                 {!first.workspaceAvailable ? (
                   <p className="mt-3 text-xs text-muted-foreground">
-                    The original folder is unavailable. You can still import into another project.
+                    {first.workspaceRoot
+                      ? "The original folder is unavailable. You can still import into another project."
+                      : "The source app did not record a folder. Choose a destination project for this conversation."}
                   </p>
                 ) : null}
                 <div className="mt-6 space-y-5">

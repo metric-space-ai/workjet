@@ -9,7 +9,7 @@ const Property = Schema.Struct({
   enum: Schema.optional(Schema.Array(Schema.String)),
   enumNames: Schema.optional(Schema.Array(Schema.String)),
   oneOf: Schema.optional(Schema.Array(Choice)),
-  items: Schema.optional(Schema.Struct({ anyOf: Schema.optional(Schema.Array(Choice)), enum: Schema.optional(Schema.Array(Schema.String)) })),
+  items: Schema.optional(Schema.Struct({ anyOf: Schema.optional(Schema.Array(Choice)), enum: Schema.optional(Schema.Array(Schema.String)), enumNames: Schema.optional(Schema.Array(Schema.String)) })),
 });
 const Form = Schema.Struct({
   mode: Schema.optional(Schema.Literal("form")),
@@ -18,12 +18,17 @@ const Form = Schema.Struct({
 });
 const decodeForm = Schema.decodeUnknownSync(Form);
 
+function propertyChoices(property: typeof Property.Type) {
+  const names = property.enumNames ?? property.items?.enumNames;
+  return property.oneOf ?? property.items?.anyOf ??
+    (property.enum ?? property.items?.enum ?? []).map((entry, index) => ({ const: entry, title: names?.[index] }));
+}
+
 /** Translate mcode's advertised form, retaining enum ids behind visible labels. */
 export function miniMaxElicitationForm(value: unknown) {
   const form = decodeForm(value);
   const questions: UserInputQuestion[] = Object.entries(form.requestedSchema.properties).map(([id, property]) => {
-    const choices = property.oneOf ?? property.items?.anyOf ??
-      (property.enum ?? property.items?.enum ?? []).map((entry, index) => ({ const: entry, title: property.enumNames?.[index] }));
+    const choices = propertyChoices(property);
     return { id, header: property.title || id, question: property.title || form.message, multiSelect: property.type === "array", options: choices.map((choice) => ({ label: choice.title || choice.const, description: property.description || choice.title || choice.const })) };
   });
   return {
@@ -37,11 +42,14 @@ export function miniMaxElicitationForm(value: unknown) {
           if (form.requestedSchema.required?.includes(id)) throw new Error(`Answer required for ${id}.`);
           continue;
         }
-        const choices = property.oneOf ?? property.items?.anyOf ?? (property.enum ?? property.items?.enum ?? []).map((entry) => ({ const: entry, title: entry }));
+        const choices = propertyChoices(property);
         const resolve = (input: string) => {
-          const choice = choices.find((entry) => entry.const === input || entry.title === input);
-          if (choices.length && !choice) throw new Error(`Unadvertised answer for ${id}.`);
-          return choice?.const ?? input;
+          const exact = choices.find((entry) => entry.const === input);
+          if (exact) return exact.const;
+          const named = choices.filter((entry) => entry.title === input);
+          if (named.length > 1) throw new Error(`Ambiguous answer label for ${id}.`);
+          if (choices.length && named.length === 0) throw new Error(`Unadvertised answer for ${id}.`);
+          return named[0]?.const ?? input;
         };
         // Workjet's question UI supplies a list even for single-choice/free-text fields.
         const values = Array.isArray(answer) ? answer : [answer];

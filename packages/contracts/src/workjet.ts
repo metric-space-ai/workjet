@@ -1146,8 +1146,9 @@ export const WorkjetGatewayRoutingStrategy = Schema.Literals([
 ]);
 export type WorkjetGatewayRoutingStrategy = typeof WorkjetGatewayRoutingStrategy.Type;
 
+/** New gateways use the fixed setup; explicit legacy strategies still decode. */
 export const WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY: WorkjetGatewayRoutingStrategy =
-  "round-robin";
+  "fill-first";
 
 /** Highest priority and weight the gateway configuration accepts per account. */
 export const WORKJET_GATEWAY_MAX_ACCOUNT_PRIORITY = 10_000;
@@ -1324,11 +1325,15 @@ export const WorkjetGatewayQuotaWindow = Schema.Struct({
       Schema.check(Schema.isGreaterThanOrEqualTo(0)),
     ),
   ),
-  modelPattern: Schema.NullOr(TrimmedNonEmptyString).pipe(Schema.withDecodingDefault(() => null)),
-  toolOnly: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
-  notInPlan: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
-  unlimited: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
-  boostPermille: Schema.NullOr(NonNegativeInt).pipe(Schema.withDecodingDefault(() => null)),
+  modelPattern: Schema.NullOr(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  toolOnly: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  notInPlan: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  unlimited: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  boostPermille: Schema.NullOr(NonNegativeInt).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   resetsAtMs: Schema.NullOr(NonNegativeInt),
   observedAtMs: NonNegativeInt,
 });
@@ -1358,10 +1363,14 @@ export const WorkjetGatewayAccountHealth = Schema.Struct({
   cooldownUntilMs: Schema.NullOr(NonNegativeInt),
   errorCode: Schema.NullOr(TrimmedNonEmptyString),
   httpStatus: Schema.NullOr(NonNegativeInt),
-  generationHttpStatus: Schema.NullOr(NonNegativeInt).pipe(Schema.withDecodingDefault(() => null)),
+  generationHttpStatus: Schema.NullOr(NonNegativeInt).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   observedAtMs: Schema.NullOr(NonNegativeInt),
   quota: Schema.Array(WorkjetGatewayQuotaWindow),
-  balance: Schema.NullOr(WorkjetGatewayAccountBalance).pipe(Schema.withDecodingDefault(() => null)),
+  balance: Schema.NullOr(WorkjetGatewayAccountBalance).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   quotaSupported: Schema.Boolean,
   quotaRefreshing: Schema.Boolean,
   quotaError: Schema.NullOr(Schema.Literals(["unavailable", "provider-error"])),

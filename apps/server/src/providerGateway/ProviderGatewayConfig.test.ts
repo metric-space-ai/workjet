@@ -123,6 +123,7 @@ describe("ProviderGatewayConfig", () => {
         priority: 10,
         weight: 2,
         modelIds: ["gpt-test"],
+        credentialKind: "oauth",
         credentialSuffix: null,
       },
     ]);

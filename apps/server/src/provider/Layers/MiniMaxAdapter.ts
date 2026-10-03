@@ -51,6 +51,7 @@ interface SessionContext {
   readonly inputs: Map<ApprovalRequestId, PendingQuestion>;
   turns: ProviderThreadTurnSnapshot[];
   turnId: TurnId | undefined;
+  turnSettled: Deferred.Deferred<void> | undefined;
   cancelled: boolean;
   stopped: boolean;
   managedPrompt: string | undefined;
@@ -88,11 +89,14 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   ]).pipe(Effect.asVoid);
   const finish = Effect.fn("minimax.finish")(function* (ctx: SessionContext, turnId: TurnId, stopReason: string, errorMessage?: string) {
     if (ctx.turnId !== turnId || ctx.stopped) return;
+    const settled = ctx.turnSettled;
     ctx.turnId = undefined;
+    ctx.turnSettled = undefined;
     const { activeTurnId: _active, ...rest } = ctx.session;
     ctx.session = { ...rest, status: errorMessage ? "error" : "ready", updatedAt: yield* now };
     yield* emit(ctx.session.threadId, { type: "turn.completed", turnId, payload: { state: errorMessage ? "failed" : stopReason === "cancelled" ? "cancelled" : "completed", stopReason, ...(errorMessage ? { errorMessage } : {}) } });
     yield* emit(ctx.session.threadId, { type: "session.state.changed", payload: { state: errorMessage ? "error" : "ready" } });
+    if (settled) yield* Deferred.succeed(settled, undefined);
   });
   const stop = Effect.fn("minimax.stop")(function* (ctx: SessionContext) {
     ctx.cancelled = true;
@@ -182,7 +186,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
       yield* withDeadline("session/set_config_option", applyModel(acp, input.threadId, model, selection?.options));
       const createdAt = yield* now;
       const session: ProviderSession = { provider: PROVIDER, providerInstanceId: options.instanceId, threadId: input.threadId, cwd: input.cwd, runtimeMode: input.runtimeMode, model, status: "ready", resumeCursor: { protocol: "minimax-acp", sessionId: started.sessionId, profileKey }, createdAt, updatedAt: createdAt };
-      const ctx: SessionContext = { session, acp, scope, processes, pending, inputs, turns: [], turnId: undefined, cancelled: false, stopped: false, managedPrompt: managed?.compiledManagedPrompt.trim() || input.workjetConfig?.managedInstructions.trim() };
+      const ctx: SessionContext = { session, acp, scope, processes, pending, inputs, turns: [], turnId: undefined, turnSettled: undefined, cancelled: false, stopped: false, managedPrompt: managed?.compiledManagedPrompt.trim() || input.workjetConfig?.managedInstructions.trim() };
       yield* acp.getEvents().pipe(Stream.runForEach((event) => Effect.gen(function* () {
         if (event._tag === "EventStreamBarrier") { yield* Deferred.succeed(event.acknowledge, undefined); return; }
         if (ctx.stopped) return;
@@ -229,6 +233,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
       yield* checked("session/set_config_option", () => miniMaxRequestedEffort(model, input.modelSelection?.options));
       if (model === ctx.session.model) yield* checked("session/set_config_option", () => miniMaxEffortValue(configOptions, model, input.modelSelection?.options));
       const turnId = TurnId.make(NodeCrypto.randomUUID());
+      ctx.turnSettled = yield* Deferred.make<void>();
       ctx.cancelled = false; ctx.turnId = turnId;
       ctx.session = { ...ctx.session, status: "running", activeTurnId: turnId, updatedAt: yield* now };
       return { ctx, turnId, model };
@@ -249,13 +254,26 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
       yield* ctx.acp.drainEvents;
       ctx.managedPrompt = undefined;
       ctx.turns = [...ctx.turns, { id: turnId, items: [{ prompt, result }] }];
-      yield* finish(ctx, turnId, ctx.cancelled ? "cancelled" : result.stopReason);
+      yield* finish(ctx, turnId, result.stopReason);
       return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
     }).pipe(Effect.tapError((cause) => finish(ctx, turnId, "error", cause.message)), Effect.ensuring(Effect.suspend(() => ctx.turnId === turnId ? finish(ctx, turnId, "cancelled") : Effect.void)));
   });
   const adapter = {
     provider: PROVIDER, capabilities: { sessionModelSwitch: "in-session" as const }, startSession, sendTurn,
-    interruptTurn: (threadId, turnId) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); if (!ctx.turnId || (turnId && ctx.turnId !== turnId)) return; ctx.cancelled = true; yield* cancelPending(ctx); yield* withDeadline("session/cancel", ctx.acp.cancel.pipe(Effect.mapError((cause) => mapAcpToAdapterError(PROVIDER, threadId, "session/cancel", cause)))).pipe(Effect.tapError(() => stop(ctx).pipe(Effect.asVoid))); }),
+    interruptTurn: (threadId, turnId) => Effect.gen(function* () {
+      const ctx = yield* requireSession(threadId);
+      if (!ctx.turnId || (turnId && ctx.turnId !== turnId)) return;
+      const settled = ctx.turnSettled;
+      ctx.cancelled = true;
+      yield* cancelPending(ctx);
+      yield* withDeadline("session/cancel", ctx.acp.cancel.pipe(
+        Effect.mapError((cause) => mapAcpToAdapterError(PROVIDER, threadId, "session/cancel", cause)),
+        Effect.andThen(settled ? Deferred.await(settled) : Effect.void),
+      )).pipe(Effect.tapError((cause) => Effect.gen(function* () {
+        if (ctx.turnId) yield* finish(ctx, ctx.turnId, "error", cause.message);
+        yield* stop(ctx);
+      })));
+    }),
     respondToRequest: (threadId, requestId, decision) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.pending.get(requestId); if (!request || ctx.cancelled) return yield* error("respondToRequest", "This MiniMax Code permission request is no longer pending."); const accepted = yield* Deferred.succeed(request, decision); if (!accepted) return yield* error("respondToRequest", "This MiniMax Code permission request has already been answered."); }),
     respondToUserInput: (threadId, requestId, answers) => Effect.gen(function* () { const ctx = yield* requireSession(threadId); const request = ctx.inputs.get(requestId); if (!request || ctx.cancelled) return yield* error("respondToUserInput", "This MiniMax Code question is no longer pending."); yield* checked("respondToUserInput", () => request.form.content(answers)); const accepted = yield* Deferred.succeed(request.answer, answers); if (!accepted) return yield* error("respondToUserInput", "This MiniMax Code question has already been answered."); }),
     stopSession: (threadId) => lock.withPermit(Effect.flatMap(requireSession(threadId), stop)),

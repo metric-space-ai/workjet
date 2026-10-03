@@ -295,6 +295,24 @@ const parseCommonAccountFields = (
 
 const API_KEY_ACCOUNT_KEYS = ["apiKeySecret", "upstreamBaseUrl", "credentialSuffix"] as const;
 
+/** Plain HTTP is accepted only for an explicitly configured local API endpoint. */
+const isApiKeyUpstreamUrl = (value: string): boolean => {
+  if (value.startsWith("https://")) return true;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "http:" &&
+      ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+};
+
 /**
  * An API-key account decodes only when it carries a secret REFERENCE and no
  * OAuth token reference at all. A record with a literal key field, or with a
@@ -315,7 +333,7 @@ const parseApiKeyAccount = (
     common === undefined ||
     apiKeySecret === undefined ||
     (value.upstreamBaseUrl !== undefined &&
-      (upstreamBaseUrl === undefined || !upstreamBaseUrl.startsWith("https://"))) ||
+      (upstreamBaseUrl === undefined || !isApiKeyUpstreamUrl(upstreamBaseUrl))) ||
     (suffix !== undefined &&
       (typeof suffix !== "string" ||
         suffix.length === 0 ||
@@ -601,9 +619,7 @@ export const decodeProviderGatewayConfiguration = (
   const typedAccounts = accounts as ReadonlyArray<GatewayAccount>;
   // Empty and all-disabled account lists keep the management/OAuth surface
   // available. An enabled provider is selected as fallback when possible.
-  if (
-    !unique(typedAccounts.map((account) => account.id))
-  ) {
+  if (!unique(typedAccounts.map((account) => account.id))) {
     return undefined;
   }
   const pools = parsePools(value.pools ?? [], typedAccounts);
@@ -627,9 +643,13 @@ export const decodeProviderGatewayConfiguration = (
   }
   return {
     schemaVersion: 1,
-    defaultProvider: typedAccounts.some((account) => account.enabled && account.provider === defaultProvider)
+    defaultProvider: typedAccounts.some(
+      (account) => account.enabled && account.provider === defaultProvider,
+    )
       ? defaultProvider
-      : [...typedAccounts].filter((account) => account.enabled).sort((a, b) => a.id.localeCompare(b.id))[0]?.provider ?? defaultProvider,
+      : ([...typedAccounts]
+          .filter((account) => account.enabled)
+          .sort((a, b) => a.id.localeCompare(b.id))[0]?.provider ?? defaultProvider),
     accounts: typedAccounts,
     pools,
     routes,
@@ -766,7 +786,9 @@ export const rustHostConfiguration = (
     : {}),
   // A bootstrap host with zero accounts must not name a default provider; the
   // host rejects that combination.
-  ...(configuration.accounts.some((account) => account.enabled) ? { defaultProvider: configuration.defaultProvider } : {}),
+  ...(configuration.accounts.some((account) => account.enabled)
+    ? { defaultProvider: configuration.defaultProvider }
+    : {}),
   runtime: {
     request_timeout_ms: 30_000,
     // The host's own kebab-case `SchedulerStrategy` values; the configured

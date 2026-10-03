@@ -47,18 +47,67 @@ const validConfiguration = () => ({
 });
 
 describe("ProviderGatewayConfig", () => {
+  it("accepts explicit loopback API endpoints without permitting remote plaintext credentials", () => {
+    const apiConfiguration = (upstreamBaseUrl: string) => ({
+      schemaVersion: 1,
+      defaultProvider: "zai",
+      routingStrategy: "fill-first",
+      pools: [],
+      routes: [],
+      accounts: ["primary", "secondary"].map((name) => ({
+        id: `fixture-${name}`,
+        label: name,
+        provider: "zai",
+        enabled: true,
+        priority: 0,
+        weight: 1,
+        models: ["fixture-model-before", "fixture-shared-model"],
+        apiKeySecret: secret(`fixture-${name}.api-key`),
+        upstreamBaseUrl,
+      })),
+    });
+    for (const upstream of [
+      "http://127.0.0.1:8123/v1",
+      "http://localhost:8123/v1",
+      "http://[::1]:8123/v1",
+      "https://api.vendor.example/v1",
+    ]) {
+      const decoded = decodeProviderGatewayConfiguration(apiConfiguration(upstream));
+      expect(decoded?.accounts).toHaveLength(2);
+      expect(JSON.stringify(rustHostConfiguration(decoded!, "/private/secrets"))).toContain(
+        upstream,
+      );
+    }
+    for (const upstream of [
+      "http://api.vendor.example/v1",
+      "http://localhost.evil.example/v1",
+      "http://127.0.0.1@evil.example/v1",
+      "http://user:password@127.0.0.1:8123/v1",
+      "http://127.0.0.1:8123/v1?key=credential",
+      "http://127.0.0.1:8123/v1#fragment",
+      "not-a-url",
+    ]) {
+      expect(decodeProviderGatewayConfiguration(apiConfiguration(upstream))).toBeUndefined();
+    }
+  });
+
   it("keeps management available when the last account is disabled", () => {
     const configuration = validConfiguration();
     configuration.accounts[0]!.enabled = false;
     const decoded = decodeProviderGatewayConfiguration(configuration);
     expect(decoded).toBeDefined();
-    const host = rustHostConfiguration(decoded!, "/private/secrets") as { defaultProvider?: string };
+    const host = rustHostConfiguration(decoded!, "/private/secrets") as {
+      defaultProvider?: string;
+    };
     expect(host.defaultProvider).toBeUndefined();
   });
 
   it("chooses an enabled default when the configured default loses its account", () => {
     const configuration = validConfiguration();
-    const decoded = decodeProviderGatewayConfiguration({ ...configuration, defaultProvider: "claude" });
+    const decoded = decodeProviderGatewayConfiguration({
+      ...configuration,
+      defaultProvider: "claude",
+    });
     expect(decoded?.defaultProvider).toBe("codex");
   });
 

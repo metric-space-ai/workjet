@@ -1197,6 +1197,13 @@ pub fn merge_person_research_source_records(
             .and_then(Value::as_str)
             .filter(|value| matches!(*value, "high" | "medium" | "low" | "user_provided"))
             .unwrap_or("low");
+        let person_key = record
+            .get("person_key")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| source_url.and_then(person_profile_key));
         let candidate = json!({
             "value": value,
             "confidence": confidence,
@@ -1205,7 +1212,7 @@ pub fn merge_person_research_source_records(
             "tier": tier,
             "via": "authenticated_source_capture",
             "note": record.get("note").and_then(Value::as_str).unwrap_or_default(),
-            "person_key": record.get("person_key").cloned().unwrap_or(Value::Null),
+            "person_key": person_key,
             "person_vorname": record.get("person_vorname").cloned().unwrap_or(Value::Null),
             "person_nachname": record.get("person_nachname").cloned().unwrap_or(Value::Null),
         });
@@ -3474,6 +3481,11 @@ mod tests {
             merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap();
 
         assert_eq!(added, 8);
+        assert_eq!(
+            merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap(),
+            0,
+            "repeating a profile capture must not add duplicate person evidence"
+        );
         assert_eq!(payload["person_records"].as_array().map(Vec::len), Some(2));
         assert_eq!(payload["person_records"][0]["person_vorname"], "Ada");
         assert_eq!(

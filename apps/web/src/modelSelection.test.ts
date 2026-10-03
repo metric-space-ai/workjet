@@ -55,6 +55,28 @@ function settingsWithProviderInstances(): UnifiedSettings {
 }
 
 describe("instance-scoped model selection", () => {
+  it("uses MiniMax's native catalog without requiring a legacy custom-model bucket", () => {
+    const preview = "MiniMax-M3.1-Flash-Preview";
+    const settings: UnifiedSettings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerInstances: {},
+      providers: {
+        ...DEFAULT_UNIFIED_SETTINGS.providers,
+        claudeAgent: {
+          ...DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent,
+          customModels: ["legacy-claude-model"],
+        },
+      },
+    };
+    const entries = deriveProviderInstanceEntries([
+      provider({ provider: ProviderDriverKind.make("minimax"), instanceId: "minimax", models: [preview] }),
+      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent", models: ["claude-sonnet-4-6"] }),
+    ]);
+    const minimax = entries.find((entry) => entry.instanceId === "minimax")!;
+    const claude = entries.find((entry) => entry.instanceId === "claudeAgent")!;
+    expect(getAppModelOptionsForInstance(settings, minimax).map((option) => option.slug)).toEqual([preview]);
+    expect(getAppModelOptionsForInstance(settings, claude).map((option) => option.slug)).toContain("legacy-claude-model");
+  });
   it("preserves server-provided legacy model metadata", () => {
     const baseProvider = provider({
       instanceId: "claudeAgent",

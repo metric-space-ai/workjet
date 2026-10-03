@@ -113,7 +113,7 @@ describe("MiniMax Code runtime selection", () => {
       expect(() =>
         miniMaxEffortValue(advertised, otherModel, [{ id: "thinkingEffort", value: effort }]),
       ).toThrow("does not advertise thinking effort");
-    const descriptor = miniMaxModelsFromConfig(advertised)[0]?.capabilities.optionDescriptors?.find(
+    const descriptor = miniMaxModelsFromConfig(advertised)[0]?.capabilities?.optionDescriptors?.find(
       (entry) => entry.id === "thinkingEffort",
     );
     if (descriptor?.type === "select") {
@@ -126,8 +126,8 @@ describe("MiniMax Code runtime selection", () => {
     const models = miniMaxModelsFromConfig(options([tokenRoute, apiRoute]));
     expect(models.map((entry) => entry.slug)).toEqual([model]);
     // The composer and saved Lumas apply reasoning through the primary select.
-    expect(models[0]?.capabilities.optionDescriptors?.[0]?.id).toBe("thinkingEffort");
-    const effort = models[0]?.capabilities.optionDescriptors?.find(
+    expect(models[0]?.capabilities?.optionDescriptors?.[0]?.id).toBe("thinkingEffort");
+    const effort = models[0]?.capabilities?.optionDescriptors?.find(
       (entry) => entry.id === "thinkingEffort",
     );
     expect(effort?.type).toBe("select");

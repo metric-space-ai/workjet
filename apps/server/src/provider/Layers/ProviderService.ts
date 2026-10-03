@@ -567,6 +567,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
+          ...(input.binding.provider === "codex"
+            ? { resumePolicy: "require-existing" as const }
+            : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
           workjetConfig: persistedWorkjetConfig,
         })

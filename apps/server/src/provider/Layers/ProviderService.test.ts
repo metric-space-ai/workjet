@@ -1595,9 +1595,11 @@ routing.layer("ProviderServiceLive routing", (it) => {
           provider?: string;
           cwd?: string;
           resumeCursor?: unknown;
+          resumePolicy?: "require-existing";
           threadId?: string;
         };
         assert.equal(startPayload.provider, "codex");
+        assert.equal(startPayload.resumePolicy, "require-existing");
         assert.equal(startPayload.cwd, "/tmp/project-send-turn");
         assert.deepEqual(startPayload.resumeCursor, initial.resumeCursor);
         assert.equal(startPayload.threadId, initial.threadId);

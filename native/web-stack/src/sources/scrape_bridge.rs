@@ -131,13 +131,15 @@ pub fn run_via_runtime_target(
     allowed_fields: &[FieldKey],
     company: &str,
     country: Country,
+    owner_user_id: Option<&str>,
 ) -> ScrapeBridgeResult {
     let input = json!({
         "company": company,
         "country": country.as_iso(),
         "source_id": source_id,
     });
-    let output = Command::new(ctox_bin)
+    let mut command = Command::new(ctox_bin);
+    command
         .arg("scrape")
         .arg("execute")
         .arg("--target-key")
@@ -148,8 +150,14 @@ pub fn run_via_runtime_target(
         .arg("--input-json")
         .arg(input.to_string())
         .arg("--runtime-root")
-        .arg(root)
-        .output();
+        .arg(root);
+    if let Some(owner_user_id) = owner_user_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        command.arg("--owner-user-id").arg(owner_user_id);
+    }
+    let output = command.output();
     let output = match output {
         Ok(output) => output,
         Err(error) => {
@@ -1400,6 +1408,48 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn runtime_target_passes_only_a_nonempty_owner_as_a_separate_argument() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "ctox-runtime-owner-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("fake-ctox");
+        std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.args\"\nprintf '%s\\n' '{\"ok\":true,\"status\":\"completed_empty\",\"records\":[]}'\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        for owner in [None, Some("   "), Some(" owner;not-shell-code ")] {
+            let result = run_via_runtime_target(
+                &root,
+                &script,
+                "xing.com",
+                "https://www.xing.com/",
+                "fixture-target",
+                &[],
+                "Fixture GmbH",
+                Country::De,
+                owner,
+            );
+            assert_eq!(result.classification, "completed_empty");
+            let arguments = std::fs::read_to_string(root.join("fake-ctox.args")).unwrap();
+            let arguments = arguments.lines().collect::<Vec<_>>();
+            assert!(arguments
+                .windows(2)
+                .any(|pair| pair == ["--target-key", "fixture-target"]));
+            if owner.is_some_and(|value| !value.trim().is_empty()) {
+                assert!(arguments
+                    .windows(2)
+                    .any(|pair| pair == ["--owner-user-id", "owner;not-shell-code"]));
+            } else {
+                assert!(!arguments.contains(&"--owner-user-id"));
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

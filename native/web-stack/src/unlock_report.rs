@@ -2005,7 +2005,7 @@ const SOURCE_CONFIG = Object.freeze({
     }
 
     #[test]
-    fn real_registry_has_fifteen_adapters_with_valid_shared_config() {
+    fn real_registry_has_the_exact_production_adapters_with_valid_shared_config() {
         let adapters_dir = default_adapters_dir();
         let shared = std::fs::read_to_string(adapters_dir.join(SHARED_SCRIPT_REL)).unwrap();
         let source_config =
@@ -2013,10 +2013,39 @@ const SOURCE_CONFIG = Object.freeze({
         let protected_config =
             parse_js_config_section(&shared, "const PROTECTED_SOURCE_CONFIG = Object.freeze({");
         let discovered = discover_adapters(&adapters_dir).unwrap();
+        let expected = [
+            "bundesanzeiger.de",
+            "companyhouse.de",
+            "dnbhoovers.com",
+            "experte.de",
+            "firmenabc.at",
+            "google.de",
+            "handelsregister.de",
+            "impressum",
+            "leadfeeder.com",
+            "linkedin.com",
+            "maps.google.com",
+            "moneyhouse.ch",
+            "northdata.de",
+            "rocketreach.com",
+            "xing.com",
+            "zefix.ch",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<std::collections::BTreeSet<_>>();
+        let actual = discovered
+            .iter()
+            .map(|(source_id, _)| source_id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            actual, expected,
+            "registered production adapter identities drifted"
+        );
         assert_eq!(
             discovered.len(),
-            15,
-            "expected 15 registered production adapters"
+            expected.len(),
+            "duplicate adapter identities"
         );
         for (source_id, _) in &discovered {
             assert!(

@@ -295,6 +295,24 @@ const parseCommonAccountFields = (
 
 const API_KEY_ACCOUNT_KEYS = ["apiKeySecret", "upstreamBaseUrl", "credentialSuffix"] as const;
 
+/** Plain HTTP is accepted only for an explicitly configured local API endpoint. */
+const isApiKeyUpstreamUrl = (value: string): boolean => {
+  if (value.startsWith("https://")) return true;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "http:" &&
+      ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+};
+
 /**
  * An API-key account decodes only when it carries a secret REFERENCE and no
  * OAuth token reference at all. A record with a literal key field, or with a
@@ -315,7 +333,7 @@ const parseApiKeyAccount = (
     common === undefined ||
     apiKeySecret === undefined ||
     (value.upstreamBaseUrl !== undefined &&
-      (upstreamBaseUrl === undefined || !upstreamBaseUrl.startsWith("https://"))) ||
+      (upstreamBaseUrl === undefined || !isApiKeyUpstreamUrl(upstreamBaseUrl))) ||
     (suffix !== undefined &&
       (typeof suffix !== "string" ||
         suffix.length === 0 ||

@@ -69,13 +69,25 @@ describe("instance-scoped model selection", () => {
       },
     };
     const entries = deriveProviderInstanceEntries([
-      provider({ provider: ProviderDriverKind.make("minimax"), instanceId: "minimax", models: [preview] }),
-      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent", models: ["claude-sonnet-4-6"] }),
+      provider({
+        provider: ProviderDriverKind.make("minimax"),
+        instanceId: "minimax",
+        models: [preview],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-4-6"],
+      }),
     ]);
     const minimax = entries.find((entry) => entry.instanceId === "minimax")!;
     const claude = entries.find((entry) => entry.instanceId === "claudeAgent")!;
-    expect(getAppModelOptionsForInstance(settings, minimax).map((option) => option.slug)).toEqual([preview]);
-    expect(getAppModelOptionsForInstance(settings, claude).map((option) => option.slug)).toContain("legacy-claude-model");
+    expect(getAppModelOptionsForInstance(settings, minimax).map((option) => option.slug)).toEqual([
+      preview,
+    ]);
+    expect(getAppModelOptionsForInstance(settings, claude).map((option) => option.slug)).toContain(
+      "legacy-claude-model",
+    );
   });
   it("preserves server-provided legacy model metadata", () => {
     const baseProvider = provider({

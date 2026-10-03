@@ -605,21 +605,26 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   const selectedModelSummary = props.models.find((model) => model.id === props.selectedModelId);
   const modelInCatalog = selectedModelSummary !== undefined;
   const allModelGroups = composerGatewayModelMenuGroups(props.models);
-  const modelGroups = nativeModels ? allModelGroups.filter(([, models]) => models.length > 0) : allModelGroups;
+  const modelGroups = nativeModels
+    ? allModelGroups.filter(([, models]) => models.length > 0)
+    : allModelGroups;
   const selectedModelProvider =
     props.models.find((model) => model.id === props.selectedModelId)?.providers[0] ??
     (nativeModels ? undefined : inferGatewayProviderFromModelId(props.selectedModelId));
   // The rail's active provider: the explicit pick, else the provider of the
   // current model, else the first group.
   const activeModelProvider =
-    (modelGroups.some(([provider]) => provider === modelProviderChoice) ? modelProviderChoice : null) ??
+    (modelGroups.some(([provider]) => provider === modelProviderChoice)
+      ? modelProviderChoice
+      : null) ??
     selectedModelProvider ??
     modelGroups.find(([, models]) => models.length > 0)?.[0] ??
     (nativeModels ? undefined : COMPOSER_GATEWAY_PROVIDER_RAIL[0]);
   const activeProviderModels =
     modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? [];
   const showCurrentCustomModel =
-    !nativeModels && !modelInCatalog &&
+    !nativeModels &&
+    !modelInCatalog &&
     props.selectedModelId.length > 0 &&
     (selectedModelProvider ?? activeModelProvider) === activeModelProvider;
 
@@ -679,7 +684,9 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           </SelectPopup>
         </Select>
         <TooltipPopup side="top">
-          {nativeModels ? "This harness runs models advertised by its native profile on the selected computer." : "Harness — the agent runtime that drives the turn. Any harness combines with any model."}
+          {nativeModels
+            ? "This harness runs models advertised by its native profile on the selected computer."
+            : "Harness — the agent runtime that drives the turn. Any harness combines with any model."}
         </TooltipPopup>
       </Tooltip>
 
@@ -692,12 +699,20 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             className="min-w-0 max-w-56"
             aria-label="Model"
             type="button"
-            title={nativeModels ? "Models reported by this harness on the selected computer." : "Served by the Workjet gateway; choose a catalog model or enter its ID."}
+            title={
+              nativeModels
+                ? "Models reported by this harness on the selected computer."
+                : "Served by the Workjet gateway; choose a catalog model or enter its ID."
+            }
           >
             <ComposerControlIcon icon={CpuIcon} />
             <span className="min-w-0 truncate">
               {selectedModelSummary?.displayName ??
-                (nativeModels ? "Choose an advertised model" : props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
+                (nativeModels
+                  ? "Choose an advertised model"
+                  : props.selectedModelId.length > 0
+                    ? props.selectedModelId
+                    : "Model")}
             </span>
             <ComposerControlChevron />
           </ComposerControl>
@@ -725,7 +740,11 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           ) : undefined
         }
         list={
-          <div className="flex min-w-0 flex-row" data-composer-model-mini-menu="true" data-model-catalog-source={nativeModels ? "native" : "gateway"}>
+          <div
+            className="flex min-w-0 flex-row"
+            data-composer-model-mini-menu="true"
+            data-model-catalog-source={nativeModels ? "native" : "gateway"}
+          >
             <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
               {modelGroups.map(([provider]) => {
                 const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
@@ -806,18 +825,18 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                 </div>
               ) : null}
               {nativeModels ? null : (
-              <button
-                ref={customModelTrigger}
-                type="button"
-                className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
-                onClick={() => {
-                  setCustomModelDraft(customModelDraft ?? props.selectedModelId);
-                  setCustomModelEditorOpen(true);
-                }}
-                aria-expanded={customModelEditorOpen}
-              >
-                {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
-              </button>
+                <button
+                  ref={customModelTrigger}
+                  type="button"
+                  className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  onClick={() => {
+                    setCustomModelDraft(customModelDraft ?? props.selectedModelId);
+                    setCustomModelEditorOpen(true);
+                  }}
+                  aria-expanded={customModelEditorOpen}
+                >
+                  {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
+                </button>
               )}
             </div>
           </div>

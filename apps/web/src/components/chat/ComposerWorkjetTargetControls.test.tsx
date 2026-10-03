@@ -347,7 +347,14 @@ describe("the manual target controls", () => {
         selectedHarness="minimax-code"
         onSelectHarness={() => undefined}
         modelSource="native"
-        models={[{ id: "MiniMax-M3.1-Flash-Preview", displayName: "MiniMax-M3.1-Flash-Preview", providers: ["minimax"], accountIds: [] }]}
+        models={[
+          {
+            id: "MiniMax-M3.1-Flash-Preview",
+            displayName: "MiniMax-M3.1-Flash-Preview",
+            providers: ["minimax"],
+            accountIds: [],
+          },
+        ]}
         modelsUnavailableReason={null}
         selectedModelId="MiniMax-M3.1-Flash-Preview"
         onSelectModel={() => undefined}
@@ -361,9 +368,13 @@ describe("the manual target controls", () => {
   it("does not present an unadvertised native model as an available current choice", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView
-        configuredInstanceIds={new Set(["minimax"])} selectedHarness="minimax-code"
-        onSelectHarness={() => undefined} modelSource="native" models={[]}
-        modelsUnavailableReason="Run mcode login" selectedModelId="foreign-model"
+        configuredInstanceIds={new Set(["minimax"])}
+        selectedHarness="minimax-code"
+        onSelectHarness={() => undefined}
+        modelSource="native"
+        models={[]}
+        modelsUnavailableReason="Run mcode login"
+        selectedModelId="foreign-model"
         onSelectModel={() => undefined}
       />,
     );

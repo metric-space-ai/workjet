@@ -3419,7 +3419,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
-  const miniMaxManualCatalog = useMemo(() => selectedProvider === "minimax" ? getMiniMaxManualModelCatalog(providerStatuses, selectedInstanceId) : null, [providerStatuses, selectedInstanceId, selectedProvider]);
+  const miniMaxManualCatalog = useMemo(
+    () =>
+      selectedProvider === "minimax"
+        ? getMiniMaxManualModelCatalog(providerStatuses, selectedInstanceId)
+        : null,
+    [providerStatuses, selectedInstanceId, selectedProvider],
+  );
   const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
   const composerManualTargetControls =
     workerModeActive || !workjetManualControlsAvailable ? null : (
@@ -3446,7 +3452,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onSelectHarness={handleSelectManualHarness}
         modelSource={miniMaxManualCatalog === null ? "gateway" : "native"}
         models={miniMaxManualCatalog?.models ?? manualGatewayModels}
-        modelsUnavailableReason={miniMaxManualCatalog?.unavailableReason ?? (miniMaxManualCatalog === null && manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null)}
+        modelsUnavailableReason={
+          miniMaxManualCatalog?.unavailableReason ??
+          (miniMaxManualCatalog === null && manualGatewayModels.length === 0
+            ? manualModelsUnavailableReason
+            : null)
+        }
         selectedModelId={selectedModelForPickerWithCustomFallback}
         onSelectModel={handleSelectManualModel}
       />

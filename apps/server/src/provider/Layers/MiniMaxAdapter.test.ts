@@ -137,6 +137,23 @@ describe("MiniMax Code adapter protocol fixture", () => {
       expect((yield* adapter.listSessions())[0]?.resumeCursor).toEqual(session.resumeCursor);
     }));
   });
+  it.live("rejects disabled thinking before changing an advertised model or idle session", () => {
+    return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
+      const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), { instanceId, resolveSessionEnvironment: () => Effect.succeed({ ...process.env, MINIMAX_TEST_LOG: log, MINIMAX_TEST_SECOND_MODEL: "1" }) });
+      const session = yield* adapter.startSession(input(cwd));
+      const initialWire = NodeFS.readFileSync(log, "utf8");
+      for (const effort of ["none", "disabled"]) {
+        const rejected = yield* adapter.sendTurn({ ...turn("must not change the native model"), modelSelection: { instanceId, model: "MiniMax-M2.7", options: [{ id: "thinkingEffort", value: effort }] } }).pipe(Effect.flip);
+        expect(rejected.message).toContain("does not advertise thinking effort");
+        expect((yield* adapter.listSessions())[0]).toEqual(session);
+        expect(NodeFS.readFileSync(log, "utf8")).toBe(initialWire);
+      }
+      yield* adapter.sendTurn(turn("original preview session remains usable"));
+      expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
+      expect((yield* adapter.listSessions())[0]?.model).toBe(MINIMAX_PREVIEW_MODEL);
+      expect((yield* adapter.listSessions())[0]?.resumeCursor).toEqual(session.resumeCursor);
+    }));
+  });
   it.live("retains a live session when a resume cursor belongs to another profile", () => {
     return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
       const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), { instanceId, resolveSessionEnvironment: () => environment(log) });
@@ -148,6 +165,28 @@ describe("MiniMax Code adapter protocol fixture", () => {
       const methods = NodeFS.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line).method);
       expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
       expect(methods).not.toContain("session/load");
+    }));
+  });
+  it.live("requires the saved cursor and never creates a fresh session after a failed load", () => {
+    return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
+      let missing = false;
+      const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), { instanceId, resolveSessionEnvironment: () => Effect.succeed({ ...process.env, MINIMAX_TEST_LOG: log, ...(missing ? { MINIMAX_TEST_LOAD_MISSING: "1" } : {}) }) });
+      const session = yield* adapter.startSession(input(cwd));
+      const absentCursor = yield* adapter.startSession({ ...input(cwd), resumePolicy: "require-existing" }).pipe(Effect.flip);
+      expect(absentCursor.message).toContain("saved MiniMax Code session cursor is required");
+      expect((yield* adapter.listSessions())[0]).toEqual(session);
+      yield* adapter.stopSession(threadId);
+      missing = true;
+      const missingSession = yield* adapter.startSession({ ...input(cwd), resumeCursor: session.resumeCursor, resumePolicy: "require-existing" }).pipe(Effect.flip);
+      expect(missingSession.message).toContain("not found");
+      expect(yield* adapter.hasSession(threadId)).toBe(false);
+      missing = false;
+      const resumed = yield* adapter.startSession({ ...input(cwd), resumeCursor: session.resumeCursor, resumePolicy: "require-existing" });
+      expect(resumed.resumeCursor).toEqual(session.resumeCursor);
+      yield* adapter.sendTurn(turn("recovered original saved session"));
+      const methods = NodeFS.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line).method);
+      expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
+      expect(methods.filter((method) => method === "session/load")).toHaveLength(2);
     }));
   });
   it.live("reports a disconnected turn, rejects further prompts and loads the saved session", () => {

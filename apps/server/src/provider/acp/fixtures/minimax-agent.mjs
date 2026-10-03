@@ -3,6 +3,8 @@ import * as NodeFS from "node:fs";
 if (process.argv.includes("--version")) { (process.env.MINIMAX_TEST_VERSION_STDERR ? process.stderr : process.stdout).write((process.env.MINIMAX_TEST_VERSION || "0.6.2") + "\n"); process.exit(0); }
 const model = "MiniMax-M3.1-Flash-Preview";
 const native = `m:minimax_oauth:${model}:u`;
+const secondaryModel = "MiniMax-M2.7";
+const secondaryNative = `m:minimax_oauth:${secondaryModel}:u`;
 let sessionId = "minimax-fixture-session";
 let modelValue = native;
 let effort = "medium";
@@ -14,7 +16,7 @@ const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", 
 const respond = (id, result) => send({ id, result });
 const notify = (update) => send({ method: "session/update", params: { sessionId, update } });
 const configOptions = () => [
-  { type: "select", id: "model", category: "model", name: "Model", currentValue: modelValue, options: process.env.MINIMAX_TEST_NO_MODELS ? [] : [{ value: native, name: model }] },
+  { type: "select", id: "model", category: "model", name: "Model", currentValue: modelValue, options: process.env.MINIMAX_TEST_NO_MODELS ? [] : [{ value: native, name: model }, ...(process.env.MINIMAX_TEST_SECOND_MODEL ? [{ value: secondaryNative, name: secondaryModel }] : [])] },
   { type: "select", id: "thinkingEffort", category: "thought_level", name: "Thinking effort", currentValue: effort, options: ["low", "medium", "high", "xhigh", "max"].map((value) => ({ value, name: value })) },
 ];
 const setup = () => ({ configOptions: configOptions(), modes: { currentModeId: mode, availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] } });
@@ -28,9 +30,9 @@ NodeReadline.createInterface({ input: process.stdin }).on("line", async (line) =
     case "initialize": respond(id, { protocolVersion: 1, agentInfo: { name: "minimax-code", version: process.env.MINIMAX_TEST_AGENT_VERSION || "0.6.2" }, agentCapabilities: { loadSession: true, promptCapabilities: { image: false }, sessionCapabilities: { resume: {}, close: {} } } }); break;
     case "authenticate": if (process.env.MINIMAX_TEST_AUTH_REQUIRED) { send({ id, error: { code: -32000, message: "Run mcode login and try again." } }); break; } if (params.methodId === "minimax-code-login") respond(id, {}); else send({ id, error: { code: -32602, message: "Unknown authentication method" } }); break;
     case "session/new": respond(id, { sessionId, ...setup() }); break;
-    case "session/load": sessionId = params.sessionId; notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "old replay" } }); respond(id, setup()); break;
+    case "session/load": if (process.env.MINIMAX_TEST_LOAD_MISSING) { send({ id, error: { code: -32602, message: "Saved MiniMax Code session not found" } }); break; } sessionId = params.sessionId; notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "old replay" } }); respond(id, setup()); break;
     case "session/set_config_option":
-      if (params.configId === "model" && params.value === native) modelValue = params.value;
+      if (params.configId === "model" && (params.value === native || (process.env.MINIMAX_TEST_SECOND_MODEL && params.value === secondaryNative))) modelValue = params.value;
       else if (params.configId === "thinkingEffort" && ["low", "medium", "high", "xhigh", "max"].includes(params.value)) effort = params.value;
       else { send({ id, error: { code: -32602, message: "Value not advertised" } }); break; }
       respond(id, { configOptions: configOptions() }); break;

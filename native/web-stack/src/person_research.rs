@@ -825,9 +825,9 @@ fn grouped_person_records(
                 .map(str::to_string);
             let profile_value = matches!(field, FieldKey::PersonXing | FieldKey::PersonLinkedin)
                 .then_some(value.as_str())
-                .filter(|value| valid_http_url(value));
+                .and_then(person_profile_key);
             let person_key = explicit_key
-                .or_else(|| profile_value.map(str::to_string))
+                .or(profile_value)
                 .or_else(|| person_profile_key(&source_url))
                 .or_else(|| person_name_key_from_candidate(candidate))
                 .unwrap_or_else(|| {
@@ -997,8 +997,10 @@ fn person_profile_key(value: &str) -> Option<String> {
     let host = parsed.host_str()?;
     let profile = (host == "xing.com" || host.ends_with(".xing.com"))
         && parsed.path().starts_with("/profile/")
+        && parsed.path().trim_end_matches('/').len() > "/profile".len()
         || (host == "linkedin.com" || host.ends_with(".linkedin.com"))
-            && parsed.path().starts_with("/in/");
+            && parsed.path().starts_with("/in/")
+            && parsed.path().trim_end_matches('/').len() > "/in".len();
     (profile && matches!(parsed.scheme(), "http" | "https")).then(|| value.to_string())
 }
 
@@ -3497,6 +3499,25 @@ mod tests {
             payload["person_records"][0]["source_url"],
             payload["person_records"][1]["source_url"]
         );
+    }
+
+    #[test]
+    fn only_individual_provider_profiles_bind_an_identity() {
+        for value in [
+            "https://www.xing.com/profile/Ada_Lovelace",
+            "https://www.linkedin.com/in/ada-lovelace",
+        ] {
+            assert_eq!(person_profile_key(value).as_deref(), Some(value));
+        }
+        for value in [
+            "https://fixture.test/team",
+            "https://www.xing.com/profile/",
+            "https://www.linkedin.com/in/",
+            "https://www.linkedin.com/company/fixture",
+            "https://linkedin.com.evil.test/in/ada",
+        ] {
+            assert!(person_profile_key(value).is_none());
+        }
     }
 
     #[test]

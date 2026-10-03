@@ -107,7 +107,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
       yield* Fiber.interrupt(consumer);
     }));
   });
-  it.effect("fails an unacknowledged cancellation once and resumes the original saved session", () => {
+  it.effect("settles an unacknowledged cancellation before a concurrent same-cursor resume", () => {
     return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
       let ignoreCancel = true;
       const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), { instanceId, resolveSessionEnvironment: () => Effect.succeed({ ...process.env, MINIMAX_TEST_LOG: log, ...(ignoreCancel ? { MINIMAX_TEST_IGNORE_CANCEL: "1" } : {}) }) });
@@ -127,17 +127,19 @@ describe("MiniMax Code adapter protocol fixture", () => {
       yield* Deferred.await(waiting);
       const interrupted = yield* adapter.interruptTurn(threadId).pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
       yield* Deferred.await(notified);
+      ignoreCancel = false;
+      const replacing = yield* adapter.startSession({ ...input(cwd), resumeCursor: session.resumeCursor, resumePolicy: "require-existing" }).pipe(Effect.forkChild({ startImmediately: true }));
+      expect((yield* adapter.listSessions())[0]?.status).toBe("running");
       yield* TestClock.adjust("31 seconds");
       const failure = yield* Fiber.join(interrupted);
       expect(failure.message).toContain("within 30 seconds");
       yield* Deferred.await(failed);
       yield* Fiber.await(running);
-      expect(yield* adapter.hasSession(threadId)).toBe(false);
       const completed = recorded.filter((event) => event.type === "turn.completed");
       expect(completed).toHaveLength(1);
       expect(completed[0]?.payload).toMatchObject({ state: "failed" });
-      ignoreCancel = false;
-      const resumed = yield* adapter.startSession({ ...input(cwd), resumeCursor: session.resumeCursor, resumePolicy: "require-existing" });
+      const resumed = yield* Fiber.join(replacing);
+      expect(yield* adapter.hasSession(threadId)).toBe(true);
       expect(resumed.resumeCursor).toEqual(session.resumeCursor);
       yield* adapter.sendTurn(turn("recovered after unacknowledged cancellation"));
       const methods = NodeFS.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line).method);

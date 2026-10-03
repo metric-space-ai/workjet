@@ -1,5 +1,5 @@
-import readline from "node:readline";
-import { appendFileSync, writeFileSync } from "node:fs";
+import * as NodeReadline from "node:readline";
+import * as NodeFS from "node:fs";
 if (process.argv.includes("--version")) { process.stdout.write((process.env.MINIMAX_TEST_VERSION || "0.6.2") + "\n"); process.exit(0); }
 const model = "MiniMax-M3.1-Flash-Preview";
 const native = `m:minimax_oauth:${model}:u`;
@@ -19,10 +19,10 @@ const configOptions = () => [
 ];
 const setup = () => ({ configOptions: configOptions(), modes: { currentModeId: mode, availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] } });
 const request = (method, params) => new Promise((resolve) => { const id = nextRequestId++; replies.set(id, resolve); send({ id, method, params }); });
-readline.createInterface({ input: process.stdin }).on("line", async (line) => {
+NodeReadline.createInterface({ input: process.stdin }).on("line", async (line) => {
   const message = JSON.parse(line);
   if (!message.method) { const settle = replies.get(message.id); replies.delete(message.id); settle?.(message.result); return; }
-  if (process.env.MINIMAX_TEST_LOG) appendFileSync(process.env.MINIMAX_TEST_LOG, JSON.stringify({ method: message.method, params: message.params }) + "\n");
+  if (process.env.MINIMAX_TEST_LOG) NodeFS.appendFileSync(process.env.MINIMAX_TEST_LOG, JSON.stringify({ method: message.method, params: message.params }) + "\n");
   const { id, method, params } = message;
   switch (method) {
     case "initialize": respond(id, { protocolVersion: 1, agentInfo: { name: "minimax-code", version: process.env.MINIMAX_TEST_AGENT_VERSION || "0.6.2" }, agentCapabilities: { loadSession: true, promptCapabilities: { image: false }, sessionCapabilities: { resume: {}, close: {} } } }); break;
@@ -49,7 +49,7 @@ readline.createInterface({ input: process.stdin }).on("line", async (line) => {
       if (text.includes("approved-edit")) {
         const permission = await request("session/request_permission", { sessionId, toolCall: { toolCallId: "edit-one", title: "Edit fixture", kind: "edit", status: "pending" }, options: [{ optionId: "yes", kind: "allow_once", name: "Allow" }, { optionId: "no", kind: "reject_once", name: "Reject" }] });
         if (permission?.outcome?.optionId === "yes") {
-          writeFileSync("result.txt", "approved change\n");
+          NodeFS.writeFileSync("result.txt", "approved change\n");
           notify({ sessionUpdate: "tool_call", toolCallId: "edit-one", title: "Edit fixture", kind: "edit", status: "completed", content: [{ type: "diff", path: "result.txt", oldText: "", newText: "approved change\n" }] });
         }
       }

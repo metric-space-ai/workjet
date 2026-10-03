@@ -8,6 +8,56 @@ import {
 const NOW = "2026-08-25T12:00:00.000Z";
 
 describe("static Workjet session transcript parsing", () => {
+  it("retains ordinary requests that discuss Codex context markers", () => {
+    for (const request of [
+      "Explain how <recommended_plugins> is handled.",
+      "Review # AGENTS.md instructions in the attached document.",
+      "Describe the <permissions instructions> marker in a transcript.",
+      "Keep a request that quotes <environment_context>.",
+    ]) {
+      const parsed = parseCodexSessionTranscript(
+        [
+          JSON.stringify({
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: request }],
+            },
+          }),
+        ],
+        NOW,
+      );
+      expect(parsed?.title).toBe(request);
+      expect(parsed?.messages).toEqual([{ role: "user", text: request, createdAt: NOW }]);
+    }
+  });
+
+  it("still excludes generated context prefixes with leading whitespace", () => {
+    for (const context of [
+      "<recommended_plugins>hidden</recommended_plugins>",
+      "# AGENTS.md instructions for /workspace",
+      "<permissions instructions>hidden</permissions instructions>",
+      "<environment_context>hidden</environment_context>",
+    ]) {
+      expect(
+        parseCodexSessionTranscript(
+          [
+            JSON.stringify({
+              type: "response_item",
+              payload: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: "\n  " + context }],
+              },
+            }),
+          ],
+          NOW,
+        ),
+      ).toBeNull();
+    }
+  });
+
   it("retains readable histories without a recorded source folder", () => {
     const codex = parseCodexSessionTranscript(
       [

@@ -129,11 +129,15 @@ const visibleText = (
     .join("\n");
 };
 
-const isInjectedCodexContext = (text: string): boolean =>
-  text.includes("<recommended_plugins>") ||
-  text.includes("# AGENTS.md instructions") ||
-  text.includes("<permissions instructions>") ||
-  text.includes("<environment_context>");
+const isInjectedCodexContext = (text: string): boolean => {
+  const content = text.trimStart();
+  return (
+    content.startsWith("<recommended_plugins>") ||
+    content.startsWith("# AGENTS.md instructions") ||
+    content.startsWith("<permissions instructions>") ||
+    content.startsWith("<environment_context>")
+  );
+};
 
 // These are UI context messages, not the user's conversation title or history.
 const stripCodexUiContext = (text: string): string =>

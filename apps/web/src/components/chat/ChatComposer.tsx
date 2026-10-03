@@ -79,6 +79,7 @@ import {
 } from "../../promptStashStore";
 import { ComposerWorkerControl, providerInstanceIdForHarness } from "./ComposerWorkerControl";
 import { workerReasoningSelections } from "./workerReasoning";
+import { getMiniMaxManualModelCatalog } from "./minimaxManualModels";
 import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
@@ -3418,6 +3419,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
+  const miniMaxManualCatalog = useMemo(() => selectedProvider === "minimax" ? getMiniMaxManualModelCatalog(providerStatuses, selectedInstanceId) : null, [providerStatuses, selectedInstanceId, selectedProvider]);
   const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
   const composerManualTargetControls =
     workerModeActive || !workjetManualControlsAvailable ? null : (
@@ -3442,10 +3444,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
         onSelectHarness={handleSelectManualHarness}
-        models={manualGatewayModels}
-        modelsUnavailableReason={
-          manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
-        }
+        modelSource={miniMaxManualCatalog === null ? "gateway" : "native"}
+        models={miniMaxManualCatalog?.models ?? manualGatewayModels}
+        modelsUnavailableReason={miniMaxManualCatalog?.unavailableReason ?? (miniMaxManualCatalog === null && manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null)}
         selectedModelId={selectedModelForPickerWithCustomFallback}
         onSelectModel={handleSelectManualModel}
       />

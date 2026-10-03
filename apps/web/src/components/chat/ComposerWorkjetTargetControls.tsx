@@ -570,7 +570,8 @@ export interface ComposerManualTargetControlsProps {
   readonly unavailableHint?: string | undefined;
   readonly selectedHarness: WorkjetHarness | null;
   readonly onSelectHarness: (harness: WorkjetHarness) => void;
-  /** The FULL gateway catalog; the menu groups the models by provider. */
+  /** Native harness catalogs are authoritative; gateway catalogs retain custom IDs. */
+  readonly modelSource?: "gateway" | "native";
   readonly models: ReadonlyArray<WorkjetGatewayModelSummary>;
   /** Why the model list may be empty; shown instead of a silent blank. */
   readonly modelsUnavailableReason: string | null;
@@ -585,6 +586,7 @@ export interface ComposerManualTargetControlsProps {
 
 /** Exported unwrapped so a test can call it; `memo` returns an object. */
 export function ComposerManualTargetControlsView(props: ComposerManualTargetControlsProps) {
+  const nativeModels = props.modelSource === "native";
   // Free-text fallback: the gateway catalog is a discovery aid, not an
   // authority — any model id the gateway accepts may be typed directly.
   const [localCustomModelDraft, setLocalCustomModelDraft] = useState<string | null>(null);
@@ -602,21 +604,22 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     harnessOptions.find((option) => option.id === props.selectedHarness) ?? null;
   const selectedModelSummary = props.models.find((model) => model.id === props.selectedModelId);
   const modelInCatalog = selectedModelSummary !== undefined;
-  const modelGroups = composerGatewayModelMenuGroups(props.models);
+  const allModelGroups = composerGatewayModelMenuGroups(props.models);
+  const modelGroups = nativeModels ? allModelGroups.filter(([, models]) => models.length > 0) : allModelGroups;
   const selectedModelProvider =
     props.models.find((model) => model.id === props.selectedModelId)?.providers[0] ??
-    inferGatewayProviderFromModelId(props.selectedModelId);
+    (nativeModels ? undefined : inferGatewayProviderFromModelId(props.selectedModelId));
   // The rail's active provider: the explicit pick, else the provider of the
   // current model, else the first group.
   const activeModelProvider =
-    modelProviderChoice ??
+    (modelGroups.some(([provider]) => provider === modelProviderChoice) ? modelProviderChoice : null) ??
     selectedModelProvider ??
     modelGroups.find(([, models]) => models.length > 0)?.[0] ??
-    COMPOSER_GATEWAY_PROVIDER_RAIL[0];
+    (nativeModels ? undefined : COMPOSER_GATEWAY_PROVIDER_RAIL[0]);
   const activeProviderModels =
     modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? [];
   const showCurrentCustomModel =
-    !modelInCatalog &&
+    !nativeModels && !modelInCatalog &&
     props.selectedModelId.length > 0 &&
     (selectedModelProvider ?? activeModelProvider) === activeModelProvider;
 
@@ -676,7 +679,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           </SelectPopup>
         </Select>
         <TooltipPopup side="top">
-          Harness — the agent runtime that drives the turn. Any harness combines with any model.
+          {nativeModels ? "This harness runs models advertised by its native profile on the selected computer." : "Harness — the agent runtime that drives the turn. Any harness combines with any model."}
         </TooltipPopup>
       </Tooltip>
 
@@ -689,12 +692,12 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             className="min-w-0 max-w-56"
             aria-label="Model"
             type="button"
-            title="Served by the Workjet gateway; choose a catalog model or enter its ID."
+            title={nativeModels ? "Models reported by this harness on the selected computer." : "Served by the Workjet gateway; choose a catalog model or enter its ID."}
           >
             <ComposerControlIcon icon={CpuIcon} />
             <span className="min-w-0 truncate">
               {selectedModelSummary?.displayName ??
-                (props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
+                (nativeModels ? "Choose an advertised model" : props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
             </span>
             <ComposerControlChevron />
           </ComposerControl>
@@ -704,7 +707,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         detailTitle="Custom model"
         detailDescription="Enter a model ID accepted by your gateway. Choose Use model to apply it to this chat."
         detail={
-          customModelEditorOpen ? (
+          customModelEditorOpen && !nativeModels ? (
             <ComposerCustomModelEditor
               value={customModelDraft ?? props.selectedModelId}
               onChange={setCustomModelDraft}
@@ -722,7 +725,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           ) : undefined
         }
         list={
-          <div className="flex min-w-0 flex-row" data-composer-model-mini-menu="true">
+          <div className="flex min-w-0 flex-row" data-composer-model-mini-menu="true" data-model-catalog-source={nativeModels ? "native" : "gateway"}>
             <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
               {modelGroups.map(([provider]) => {
                 const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
@@ -802,6 +805,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                   {props.modelsUnavailableReason ?? "No models reported for this provider."}
                 </div>
               ) : null}
+              {nativeModels ? null : (
               <button
                 ref={customModelTrigger}
                 type="button"
@@ -814,6 +818,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
               >
                 {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
               </button>
+              )}
             </div>
           </div>
         }

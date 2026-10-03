@@ -24,7 +24,7 @@ the normal native client sends an inference request to the fixture.
 
    Its private `receipt.json` names the PID, endpoint and deadline. Keep the
    supervisor handle and terminate only that owned group at the unit's end. The
-   server accepts at most 200 inference requests and exits by SIGTERM or its 900s
+   server accepts at most 200 inference attempts and exits by SIGTERM or its 900s
    wall deadline. It stores sanitized request receipts, never request prompts,
    authorization headers or raw session/cache identities.
 
@@ -58,6 +58,20 @@ the normal native client sends an inference request to the fixture.
    `What is 297 + 306?` and check the real streamed reply 603,
    requested-model receipt, reload and normal Quit/reopen persistence. This is fixture transport
    acceptance, not evidence of real-provider availability or token consumption.
+
+For a separate error chapter, choose `--primary-status 401`, `402`, `403`,
+`404`, `429`, `500` or `503` before launching a new fixture and profile. The
+original Primary key returns that real HTTP status; Secondary and Other remain
+healthy. A synthetic replacement key
+`fixture-primary-replacement-not-a-real-key-r004` maps to Primary and succeeds,
+so the visible existing-account key replacement can be tested without changing
+the fixture after launch. Never add this replacement as a new account or use
+any of these synthetic keys against a real vendor. Error receipts contain
+status/account/model/attempt only, and successful completions have a separate
+number. A429 supplies a60-second Retry-After; this is a local retry signal,
+not a measured provider percentage, subscription reset or cache report. These
+modes are prepared fixtures, not proof that the packaged UI chapters have run.
+They do not provide OAuth login, quota endpoints or configuration-write faults.
 
 Limits and balance are deliberately unknown. The fixture supplies no measured
 token counts or cache counters, so those remain absent. Do not inject older usage

@@ -50,7 +50,12 @@ describe("MiniMax Code adapter protocol fixture", () => {
         recorded.push(event);
         if (event.type === "turn.completed") yield* Deferred.succeed(completed, undefined);
         if (event.type === "request.opened" && event.requestId) yield* adapter.respondToRequest(threadId, ApprovalRequestId.make(event.requestId), "accept");
-        if (event.type === "user-input.requested" && event.requestId) yield* adapter.respondToUserInput(threadId, ApprovalRequestId.make(event.requestId), { scope: "Small" });
+        if (event.type === "user-input.requested" && event.requestId) {
+          const requestId = ApprovalRequestId.make(event.requestId);
+          const invalid = yield* adapter.respondToUserInput(threadId, requestId, { scope: ["unadvertised"] }).pipe(Effect.flip);
+          expect(invalid.message).toContain("Unadvertised answer");
+          yield* adapter.respondToUserInput(threadId, requestId, { scope: ["Small"] });
+        }
       })), Effect.forkChild({ startImmediately: true }));
       const session = yield* adapter.startSession(input(cwd));
       yield* adapter.sendTurn(turn("ask-question approved-edit"));

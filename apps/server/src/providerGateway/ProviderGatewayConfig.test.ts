@@ -123,6 +123,7 @@ describe("ProviderGatewayConfig", () => {
         priority: 10,
         weight: 2,
         modelIds: ["gpt-test"],
+        credentialKind: "oauth",
         credentialSuffix: null,
       },
     ]);
@@ -425,26 +426,37 @@ describe("ProviderGatewayConfig", () => {
       ]);
     });
 
-    it("ignores legacy zero weights for enabled OAuth and API-key accounts", () => {
+    it("ignores accepted legacy weights for enabled OAuth and API-key accounts", () => {
       const roundRobin = decodeProviderGatewayConfiguration(
         poolConfiguration([{ id: "claude-a", provider: "claude" }]),
       )!;
       expect(providerPools(roundRobin)[0]?.weightHonored).toBe(false);
+      expect(
+        decodeProviderGatewayConfiguration(
+          poolConfiguration(
+            [{ id: "claude-a", provider: "claude", weight: 0 }],
+            "weighted-round-robin",
+          ),
+        ),
+      ).toBeUndefined();
 
       const weighted = decodeProviderGatewayConfiguration(
-        poolConfiguration([{ id: "claude-a", provider: "claude", weight: 0 }], "weighted-round-robin"),
+        poolConfiguration(
+          [{ id: "claude-a", provider: "claude", weight: 2 }],
+          "weighted-round-robin",
+        ),
       )!;
       expect(providerPools(weighted)[0]?.weightHonored).toBe(false);
       expect(providerPools(weighted)[0]?.members[0]?.selectable).toBe(true);
       expect(providerPools(weighted)[0]?.strategy).toBe("fill-first");
 
       // Enabled accounts remain eligible to the fixed policy regardless of
-      // legacy weight; runtime health determines whether they can serve now.
+      // accepted legacy weight; malformed weights still fail configuration decoding.
       const apiKey = decodeProviderGatewayConfiguration(
         poolConfiguration(
           [
             { id: "zai-a", provider: "zai", priority: 5, weight: 1 },
-            { id: "zai-b", provider: "zai", priority: 0, weight: 0 },
+            { id: "zai-b", provider: "zai", priority: 0, weight: 2 },
           ],
           "weighted-round-robin",
         ),

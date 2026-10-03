@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use workjet_provider_gateway::internal::api::server_management::{
@@ -52,27 +52,11 @@ use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_handl
 };
 use workjet_provider_gateway::sdk::api::handlers::openai::openai_responses_xai_handlers::OpenAiResponsesXaiHandler;
 use workjet_provider_gateway::sdk::cliproxy::auth::Auth;
-use workjet_provider_gateway::sdk::cliproxy::auth::{
-    AccountRouter, CooldownConductor, CooldownStateRecord, CooldownStateStore, CooldownStoreError,
-};
+use workjet_provider_gateway::sdk::cliproxy::auth::{AccountRouter, CooldownConductor};
 use workjet_provider_gateway::sdk::pluginapi::HostHttpClient;
 use workjet_provider_gateway::sdk::translator::builtin::registry as builtin_registry;
 
 use crate::secret_store::{SecretResolveError, WorkjetSecretStore};
-
-#[derive(Default)]
-struct MemoryCooldownStore(Mutex<Vec<CooldownStateRecord>>);
-
-impl CooldownStateStore for MemoryCooldownStore {
-    fn load(&self) -> Result<Vec<CooldownStateRecord>, CooldownStoreError> {
-        Ok(self.0.lock().map_err(|_| CooldownStoreError::Read)?.clone())
-    }
-
-    fn save(&self, records: &[CooldownStateRecord]) -> Result<(), CooldownStoreError> {
-        *self.0.lock().map_err(|_| CooldownStoreError::Write)? = records.to_vec();
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 struct SystemAccountClock;
@@ -139,18 +123,15 @@ pub struct ProviderRoutes {
     pub messages: Option<Arc<dyn ClaudeMessagesRouteHandler>>,
     pub auxiliary: Option<Arc<dyn AuxiliaryRouteHandler>>,
     pub models: ClaudeMessagesHttpResponse,
+    pub account_state: Arc<crate::account_policy::AccountState>,
 }
 
 fn state_authorities(
-    config: &ValidatedRuntimeConfig,
+    state: Arc<crate::account_policy::AccountState>,
 ) -> (Arc<AccountRouter>, Arc<CooldownConductor>) {
-    let store = Arc::new(MemoryCooldownStore::default());
     (
-        Arc::new(AccountRouter::with_strategy(
-            store.clone(),
-            config.routing_strategy(),
-        )),
-        Arc::new(CooldownConductor::new(store)),
+        Arc::new(AccountRouter::new(state.clone()).with_policy(state.clone())),
+        state.conductor(),
     )
 }
 
@@ -179,6 +160,8 @@ pub fn build_provider_routes(
     let Some(default_provider) = default_provider else {
         return Ok(None);
     };
+    let state = crate::account_policy::AccountState::open(store.clone())
+        .map_err(|_| RuntimeBuildError::Configuration)?;
     let account_clock: Arc<dyn AccountStateClock> = Arc::new(SystemAccountClock);
     let mut auxiliary_handlers: Vec<Arc<dyn AuxiliaryRouteHandler>> = Vec::new();
 
@@ -186,10 +169,16 @@ pub fn build_provider_routes(
     let claude = if config.claude_accounts().is_empty() {
         None
     } else {
-        let (router, conductor) = state_authorities(config);
+        let (router, conductor) = state_authorities(state.clone());
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.claude_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("claude", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             let refresh = Arc::new(
                 AnthropicHttpTransport::new(configured_proxy.as_deref().map(String::as_str))
@@ -261,10 +250,16 @@ pub fn build_provider_routes(
     let codex = if config.codex_accounts().is_empty() {
         None
     } else {
-        let (router, conductor) = state_authorities(config);
+        let (router, conductor) = state_authorities(state.clone());
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.codex_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("codex", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             let refresh = Arc::new(
                 CodexHttpTransport::new(configured_proxy.as_deref().map(String::as_str))
@@ -330,10 +325,16 @@ pub fn build_provider_routes(
             )
             .map_err(|_| RuntimeBuildError::Configuration)?,
         )));
-        let (router, conductor) = state_authorities(config);
+        let (router, conductor) = state_authorities(state.clone());
         let mut executors = HashMap::new();
         let mut targets = HashMap::new();
         for account in config.antigravity_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("antigravity", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             let refresh = Arc::new(
                 AntigravityHttpTransport::new(configured_proxy.as_deref().map(String::as_str))
@@ -407,6 +408,9 @@ pub fn build_provider_routes(
                 let api_key = store
                     .resolve_text(&account.api_key_secret)
                     .map_err(|_| RuntimeBuildError::Secret)?;
+                state
+                    .bind_api_key(provider, &account.id, api_key.as_bytes())
+                    .map_err(|_| RuntimeBuildError::Configuration)?;
                 accounts.push(
                     ApiKeyAccount::new(
                         account.id.clone(),
@@ -423,7 +427,8 @@ pub fn build_provider_routes(
                 );
             }
             let pool = ApiKeyAccountPool::new(provider, accounts, registry.clone())
-                .map_err(|_| RuntimeBuildError::Configuration)?;
+                .map_err(|_| RuntimeBuildError::Configuration)?
+                .with_policy(state.clone());
             api_key_handlers.insert(
                 provider.to_owned(),
                 Arc::new(OpenAiResponsesApiKeyHandler::new(Arc::new(pool))),
@@ -441,6 +446,12 @@ pub fn build_provider_routes(
         let mut accounts = Vec::new();
         let mut persist_refs = HashMap::new();
         for account in config.xai_accounts() {
+            let credential = store
+                .resolve_text(&account.access_token_secret)
+                .map_err(|_| RuntimeBuildError::Configuration)?;
+            state
+                .bind_oauth("xai", &account.id, credential.as_bytes())
+                .map_err(|_| RuntimeBuildError::Configuration)?;
             let configured_proxy = proxy_url(&store, account.proxy_url_secret.as_ref())?;
             match &pool_proxy {
                 None => pool_proxy = Some(configured_proxy),
@@ -501,6 +512,7 @@ pub fn build_provider_routes(
         );
         let pool = XaiSubscriptionAccountPool::new(accounts, executor, auth)
             .map_err(|_| RuntimeBuildError::Configuration)?
+            .with_policy(state.clone())
             .with_persist(Arc::new(XaiSecretPersist {
                 store: store.clone(),
                 refs: persist_refs,
@@ -533,6 +545,7 @@ pub fn build_provider_routes(
         messages: Some(messages),
         auxiliary,
         models: claude_models_response(&model_catalog(config), false),
+        account_state: state,
     }))
 }
 
@@ -619,6 +632,7 @@ pub struct HostManagementSource {
     management_endpoint: String,
     default_provider: Option<String>,
     summary: ManagementRuntimeConfigSummary,
+    account_health: Option<Arc<crate::account_health::AccountHealthSource>>,
 }
 
 impl HostManagementSource {
@@ -738,11 +752,20 @@ impl HostManagementSource {
                 providers,
             },
             default_provider,
+            account_health: None,
         }
     }
 }
 
 impl HostManagementSource {
+    pub fn with_account_health(
+        mut self,
+        source: Arc<crate::account_health::AccountHealthSource>,
+    ) -> Self {
+        self.account_health = Some(source);
+        self
+    }
+
     /// A host without any provider account is up but has nothing to route to.
     fn provider_phase(&self) -> ManagementRuntimePhase {
         if self.default_provider.is_some() {
@@ -754,6 +777,9 @@ impl HostManagementSource {
 }
 
 impl ManagementRuntimeStatusSource for HostManagementSource {
+    fn account_health(&self) -> Option<serde_json::Value> {
+        self.account_health.as_ref().map(|s| s.snapshot())
+    }
     fn snapshot(&self) -> ManagementRuntimeStatus {
         ManagementRuntimeStatus {
             schema: "workjet.provider-gateway.runtime-status.v1".to_owned(),

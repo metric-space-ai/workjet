@@ -8,6 +8,41 @@ import {
 const NOW = "2026-08-25T12:00:00.000Z";
 
 describe("static Workjet session transcript parsing", () => {
+  it("retains readable histories without a recorded source folder", () => {
+    const codex = parseCodexSessionTranscript(
+      [
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "Keep this Codex conversation" }],
+          },
+        }),
+      ],
+      NOW,
+    );
+    const claude = parseClaudeSessionTranscript(
+      [
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "Keep this Claude conversation" },
+        }),
+      ],
+      NOW,
+    );
+    expect(codex).toMatchObject({
+      workspaceRoot: null,
+      title: "Keep this Codex conversation",
+      messages: [{ role: "user", text: "Keep this Codex conversation" }],
+    });
+    expect(claude).toMatchObject({
+      workspaceRoot: null,
+      title: "Keep this Claude conversation",
+      messages: [{ role: "user", text: "Keep this Claude conversation" }],
+    });
+  });
+
   it("retains the latest Codex model and ignores synthetic Claude model markers", () => {
     const user = JSON.stringify({
       type: "response_item",

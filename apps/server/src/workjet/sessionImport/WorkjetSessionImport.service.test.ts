@@ -160,6 +160,39 @@ const withFixture = <A, E>(
   );
 
 describe("project-directed static session imports", () => {
+  it.effect("imports missing-folder history only into an explicit destination", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        const file = NodePath.join(root, "sessions", "without-folder.jsonl");
+        const original = transcript("History without folder", ["Still readable"])
+          .split("\n")
+          .slice(1)
+          .join("\n");
+        yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+        const inspection = yield* service.inspect();
+        expect(inspection.candidates).toHaveLength(1);
+        const candidate = inspection.candidates[0]!;
+        expect(candidate.workspaceRoot).toBeNull();
+        expect(candidate.workspaceAvailable).toBe(false);
+        const blocked = yield* service.importSessions({ candidateIds: [candidate.candidateId] });
+        expect(blocked.items[0]?.status).toBe("failed");
+        expect(commands).toHaveLength(0);
+        expect(threads.size).toBe(0);
+        const input = {
+          candidateIds: [candidate.candidateId],
+          projectId: ProjectId.make("project-a"),
+        };
+        const imported = yield* service.importSessions(input);
+        expect(imported.items[0]?.status).toBe("imported");
+        expect(threads.get(imported.items[0]!.threadId!)?.projectId).toBe("project-a");
+        expect(threads.get(imported.items[0]!.threadId!)?.messages).toHaveLength(2);
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
+        expect(commands.some((command) => command.type === "project.create")).toBe(false);
+        expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(original);
+      }),
+    ),
+  );
+
   it.effect(
     "imports into the selected project, updates idempotently, and permits an independent copy in another project",
     () =>

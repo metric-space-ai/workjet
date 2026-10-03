@@ -66,7 +66,7 @@ interface ImportedMessage {
 interface ParsedSession {
   readonly title: string;
   readonly model: string | null;
-  readonly workspaceRoot: string;
+  readonly workspaceRoot: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly messages: ReadonlyArray<ImportedMessage>;
@@ -182,7 +182,7 @@ export const parseCodexSessionTranscript = (
     if (!text || (role === "user" && isInjectedCodexContext(text))) continue;
     messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
   }
-  if (!workspaceRoot || !messages.some((message) => message.role === "user")) return null;
+  if (!messages.some((message) => message.role === "user")) return null;
   if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
     return null;
   }
@@ -190,7 +190,7 @@ export const parseCodexSessionTranscript = (
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Codex session",
     model,
-    workspaceRoot,
+    workspaceRoot: workspaceRoot || null,
     createdAt,
     updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
     messages,
@@ -225,7 +225,7 @@ export const parseClaudeSessionTranscript = (
     if (!text) continue;
     messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
   }
-  if (!workspaceRoot || !messages.some((message) => message.role === "user")) return null;
+  if (!messages.some((message) => message.role === "user")) return null;
   if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
     return null;
   }
@@ -233,7 +233,7 @@ export const parseClaudeSessionTranscript = (
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Claude Code session",
     model,
-    workspaceRoot,
+    workspaceRoot: workspaceRoot || null,
     createdAt: messages[0]?.createdAt ?? fallbackIso,
     updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
     messages,
@@ -487,7 +487,7 @@ export const make = Effect.gen(function* () {
         if (!parsed) continue;
         if (
           search &&
-          !`${parsed.title}\n${parsed.workspaceRoot}`.toLocaleLowerCase().includes(search)
+          !`${parsed.title}\n${parsed.workspaceRoot ?? ""}`.toLocaleLowerCase().includes(search)
         )
           continue;
         if (matched++ < offset) continue;
@@ -522,10 +522,12 @@ export const make = Effect.gen(function* () {
           importedCopies,
           previewMessages: parsed.previewMessages,
           workspaceAvailable: yield* Effect.promise(() =>
-            NodeFSP.access(parsed.workspaceRoot).then(
-              () => true,
-              () => false,
-            ),
+            parsed.workspaceRoot
+              ? NodeFSP.access(parsed.workspaceRoot).then(
+                  () => true,
+                  () => false,
+                )
+              : Promise.resolve(false),
           ),
         });
       }
@@ -576,7 +578,11 @@ export const make = Effect.gen(function* () {
 
       let project = destinationProjectId
         ? Option.getOrUndefined(yield* query.getProjectShellById(destinationProjectId))
-        : Option.getOrUndefined(yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot));
+        : parsed.workspaceRoot
+          ? Option.getOrUndefined(
+              yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot),
+            )
+          : undefined;
       if (destinationProjectId && !project) {
         return yield* new WorkjetSessionImportError({
           reason: "project_unavailable",
@@ -585,6 +591,11 @@ export const make = Effect.gen(function* () {
       }
       const now = new Date().toISOString();
       if (!project) {
+        if (!parsed.workspaceRoot)
+          return yield* new WorkjetSessionImportError({
+            reason: "project_unavailable",
+            subject: candidateId,
+          });
         const projectId = ProjectId.make(NodeCrypto.randomUUID());
         yield* engine.dispatch({
           type: "project.create",

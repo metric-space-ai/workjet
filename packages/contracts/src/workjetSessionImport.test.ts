@@ -10,6 +10,24 @@ import {
 } from "./index.ts";
 
 describe("Workjet static session import contracts", () => {
+  it("represents an unrecorded source folder without guessing a path", () => {
+    const input = {
+      candidateId: "wjsi_0123456789abcdef0123456789abcdef",
+      source: "codex",
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      title: "Conversation without folder",
+      workspaceRoot: null,
+      createdAt: "2026-08-25T12:00:00.000Z",
+      updatedAt: "2026-08-25T12:05:00.000Z",
+      sourceSizeBytes: 42,
+      importedThreadId: null,
+      workspaceAvailable: false,
+    };
+    const decode = Schema.decodeUnknownSync(WorkjetSessionImportCandidate);
+    expect(decode(input).workspaceRoot).toBeNull();
+    expect(() => decode({ ...input, workspaceRoot: "" })).toThrow();
+  });
+
   it("exposes opaque candidates without a native source path", () => {
     const decoded = Schema.decodeUnknownSync(WorkjetSessionImportCandidate)({
       candidateId: "wjsi_0123456789abcdef0123456789abcdef",

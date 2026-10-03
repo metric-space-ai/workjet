@@ -67,6 +67,29 @@ function control(input: SessionImportBrowserProps, label: string) {
 }
 
 describe("conversation import browser controls", () => {
+  it("keeps history without folder metadata selectable and explains its origin", () => {
+    const unknown = { ...candidate, workspaceRoot: null, workspaceAvailable: false };
+    const input = {
+      ...props(),
+      inspection: { sources: [], candidates: [unknown], truncated: false, nextOffset: null },
+      preview: unknown,
+    };
+    const tree = SessionImportBrowser(input);
+    expect(
+      visitElements(tree, (node) => node.props.children === "No recorded folder"),
+    ).toBeDefined();
+    expect(
+      visitElements(
+        tree,
+        (node) =>
+          node.props.children ===
+          "The source app did not record a folder. Choose a destination project for this conversation.",
+      ),
+    ).toBeDefined();
+    (control(input, `Select ${unknown.title}`).onCheckedChange as (value: boolean) => void)(true);
+    expect(input.onSelect).toHaveBeenCalledWith(unknown, true);
+  });
+
   it("opens a preview independently from selecting the conversation", () => {
     const input = props();
     (control(input, `Preview ${candidate.title}`).onClick as () => void)();

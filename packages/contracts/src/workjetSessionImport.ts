@@ -19,7 +19,7 @@ export const WorkjetSessionImportCandidate = Schema.Struct({
   source: WorkjetSessionImportSource,
   providerInstanceId: ProviderInstanceId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
-  workspaceRoot: TrimmedNonEmptyString.check(Schema.isMaxLength(4_096)),
+  workspaceRoot: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   sourceSizeBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

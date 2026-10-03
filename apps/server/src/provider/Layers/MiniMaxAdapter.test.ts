@@ -78,7 +78,8 @@ function runTest(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 }
 
-const settings = (binaryPath: string) => Schema.decodeSync(MiniMaxSettings)({ binaryPath });
+const decodeMiniMaxSettings = Schema.decodeSync(MiniMaxSettings);
+const settings = (binaryPath: string) => decodeMiniMaxSettings({ binaryPath });
 const environment = (log: string) => Effect.succeed({ ...process.env, MINIMAX_TEST_LOG: log });
 
 describe("MiniMax Code adapter protocol fixture", () => {

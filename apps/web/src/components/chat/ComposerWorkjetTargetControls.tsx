@@ -458,7 +458,6 @@ export const ComposerComputerControl = memo(ComposerComputerControlView);
 // the model menu groups by provider instead.
 // ---------------------------------------------------------------------------
 
-const CUSTOM_MODEL_VALUE = "__custom_model__";
 const NO_HARNESS_VALUE = "__no_harness__";
 
 /**

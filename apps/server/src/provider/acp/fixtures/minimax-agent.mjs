@@ -1,5 +1,6 @@
 import readline from "node:readline";
 import { appendFileSync, writeFileSync } from "node:fs";
+if (process.argv.includes("--version")) { process.stdout.write("0.6.2\n"); process.exit(0); }
 const model = "MiniMax-M3.1-Flash-Preview";
 const native = `m:minimax_oauth:${model}:u`;
 let sessionId = "minimax-fixture-session";

@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
+import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderDriverError, ProviderAdapterRequestError } from "../Errors.ts";
@@ -26,7 +27,7 @@ const decode = Schema.decodeSync(MiniMaxSettings);
 const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
   resolve: (options) => makeProviderMaintenanceCapabilities({ provider: DRIVER, packageName: null, updateExecutable: options?.binaryPath?.trim() && options.binaryPath.trim() !== "mcode" ? null : "npm", updateArgs: ["install", "--global", `@minimax-ai/code@${MINIMAX_CODE_RELEASE.version}`, "--registry=https://registry.npmjs.org/", "--include=optional", "--ignore-scripts=false", "--allow-scripts=@minimax-ai/code,better-sqlite3"], updateLockKey: "npm-global" }),
 };
-export type MiniMaxDriverEnv = Crypto.Crypto | FileSystem.FileSystem | Path.Path | BackgroundPolicy.BackgroundPolicy | ChildProcessSpawner.ChildProcessSpawner | ServerSettingsService;
+export type MiniMaxDriverEnv = ServerConfig | Crypto.Crypto | FileSystem.FileSystem | Path.Path | BackgroundPolicy.BackgroundPolicy | ChildProcessSpawner.ChildProcessSpawner | ServerSettingsService;
 
 export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = {
   driverKind: DRIVER,
@@ -38,6 +39,9 @@ export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = 
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const fs = yield* FileSystem.FileSystem;
     const serverSettings = yield* ServerSettingsService;
+    const serverConfig = yield* ServerConfig;
+    const path = yield* Path.Path;
+    const probeSessionPath = path.join(serverConfig.providerStatusCacheDir, `minimax-${instanceId}-session.json`);
     const processEnv = mergeProviderInstanceEnvironment(environment);
     const continuationIdentity = defaultProviderContinuationIdentity({ driverKind: DRIVER, instanceId });
     const stamp = (draft: ServerProviderDraft): ServerProvider => ({ ...draft, instanceId, driver: DRIVER, ...(displayName ? { displayName } : {}), ...(accentColor ? { accentColor } : {}), continuation: { groupKey: continuationIdentity.continuationKey } });
@@ -58,7 +62,7 @@ export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = 
       streamSettings: source.streamSettings,
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,
       initialSnapshot: (settings) => buildInitialMiniMaxProviderSnapshot(settings.provider).pipe(Effect.map(stamp)),
-      checkProvider: checkMiniMaxProviderStatus(effective, processEnv).pipe(Effect.map(stamp), Effect.provideService(Crypto.Crypto, crypto), Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner), Effect.provideService(FileSystem.FileSystem, fs)),
+      checkProvider: checkMiniMaxProviderStatus(effective, processEnv, probeSessionPath).pipe(Effect.map(stamp), Effect.provideService(Crypto.Crypto, crypto), Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner), Effect.provideService(FileSystem.FileSystem, fs)),
     }).pipe(Effect.mapError((cause) => new ProviderDriverError({ driver: DRIVER, instanceId, detail: `Failed to build MiniMax Code snapshot: ${cause.message}`, cause })));
     return { instanceId, driverKind: DRIVER, continuationIdentity, displayName, accentColor, enabled, snapshot, adapter, textGeneration } satisfies ProviderInstance;
   }),

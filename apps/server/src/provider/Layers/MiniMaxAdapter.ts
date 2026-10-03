@@ -116,11 +116,11 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     if (!model) return yield* error("startSession", "Choose a MiniMax Code model.");
     const resume = decodeResume(input.resumeCursor);
     if (input.resumeCursor !== undefined && resume._tag === "None") return yield* error("startSession", "This cursor does not identify a MiniMax Code ACP session.");
-    const previous = sessions.get(input.threadId);
-    if (previous) yield* stop(previous);
     const environment = yield* options.resolveSessionEnvironment();
     const profileKey = createHash("sha256").update(JSON.stringify([options.instanceId, config.dataDirectory || environment.MINIMAX_DATA_DIR || environment.MAVIS_DATA_DIR || "default", environment.HOME || ""])).digest("hex");
     if (resume._tag === "Some" && resume.value.profileKey !== profileKey) return yield* error("startSession", "The saved MiniMax Code session belongs to a different profile. Select its original harness profile to resume.");
+    const previous = sessions.get(input.threadId);
+    if (previous) yield* stop(previous);
     const scope = yield* Scope.make("sequential");
     const processes: ProviderTrackedProcess[] = [];
     const pending = new Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>();

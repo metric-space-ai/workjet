@@ -39,7 +39,7 @@ const hanging = new Promise((resolve) => {
   hangingRequest = resolve;
 });
 
-function answer(response, content, stopReason) {
+function answer(response, content, stopReason, model) {
   response.writeHead(200, { "content-type": "text/event-stream" });
   const write = (event, data) =>
     response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -49,6 +49,7 @@ function answer(response, content, stopReason) {
       id: "fixture",
       type: "message",
       role: "assistant",
+      model,
       content: [],
       usage: { input_tokens: 7, output_tokens: 0 },
     },
@@ -122,10 +123,11 @@ const server = NodeHttp.createServer(async (request, response) => {
           },
         },
         "tool_use",
+        body.model,
       );
       return;
     }
-    answer(response, { type: "text", text: "Greppy ✓: fixture answer" }, "end_turn");
+    answer(response, { type: "text", text: "Greppy ✓: fixture answer" }, "end_turn", body.model);
   } catch (error) {
     failures.push(String(error));
     response.writeHead(500);

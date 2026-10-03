@@ -11,7 +11,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderDriverError, ProviderAdapterRequestError } from "../Errors.ts";
 import { makeMiniMaxAdapter } from "../Layers/MiniMaxAdapter.ts";
-import { buildInitialMiniMaxProviderSnapshot, checkMiniMaxProviderStatus } from "../Layers/MiniMaxProvider.ts";
+import { buildInitialMiniMaxProviderSnapshot, buildMiniMaxGatewayUnavailableSnapshot, checkMiniMaxProviderStatus, MINIMAX_GATEWAY_UNSUPPORTED } from "../Layers/MiniMaxProvider.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { defaultProviderContinuationIdentity, type ProviderDriver, type ProviderInstance } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
@@ -50,7 +50,7 @@ export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = 
     const adapter = yield* makeMiniMaxAdapter(effective, {
       instanceId,
       resolveSessionEnvironment: () => routeViaGateway
-        ? Effect.fail(new ProviderAdapterRequestError({ provider: DRIVER, method: "startSession", detail: "MiniMax Code requires an explicitly configured provider route in its selected profile. Workjet gateway injection is not verified for this CLI and cannot silently fall back to direct credentials." }))
+        ? Effect.fail(new ProviderAdapterRequestError({ provider: DRIVER, method: "startSession", detail: MINIMAX_GATEWAY_UNSUPPORTED }))
         : Effect.succeed(processEnv),
     });
     const unsupported = (operation: "generateCommitMessage" | "generatePrContent" | "generateBranchName" | "generateThreadTitle") => Effect.fail(new TextGenerationError({ operation, detail: "MiniMax Code ACP does not expose this metadata generation operation." }));
@@ -61,8 +61,8 @@ export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = 
       getSettings: source.getSettings,
       streamSettings: source.streamSettings,
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-      initialSnapshot: (settings) => buildInitialMiniMaxProviderSnapshot(settings.provider).pipe(Effect.map(stamp)),
-      checkProvider: checkMiniMaxProviderStatus(effective, processEnv, probeSessionPath).pipe(Effect.map(stamp), Effect.provideService(Crypto.Crypto, crypto), Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner), Effect.provideService(FileSystem.FileSystem, fs)),
+      initialSnapshot: (settings) => (routeViaGateway ? buildMiniMaxGatewayUnavailableSnapshot(settings.provider) : buildInitialMiniMaxProviderSnapshot(settings.provider)).pipe(Effect.map(stamp)),
+      checkProvider: (routeViaGateway ? buildMiniMaxGatewayUnavailableSnapshot(effective) : checkMiniMaxProviderStatus(effective, processEnv, probeSessionPath, serverConfig.providerStatusCacheDir)).pipe(Effect.map(stamp), Effect.provideService(Crypto.Crypto, crypto), Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner), Effect.provideService(FileSystem.FileSystem, fs)),
     }).pipe(Effect.mapError((cause) => new ProviderDriverError({ driver: DRIVER, instanceId, detail: `Failed to build MiniMax Code snapshot: ${cause.message}`, cause })));
     return { instanceId, driverKind: DRIVER, continuationIdentity, displayName, accentColor, enabled, snapshot, adapter, textGeneration } satisfies ProviderInstance;
   }),

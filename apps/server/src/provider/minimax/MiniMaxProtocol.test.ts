@@ -56,6 +56,20 @@ describe("MiniMax Code question forms", () => {
     expect(form().content({ scope: ["Small change"], tools: ["Read", "Edit"], note: ["keep tests"] })).toEqual({ scope: "small", tools: ["read", "edit"], note: "keep tests" });
     expect(form().questions.find((entry) => entry.id === "tools")?.multiSelect).toBe(true);
   });
+  it("decodes the same enumNames labels shown for scalar and array choices", () => {
+    const named = miniMaxElicitationForm({ mode: "form", message: "Choose", requestedSchema: { type: "object", properties: {
+      scope: { type: "string", enum: ["small"], enumNames: ["Small"] },
+      tools: { type: "array", items: { enum: ["read", "edit"], enumNames: ["Read", "Edit"] } },
+    } } });
+    expect(named.questions[0]?.options?.[0]?.label).toBe("Small");
+    expect(named.questions[1]?.options?.map((entry) => entry.label)).toEqual(["Read", "Edit"]);
+    expect(named.content({ scope: ["Small"], tools: ["Read", "Edit"] })).toEqual({ scope: "small", tools: ["read", "edit"] });
+  });
+  it("rejects ambiguous labels while preserving exact native IDs", () => {
+    const named = miniMaxElicitationForm({ message: "Choose", requestedSchema: { type: "object", properties: { scope: { type: "string", enum: ["small", "large"], enumNames: ["Same", "Same"] } } } });
+    expect(() => named.content({ scope: ["Same"] })).toThrow("Ambiguous answer label");
+    expect(named.content({ scope: ["small"] })).toEqual({ scope: "small" });
+  });
   it("cancels empty responses and rejects missing required or unadvertised answers", () => {
     expect(form().content({})).toBeUndefined();
     expect(() => form().content({ note: ["hello"] })).toThrow("Answer required");

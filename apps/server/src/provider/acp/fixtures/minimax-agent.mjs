@@ -1,6 +1,6 @@
 import readline from "node:readline";
 import { appendFileSync, writeFileSync } from "node:fs";
-if (process.argv.includes("--version")) { process.stdout.write("0.6.2\n"); process.exit(0); }
+if (process.argv.includes("--version")) { process.stdout.write((process.env.MINIMAX_TEST_VERSION || "0.6.2") + "\n"); process.exit(0); }
 const model = "MiniMax-M3.1-Flash-Preview";
 const native = `m:minimax_oauth:${model}:u`;
 let sessionId = "minimax-fixture-session";
@@ -14,7 +14,7 @@ const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", 
 const respond = (id, result) => send({ id, result });
 const notify = (update) => send({ method: "session/update", params: { sessionId, update } });
 const configOptions = () => [
-  { type: "select", id: "model", category: "model", name: "Model", currentValue: modelValue, options: [{ value: native, name: model }] },
+  { type: "select", id: "model", category: "model", name: "Model", currentValue: modelValue, options: process.env.MINIMAX_TEST_NO_MODELS ? [] : [{ value: native, name: model }] },
   { type: "select", id: "thinkingEffort", category: "thought_level", name: "Thinking effort", currentValue: effort, options: ["low", "medium", "high", "xhigh", "max"].map((value) => ({ value, name: value })) },
 ];
 const setup = () => ({ configOptions: configOptions(), modes: { currentModeId: mode, availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] } });
@@ -25,8 +25,8 @@ readline.createInterface({ input: process.stdin }).on("line", async (line) => {
   if (process.env.MINIMAX_TEST_LOG) appendFileSync(process.env.MINIMAX_TEST_LOG, JSON.stringify({ method: message.method, params: message.params }) + "\n");
   const { id, method, params } = message;
   switch (method) {
-    case "initialize": respond(id, { protocolVersion: 1, agentInfo: { name: "minimax-code", version: "0.6.2" }, agentCapabilities: { loadSession: true, promptCapabilities: { image: false }, sessionCapabilities: { resume: {}, close: {} } } }); break;
-    case "authenticate": if (params.methodId === "minimax-code-login") respond(id, {}); else send({ id, error: { code: -32602, message: "Unknown authentication method" } }); break;
+    case "initialize": respond(id, { protocolVersion: 1, agentInfo: { name: "minimax-code", version: process.env.MINIMAX_TEST_AGENT_VERSION || "0.6.2" }, agentCapabilities: { loadSession: true, promptCapabilities: { image: false }, sessionCapabilities: { resume: {}, close: {} } } }); break;
+    case "authenticate": if (process.env.MINIMAX_TEST_AUTH_REQUIRED) { send({ id, error: { code: -32000, message: "Run mcode login and try again." } }); break; } if (params.methodId === "minimax-code-login") respond(id, {}); else send({ id, error: { code: -32602, message: "Unknown authentication method" } }); break;
     case "session/new": respond(id, { sessionId, ...setup() }); break;
     case "session/load": sessionId = params.sessionId; notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "old replay" } }); respond(id, setup()); break;
     case "session/set_config_option":
@@ -40,9 +40,11 @@ readline.createInterface({ input: process.stdin }).on("line", async (line) => {
     case "session/prompt": {
       const text = params.prompt.map((content) => content.text || "").join("");
       notify({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Inspecting fixture repository" } });
+      if (text.includes("disconnect")) { process.exit(7); }
       if (text.includes("wait-for-cancel")) { pendingPrompt = id; notify({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "waiting" } }); break; }
       if (text.includes("ask-question")) {
-        await request("session/elicitation", { mode: "form", sessionId, message: "Scope", requestedSchema: { type: "object", properties: { scope: { type: "string", oneOf: [{ const: "small", title: "Small" }] } }, required: ["scope"] } });
+        const answer = await request("session/elicitation", { mode: "form", sessionId, message: "Scope", requestedSchema: { type: "object", properties: { scope: { type: "string", oneOf: [{ const: "small", title: "Small" }] } }, required: ["scope"] } });
+        if (answer?.action !== "accept" || answer.content?.scope !== "small") { send({ id, error: { code: -32602, message: "Expected the native enum answer" } }); break; }
       }
       if (text.includes("approved-edit")) {
         const permission = await request("session/request_permission", { sessionId, toolCall: { toolCallId: "edit-one", title: "Edit fixture", kind: "edit", status: "pending" }, options: [{ optionId: "yes", kind: "allow_once", name: "Allow" }, { optionId: "no", kind: "reject_once", name: "Reject" }] });

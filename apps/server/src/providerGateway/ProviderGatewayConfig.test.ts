@@ -394,17 +394,21 @@ describe("ProviderGatewayConfig", () => {
       ).toBeUndefined();
     });
 
-    it("passes the configured strategy through to the host runtime", () => {
-      const decoded = decodeProviderGatewayConfiguration(
-        poolConfiguration([{ id: "claude-a", provider: "claude" }], "weighted-round-robin"),
-      )!;
-      const host = rustHostConfiguration(decoded, "/secrets") as {
-        runtime: { routing_strategy: string };
-      };
-      expect(host.runtime.routing_strategy).toBe("weighted-round-robin");
+    it("keeps the fixed host fallback for every accepted legacy strategy", () => {
+      for (const strategy of ["round-robin", "fill-first", "weighted-round-robin"]) {
+        const decoded = decodeProviderGatewayConfiguration(
+          poolConfiguration([{ id: "claude-a", provider: "claude" }], strategy),
+        )!;
+        expect(decoded.routingStrategy).toBe(strategy);
+        const host = rustHostConfiguration(decoded, "/secrets") as {
+          runtime: { routing_strategy: string };
+        };
+        expect(host.runtime.routing_strategy).toBe("fill-first");
+        expect(gatewayCatalog(decoded).routingStrategy).toBe("fill-first");
+      }
     });
 
-    it("holds back lower-priority OAuth members, because the host's scheduler does", () => {
+    it("keeps lower-priority OAuth members available to the reset-aware policy", () => {
       const decoded = decodeProviderGatewayConfiguration(
         poolConfiguration([
           { id: "claude-a", provider: "claude", priority: 7 },
@@ -414,32 +418,45 @@ describe("ProviderGatewayConfig", () => {
       )!;
       const [pool] = providerPools(decoded);
       expect(pool?.provider).toBe("claude");
-      expect(pool?.priorityExclusive).toBe(true);
+      expect(pool?.priorityExclusive).toBe(false);
       expect(pool?.members.map((member) => [member.accountId, member.selectable])).toEqual([
         ["claude-a", true],
-        ["claude-b", false],
+        ["claude-b", true],
         ["claude-c", false],
       ]);
     });
 
-    it("honours weight only under the weighted strategy and never for an API-key pool", () => {
+    it("ignores accepted legacy weights for enabled OAuth and API-key accounts", () => {
       const roundRobin = decodeProviderGatewayConfiguration(
         poolConfiguration([{ id: "claude-a", provider: "claude" }]),
       )!;
       expect(providerPools(roundRobin)[0]?.weightHonored).toBe(false);
+      expect(
+        decodeProviderGatewayConfiguration(
+          poolConfiguration(
+            [{ id: "claude-a", provider: "claude", weight: 0 }],
+            "weighted-round-robin",
+          ),
+        ),
+      ).toBeUndefined();
 
       const weighted = decodeProviderGatewayConfiguration(
-        poolConfiguration([{ id: "claude-a", provider: "claude" }], "weighted-round-robin"),
+        poolConfiguration(
+          [{ id: "claude-a", provider: "claude", weight: 2 }],
+          "weighted-round-robin",
+        ),
       )!;
-      expect(providerPools(weighted)[0]?.weightHonored).toBe(true);
+      expect(providerPools(weighted)[0]?.weightHonored).toBe(false);
+      expect(providerPools(weighted)[0]?.members[0]?.selectable).toBe(true);
+      expect(providerPools(weighted)[0]?.strategy).toBe("fill-first");
 
-      // `ApiKeyAccountPool` reads neither the strategy nor the weight, and it
-      // keeps lower-priority accounts in the rotation.
+      // Enabled accounts remain eligible to the fixed policy regardless of
+      // accepted legacy weight; malformed weights still fail configuration decoding.
       const apiKey = decodeProviderGatewayConfiguration(
         poolConfiguration(
           [
-            { id: "zai-a", provider: "zai", priority: 5 },
-            { id: "zai-b", provider: "zai", priority: 0 },
+            { id: "zai-a", provider: "zai", priority: 5, weight: 1 },
+            { id: "zai-b", provider: "zai", priority: 0, weight: 2 },
           ],
           "weighted-round-robin",
         ),

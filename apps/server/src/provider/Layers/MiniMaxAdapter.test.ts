@@ -9,7 +9,6 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
-import * as TestClock from "effect/testing/TestClock";
 import type * as Scope from "effect/Scope";
 import * as Layer from "effect/Layer";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
@@ -206,7 +205,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
       );
     },
   );
-  it.effect("settles an unacknowledged cancellation before a concurrent same-cursor resume", () => {
+  it.live("settles an unacknowledged cancellation before a concurrent same-cursor resume", () => {
     return runTest((cwd, binaryPath, log) =>
       Effect.gen(function* () {
         let ignoreCancel = true;
@@ -257,7 +256,6 @@ describe("MiniMax Code adapter protocol fixture", () => {
           })
           .pipe(Effect.forkChild({ startImmediately: true }));
         expect((yield* adapter.listSessions())[0]?.status).toBe("running");
-        yield* TestClock.adjust("31 seconds");
         const failure = yield* Fiber.join(interrupted);
         expect(failure.message).toContain("within 30 seconds");
         yield* Deferred.await(failed);

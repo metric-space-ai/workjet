@@ -430,7 +430,24 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       case "Request":
         return handleRequestEncoded(message);
       case "Exit":
-        return handleExitEncoded(message);
+        // Effect's JSON-RPC codec treats plain peer errors as defects. ACP
+        // agents send standard code/message errors, which belong in the typed
+        // request failure channel so callers can handle login and missing sessions.
+        return handleExitEncoded(
+          message.exit._tag === "Failure"
+            ? {
+                ...message,
+                exit: {
+                  ...message.exit,
+                  cause: message.exit.cause.map((entry) =>
+                    entry._tag === "Die" && isProtocolError(entry.defect)
+                      ? { _tag: "Fail" as const, error: entry.defect }
+                      : entry,
+                  ),
+                },
+              }
+            : message,
+        );
       case "Chunk":
         return Ref.get(extPending).pipe(
           Effect.flatMap((pending) => {

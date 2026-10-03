@@ -450,6 +450,38 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
     }),
   );
 
+  it.effect("preserves native JSON-RPC errors for extension and core requests", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+      });
+      const nativeError = { code: -32002, message: "Resource not found", data: { uri: "saved" } };
+      const extension = yield* transport.request("x/private", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+      yield* Queue.offer(input, encoder.encode(`${encodeUnknownJsonString({
+        jsonrpc: "2.0", id: 1, error: nativeError,
+      })}\n`));
+      const failure = yield* Fiber.join(extension).pipe(Effect.flip);
+      assert.instanceOf(failure, AcpError.AcpRequestError);
+      assert.deepInclude(failure, {
+        code: -32002, errorMessage: "Resource not found", method: "x/private", data: { uri: "saved" },
+      });
+      const core = yield* Deferred.make<unknown>();
+      yield* transport.clientProtocol.run(0, (message) =>
+        Deferred.succeed(core, message).pipe(Effect.asVoid),
+      ).pipe(Effect.forkScoped);
+      yield* Queue.offer(input, encoder.encode(`${encodeUnknownJsonString({
+        jsonrpc: "2.0", id: 2, error: nativeError,
+      })}\n`));
+      assert.deepInclude(yield* Deferred.await(core), {
+        _tag: "Exit", requestId: 2,
+        exit: { _tag: "Failure", cause: [{ _tag: "Fail", error: nativeError }] },
+      });
+    }),
+  );
+
   it.effect("preserves numeric ids for inbound extension requests", () =>
     Effect.gen(function* () {
       const { stdio, input, output } = yield* makeInMemoryStdio();

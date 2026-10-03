@@ -96,12 +96,38 @@ describe("MiniMax Code adapter protocol fixture", () => {
       const running = yield* adapter.sendTurn(turn("wait-for-cancel")).pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.await(waiting);
       yield* adapter.interruptTurn(threadId);
+      expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
       yield* Fiber.join(running);
       yield* Deferred.await(cancelled);
       expect(recorded.some((event) => event.type === "turn.completed" && event.payload.state === "cancelled")).toBe(true);
       expect((yield* adapter.listSessions())[0]?.resumeCursor).toEqual(session.resumeCursor);
       yield* adapter.sendTurn(turn("after cancellation"));
       expect(NodeFS.readFileSync(log, "utf8")).toContain('"method":"session/cancel"');
+      yield* Fiber.interrupt(consumer);
+    }));
+  });
+  it.live("retains the native completion reason when the CLI finishes as cancellation arrives", () => {
+    return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
+      const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), { instanceId, resolveSessionEnvironment: () => Effect.succeed({ ...process.env, MINIMAX_TEST_LOG: log, MINIMAX_TEST_CANCEL_END_TURN: "1" }) });
+      const waiting = yield* Deferred.make<void>();
+      const completed = yield* Deferred.make<void>();
+      const recorded: ProviderRuntimeEvent[] = [];
+      const consumer = yield* adapter.streamEvents.pipe(Stream.runForEach((event) => {
+        recorded.push(event);
+        if (event.type === "turn.completed") return Deferred.succeed(completed, undefined).pipe(Effect.asVoid);
+        return event.type === "content.delta" && event.payload.delta === "waiting" ? Deferred.succeed(waiting, undefined).pipe(Effect.asVoid) : Effect.void;
+      }), Effect.forkChild({ startImmediately: true }));
+      const session = yield* adapter.startSession(input(cwd));
+      const running = yield* adapter.sendTurn(turn("wait-for-cancel")).pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(waiting);
+      yield* adapter.interruptTurn(threadId);
+      expect((yield* adapter.listSessions())[0]?.status).toBe("ready");
+      yield* Deferred.await(completed);
+      expect(recorded.some((event) => event.type === "turn.completed" && event.payload.state === "completed" && event.payload.stopReason === "end_turn")).toBe(true);
+      expect(recorded.some((event) => event.type === "turn.completed" && event.payload.state === "cancelled")).toBe(false);
+      yield* Fiber.join(running);
+      expect((yield* adapter.listSessions())[0]?.resumeCursor).toEqual(session.resumeCursor);
+      yield* adapter.sendTurn(turn("same session after the completed turn"));
       yield* Fiber.interrupt(consumer);
     }));
   });

@@ -7,6 +7,8 @@ type TeamThread = {
   readonly title: string;
   readonly workjetConfig: WorkjetThreadConfig;
   readonly modelSelection: ModelSelection;
+  readonly archivedAt?: string | null | undefined;
+  readonly deletedAt?: string | null | undefined;
 };
 
 export function ProjectTeamPanel(props: {
@@ -24,8 +26,78 @@ export function ProjectTeamPanel(props: {
   const [editedGoal, setEditedGoal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const members = props.threads.filter((thread) => {
+    const member = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
+    return (
+      thread.projectId === props.thread.projectId &&
+      member?.projectId === thread.projectId &&
+      member.threadId === thread.id &&
+      thread.archivedAt == null &&
+      thread.deletedAt == null
+    );
+  });
+  const directory = (
+    <div className="mt-3 grid gap-3 sm:grid-cols-3" aria-label="Project Lumas">
+      {(
+        [
+          ["supervisor", "Supervisor", "border-primary/50", "No supervisor yet."],
+          ["specialist", "Fach-Lumas", "border-emerald-500/50", "No Fach-Lumas yet."],
+          ["worker", "One-time PR threads", "border-amber-500/50", "No one-time PR threads yet."],
+        ] as const
+      ).map(([role, label, accent, empty]) => {
+        const group = members.filter(
+          (member) =>
+            member.workjetConfig.schemaVersion === 2 && member.workjetConfig.team?.role === role,
+        );
+        return (
+          <section
+            key={role}
+            aria-label={label}
+            data-workjet-team-group={role}
+            className={`min-w-0 rounded-md border-l-2 bg-muted/30 p-3 ${accent}`}
+          >
+            <h3 className="font-medium">{label}</h3>
+            {group.length === 0 ? (
+              <p className="mt-2 text-xs text-muted-foreground">{empty}</p>
+            ) : (
+              <ul className="mt-2 space-y-2">
+                {group.map((member) => {
+                  const membership =
+                    member.workjetConfig.schemaVersion === 2
+                      ? member.workjetConfig.team
+                      : undefined;
+                  if (!membership) return null;
+                  const owner = members.find(
+                    (candidate) => candidate.id === membership.parentThreadId,
+                  );
+                  return (
+                    <li key={member.id}>
+                      <button
+                        type="button"
+                        aria-current={member.id === props.thread.id ? "page" : undefined}
+                        onClick={() => props.onOpen(member.id)}
+                        className="block max-w-full break-words text-left underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-ring"
+                      >
+                        {member.title}
+                      </button>
+                      {membership.role === "specialist" ? (
+                        <p className="text-xs text-muted-foreground">{membership.domain}</p>
+                      ) : null}
+                      {owner ? (
+                        <p className="text-xs text-muted-foreground">Parent: {owner.title}</p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
   if (!team) {
-    const supervisor = props.threads.find(
+    const supervisor = members.find(
       (thread) =>
         thread.projectId === props.thread.projectId &&
         thread.workjetConfig.schemaVersion === 2 &&
@@ -60,14 +132,11 @@ export function ProjectTeamPanel(props: {
           </button>
         )}
         {error ? <p role="alert">{error}</p> : null}
+        {directory}
       </section>
     );
   }
-  const parent = props.threads.find((thread) => thread.id === team.parentThreadId);
-  const children = props.threads.filter((thread) => {
-    const member = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
-    return member?.projectId === team.projectId && member.parentThreadId === props.thread.id;
-  });
+  const parent = members.find((thread) => thread.id === team.parentThreadId);
   const perform = async (action: () => Promise<boolean>) => {
     if (busy) return;
     setBusy(true);
@@ -120,17 +189,7 @@ export function ProjectTeamPanel(props: {
           </button>
         </form>
       </details>
-      {children.length ? (
-        <ul className="mt-2 flex flex-wrap gap-3">
-          {children.map((child) => (
-            <li key={child.id}>
-              <button type="button" onClick={() => props.onOpen(child.id)}>
-                {child.title}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {directory}
       {team.role === "supervisor" ? (
         <details className="mt-2">
           <summary>Add domain specialist</summary>

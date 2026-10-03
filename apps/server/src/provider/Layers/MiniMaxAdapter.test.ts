@@ -243,10 +243,12 @@ describe("MiniMax Code adapter protocol fixture", () => {
           .sendTurn(turn("wait-for-cancel"))
           .pipe(Effect.forkChild({ startImmediately: true }));
         yield* Deferred.await(waiting);
+        yield* Effect.logInfo("MiniMax cancellation fixture: prompt waiting");
         const interrupted = yield* adapter
           .interruptTurn(threadId)
           .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
         yield* Deferred.await(notified);
+        yield* Effect.logInfo("MiniMax cancellation fixture: cancel notification received");
         ignoreCancel = false;
         const replacing = yield* adapter
           .startSession({
@@ -257,13 +259,17 @@ describe("MiniMax Code adapter protocol fixture", () => {
           .pipe(Effect.forkChild({ startImmediately: true }));
         expect((yield* adapter.listSessions())[0]?.status).toBe("running");
         const failure = yield* Fiber.join(interrupted);
+        yield* Effect.logInfo("MiniMax cancellation fixture: interrupt settled");
         expect(failure.message).toContain("within 30 seconds");
         yield* Deferred.await(failed);
+        yield* Effect.logInfo("MiniMax cancellation fixture: failed receipt received");
         yield* Fiber.await(running);
+        yield* Effect.logInfo("MiniMax cancellation fixture: original prompt settled");
         const completed = recorded.filter((event) => event.type === "turn.completed");
         expect(completed).toHaveLength(1);
         expect(completed[0]?.payload).toMatchObject({ state: "failed" });
         const resumed = yield* Fiber.join(replacing);
+        yield* Effect.logInfo("MiniMax cancellation fixture: saved session resumed");
         expect(yield* adapter.hasSession(threadId)).toBe(true);
         expect(resumed.resumeCursor).toEqual(session.resumeCursor);
         yield* adapter.sendTurn(turn("recovered after unacknowledged cancellation"));

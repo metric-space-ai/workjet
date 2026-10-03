@@ -49,7 +49,10 @@ export type WorkjetSessionImportSourceSummary = typeof WorkjetSessionImportSourc
 
 export const WorkjetSessionImportInspectInput = Schema.Struct({
   offset: Schema.optionalKey(
-    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(5_000)),
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+    ),
   ),
   query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
   source: Schema.optionalKey(WorkjetSessionImportSource),

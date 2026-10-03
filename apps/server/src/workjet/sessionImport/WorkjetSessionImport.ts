@@ -35,9 +35,9 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
-const MAX_DISCOVERED_FILES = 5_000;
 const MAX_TRANSCRIPT_BYTES = 20 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 1024 * 1024;
+const MAX_CACHED_PREVIEWS = 512;
 const MAX_MESSAGE_COUNT = 5_000;
 const MAX_MESSAGE_CHARS = 200_000;
 const IMPORT_CHUNK_SIZE = 200;
@@ -333,7 +333,7 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
   const files: SourceFile[] = [];
   for (const location of locations) {
     const stack = [location.root];
-    while (stack.length > 0 && files.length < MAX_DISCOVERED_FILES) {
+    while (stack.length > 0) {
       const directory = stack.pop();
       if (!directory) break;
       try {
@@ -363,7 +363,6 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
           } catch {
             // Files can disappear while the source app rotates its sessions.
           }
-          if (files.length >= MAX_DISCOVERED_FILES) break;
         }
       } catch {
         continue;
@@ -482,6 +481,10 @@ export const make = Effect.gen(function* () {
                 .map(({ role, text }) => ({ role, text: text.slice(0, 1_000) })),
             };
             previewCache.set(file.sourceKey, { fingerprint, session: parsed });
+            if (previewCache.size > MAX_CACHED_PREVIEWS) {
+              const oldestKey = previewCache.keys().next().value;
+              if (oldestKey !== undefined) previewCache.delete(oldestKey);
+            }
           }
         }
         if (!parsed) continue;
@@ -540,9 +543,9 @@ export const make = Effect.gen(function* () {
       return {
         sources: summaries,
         candidates,
-        truncated: hasMore || files.length >= MAX_DISCOVERED_FILES,
+        truncated: hasMore,
         nextOffset: hasMore ? offset + candidates.length : null,
-        discoveryLimitReached: files.length >= MAX_DISCOVERED_FILES,
+        discoveryLimitReached: false,
       };
     }).pipe(
       Effect.mapError((error) =>

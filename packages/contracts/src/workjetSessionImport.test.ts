@@ -64,6 +64,9 @@ describe("Workjet static session import contracts", () => {
       inspect({ offset: 100, query: "older conversation", source: "claude-code" }).offset,
     ).toBe(100);
     expect(() => inspect({ offset: -1 })).toThrow();
+    expect(inspect({ offset: 5_001 }).offset).toBe(5_001);
+    expect(() => inspect({ offset: 1.5 })).toThrow();
+    expect(() => inspect({ offset: Number.MAX_SAFE_INTEGER + 1 })).toThrow();
     expect(() => inspect({ source: "unknown" })).toThrow();
     const candidateIds = ["wjsi_0123456789abcdef0123456789abcdef"];
     const imported = Schema.decodeUnknownSync(WorkjetSessionImportInput);

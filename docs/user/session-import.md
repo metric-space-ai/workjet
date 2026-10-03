@@ -13,4 +13,4 @@ The imported thread retains the recorded source model identifier. If the transcr
 
 If either the source history or the imported Workjet conversation has changed incompatibly, the importer leaves that copy untouched and reports the problem. Failed conversations stay selected for retry. Successful imports include links to the resulting conversations.
 
-Codex and Claude Code are supported session sources, including archived Codex conversations. The original source folder can be missing; import into an available destination project still works. Source scans are limited to 5,000 files and individual transcripts to 20 MiB.
+Codex and Claude Code are supported session sources, including archived Codex conversations. The original source folder can be missing; import into an available destination project still works. Search and paging include older histories even when a source contains more than 5,000 sessions. Results and import batches stay small; individual transcripts remain limited to 20 MiB.

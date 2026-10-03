@@ -291,6 +291,43 @@ describe("MiniMax Code adapter protocol fixture", () => {
       expect(methods.filter((method) => method === "session/close")).toHaveLength(2);
     }));
   });
+  it.live("replaces only a missing dedicated health session and persists its replacement", () => {
+    return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
+      const cache = NodePath.join(cwd, "probe.json");
+      const env = { ...process.env, MINIMAX_TEST_LOG: log };
+      yield* checkMiniMaxProviderStatus(settings(binaryPath), env, cache, cwd);
+      const saved = JSON.parse(NodeFS.readFileSync(cache, "utf8"));
+      NodeFS.writeFileSync(cache, JSON.stringify({ ...saved, sessionId: "deleted-status-session" }));
+      const recovered = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_LOAD_MISSING: "1" }, cache, cwd);
+      expect(recovered.status).toBe("ready");
+      const replacement = JSON.parse(NodeFS.readFileSync(cache, "utf8"));
+      expect(replacement.sessionId).not.toBe("deleted-status-session");
+      expect(replacement.profileKey).toBe(saved.profileKey);
+      const refreshed = yield* checkMiniMaxProviderStatus(settings(binaryPath), env, cache, cwd);
+      expect(refreshed.status).toBe("ready");
+      const wire = NodeFS.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(wire.filter((entry) => entry.method === "session/new")).toHaveLength(2);
+      expect(wire.filter((entry) => entry.method === "session/load").map((entry) => entry.params.sessionId)).toEqual(["deleted-status-session", replacement.sessionId]);
+    }));
+  });
+  it.live("preserves the health cursor after authentication or other load failures", () => {
+    return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
+      const cache = NodePath.join(cwd, "probe.json");
+      const env = { ...process.env, MINIMAX_TEST_LOG: log };
+      yield* checkMiniMaxProviderStatus(settings(binaryPath), env, cache, cwd);
+      const saved = NodeFS.readFileSync(cache, "utf8");
+      const unauthenticated = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_AUTH_REQUIRED: "1" }, cache, cwd);
+      expect(unauthenticated.auth.status).toBe("unauthenticated");
+      expect(NodeFS.readFileSync(cache, "utf8")).toBe(saved);
+      const failed = yield* checkMiniMaxProviderStatus(settings(binaryPath), { ...env, MINIMAX_TEST_LOAD_MISSING: "1", MINIMAX_TEST_LOAD_ERROR_CODE: "-32603" }, cache, cwd);
+      expect(failed.status).toBe("error");
+      expect(failed.models).toEqual([]);
+      expect(NodeFS.readFileSync(cache, "utf8")).toBe(saved);
+      const methods = NodeFS.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line).method);
+      expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
+      expect(methods.filter((method) => method === "session/load")).toHaveLength(1);
+    }));
+  });
   it.live("keeps an unsupported gateway route unavailable without probing direct credentials", () => {
     return runTest((cwd, binaryPath, log) => Effect.gen(function* () {
       const provider = yield* MiniMaxDriver.create({ instanceId, displayName: undefined, environment: [{ name: "MINIMAX_TEST_LOG", value: log, sensitive: false }], enabled: true, routeViaGateway: true, config: settings(binaryPath) });

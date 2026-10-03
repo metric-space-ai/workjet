@@ -382,11 +382,11 @@ describe("ProviderGatewayConfig", () => {
       ...(routingStrategy === undefined ? {} : { routingStrategy }),
     });
 
-    it("defaults to the host's own strategy and refuses one the host does not implement", () => {
+    it("defaults to fill-first and refuses a strategy the host does not implement", () => {
       const decoded = decodeProviderGatewayConfiguration(
         poolConfiguration([{ id: "claude-a", provider: "claude" }]),
       )!;
-      expect(decoded.routingStrategy).toBe("round-robin");
+      expect(decoded.routingStrategy).toBe("fill-first");
       expect(
         decodeProviderGatewayConfiguration(
           poolConfiguration([{ id: "claude-a", provider: "claude" }], "least-loaded"),

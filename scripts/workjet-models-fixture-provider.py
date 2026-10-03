@@ -25,9 +25,9 @@ root.mkdir(parents=True, exist_ok=False)
 os.chmod(root, 0o700)
 started = time.time()
 keys = {
-    'fixture-primary-not-a-real-key-p001',
-    'fixture-secondary-not-a-real-key-s002',
-    'fixture-other-not-a-real-key-o003',
+    'fixture-primary-not-a-real-key-p001': 'fixture-primary',
+    'fixture-secondary-not-a-real-key-s002': 'fixture-secondary',
+    'fixture-other-not-a-real-key-o003': 'fixture-other',
 }
 models = ('gpt-6.1-sol', 'fixture-model-before', 'fixture-model-one', 'fixture-model-two', 'fixture-shared-model')
 record = dict(schema='workjet.models.local-provider-fixture.v1', owner=args.owner,
@@ -107,7 +107,9 @@ class Handler(BaseHTTPRequestHandler):
         record['requests'] += 1
         number = record['requests']
         identity = 'fixture-response-' + str(number)
-        receipt = dict(number=number, route=route, status=200, model=model, streamed=body.get('stream') is True, observed_unix=time.time())
+        receipt = dict(number=number, route=route, status=200, model=model,
+                       fixture_account_id=keys[authorization.removeprefix('Bearer ')],
+                       streamed=body.get('stream') is True, observed_unix=time.time())
         # No authorization value, request body, prompt or raw session/cache identity is recorded.
         session = body.get('prompt_cache_key', body.get('session_id'))
         if isinstance(session, str):

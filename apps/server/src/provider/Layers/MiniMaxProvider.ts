@@ -2,7 +2,7 @@
 import type { MiniMaxSettings } from "@workjet/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Schema from "effect/Schema";
-import { createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -56,7 +56,7 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
 
   const fs = yield* FileSystem.FileSystem;
   const cwd = probeCwd ?? environment.PWD ?? process.cwd();
-  const profileKey = createHash("sha256").update(JSON.stringify([settings.dataDirectory || environment.MINIMAX_DATA_DIR || environment.MAVIS_DATA_DIR || "default", environment.HOME || ""])).digest("hex");
+  const profileKey = NodeCrypto.createHash("sha256").update(JSON.stringify([settings.dataDirectory || environment.MINIMAX_DATA_DIR || environment.MAVIS_DATA_DIR || "default", environment.HOME || ""])).digest("hex");
   const stored = probeSessionPath ? yield* fs.readFileString(probeSessionPath).pipe(Effect.orElseSucceed(() => "")) : "";
   const cursor = decodeProbeCursor(stored);
   const resumeSessionId = cursor._tag === "Some" && cursor.value.profileKey === profileKey ? cursor.value.sessionId : undefined;

@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID, createHash } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import {
   ApprovalRequestId, EventId, ProviderDriverKind, RuntimeRequestId, TurnId,
   type MiniMaxSettings, type ProviderApprovalDecision, type ProviderInstanceId,
@@ -73,7 +73,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   const lock = yield* Semaphore.make(1);
   const sessions = new Map<ThreadId, SessionContext>();
   const now = Effect.map(DateTime.now, DateTime.formatIso);
-  const stamp = Effect.gen(function* () { return { eventId: EventId.make(randomUUID()), createdAt: yield* now }; });
+  const stamp = Effect.gen(function* () { return { eventId: EventId.make(NodeCrypto.randomUUID()), createdAt: yield* now }; });
   const publish = (event: ProviderRuntimeEvent) => PubSub.publish(events, { ...event, providerInstanceId: options.instanceId }).pipe(Effect.asVoid);
   const emit = Effect.fn("minimax.emit")(function* (threadId: ThreadId, event: Pick<ProviderRuntimeEvent, "type" | "payload"> & { readonly turnId?: TurnId; readonly requestId?: RuntimeRequestId }) {
     yield* publish({ ...event, ...(yield* stamp), provider: PROVIDER, threadId } as ProviderRuntimeEvent);
@@ -124,7 +124,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
     const resume = decodeResume(input.resumeCursor);
     if (input.resumeCursor !== undefined && resume._tag === "None") return yield* error("startSession", "This cursor does not identify a MiniMax Code ACP session.");
     const environment = yield* options.resolveSessionEnvironment();
-    const profileKey = createHash("sha256").update(JSON.stringify([options.instanceId, config.dataDirectory || environment.MINIMAX_DATA_DIR || environment.MAVIS_DATA_DIR || "default", environment.HOME || ""])).digest("hex");
+    const profileKey = NodeCrypto.createHash("sha256").update(JSON.stringify([options.instanceId, config.dataDirectory || environment.MINIMAX_DATA_DIR || environment.MAVIS_DATA_DIR || "default", environment.HOME || ""])).digest("hex");
     if (resume._tag === "Some" && resume.value.profileKey !== profileKey) return yield* error("startSession", "The saved MiniMax Code session belongs to a different profile. Select its original harness profile to resume.");
     const previous = sessions.get(input.threadId);
     // Finish an active turn before loading its persisted history. Keep an idle
@@ -152,7 +152,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           const optionId = miniMaxPermissionOption(params, "accept");
           return { outcome: optionId ? { outcome: "selected" as const, optionId } : { outcome: "cancelled" as const } };
         }
-        const requestId = ApprovalRequestId.make(randomUUID());
+        const requestId = ApprovalRequestId.make(NodeCrypto.randomUUID());
         const decision = yield* Deferred.make<ProviderApprovalDecision>();
         pending.set(requestId, decision);
         const parsed = parsePermissionRequest(params);
@@ -166,7 +166,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         const ctx = sessions.get(input.threadId);
         if (!ctx || ctx.cancelled || ctx.stopped || params.sessionId !== (ctx.session.resumeCursor as { sessionId: string }).sessionId) return { action: "cancel" as const };
         const form = yield* Effect.try({ try: () => miniMaxElicitationForm(params), catch: () => new AcpRequestError({ code: -32602, errorMessage: "MiniMax Code supplied an unsupported question form." }) });
-        const requestId = ApprovalRequestId.make(randomUUID());
+        const requestId = ApprovalRequestId.make(NodeCrypto.randomUUID());
         const answer = yield* Deferred.make<ProviderUserInputAnswers>();
         inputs.set(requestId, { answer, form });
         yield* emit(input.threadId, { type: "user-input.requested", turnId: ctx.turnId, requestId: RuntimeRequestId.make(requestId), payload: { questions: form.questions } });
@@ -225,7 +225,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
       const configOptions = yield* ctx.acp.getConfigOptions;
       yield* checked("session/set_config_option", () => resolveMiniMaxModelValue(configOptions, model, input.modelSelection?.options));
       if (model === ctx.session.model) yield* checked("session/set_config_option", () => miniMaxEffortValue(configOptions, model, input.modelSelection?.options));
-      const turnId = TurnId.make(randomUUID());
+      const turnId = TurnId.make(NodeCrypto.randomUUID());
       ctx.cancelled = false; ctx.turnId = turnId;
       ctx.session = { ...ctx.session, status: "running", activeTurnId: turnId, updatedAt: yield* now };
       return { ctx, turnId, model };

@@ -7,8 +7,8 @@ type TeamThread = {
   readonly title: string;
   readonly workjetConfig: WorkjetThreadConfig;
   readonly modelSelection: ModelSelection;
-  readonly archivedAt?: string | null;
-  readonly deletedAt?: string | null;
+  readonly archivedAt?: string | null | undefined;
+  readonly deletedAt?: string | null | undefined;
 };
 
 export function ProjectTeamPanel(props: {

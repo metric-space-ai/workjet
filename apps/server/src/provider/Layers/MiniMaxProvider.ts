@@ -63,7 +63,7 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
   const stored = probeSessionPath ? yield* fs.readFileString(probeSessionPath).pipe(Effect.orElseSucceed(() => "")) : "";
   const cursor = decodeProbeCursor(stored);
   const resumeSessionId = cursor._tag === "Some" && cursor.value.profileKey === profileKey ? cursor.value.sessionId : undefined;
-  const discovered = yield* Effect.gen(function* () {
+  const discover = (resumeSessionId?: string) => Effect.gen(function* () {
     const acp = yield* makeMiniMaxAcpRuntime({ config: settings, environment, spawner, cwd, clientInfo: { name: "workjet-status", version: "1" }, mcpServers: [], ...(resumeSessionId ? { resumeSessionId, requireLoadResponse: true } : {}) });
     const started = yield* acp.start();
     if (started.initializeResult.agentInfo?.name !== "minimax-code" || started.initializeResult.agentInfo.version !== MINIMAX_CODE_RELEASE.version) return yield* Effect.fail(new MiniMaxProbeCompatibilityError("Unexpected MiniMax Code ACP executable identity."));
@@ -79,7 +79,16 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
     const models = miniMaxModelsFromConfig(yield* acp.getConfigOptions);
     yield* acp.request("session/close", { sessionId: started.sessionId }).pipe(Effect.ignore);
     return models;
-  }).pipe(Effect.scoped, Effect.timeoutOption("20 seconds"), Effect.result);
+  }).pipe(Effect.scoped);
+  // Only the disposable status session may be replaced after a native missing
+  // session response. User conversation loads remain strict.
+  const discovered = yield* discover(resumeSessionId).pipe(
+    Effect.catch((failure) => resumeSessionId && isAcpRequestError(failure) && failure.method === "session/load" && failure.code === -32002
+      ? discover()
+      : Effect.fail(failure)),
+    Effect.timeoutOption("20 seconds"),
+    Effect.result,
+  );
 
   if (Result.isFailure(discovered)) {
     const failure = discovered.failure;

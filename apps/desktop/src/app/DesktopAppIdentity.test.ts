@@ -130,9 +130,9 @@ const withIdentity = <A, E, R>(
         Layer.provideMerge(
           FileSystem.layerNoop({
             exists: (path) =>
-              Effect.succeed(input.legacyPathExists === true && path.includes("t3code")),
+              Effect.succeed(input.legacyPathExists === true && path.includes("workjet")),
             readFileString: () =>
-              Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
+              Effect.succeed(input.packageJson ?? '{"workjetCommitHash":"abcdef1234567890"}'),
           }),
         ),
         Layer.provideMerge(makeAssetsLayer(input.pngIconPath ?? Option.none())),
@@ -144,13 +144,13 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("always resolves the CTOX Desktop App user-data path", () =>
+  it.effect("always resolves the Workjet user-data path", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/CTOX Desktop App");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/Workjet");
       }),
     ),
   );
@@ -161,7 +161,7 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/CTOX Desktop App");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/Workjet");
       }),
       { legacyPathExists: true },
     ),
@@ -185,14 +185,14 @@ describe("DesktopAppIdentity", () => {
         assert.equal(calls.setAboutPanelOptions[0]?.applicationVersion, "1.2.3");
         assert.equal(calls.setAboutPanelOptions[0]?.version, "0123456789ab");
         assert.deepEqual(calls.setDockIcon, ["/icon.png"]);
-        // Workjet is canonical; older CTOX Desktop and t3code links stay inbound-compatible.
-        assert.deepEqual(calls.setAsDefaultProtocolClient, ["workjet", "ctox-desktop", "t3code"]);
+        // Workjet is canonical; the previous CTOX Desktop alias stays inbound-compatible.
+        assert.deepEqual(calls.setAsDefaultProtocolClient, ["workjet", "ctox-desktop"]);
       }),
       {
         calls,
         environment: {
           env: {
-            T3CODE_COMMIT_HASH: "0123456789abcdef",
+            WORKJET_COMMIT_HASH: "0123456789abcdef",
           },
         },
         pngIconPath: Option.some("/icon.png"),

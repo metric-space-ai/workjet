@@ -4,13 +4,13 @@ import {
   connectLoopbackRedirectUri,
   CONNECT_OAUTH_SCOPES,
   type ConnectAuthorizeRequest,
-} from "@t3tools/shared/connectAuth";
-import { clerkFrontendApiUrlFromPublishableKey } from "@t3tools/shared/relayAuth";
+} from "@workjet/shared/connectAuth";
+import { clerkFrontendApiUrlFromPublishableKey } from "@workjet/shared/relayAuth";
 
 import { configuredHostedAppUrl, isHostedStaticApp } from "../hostedPairing";
 import { hasCloudPublicConfig, resolveCloudPublicConfig, trimNonEmpty } from "./publicConfig";
 
-const CONNECT_CLI_AUTH_STATE_STORAGE_KEY = "t3code-connect-cli-auth-state";
+const CONNECT_CLI_AUTH_STATE_STORAGE_KEY = "workjet-connect-cli-auth-state";
 
 export function resolveConnectCliOAuthClientId(): string | null {
   return trimNonEmpty(import.meta.env.VITE_CLERK_CLI_OAUTH_CLIENT_ID as string | undefined);
@@ -44,7 +44,8 @@ export function connectCliAuthRoutesEnabled(): boolean {
 export function buildConnectCliClerkAuthorizeUrl(request: ConnectAuthorizeRequest): string | null {
   const { clerkPublishableKey } = resolveCloudPublicConfig();
   const clientId = resolveConnectCliOAuthClientId();
-  if (!clerkPublishableKey || !clientId) {
+  const hostedAppUrl = configuredHostedAppUrl();
+  if (!clerkPublishableKey || !clientId || (request.loopbackPort === undefined && !hostedAppUrl)) {
     return null;
   }
   return buildConnectClerkAuthorizeUrl({
@@ -52,7 +53,7 @@ export function buildConnectCliClerkAuthorizeUrl(request: ConnectAuthorizeReques
     clientId,
     redirectUri:
       request.loopbackPort === undefined
-        ? connectCallbackUrl(configuredHostedAppUrl())
+        ? connectCallbackUrl(hostedAppUrl)
         : connectLoopbackRedirectUri(request.loopbackPort),
     scopes: CONNECT_OAUTH_SCOPES,
     state: request.state,

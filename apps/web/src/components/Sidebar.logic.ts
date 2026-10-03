@@ -1,12 +1,14 @@
 import * as React from "react";
-import type { ContextMenuItem } from "@t3tools/contracts";
-import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import type { ContextMenuItem, ScopedProjectRef } from "@workjet/contracts";
+import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@workjet/contracts/settings";
 import {
   getThreadSortTimestamp,
   sortThreads,
   toSortableTimestamp,
   type ThreadSortInput,
 } from "../lib/threadSort";
+import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
+import type { AvailableProject } from "../availableProjects";
 import type { SidebarThreadSummary, Thread } from "../types";
 import type { ThreadRouteTarget } from "../threadRoutes";
 import { cn } from "../lib/utils";
@@ -22,6 +24,21 @@ export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
 // so this limit is a direct renderer-heap and server-load multiplier — keep
 // it small; cold opens still render instantly from the cached snapshot.
 export const SIDEBAR_THREAD_PREWARM_LIMIT = 3;
+
+/** Commit the project picker only after the matching workspace has opened. */
+export async function activateSidebarProject(input: {
+  readonly target: ScopedProjectRef;
+  readonly active: ScopedProjectRef | null;
+  readonly open: () => Promise<unknown | null>;
+  readonly select: () => void;
+}): Promise<boolean> {
+  const alreadyOpen =
+    input.active?.environmentId === input.target.environmentId &&
+    input.active.projectId === input.target.projectId;
+  if (!alreadyOpen && (await input.open()) === null) return false;
+  input.select();
+  return true;
+}
 
 type SidebarProject = {
   id: string;
@@ -298,9 +315,13 @@ export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
 // immediately and the modifier changes nothing.
 export function shouldCreateNewThreadInCurrentProject(
   shiftKey: boolean,
-  projectGroupCount: number,
+  availableProjectCount: number,
 ): boolean {
-  return shiftKey || projectGroupCount <= 1;
+  return shiftKey || availableProjectCount <= 1;
+}
+
+export function isSidebarNewThreadDisabled(availableProjectCount: number): boolean {
+  return availableProjectCount === 0;
 }
 
 export function orderItemsByPreferredIds<TItem, TId>(input: {
@@ -551,8 +572,8 @@ export {
   generateSpreadPinOrderKeys,
   pinOrderKeyBetween,
   planPinnedReorder,
-} from "@t3tools/client-runtime/state/thread-sort";
-export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
+} from "@workjet/client-runtime/state/thread-sort";
+export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@workjet/client-runtime/state/thread-sort";
 
 /**
  * Search the already-ordered sidebar thread collection by title only.
@@ -876,6 +897,34 @@ export function sortProjectsForSidebar<
     (project) => threadsByProjectId.get(project.id) ?? [],
     (left, right) => left.title.localeCompare(right.title) || left.id.localeCompare(right.id),
   );
+}
+
+export function includeAvailableProjectsInSidebar(
+  projects: readonly EnvironmentProject[],
+  availableProjects: readonly AvailableProject[],
+): EnvironmentProject[] {
+  const existingKeys = new Set(
+    projects.map((project) => `${project.environmentId}\0${project.id}`),
+  );
+  const additions = availableProjects.flatMap((project): EnvironmentProject[] => {
+    const key = `${project.environmentId}\0${project.id}`;
+    if (existingKeys.has(key)) return [];
+    existingKeys.add(key);
+    return [
+      {
+        id: project.id,
+        environmentId: project.environmentId,
+        title: project.title,
+        workspaceRoot: project.path,
+        repositoryIdentity: null,
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: "1970-01-01T00:00:00.000Z",
+        updatedAt: "1970-01-01T00:00:00.000Z",
+      },
+    ];
+  });
+  return [...projects, ...additions];
 }
 
 export function sortLogicalProjectsForSidebar<

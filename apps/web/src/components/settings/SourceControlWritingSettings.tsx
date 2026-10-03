@@ -1,9 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useRef } from "react";
-import type { SourceControlWritingStyleMode } from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
-import { createModelSelection } from "@t3tools/shared/model";
-import { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
+import type { SourceControlWritingStyleMode } from "@workjet/contracts";
+import { DEFAULT_UNIFIED_SETTINGS } from "@workjet/contracts/settings";
+import { createModelSelection } from "@workjet/shared/model";
+import { resolveSourceControlWriterModelSelection } from "@workjet/shared/serverSettings";
 
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import {
@@ -43,7 +43,7 @@ const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; descr
 export function SourceControlWritingSettingsSection({
   environmentId,
 }: {
-  readonly environmentId: import("@t3tools/contracts").EnvironmentId;
+  readonly environmentId: import("@workjet/contracts").EnvironmentId;
 }) {
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);

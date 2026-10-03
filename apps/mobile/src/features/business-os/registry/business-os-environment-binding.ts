@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@workjet/contracts";
 
 /**
  * Non-secret local membership that makes one Code machine/environment part of

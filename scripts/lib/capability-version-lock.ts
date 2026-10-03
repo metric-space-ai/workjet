@@ -14,7 +14,7 @@ import {
  * THE CANONICAL CAPABILITY VERSION LOCK.
  *
  * One capability is defined once, in `packages/workjet-capabilities`, and is
- * then resolved twice: by the Code host (T3 MCP toolkit) and by the CTOX host
+ * then resolved twice: by the Code host (Workjet MCP toolkit) and by the CTOX host
  * (Business OS MCP over the shared `ctox-web-stack` capability core). This
  * module derives, for every dual-host capability, what each host resolves along
  * four dimensions — manifest, JSON schemas, implementation revision, artifact

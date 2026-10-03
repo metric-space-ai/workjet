@@ -33,6 +33,7 @@ use workjet_provider_gateway::sdk::api::handlers::claude::code_handlers::{
     claude_models_response, ClaudeMessagesAntigravityHandler, ClaudeMessagesClaudeHandler,
     ClaudeMessagesHttpResponse, ClaudeMessagesRouteHandler,
 };
+use workjet_provider_gateway::sdk::api::handlers::claude::responses_bridge::ClaudeMessagesProviderRouter;
 use zeroize::Zeroizing;
 
 use workjet_provider_gateway::internal::runtime::executor::xai_subscription_pool::{
@@ -521,12 +522,15 @@ pub fn build_provider_routes(
     let auxiliary = (!auxiliary_handlers.is_empty()).then(|| {
         Arc::new(AuxiliaryRouteChain::new(auxiliary_handlers)) as Arc<dyn AuxiliaryRouteHandler>
     });
+    let messages = Arc::new(ClaudeMessagesProviderRouter::new(
+        default_provider,
+        claude_messages,
+        messages,
+        responses.clone(),
+    ));
     Ok(Some(ProviderRoutes {
         responses,
-        // Claude first: on a host with Claude accounts the Messages route
-        // belongs to them; Antigravity keeps it only where it is the sole
-        // subscription that can serve the shape.
-        messages: claude_messages.or(messages),
+        messages: Some(messages),
         auxiliary,
         models: claude_models_response(&model_catalog(config), false),
     }))

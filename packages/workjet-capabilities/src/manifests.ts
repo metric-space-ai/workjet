@@ -1,4 +1,9 @@
-import { CapabilityManifest } from "@t3tools/contracts";
+import {
+  CapabilityManifest,
+  WorkjetCtoxBusinessOsInput,
+  WorkjetCtoxBusinessOsResult,
+  CTOX_BUSINESS_OS_INSTRUCTIONS,
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 import {
@@ -11,8 +16,8 @@ import {
 import { DECISION_HUB_SKILL_PROMPT } from "./generated/decision-hub-skill.ts";
 
 const ALL_ADAPTERS = [
-  "t3-mcp",
-  "t3-prompt",
+  "workjet-mcp",
+  "workjet-prompt",
   "ctox-business-os-mcp",
   "ctox-business-command",
 ] as const;
@@ -179,10 +184,31 @@ const BUILT_IN_MANIFEST_LITERALS = [
         status: { type: "string", enum: ["open", "resolved", "expired"] },
       },
     },
-    supportedAdapters: ["t3-mcp", "t3-prompt"],
+    supportedAdapters: ["workjet-mcp", "workjet-prompt"],
     activationPolicy: {
       allowedRoles: ["standard", "orchestrator"],
       childDelegation: "forbidden",
+      requiredBinding: "ctox-connection",
+    },
+  },
+  {
+    schemaVersion: 2,
+    id: "ctox-business-os",
+    version: "1.0.0",
+    metadata: {
+      displayName: "CTOX Business OS",
+      description:
+        "Develops apps and follows native CTOX work in the instance bound to this thread.",
+    },
+    promptContribution: { instructions: CTOX_BUSINESS_OS_INSTRUCTIONS },
+    permissionRequirements: ["network.read"],
+    secretRequirements: [],
+    inputSchema: Schema.toJsonSchemaDocument(WorkjetCtoxBusinessOsInput).schema,
+    outputSchema: Schema.toJsonSchemaDocument(WorkjetCtoxBusinessOsResult).schema,
+    supportedAdapters: ["workjet-mcp", "workjet-prompt"],
+    activationPolicy: {
+      allowedRoles: ["standard", "orchestrator", "worker"],
+      childDelegation: "allowed",
       requiredBinding: "ctox-connection",
     },
   },

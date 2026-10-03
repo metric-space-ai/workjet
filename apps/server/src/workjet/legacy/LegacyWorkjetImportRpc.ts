@@ -56,7 +56,7 @@ import {
   type WorkjetLegacyImportInspection,
   type WorkjetLegacyImportPending,
   type WorkjetLegacyImportUnreadableReason,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 

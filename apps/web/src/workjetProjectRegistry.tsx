@@ -1,8 +1,14 @@
-import { CtoxWorkjetProjectProjection, ProjectId } from "@t3tools/contracts";
+import {
+  CtoxWorkjetProjectProjection,
+  type EnvironmentId,
+  ProjectId,
+  type WorkjetComputer,
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { useActiveWorkjetScope } from "./activeWorkjetScope";
+import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
 import { listWorkjetProjects } from "./workjetProjectControl";
 
 export interface WorkjetProjectRegistrySnapshot {
@@ -153,6 +159,73 @@ export function findWorkjetProjectByWorkingCopy(
   );
 }
 
+export interface WorkjetComputerResolution {
+  readonly computer: WorkjetComputer | null;
+  readonly source: "worker" | "environment" | "selected" | null;
+}
+
+export function resolveLocalWorkjetComputer(input: {
+  readonly resolvedComputer: WorkjetComputer | null;
+  readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly localEnvironmentId: EnvironmentId | null;
+}): WorkjetComputer | null {
+  if (
+    input.resolvedComputer !== null &&
+    input.resolvedComputer.environmentId === input.localEnvironmentId
+  ) {
+    return input.resolvedComputer;
+  }
+
+  return (
+    input.computers.find((computer) => computer.environmentId === input.localEnvironmentId) ?? null
+  );
+}
+
+export function resolveLocalWorkjetWorkingCopy(input: {
+  readonly resolvedComputer: WorkjetComputer | null;
+  readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly localEnvironmentId: EnvironmentId | null;
+  readonly path: string;
+}): { readonly computerId: WorkjetComputer["id"]; readonly path: string } | null {
+  const computer = resolveLocalWorkjetComputer(input);
+  return computer === null ? null : { computerId: computer.id, path: input.path };
+}
+
+export function resolveWorkjetComputer(input: {
+  readonly computers: ReadonlyArray<WorkjetComputer>;
+  readonly workerModeActive: boolean;
+  readonly workerComputerId: string | null;
+  readonly activeEnvironmentId: EnvironmentId | null;
+  readonly selectedComputerId: string | null;
+}): WorkjetComputerResolution {
+  if (input.workerModeActive && input.workerComputerId !== null) {
+    const workerComputer = input.computers.find(
+      (computer) => computer.id === input.workerComputerId,
+    );
+    if (workerComputer !== undefined) {
+      return { computer: workerComputer, source: "worker" };
+    }
+  }
+
+  const environmentComputer = input.computers.find(
+    (computer) => computer.environmentId === input.activeEnvironmentId,
+  );
+  if (environmentComputer !== undefined) {
+    return { computer: environmentComputer, source: "environment" };
+  }
+
+  if (input.selectedComputerId !== null) {
+    const selectedComputer = input.computers.find(
+      (computer) => computer.id === input.selectedComputerId,
+    );
+    if (selectedComputer !== undefined) {
+      return { computer: selectedComputer, source: "selected" };
+    }
+  }
+
+  return { computer: null, source: null };
+}
+
 export function recordWorkjetProjectProjection(
   presentationInstanceId: string,
   project: CtoxWorkjetProjectProjection,
@@ -194,6 +267,7 @@ export function useWorkjetProjectRegistry(
 }
 
 export function WorkjetProjectRegistrySynchronizer() {
+  useHydratePrimaryWorkjetSettings();
   const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
 
   useEffect(() => {

@@ -1,8 +1,8 @@
 import type {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectProjection,
-} from "@t3tools/contracts";
-import { ProjectId } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { ProjectId } from "@workjet/contracts";
 
 import {
   createWorkjetProject,
@@ -28,6 +28,10 @@ export type WorkjetProjectCreationOutcome =
         | "invalid_input"
         | "invalid_projection"
         | "not_active"
+        | "launch_failed"
+        | "authentication_required"
+        | "unsupported"
+        | "timeout"
         | "guest_failed"
         | "response_too_large";
     };
@@ -35,6 +39,25 @@ export type WorkjetProjectCreationOutcome =
 export interface WorkjetProjectCreationOptions {
   readonly port?: WorkjetProjectControlPort;
   readonly onPhase?: (phase: WorkjetProjectCreationPhase) => void;
+}
+
+export function workjetProjectCreationFailureMessage(
+  code: Extract<WorkjetProjectCreationOutcome, { readonly _tag: "failed" }>["code"],
+): string {
+  switch (code) {
+    case "authentication_required":
+      return "Sign in to the selected instance to add this project.";
+    case "unsupported":
+      return "The selected instance does not provide project management. Update its Business OS shell in Settings, then retry.";
+    case "not_active":
+      return "The selected CTOX instance is no longer connected.";
+    case "launch_failed":
+      return "Workjet could not start the connection to the selected CTOX instance. Check its status in Settings, then retry.";
+    case "timeout":
+      return "The selected instance did not respond within 30 seconds. Open Business OS to check its connection, then retry.";
+    default:
+      return "CTOX did not confirm the project. You can retry without reopening this dialog.";
+  }
 }
 
 /**
@@ -69,6 +92,22 @@ function exactProject(
   return projects.find((project) => project.id === projectId);
 }
 
+function hasRequestedWorkingCopy(
+  project: CtoxWorkjetProjectProjection,
+  attempt: WorkjetProjectCreationAttempt,
+): boolean {
+  const requested = attempt.request.workingCopy;
+  return (
+    requested === undefined ||
+    project.workingCopies.some(
+      (copy) =>
+        copy.status === "active" &&
+        copy.computerId === requested.computerId &&
+        copy.path === requested.path,
+    )
+  );
+}
+
 export async function runWorkjetProjectCreation(
   attempt: WorkjetProjectCreationAttempt,
   options: WorkjetProjectCreationOptions = {},
@@ -79,7 +118,13 @@ export async function runWorkjetProjectCreation(
     () => ({ _tag: "failed", code: "guest_failed" }) as const,
   );
   if (listed._tag === "failed") {
-    if (listed.code === "not_active") {
+    if (
+      listed.code === "not_active" ||
+      listed.code === "launch_failed" ||
+      listed.code === "authentication_required" ||
+      listed.code === "unsupported" ||
+      listed.code === "timeout"
+    ) {
       onPhase("failed");
       return { _tag: "failed", code: listed.code };
     }
@@ -92,7 +137,7 @@ export async function runWorkjetProjectCreation(
       return { _tag: "failed", code: "invalid_projection" };
     }
     const existing = exactProject(listed.response.projects, attempt.request.projectId);
-    if (existing !== undefined) {
+    if (existing !== undefined && hasRequestedWorkingCopy(existing, attempt)) {
       onPhase("visible");
       return { _tag: "visible", project: existing };
     }
@@ -110,7 +155,8 @@ export async function runWorkjetProjectCreation(
   }
   if (
     created.response.action !== "project.create" ||
-    created.response.project.id !== attempt.request.projectId
+    created.response.project.id !== attempt.request.projectId ||
+    !hasRequestedWorkingCopy(created.response.project, attempt)
   ) {
     onPhase("failed");
     return { _tag: "failed", code: "invalid_projection" };

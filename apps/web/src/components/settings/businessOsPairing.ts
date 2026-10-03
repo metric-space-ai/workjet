@@ -1,4 +1,4 @@
-import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteRefV1 } from "@t3tools/contracts";
+import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteRefV1 } from "@workjet/contracts";
 
 const BASE64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 

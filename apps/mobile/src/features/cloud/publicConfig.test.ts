@@ -18,7 +18,7 @@ vi.mock("expo-constants", () => ({
 describe("resolveCloudPublicConfig", () => {
   it("reports the missing Clerk JWT template as structured configuration", () => {
     expect(() => resolveRelayClerkTokenOptions()).toThrowError(
-      new CloudPublicConfigMissingError({ key: "T3CODE_CLERK_JWT_TEMPLATE" }),
+      new CloudPublicConfigMissingError({ key: "WORKJET_CLERK_JWT_TEMPLATE" }),
     );
   });
 
@@ -45,7 +45,7 @@ describe("resolveCloudPublicConfig", () => {
   it("normalizes statically injected cloud configuration", () => {
     expect(
       resolveCloudPublicConfig({
-        clerk: { publishableKey: "  pk_test_example  ", jwtTemplate: "  t3-relay  " },
+        clerk: { publishableKey: "  pk_test_example  ", jwtTemplate: "  workjet-relay  " },
         relay: { url: " https://relay.example.test/// " },
         managedControl: { url: " https://ctox.example.test/// " },
         observability: {
@@ -57,7 +57,7 @@ describe("resolveCloudPublicConfig", () => {
     ).toEqual({
       clerk: {
         publishableKey: "pk_test_example",
-        jwtTemplate: "t3-relay",
+        jwtTemplate: "workjet-relay",
       },
       relay: {
         url: "https://relay.example.test",
@@ -76,13 +76,13 @@ describe("resolveCloudPublicConfig", () => {
   it("rejects an insecure relay URL", () => {
     expect(
       resolveCloudPublicConfig({
-        clerk: { publishableKey: "pk_test_example", jwtTemplate: "t3-relay" },
+        clerk: { publishableKey: "pk_test_example", jwtTemplate: "workjet-relay" },
         relay: { url: "http://relay.example.test" },
       }),
     ).toEqual({
       clerk: {
         publishableKey: "pk_test_example",
-        jwtTemplate: "t3-relay",
+        jwtTemplate: "workjet-relay",
       },
       relay: {
         url: null,

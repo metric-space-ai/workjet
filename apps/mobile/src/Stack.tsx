@@ -168,14 +168,14 @@ const SettingsContentStack = createNativeStackNavigator({
       screen: SettingsEnvironmentsRouteScreen,
       linking: "environments",
       options: {
-        title: "Environments",
+        title: "Computers",
       },
     }),
     SettingsEnvironmentNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,
       linking: "environment-new",
       options: {
-        title: "Add Environment",
+        title: "Add computer",
       },
     }),
     SettingsArchive: createNativeStackScreen({
@@ -452,14 +452,14 @@ function NotFoundScreen() {
       }}
       style={[{ flex: 1 }, screenBgStyle]}
     >
-      <Text className="text-3xl font-t3-bold text-foreground" selectable>
+      <Text className="text-3xl font-workjet-bold text-foreground" selectable>
         Route not found
       </Text>
       <Pressable
         style={returnHomeButtonStyle}
         onPress={() => navigation.dispatch(StackActions.replace("Home"))}
       >
-        <Text className="text-base font-t3-bold text-primary-foreground">Return home</Text>
+        <Text className="text-base font-workjet-bold text-primary-foreground">Return home</Text>
       </Pressable>
     </ScrollView>
   );
@@ -617,7 +617,7 @@ export const RootStack = createNativeStackNavigator({
       screen: ConnectionsRouteScreen,
       linking: "connections",
       options: {
-        title: "Environments",
+        title: "Computers",
         // Android: full page; the screen renders its own AndroidScreenHeader,
         // so the native bar stays hidden. iOS keeps the sheet.
         ...(Platform.OS === "android"

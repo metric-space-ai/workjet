@@ -1,0 +1,17 @@
+{
+  "name": "@workjet/mobile-terminal-native",
+  "version": "0.0.0",
+  "private": true,
+  "expo-module": {
+    "ios": {
+      "modules": [
+        "WorkjetTerminalModule"
+      ]
+    },
+    "android": {
+      "modules": [
+        "expo.modules.workjetterminal.WorkjetTerminalModule"
+      ]
+    }
+  }
+}

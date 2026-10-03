@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- This module IS the Node platform implementation behind the injected `GreppyRuntimePlatform` interface: `nodeRun` supervises a `child_process` it must SIGKILL, `nodeDownload` polices its own HTTPS redirect chain byte by byte before anything touches disk, and `nodePlatform` performs the mkdtemp/rename/chmod activation dance. Everything above `GreppyRuntimePlatform` is ordinary Effect code and receives a fake in tests.
-import { WorkjetGreppyOperationError } from "@t3tools/contracts";
+import { WorkjetGreppyOperationError } from "@workjet/contracts";
 import {
   decodeGreppyIndexStatus,
   decodePinnedGreppyModelManifest,
@@ -205,7 +205,7 @@ export interface GreppyRuntimeShape {
 }
 
 export class GreppyRuntime extends Context.Service<GreppyRuntime, GreppyRuntimeShape>()(
-  "t3/mcp/toolkits/workjet/GreppyRuntime",
+  "workjet/mcp/toolkits/workjet/GreppyRuntime",
 ) {}
 
 interface RuntimePaths {
@@ -844,9 +844,9 @@ const nodeDownload = async (input: {
 };
 
 export const nodePlatform = (): GreppyRuntimePlatform => {
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Concrete Node boundary behind the injected GreppyRuntimePlatform interface.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Concrete Node boundary behind the injected GreppyRuntimePlatform interface.
   const hostPlatform = process.platform;
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Same injected boundary; captured once for deterministic consumers.
+  // oxlint-disable-next-line workjet/no-global-process-runtime -- Same injected boundary; captured once for deterministic consumers.
   const hostArchitecture = process.arch;
   return {
     platform: hostPlatform,

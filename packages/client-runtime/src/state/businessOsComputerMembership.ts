@@ -6,7 +6,7 @@ import {
   type WorkjetBusinessOsComputerListResult,
   type WorkjetBusinessOsComputerUnassignInput,
   type WorkjetBusinessOsComputerUnassignResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";

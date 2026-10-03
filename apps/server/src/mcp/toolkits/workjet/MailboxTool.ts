@@ -13,7 +13,7 @@ import {
   WorkjetMailboxTimestamp,
   WorkjetReviewDecision,
   type WorkjetMessageBody,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -30,7 +30,7 @@ import * as WorkjetSnapshotStore from "../../../workjet/mailbox/WorkjetSnapshotS
  * The first two harness-neutral Workjet mailbox tools (docs/workjet-plan.md →
  * "Expose harness-neutral MCP tools `workjet_send_message`,
  * `workjet_delegate_task` …"). Every harness receives the SAME bounded schemas
- * and the SAME authorization boundary from the per-session T3 MCP server, so
+ * and the SAME authorization boundary from the per-session Workjet MCP server, so
  * nothing here may branch on provider, harness, or model.
  *
  * Authorization mirrors `workjet_dispatch_worker` exactly: orchestrator-scoped

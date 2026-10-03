@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxManagedDiscoveryResult } from "@t3tools/contracts";
+import type { CtoxManagedDiscoveryResult } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -80,7 +80,7 @@ export class CtoxDevAuth extends Context.Service<
     readonly login: Effect.Effect<CtoxDevLoginResult, CtoxDevAuthOperationError>;
     readonly logout: Effect.Effect<void, CtoxDevAuthOperationError>;
   }
->()("@t3tools/desktop/ctox/CtoxDevAuth") {}
+>()("@workjet/desktop/ctox/CtoxDevAuth") {}
 
 interface CookieApi {
   readonly get?: (filter: Record<string, never>) => Promise<readonly Cookie[]>;

@@ -99,15 +99,15 @@ machine running Workjet.
 Recommended, a Bitbucket access token:
 
 ```bash
-export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
+export WORKJET_BITBUCKET_ACCESS_TOKEN="your-access-token"
 ```
 
 Or an Atlassian account email plus API token, with read/write access to pull requests and
 repositories:
 
 ```bash
-export T3CODE_BITBUCKET_EMAIL="you@example.com"
-export T3CODE_BITBUCKET_API_TOKEN="your-token"
+export WORKJET_BITBUCKET_EMAIL="you@example.com"
+export WORKJET_BITBUCKET_API_TOKEN="your-token"
 ```
 
 If both are set, the access token wins. Restart Workjet and verify the connection in **Source

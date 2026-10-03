@@ -3,7 +3,7 @@ import type {
   CtoxMobileInviteCreateResult,
   CtoxMobileInviteRevokeInput,
   CtoxMobileInviteRevokeResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import type { SavedRemoteConnection } from "../../../lib/connection";
 import type { BusinessOsInstance } from "../registry/business-os-registry";

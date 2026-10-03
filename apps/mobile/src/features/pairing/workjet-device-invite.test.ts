@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { WorkjetDeviceInviteV1 } from "@t3tools/contracts";
+import { WorkjetDeviceInviteV1 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 import {

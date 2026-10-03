@@ -12,7 +12,7 @@ import {
   type WorkjetCrossModeLinkId,
   type WorkjetCrossModeOperation,
   type WorkjetCrossModeResultOutcome,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -99,7 +99,7 @@ export interface WorkjetCrossModeCtoxCommand {
  * What the CTOX authority did with a dispatched command.
  *
  * The two outcomes are exactly CTOX's own approval model — execute versus
- * propose-and-await-a-human — surfaced without reinterpretation. T3 does not add
+ * propose-and-await-a-human — surfaced without reinterpretation. Workjet does not add
  * a second gate on top; it reports which side of CTOX's gate the command landed
  * on, and the contract maps that onto the repository's existing
  * `WorkjetDelegationApprovalState` vocabulary (`not-required` / `pending`).
@@ -151,7 +151,7 @@ export interface WorkjetCrossModeCtoxPortShape {
 export class WorkjetCrossModeCtoxPort extends Context.Service<
   WorkjetCrossModeCtoxPort,
   WorkjetCrossModeCtoxPortShape
->()("t3/workjet/crossmode/WorkjetCrossModeCtoxPort") {}
+>()("workjet/workjet/crossmode/WorkjetCrossModeCtoxPort") {}
 
 /**
  * The only implementation this slice ships: no authority is verifiable and no

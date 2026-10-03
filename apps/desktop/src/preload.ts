@@ -1,10 +1,11 @@
 import type {
   CtoxShellFleetRolloutStatus,
+  CtoxWorkjetSessionTransferNotification,
   DesktopBridge,
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -57,6 +58,46 @@ function isIdList(value: unknown): value is readonly string[] {
   );
 }
 
+const sessionTransferStates = new Set([
+  "pause_requested",
+  "packing",
+  "packed",
+  "shipping",
+  "applying",
+  "applied",
+  "switching",
+  "resuming",
+  "completed",
+  "aborting",
+  "rolled_back",
+  "failed",
+]);
+
+function isSessionTransferNotification(
+  value: unknown,
+): value is CtoxWorkjetSessionTransferNotification {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const notification = value as Record<string, unknown>;
+  if (!isBoundedString(notification.instanceId, 512)) return false;
+  const event = notification.event;
+  if (typeof event !== "object" || event === null || Array.isArray(event)) return false;
+  const transfer = event as Record<string, unknown>;
+  const nonNegativeInteger = (candidate: unknown) =>
+    Number.isInteger(candidate) && Number(candidate) >= 0;
+  return (
+    transfer.type === "workjet.session.transfer" &&
+    isBoundedString(transfer.transferId, 256) &&
+    isBoundedString(transfer.sessionId, 256) &&
+    typeof transfer.state === "string" &&
+    sessionTransferStates.has(transfer.state) &&
+    nonNegativeInteger(transfer.fenceEpoch) &&
+    isBoundedString(transfer.sourceComputerId, 256) &&
+    isBoundedString(transfer.targetComputerId, 256) &&
+    nonNegativeInteger(transfer.deadlineAtMs) &&
+    nonNegativeInteger(transfer.updatedAtMs)
+  );
+}
+
 function isShellFleetRolloutStatus(value: unknown): value is CtoxShellFleetRolloutStatus {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const status = value as Record<string, unknown>;
@@ -105,7 +146,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   setConnectionCatalog: (catalog) =>
     ipcRenderer.invoke(IpcChannels.SET_CONNECTION_CATALOG_CHANNEL, catalog),
   clearConnectionCatalog: () => ipcRenderer.invoke(IpcChannels.CLEAR_CONNECTION_CATALOG_CHANNEL),
+  recoverConnectionCatalog: () =>
+    ipcRenderer.invoke(IpcChannels.RECOVER_CONNECTION_CATALOG_CHANNEL),
   discoverSshHosts: () => ipcRenderer.invoke(IpcChannels.DISCOVER_SSH_HOSTS_CHANNEL),
+  discoverTailscalePeers: () => ipcRenderer.invoke(IpcChannels.DISCOVER_TAILSCALE_PEERS_CHANNEL),
   ensureSshEnvironment: async (target, options) =>
     unwrapEnsureSshEnvironmentResult(
       await ipcRenderer.invoke(IpcChannels.ENSURE_SSH_ENVIRONMENT_CHANNEL, {
@@ -113,8 +157,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ...(options === undefined ? {} : { options }),
       }),
     ),
-  disconnectSshEnvironment: (target) =>
-    ipcRenderer.invoke(IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL, target),
+  disconnectSshEnvironment: (target, options) =>
+    ipcRenderer.invoke(
+      IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL,
+      options?.releaseOnly === true ? { target, releaseOnly: true } : target,
+    ),
   fetchSshEnvironmentDescriptor: (httpBaseUrl) =>
     ipcRenderer.invoke(IpcChannels.FETCH_SSH_ENVIRONMENT_DESCRIPTOR_CHANNEL, { httpBaseUrl }),
   bootstrapSshBearerSession: (httpBaseUrl, credential) =>
@@ -216,6 +263,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     ipcRenderer.invoke(IpcChannels.PROVISIONING_START_CHANNEL, input),
   getProvisioningOperation: (operationId) =>
     ipcRenderer.invoke(IpcChannels.PROVISIONING_GET_CHANNEL, { operationId }),
+  listProvisioningOperations: () => ipcRenderer.invoke(IpcChannels.PROVISIONING_LIST_CHANNEL, {}),
   onUpdateState: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
       if (typeof state !== "object" || state === null) return;
@@ -267,11 +315,35 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         instanceId,
         request,
       }),
+    requestComputerControl: (instanceId, request) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_COMPUTER_CONTROL_CHANNEL, {
+        instanceId,
+        request,
+      }),
     requestProjectControl: (instanceId, request) =>
       ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_PROJECT_CONTROL_CHANNEL, {
         instanceId,
         request,
       }),
+    requestSessionControl: (instanceId, request) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_WORKJET_SESSION_CONTROL_CHANNEL, {
+        instanceId,
+        request,
+      }),
+    registerSessionTransferEvents: (computerIds) =>
+      ipcRenderer.invoke(IpcChannels.CTOX_SESSION_TRANSFER_REGISTER_CHANNEL, { computerIds }),
+    onSessionTransferEvent: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        if (isSessionTransferNotification(payload)) listener(payload);
+      };
+      ipcRenderer.on(IpcChannels.CTOX_SESSION_TRANSFER_EVENT_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(
+          IpcChannels.CTOX_SESSION_TRANSFER_EVENT_CHANNEL,
+          wrappedListener,
+        );
+      };
+    },
     openApp: (instanceId, moduleId, bounds) =>
       ipcRenderer.invoke(IpcChannels.CTOX_OPEN_APP_CHANNEL, { instanceId, moduleId, bounds }),
     openSettings: (instanceId) =>

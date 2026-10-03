@@ -19,7 +19,7 @@ import {
   workjetGatewayModelRouteTable,
   type WorkjetGatewayCatalog,
   type WorkjetGatewayModelRoute,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import { SettingsRow } from "./settingsLayout";
 import { WORKJET_GATEWAY_PROVIDER_LABELS } from "./WorkjetGatewayAccounts";

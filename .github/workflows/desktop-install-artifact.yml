@@ -1,0 +1,107 @@
+name: Desktop install artifact
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/desktop-install-artifact.yml
+      - packages/ssh/**
+      - apps/desktop/src/main.ts
+      - apps/desktop/src/provisioning/**
+      - scripts/build-ssh-server.mjs
+      - .github/workflows/ssh-server-artifacts.yml
+
+      - apps/server/**
+      - scripts/lib/cli-external-packages.ts
+      - scripts/build-desktop-artifact.ts
+      - scripts/lib/prepare-provider-gateway-host.ts
+      - scripts/smoke-packaged-startup.mjs
+      - scripts/keychain-smoke.ts
+      - scripts/keychainSmoke/main.cjs
+      - apps/desktop/package.json
+      - apps/desktop/src/electron/ElectronSafeStorage.ts
+      - apps/desktop/src/electron/ElectronSafeStorage.test.ts
+      - pnpm-lock.yaml
+      - apps/desktop/resources/provider-gateway/host-release.pin.json
+      - apps/desktop/resources/entitlements.mac.adhoc.plist
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-install-artifact-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ssh-server:
+    uses: ./.github/workflows/ssh-server-artifacts.yml
+
+  macos-arm64:
+    name: Standalone macOS ARM64 app
+    needs: ssh-server
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      CI: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: stable
+      - name: Verify asynchronous macOS keychain and legacy ciphertext
+        run: |
+          export TMPDIR="$RUNNER_TEMP"
+          node apps/desktop/scripts/ensure-electron-runtime.mjs
+          node scripts/keychain-smoke.ts | tee "$RUNNER_TEMP/keychain-smoke.log"
+          grep -q '^keychain smoke: pass' "$RUNNER_TEMP/keychain-smoke.log"
+          grep -q '^legacy keychain migration: pass' "$RUNNER_TEMP/keychain-smoke.log"
+      - name: Build the standalone install package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: workjet-ssh-server-*
+          path: apps/desktop/resources/ssh-servers
+          merge-multiple: true
+      - name: Package the desktop with its SSH servers
+        run: |
+          test "$(uname -m)" = arm64
+          export TMPDIR="$RUNNER_TEMP"
+          export ELECTRON_CACHE="$RUNNER_TEMP/electron-cache"
+          export ELECTRON_BUILDER_CACHE="$RUNNER_TEMP/electron-builder-cache"
+          # This workflow publishes an install artifact, not an updater feed.
+          # Use the existing unconfigured-build behavior instead of embedding
+          # the ambient Actions repository as a nonexistent desktop release feed.
+          unset GITHUB_REPOSITORY WORKJET_DESKTOP_UPDATE_REPOSITORY
+          node scripts/build-desktop-artifact.ts --platform mac --arch arm64 --target zip --output-dir "$RUNNER_TEMP/workjet-desktop"
+      - name: Verify the packaged app signature and executable
+        run: |
+          mkdir -p "$RUNNER_TEMP/workjet-desktop-verify"
+          ditto -xk "$RUNNER_TEMP"/workjet-desktop/Workjet-*-arm64.zip "$RUNNER_TEMP/workjet-desktop-verify"
+          app="$RUNNER_TEMP/workjet-desktop-verify/Workjet.app"
+          codesign --verify --deep --strict "$app"
+          test ! -e "$app/Contents/Resources/app-update.yml"
+          ELECTRON_RUN_AS_NODE=1 "$app/Contents/MacOS/Workjet" -e 'if (!process.versions.electron) process.exit(1)'
+          node scripts/smoke-packaged-startup.mjs "$app/Contents/MacOS/Workjet" "$RUNNER_TEMP/workjet-desktop/startup-smoke.json"
+      - name: Record source and artifact checksums
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/workjet-desktop/SOURCE_COMMIT"
+          cd "$RUNNER_TEMP/workjet-desktop"
+          shasum -a 256 ./*.zip > SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: workjet-desktop-macos-arm64-${{ github.sha }}
+          path: ${{ runner.temp }}/workjet-desktop/
+          if-no-files-found: error
+          retention-days: 14

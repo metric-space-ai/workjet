@@ -198,6 +198,11 @@ import {
   WorkjetGatewayRemoveAccountInput,
   WorkjetGatewayRemoveAccountResult,
   WorkjetGatewayCatalog,
+  WorkjetGatewayGrantTarget,
+  WorkjetGatewayScopedCatalog,
+  WorkjetGatewaySetGrantInput,
+  WorkjetGatewaySetGrantResult,
+  WorkjetGatewayAccessError,
   WorkjetGatewayHealth,
   WorkjetGatewayModelDiscovery,
   WorkjetGatewayOauthPollInput,
@@ -260,6 +265,8 @@ import {
   WorkjetCrossModeListLinksRpcResult,
   WorkjetCrossModeOpenInCodeRpcInput,
   WorkjetCrossModeOpenInCodeRpcResult,
+  WorkjetCrossModeResolveBrowserOpsRpcInput,
+  WorkjetCrossModeResolveBrowserOpsRpcResult,
   WorkjetCrossModeSubmitRpcInput,
   WorkjetCrossModeSubmitRpcResult,
 } from "./workjetCrossMode.ts";
@@ -374,6 +381,8 @@ export const WS_METHODS = {
   // Environment-scoped Workjet provider gateway authority
   workjetGatewayStatus: "workjet.providerGateway.status",
   workjetGatewayCatalog: "workjet.providerGateway.catalog",
+  workjetGatewayScopedCatalog: "workjet.providerGateway.scopedCatalog",
+  workjetGatewaySetGrant: "workjet.providerGateway.setGrant",
   workjetGatewayStart: "workjet.providerGateway.start",
   workjetGatewayStop: "workjet.providerGateway.stop",
   workjetGatewayOauthStart: "workjet.providerGateway.oauthStart",
@@ -417,6 +426,7 @@ export const WS_METHODS = {
   // to the Business OS authority through the validated CTOX MCP command path.
   workjetCrossModeOpenInCode: "workjet.crossMode.openInCode",
   workjetCrossModeGetThreadLink: "workjet.crossMode.getThreadLink",
+  workjetCrossModeResolveBrowserOps: "workjet.crossMode.resolveBrowserOps",
   workjetCrossModeListLinks: "workjet.crossMode.listLinks",
   workjetCrossModeSubmit: "workjet.crossMode.submit",
 
@@ -679,6 +689,18 @@ export const WsWorkjetGatewayCatalogRpc = Rpc.make(WS_METHODS.workjetGatewayCata
   error: WorkjetGatewayRpcError,
 });
 
+export const WsWorkjetGatewayScopedCatalogRpc = Rpc.make(WS_METHODS.workjetGatewayScopedCatalog, {
+  payload: Schema.Struct({ target: WorkjetGatewayGrantTarget }),
+  success: WorkjetGatewayScopedCatalog,
+  error: Schema.Union([WorkjetGatewayRpcError, WorkjetGatewayAccessError]),
+});
+
+export const WsWorkjetGatewaySetGrantRpc = Rpc.make(WS_METHODS.workjetGatewaySetGrant, {
+  payload: WorkjetGatewaySetGrantInput,
+  success: WorkjetGatewaySetGrantResult,
+  error: Schema.Union([WorkjetGatewayRpcError, WorkjetGatewayAccessError]),
+});
+
 export const WsWorkjetGatewayStartRpc = Rpc.make(WS_METHODS.workjetGatewayStart, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayStatus,
@@ -926,6 +948,16 @@ export const WsWorkjetCrossModeGetThreadLinkRpc = Rpc.make(
   {
     payload: WorkjetCrossModeGetThreadLinkRpcInput,
     success: WorkjetCrossModeGetThreadLinkRpcResult,
+    error: WorkjetCrossModeRpcError,
+  },
+);
+
+/** Verify the selected Ops connection at click time; this is not a shell login or launch token. */
+export const WsWorkjetCrossModeResolveBrowserOpsRpc = Rpc.make(
+  WS_METHODS.workjetCrossModeResolveBrowserOps,
+  {
+    payload: WorkjetCrossModeResolveBrowserOpsRpcInput,
+    success: WorkjetCrossModeResolveBrowserOpsRpcResult,
     error: WorkjetCrossModeRpcError,
   },
 );
@@ -1298,7 +1330,7 @@ export const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
 
 /**
  * Ephemeral live diff preview for compact/mobile surfaces.
- * Not the persisted T3 Review model. Future review sessions should use
+ * Not the persisted Workjet Review model. Future review sessions should use
  * review.open* + review.getSnapshot.
  */
 export const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
@@ -1582,6 +1614,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetWorktreesInspectRpc,
   WsWorkjetGatewayStatusRpc,
   WsWorkjetGatewayCatalogRpc,
+  WsWorkjetGatewayScopedCatalogRpc,
+  WsWorkjetGatewaySetGrantRpc,
   WsWorkjetGatewayStartRpc,
   WsWorkjetGatewayStopRpc,
   WsWorkjetGatewayOauthStartRpc,
@@ -1607,6 +1641,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetMailboxAcceptHandoffRpc,
   WsWorkjetCrossModeOpenInCodeRpc,
   WsWorkjetCrossModeGetThreadLinkRpc,
+  WsWorkjetCrossModeResolveBrowserOpsRpc,
   WsWorkjetCrossModeListLinksRpc,
   WsWorkjetCrossModeSubmitRpc,
   WsWorkjetDecisionHubListConnectionsRpc,

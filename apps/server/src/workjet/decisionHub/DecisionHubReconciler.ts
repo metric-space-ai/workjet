@@ -5,7 +5,7 @@ import {
   type OrchestrationCommand,
   ThreadId,
   WorkjetConnectionId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -39,7 +39,7 @@ export interface DecisionHubReconcilerShape {
 export class DecisionHubReconciler extends Context.Service<
   DecisionHubReconciler,
   DecisionHubReconcilerShape
->()("t3/workjet/decisionHub/DecisionHubReconciler") {}
+>()("workjet/workjet/decisionHub/DecisionHubReconciler") {}
 
 export const decisionHubRetryDelayMs = (attempt: number, key: string): number => {
   const bounded = Math.min(Math.max(attempt, 0), 8);

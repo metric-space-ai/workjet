@@ -1,5 +1,5 @@
 import { useAuth, useClerk, useUser } from "@clerk/react";
-import { encodeConnectAuthCode, readConnectAuthorizeRequest } from "@t3tools/shared/connectAuth";
+import { encodeConnectAuthCode, readConnectAuthorizeRequest } from "@workjet/shared/connectAuth";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -40,7 +40,7 @@ const invalidLinkMessage = {
   eyebrow: "Authorization request",
   title: "This connect link is incomplete",
   description:
-    "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.",
+    "The link is missing its authorization request. Re-run `workjet connect` in your terminal and open the freshly printed URL.",
 } as const;
 
 /**
@@ -131,7 +131,7 @@ export function ConnectCliCallbackSurface() {
         <ConnectCliAuthMessage
           eyebrow="Step 2 of 2 · Terminal handoff"
           title="Authorization did not complete"
-          description="No authorization code was returned. Re-run `t3 connect` in your terminal and try again."
+          description="No authorization code was returned. Re-run `workjet connect` in your terminal and try again."
         />
       </AuthSurfaceShell>
     );
@@ -147,7 +147,7 @@ export function ConnectCliCallbackSurface() {
         <ConnectCliAuthMessage
           eyebrow="Step 2 of 2 · Terminal handoff"
           title="This code belongs to a different request"
-          description="This authorization response does not match a connect request started in this browser. Re-run `t3 connect` in your terminal and open the freshly printed URL in this browser."
+          description="This authorization response does not match a connect request started in this browser. Re-run `workjet connect` in your terminal and open the freshly printed URL in this browser."
         />
       </AuthSurfaceShell>
     );

@@ -17,7 +17,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  * Representation notes, following migrations 042/045/051:
  *
  * - The canonical contract value lives in `link_json` and is encoded and decoded
- *   exclusively through the `@t3tools/contracts` `WorkjetCrossModeLink` schema.
+ *   exclusively through the `@workjet/contracts` `WorkjetCrossModeLink` schema.
  *   The columns beside it are duplicated OUT of that JSON so a bounded listing
  *   and both directional lookups never have to decode every row.
  * - `link_id` is the PRIMARY KEY and is chosen by THIS server, never by a

@@ -1,4 +1,4 @@
-import { EnvironmentId, WorkjetComputerId, type WorkjetComputer } from "@t3tools/contracts";
+import { EnvironmentId, WorkjetComputerId, type WorkjetComputer } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveComposerComputer } from "./ChatComposer";

@@ -50,7 +50,7 @@ import {
   type EnvironmentId,
   type WorkjetHandoffBranchRef,
   type WorkjetWorkerAddress,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 /**
  * How many trailing messages a snapshot may carry at most.

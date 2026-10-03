@@ -4,7 +4,7 @@ import {
   SECRET_SHAPE_NAMES,
   SECRET_SHAPES,
   SOURCE_TREE_SECRET_SHAPES,
-} from "@t3tools/shared/secretShapes";
+} from "@workjet/shared/secretShapes";
 
 import {
   applyAllowlist,
@@ -28,7 +28,7 @@ const FAKE_PEM_KEY = [
 describe("the secret-shape table this gate reuses", () => {
   /**
    * The gate must not grow its own opinion of what a secret looks like. It
-   * consumes `@t3tools/shared/secretShapes`, which is the same table
+   * consumes `@workjet/shared/secretShapes`, which is the same table
    * `apps/desktop/src/support/SupportBundleRedaction.ts` redacts with. This
    * set equality is what makes a new shape impossible to add without deciding
    * whether the tracked-file scan uses it.
@@ -120,12 +120,15 @@ describe("scanTrackedFileText", () => {
       "a documented template holds placeholders, so it is scanned like documentation",
     );
     assert.isTrue(
-      scanTrackedFileText(".env", "T3CODE_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr").length >
-        0,
+      scanTrackedFileText(".env", "WORKJET_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr")
+        .length > 0,
       "the escalation is what catches an opaque pairing token with no recognizable prefix",
     );
     assert.deepStrictEqual(
-      scanTrackedFileText(".env.example", "T3CODE_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr"),
+      scanTrackedFileText(
+        ".env.example",
+        "WORKJET_PAIRING_TOKEN=Qx4Lm2Rt8Wv6Yb1Nc3Kd5Fg7Hj0PsQwEr",
+      ),
       [],
     );
   });

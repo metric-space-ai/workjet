@@ -5,7 +5,7 @@ import {
   type BusinessOsInstanceId,
   type WorkjetDeviceSessionBootstrapCredential,
   type WorkjetManagedIssuerOrigin,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 
 import { buildPairingUrl } from "../connection/pairing";

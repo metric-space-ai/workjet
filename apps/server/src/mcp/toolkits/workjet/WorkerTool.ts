@@ -6,7 +6,7 @@ import {
   TrimmedNonEmptyString,
   WorkjetCapabilityId,
   WorkjetParentThreadReference,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -77,7 +77,7 @@ const enabledWhen = () => {
 
 export const WorkerDispatchMcpTool = Tool.make(WORKJET_DISPATCH_WORKER_TOOL_NAME, {
   description:
-    "Create an ordinary local Workjet worker thread in this server environment and start its first T3 turn. The call returns immediately after dispatch and does not wait for completion.",
+    "Create an ordinary local Workjet worker thread in this server environment and start its first Workjet turn. The call returns immediately after dispatch and does not wait for completion.",
   parameters: WorkerDispatchInputSchema,
   success: WorkerDispatchResultSchema,
   dependencies: [McpInvocationContext.McpInvocationContext, WorkerDispatch.WorkerDispatch],

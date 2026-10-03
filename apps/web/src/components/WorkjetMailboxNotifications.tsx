@@ -18,7 +18,7 @@
  * Every string comes from `toWorkjetMailboxNotification`, which composes them
  * from bounded ids and closed codes. Nothing here reads a payload.
  */
-import type { WorkjetMailboxNotification } from "@t3tools/contracts";
+import type { WorkjetMailboxNotification } from "@workjet/contracts";
 import { AlertTriangleIcon, InboxIcon } from "lucide-react";
 
 import { cn } from "../lib/utils";

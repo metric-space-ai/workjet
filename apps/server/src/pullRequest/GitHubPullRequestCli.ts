@@ -20,7 +20,7 @@ import {
   type PullRequestReviewerKind,
   type PullRequestThreadComment,
   type PullRequestUpdateMethod,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import * as GitHubCli from "../sourceControl/GitHubCli.ts";
 import {
@@ -555,7 +555,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly body: string;
     }) => Effect.Effect<void, GitHubPullRequestCliError>;
   }
->()("t3/pullRequest/GitHubPullRequestCli") {}
+>()("workjet/pullRequest/GitHubPullRequestCli") {}
 
 /**
  * The GraphQL API takes owner and name as separate arguments, so `owner/repo` is split here.

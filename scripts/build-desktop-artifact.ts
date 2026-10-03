@@ -3,11 +3,12 @@
 
 import * as NodeFSP from "node:fs/promises";
 import * as NodeModule from "node:module";
+import * as NodeURL from "node:url";
 
-import { fromYaml } from "@t3tools/shared/schemaYaml";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { fromYaml } from "@workjet/shared/schemaYaml";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
+import { clerkFrontendApiHostnameFromPublishableKey } from "@workjet/shared/relayAuth";
+import { resolveSpawnCommand } from "@workjet/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
@@ -17,6 +18,7 @@ import { enforceCapabilityVersionLock } from "./check-capability-version-lock.ts
 import { BRAND_ASSET_PATHS, type WebAssetBrand } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
+import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import {
   CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
   findInlinedExternalPackages,
@@ -41,8 +43,11 @@ import { Command, Flag } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "com.t3tools.t3code";
+const DESKTOP_APP_ID = "dev.workjet.app";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
+const MAC_ADHOC_ENTITLEMENTS_PATH = NodeURL.fileURLToPath(
+  new URL("../apps/desktop/resources/entitlements.mac.adhoc.plist", import.meta.url),
+);
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
 const BuildArch = Schema.Literals(["arm64", "x64", "universal"]);
@@ -121,7 +126,7 @@ export function resolveResourceMonitorRustTargets(
 }
 
 export function resourceMonitorExecutableName(platform: typeof BuildPlatform.Type): string {
-  return platform === "win" ? "t3-resource-monitor.exe" : "t3-resource-monitor";
+  return platform === "win" ? "workjet-resource-monitor.exe" : "workjet-resource-monitor";
 }
 
 const PLATFORM_CONFIG: Record<typeof BuildPlatform.Type, PlatformConfig> = {
@@ -287,6 +292,15 @@ export class CtoxBusinessOsShellPreparationError extends Schema.TaggedErrorClass
 ) {
   override get message(): string {
     return "Could not prepare the verified CTOX Business OS shell dependency.";
+  }
+}
+
+export class ProviderGatewayHostPreparationError extends Schema.TaggedErrorClass<ProviderGatewayHostPreparationError>()(
+  "ProviderGatewayHostPreparationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Could not prepare the verified Workjet provider-gateway host dependency.";
   }
 }
 
@@ -505,7 +519,7 @@ export class MissingDesktopLegalNoticeError extends Schema.TaggedErrorClass<Miss
   },
 ) {
   override get message(): string {
-    return `Missing required license notice ${this.noticeFile} at ${this.noticePath}. Every desktop artifact must ship the T3 MIT notice, the Workjet license policy, and the generated release NOTICE; run 'pnpm run notice:generate' if NOTICE.md is missing.`;
+    return `Missing required license notice ${this.noticeFile} at ${this.noticePath}. Every desktop artifact must ship the Workjet MIT notice, the Workjet license policy, and the generated release NOTICE; run 'pnpm run notice:generate' if NOTICE.md is missing.`;
   }
 }
 
@@ -733,7 +747,7 @@ interface StagePackageJson {
   readonly name: string;
   readonly version: string;
   readonly buildVersion: string;
-  readonly t3codeCommitHash: string;
+  readonly workjetCommitHash: string;
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
@@ -775,7 +789,7 @@ export const DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE = {
 } as const;
 export const CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY = "ctox-business-os-shell";
 
-// The T3 MIT notice, the Workjet license policy, and the generated release
+// The Workjet MIT notice, the Workjet license policy, and the generated release
 // NOTICE must travel with every binary. They are staged into `legal/` and
 // shipped as a plain extra resource rather than inside the asar so the notices
 // remain readable in the installed application without unpacking anything.
@@ -797,13 +811,11 @@ export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
 /**
  * The host is included ONLY when a staged directory is supplied.
  *
- * There is no `provider-gateway-host-v*` release yet
- * (`apps/desktop/resources/provider-gateway/host-release.pin.json` reads
- * `"status": "unreleased"`), so pointing electron-builder at a directory that
- * does not exist would break every packaged build today for a binary nobody
- * can ship yet. Passing the staged path — produced by
- * `scripts/provider-gateway-host-artifacts.ts stage` — is what turns this on,
- * so the wiring is in place the moment the tag is cut and inert until then.
+ * The standalone builder always supplies the directory returned by
+ * prepareProviderGatewayHost after verifying the pinned release manifest and
+ * executable. An unreleased pin fails preparation before packaging begins.
+ * The optional argument remains available to callers constructing only the
+ * resource list; it is not a runtime fallback for a standalone build.
  */
 export function createDesktopExtraResources(
   businessOsShellInstallPath: string,
@@ -811,6 +823,10 @@ export function createDesktopExtraResources(
 ) {
   return [
     DESKTOP_RESOURCE_MONITOR_EXTRA_RESOURCE,
+    {
+      from: "apps/desktop/prod-resources/ssh-servers",
+      to: "ssh-servers",
+    },
     {
       from: businessOsShellInstallPath,
       to: CTOX_BUSINESS_OS_SHELL_RESOURCE_DIRECTORY,
@@ -867,7 +883,7 @@ export class InvalidAppleTeamIdError extends Schema.TaggedErrorClass<InvalidAppl
   },
 ) {
   override get message(): string {
-    return `T3CODE_APPLE_TEAM_ID '${this.teamId}' must be a 10-character Apple Developer Team ID.`;
+    return `WORKJET_APPLE_TEAM_ID '${this.teamId}' must be a 10-character Apple Developer Team ID.`;
   }
 }
 
@@ -876,7 +892,7 @@ export class MissingMacPasskeyProvisioningProfileError extends Schema.TaggedErro
   {},
 ) {
   override get message(): string {
-    return "T3CODE_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.";
+    return "WORKJET_MACOS_PROVISIONING_PROFILE must point to an Associated Domains provisioning profile.";
   }
 }
 
@@ -885,7 +901,7 @@ export class MissingMacPasskeyDomainConfigurationError extends Schema.TaggedErro
   {},
 ) {
   override get message(): string {
-    return "T3CODE_CLERK_PUBLISHABLE_KEY or T3CODE_CLERK_PASSKEY_RP_DOMAINS is required for signed macOS passkey builds.";
+    return "WORKJET_CLERK_PUBLISHABLE_KEY or WORKJET_CLERK_PASSKEY_RP_DOMAINS is required for signed macOS passkey builds.";
   }
 }
 
@@ -896,7 +912,7 @@ export class InvalidMacPasskeyPublishableKeyError extends Schema.TaggedErrorClas
   },
 ) {
   override get message(): string {
-    return "T3CODE_CLERK_PUBLISHABLE_KEY is invalid.";
+    return "WORKJET_CLERK_PUBLISHABLE_KEY is invalid.";
   }
 }
 
@@ -964,22 +980,22 @@ function normalizePasskeyRpDomain(value: string): string {
 export function resolveMacPasskeySigningConfiguration(
   env: Readonly<Record<string, string | undefined>>,
 ): MacPasskeySigningConfiguration {
-  const teamId = env.T3CODE_APPLE_TEAM_ID?.trim().toUpperCase() ?? "";
+  const teamId = env.WORKJET_APPLE_TEAM_ID?.trim().toUpperCase() ?? "";
   if (!APPLE_TEAM_ID_PATTERN.test(teamId)) {
     throw new InvalidAppleTeamIdError({ teamId });
   }
 
-  const provisioningProfilePath = env.T3CODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "";
+  const provisioningProfilePath = env.WORKJET_MACOS_PROVISIONING_PROFILE?.trim() ?? "";
   if (provisioningProfilePath.length === 0) {
     throw new MissingMacPasskeyProvisioningProfileError();
   }
 
-  const configuredRpDomains = env.T3CODE_CLERK_PASSKEY_RP_DOMAINS?.trim();
+  const configuredRpDomains = env.WORKJET_CLERK_PASSKEY_RP_DOMAINS?.trim();
   let rpDomains: readonly string[];
   if (configuredRpDomains) {
     rpDomains = configuredRpDomains.split(",").map(normalizePasskeyRpDomain);
   } else {
-    const publishableKey = env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim();
+    const publishableKey = env.WORKJET_CLERK_PUBLISHABLE_KEY?.trim();
     if (!publishableKey) {
       throw new MissingMacPasskeyDomainConfigurationError();
     }
@@ -1428,22 +1444,24 @@ const AzureTrustedSigningOptionsConfig = Config.all({
 });
 
 const BuildEnvConfig = Config.all({
-  platform: Config.schema(BuildPlatform, "T3CODE_DESKTOP_PLATFORM").pipe(Config.option),
-  target: Config.string("T3CODE_DESKTOP_TARGET").pipe(Config.option),
-  arch: Config.schema(BuildArch, "T3CODE_DESKTOP_ARCH").pipe(Config.option),
-  version: Config.string("T3CODE_DESKTOP_VERSION").pipe(Config.option),
-  outputDir: Config.string("T3CODE_DESKTOP_OUTPUT_DIR").pipe(Config.option),
-  skipBuild: Config.boolean("T3CODE_DESKTOP_SKIP_BUILD").pipe(Config.withDefault(false)),
-  keepStage: Config.boolean("T3CODE_DESKTOP_KEEP_STAGE").pipe(Config.withDefault(false)),
-  signed: Config.boolean("T3CODE_DESKTOP_SIGNED").pipe(Config.withDefault(false)),
-  verbose: Config.boolean("T3CODE_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
-  mockUpdates: Config.boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
-  mockUpdateServerPort: Config.string("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
+  platform: Config.schema(BuildPlatform, "WORKJET_DESKTOP_PLATFORM").pipe(Config.option),
+  target: Config.string("WORKJET_DESKTOP_TARGET").pipe(Config.option),
+  arch: Config.schema(BuildArch, "WORKJET_DESKTOP_ARCH").pipe(Config.option),
+  version: Config.string("WORKJET_DESKTOP_VERSION").pipe(Config.option),
+  outputDir: Config.string("WORKJET_DESKTOP_OUTPUT_DIR").pipe(Config.option),
+  skipBuild: Config.boolean("WORKJET_DESKTOP_SKIP_BUILD").pipe(Config.withDefault(false)),
+  keepStage: Config.boolean("WORKJET_DESKTOP_KEEP_STAGE").pipe(Config.withDefault(false)),
+  signed: Config.boolean("WORKJET_DESKTOP_SIGNED").pipe(Config.withDefault(false)),
+  verbose: Config.boolean("WORKJET_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
+  mockUpdates: Config.boolean("WORKJET_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
+  mockUpdateServerPort: Config.string("WORKJET_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(
+    Config.option,
+  ),
   // Path to a prebuilt Linux node-pty binary (pty.node) for the target arch,
   // produced by the Linux CI job and handed to the Windows packaging job. Placed
   // into the staged node-pty so the WSL backend ships a ready binary and never
   // compiles on the user's machine.
-  wslPrebuild: Config.string("T3CODE_DESKTOP_WSL_PREBUILD").pipe(Config.option),
+  wslPrebuild: Config.string("WORKJET_DESKTOP_WSL_PREBUILD").pipe(Config.option),
 });
 
 const MockUpdateServerPortSchema = Schema.NumberFromString.check(
@@ -1779,7 +1797,7 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
     }
 
     const probeRoot = yield* fs.makeTempDirectoryScoped({
-      prefix: "t3code-bundle-selfcheck-",
+      prefix: "workjet-bundle-selfcheck-",
     });
     const probeApp = path.join(probeRoot, "app");
     yield* copyDirectoryPreservingSymlinks(unpackedRoot, probeApp);
@@ -1857,7 +1875,7 @@ const verifyPackagedBundleIsSelfContained = Effect.fn("verifyPackagedBundleIsSel
 /**
  * Copy the repository license notices into the staged app so electron-builder
  * ships them as `Resources/legal/**`. Fails closed: a binary that silently drops
- * the T3 MIT notice or the generated NOTICE is not a releasable artifact.
+ * the Workjet MIT notice or the generated NOTICE is not a releasable artifact.
  */
 export const stageLegalNotices = Effect.fn("stageLegalNotices")(function* (input: {
   readonly repoRoot: string;
@@ -2121,7 +2139,7 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
   updateChannel: "latest" | "nightly",
 ) {
   const env = yield* Config.all({
-    updateRepository: Config.string("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
+    updateRepository: Config.string("WORKJET_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
   });
   const rawRepo = (
@@ -2178,7 +2196,7 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 }
 
 // Deep-link schemes the packaged app claims. Workjet is the only current
-// identity; CTOX Desktop and t3code stay claimed as inbound aliases. Kept in sync with
+// identity; CTOX Desktop and workjet stay claimed as inbound aliases. Kept in sync with
 // apps/desktop/src/electron/desktopSchemes.ts (DESKTOP_DEEP_LINK_SCHEMES).
 export const DESKTOP_PROTOCOL_SCHEMES = [
   "workjet",
@@ -2186,8 +2204,8 @@ export const DESKTOP_PROTOCOL_SCHEMES = [
   "workjet-preview",
   "ctox-desktop",
   "ctox-desktop-dev",
-  "t3code",
-  "t3code-dev",
+  "workjet",
+  "workjet-dev",
 ] as const;
 
 export function resolveDesktopProductName(_version: string): string {
@@ -2247,6 +2265,19 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      // The runtime verifies the released executable's exact SHA-256. Its own
+      // signature must survive packaging; the app seal still covers these bytes.
+      signIgnore: ["/Contents/Resources/provider-gateway-host/"],
+      // Builds without a distribution identity still need a valid bundle seal.
+      // Keep hardened runtime and the Electron JIT/library entitlements together.
+      ...(!signed
+        ? {
+            identity: "-",
+            hardenedRuntime: true,
+            entitlements: MAC_ADHOC_ENTITLEMENTS_PATH,
+            entitlementsInherit: MAC_ADHOC_ENTITLEMENTS_PATH,
+          }
+        : {}),
       protocols: [
         {
           name: "Workjet",
@@ -2265,7 +2296,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
-      executableName: "t3code",
+      executableName: "workjet",
       icon: "icons",
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
@@ -2279,7 +2310,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ],
       desktop: {
         entry: {
-          StartupWMClass: "t3code",
+          StartupWMClass: "workjet",
         },
       },
     };
@@ -2329,7 +2360,7 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
 // backend never compiles on the user's machine. node-pty publishes no Linux
 // prebuilt and the WSL Linux Node can't load the Windows/Electron binary, so the
 // Linux CI job builds pty.node and hands it here. We drop it into the staged
-// node-pty's prebuilds/linux-<arch>/ with a t3code marker the WSL preflight
+// node-pty's prebuilds/linux-<arch>/ with a workjet marker the WSL preflight
 // checks (arch + node-pty version; the binary is N-API, hence ABI-stable across
 // Node versions). A missing prebuild is a warning, not an error, so local and
 // non-Windows builds still succeed — they just won't ship a working WSL backend.
@@ -2343,7 +2374,7 @@ const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (
 
   if (input.prebuildPath === undefined) {
     yield* Effect.logWarning(
-      "[desktop-artifact] No WSL node-pty prebuild provided (--wsl-prebuild / T3CODE_DESKTOP_WSL_PREBUILD); the packaged WSL backend will not start until a Linux pty.node is bundled.",
+      "[desktop-artifact] No WSL node-pty prebuild provided (--wsl-prebuild / WORKJET_DESKTOP_WSL_PREBUILD); the packaged WSL backend will not start until a Linux pty.node is bundled.",
     );
     return;
   }
@@ -2388,7 +2419,7 @@ const stageWslNodePtyPrebuild = Effect.fn("stageWslNodePtyPrebuild")(function* (
   yield* fs.makeDirectory(prebuildDir, { recursive: true });
   yield* fs.copyFile(input.prebuildPath, path.join(prebuildDir, "pty.node"));
   const markerJson = yield* encodeJsonString({ arch: linuxArch, nodePtyVersion });
-  yield* fs.writeFileString(path.join(prebuildDir, "t3code-wsl-node-pty.json"), `${markerJson}\n`);
+  yield* fs.writeFileString(path.join(prebuildDir, "workjet-wsl-node-pty.json"), `${markerJson}\n`);
 
   yield* Effect.log(
     `[desktop-artifact] Staged WSL node-pty prebuild (linux-${linuxArch}, node-pty ${nodePtyVersion}).`,
@@ -2420,6 +2451,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const workspaceOverrides = workspaceConfig.overrides ?? {};
   const workspacePatchedDependencies = workspaceConfig.patchedDependencies ?? {};
   const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
+  const providerGatewayHost = yield* Effect.tryPromise({
+    try: () =>
+      prepareProviderGatewayHost({ repoRoot, platform: options.platform, arch: options.arch }),
+    catch: (cause) => new ProviderGatewayHostPreparationError({ cause }),
+  });
   const businessOsShell = yield* Effect.tryPromise({
     try: () => prepareCtoxBusinessOsShell({ repoRoot }),
     catch: (cause) => new CtoxBusinessOsShellPreparationError({ cause }),
@@ -2478,7 +2514,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
-    prefix: `t3code-desktop-${options.platform}-stage-`,
+    prefix: `workjet-desktop-${options.platform}-stage-`,
   });
 
   const stageAppDir = path.join(stageRoot, "app");
@@ -2686,10 +2722,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     stageDependencies,
   );
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: "workjet",
     version: appVersion,
     buildVersion: appVersion,
-    t3codeCommitHash: commitHash,
+    workjetCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
     description: "Workjet desktop build",
@@ -2709,6 +2745,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
           }
         : undefined,
       businessOsShell.installPath,
+      providerGatewayHost.installPath,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -2771,6 +2808,21 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     { label: "vp install --prod --frozen-lockfile", verbose: options.verbose },
   );
   yield* stageClerkPasskeyNativeBinaries(stageAppDir, options.platform, options.arch);
+  if (options.platform === "mac") {
+    // The stable node-pty archive omits Darwin spawn-helper's executable bit.
+    const architectures = options.arch === "universal" ? ["arm64", "x64"] : [options.arch];
+    for (const architecture of architectures) {
+      yield* fs.chmod(
+        path.join(
+          stageAppDir,
+          "node_modules/node-pty/prebuilds",
+          `darwin-${architecture}`,
+          "spawn-helper",
+        ),
+        0o755,
+      );
+    }
+  }
 
   // WSL is Windows-only, so only the Windows artifact carries the Linux backend
   // binary; other platforms ignore the prebuild input.
@@ -2796,6 +2848,11 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   }
   if (!options.signed) {
     buildEnv.CSC_IDENTITY_AUTO_DISCOVERY = "false";
+    if (options.platform === "mac") {
+      // PR builds otherwise skip even the explicit ad-hoc identity above.
+      // This path never imports a distribution certificate or notarization key.
+      buildEnv.CSC_FOR_PULL_REQUEST = "true";
+    }
     delete buildEnv.CSC_LINK;
     delete buildEnv.CSC_KEY_PASSWORD;
     delete buildEnv.APPLE_API_KEY;
@@ -2825,7 +2882,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const builderArgs = [
     "exec",
     "--filter",
-    "@t3tools/desktop",
+    "@workjet/desktop",
     "--",
     "electron-builder",
     "--projectDir",
@@ -2843,7 +2900,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       shell: builderCommand.shell,
     }),
     {
-      label: `vp exec --filter @t3tools/desktop -- electron-builder --projectDir ${stageAppDir} ${platformConfig.cliFlag} --${options.arch} --publish never`,
+      label: `vp exec --filter @workjet/desktop -- electron-builder --projectDir ${stageAppDir} ${platformConfig.cliFlag} --${options.arch} --publish never`,
       verbose: options.verbose,
     },
   );
@@ -2901,59 +2958,61 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
 const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   platform: Flag.choice("platform", BuildPlatform.literals).pipe(
-    Flag.withDescription("Build platform (env: T3CODE_DESKTOP_PLATFORM)."),
+    Flag.withDescription("Build platform (env: WORKJET_DESKTOP_PLATFORM)."),
     Flag.optional,
   ),
   target: Flag.string("target").pipe(
     Flag.withDescription(
-      "Artifact target, for example dmg/AppImage/nsis (env: T3CODE_DESKTOP_TARGET).",
+      "Artifact target, for example dmg/AppImage/nsis (env: WORKJET_DESKTOP_TARGET).",
     ),
     Flag.optional,
   ),
   arch: Flag.choice("arch", BuildArch.literals).pipe(
-    Flag.withDescription("Build arch, for example arm64/x64/universal (env: T3CODE_DESKTOP_ARCH)."),
+    Flag.withDescription(
+      "Build arch, for example arm64/x64/universal (env: WORKJET_DESKTOP_ARCH).",
+    ),
     Flag.optional,
   ),
   buildVersion: Flag.string("build-version").pipe(
-    Flag.withDescription("Artifact version metadata (env: T3CODE_DESKTOP_VERSION)."),
+    Flag.withDescription("Artifact version metadata (env: WORKJET_DESKTOP_VERSION)."),
     Flag.optional,
   ),
   outputDir: Flag.string("output-dir").pipe(
-    Flag.withDescription("Output directory for artifacts (env: T3CODE_DESKTOP_OUTPUT_DIR)."),
+    Flag.withDescription("Output directory for artifacts (env: WORKJET_DESKTOP_OUTPUT_DIR)."),
     Flag.optional,
   ),
   skipBuild: Flag.boolean("skip-build").pipe(
     Flag.withDescription(
-      "Skip `vp run build:desktop` and use existing dist artifacts (env: T3CODE_DESKTOP_SKIP_BUILD).",
+      "Skip `vp run build:desktop` and use existing dist artifacts (env: WORKJET_DESKTOP_SKIP_BUILD).",
     ),
     Flag.optional,
   ),
   keepStage: Flag.boolean("keep-stage").pipe(
-    Flag.withDescription("Keep temporary staging files (env: T3CODE_DESKTOP_KEEP_STAGE)."),
+    Flag.withDescription("Keep temporary staging files (env: WORKJET_DESKTOP_KEEP_STAGE)."),
     Flag.optional,
   ),
   signed: Flag.boolean("signed").pipe(
     Flag.withDescription(
-      "Enable signing/notarization discovery; Windows uses Azure Trusted Signing (env: T3CODE_DESKTOP_SIGNED).",
+      "Enable signing/notarization discovery; Windows uses Azure Trusted Signing (env: WORKJET_DESKTOP_SIGNED).",
     ),
     Flag.optional,
   ),
   verbose: Flag.boolean("verbose").pipe(
-    Flag.withDescription("Stream subprocess stdout (env: T3CODE_DESKTOP_VERBOSE)."),
+    Flag.withDescription("Stream subprocess stdout (env: WORKJET_DESKTOP_VERBOSE)."),
     Flag.optional,
   ),
   mockUpdates: Flag.boolean("mock-updates").pipe(
-    Flag.withDescription("Enable mock updates (env: T3CODE_DESKTOP_MOCK_UPDATES)."),
+    Flag.withDescription("Enable mock updates (env: WORKJET_DESKTOP_MOCK_UPDATES)."),
     Flag.optional,
   ),
   mockUpdateServerPort: Flag.integer("mock-update-server-port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
-    Flag.withDescription("Mock update server port (env: T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT)."),
+    Flag.withDescription("Mock update server port (env: WORKJET_DESKTOP_MOCK_UPDATE_SERVER_PORT)."),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(
     Flag.withDescription(
-      "Path to a prebuilt Linux node-pty (pty.node) for the target arch, staged for the WSL backend (env: T3CODE_DESKTOP_WSL_PREBUILD).",
+      "Path to a prebuilt Linux node-pty (pty.node) for the target arch, staged for the WSL backend (env: WORKJET_DESKTOP_WSL_PREBUILD).",
     ),
     Flag.optional,
   ),

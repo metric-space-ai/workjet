@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
+  activateSidebarProject,
   archiveSelectedThreadEntries,
   buildBulkTitleRegenerationContextMenuItem,
   buildMultiSelectThreadContextMenuItems,
@@ -11,7 +12,9 @@ import {
   getVisibleThreadsForProject,
   getProjectSortTimestamp,
   hasUnseenCompletion,
+  includeAvailableProjectsInSidebar,
   isContextMenuPointerDown,
+  isSidebarNewThreadDisabled,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
@@ -43,7 +46,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import {
   DEFAULT_INTERACTION_MODE,
@@ -53,6 +56,68 @@ import {
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("activateSidebarProject", () => {
+  const target = { environmentId: localEnvironmentId, projectId: ProjectId.make("greppy") };
+
+  it("opens the selected workspace before updating the picker", async () => {
+    const events: string[] = [];
+    await activateSidebarProject({
+      target,
+      active: { ...target, projectId: ProjectId.make("ctox") },
+      open: async () => {
+        events.push("open greppy");
+        return { draftId: "greppy-draft" };
+      },
+      select: () => {
+        events.push("select greppy");
+      },
+    });
+    expect(events).toEqual(["open greppy", "select greppy"]);
+  });
+
+  it("keeps the existing thread when its project is selected again", async () => {
+    const open = vi.fn();
+    const select = vi.fn();
+    expect(await activateSidebarProject({ target, active: target, open, select })).toBe(true);
+    expect(open).not.toHaveBeenCalled();
+    expect(select).toHaveBeenCalledOnce();
+  });
+
+  it("distinguishes equal project ids on different computers", async () => {
+    const open = vi.fn(async () => ({ draftId: "remote-draft" }));
+    await activateSidebarProject({
+      target,
+      active: { ...target, environmentId: EnvironmentId.make("another-computer") },
+      open,
+      select: vi.fn(),
+    });
+    expect(open).toHaveBeenCalledOnce();
+  });
+
+  it("does not change the selection when workspace creation fails", async () => {
+    const select = vi.fn();
+    expect(
+      await activateSidebarProject({ target, active: null, open: async () => null, select }),
+    ).toBe(false);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("leaves selection intact when opening rejects", async () => {
+    const select = vi.fn();
+    await expect(
+      activateSidebarProject({
+        target,
+        active: null,
+        open: async () => {
+          throw new Error("disconnected");
+        },
+        select,
+      }),
+    ).rejects.toThrow("disconnected");
+    expect(select).not.toHaveBeenCalled();
+  });
+});
 
 describe("shouldNavigateAfterProjectRemoval", () => {
   const projectThreads = [{ environmentId: "environment-local", id: "thread-1" }];
@@ -355,7 +420,7 @@ describe("createThreadJumpHintVisibilityController", () => {
 
 describe("getSidebarThreadIdsToPrewarm", () => {
   it("returns only the first visible thread ids up to the prewarm limit", () => {
-    expect(getSidebarThreadIdsToPrewarm(["t1", "t2", "t3"], 2)).toEqual(["t1", "t2"]);
+    expect(getSidebarThreadIdsToPrewarm(["t1", "t2", "workjet"], 2)).toEqual(["t1", "t2"]);
   });
 
   it("returns all visible thread ids when they fit within the limit", () => {
@@ -431,6 +496,16 @@ describe("isSidebarNestedLinkClick", () => {
   it("leaves ordinary row clicks alone", () => {
     expect(isSidebarNestedLinkClick({ closest: () => null } as unknown as EventTarget)).toBe(false);
     expect(isSidebarNestedLinkClick(null)).toBe(false);
+  });
+});
+
+describe("new thread availability gating", () => {
+  it("enables the action for a sync-only available project", () => {
+    expect(isSidebarNewThreadDisabled(1)).toBe(false);
+  });
+
+  it("disables the action when neither local nor synced projects are available", () => {
+    expect(isSidebarNewThreadDisabled(0)).toBe(true);
   });
 });
 
@@ -1618,6 +1693,66 @@ describe("sortScopedProjectsForSidebar", () => {
       "Visible project",
       "Archived-only project",
     ]);
+  });
+});
+
+describe("includeAvailableProjectsInSidebar", () => {
+  it("keeps the local server project for a synced working copy in the sidebar group", () => {
+    const syncedEnvironmentId = EnvironmentId.make("environment-computer");
+    const serverProjectId = ProjectId.make("project-server");
+    const sidebarProjects = includeAvailableProjectsInSidebar(
+      [],
+      [
+        {
+          kind: "local",
+          id: serverProjectId,
+          title: "Synced project",
+          environmentId: syncedEnvironmentId,
+          path: "/workspace/synced",
+        },
+      ],
+    );
+
+    expect(sidebarProjects).toHaveLength(1);
+    expect(sidebarProjects[0]).toMatchObject({
+      id: serverProjectId,
+      environmentId: syncedEnvironmentId,
+      workspaceRoot: "/workspace/synced",
+    });
+  });
+
+  it("gives a promoted synced-project thread a sidebar project group", () => {
+    const syncedEnvironmentId = EnvironmentId.make("environment-computer");
+    const syncedProjectId = ProjectId.make("project-synced");
+    const sidebarProjects = includeAvailableProjectsInSidebar(
+      [],
+      [
+        {
+          kind: "workjet",
+          id: syncedProjectId,
+          title: "Synced project",
+          environmentId: syncedEnvironmentId,
+          path: "/workspace/synced",
+          workingCopyId: "working-copy-synced",
+        },
+      ],
+    );
+    const groups = sidebarProjects.map((project) => ({
+      ...project,
+      projectKey: "logical-synced",
+      memberProjectRefs: [{ environmentId: project.environmentId, projectId: project.id }],
+    }));
+    const promotedThread = makeThread({
+      environmentId: syncedEnvironmentId,
+      projectId: syncedProjectId,
+      updatedAt: "2026-03-09T10:05:00.000Z",
+    });
+
+    expect(sortLogicalProjectsForSidebar(groups, [promotedThread], "updated_at")).toEqual(groups);
+    expect(groups[0]?.memberProjectRefs).toContainEqual({
+      environmentId: promotedThread.environmentId,
+      projectId: promotedThread.projectId,
+    });
   });
 });
 

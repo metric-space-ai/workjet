@@ -7,7 +7,7 @@ import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   WorkjetConnectionId,
   type WorkjetThreadConfig,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveThreadCapabilityContext } from "./ThreadCapabilityContext.ts";
@@ -15,15 +15,15 @@ import { resolveThreadCapabilityContext } from "./ThreadCapabilityContext.ts";
 const registry = createCapabilityRegistry([
   {
     ...builtInCapabilityManifests[0]!,
-    supportedAdapters: ["t3-prompt"],
+    supportedAdapters: ["workjet-prompt"],
   },
   {
     ...builtInCapabilityManifests[1]!,
-    supportedAdapters: ["t3-mcp"],
+    supportedAdapters: ["workjet-mcp"],
   },
   {
     ...builtInCapabilityManifests[2]!,
-    supportedAdapters: ["t3-mcp", "t3-prompt"],
+    supportedAdapters: ["workjet-mcp", "workjet-prompt"],
   },
 ]);
 
@@ -37,7 +37,7 @@ describe("resolveThreadCapabilityContext", () => {
     });
   });
 
-  it("resolves each T3 adapter independently with stable order and de-duplication", () => {
+  it("resolves each Workjet adapter independently with stable order and de-duplication", () => {
     const config = {
       schemaVersion: 1,
       role: "standard",

@@ -13,7 +13,7 @@ import {
   SUPPORT_BUNDLE_PLACEHOLDERS,
   SupportBundleDocument,
   flattenSupportBundlePaths,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -125,7 +125,7 @@ const makeFixture = (): Fixture => {
       spans: {},
     }),
     JSON.stringify({
-      message: "runtime logging configured /Users/canary/.t3/userdata/logs",
+      message: "runtime logging configured /Users/canary/.workjet/userdata/logs",
       level: "INFO",
       timestamp: "2026-08-20T09:41:04.500Z",
       annotations: { component: "desktop-startup" },
@@ -148,7 +148,7 @@ const makeFixture = (): Fixture => {
   };
 };
 
-const desktopConfigLayer = (baseDir: string) => DesktopConfig.layerTest({ T3CODE_HOME: baseDir });
+const desktopConfigLayer = (baseDir: string) => DesktopConfig.layerTest({ WORKJET_HOME: baseDir });
 
 const appIdentityLayer = Layer.succeed(DesktopAppIdentity.DesktopAppIdentity, {
   resolveUserDataPath: Effect.succeed("/tmp/userdata"),

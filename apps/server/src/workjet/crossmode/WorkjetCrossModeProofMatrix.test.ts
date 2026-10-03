@@ -15,7 +15,7 @@ import {
   type WorkjetCrossModeCtoxRef,
   type WorkjetCrossModeEvidence,
   type WorkjetCrossModeLink,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";

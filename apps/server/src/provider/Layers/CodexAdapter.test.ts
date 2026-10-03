@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   EventId,
   ProviderDriverKind,
@@ -18,8 +19,9 @@ import {
   type ProviderUserInputAnswers,
   ThreadId,
   TurnId,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+  WorkjetConnectionId,
+} from "@workjet/contracts";
+import { createModelSelection } from "@workjet/shared/model";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, vi } from "@effect/vitest";
 
@@ -52,7 +54,7 @@ const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
 class CodexAdapter extends Context.Service<CodexAdapter, CodexAdapterShape>()(
-  "t3/provider/Layers/CodexAdapter.test/CodexAdapter",
+  "workjet/provider/Layers/CodexAdapter.test/CodexAdapter",
 ) {}
 
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
@@ -291,7 +293,13 @@ validationLayer("CodexAdapterLive validation", (it) => {
         runtimeMode: "full-access",
       });
 
-      NodeAssert.deepStrictEqual(validationRuntimeFactory.factory.mock.calls[0]?.[0], {
+      const validationOptions = validationRuntimeFactory.factory.mock.calls[0]?.[0] as
+        | (Record<string, unknown> & { onProcessSpawn?: unknown })
+        | undefined;
+      NodeAssert.equal(typeof validationOptions?.onProcessSpawn, "function");
+      const { onProcessSpawn: _onProcessSpawn, ...validationOptionsWithoutSpawnHook } =
+        validationOptions ?? {};
+      NodeAssert.deepStrictEqual(validationOptionsWithoutSpawnHook, {
         binaryPath: "codex",
         cwd: process.cwd(),
         launchArgs: "",
@@ -348,6 +356,48 @@ const sessionErrorLayer = it.layer(
 );
 
 sessionErrorLayer("CodexAdapterLive session errors", (it) => {
+  it.effect(
+    "pins Crew resume policy and rejects malformed cursors before replacing a session",
+    () =>
+      Effect.gen(function* () {
+        const adapter = yield* CodexAdapter;
+        const input = {
+          provider: ProviderDriverKind.make("codex"),
+          threadId: asThreadId("crew-resume-policy"),
+          runtimeMode: "full-access" as const,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            ctoxCrewChat: {
+              instanceId: "instance",
+              connectionId: WorkjetConnectionId.make("connection"),
+              chatId: "workjet_private_chat",
+            },
+          },
+        };
+        yield* adapter.startSession({ ...input, resumeCursor: { threadId: "owned" } });
+        const runtime = sessionRuntimeFactory.lastRuntime;
+        NodeAssert.ok(runtime);
+        NodeAssert.equal(runtime.options.resumePolicy, "require-existing");
+        NodeAssert.deepStrictEqual(runtime.options.resumeCursor, { threadId: "owned" });
+        const calls = sessionRuntimeFactory.factory.mock.calls.length;
+        for (const resumeCursor of [null, {}, { threadId: 42 }]) {
+          const error = yield* Effect.flip(adapter.startSession({ ...input, resumeCursor }));
+          NodeAssert.equal(error._tag, "ProviderAdapterValidationError");
+          NodeAssert.equal(sessionRuntimeFactory.factory.mock.calls.length, calls);
+          NodeAssert.equal(runtime.closeImpl.mock.calls.length, 0);
+        }
+        yield* adapter.startSession({
+          ...input,
+          threadId: asThreadId("ordinary-resume-policy"),
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          resumeCursor: { threadId: "ordinary" },
+        });
+        NodeAssert.equal(sessionRuntimeFactory.lastRuntime?.options.resumePolicy, undefined);
+        yield* adapter.startSession({ ...input, threadId: asThreadId("fresh-crew") });
+        NodeAssert.equal(sessionRuntimeFactory.lastRuntime?.options.resumePolicy, undefined);
+      }),
+  );
+
   it.effect("maps missing adapter sessions to ProviderAdapterSessionNotFoundError", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;
@@ -430,14 +480,14 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.effect("uses T3CODE_CODEX_LAUNCH_ARGS for the session runtime", () => {
+  it.effect("uses WORKJET_CODEX_LAUNCH_ARGS for the session runtime", () => {
     const runtimeFactory = makeRuntimeFactory();
     const layer = Layer.effect(
       CodexAdapter,
       Effect.gen(function* () {
         const codexConfig = decodeCodexSettings({ launchArgs: "--enable settings-feature" });
         return yield* makeCodexAdapter(codexConfig, {
-          environment: { T3CODE_CODEX_LAUNCH_ARGS: " --strict-config --enable env-feature " },
+          environment: { WORKJET_CODEX_LAUNCH_ARGS: " --strict-config --enable env-feature " },
           makeRuntime: runtimeFactory.factory,
         });
       }),
@@ -615,7 +665,7 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           item: {
             type: "mcpToolCall",
             id: "mcp_1",
-            server: "t3-code",
+            server: "workjet",
             tool: "preview_status",
             arguments: {},
             durationMs: 12,
@@ -632,7 +682,7 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         return;
       }
       NodeAssert.equal(firstEvent.value.payload.itemType, "mcp_tool_call");
-      NodeAssert.equal(firstEvent.value.payload.title, "t3-code · preview_status");
+      NodeAssert.equal(firstEvent.value.payload.title, "workjet · preview_status");
       NodeAssert.deepStrictEqual(firstEvent.value.payload.data, {
         completedAtMs: 1_778_000_000_000,
         threadId: "thread-1",
@@ -640,7 +690,7 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         item: {
           type: "mcpToolCall",
           id: "mcp_1",
-          server: "t3-code",
+          server: "workjet",
           tool: "preview_status",
           arguments: {},
           durationMs: 12,
@@ -1224,8 +1274,13 @@ scopedLifecycleLayer("CodexAdapterLive scoped lifecycle", (it) => {
       const runtime = scopedLifecycleRuntimeFactory.lastRuntime;
       NodeAssert.ok(runtime);
 
-      yield* adapter.stopSession(asThreadId("thread-stop"));
+      const result = yield* adapter.stopSession(asThreadId("thread-stop"));
 
+      NodeAssert.deepStrictEqual(result, {
+        terminated: true,
+        method: "cooperative",
+        pids: [],
+      });
       NodeAssert.equal(runtime.closeImpl.mock.calls.length, 1);
       NodeAssert.deepStrictEqual(scopedLifecycleRuntimeFactory.releasedThreadIds, [
         asThreadId("thread-stop"),
@@ -1280,7 +1335,7 @@ scopedFailureLayer("CodexAdapterLive scoped startup failure", (it) => {
 it.effect("flushes managed native logs when the adapter layer shuts down", () =>
   Effect.gen(function* () {
     const tempDir = NodeFS.mkdtempSync(
-      NodePath.join(NodeOS.tmpdir(), "t3-codex-adapter-native-log-"),
+      NodePath.join(NodeOS.tmpdir(), "workjetx-adapter-native-log-"),
     );
     const basePath = NodePath.join(tempDir, "provider-native.ndjson");
     const runtimeFactory = makeRuntimeFactory();

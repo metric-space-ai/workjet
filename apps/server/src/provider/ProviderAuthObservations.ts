@@ -35,7 +35,7 @@
  * because a turn that succeeded proves the credential worked at that moment
  * and nothing about the provider's installation or version.
  */
-import type { ProviderInstanceId } from "@t3tools/contracts";
+import type { ProviderInstanceId } from "@workjet/contracts";
 
 /** A failed sign-in seen by a real turn. */
 export interface ProviderAuthObservation {

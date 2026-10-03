@@ -118,7 +118,7 @@ export interface WebStackBrowserShape {
 }
 
 export class WebStackBrowser extends Context.Service<WebStackBrowser, WebStackBrowserShape>()(
-  "t3/mcp/toolkits/workjet/WebStackBrowser",
+  "workjet/mcp/toolkits/workjet/WebStackBrowser",
 ) {}
 
 const failure = (reason: WebStackBrowserFailureReason): WebStackBrowserError =>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { WorkjetDeviceInviteRefV1 } from "@t3tools/contracts";
+import type { WorkjetDeviceInviteRefV1 } from "@workjet/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -76,7 +76,7 @@ export class WorkjetDeviceInviteReferenceService extends Context.Service<
       WorkjetDeviceInviteReferenceServiceError
     >;
   }
->()("t3/ctox/WorkjetDeviceInviteReferenceService") {}
+>()("workjet/ctox/WorkjetDeviceInviteReferenceService") {}
 
 export interface WorkjetDeviceInviteReferenceServiceOptions {
   readonly nowEpochMs?: () => number;

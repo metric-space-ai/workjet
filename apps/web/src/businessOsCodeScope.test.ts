@@ -1,9 +1,10 @@
-import { BusinessOsInstanceId, EnvironmentId } from "@t3tools/contracts";
+import { BusinessOsInstanceId, EnvironmentId } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   businessOsCodeScopeContainsEnvironment,
   projectBusinessOsEnvironmentIds,
+  resolveBusinessOsCodeScopeEnvironmentIds,
   type BusinessOsCodeScopeSnapshot,
 } from "./businessOsCodeScope";
 
@@ -28,7 +29,92 @@ describe("Business OS Code scope", () => {
     expect([...projectBusinessOsEnvironmentIds(WELSCH, entries)]).toEqual([WELSCH_ENV]);
   });
 
-  it("fails closed while authority or membership is unresolved", () => {
+  it("includes an SSH environment only when its exact computer id has a confirmed assignment", () => {
+    const input = {
+      businessOsInstanceId: WELSCH,
+      entries: new Map([[SSH_ENV, { target: { _tag: "SshConnectionTarget" } }]]),
+      primaryEnvironmentId: null,
+      computers: [
+        { id: "computer-gpu", environmentId: SSH_ENV, presentationKind: "tailscale" as const },
+      ],
+    };
+    expect([...resolveBusinessOsCodeScopeEnvironmentIds(input)]).toEqual([]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        confirmedComputerIds: new Set(["other-computer"]),
+      }),
+    ]).toEqual([]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        confirmedComputerIds: new Set(["computer-gpu"]),
+      }),
+    ]).toEqual([SSH_ENV]);
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        ...input,
+        entries: new Map(),
+        confirmedComputerIds: new Set(["computer-gpu"]),
+      }),
+    ]).toEqual([]);
+  });
+
+  it("includes the Primary environment when the registered local computer identifies it", () => {
+    const entries = new Map([
+      [WELSCH_ENV, { target: { _tag: "RelayConnectionTarget", businessOsInstanceId: WELSCH } }],
+      [OTHER_ENV, { target: { _tag: "RelayConnectionTarget", businessOsInstanceId: OTHER } }],
+      [PRIMARY_ENV, { target: { _tag: "PrimaryConnectionTarget" } }],
+    ]);
+
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        businessOsInstanceId: WELSCH,
+        entries,
+        primaryEnvironmentId: PRIMARY_ENV,
+        computers: [{ presentationKind: "local", environmentId: PRIMARY_ENV }],
+      }),
+    ]).toEqual([WELSCH_ENV, PRIMARY_ENV]);
+  });
+
+  it("keeps the Primary environment out without a registered local computer", () => {
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        businessOsInstanceId: WELSCH,
+        entries: new Map(),
+        primaryEnvironmentId: PRIMARY_ENV,
+        computers: [],
+      }),
+    ]).toEqual([]);
+  });
+
+  it("keeps the Primary environment out when the local computer identifies another environment", () => {
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        businessOsInstanceId: WELSCH,
+        entries: new Map(),
+        primaryEnvironmentId: PRIMARY_ENV,
+        computers: [{ presentationKind: "local", environmentId: OTHER_ENV }],
+      }),
+    ]).toEqual([]);
+  });
+
+  it("keeps the Primary environment out for non-local computer presentations", () => {
+    expect([
+      ...resolveBusinessOsCodeScopeEnvironmentIds({
+        businessOsInstanceId: WELSCH,
+        entries: new Map(),
+        primaryEnvironmentId: PRIMARY_ENV,
+        computers: [
+          { presentationKind: "ssh", environmentId: PRIMARY_ENV },
+          { presentationKind: "tailscale", environmentId: PRIMARY_ENV },
+          { presentationKind: "workjet-connect", environmentId: PRIMARY_ENV },
+        ],
+      }),
+    ]).toEqual([]);
+  });
+
+  it("fails closed with an empty scope while authority or membership is unresolved", () => {
     const resolving: BusinessOsCodeScopeSnapshot = {
       phase: "resolving",
       presentationInstanceId: "managed:welsch",
@@ -40,10 +126,12 @@ describe("Business OS Code scope", () => {
       phase: "blocked",
       presentationInstanceId: "managed:welsch",
       businessOsInstanceId: null,
-      environmentIds: new Set([WELSCH_ENV]),
+      environmentIds: new Set(),
       blocker: "authority-rejected",
     };
 
+    expect([...resolving.environmentIds]).toEqual([]);
+    expect([...blocked.environmentIds]).toEqual([]);
     expect(businessOsCodeScopeContainsEnvironment(resolving, WELSCH_ENV)).toBe(false);
     expect(businessOsCodeScopeContainsEnvironment(blocked, WELSCH_ENV)).toBe(false);
   });

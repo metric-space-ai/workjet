@@ -3,7 +3,7 @@
  * Content-addressed immutable prompt-snapshot store (docs/workjet-plan.md →
  * "Transfer context by immutable prompt snapshots and bounded references …").
  *
- * The delegation contract in `@t3tools/contracts` pins a prompt with a
+ * The delegation contract in `@workjet/contracts` pins a prompt with a
  * `WorkjetContentDigest` plus a bounded `WorkjetSealedPayloadRef`. Until this
  * module existed those three fields were CALLER-SUPPLIED, so nothing in the
  * server ever verified that the digest described any real content: a harness
@@ -47,7 +47,7 @@ import {
   WorkjetContentDigest,
   type WorkjetPayloadByteLength,
   WorkjetSealedPayloadRef,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as NodeBuffer from "node:buffer";
 import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
@@ -245,7 +245,7 @@ export interface WorkjetSnapshotStoreShape {
 export class WorkjetSnapshotStore extends Context.Service<
   WorkjetSnapshotStore,
   WorkjetSnapshotStoreShape
->()("t3/workjet/mailbox/WorkjetSnapshotStore") {}
+>()("workjet/workjet/mailbox/WorkjetSnapshotStore") {}
 
 const ioFailure = (operation: string) => (cause: unknown) =>
   new WorkjetSnapshotIoError({ operation, cause });

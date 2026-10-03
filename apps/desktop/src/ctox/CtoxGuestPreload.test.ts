@@ -13,16 +13,22 @@ vi.mock("electron", () => ({
 await import("./CtoxGuestPreload.ts");
 
 describe("CtoxGuestPreload", () => {
-  it("exposes only the fixed no-argument managed refresh event", () => {
-    expect(exposeInMainWorld).toHaveBeenCalledOnce();
-    const [name, bridge] = exposeInMainWorld.mock.calls[0] as [string, Record<string, () => void>];
-    expect(name).toBe("ctoxBusinessOsDesktop");
-    expect(Object.keys(bridge)).toEqual(["refreshManagedLaunch"]);
+  it("exposes fixed refresh and transfer event bridges", () => {
+    expect(exposeInMainWorld).toHaveBeenCalledTimes(2);
+    const exposed = new Map(
+      exposeInMainWorld.mock.calls as Array<[string, Record<string, (...args: unknown[]) => void>]>,
+    );
+    const desktop = exposed.get("ctoxBusinessOsDesktop");
+    const host = exposed.get("workjetHostBridge");
+    expect(Object.keys(desktop ?? {})).toEqual(["refreshManagedLaunch"]);
+    expect(Object.keys(host ?? {})).toEqual(["postSessionTransferEvent"]);
 
-    bridge.refreshManagedLaunch?.();
+    desktop?.refreshManagedLaunch?.();
+    const event = { type: "workjet.session.transfer", transferId: "transfer-1" };
+    host?.postSessionTransferEvent?.(event);
 
-    expect(send).toHaveBeenCalledWith("instance:refresh-managed-launch");
-    expect(send.mock.calls[0]).toHaveLength(1);
+    expect(send).toHaveBeenNthCalledWith(1, "instance:refresh-managed-launch");
+    expect(send).toHaveBeenNthCalledWith(2, "ctox-instance:session-transfer-event", event);
   });
 
   it("applies only allowlisted, bounded host theme tokens", () => {

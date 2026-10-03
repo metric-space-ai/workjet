@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@t3tools/contracts";
+import { CommandId, ProjectId } from "@workjet/contracts";
+import * as NodeVM from "node:vm";
+import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -9,6 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import type { BrowserWindow, Session, WebContentsView } from "electron";
 import { expect, vi } from "vite-plus/test";
 
@@ -16,7 +19,7 @@ vi.mock("electron", () => ({ WebContentsView: class {} }));
 
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { CTOX_GUEST_STATE_CHANNEL } from "../ipc/channels.ts";
+import { CTOX_GUEST_STATE_CHANNEL, CTOX_SESSION_TRANSFER_EVENT_CHANNEL } from "../ipc/channels.ts";
 import * as CtoxBusinessOsShell from "./CtoxBusinessOsShell.ts";
 import * as CtoxDevAuth from "./CtoxDevAuth.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
@@ -163,6 +166,7 @@ function makeGuestHarness() {
     readonly finishLoad: () => void;
     readonly listenerCount: (event: string) => number;
     readonly refresh: (...args: Array<unknown>) => void;
+    readonly postSessionTransferEvent: (...args: Array<unknown>) => void;
     readonly openWindow: (url: string) => { readonly action: string };
     readonly willNavigate: (url: string) => boolean;
   }> = [];
@@ -188,7 +192,7 @@ function makeGuestHarness() {
     });
     const loadURL = vi.fn((url: string) => loadURLImplementation(url, emit));
     const setBounds = vi.fn();
-    let refreshHandler: ((event: unknown, ...args: Array<unknown>) => void) | undefined;
+    const ipcHandlers = new Map<string, (event: unknown, ...args: Array<unknown>) => void>();
     const executeJavaScript = vi.fn(async () => undefined);
     const webContents = {
       session: browserSession,
@@ -205,9 +209,8 @@ function makeGuestHarness() {
         listeners.get(event)?.delete(handler);
       }),
       ipc: {
-        on: vi.fn((channel: string, handler: typeof refreshHandler) => {
-          assert.equal(channel, CtoxGuestManager.REFRESH_MANAGED_LAUNCH_CHANNEL);
-          refreshHandler = handler;
+        on: vi.fn((channel: string, handler: (event: unknown, ...args: Array<unknown>) => void) => {
+          ipcHandlers.set(channel, handler);
         }),
       },
       getURL: vi.fn(() => loadURL.mock.calls.at(-1)?.[0] ?? "about:blank"),
@@ -228,7 +231,10 @@ function makeGuestHarness() {
       emit,
       finishLoad: () => emit("did-finish-load"),
       listenerCount: (event) => listeners.get(event)?.size ?? 0,
-      refresh: (...args) => refreshHandler?.({}, ...args),
+      refresh: (...args) =>
+        ipcHandlers.get(CtoxGuestManager.REFRESH_MANAGED_LAUNCH_CHANNEL)?.({}, ...args),
+      postSessionTransferEvent: (...args) =>
+        ipcHandlers.get("ctox-instance:session-transfer-event")?.({}, ...args),
       /** The handler the guest installed, so a test can ask it for a verdict. */
       openWindow: (url: string) => {
         const handler = webContents.setWindowOpenHandler.mock.calls[0]?.[0];
@@ -248,8 +254,9 @@ function makeGuestHarness() {
     _tag: "ready",
     instances: [descriptor],
   };
+  const refreshAccount = vi.fn(() => Effect.succeed(discovery));
   const auth = CtoxDevAuth.CtoxDevAuth.of({
-    refresh: Effect.suspend(() => Effect.succeed(discovery)),
+    refresh: Effect.suspend(refreshAccount),
     login: Effect.die("unused"),
     logout: Effect.void,
   });
@@ -267,6 +274,7 @@ function makeGuestHarness() {
       : Effect.succeed({ descriptor: paired, config: pairedConfig });
   });
   const registry = CtoxInstanceRegistry.CtoxInstanceRegistry.of({
+    deviceProofKey: () => Effect.die("Device key storage is outside this test"),
     merge: (managed) =>
       Effect.succeed(
         CtoxInstanceRegistry.mergeCtoxInstanceSources(managed, pairedInstances, [
@@ -395,6 +403,7 @@ function makeGuestHarness() {
     removeChildView,
     sendAll,
     closeForwards,
+    refreshAccount,
     resolveLocalLaunch,
     resolvePairedLaunch,
     resolveSshLaunch,
@@ -1078,6 +1087,28 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("prepares local, paired, and SSH projects without hosted account discovery", () => {
+    const harness = makeGuestHarness();
+    harness.setLocalInstances([localDescriptor]);
+    harness.setPairedInstances([pairedDescriptor]);
+    harness.setSshInstances([sshDescriptor]);
+    harness.refreshAccount.mockImplementation(() => Effect.die("Hosted discovery is unavailable"));
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      for (const instance of [localDescriptor, pairedDescriptor, sshDescriptor]) {
+        assert.deepEqual(yield* manager.ensurePooled(instance.id), {
+          _tag: "ready",
+          instanceId: instance.id,
+        });
+      }
+      expect(harness.refreshAccount).not.toHaveBeenCalled();
+      expect(harness.resolveLocalLaunch).toHaveBeenCalledExactlyOnceWith(localDescriptor.id);
+      expect(harness.resolvePairedLaunch).toHaveBeenCalledExactlyOnceWith(pairedDescriptor.id);
+      expect(harness.resolveSshLaunch).toHaveBeenCalledExactlyOnceWith(sshDescriptor.id);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("launches a running local daemon through freshly minted material", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
@@ -1548,6 +1579,85 @@ describe("CtoxGuestManager", () => {
           response: { schema: "ctox.workjet-device-bindings.v1", bindings: [] },
         },
       );
+      const nativeBindings = vi.fn().mockResolvedValue({
+        schema: "ctox.workjet-device-bindings.v1",
+        bindings: [
+          {
+            inviteIdHash: "native-only-hash",
+            id: "binding-a",
+            deviceId: "device-a",
+            displayName: "Laptop",
+            createdAtMs: 1,
+            pairedAtMs: null,
+          },
+        ],
+      });
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+        NodeVM.runInNewContext(expression, { workjetBusinessOsDeviceControl: nativeBindings }),
+      );
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        {
+          _tag: "completed",
+          response: {
+            schema: "ctox.workjet-device-bindings.v1",
+            bindings: [
+              {
+                id: "binding-a",
+                deviceId: "device-a",
+                displayName: "Laptop",
+                createdAtMs: 1,
+                pairedAtMs: null,
+              },
+            ],
+          },
+        },
+      );
+      nativeBindings.mockResolvedValueOnce({
+        businessOsInstanceId: "instance-a",
+        deviceId: null,
+        proofKeyThumbprint: null,
+        grantId: "grant-a",
+        inviteId: "invite-a",
+        invite: {
+          type: "ctox-business-os-invite",
+          version: 1,
+          display_name: "Operations",
+          instance_id: "instance-a",
+          sync_room: "ctox-business-os:instance-a",
+          native_peer_id: "native-a",
+          signaling_urls: ["wss://signal.example.test/socket"],
+          signaling_auth_version: "ctox-role-bound-v1",
+          signaling_browser_token: "synthetic-browser-token",
+          signaling_browser_token_hash: "a".repeat(64),
+          signaling_native_token_hash: "b".repeat(64),
+          transport: "webrtc",
+          expires_at: "2026-09-24T17:05:00Z",
+          data_plane: "rxdb-webrtc",
+          http_bridge_available: false,
+          session: {
+            authenticated: true,
+            source: "mobile_invite",
+            capability_token: "synthetic-capability-token",
+            capability_expires_at_ms: Date.parse("2026-09-24T17:05:00Z"),
+            user: {
+              id: "mobile-a",
+              display_name: "Mobile pairing",
+              role: "user",
+              is_admin: false,
+            },
+          },
+        },
+        expiresAt: "2026-09-24T17:05:00Z",
+        pairingUri: "native-only-qr-secret",
+        qrSvg: "<svg>native-only-qr-secret</svg>",
+      });
+      const created = yield* manager.requestDeviceControl(descriptor.id, {
+        action: "invite.create",
+        ttlSeconds: 300,
+      });
+      expect(created._tag).toBe("completed");
+      expect(encodeUnknownJson(created)).not.toContain("native-only-qr-secret");
       assert.deepEqual(
         yield* manager.requestDeviceControl("managed:other", { action: "binding.list" }),
         { _tag: "failed", code: "not_active" },
@@ -1558,7 +1668,163 @@ describe("CtoxGuestManager", () => {
         yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
         { _tag: "failed", code: "unsupported" },
       );
+
+      const control = vi.fn();
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+        NodeVM.runInNewContext(expression, { workjetBusinessOsDeviceControl: control }),
+      );
+      control.mockRejectedValueOnce(
+        Object.assign(new Error("private credential"), {
+          code: "CTOX_WEBRTC_CAPABILITY_MISSING",
+        }),
+      );
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "unsupported" },
+      );
+      control.mockRejectedValueOnce(new Error("Native WebRTC peer is not connected"));
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "sync_unavailable" },
+      );
+      control.mockRejectedValueOnce(new Error("workjet device management is not allowed"));
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "forbidden" },
+      );
+      control.mockRejectedValueOnce(new Error("private credential"));
+      assert.deepEqual(
+        yield* manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+        { _tag: "failed", code: "guest_failed" },
+      );
     }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect(
+    "routes computer membership only through the exact warm guest and rejects mismatched replies",
+    () => {
+      const harness = makeGuestHarness();
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+          { _tag: "failed", code: "not_active" },
+        );
+        expect(harness.views).toHaveLength(0);
+        yield* manager.enterBusinessOsMode;
+        yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+        yield* manager.exitBusinessOsMode;
+        const control = vi.fn().mockResolvedValue({ action: "computer.list", computers: [] });
+        harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) => {
+          expect(expression).not.toContain("fetch(");
+          return NodeVM.runInNewContext(expression, { workjetComputerControl: control });
+        });
+        assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+          { _tag: "completed", response: { action: "computer.list", computers: [] } },
+        );
+        expect(control).toHaveBeenCalledExactlyOnceWith({ action: "computer.list" });
+        assert.deepEqual(
+          yield* manager.requestComputerControl("managed:other", { action: "computer.list" }),
+          { _tag: "failed", code: "not_active" },
+        );
+        control.mockResolvedValueOnce({
+          action: "computer.assign",
+          computer: {
+            id: "other-computer",
+            displayName: "Other",
+            hostingMode: "workstation",
+            status: "assigned",
+            capabilities: [],
+            selfHostedColocation: false,
+          },
+        });
+        assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, {
+            action: "computer.assign",
+            commandId: CommandId.make("assign-command"),
+            computerId: "expected-computer",
+            displayName: "GPU",
+            hostingMode: "workstation",
+            capabilities: [],
+            selfHostedColocation: false,
+          }),
+          { _tag: "failed", code: "response_invalid" },
+        );
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
+  it.effect("preserves safe computer failure reasons without exposing guest exceptions", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      const control = vi.fn();
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+        NodeVM.runInNewContext(expression, { workjetComputerControl: control }),
+      );
+      const failures = [
+        {
+          error: { code: "QUERY_NOT_SUPPORTED", message: "private credential" },
+          code: "query_unsupported",
+        },
+        { error: "QUERY_NOT_SUPPORTED: collection is not V1.5-enabled", code: "query_unsupported" },
+        { error: { code: "peer_connect_timeout" }, code: "sync_unavailable" },
+        { error: new Error("PEER_UNAVAILABLE"), code: "sync_unavailable" },
+        { error: { code: "QUERY_CANCELLED" }, code: "sync_unavailable" },
+        {
+          error: { name: "InvalidStateError", message: "private credential" },
+          code: "sync_unavailable",
+        },
+        { error: new Error("Workjet computer control is not ready."), code: "sync_unavailable" },
+        {
+          error: new Error("workjet_computers collection is not registered."),
+          code: "unsupported",
+        },
+        { error: new Error("native command failed: private credential"), code: "command_failed" },
+      ] as const;
+      for (const failure of failures) {
+        control.mockRejectedValueOnce(failure.error);
+        const result = yield* manager.requestComputerControl(descriptor.id, {
+          action: "computer.list",
+        });
+        assert.deepEqual(result, { _tag: "failed", code: failure.code });
+        expect(encodeUnknownJson(result)).not.toContain("private credential");
+      }
+      control.mockResolvedValueOnce({ action: "computer.list", computers: "invalid" });
+      assert.deepEqual(
+        yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+        { _tag: "failed", code: "response_invalid" },
+      );
+      harness.views[0]?.executeJavaScript.mockRejectedValueOnce(new Error("renderer unavailable"));
+      assert.deepEqual(
+        yield* manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+        { _tag: "failed", code: "guest_failed" },
+      );
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("bounds stalled computer commands without locking navigation", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      harness.views[0]?.executeJavaScript.mockImplementation(() => {
+        entered.resolve();
+        return new Promise<unknown>(() => {});
+      });
+      const request = yield* Effect.forkChild(
+        manager.requestComputerControl(descriptor.id, { action: "computer.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      assert.deepEqual(yield* manager.exitBusinessOsMode, { _tag: "completed" });
+      yield* TestClock.adjust("45 seconds");
+      assert.deepEqual(yield* Fiber.join(request), { _tag: "failed", code: "timeout" });
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
   });
 
   it.effect("uses only an existing warm guest for project control", () => {
@@ -1599,6 +1865,218 @@ describe("CtoxGuestManager", () => {
         { _tag: "failed", code: "not_active" },
       );
       expect(harness.views).toHaveLength(1);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("correlates native private chat creation before returning its ID", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
+      const request = {
+        action: "project.worker.add" as const,
+        commandId: CommandId.make("add-worker"),
+        projectId: ProjectId.make("project-one"),
+        workerProfileId: "worker-one",
+        createdAt: "2026-09-12T10:00:00.000Z",
+      };
+      const response = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        workerProfileId: request.workerProfileId,
+        chatId: "workjet_private_confirmed",
+      };
+      for (const change of [
+        { commandId: "different-command" },
+        { projectId: "different-project" },
+        { workerProfileId: "different-worker" },
+        { action: "project.chat.create" },
+        { chatId: "workjet_group_not_private" },
+      ]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValue({
+          status: "completed",
+          result: { ...response, ...change },
+        });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
+      }
+      harness.views[0]?.executeJavaScript.mockResolvedValue({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("distinguishes a hidden sign-in page from an unsupported project shell", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.exitBusinessOsMode;
+      for (const signInVisible of [true, false]) {
+        harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+          NodeVM.runInNewContext(expression, {
+            document: {
+              querySelector: () => ({ getClientRects: () => (signInVisible ? [{}] : []) }),
+            },
+          }),
+        );
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          {
+            _tag: "failed",
+            code: signInVisible ? "authentication_required" : "unsupported",
+          },
+        );
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("keeps navigation usable while a project request hangs and returns a timeout", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      harness.views[0]?.executeJavaScript.mockImplementation(() => {
+        entered.resolve();
+        return new Promise<unknown>(() => {});
+      });
+      const request = yield* Effect.forkChild(
+        manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      assert.deepEqual(yield* manager.exitBusinessOsMode, { _tag: "completed" });
+      yield* TestClock.adjust("30 seconds");
+      assert.deepEqual(yield* Fiber.join(request), { _tag: "failed", code: "timeout" });
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
+  });
+
+  it.effect("does not let stalled device or session requests lock the guest pool", () => {
+    const harness = makeGuestHarness();
+    const entered = Promise.withResolvers<void>();
+    let started = 0;
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      harness.views[0]?.executeJavaScript.mockImplementation(() => {
+        if (++started === 2) entered.resolve();
+        return new Promise<unknown>(() => {});
+      });
+      const devices = yield* Effect.forkChild(
+        manager.requestDeviceControl(descriptor.id, { action: "binding.list" }),
+      );
+      const sessions = yield* Effect.forkChild(
+        manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+      );
+      yield* Effect.promise(() => entered.promise);
+      assert.deepEqual(yield* manager.exitBusinessOsMode, { _tag: "completed" });
+      yield* TestClock.adjust("30 seconds");
+      assert.deepEqual(yield* Fiber.join(devices), { _tag: "failed", code: "guest_failed" });
+      assert.deepEqual(yield* Fiber.join(sessions), { _tag: "failed", code: "guest_failed" });
+    }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
+  });
+
+  it.effect("registers transfer sources, forwards valid events, and drops invalid payloads", () => {
+    const harness = makeGuestHarness();
+    const event = {
+      type: "workjet.session.transfer",
+      transferId: "transfer-1",
+      sessionId: "session-1",
+      state: "pause_requested",
+      fenceEpoch: 4,
+      sourceComputerId: "computer-1",
+      targetComputerId: "computer-2",
+      deadlineAtMs: 1_788_000_040_000,
+      updatedAtMs: 1_788_000_000_000,
+    } as const;
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      harness.views[0]?.executeJavaScript.mockImplementationOnce(async (expression: unknown) => {
+        const source = String(expression);
+        expect(source).toContain("globalThis.workjetSessionEvents");
+        expect(source).toContain('"computer-1"');
+        return { registered: 1, events: [event] };
+      });
+
+      assert.deepEqual(yield* manager.registerSessionTransferEvents(["computer-1"]), {
+        _tag: "completed",
+      });
+      harness.views[0]?.postSessionTransferEvent(event);
+      harness.views[0]?.postSessionTransferEvent({ ...event, extra: true });
+
+      const notifications = harness.sendAll.mock.calls
+        .filter(([channel]) => channel === CTOX_SESSION_TRANSFER_EVENT_CHANNEL)
+        .map(([, payload]) => payload);
+      expect(notifications).toEqual([
+        { instanceId: descriptor.id, event },
+        { instanceId: descriptor.id, event },
+      ]);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  it.effect("bounds and decodes session control on the selected warm renderer", () => {
+    const harness = makeGuestHarness();
+    const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
+
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        { _tag: "failed", code: "not_active" },
+      );
+      expect(harness.views).toHaveLength(0);
+
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, bounds);
+      yield* manager.exitBusinessOsMode;
+      harness.views[0]?.executeJavaScript.mockImplementationOnce(async (expression: unknown) => {
+        const source = String(expression);
+        expect(source).toContain("globalThis.workjetSessionControl");
+        expect(source).toContain('{"action":"session.list"}');
+        expect(source).not.toContain("fetch(");
+        return { status: "completed", result: { action: "session.list", sessions: [] } };
+      });
+
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        {
+          _tag: "completed",
+          response: { action: "session.list", sessions: [] },
+        },
+      );
+
+      harness.views[0]?.executeJavaScript.mockResolvedValueOnce({
+        status: "completed",
+        result: { action: "session.list", sessions: "invalid" },
+      });
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        { _tag: "failed", code: "guest_failed" },
+      );
+
+      harness.views[0]?.executeJavaScript.mockResolvedValueOnce({
+        status: "completed",
+        result: { action: "session.list", sessions: [], padding: "x".repeat(256 * 1_024) },
+      });
+      assert.deepEqual(
+        yield* manager.requestSessionControl(descriptor.id, { action: "session.list" }),
+        { _tag: "failed", code: "response_too_large" },
+      );
     }).pipe(Effect.provide(harness.layer));
   });
 
@@ -1680,6 +2158,48 @@ describe("CtoxGuestManager", () => {
   });
 
   it("allows shell/control resources but blocks Business OS HTTP data routes", () => {
+    for (const prefix of [
+      "",
+      "/business-os",
+      "/business-os/_shell/0.1.46-beta.42",
+      "/_shell/0.1.46-beta.42",
+    ]) {
+      for (const asset of [
+        "/app.js",
+        "/system-apps.json",
+        "/modules/registry.json",
+        "/shared/runtime.mjs",
+      ]) {
+        const url = `https://welsch.ctox.dev${prefix}${asset}?v=release`;
+        expect(
+          CtoxGuestManager.isForbiddenCtoxDataRequest(url, "fetch", "https://welsch.ctox.dev"),
+        ).toBe(false);
+        expect(
+          CtoxGuestManager.isForbiddenCtoxDataRequest(
+            url,
+            "fetch",
+            "https://welsch.ctox.dev",
+            "POST",
+          ),
+        ).toBe(true);
+      }
+      for (const path of [
+        "/api/business-os/records",
+        "/commands",
+        "/files",
+        "/rxdb/private",
+        "/app.js/records",
+        "/private.js",
+      ]) {
+        expect(
+          CtoxGuestManager.isForbiddenCtoxDataRequest(
+            `https://welsch.ctox.dev${prefix}${path}`,
+            "fetch",
+            "https://welsch.ctox.dev",
+          ),
+        ).toBe(true);
+      }
+    }
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/business-os/system-apps.json",
@@ -1708,6 +2228,23 @@ describe("CtoxGuestManager", () => {
         "https://ctox.dev",
       ),
     ).toBe(false);
+    for (const method of ["GET", "POST", "PUT", "DELETE"]) {
+      expect(
+        CtoxGuestManager.isForbiddenCtoxDataRequest(
+          "https://welsch.ctox.dev/api/business-os/ctox/maintenance",
+          "fetch",
+          "https://welsch.ctox.dev",
+          method,
+        ),
+      ).toBe(method !== "GET");
+    }
+    expect(
+      CtoxGuestManager.isForbiddenCtoxDataRequest(
+        "https://welsch.ctox.dev/api/business-os/ctox/maintenance/records",
+        "fetch",
+        "https://welsch.ctox.dev",
+      ),
+    ).toBe(true);
     expect(
       CtoxGuestManager.isForbiddenCtoxDataRequest(
         "https://ctox.dev/api/business-os/records",

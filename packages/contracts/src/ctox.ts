@@ -474,7 +474,14 @@ export type CtoxWorkjetDeviceControlInput = typeof CtoxWorkjetDeviceControlInput
 export const CtoxWorkjetDeviceControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: WorkjetDeviceWebRtcResponseV1 }),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "not_active", "unsupported", "guest_failed"]),
+    code: Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "unsupported",
+      "sync_unavailable",
+      "forbidden",
+      "guest_failed",
+    ]),
   }),
 ]);
 export type CtoxWorkjetDeviceControlResult = typeof CtoxWorkjetDeviceControlResult.Type;
@@ -488,6 +495,21 @@ const CtoxProjectText = (maximum: number) =>
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   Schema.Struct({ action: Schema.Literal("project.list") }),
+  Schema.Struct({
+    action: Schema.Literal("project.worker.add"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    workerProfileId: CtoxProjectText(256),
+    createdAt: IsoDateTime,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.chat.create"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    workerProfileId: CtoxProjectText(256),
+    title: CtoxProjectText(256),
+    createdAt: IsoDateTime,
+  }),
   Schema.Struct({
     action: Schema.Literal("project.create"),
     commandId: CommandId,
@@ -541,6 +563,13 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   Schema.Struct({ action: Schema.Literal("project.list"), projects: CtoxWorkjetProjectList }),
   Schema.Struct({
+    action: Schema.Literals(["project.worker.add", "project.chat.create"]),
+    commandId: CommandId,
+    projectId: ProjectId,
+    workerProfileId: CtoxProjectText(256),
+    chatId: CtoxProjectText(256).check(Schema.isPattern(/^workjet_private_.+/)),
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.create"),
     project: CtoxWorkjetProjectProjection,
   }),
@@ -550,10 +579,289 @@ export type CtoxWorkjetProjectControlResponse = typeof CtoxWorkjetProjectControl
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+    code: Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "launch_failed",
+      "authentication_required",
+      "unsupported",
+      "timeout",
+      "guest_failed",
+      "response_too_large",
+    ]),
   }),
 ]);
 export type CtoxWorkjetProjectControlResult = typeof CtoxWorkjetProjectControlResult.Type;
+
+const CtoxComputerId = CtoxProjectText(160);
+const CtoxComputerCapabilities = Schema.Array(CtoxProjectText(80)).check(Schema.isMaxLength(32));
+const CtoxComputerHostingMode = Schema.Literals(["workstation", "self_hosted"]);
+
+/** Computer membership is confirmed by the selected instance over RxDB/WebRTC. */
+export const CtoxWorkjetComputerControlRequest = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("computer.list") }),
+  Schema.Struct({
+    action: Schema.Literal("computer.assign"),
+    commandId: CommandId,
+    computerId: CtoxComputerId,
+    displayName: CtoxProjectText(256),
+    hostingMode: CtoxComputerHostingMode,
+    capabilities: CtoxComputerCapabilities,
+    selfHostedColocation: Schema.Literal(false),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.unassign"),
+    commandId: CommandId,
+    computerId: CtoxComputerId,
+  }),
+]);
+export type CtoxWorkjetComputerControlRequest = typeof CtoxWorkjetComputerControlRequest.Type;
+
+export const CtoxWorkjetComputerControlInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  request: CtoxWorkjetComputerControlRequest,
+});
+
+export const CtoxWorkjetComputerProjection = Schema.Struct({
+  id: CtoxComputerId,
+  displayName: CtoxProjectText(256),
+  hostingMode: CtoxComputerHostingMode,
+  status: Schema.Literals(["assigned", "unassigned"]),
+  capabilities: CtoxComputerCapabilities,
+  selfHostedColocation: Schema.Boolean,
+});
+export type CtoxWorkjetComputerProjection = typeof CtoxWorkjetComputerProjection.Type;
+
+export const CtoxWorkjetComputerControlResponse = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("computer.list"),
+    computers: Schema.Array(CtoxWorkjetComputerProjection).check(
+      Schema.isMaxLength(100),
+      Schema.makeFilter(
+        (computers) =>
+          computers.every((computer) => computer.status === "assigned") &&
+          new Set(computers.map((computer) => computer.id)).size === computers.length,
+      ),
+    ),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.assign"),
+    computer: CtoxWorkjetComputerProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.unassign"),
+    computer: CtoxWorkjetComputerProjection,
+  }),
+]);
+export type CtoxWorkjetComputerControlResponse = typeof CtoxWorkjetComputerControlResponse.Type;
+
+export const CtoxWorkjetComputerControlResult = Schema.Union([
+  Schema.TaggedStruct("completed", { response: CtoxWorkjetComputerControlResponse }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "authentication_required",
+      "unsupported",
+      "timeout",
+      "sync_unavailable",
+      "query_unsupported",
+      "command_failed",
+      "response_invalid",
+      "guest_failed",
+      "response_too_large",
+    ]),
+  }),
+]);
+export type CtoxWorkjetComputerControlResult = typeof CtoxWorkjetComputerControlResult.Type;
+
+const CtoxSessionId = CtoxProjectText(160);
+const CtoxSessionComputerId = CtoxProjectText(256);
+const CtoxSessionTransferText = CtoxProjectText(256);
+const CtoxSessionOutcomeText = Schema.String.check(
+  Schema.isMaxLength(512),
+  NoAsciiControlCharacters,
+);
+const MAX_WORKJET_TRANSFER_BYTES = 64 * 1_024;
+const encodeCtoxUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+export const CtoxWorkjetSessionTransferEvent = Schema.Struct({
+  type: Schema.Literal("workjet.session.transfer"),
+  transferId: CtoxSessionTransferText,
+  sessionId: CtoxSessionTransferText,
+  state: Schema.Literals([
+    "pause_requested",
+    "packing",
+    "packed",
+    "shipping",
+    "applying",
+    "applied",
+    "switching",
+    "resuming",
+    "completed",
+    "aborting",
+    "rolled_back",
+    "failed",
+  ]),
+  fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  sourceComputerId: CtoxSessionComputerId,
+  targetComputerId: CtoxSessionComputerId,
+  deadlineAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  updatedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type CtoxWorkjetSessionTransferEvent = typeof CtoxWorkjetSessionTransferEvent.Type;
+
+export const CtoxWorkjetSessionTransferNotification = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  event: CtoxWorkjetSessionTransferEvent,
+});
+export type CtoxWorkjetSessionTransferNotification =
+  typeof CtoxWorkjetSessionTransferNotification.Type;
+
+export const CtoxWorkjetSessionEventsRegistrationInput = Schema.Struct({
+  computerIds: Schema.Array(CtoxSessionComputerId).check(Schema.isMaxLength(1_000)),
+});
+export type CtoxWorkjetSessionEventsRegistrationInput =
+  typeof CtoxWorkjetSessionEventsRegistrationInput.Type;
+
+const CtoxWorkjetTransfer = Schema.Unknown.check(
+  Schema.makeFilter((transfer) => {
+    if (typeof transfer !== "object" || transfer === null || Array.isArray(transfer)) {
+      return "Transfer must be an object.";
+    }
+    try {
+      if (
+        new TextEncoder().encode(encodeCtoxUnknownJson(transfer)).byteLength >
+        MAX_WORKJET_TRANSFER_BYTES
+      ) {
+        return `Transfer must not exceed ${MAX_WORKJET_TRANSFER_BYTES} bytes.`;
+      }
+    } catch {
+      return "Transfer must be JSON serializable.";
+    }
+    return true;
+  }),
+);
+
+export const CtoxWorkjetSessionControlRequest = Schema.Union([
+  Schema.Struct({ action: Schema.Literal("session.list") }),
+  Schema.Struct({
+    action: Schema.Literal("session.create"),
+    commandId: CtoxSessionId,
+    sessionId: Schema.optionalKey(CtoxSessionId),
+    projectId: CtoxSessionId,
+    workingCopyId: CtoxSessionId,
+    threadId: Schema.optionalKey(CtoxSessionId),
+    codingSessionId: Schema.optionalKey(CtoxSessionId),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.start"),
+    commandId: CtoxSessionId,
+    sessionId: CtoxSessionId,
+    targetComputerId: CtoxSessionComputerId,
+    targetPath: CtoxProjectText(4_096),
+    idempotencyKey: CtoxSessionId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.status"),
+    commandId: CtoxSessionId,
+    transferId: Schema.optionalKey(CtoxSessionId),
+    sessionId: Schema.optionalKey(CtoxSessionId),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.abort"),
+    commandId: CtoxSessionId,
+    transferId: CtoxSessionId,
+    reason: CtoxSessionOutcomeText,
+    idempotencyKey: CtoxSessionId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.pause_ack"),
+    commandId: CtoxSessionId,
+    transferId: CtoxSessionId,
+    computerId: CtoxSessionComputerId,
+    fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    lastTerminalTurnId: Schema.NullOr(CtoxSessionId),
+    gitRepository: Schema.Boolean,
+    idempotencyKey: CtoxSessionId,
+  }),
+]);
+export type CtoxWorkjetSessionControlRequest = typeof CtoxWorkjetSessionControlRequest.Type;
+
+export const CtoxWorkjetSessionProjection = Schema.Struct({
+  id: CtoxSessionId,
+  projectId: CtoxSessionId,
+  workingCopyId: CtoxSessionId,
+  computerId: CtoxSessionComputerId,
+  threadId: Schema.NullOr(CtoxSessionId),
+  codingSessionId: Schema.NullOr(CtoxSessionId),
+  runStatus: Schema.Literals([
+    "running",
+    "pausing",
+    "paused",
+    "transferring",
+    "resuming",
+    "transfer_failed",
+  ]),
+  fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  activeTransferId: Schema.NullOr(CtoxSessionId),
+  updatedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type CtoxWorkjetSessionProjection = typeof CtoxWorkjetSessionProjection.Type;
+
+export const CtoxWorkjetTransferOutcome = Schema.Struct({
+  ok: Schema.Boolean,
+  transferId: Schema.optionalKey(CtoxSessionId),
+  state: Schema.optionalKey(CtoxSessionOutcomeText),
+  errorCode: Schema.optionalKey(CtoxSessionOutcomeText),
+  retryable: Schema.optionalKey(Schema.Boolean),
+  message: Schema.optionalKey(CtoxSessionOutcomeText),
+  session: Schema.optionalKey(CtoxWorkjetSessionProjection),
+  transfer: Schema.optionalKey(CtoxWorkjetTransfer),
+});
+export type CtoxWorkjetTransferOutcome = typeof CtoxWorkjetTransferOutcome.Type;
+
+export const CtoxWorkjetSessionControlResponse = Schema.Union([
+  Schema.Struct({
+    action: Schema.Literal("session.list"),
+    sessions: Schema.Array(CtoxWorkjetSessionProjection).check(Schema.isMaxLength(10_000)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.create"),
+    session: CtoxWorkjetSessionProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.start"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.status"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.abort"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("session.transfer.pause_ack"),
+    outcome: CtoxWorkjetTransferOutcome,
+  }),
+]);
+export type CtoxWorkjetSessionControlResponse = typeof CtoxWorkjetSessionControlResponse.Type;
+
+export const CtoxWorkjetSessionControlInput = Schema.Struct({
+  instanceId: CtoxManagedInstanceId,
+  request: CtoxWorkjetSessionControlRequest,
+});
+export type CtoxWorkjetSessionControlInput = typeof CtoxWorkjetSessionControlInput.Type;
+
+export const CtoxWorkjetSessionControlResult = Schema.Union([
+  Schema.TaggedStruct("completed", { response: CtoxWorkjetSessionControlResponse }),
+  Schema.TaggedStruct("failed", {
+    code: Schema.Literals(["invalid_input", "not_active", "guest_failed", "response_too_large"]),
+  }),
+]);
+export type CtoxWorkjetSessionControlResult = typeof CtoxWorkjetSessionControlResult.Type;
 
 /**
  * One user-visible Workjet device pairing. The environment bootstrap grants
@@ -825,7 +1133,7 @@ export type CtoxGuestStateEvent = typeof CtoxGuestStateEvent.Type;
 
 /**
  * A Business OS module surfaced in the sidebar as a directly selectable app —
- * the CTOX analog of a T3 chat session under its project. Docked apps are
+ * the CTOX analog of a Workjet chat session under its project. Docked apps are
  * user-pinned to the rail (taskbar model) and stay listed even while closed
  * or disconnected; undocked apps appear only while open in the guest.
  */

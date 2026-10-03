@@ -1,6 +1,6 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { selectWorkersForOrchestrator } from "@t3tools/client-runtime/state/worker-overview";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentId, ThreadId } from "@workjet/contracts";
+import { selectWorkersForOrchestrator } from "@workjet/client-runtime/state/worker-overview";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ReactElement } from "react";
 
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible";

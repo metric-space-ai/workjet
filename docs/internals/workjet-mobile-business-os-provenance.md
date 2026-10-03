@@ -9,7 +9,7 @@ without duplicating local data.
 
 The user-visible name is `Workjet`. `CTOX` names the backend/daemon only. New
 links use `workjet://` (or the matching development/preview variant). Existing
-`ctox-mobile*://`, `ctox-business-os-mobile://pair` and `t3code*://` inputs are
+`ctox-mobile*://`, `ctox-business-os-mobile://pair` and `workjet*://` inputs are
 accepted and normalized during the migration window.
 
 ## Donor provenance
@@ -74,14 +74,14 @@ selects an authenticated, unambiguous environment and creates a fresh
 request-bound proof for relay-managed DPoP connections; Mobile does not read or
 reimplement bearer, cookie or DPoP credentials.
 
-The Mobile registry uses the existing `t3code-client.db` identity and adds
+The Mobile registry uses the existing `workjet-client.db` identity and adds
 `business_os_instances` plus a singleton selection row. Room passwords and
 capability tokens are stored only under opaque, device-bound Expo SecureStore
 references. Re-pairing writes both new secrets and the registry row before old
 references are deleted. Forgetting an instance removes only its two references
 and its isolated WebView profile.
 
-The native shell host is present but cannot activate a production shell yet:
+The native shell host can activate a base shell embedded in the signed mobile binary:
 
 - iOS serves `workjet-business-os://<storage-uuid>/business-os/index.html`
   through `WKURLSchemeHandler` and a `WKWebsiteDataStore` created from that
@@ -105,7 +105,23 @@ The native shell host is present but cannot activate a production shell yet:
   row provides catch-up after reconnect; this bridge is not a replacement for
   a remote APNs/FCM push when the app is fully suspended or terminated.
 
-Activation remains fail-closed because the signed shell distribution endpoint
+At prebuild, Workjet verifies the same pinned CTOX release archive used by the
+desktop host, then derives `workjet.bundled-business-os-shell.v1` resources.
+The inventory records upstream provenance and every file's size and SHA-256;
+its digest identifies the pack. The native Workjet app catalog is included as
+`mobile-apps.json`, without native symbol names. Office is excluded. Native
+launcher icons remain platform symbols, so this bundled base does not claim to
+be the downloadable cross-platform PNG icon pack.
+
+Android reads the base directly from APK assets; iOS reads a CocoaPods resource
+bundle. Both are covered by native app signing. Only the native module resolves
+that resource root. No download, server-provided path or current/next Ed25519 key
+is used to activate these app resources. New base code ships in a new signed
+app binary. Per-instance WebView profiles and the WebRTC-only data boundary
+remain unchanged. The host remounts when storage identity changes, discarding
+pending secrets and events from the previous instance.
+
+Downloaded-pack activation remains fail-closed because the signed shell distribution endpoint
 is present but its production producer and bundled public-key trust map have not
 landed. Mobile resolves it through the shared DPoP-capable Environment command
 from Workjet commit `9df756456` and validates the
@@ -150,7 +166,7 @@ Backend.
   timestamp; no WebView screenshot, record or secret crosses the native
   boundary.
 - The per-instance layout, dock, folders and Recents live in the existing
-  `t3code-client.db` data identity. Forgetting an instance deletes this row in
+  `workjet-client.db` data identity. Forgetting an instance deletes this row in
   addition to its secrets and isolated WebView profile.
 - The versioned `workjet.business-os-shell.v1` bridge accepts only host
   configuration, catalog, app lifecycle, back, declared action and aggregate

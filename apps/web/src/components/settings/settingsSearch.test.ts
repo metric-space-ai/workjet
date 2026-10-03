@@ -41,8 +41,8 @@ describe("searchSettings", () => {
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
     // A sidebar label is findable even when no individual setting carries it.
     expect(searchSettings("connections", ITEMS)).toEqual([]);
-    expect(searchSettings("business os", ITEMS)).toEqual([
-      { id: "/settings/business-os", title: "Business OS", to: "/settings/business-os" },
+    expect(searchSettings("instanzen", ITEMS)).toEqual([
+      { id: "/settings/business-os", title: "Instanzen", to: "/settings/business-os" },
     ]);
     expect(searchSettings("claude", ITEMS)).toEqual([]);
   });

@@ -1,5 +1,5 @@
-import type { ConnectionCatalogEntry } from "@t3tools/client-runtime/connection";
-import type { ServerConfig } from "@t3tools/contracts";
+import type { ConnectionCatalogEntry } from "@workjet/client-runtime/connection";
+import type { ServerConfig } from "@workjet/contracts";
 import { useMemo } from "react";
 
 import { useBusinessOsScopedEnvironments, usePrimaryEnvironmentId } from "~/state/environments";

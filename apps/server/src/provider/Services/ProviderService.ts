@@ -19,11 +19,12 @@ import type {
   ProviderRuntimeEvent,
   ProviderSendTurnInput,
   ProviderSession,
+  ProviderSessionStopResult,
   ProviderSessionStartInput,
   ProviderStopSessionInput,
   ThreadId,
   ProviderTurnStartResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -77,7 +78,7 @@ export interface ProviderServiceShape {
    */
   readonly stopSession: (
     input: ProviderStopSessionInput,
-  ) => Effect.Effect<void, ProviderServiceError>;
+  ) => Effect.Effect<ProviderSessionStopResult | void, ProviderServiceError>;
 
   /**
    * List active provider sessions.
@@ -117,5 +118,5 @@ export interface ProviderServiceShape {
  * ProviderService - Service tag for provider orchestration.
  */
 export class ProviderService extends Context.Service<ProviderService, ProviderServiceShape>()(
-  "t3/provider/Services/ProviderService",
+  "workjet/provider/Services/ProviderService",
 ) {}

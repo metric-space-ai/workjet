@@ -4,8 +4,8 @@ import {
   issueRemoteWebSocketTicket,
   RemoteEnvironmentAuthUndeclaredStatusError,
   type RemoteEnvironmentAuthError,
-} from "@t3tools/client-runtime/authorization";
-import { fetchRemoteEnvironmentDescriptor } from "@t3tools/client-runtime/environment";
+} from "@workjet/client-runtime/authorization";
+import { fetchRemoteEnvironmentDescriptor } from "@workjet/client-runtime/environment";
 import {
   EnvironmentAuthInvalidError,
   DesktopDiscoveredSshHostSchema,
@@ -25,9 +25,9 @@ import {
   AuthAccessTokenResult,
   AuthSessionState,
   AuthWebSocketTicketResult,
-} from "@t3tools/contracts";
-import { SshHttpBridgeError } from "@t3tools/ssh/errors";
-import { resolveLoopbackSshHttpBaseUrl } from "@t3tools/ssh/tunnel";
+} from "@workjet/contracts";
+import { SshHttpBridgeError } from "@workjet/ssh/errors";
+import { resolveLoopbackSshHttpBaseUrl } from "@workjet/ssh/tunnel";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -141,11 +141,21 @@ export const ensureSshEnvironment = DesktopIpc.makeIpcMethod({
 
 export const disconnectSshEnvironment = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DISCONNECT_SSH_ENVIRONMENT_CHANNEL,
-  payload: DesktopSshEnvironmentTargetSchema,
+  payload: Schema.Union([
+    DesktopSshEnvironmentTargetSchema,
+    Schema.Struct({
+      target: DesktopSshEnvironmentTargetSchema,
+      releaseOnly: Schema.Literal(true),
+    }),
+  ]),
   result: Schema.Void,
-  handler: Effect.fn("desktop.ipc.sshEnvironment.disconnectEnvironment")(function* (target) {
+  handler: Effect.fn("desktop.ipc.sshEnvironment.disconnectEnvironment")(function* (input) {
     const sshEnvironment = yield* DesktopSshEnvironment.DesktopSshEnvironment;
-    yield* sshEnvironment.disconnectEnvironment(target);
+    if ("releaseOnly" in input) {
+      yield* sshEnvironment.releaseEnvironment(input.target);
+    } else {
+      yield* sshEnvironment.disconnectEnvironment(input);
+    }
   }),
 });
 

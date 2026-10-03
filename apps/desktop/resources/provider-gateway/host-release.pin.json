@@ -1,6 +1,70 @@
 {
   "schema": "workjet.provider-gateway-host.pin.v1",
   "component": "workjet-provider-gateway-host",
-  "status": "unreleased",
-  "unreleasedReason": "No provider-gateway-host-v* release has been published yet. Tag one with .github/workflows/provider-gateway-host-release.yml, then regenerate this file with 'node scripts/provider-gateway-host-artifacts.ts pin'. Until then the desktop uses the development local-build path and packaged builds refuse to start a pinned host."
+  "status": "pinned",
+  "release": {
+    "version": "0.1.1",
+    "releaseTag": "provider-gateway-host-v0.1.1",
+    "sourceCommit": "9b2c23c2d000c5f50715b3e0bb6ff9e4bf500dba",
+    "manifestFileName": "workjet-provider-gateway-host-0.1.1.manifest.json",
+    "manifestUrl": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1.manifest.json",
+    "manifestByteLength": 3174,
+    "manifestSha256": "8b1409f9efa1919fb30a06569d1b8a8727612de36f22355008cb2c8332b914b7",
+    "artifacts": [
+      {
+        "triple": "aarch64-apple-darwin",
+        "os": "darwin",
+        "arch": "arm64",
+        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-apple-darwin",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-apple-darwin",
+        "byteLength": 17667856,
+        "sha256": "5d07e61898d2e69d6bb1b2974f651d0062418f6d514891848b8c3185649d4c82"
+      },
+      {
+        "triple": "x86_64-apple-darwin",
+        "os": "darwin",
+        "arch": "x64",
+        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-apple-darwin",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-apple-darwin",
+        "byteLength": 19113240,
+        "sha256": "2c2583262e0ee0e185abf3f06f2a5792a334f107a3608359aca55194e7813790"
+      },
+      {
+        "triple": "x86_64-unknown-linux-gnu",
+        "os": "linux",
+        "arch": "x64",
+        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-unknown-linux-gnu",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-unknown-linux-gnu",
+        "byteLength": 20872496,
+        "sha256": "f31b07e4fd8768b1450f94a2d884f09c63fc88bfff2f9fd7c38d9f4fffe7efd9"
+      },
+      {
+        "triple": "aarch64-unknown-linux-gnu",
+        "os": "linux",
+        "arch": "arm64",
+        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-unknown-linux-gnu",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-unknown-linux-gnu",
+        "byteLength": 18622584,
+        "sha256": "887b7afc056dc6a4b2a5f10827f966c5d6cf5c3b5fcdfae28cfa046bf61f30a9"
+      },
+      {
+        "triple": "x86_64-pc-windows-msvc",
+        "os": "win32",
+        "arch": "x64",
+        "fileName": "workjet-provider-gateway-host-0.1.1-x86_64-pc-windows-msvc.exe",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-x86_64-pc-windows-msvc.exe",
+        "byteLength": 24647168,
+        "sha256": "3ea7a3a400d2a368ebd3e664ff55513317f7c293b489ed55975b3be74ed3af1f"
+      },
+      {
+        "triple": "aarch64-pc-windows-msvc",
+        "os": "win32",
+        "arch": "arm64",
+        "fileName": "workjet-provider-gateway-host-0.1.1-aarch64-pc-windows-msvc.exe",
+        "url": "https://github.com/metric-space-ai/workjet/releases/download/provider-gateway-host-v0.1.1/workjet-provider-gateway-host-0.1.1-aarch64-pc-windows-msvc.exe",
+        "byteLength": 21745664,
+        "sha256": "b12a103527465eb5134844e9bf4f934a22cd8f3dfcc15d89c2269c9106d3cc20"
+      }
+    ]
+  }
 }

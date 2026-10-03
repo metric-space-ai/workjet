@@ -18,11 +18,11 @@
  * `automatic` is deliberately also `null`: it means "do not force one", so
  * writing an explicit selection for it would be the opposite of what it says.
  */
-import type { ModelCapabilities, ProviderOptionSelection } from "@t3tools/contracts";
+import type { ModelCapabilities, ProviderOptionSelection } from "@workjet/contracts";
 import {
   buildProviderOptionSelectionsFromDescriptors,
   getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
+} from "@workjet/shared/model";
 
 export function workerReasoningSelections(input: {
   readonly caps: ModelCapabilities;

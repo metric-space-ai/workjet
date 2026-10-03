@@ -1,14 +1,14 @@
 included:
-  - ios/T3Code
-  - modules/t3-composer-editor/ios
-  - modules/t3-native-controls/ios
-  - modules/t3-terminal/ios
-  - modules/t3-review-diff/ios
+  - ios/Workjet
+  - modules/workjet-composer-editor/ios
+  - modules/workjet-native-controls/ios
+  - modules/workjet-terminal/ios
+  - modules/workjet-review-diff/ios
 
 excluded:
   - ios/Pods
   - ios/build
-  - modules/t3-terminal/Vendor
+  - modules/workjet-terminal/Vendor
 
 reporter: xcode
 

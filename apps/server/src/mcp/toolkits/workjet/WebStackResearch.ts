@@ -236,7 +236,7 @@ export interface WebStackResearchShape {
 }
 
 export class WebStackResearch extends Context.Service<WebStackResearch, WebStackResearchShape>()(
-  "t3/mcp/toolkits/workjet/WebStackResearch",
+  "workjet/mcp/toolkits/workjet/WebStackResearch",
 ) {}
 
 const failure = (reason: WebStackResearchFailureReason): WebStackResearchError =>

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { CtoxManagedInstance } from "@t3tools/contracts";
+import type { CtoxManagedInstance } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -65,7 +65,7 @@ export class CtoxElectronSessions extends Context.Service<
       descriptor: CtoxManagedInstance,
     ) => Effect.Effect<void, CtoxElectronSessionsError>;
   }
->()("@t3tools/desktop/ctox/CtoxElectronSessions") {}
+>()("@workjet/desktop/ctox/CtoxElectronSessions") {}
 
 function installPermissionPolicy(browserSession: Session, account: boolean): void {
   browserSession.setPermissionRequestHandler((_webContents, permission, callback) => {

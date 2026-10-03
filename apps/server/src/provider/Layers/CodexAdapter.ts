@@ -25,7 +25,7 @@ import {
   ProviderApprovalDecision,
   ThreadId,
   ProviderSendTurnInput,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
@@ -39,7 +39,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@workjet/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
@@ -53,6 +53,12 @@ import {
   type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
+import {
+  NO_PROCESS_STOP_RESULT,
+  type ProviderTrackedProcess,
+  terminateProviderProcesses,
+  trackedChildProcess,
+} from "../Services/ProviderAdapter.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import {
@@ -110,6 +116,7 @@ interface CodexAdapterSessionContext {
   readonly scope: Scope.Closeable;
   readonly runtime: CodexSessionRuntimeShape;
   readonly eventFiber: Fiber.Fiber<void, never>;
+  readonly processes: readonly ProviderTrackedProcess[];
   stopped: boolean;
 }
 
@@ -1671,6 +1678,20 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           });
         }
 
+        const crewBound =
+          input.workjetConfig?.schemaVersion === 2 &&
+          input.workjetConfig.ctoxCrewChat !== undefined;
+        if (
+          crewBound &&
+          input.resumeCursor !== undefined &&
+          !isCodexResumeCursorSchema(input.resumeCursor)
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue: "Crew recovery requires a valid Codex resume cursor.",
+          });
+        }
         const existing = sessions.get(input.threadId);
         if (existing && !existing.stopped) {
           yield* Effect.suspend(() => stopSessionInternal(existing));
@@ -1701,28 +1722,36 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
             : {}),
+          ...(crewBound && input.resumeCursor !== undefined
+            ? { resumePolicy: "require-existing" as const }
+            : {}),
           runtimeMode: input.runtimeMode,
           ...(input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }
             : {}),
           ...(serviceTier ? { serviceTier } : {}),
+          onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
           ...(mcpSession
             ? {
                 compiledManagedPrompt: mcpSession.compiledManagedPrompt,
                 environment: {
                   ...(sessionEnvironment ?? process.env),
-                  T3_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(/^Bearer\s+/, ""),
+                  WORKJET_MCP_BEARER_TOKEN: mcpSession.authorizationHeader.replace(
+                    /^Bearer\s+/,
+                    "",
+                  ),
                 },
                 appServerArgs: [
                   "-c",
-                  `mcp_servers.t3-code.url=${mcpSession.endpoint}`,
+                  `mcp_servers.workjet.url=${mcpSession.endpoint}`,
                   "-c",
-                  'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+                  'mcp_servers.workjet.bearer_token_env_var="WORKJET_MCP_BEARER_TOKEN"',
                 ],
               }
             : {}),
         };
         const sessionScope = yield* Scope.make("sequential");
+        const processes: Array<ProviderTrackedProcess> = [];
         let sessionScopeTransferred = false;
         yield* Effect.addFinalizer(() =>
           sessionScopeTransferred ? Effect.void : Scope.close(sessionScope, Exit.void),
@@ -1784,6 +1813,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           scope: sessionScope,
           runtime,
           eventFiber,
+          processes,
           stopped: false,
         });
         sessionScopeTransferred = true;
@@ -1953,22 +1983,27 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     session: CodexAdapterSessionContext,
   ) {
     if (session.stopped) {
-      return;
+      return NO_PROCESS_STOP_RESULT;
     }
     session.stopped = true;
     sessions.delete(session.threadId);
-    yield* session.runtime.close.pipe(Effect.ignore);
-    yield* Effect.ignore(Scope.close(session.scope, Exit.void));
-    yield* Fiber.interrupt(session.eventFiber).pipe(Effect.ignore);
+    return yield* terminateProviderProcesses({
+      processes: session.processes,
+      cooperative: session.runtime.close.pipe(
+        Effect.ignore,
+        Effect.andThen(Effect.ignore(Scope.close(session.scope, Exit.void))),
+        Effect.andThen(Fiber.interrupt(session.eventFiber).pipe(Effect.ignore)),
+      ),
+    });
   });
 
   const stopSession: CodexAdapterShape["stopSession"] = (threadId) =>
     Effect.gen(function* () {
       const session = sessions.get(threadId);
       if (!session) {
-        return;
+        return NO_PROCESS_STOP_RESULT;
       }
-      yield* stopSessionInternal(session);
+      return yield* stopSessionInternal(session);
     });
 
   const listSessions: CodexAdapterShape["listSessions"] = () =>

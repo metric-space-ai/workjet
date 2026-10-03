@@ -11,7 +11,7 @@ import {
   type ToolLifecycleItemType,
   TurnId,
   type UserInputQuestion,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -25,7 +25,7 @@ import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import type { OpencodeClient, Part, PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@workjet/shared/model";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -40,6 +40,7 @@ import {
   type ProviderGatewayRoutingError,
 } from "../Errors.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
+import { terminateProviderProcesses } from "../Services/ProviderAdapter.ts";
 import {
   buildOpenCodePermissionRules,
   OpenCodeRuntime,
@@ -252,6 +253,7 @@ interface OpenCodeSessionContext {
   readonly managedPromptFingerprint: string | undefined;
   appliedManagedPromptFingerprint: string | undefined;
   managedPromptInjectionInFlight: boolean;
+  managedPromptEpoch: number;
   readonly pendingPermissions: Map<string, PermissionRequest>;
   readonly pendingQuestions: Map<string, QuestionRequest>;
   readonly messageRoleById: Map<string, "user" | "assistant">;
@@ -282,8 +284,9 @@ interface OpenCodeSessionContext {
 function applyManagedPromptFingerprint(
   context: OpenCodeSessionContext,
   managedPromptFingerprint: string | undefined,
+  epoch: number,
 ): void {
-  if (managedPromptFingerprint === undefined) return;
+  if (managedPromptFingerprint === undefined || context.managedPromptEpoch !== epoch) return;
   context.appliedManagedPromptFingerprint = managedPromptFingerprint;
   context.managedPromptInjectionInFlight = false;
   context.session = {
@@ -295,8 +298,10 @@ function applyManagedPromptFingerprint(
 function releaseManagedPromptInjection(
   context: OpenCodeSessionContext,
   managedPromptFingerprint: string | undefined,
+  epoch: number,
 ): void {
   if (
+    context.managedPromptEpoch === epoch &&
     managedPromptFingerprint !== undefined &&
     context.appliedManagedPromptFingerprint !== managedPromptFingerprint
   ) {
@@ -889,6 +894,15 @@ export function makeOpenCodeAdapter(
       });
 
       switch (event.type) {
+        case "session.compacted": {
+          context.managedPromptEpoch += 1;
+          context.appliedManagedPromptFingerprint = undefined;
+          context.managedPromptInjectionInFlight = false;
+          yield* updateProviderSession(context, {
+            resumeCursor: makeOpenCodeResumeCursor(context.openCodeSessionId),
+          });
+          break;
+        }
         case "session.updated": {
           const title = openCodeEventSessionTitle(event);
           if (title) {
@@ -1324,7 +1338,7 @@ export function makeOpenCodeAdapter(
               if (mcpSession && !server.external) {
                 yield* runOpenCodeSdk("mcp.add", () =>
                   client.mcp.add({
-                    name: "t3-code",
+                    name: "workjet",
                     config: {
                       type: "remote",
                       url: mcpSession.endpoint,
@@ -1473,7 +1487,7 @@ export function makeOpenCodeAdapter(
           // restart), so follow-ups continue the same conversation (#3604).
           resumeCursor: makeOpenCodeResumeCursor(
             started.openCodeSession.id,
-            started.preservedHistory ? resumeCursor?.managedPromptFingerprint : undefined,
+            // An offline compaction may have invalidated the saved fingerprint.
           ),
           createdAt,
           updatedAt: createdAt,
@@ -1487,10 +1501,9 @@ export function makeOpenCodeAdapter(
           openCodeSessionId: started.openCodeSession.id,
           managedPrompt,
           managedPromptFingerprint,
-          appliedManagedPromptFingerprint: started.preservedHistory
-            ? resumeCursor?.managedPromptFingerprint
-            : undefined,
+          appliedManagedPromptFingerprint: undefined,
           managedPromptInjectionInFlight: false,
+          managedPromptEpoch: 0,
           pendingPermissions: new Map(),
           pendingQuestions: new Map(),
           partById: new Map(),
@@ -1571,6 +1584,7 @@ export function makeOpenCodeAdapter(
         });
       }
 
+      const managedPromptEpoch = context.managedPromptEpoch;
       const managedPromptFingerprintToApply =
         context.managedPrompt !== undefined &&
         context.managedPromptFingerprint !== undefined &&
@@ -1627,12 +1641,20 @@ export function makeOpenCodeAdapter(
         Effect.mapError(toRequestError),
         Effect.tap(() =>
           Effect.sync(() =>
-            applyManagedPromptFingerprint(context, managedPromptFingerprintToApply),
+            applyManagedPromptFingerprint(
+              context,
+              managedPromptFingerprintToApply,
+              managedPromptEpoch,
+            ),
           ),
         ),
         Effect.ensuring(
           Effect.sync(() =>
-            releaseManagedPromptInjection(context, managedPromptFingerprintToApply),
+            releaseManagedPromptInjection(
+              context,
+              managedPromptFingerprintToApply,
+              managedPromptEpoch,
+            ),
           ),
         ),
         // On failure of a fresh turn: clear active-turn state, flip the
@@ -1752,19 +1774,25 @@ export function makeOpenCodeAdapter(
             threadId,
           });
         }
-        const stopped = yield* stopOpenCodeContext(context);
-        sessions.delete(threadId);
-        if (!stopped) {
-          return;
-        }
-        yield* emit({
-          ...(yield* buildEventBase({ threadId })),
-          type: "session.exited",
-          payload: {
-            reason: "Session stopped.",
-            recoverable: false,
-            exitKind: "graceful",
-          },
+        // OpenCodeRuntime, not this adapter, owns a local server process inside
+        // sessionScope; external server URLs are API-only and have no local pid.
+        // Scope.close does not return until its bounded process-tree finalizer ran.
+        return yield* terminateProviderProcesses({
+          processes: [],
+          cooperative: Effect.gen(function* () {
+            const stopped = yield* stopOpenCodeContext(context);
+            sessions.delete(threadId);
+            if (!stopped) return;
+            yield* emit({
+              ...(yield* buildEventBase({ threadId })),
+              type: "session.exited",
+              payload: {
+                reason: "Session stopped.",
+                recoverable: false,
+                exitKind: "graceful",
+              },
+            });
+          }),
         });
       },
     );

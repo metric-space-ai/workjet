@@ -14,8 +14,8 @@ import {
   type CtoxShellFleetPauseInput,
   type CtoxShellFleetRow,
   type CtoxShellFleetRolloutResult,
-} from "@t3tools/contracts";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@workjet/contracts";
+import { HostProcessArchitecture, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -129,7 +129,7 @@ export class CtoxShellFleet extends Context.Service<
       listener: (status: CtoxShellFleetRolloutStatus) => void,
     ) => Effect.Effect<() => void>;
   }
->()("@t3tools/desktop/ctox/CtoxShellFleet") {}
+>()("@workjet/desktop/ctox/CtoxShellFleet") {}
 
 function blockedStatus(administrable: boolean): BusinessOsShellUpdateStatus {
   return {

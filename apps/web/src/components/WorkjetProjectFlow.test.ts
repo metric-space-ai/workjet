@@ -26,13 +26,27 @@ describe("CTOX-native project story", () => {
     const creation = commandPaletteSource.slice(start, end);
 
     expect(creation).toContain("await createProject");
-    expect(creation).toContain("unscopedProjects.filter");
+    expect(creation).toContain(".get(environmentProjects.projectsAtom)");
+    expect(creation).toContain(".filter((project) => project.environmentId === environmentId)");
+    expect(creation).not.toContain("unscopedProjects.filter");
+    expect(creation.indexOf("await listWorkjetProjects")).toBeLessThan(
+      creation.indexOf("await createProject"),
+    );
     expect(creation.indexOf("await createProject")).toBeLessThan(
       creation.indexOf("await runWorkjetProjectCreation"),
     );
-    expect(creation).toContain("...(workingCopyComputer");
-    expect(creation).toContain("confirmedRegistry.projects.find");
-    expect(creation).toContain("if (confirmedProject === undefined)");
+    expect(creation).toContain("resolveLocalWorkjetWorkingCopy({");
+    expect(creation).toContain("resolvedComputer,");
+    expect(creation).toContain("localEnvironmentId: primaryEnvironmentId");
+    expect(creation).toContain("path: cwd");
+    expect(creation).toContain("workingCopy: localWorkingCopy");
+    expect(creation).toContain('title: "No local computer registered"');
+    expect(creation).toContain("const confirmedProject = outcome.project");
+    expect(creation).toContain('if (outcome._tag === "failed")');
+    expect(creation.indexOf('if (outcome._tag === "failed")')).toBeLessThan(
+      creation.indexOf("const confirmedProject = outcome.project"),
+    );
+    expect(creation).not.toContain("confirmedRegistry.projects.find");
     expect(creation).toContain("recordWorkjetProjectProjection");
     expect(creation).toContain("readWorkjetProjectRegistry(presentationInstanceId).projects.some");
     expect(creation.indexOf("setOpen(false)")).toBeGreaterThan(
@@ -50,7 +64,7 @@ describe("CTOX-native project story", () => {
     expect(commandPaletteSource).toContain(
       "void createLogicalProjectFromPath(resolvedAddProjectPath)",
     );
-    expect(commandPaletteSource).toContain("Adding the local project and syncing it with CTOX…");
+    expect(commandPaletteSource).toContain("ProjectCreationProgress stage={projectCreationStage}");
     expect(commandPaletteSource).toContain('aria-live="polite"');
   });
 
@@ -58,7 +72,7 @@ describe("CTOX-native project story", () => {
     expect(commandPaletteResultsSource).toContain("data-workjet-action={props.item.value}");
     expect(sidebarSource).toContain('data-workjet-action="project.add.sidebar"');
     expect(chatIndexSource).toContain('data-workjet-action="project.add.hero"');
-    expect(sidebarSource).toContain("useWorkjetProjectRegistry(activeCtoxInstanceId)");
+    expect(sidebarSource).toContain("useAvailableProjectContext()");
     expect(sidebarSource).toContain("project.title");
     expect(chatIndexSource).toContain('data-workjet-project-state="ready"');
     expect(chatIndexSource).toContain("Project synced with this CTOX instance");

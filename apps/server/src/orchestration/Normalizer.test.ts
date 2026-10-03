@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@t3tools/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   CommandId,
@@ -7,7 +7,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import { canonicalizeClientCommandTimestamps } from "./Normalizer.ts";
 

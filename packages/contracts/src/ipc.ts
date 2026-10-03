@@ -112,6 +112,11 @@ import type {
   CtoxWorkjetDeviceControlResult,
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
+  CtoxWorkjetComputerControlRequest,
+  CtoxWorkjetComputerControlResult,
+  CtoxWorkjetSessionControlRequest,
+  CtoxWorkjetSessionControlResult,
+  CtoxWorkjetSessionTransferNotification,
   CtoxPairedInstanceImportResult,
   CtoxPairedInstanceRemoveResult,
   CtoxSshManagedInstanceAddInput,
@@ -135,6 +140,7 @@ import type {
 } from "./sourceControl.ts";
 import type {
   WorkjetProvisioningGetResult,
+  WorkjetProvisioningListResult,
   WorkjetProvisioningPreflightInput,
   WorkjetProvisioningPreflightResult,
   WorkjetProvisioningStartInput,
@@ -339,6 +345,18 @@ export const DesktopSshEnvironmentTargetSchema = Schema.Struct({
 export type DesktopSshEnvironmentTarget = typeof DesktopSshEnvironmentTargetSchema.Type;
 
 export type DesktopSshHostSource = "ssh-config" | "known-hosts";
+export const DesktopTailscalePeersSchema = Schema.Struct({
+  status: Schema.Literals(["available", "unavailable"]),
+  peers: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+      hostname: Schema.String,
+      online: Schema.Boolean,
+    }),
+  ),
+});
+export type DesktopTailscalePeers = typeof DesktopTailscalePeersSchema.Type;
 export const DesktopSshHostSourceSchema = Schema.Literals(["ssh-config", "known-hosts"]);
 
 export interface DesktopDiscoveredSshHost extends DesktopSshEnvironmentTarget {
@@ -521,6 +539,8 @@ export interface DesktopUserDataMigrationOffer {
   targetPath: string;
   /** Top-level entries the import would copy. Caches are never copied. */
   entries: readonly string[];
+  /** The previous copy failed and can be retried. */
+  previousAttemptFailed?: boolean;
 }
 
 /**
@@ -702,7 +722,7 @@ export const DesktopPreviewPointerEventSchema: Schema.Codec<DesktopPreviewPointe
  * can attach.
  */
 export interface DesktopPreviewWebviewConfig {
-  /** `persist:t3code-preview` (or whatever the desktop chose). */
+  /** `persist:workjet-preview` (or whatever the desktop chose). */
   partition: string;
   /**
    * Canonical `<webview webpreferences="...">` string. Encodes the security
@@ -1105,12 +1125,17 @@ export interface DesktopBridge {
   getConnectionCatalog?: () => Promise<string | null>;
   setConnectionCatalog?: (catalog: string) => Promise<boolean>;
   clearConnectionCatalog?: () => Promise<void>;
+  recoverConnectionCatalog?: () => Promise<string | null>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
+  discoverTailscalePeers: () => Promise<DesktopTailscalePeers>;
   ensureSshEnvironment: (
     target: DesktopSshEnvironmentTarget,
     options?: { issuePairingToken?: boolean },
   ) => Promise<DesktopSshEnvironmentBootstrap>;
-  disconnectSshEnvironment: (target: DesktopSshEnvironmentTarget) => Promise<void>;
+  disconnectSshEnvironment: (
+    target: DesktopSshEnvironmentTarget,
+    options?: { releaseOnly?: boolean },
+  ) => Promise<void>;
   fetchSshEnvironmentDescriptor: (httpBaseUrl: string) => Promise<ExecutionEnvironmentDescriptor>;
   bootstrapSshBearerSession: (
     httpBaseUrl: string,
@@ -1197,6 +1222,7 @@ export interface DesktopBridge {
     input: WorkjetProvisioningStartInput,
   ) => Promise<WorkjetProvisioningStartResult>;
   getProvisioningOperation?: (operationId: string) => Promise<WorkjetProvisioningGetResult>;
+  listProvisioningOperations?: () => Promise<WorkjetProvisioningListResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
@@ -1228,11 +1254,28 @@ export interface DesktopCtoxBridge {
     instanceId: string,
     request: WorkjetDeviceWebRtcRequestV1,
   ) => Promise<CtoxWorkjetDeviceControlResult>;
-  /** Project data/control through the exact selected CTOX RxDB/WebRTC guest. */
+  /** Computer and project control through the exact selected CTOX RxDB/WebRTC guest. */
+  requestComputerControl?: (
+    instanceId: string,
+    request: CtoxWorkjetComputerControlRequest,
+  ) => Promise<CtoxWorkjetComputerControlResult>;
   requestProjectControl?: (
     instanceId: string,
     request: CtoxWorkjetProjectControlRequest,
   ) => Promise<CtoxWorkjetProjectControlResult>;
+  /** Session data/control through the exact selected CTOX RxDB/WebRTC peer. */
+  requestSessionControl?: (
+    instanceId: string,
+    request: CtoxWorkjetSessionControlRequest,
+  ) => Promise<CtoxWorkjetSessionControlResult>;
+  /** Register local computer ids with every warm Business OS renderer. */
+  registerSessionTransferEvents?: (
+    computerIds: readonly string[],
+  ) => Promise<CtoxManagedActionResult>;
+  /** Subscribe to validated transfer notifications from Business OS renderers. */
+  onSessionTransferEvent?: (
+    listener: (notification: CtoxWorkjetSessionTransferNotification) => void,
+  ) => () => void;
   /** Configure one SSH-managed CTOX instance; carries no credential. */
   addSshManagedInstance: (
     input: CtoxSshManagedInstanceAddInput,

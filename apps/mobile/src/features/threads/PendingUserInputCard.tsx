@@ -1,4 +1,4 @@
-import type { ApprovalRequestId, UserInputQuestion } from "@t3tools/contracts";
+import type { ApprovalRequestId, UserInputQuestion } from "@workjet/contracts";
 import { useCallback, useRef } from "react";
 import { Platform, Pressable, ScrollView, View, type LayoutChangeEvent } from "react-native";
 import Animated, {
@@ -173,7 +173,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         onPress={props.onToggleCollapsed}
         className="min-h-10 flex-1 flex-row items-center gap-2 active:opacity-70"
       >
-        <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-sky-700 dark:text-sky-300">
+        <Text className="font-workjet-bold text-2xs uppercase tracking-[1.1px] text-sky-700 dark:text-sky-300">
           User input needed
         </Text>
         <Text className="font-sans text-xs text-neutral-500 dark:text-neutral-400">
@@ -227,10 +227,10 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         className="flex-row items-start gap-2"
       >
         <View className="flex-1 gap-2.5">
-          <Text className="font-t3-bold text-2xs uppercase tracking-[1.1px] text-sky-700 dark:text-sky-300">
+          <Text className="font-workjet-bold text-2xs uppercase tracking-[1.1px] text-sky-700 dark:text-sky-300">
             User input needed
           </Text>
-          <Text className="font-t3-bold text-lg text-neutral-950 dark:text-neutral-50">
+          <Text className="font-workjet-bold text-lg text-neutral-950 dark:text-neutral-50">
             Fill in the pending answers
           </Text>
         </View>
@@ -251,7 +251,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
           const draft = props.drafts[question.id];
           return (
             <View key={question.id} className="gap-2 pt-1">
-              <Text className="font-t3-bold text-xs uppercase tracking-[1px] text-neutral-500 dark:text-neutral-500">
+              <Text className="font-workjet-bold text-xs uppercase tracking-[1px] text-neutral-500 dark:text-neutral-500">
                 {question.header}
               </Text>
               <Text className="font-sans text-base leading-snug text-neutral-950 dark:text-neutral-50">
@@ -279,7 +279,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                     >
                       <Text
                         className={cn(
-                          "font-t3-bold text-sm",
+                          "font-workjet-bold text-sm",
                           selected
                             ? "text-sky-700 dark:text-sky-300"
                             : "text-neutral-600 dark:text-neutral-300",
@@ -315,7 +315,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
         }
         onPress={() => void props.onSubmit()}
       >
-        <Text className="font-t3-extrabold text-sm text-white">Submit answers</Text>
+        <Text className="font-workjet-extrabold text-sm text-white">Submit answers</Text>
       </Pressable>
     </Animated.View>
   ) : null;

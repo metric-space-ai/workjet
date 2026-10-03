@@ -9,13 +9,13 @@ import {
   type TurnId,
   type WorkjetBusinessOsObjectId,
   type WorkjetBusinessOsObjectKind,
-} from "@t3tools/contracts";
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@workjet/contracts";
+import { parseScopedThreadKey } from "@workjet/client-runtime/environment";
+import type { AgentPanelModel } from "@workjet/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
   formatSubagentTokenCount,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+} from "@workjet/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
@@ -25,7 +25,7 @@ const EMPTY_WORKJET_REASSIGN_THREADS: ReadonlyArray<{
   readonly threadId: string;
   readonly title: string;
 }> = [];
-import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
+import { resolveChatListAnchoredEndSpace } from "@workjet/shared/chatList";
 import {
   createContext,
   Fragment,
@@ -115,7 +115,7 @@ import {
 } from "~/lib/previewAnnotation";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { type TimestampFormat } from "@workjet/contracts/settings";
 import { formatChatTimestampTooltip, formatShortTimestamp } from "../../timestampFormat";
 
 import {

@@ -5,7 +5,7 @@ import {
   readManagedBusinessOsDeviceSessionMembership,
   redeemManagedWorkjetDeviceInviteReference,
   toManagedWorkjetDeviceSessionAuthorization,
-} from "@t3tools/client-runtime/state/business-os-managed-backend-control";
+} from "@workjet/client-runtime/state/business-os-managed-backend-control";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { useAtomSet } from "@effect/atom-react";

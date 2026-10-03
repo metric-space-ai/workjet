@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId, WorkjetThreadConfig } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId, WorkjetThreadConfig } from "@workjet/contracts";
 
 /**
  * Minimal structural shape the worker-overview grouping needs from a thread.

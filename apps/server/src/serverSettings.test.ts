@@ -5,8 +5,8 @@ import {
   ProviderInstanceId,
   ServerSettings,
   ServerSettingsPatch,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@workjet/contracts";
+import { createModelSelection } from "@workjet/shared/model";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
@@ -30,7 +30,7 @@ const makeServerSettingsLayer = () =>
     Layer.provideMerge(
       Layer.fresh(
         ServerConfig.layerTest(process.cwd(), {
-          prefix: "t3code-server-settings-test-",
+          prefix: "workjet-server-settings-test-",
         }),
       ),
     ),
@@ -63,7 +63,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     });
     const configLayer = Layer.fresh(
       ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3code-server-settings-secret-failure-test-",
+        prefix: "workjet-server-settings-secret-failure-test-",
       }),
     );
     const settingsLayer = ServerSettingsModule.layer.pipe(
@@ -704,7 +704,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         // Canonicalize so expectations survive macOS's /var -> /private/var symlink.
         const container = yield* fileSystem.realPath(
           yield* fileSystem.makeTempDirectoryScoped({
-            prefix: "t3code-server-settings-worktrees-",
+            prefix: "workjet-server-settings-worktrees-",
           }),
         );
         const target = path.join(container, "target");

@@ -557,7 +557,7 @@ pub fn mime_type_for_extension(extension: &str) -> Option<&'static str> {
         "srt" => Some("application/x-subrip"),
         "sv4cpio" => Some("application/x-sv4cpio"),
         "sv4crc" => Some("application/x-sv4crc"),
-        "t3" => Some("application/x-t3vm-image"),
+        "workjet" => Some("application/x-t3vm-image"),
         "gam" => Some("application/x-tads"),
         "tar" => Some("application/x-tar"),
         "tcl" => Some("application/x-tcl"),

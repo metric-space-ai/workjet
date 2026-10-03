@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { ModelCapabilities } from "@t3tools/contracts";
-import { createModelCapabilities } from "@t3tools/shared/model";
+import type { ModelCapabilities } from "@workjet/contracts";
+import { createModelCapabilities } from "@workjet/shared/model";
 import { describe, expect, it } from "vite-plus/test";
 
 import { workerReasoningSelections } from "./workerReasoning";

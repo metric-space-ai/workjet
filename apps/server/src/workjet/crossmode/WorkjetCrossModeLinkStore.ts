@@ -5,7 +5,7 @@ import {
   WorkjetCrossModeLinkId,
   type WorkjetCrossModeCtoxRef,
   type WorkjetCrossModeTimestamp,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -33,7 +33,7 @@ import { PersistenceSqlError } from "../../persistence/Errors.ts";
  * 2. One Code thread carries at most one backlink, so "which object does this
  *    thread implement" always has exactly one answer.
  *
- * Every stored value is encoded and decoded through the `@t3tools/contracts`
+ * Every stored value is encoded and decoded through the `@workjet/contracts`
  * `WorkjetCrossModeLink` schema; there is no hand-rolled JSON shape in this
  * file, and a row that stops decoding surfaces as a typed corrupt-row failure
  * rather than a crash — the same discipline `WorkjetMailboxStore` applies.
@@ -168,7 +168,7 @@ export interface WorkjetCrossModeLinkStoreShape {
 export class WorkjetCrossModeLinkStore extends Context.Service<
   WorkjetCrossModeLinkStore,
   WorkjetCrossModeLinkStoreShape
->()("t3/workjet/crossmode/WorkjetCrossModeLinkStore") {}
+>()("workjet/workjet/crossmode/WorkjetCrossModeLinkStore") {}
 
 const sqlFailure = (operation: string) => (cause: unknown) =>
   new PersistenceSqlError({ operation, cause });

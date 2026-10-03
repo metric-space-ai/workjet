@@ -14,7 +14,7 @@ import {
   type WorkjetGatewayProvider,
   type WorkjetGatewayRoutingStrategy,
   type WorkjetGatewayRouteSummary,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export const GATEWAY_SECRET_SCOPE = "workjet-provider-gateway";
 export const MANAGEMENT_SECRET_NAME = "management";

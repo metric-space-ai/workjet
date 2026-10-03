@@ -3,8 +3,19 @@ import {
   scopedProjectKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
-import { DEFAULT_RUNTIME_MODE, type ScopedProjectRef, type ThreadId } from "@t3tools/contracts";
+} from "@workjet/client-runtime/environment";
+import {
+  squashAtomCommandFailure,
+  type AtomCommand,
+  type AtomCommandResult,
+} from "@workjet/client-runtime/state/runtime";
+import type { EnvironmentProject } from "@workjet/client-runtime/state/shell";
+import {
+  DEFAULT_RUNTIME_MODE,
+  type ProjectId,
+  type ScopedProjectRef,
+  type ThreadId,
+} from "@workjet/contracts";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 import {
@@ -15,20 +26,29 @@ import {
   type DraftThreadState,
   useComposerDraftStore,
 } from "../composerDraftStore";
-import { newDraftId, newThreadId } from "../lib/utils";
+import { newDraftId, newProjectId, newThreadId } from "../lib/utils";
 import { orderItemsByPreferredIds } from "../components/Sidebar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
+import { resolveDefaultThreadEnvMode } from "@workjet/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThread } from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
-import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
+import { readWorkjetProjectFileDefaultThreadEnvMode } from "../lib/workjetProjectFileDefaults";
 import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import {
+  availableProjectRef,
+  findEnvironmentProjectByPath,
+  useAvailableProjects,
+  type AvailableProject,
+} from "../availableProjects";
+import { projectEnvironment } from "../state/projects";
+import { useAtomCommand } from "../state/use-atom-command";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useClientSettings } from "./useSettings";
 
 interface NewThreadWorkspaceOptions {
@@ -50,8 +70,95 @@ function pickExplicitWorkspaceOptions(options: NewThreadWorkspaceOptions | undef
   };
 }
 
+function isAvailableProjectTarget(
+  project: ScopedProjectRef | AvailableProject,
+): project is AvailableProject {
+  return "kind" in project;
+}
+
+type AtomCommandRunner<T> =
+  T extends AtomCommand<infer W, infer A, infer E>
+    ? (value: W) => Promise<AtomCommandResult<A, E>>
+    : never;
+type ProjectCreateRunner = AtomCommandRunner<typeof projectEnvironment.create>;
+type ProjectCreateValue = Parameters<ProjectCreateRunner>[0];
+type ProjectCreateResult = Awaited<ReturnType<ProjectCreateRunner>>;
+type ProjectCreateFailure = Extract<ProjectCreateResult, { readonly _tag: "Failure" }>;
+
+export async function resolveNewThreadProjectTarget(input: {
+  readonly project: ScopedProjectRef | AvailableProject;
+  readonly availableProjects: readonly AvailableProject[];
+  readonly projects: readonly EnvironmentProject[];
+  readonly createProject: (value: ProjectCreateValue) => Promise<ProjectCreateResult>;
+  readonly createProjectId: () => ProjectId;
+  readonly reportProjectCreateFailure: (failure: ProjectCreateFailure) => void;
+}): Promise<{
+  readonly projectRef: ScopedProjectRef;
+  readonly workspaceOptions: NewThreadWorkspaceOptions;
+} | null> {
+  let explicitProject: AvailableProject | null;
+  let projectRef: ScopedProjectRef;
+  if (isAvailableProjectTarget(input.project)) {
+    explicitProject = input.project;
+    projectRef = availableProjectRef(input.project);
+  } else {
+    explicitProject = null;
+    projectRef = input.project;
+  }
+  const availableProject =
+    explicitProject ??
+    input.availableProjects.find(
+      (candidate) =>
+        candidate.id === projectRef.projectId &&
+        candidate.environmentId === projectRef.environmentId,
+    ) ??
+    null;
+
+  if (availableProject?.kind !== "workjet") {
+    return { projectRef, workspaceOptions: {} };
+  }
+
+  const workspaceOptions = {
+    worktreePath: availableProject.path,
+    envMode: "local" as const,
+  };
+  const existingProject = findEnvironmentProjectByPath({
+    projects: input.projects,
+    environmentId: availableProject.environmentId,
+    path: availableProject.path,
+  });
+  if (existingProject !== undefined) {
+    return {
+      projectRef: scopeProjectRef(existingProject.environmentId, existingProject.id),
+      workspaceOptions,
+    };
+  }
+
+  const serverProjectId = input.createProjectId();
+  const createResult = await input.createProject({
+    environmentId: availableProject.environmentId,
+    input: {
+      projectId: serverProjectId,
+      title: availableProject.title,
+      workspaceRoot: availableProject.path,
+      createWorkspaceRootIfMissing: true,
+    },
+  });
+  if (createResult._tag === "Failure") {
+    input.reportProjectCreateFailure(createResult);
+    return null;
+  }
+
+  return {
+    projectRef: scopeProjectRef(availableProject.environmentId, serverProjectId),
+    workspaceOptions,
+  };
+}
+
 export function useNewThreadHandler() {
   const projects = useProjects();
+  const availableProjects = useAvailableProjects();
+  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   // New-thread defaults are a user preference, and the settings UI only ever
   // edits the primary environment's settings.json. Reading the target
   // environment's own settings here would silently reset remote projects to
@@ -66,9 +173,9 @@ export function useNewThreadHandler() {
   }, [router]);
 
   return useCallback(
-    (
-      projectRef: ScopedProjectRef,
-      options?: {
+    async (
+      projectTarget: ScopedProjectRef | AvailableProject,
+      requestedOptions?: {
         branch?: string | null;
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
@@ -87,6 +194,26 @@ export function useNewThreadHandler() {
       // prepared checkout, a task to write — addresses that one rather than looking the project
       // up again and finding whichever draft it happens to hold.
     ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
+      const target = await resolveNewThreadProjectTarget({
+        project: projectTarget,
+        availableProjects,
+        projects,
+        createProject,
+        createProjectId: newProjectId,
+        reportProjectCreateFailure: (failure) => {
+          const error = squashAtomCommandFailure(failure);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to add project",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        },
+      });
+      if (target === null) return null;
+      const projectRef = target.projectRef;
+      const options = { ...requestedOptions, ...target.workspaceOptions };
       const {
         getComposerDraft,
         getDraftSessionByLogicalProjectKey,
@@ -161,7 +288,7 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
-      // The shared resolver owns the priority order. The t3.json read is
+      // The shared resolver owns the priority order. The workjet.json read is
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
@@ -169,7 +296,7 @@ export function useNewThreadHandler() {
         return resolveDefaultThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,
           projectFile: consultProjectFile
-            ? await readT3ProjectFileDefaultThreadEnvMode(
+            ? await readWorkjetProjectFileDefaultThreadEnvMode(
                 project.environmentId,
                 project.workspaceRoot,
               )
@@ -179,7 +306,17 @@ export function useNewThreadHandler() {
       };
       const logicalProjectKey = project
         ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
-        : scopedProjectKey(projectRef);
+        : target.workspaceOptions.worktreePath
+          ? deriveLogicalProjectKeyFromSettings(
+              {
+                environmentId: projectRef.environmentId,
+                id: projectRef.projectId,
+                workspaceRoot: target.workspaceOptions.worktreePath,
+                repositoryIdentity: null,
+              },
+              projectGroupingSettings,
+            )
+          : scopedProjectKey(projectRef);
       const hasBranchOption = options?.branch !== undefined;
       const hasWorktreePathOption = options?.worktreePath !== undefined;
       const hasEnvModeOption = options?.envMode !== undefined;
@@ -427,7 +564,15 @@ export function useNewThreadHandler() {
         return { draftId, threadId };
       })();
     },
-    [getCurrentRouteTarget, primaryServerSettings, projectGroupingSettings, projects, router],
+    [
+      availableProjects,
+      createProject,
+      getCurrentRouteTarget,
+      primaryServerSettings,
+      projectGroupingSettings,
+      projects,
+      router,
+    ],
   );
 }
 
@@ -448,6 +593,7 @@ export function useHandleNewThread() {
       : null,
   );
   const projects = useProjects();
+  const availableProjects = useAvailableProjects();
   const orderedProjects = useMemo(() => {
     return orderItemsByPreferredIds({
       items: projects,
@@ -460,12 +606,21 @@ export function useHandleNewThread() {
     });
   }, [projectOrder, projects]);
   const handleNewThread = useNewThreadHandler();
+  const defaultAvailableProject =
+    (orderedProjects[0]
+      ? availableProjects.find(
+          (project) =>
+            project.id === orderedProjects[0]?.id &&
+            project.environmentId === orderedProjects[0]?.environmentId,
+        )
+      : undefined) ?? availableProjects[0];
 
   return {
     activeDraftThread,
     activeThread,
-    defaultProjectRef: orderedProjects[0]
-      ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)
+    availableProjects,
+    defaultProjectRef: defaultAvailableProject
+      ? availableProjectRef(defaultAvailableProject)
       : null,
     handleNewThread,
     routeThreadRef,

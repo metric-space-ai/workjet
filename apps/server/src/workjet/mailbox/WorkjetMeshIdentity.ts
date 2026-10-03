@@ -9,7 +9,7 @@ import {
   type WorkjetMeshOverviewPeer,
   type WorkjetMeshRoster,
   type WorkjetRoutingEnvelope,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -428,7 +428,7 @@ export interface WorkjetMeshIdentityShape {
 export class WorkjetMeshIdentity extends Context.Service<
   WorkjetMeshIdentity,
   WorkjetMeshIdentityShape
->()("t3/workjet/mailbox/WorkjetMeshIdentity") {}
+>()("workjet/workjet/mailbox/WorkjetMeshIdentity") {}
 
 // ===============================
 // Key and workspace-id material

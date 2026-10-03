@@ -19,7 +19,7 @@ import type {
   WorkjetHarness,
   WorkjetHarnessAvailability,
   WorkjetHarnessAvailabilitySnapshot,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 export type HarnessAvailabilityView =
   /** No probe has run, or it did not cover this harness. Say so; do not guess. */

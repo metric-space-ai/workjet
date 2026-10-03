@@ -1,4 +1,4 @@
-import { CommandId, ProjectId } from "@t3tools/contracts";
+import { CommandId, ProjectId } from "@workjet/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { runWorkjetProjectCreation, workjetLogicalProjectId } from "./workjetProjectCreation";
 
@@ -35,6 +35,28 @@ const project = {
 };
 
 describe("runWorkjetProjectCreation", () => {
+  it.each(["authentication_required", "unsupported", "timeout"] as const)(
+    "does not send create when the selected shell reports %s",
+    async (code) => {
+      const port = vi.fn(async () => ({ _tag: "failed" as const, code }));
+      await expect(
+        runWorkjetProjectCreation({ presentationInstanceId: instanceId, request }, { port }),
+      ).resolves.toEqual({ _tag: "failed", code });
+      expect(port).toHaveBeenCalledExactlyOnceWith(instanceId, { action: "project.list" });
+    },
+  );
+  it("stops after a failed connection launch instead of starting another attempt", async () => {
+    const port = vi.fn(async () => ({ _tag: "failed" as const, code: "launch_failed" as const }));
+    const phases: string[] = [];
+    await expect(
+      runWorkjetProjectCreation(
+        { presentationInstanceId: instanceId, request },
+        { port, onPhase: (phase) => phases.push(phase) },
+      ),
+    ).resolves.toEqual({ _tag: "failed", code: "launch_failed" });
+    expect(port).toHaveBeenCalledOnce();
+    expect(phases).toEqual(["checking", "failed"]);
+  });
   it("derives a stable instance-bound id for retrying the same folder", async () => {
     const first = await workjetLogicalProjectId(instanceId, "/workspace/greppy/");
     const retry = await workjetLogicalProjectId(instanceId, "/workspace/greppy");
@@ -59,6 +81,73 @@ describe("runWorkjetProjectCreation", () => {
     expect(port).toHaveBeenCalledTimes(1);
     expect(port).toHaveBeenCalledWith(instanceId, { action: "project.list" });
   });
+
+  const incompleteCopies = [
+    { name: "missing", workingCopies: [] },
+    {
+      name: "other computer",
+      workingCopies: [{ ...project.workingCopies[0]!, computerId: "computer:other" }],
+    },
+    {
+      name: "other path",
+      workingCopies: [{ ...project.workingCopies[0]!, path: "/workspace/other" }],
+    },
+    {
+      name: "detached",
+      workingCopies: [{ ...project.workingCopies[0]!, status: "detached" as const }],
+    },
+  ];
+
+  it.each(incompleteCopies)(
+    "resumes creation when the requested copy is $name",
+    async ({ workingCopies }) => {
+      const phases: string[] = [];
+      const port = vi
+        .fn()
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.list", projects: [{ ...project, workingCopies }] },
+        })
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.create", project },
+        });
+
+      await expect(
+        runWorkjetProjectCreation(
+          { presentationInstanceId: instanceId, request },
+          { port, onPhase: (phase) => phases.push(phase) },
+        ),
+      ).resolves.toEqual({ _tag: "visible", project });
+      expect(port).toHaveBeenNthCalledWith(2, instanceId, request);
+      expect(phases).toEqual(["checking", "creating", "visible"]);
+    },
+  );
+
+  it.each(incompleteCopies)(
+    "rejects create success when the requested copy is $name",
+    async ({ workingCopies }) => {
+      const phases: string[] = [];
+      const port = vi
+        .fn()
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.list", projects: [] },
+        })
+        .mockResolvedValueOnce({
+          _tag: "completed",
+          response: { action: "project.create", project: { ...project, workingCopies } },
+        });
+
+      await expect(
+        runWorkjetProjectCreation(
+          { presentationInstanceId: instanceId, request },
+          { port, onPhase: (phase) => phases.push(phase) },
+        ),
+      ).resolves.toEqual({ _tag: "failed", code: "invalid_projection" });
+      expect(phases).toEqual(["checking", "creating", "failed"]);
+    },
+  );
 
   it("lists, creates, and exposes the exact authoritative projection", async () => {
     const phases: string[] = [];

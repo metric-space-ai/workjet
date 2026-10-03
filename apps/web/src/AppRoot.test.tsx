@@ -6,7 +6,7 @@ import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { PreviewAutomationHosts } from "./components/preview/PreviewAutomationHosts";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
-import { AppRoot } from "./AppRoot";
+import { AppRoot, WorkjetSessionPauseObserverHost } from "./AppRoot";
 
 describe("AppRoot", () => {
   it("shares the application atom registry with routed UI and renderer-wide desktop hosts", () => {
@@ -16,9 +16,10 @@ describe("AppRoot", () => {
     const children = Children.toArray(
       (root as ReactElement<{ readonly children: ReactNode }>).props.children,
     );
-    expect(children).toHaveLength(3);
-    expect(isValidElement(children[0]) && children[0].type).toBe(RouterProvider);
-    expect(isValidElement(children[1]) && children[1].type).toBe(PreviewAutomationHosts);
-    expect(isValidElement(children[2]) && children[2].type).toBe(ElectronBrowserHost);
+    expect(children).toHaveLength(4);
+    expect(isValidElement(children[0]) && children[0].type).toBe(WorkjetSessionPauseObserverHost);
+    expect(isValidElement(children[1]) && children[1].type).toBe(RouterProvider);
+    expect(isValidElement(children[2]) && children[2].type).toBe(PreviewAutomationHosts);
+    expect(isValidElement(children[3]) && children[3].type).toBe(ElectronBrowserHost);
   });
 });

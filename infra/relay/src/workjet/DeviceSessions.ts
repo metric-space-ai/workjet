@@ -55,7 +55,7 @@ export interface DeviceSessionGrantCandidate {
 export class WorkjetDeviceSessionPrincipal extends Context.Service<
   WorkjetDeviceSessionPrincipal,
   DeviceSessionGrantCandidate
->()("t3code-relay/workjet/DeviceSessions/WorkjetDeviceSessionPrincipal") {}
+>()("workjet-relay/workjet/DeviceSessions/WorkjetDeviceSessionPrincipal") {}
 
 export interface DeviceSessionAuthorization extends DeviceSessionGrantCandidate {
   readonly accessToken: string;
@@ -129,7 +129,7 @@ export class DeviceSessions extends Context.Service<
       claims: RelayDpopAccessTokenClaims,
     ) => Effect.Effect<DeviceSessionGrantCandidate | null, DeviceSessionPersistenceError>;
   }
->()("t3code-relay/workjet/DeviceSessions") {}
+>()("workjet-relay/workjet/DeviceSessions") {}
 
 const make = Effect.gen(function* () {
   const config = yield* RelayConfiguration.RelayConfiguration;
@@ -170,7 +170,7 @@ const make = Effect.gen(function* () {
         jti: randomCredential(),
         issuedAtEpochSeconds: Math.floor(now.epochMilliseconds / 1_000),
         expiresAtEpochSeconds: Math.floor(accessExpiresAt.epochMilliseconds / 1_000),
-        clientId: "t3-mobile",
+        clientId: "workjet-mobile",
         scopes: ["environment:connect", "environment:status"],
         workjet: {
           grantId: grant.grantId,

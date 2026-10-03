@@ -8,14 +8,15 @@ Node.js `^22.16 || ^23.11 || >=24.10` on the machine that runs the Workjet serve
 
 At least one provider CLI, installed and authenticated. See [Providers](#providers) below.
 
-## Run Without Installing
+## Command-line Server
+
+Use the `workjet` CLI supplied by your Workjet distribution. The examples in this guide
+assume that executable is on your PATH. Do not install a similarly named package from a
+registry as a substitute for the official distribution.
 
 ```bash
-npx t3@latest
+workjet --help
 ```
-
-This starts the Workjet server on your machine and opens the local web app. Use
-`npx t3@latest --help` for the full CLI reference.
 
 ## Desktop App
 

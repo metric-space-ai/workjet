@@ -1,20 +1,23 @@
 "use client";
+import { useInstanceOnboardingState } from "./ctox/InstanceOnboarding";
+import { openInstanceSetup } from "../instanceSetup";
+import { ProjectCreationProgress } from "./ProjectCreationProgress";
 
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { canCreateProjectInEnvironment } from "@t3tools/client-runtime/operations/projects";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
-import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environment";
+import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
+import { connectionStatusText } from "@workjet/client-runtime/connection";
+import { threadSearchMatchKey } from "@workjet/client-runtime/state/thread-search";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
   filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
-} from "@t3tools/client-runtime/state/filesystem";
+} from "@workjet/client-runtime/state/filesystem";
 import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@workjet/client-runtime/state/runtime";
 import {
   type DesktopWslState,
   type EnvironmentId,
@@ -24,7 +27,7 @@ import {
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
@@ -42,6 +45,7 @@ import {
 } from "lucide-react";
 import {
   useCallback,
+  useContext,
   useDeferredValue,
   useEffect,
   useLayoutEffect,
@@ -52,10 +56,11 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
+import { useAvailableProjectContext } from "../availableProjects";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useClientSettings, usePrimarySettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
@@ -117,6 +122,7 @@ import {
   ITEM_ICON_CLASS,
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
+  shouldShowNewThreadActions,
   type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
@@ -151,10 +157,17 @@ import {
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
 import type { Project } from "../types";
-import { runWorkjetProjectCreation, workjetLogicalProjectId } from "../workjetProjectCreation";
+import {
+  runWorkjetProjectCreation,
+  workjetLogicalProjectId,
+  workjetProjectCreationFailureMessage,
+} from "../workjetProjectCreation";
+import { listWorkjetProjects } from "../workjetProjectControl";
+import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import {
   readWorkjetProjectRegistry,
   recordWorkjetProjectProjection,
+  resolveLocalWorkjetWorkingCopy,
 } from "../workjetProjectRegistry";
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../activeWorkjetScope";
 
@@ -391,6 +404,7 @@ function overlayModeForCommand(command: string | null): SearchOverlayMode | null
 }
 
 export function CommandPalette({ children }: { children: ReactNode }) {
+  const instanceState = useInstanceOnboardingState();
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
     mode: "command",
@@ -464,15 +478,32 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       }
       event.preventDefault();
       event.stopPropagation();
+      if (instanceState !== "ready") {
+        openInstanceSetup();
+        return;
+      }
       toggleMode(mode);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings, previewOpen, resolvedTheme, terminalOpen, theme, themeHalves, toggleMode]);
+  }, [
+    instanceState,
+    keybindings,
+    previewOpen,
+    resolvedTheme,
+    terminalOpen,
+    theme,
+    themeHalves,
+    toggleMode,
+  ]);
 
   useEffect(
     () =>
       onOpenCommandPalette((detail) => {
+        if (instanceState !== "ready") {
+          openInstanceSetup();
+          return;
+        }
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
         } else if (detail.open === "add-project") {
@@ -481,13 +512,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [instanceState, openAddProject, openNewThreadIn, setOpen],
   );
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
       <CommandDialog
-        open={state.open}
+        open={state.open && instanceState === "ready"}
         onOpenChange={(open, eventDetails) => {
           if (!open && eventDetails.reason === "escape-key" && state.mode !== "command") {
             eventDetails.cancel();
@@ -499,7 +530,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       >
         {children}
         <CommandPaletteDialog
-          open={state.open}
+          open={state.open && instanceState === "ready"}
           mode={state.mode}
           openIntent={state.openIntent}
           setOpen={setOpen}
@@ -594,10 +625,12 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const primaryEnvironment = usePrimaryEnvironment();
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
+  const { activeDraftThread, activeThread, availableProjects, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const { resolvedComputer } = useAvailableProjectContext();
   const projects = useProjects();
-  const unscopedProjects = useAtomValue(environmentProjects.projectsAtom);
+  const projectRegistry = useContext(RegistryContext);
+  const navigateToCrossMode = useCrossModeNavigator();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -648,10 +681,14 @@ function OpenCommandPaletteDialog(props: {
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [isLogicalProjectPathEntry, setIsLogicalProjectPathEntry] = useState(false);
   const [isLogicalProjectCreating, setIsLogicalProjectCreating] = useState(false);
+  const [projectCreationStage, setProjectCreationStage] = useState<
+    "connecting" | "local" | "syncing"
+  >("connecting");
   const [logicalProjectCreationError, setLogicalProjectCreationError] = useState<string | null>(
     null,
   );
   const projectCreationPendingRef = useRef(false);
+  const [projectSignInInstanceId, setProjectSignInInstanceId] = useState<string | null>(null);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   const [isRemoteProjectLookingUp, setIsRemoteProjectLookingUp] = useState(false);
   const [isRemoteProjectCloning, setIsRemoteProjectCloning] = useState(false);
@@ -979,38 +1016,58 @@ function OpenCommandPaletteDialog(props: {
     [openProjectFromSearch, pickerProjects, projectGroupByTargetKey],
   );
 
-  const projectThreadItems = useMemo(
-    () =>
-      enumerateCommandPaletteItems(
-        buildProjectActionItems({
-          projects: pickerProjects,
-          valuePrefix: "new-thread-in",
-          searchTerms: (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            return (
-              group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
-            );
-          },
-          icon: projectFavicon,
-          runProject: async (project) => {
-            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
-            const contextualRefBelongsToGroup =
-              contextualProjectRef !== null &&
-              group?.memberProjectRefs.some(
-                (projectRef) =>
-                  projectRef.environmentId === contextualProjectRef.environmentId &&
-                  projectRef.projectId === contextualProjectRef.projectId,
-              );
-            await handleNewThread(
-              contextualRefBelongsToGroup
-                ? contextualProjectRef
-                : scopeProjectRef(project.environmentId, project.id),
-            );
-          },
-        }),
-      ),
-    [contextualProjectRef, handleNewThread, pickerProjects, projectGroupByTargetKey],
-  );
+  const projectThreadItems = useMemo(() => {
+    const localItems = buildProjectActionItems({
+      projects: pickerProjects,
+      valuePrefix: "new-thread-in",
+      searchTerms: (project) => {
+        const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+        return (
+          group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
+        );
+      },
+      icon: projectFavicon,
+      runProject: async (project) => {
+        const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+        const contextualRefBelongsToGroup =
+          contextualProjectRef !== null &&
+          group?.memberProjectRefs.some(
+            (projectRef) =>
+              projectRef.environmentId === contextualProjectRef.environmentId &&
+              projectRef.projectId === contextualProjectRef.projectId,
+          );
+        await handleNewThread(
+          contextualRefBelongsToGroup
+            ? contextualProjectRef
+            : scopeProjectRef(project.environmentId, project.id),
+        );
+      },
+    });
+    const workjetItems: CommandPaletteActionItem[] = availableProjects.flatMap((project) =>
+      project.kind === "workjet"
+        ? [
+            {
+              kind: "action" as const,
+              value: `new-thread-in:${project.environmentId}:${project.id}`,
+              searchTerms: [project.title, project.path, "synced", "working copy"],
+              title: project.title,
+              description: project.path,
+              icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+              run: async () => {
+                await handleNewThread(project);
+              },
+            },
+          ]
+        : [],
+    );
+    return enumerateCommandPaletteItems([...localItems, ...workjetItems]);
+  }, [
+    availableProjects,
+    contextualProjectRef,
+    handleNewThread,
+    pickerProjects,
+    projectGroupByTargetKey,
+  ]);
 
   const allThreadItems = useMemo(
     () =>
@@ -1358,6 +1415,8 @@ function OpenCommandPaletteDialog(props: {
       if (pickedPath.length === 0 || projectCreationPendingRef.current) return;
       projectCreationPendingRef.current = true;
       setLogicalProjectCreationError(null);
+      setProjectSignInInstanceId(null);
+      setProjectCreationStage("connecting");
       setIsLogicalProjectCreating(true);
       try {
         const presentationInstanceId = activeCtoxInstanceId;
@@ -1388,13 +1447,29 @@ function OpenCommandPaletteDialog(props: {
 
         const cwd = resolveProjectPathForDispatch(pickedPath, null);
         if (cwd.length === 0) return;
+        // Check the instance before committing a local record. A hidden guest
+        // may be showing its sign-in page even though discovery succeeded.
+        const connection = await listWorkjetProjects(presentationInstanceId);
+        if (connection._tag === "failed") {
+          if (connection.code === "authentication_required") {
+            setProjectSignInInstanceId(presentationInstanceId);
+          }
+          setLogicalProjectCreationError(workjetProjectCreationFailureMessage(connection.code));
+          return;
+        }
+        // Palette menu actions survive rerenders. Read the current backend
+        // projection when invoked, so a retry sees a local create that already
+        // committed while its CTOX registration failed.
         const existingLocalProject = findProjectByPath(
-          unscopedProjects.filter((project) => project.environmentId === environmentId),
+          projectRegistry
+            .get(environmentProjects.projectsAtom)
+            .filter((project) => project.environmentId === environmentId),
           cwd,
         );
         const projectId =
           existingLocalProject?.id ?? (await workjetLogicalProjectId(presentationInstanceId, cwd));
         if (existingLocalProject === undefined) {
+          setProjectCreationStage("local");
           const createResult = await createProject({
             environmentId,
             input: {
@@ -1420,45 +1495,45 @@ function OpenCommandPaletteDialog(props: {
           }
         }
 
-        const workingCopyComputer = workjetComputers.find(
-          (computer) => computer.environmentId === environmentId,
-        );
-        const confirmedRegistry = readWorkjetProjectRegistry(presentationInstanceId);
-        let confirmedProject = confirmedRegistry.projects.find(
-          (project) => project.id === projectId,
-        );
-        if (confirmedProject === undefined) {
-          const outcome = await runWorkjetProjectCreation({
-            presentationInstanceId,
-            request: {
-              action: "project.create",
-              commandId: newCommandId(),
-              projectId,
-              title: inferProjectTitleFromPath(cwd),
-              ...(workingCopyComputer
-                ? {
-                    workingCopy: {
-                      computerId: workingCopyComputer.id,
-                      path: cwd,
-                    },
-                  }
-                : {}),
-              createdAt: new Date().toISOString(),
-            },
+        const localWorkingCopy = resolveLocalWorkjetWorkingCopy({
+          computers: workjetComputers,
+          resolvedComputer,
+          localEnvironmentId: primaryEnvironmentId,
+          path: cwd,
+        });
+        if (localWorkingCopy === null) {
+          toastManager.add({
+            type: "info",
+            title: "No local computer registered",
+            description: "The project will be added without a local working copy.",
           });
-          if (outcome._tag === "failed") {
-            const description =
-              outcome.code === "not_active"
-                ? "The selected CTOX instance is no longer connected."
-                : "CTOX did not confirm the project. You can retry without reopening this dialog.";
-            setLogicalProjectCreationError(description);
-            toastManager.add(
-              stackedThreadToast({ type: "error", title: "Failed to add project", description }),
-            );
-            return;
-          }
-          confirmedProject = outcome.project;
         }
+        // A cached logical project does not confirm this computer's folder.
+        // The shared creation path verifies the requested working copy too.
+        setProjectCreationStage("syncing");
+        const outcome = await runWorkjetProjectCreation({
+          presentationInstanceId,
+          request: {
+            action: "project.create",
+            commandId: newCommandId(),
+            projectId,
+            title: inferProjectTitleFromPath(cwd),
+            ...(localWorkingCopy ? { workingCopy: localWorkingCopy } : {}),
+            createdAt: new Date().toISOString(),
+          },
+        });
+        if (outcome._tag === "failed") {
+          if (outcome.code === "authentication_required") {
+            setProjectSignInInstanceId(presentationInstanceId);
+          }
+          const description = workjetProjectCreationFailureMessage(outcome.code);
+          setLogicalProjectCreationError(description);
+          toastManager.add(
+            stackedThreadToast({ type: "error", title: "Failed to add project", description }),
+          );
+          return;
+        }
+        const confirmedProject = outcome.project;
         if (readActiveWorkjetScope().selectedInstanceId !== presentationInstanceId) {
           const description = "The active instance changed while the project was being created.";
           setLogicalProjectCreationError(description);
@@ -1515,8 +1590,9 @@ function OpenCommandPaletteDialog(props: {
       environments,
       primaryEnvironment,
       primaryEnvironmentId,
+      resolvedComputer,
       setOpen,
-      unscopedProjects,
+      projectRegistry,
       workjetComputers,
     ],
   );
@@ -1671,10 +1747,22 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0) {
+  if (shouldShowNewThreadActions(availableProjects.length)) {
+    const preferredLocalProjectTitle = projectPickerEntries.find((entry) => entry.isPreferred)
+      ?.group.displayName;
+    const currentLocalProjectTitle = currentProjectId
+      ? projectTitleById.get(currentProjectId)
+      : undefined;
+    const defaultAvailableProjectTitle = availableProjects.find(
+      (project) =>
+        project.environmentId === defaultProjectRef?.environmentId &&
+        project.id === defaultProjectRef?.projectId,
+    )?.title;
     const activeProjectTitle =
-      projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
-      (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
+      preferredLocalProjectTitle ??
+      currentLocalProjectTitle ??
+      defaultAvailableProjectTitle ??
+      null;
 
     if (activeProjectTitle) {
       actionItems.push({
@@ -2670,11 +2758,28 @@ function OpenCommandPaletteDialog(props: {
           )}
           role="status"
         >
-          {isPickingProjectFolder
-            ? "Opening folder picker…"
-            : isLogicalProjectCreating
-              ? "Adding the local project and syncing it with CTOX…"
-              : logicalProjectCreationError}
+          {isPickingProjectFolder ? (
+            "Opening folder picker…"
+          ) : isLogicalProjectCreating ? (
+            <ProjectCreationProgress stage={projectCreationStage} />
+          ) : (
+            logicalProjectCreationError
+          )}
+          {logicalProjectCreationError && projectSignInInstanceId ? (
+            <Button
+              className="mt-2 block"
+              onClick={() => {
+                setOpen(false);
+                void navigateToCrossMode({
+                  mode: "business-os",
+                  ctoxInstanceId: projectSignInInstanceId,
+                });
+              }}
+              variant="outline"
+            >
+              Sign in to instance
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <CommandPaletteResults

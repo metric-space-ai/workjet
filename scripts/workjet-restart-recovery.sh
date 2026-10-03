@@ -31,7 +31,7 @@ trap 'rm -rf "${HOME_DIR}"' EXIT
 
 boot() { # $1 = log file, $2 = seconds to wait
   ( cd "${REPO_ROOT}/apps/server" \
-    && T3CODE_HOME="${HOME_DIR}" node src/bin.ts --port "${PORT}" --no-browser ) \
+    && WORKJET_HOME="${HOME_DIR}" node src/bin.ts --port "${PORT}" --no-browser ) \
     > "$1" 2>&1 &
   local pid=$!
   sleep "$2"

@@ -9,7 +9,7 @@ import * as NodePath from "node:path";
 import type {
   BusinessOsShellReleaseManifestV2,
   BusinessOsShellUpdateStatus,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -151,7 +151,7 @@ export class CtoxBusinessOsShell extends Context.Service<
       shellStatus?: BusinessOsShellUpdateStatus,
     ) => Effect.Effect<CtoxBusinessOsLaunch, CtoxBusinessOsShellError>;
   }
->()("@t3tools/desktop/ctox/CtoxBusinessOsShell") {}
+>()("@workjet/desktop/ctox/CtoxBusinessOsShell") {}
 
 interface RunningShellServer {
   readonly origin: string;
@@ -639,7 +639,7 @@ export const make = Effect.gen(function* () {
   const recoveryRoot = resolveCtoxBusinessOsShellRoot(environment);
   const localModuleAssetRoot = resolveCtoxLocalModuleAssetRoot(process.env, NodeOS.homedir());
   const cacheRoot = NodePath.join(
-    environment.stateDir ?? NodePath.join(environment.rootDir, ".t3"),
+    environment.stateDir ?? NodePath.join(environment.rootDir, ".workjet"),
     "ctox-business-os-shell-cache",
   );
   const serverRef = yield* SynchronizedRef.make<ReadonlyMap<string, RunningShellServer>>(new Map());

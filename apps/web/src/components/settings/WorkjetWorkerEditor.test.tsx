@@ -8,7 +8,7 @@ import {
   createDefaultWorkjetWorkerPersonalization,
   type WorkjetComputer,
   type WorkjetLlmRoute,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -152,19 +152,17 @@ describe("WorkjetWorkerEditor", () => {
 
     expect(markup).toContain('aria-label="Add worker"');
 
-    // The panel follows the Swift Workjet worker editor: one column, in the
-    // order each choice constrains the next, with the harness, provider,
-    // reasoning and target computer as visible option sets rather than
-    // dropdowns that hide them.
+    // Name and task lead; personality is an optional disclosure.
     const sections = [
+      ">Name</label>",
+      ">Task</label>",
+      "Personality",
       "Profile",
-      "Name / role",
-      "task",
       "Harness",
       "LLM route",
       "Model",
       "Reasoning",
-      "Skills",
+      "Tools",
       "Target computer",
       "Technical details",
     ] as const;

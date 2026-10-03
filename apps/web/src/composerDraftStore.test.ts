@@ -3,10 +3,12 @@ import {
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+} from "@workjet/client-runtime/environment";
 import * as Schema from "effect/Schema";
 import {
   defaultInstanceIdForDriver,
+  CommandId,
+  WorkjetConnectionId,
   EnvironmentId,
   ProjectId,
   ProviderDriverKind,
@@ -14,8 +16,8 @@ import {
   ThreadId,
   type ModelSelection,
   type ProviderOptionSelection,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
+} from "@workjet/contracts";
+import { createModelSelection } from "@workjet/shared/model";
 
 // The composer draft's `modelSelectionByProvider` and
 // `stickyModelSelectionByProvider` maps are keyed by `ProviderInstanceId`
@@ -76,6 +78,12 @@ import {
   type TerminalContextDraft,
 } from "./lib/terminalContext";
 import { createDebouncedStorage } from "./lib/storage";
+import {
+  createWorkjetPrivateChat,
+  privateChatIntentRequest,
+  type WorkjetPrivateChatIntent,
+} from "./workjetPrivateChat";
+import type { WorkjetProjectControlPort } from "./workjetProjectControl";
 
 function makeImage(input: {
   id: string;
@@ -547,6 +555,73 @@ describe("composerDraftStore terminal contexts", () => {
     ]);
   });
 
+  it("replays the saved creation command after a lost response and rehydration", async () => {
+    const candidate: WorkjetPrivateChatIntent = {
+      instanceId: "instance-one",
+      connectionId: WorkjetConnectionId.make("connection-one"),
+      projectId: ProjectId.make("project-one"),
+      workerProfileId: "worker-one",
+      separate: true,
+      membershipCommandId: CommandId.make("membership-one"),
+      chatCommandId: CommandId.make("chat-one"),
+      createdAt: "2026-09-12T10:00:00.000Z",
+    };
+    const original = useComposerDraftStore
+      .getState()
+      .preparePrivateChatIntent(threadRef, candidate);
+    const port = vi
+      .fn<WorkjetProjectControlPort>()
+      .mockRejectedValueOnce(new Error("response lost"));
+    await expect(
+      createWorkjetPrivateChat({
+        ...original,
+        request: privateChatIntentRequest(original, "project.chat.create"),
+        isCurrent: () => true,
+        port,
+      }),
+    ).rejects.toThrow("response lost");
+    const persistApi = useComposerDraftStore.persist;
+    const saved = await persistApi.getOptions().storage!.getItem(COMPOSER_DRAFT_STORAGE_KEY);
+    expect(saved).not.toBeNull();
+    // Reconstruct through the real persist merge, discarding all in-memory drafts.
+    useComposerDraftStore.setState(
+      persistApi.getOptions().merge!(saved!.state, {
+        ...useComposerDraftStore.getState(),
+        draftsByThreadKey: {},
+      }),
+    );
+    const retried = useComposerDraftStore.getState().preparePrivateChatIntent(threadRef, {
+      ...candidate,
+      chatCommandId: CommandId.make("would-create-a-duplicate"),
+      membershipCommandId: CommandId.make("fresh-membership"),
+    });
+    expect(retried).toEqual(original);
+    port.mockResolvedValueOnce({
+      _tag: "completed",
+      response: {
+        action: "project.chat.create",
+        commandId: original.chatCommandId,
+        projectId: original.projectId,
+        workerProfileId: original.workerProfileId,
+        chatId: "workjet_private_native_original",
+      },
+    });
+    const chat = await createWorkjetPrivateChat({
+      ...retried,
+      request: privateChatIntentRequest(retried, "project.chat.create"),
+      isCurrent: () => true,
+      port,
+    });
+    expect(chat.chatId).toBe("workjet_private_native_original");
+    expect(port.mock.calls[1]).toEqual(port.mock.calls[0]);
+    expect(() =>
+      useComposerDraftStore.getState().preparePrivateChatIntent(threadRef, {
+        ...candidate,
+        projectId: ProjectId.make("different-project"),
+      }),
+    ).toThrow("pending private chat");
+  });
+
   it("hydrates the selected Workjet worker and its managed instructions", () => {
     const persistApi = useComposerDraftStore.persist as unknown as {
       getOptions: () => {
@@ -569,6 +644,11 @@ describe("composerDraftStore terminal contexts", () => {
               role: "orchestrator",
               parent: null,
               managedInstructions: "Your name is E2E-Lead.",
+              ctoxCrewChat: {
+                instanceId: "native-instance",
+                connectionId: "native-connection",
+                chatId: "workjet_private_opaque_native_id",
+              },
               enabledCapabilityIds: [],
               capabilityBindings: [],
             },
@@ -588,6 +668,11 @@ describe("composerDraftStore terminal contexts", () => {
         role: "orchestrator",
         parent: null,
         managedInstructions: "Your name is E2E-Lead.",
+        ctoxCrewChat: {
+          instanceId: "native-instance",
+          connectionId: "native-connection",
+          chatId: "workjet_private_opaque_native_id",
+        },
         enabledCapabilityIds: [],
         capabilityBindings: [],
       },
@@ -783,6 +868,34 @@ describe("composerDraftStore review comments", () => {
 });
 
 describe("composerDraftStore project draft thread mapping", () => {
+  it.each([
+    "environment-local:/workspace/local-project",
+    "environment-local:C:/workspace/local-project",
+    "github.com/example/project",
+  ])("preserves the physical project through persistence for logical key %s", (logicalKey) => {
+    resetComposerDraftStore();
+    const draftId = DraftId.make("draft-persistence");
+    const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, ProjectId.make("actual-project-id"));
+    const store = useComposerDraftStore.getState();
+    store.setLogicalProjectDraftThreadId(logicalKey, projectRef, draftId, {
+      threadId: ThreadId.make("thread-persistence"),
+      branch: "feature/persist",
+      worktreePath: "/workspace/local-project",
+    });
+    store.setPrompt(draftId, "Keep this unsent work");
+    const options = useComposerDraftStore.persist.getOptions();
+    const persisted = options.partialize!(useComposerDraftStore.getState());
+    const restored = options.merge!(persisted, useComposerDraftStore.getInitialState());
+    expect(restored.draftThreadsByThreadKey[draftId]).toMatchObject({
+      ...projectRef,
+      logicalProjectKey: logicalKey,
+      branch: "feature/persist",
+      worktreePath: "/workspace/local-project",
+    });
+    expect(restored.logicalProjectDraftThreadKeyByLogicalProjectKey[logicalKey]).toBe(draftId);
+    expect(restored.draftsByThreadKey[draftId]?.prompt).toBe("Keep this unsent work");
+  });
+
   const projectId = ProjectId.make("project-a");
   const otherProjectId = ProjectId.make("project-b");
   const projectRef = scopeProjectRef(TEST_ENVIRONMENT_ID, projectId);
@@ -1133,6 +1246,60 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
     expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
     expect(draftByKey(draftId)).toBeUndefined();
+  });
+
+  it("preserves worker choices on the canonical thread without replaying sent content", () => {
+    const store = useComposerDraftStore.getState();
+    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    const manualReturn = { provider: CODEX_INSTANCE, model: "manual-model" };
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "already sent");
+    store.setWorkjetWorkerSelection(draftId, "worker-bulk", manualReturn);
+    store.setModelSelection(draftId, {
+      instanceId: CLAUDE_AGENT_INSTANCE,
+      model: "MiniMax-M3",
+    });
+    markPromotedDraftThreadByRef(threadRef);
+
+    finalizePromotedDraftThreadByRef(threadRef);
+
+    expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      prompt: "",
+      images: [],
+      workjetWorkerId: "worker-bulk",
+      workjetManualReturn: manualReturn,
+      activeProvider: CLAUDE_AGENT_INSTANCE,
+      modelSelectionByProvider: {
+        [CLAUDE_AGENT_INSTANCE]: {
+          instanceId: CLAUDE_AGENT_INSTANCE,
+          model: "MiniMax-M3",
+        },
+      },
+    });
+    expect(draftFor(threadId, OTHER_TEST_ENVIRONMENT_ID)).toBeUndefined();
+    store.clearComposerContent(threadRef);
+    finalizePromotedDraftThreadByRef(threadRef);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.workjetWorkerId).toBe("worker-bulk");
+  });
+
+  it("preserves existing canonical Manual choices and unsent content during promotion", () => {
+    const store = useComposerDraftStore.getState();
+    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    // Create the canonical entry before the draft alias can resolve to it.
+    store.setPrompt(threadRef, "new follow-up");
+    store.setWorkjetWorkerSelection(threadRef, null, null);
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setWorkjetWorkerSelection(draftId, "old-worker", null);
+    store.setPrompt(draftId, "already sent");
+
+    finalizePromotedDraftThreadByRef(threadRef);
+
+    expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      prompt: "new follow-up",
+      workjetWorkerId: null,
+    });
   });
 
   it("finalizes a matching materialized draft even when promotion was not pre-marked", () => {

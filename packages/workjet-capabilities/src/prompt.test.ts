@@ -1,4 +1,4 @@
-import type { CapabilityManifest } from "@t3tools/contracts";
+import type { CapabilityManifest } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { builtInCapabilityManifests } from "./manifests.ts";
@@ -111,7 +111,7 @@ describe("capability prompt compiler", () => {
         "",
         "## Workjet Role: Orchestrator",
         "",
-        "You are a Workjet orchestrator. Workers are ordinary T3 threads in the same server environment. Use `workjet_dispatch_worker` as the dispatch boundary. Delegate bounded tasks and use the returned worker thread ID to track the dispatched work.",
+        "You are a Workjet orchestrator. Workers are ordinary Workjet threads in the same server environment. Use `workjet_dispatch_worker` as the dispatch boundary. Delegate bounded tasks and use the returned worker thread ID to track the dispatched work.",
       ].join("\n"),
     );
     expect(

@@ -6,6 +6,14 @@ const MOBILE_ROOT = NodePath.resolve(import.meta.dirname, "../../..");
 const read = (path: string) => NodeFS.readFileSync(NodePath.resolve(MOBILE_ROOT, path), "utf8");
 
 describe("Business OS native security guards", () => {
+  it("turns pairing validation failures into handled promise rejections", () => {
+    const provider = read("src/features/business-os/BusinessOsProvider.tsx");
+    expect(provider).toMatch(/const importLink = useCallback\(\s*async \(raw: string\)/u);
+    expect(provider).toMatch(/const importInvite = useCallback\(\s*async \(invite:/u);
+    expect(provider).toContain("void importLink(url).catch(showPairingFailure)");
+    expect(provider).toContain("Linking.getInitialURL().then(handle).catch(showPairingFailure)");
+  });
+
   it("has no manual signaling, room or password field in its settings surface", () => {
     const settings = read("src/features/business-os/components/BusinessOsSettingsPanel.tsx");
     expect(settings).not.toMatch(/TextInput/u);
@@ -101,9 +109,9 @@ describe("Business OS native security guards", () => {
     const root = read("src/features/business-os/launcher/BusinessOsMobileRoot.tsx");
     const home = read("src/features/business-os/launcher/BusinessOsHomeDesk.tsx");
     const nativeTypes = read("src/features/business-os/launcher/native-business-os-launcher.tsx");
-    const ios = read("modules/t3-native-controls/ios/T3BusinessOsLauncherModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetBusinessOsLauncherModule.swift");
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsLauncherModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetBusinessOsLauncherModule.kt",
     );
     expect(
       NodeFS.existsSync(
@@ -115,8 +123,13 @@ describe("Business OS native security guards", () => {
     ).toBe(false);
     expect(root).not.toContain('"settings" | "app"');
     expect(root).not.toContain('setRoute("settings")');
-    expect(root).toContain('navigation.navigate("SettingsSheet"');
-    expect(root).toContain('params: { screen: "SettingsBusinessOs" }');
+    const app = read("src/App.tsx");
+    const setup = read("src/features/mode/BusinessOsSetupScreen.tsx");
+    expect(root).toContain("const openSettings = props.onOpenSettings;");
+    expect(setup).toContain("onOpenSettings={props.onOpenSettings}");
+    expect(app).toContain("onOpenSettings={openBusinessOsSettings}");
+    expect(app).toContain('navigationRef.navigate("SettingsSheet"');
+    expect(app).toContain('params: { screen: "SettingsBusinessOs" }');
     expect(root).toContain("showsSettingsAction={!sidebarAvailable || !sidebarVisible}");
     expect(home).toContain("props.showsSettingsAction ?");
     expect(nativeTypes).toContain("readonly showsSettingsAction: boolean");
@@ -155,7 +168,7 @@ describe("Business OS native security guards", () => {
 
   it("requires isolated native profiles and canonical app origins", () => {
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetBusinessOsModule.kt",
     );
     expect(android).toContain("WebViewFeature.MULTI_PROFILE");
     expect(android).toContain("WebViewFeature.WEB_MESSAGE_LISTENER");
@@ -166,7 +179,7 @@ describe("Business OS native security guards", () => {
     expect(android).toContain("MIXED_CONTENT_NEVER_ALLOW");
     expect(android).toContain("request.deny()");
 
-    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetBusinessOsModule.swift");
     expect(ios).toContain("WKWebsiteDataStore(forIdentifier:");
     expect(ios).toContain("workjet-business-os://");
     expect(ios).toContain("decisionHandler(.deny)");
@@ -174,18 +187,18 @@ describe("Business OS native security guards", () => {
 
   it("does not introduce an HTTP data bridge or secret-bearing query", () => {
     const launch = read("src/features/business-os/shell/launch-context.ts");
-    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetBusinessOsModule.swift");
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetBusinessOsModule.kt",
     );
     expect(launch).toContain("http_bridge_available: false");
     expect(`${launch}\n${ios}\n${android}`).not.toMatch(/ctox_config|\/api\/business-os\/data/iu);
   });
 
   it("bounds the native Decision Hub notification bridge on both platforms", () => {
-    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetBusinessOsModule.swift");
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetBusinessOsModule.kt",
     );
     expect(ios).toContain("workjetBusinessOsNotification");
     expect(ios).toContain('payload["kind"] as? String == "decision_hub"');
@@ -197,9 +210,9 @@ describe("Business OS native security guards", () => {
   it("keeps the lifecycle bridge origin-bound and metadata-only", () => {
     const protocol = read("src/features/business-os/launcher/business-os-shell-protocol.ts");
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetBusinessOsModule.kt",
     );
-    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetBusinessOsModule.swift");
     expect(protocol).toContain('"workjet.business-os-shell.v1"');
     expect(protocol).not.toContain("roomPassword");
     expect(protocol).not.toContain("capabilityToken");
@@ -215,9 +228,9 @@ describe("Business OS native security guards", () => {
     const relay = read("src/features/cloud/managedRelayLayer.ts");
     const session = read("src/features/pairing/workjet-managed-device-session-layer.ts");
     const pairing = read("src/features/pairing/WorkjetDevicePairingProvider.tsx");
-    const ios = read("modules/t3-native-controls/ios/T3BusinessOsModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetBusinessOsModule.swift");
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetBusinessOsModule.kt",
     );
 
     expect(surface).toContain("nativeWorkjetDeviceProof");
@@ -275,9 +288,9 @@ describe("Business OS native security guards", () => {
 
   it("redacts protected content on Android screenshots and iOS background capture", () => {
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3NativeControlsModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetNativeControlsModule.kt",
     );
-    const ios = read("modules/t3-native-controls/ios/T3NativeControlsModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetNativeControlsModule.swift");
     expect(android).toContain("FLAG_SECURE");
     expect(ios).toContain("willResignActiveNotification");
     expect(ios).toContain("capturedDidChangeNotification");
@@ -285,9 +298,9 @@ describe("Business OS native security guards", () => {
 
   it("uses native SwiftUI and Compose launchers before the React Native fallback", () => {
     const home = read("src/features/business-os/launcher/BusinessOsHomeDesk.tsx");
-    const ios = read("modules/t3-native-controls/ios/T3BusinessOsLauncherModule.swift");
+    const ios = read("modules/workjet-native-controls/ios/WorkjetBusinessOsLauncherModule.swift");
     const android = read(
-      "modules/t3-native-controls/android/src/main/java/expo/modules/t3nativecontrols/T3BusinessOsLauncherModule.kt",
+      "modules/workjet-native-controls/android/src/main/java/expo/modules/workjetnativecontrols/WorkjetBusinessOsLauncherModule.kt",
     );
     expect(home.indexOf("if (NativeBusinessOsLauncher)")).toBeLessThan(
       home.indexOf("BusinessOsHomeDeskFallback"),

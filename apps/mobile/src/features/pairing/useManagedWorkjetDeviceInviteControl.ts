@@ -1,11 +1,11 @@
-import { BusinessOsInstanceId } from "@t3tools/contracts";
+import { BusinessOsInstanceId } from "@workjet/contracts";
 import {
   createManagedWorkjetDeviceInvite,
   issueManagedRelayControlIdentityAssertion,
   readManagedWorkjetDeviceSessionAuthorization,
   resolveManagedBusinessOsBackendControl,
   revokeManagedWorkjetDeviceInvite,
-} from "@t3tools/client-runtime/state/business-os-managed-backend-control";
+} from "@workjet/client-runtime/state/business-os-managed-backend-control";
 import { useEffect, useMemo, useState } from "react";
 import * as Schema from "effect/Schema";
 

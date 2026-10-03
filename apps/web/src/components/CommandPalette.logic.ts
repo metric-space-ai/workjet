@@ -2,8 +2,8 @@ import {
   type FilesystemBrowseEntry,
   type KeybindingCommand,
   THREAD_JUMP_KEYBINDING_COMMANDS,
-} from "@t3tools/contracts";
-import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+} from "@workjet/contracts";
+import type { SidebarThreadSortOrder } from "@workjet/contracts/settings";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { type ReactNode } from "react";
@@ -14,6 +14,10 @@ import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
+
+export function shouldShowNewThreadActions(availableProjectCount: number): boolean {
+  return availableProjectCount > 0;
+}
 
 /**
  * The global search overlay hosts three mutually exclusive surfaces: the

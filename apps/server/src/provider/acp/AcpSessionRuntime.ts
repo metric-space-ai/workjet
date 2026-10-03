@@ -19,7 +19,7 @@ import * as EffectAcpClient from "effect-acp/client";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { resolveSpawnCommand } from "@workjet/shared/shell";
 
 import {
   collectSessionConfigOptionValues,
@@ -70,6 +70,7 @@ export interface AcpSessionRuntimeOptions {
   };
   readonly authMethodId: string;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
+  readonly onProcessSpawn?: (handle: ChildProcessSpawner.ChildProcessHandle) => void;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
     readonly logIncoming?: boolean;
@@ -244,7 +245,7 @@ export class AcpSessionRuntime extends Context.Service<
       payload: unknown,
     ) => Effect.Effect<void, EffectAcpErrors.AcpError>;
   }
->()("t3/provider/acp/AcpSessionRuntime") {}
+>()("workjet/provider/acp/AcpSessionRuntime") {}
 
 interface AcpStartedState extends AcpSessionRuntimeStartResult {}
 
@@ -352,6 +353,8 @@ export const make = (
             }),
         ),
       );
+
+    options.onProcessSpawn?.(child);
 
     const acpContext = yield* Layer.build(
       EffectAcpClient.layerChildProcess(child, {

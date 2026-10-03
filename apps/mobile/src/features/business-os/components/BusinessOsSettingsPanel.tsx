@@ -249,7 +249,7 @@ export function BusinessOsSettingsPanel(props: {
         <View className={cn("gap-5", tabletLayout && "flex-row items-start")}>
           <View className="min-w-0 flex-1 gap-4 rounded-[24px] bg-card p-5">
             <View className="gap-1">
-              <Text className="text-lg font-t3-bold text-foreground">Business OS</Text>
+              <Text className="text-lg font-workjet-bold text-foreground">Business OS</Text>
               <Text className="text-sm leading-normal text-foreground-muted">
                 Jede Business-OS-Instanz wird auf diesem Gerät separat verbunden. Die aktive Auswahl
                 gilt immer gemeinsam für Code und Business OS; Geschäftsdaten synchronisieren
@@ -286,7 +286,9 @@ export function BusinessOsSettingsPanel(props: {
                         active ? "border-primary bg-subtle" : "border-border bg-secondary",
                       )}
                     >
-                      <Text className="font-t3-bold text-foreground">{instance.displayName}</Text>
+                      <Text className="font-workjet-bold text-foreground">
+                        {instance.displayName}
+                      </Text>
                       <Text className="mt-0.5 text-xs text-foreground-muted" numberOfLines={1}>
                         {codeEnvironmentBound
                           ? active
@@ -323,7 +325,7 @@ export function BusinessOsSettingsPanel(props: {
 
           <View className="min-w-0 flex-1 gap-4 rounded-[24px] bg-card p-5">
             <View className="gap-1">
-              <Text className="text-lg font-t3-bold text-foreground">Gerät hinzufügen</Text>
+              <Text className="text-lg font-workjet-bold text-foreground">Gerät hinzufügen</Text>
               <Text className="text-sm leading-normal text-foreground-muted">
                 Der kurzlebige QR-Code verbindet das andere Gerät mit Code und Business OS dieser
                 Instanz. Weitere Business-OS-Instanzen werden separat verbunden. Zeige ihn nur der
@@ -335,7 +337,7 @@ export function BusinessOsSettingsPanel(props: {
               <>
                 <CredentialQrCode value={generatedInvite.link} size={tabletLayout ? 240 : 264} />
                 <View className="items-center gap-1">
-                  <Text className="font-t3-bold text-foreground">
+                  <Text className="font-workjet-bold text-foreground">
                     {generatedInvite.displayName}
                   </Text>
                   <Text className="text-sm text-foreground-muted">

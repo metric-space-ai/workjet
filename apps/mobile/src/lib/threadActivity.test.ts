@@ -10,7 +10,7 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   DEFAULT_WORKJET_THREAD_CONFIG,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 
 import {
   buildPendingUserInputAnswers,

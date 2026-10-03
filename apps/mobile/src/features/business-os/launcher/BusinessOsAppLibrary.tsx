@@ -63,7 +63,7 @@ export function BusinessOsAppLibrary(props: {
       >
         {categories.map(({ category, apps }) => (
           <View key={category} className="gap-4">
-            <Text className="px-1 text-sm font-t3-bold uppercase tracking-wider text-foreground-muted">
+            <Text className="px-1 text-sm font-workjet-bold uppercase tracking-wider text-foreground-muted">
               {category}
             </Text>
             <View className="flex-row flex-wrap gap-y-5">

@@ -68,7 +68,7 @@ impl RuntimeConfigStore for CtoxRuntimeConfigStore {
     }
 }
 
-/// SQL-free Workjet/T3 adapter backed by immutable caller-provided values.
+/// SQL-free Workjet/Workjet adapter backed by immutable caller-provided values.
 #[derive(Debug, Clone, Default)]
 pub struct WorkjetRuntimeConfigStore {
     values: BTreeMap<String, String>,

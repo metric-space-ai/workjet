@@ -33,8 +33,8 @@ function ModeButton(props: {
       <Text
         className={
           props.selected
-            ? "text-sm font-t3-bold text-foreground"
-            : "text-sm font-t3-medium text-foreground-muted"
+            ? "text-sm font-workjet-bold text-foreground"
+            : "text-sm font-workjet-medium text-foreground-muted"
         }
       >
         {props.label}
@@ -112,7 +112,7 @@ export function WorkjetProductChrome() {
             className="min-h-10 max-w-[240px] flex-row items-center gap-2 rounded-[11px] bg-subtle px-3 active:bg-subtle-strong"
           >
             <View className="size-2 rounded-full bg-primary" />
-            <Text className="min-w-0 flex-1 text-sm font-t3-bold" numberOfLines={1}>
+            <Text className="min-w-0 flex-1 text-sm font-workjet-bold" numberOfLines={1}>
               {selected.displayName}
             </Text>
             <SymbolView name="chevron.down" size={13} tintColor={muted} type="monochrome" />
@@ -121,7 +121,7 @@ export function WorkjetProductChrome() {
       ) : null}
 
       <View className="flex-1" />
-      {showWordmark ? <Text className="pb-2 text-sm font-t3-bold">Workjet</Text> : null}
+      {showWordmark ? <Text className="pb-2 text-sm font-workjet-bold">Workjet</Text> : null}
     </View>
   );
 }

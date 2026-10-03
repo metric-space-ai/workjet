@@ -1,5 +1,5 @@
-import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteRefV1 } from "@t3tools/contracts";
-import { QrCode } from "@t3tools/shared/qrCode";
+import type { CtoxBusinessOsInviteV1, WorkjetDeviceInviteRefV1 } from "@workjet/contracts";
+import { QrCode } from "@workjet/shared/qrCode";
 import { describe, expect, it } from "vite-plus/test";
 
 import {

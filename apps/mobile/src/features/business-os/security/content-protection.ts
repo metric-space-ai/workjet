@@ -6,7 +6,7 @@ interface NativeBusinessOsContentProtection {
 
 function nativeControls(): NativeBusinessOsContentProtection | null {
   try {
-    return requireOptionalNativeModule<NativeBusinessOsContentProtection>("T3NativeControls");
+    return requireOptionalNativeModule<NativeBusinessOsContentProtection>("WorkjetNativeControls");
   } catch {
     return null;
   }

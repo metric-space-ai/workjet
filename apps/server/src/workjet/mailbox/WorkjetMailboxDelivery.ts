@@ -30,7 +30,7 @@ import {
   type WorkjetThreadHandoff,
   type WorkjetWorkerAddress,
   type WorkjetWorkerMessage,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -71,7 +71,7 @@ import { WorkjetMeshIdentity } from "./WorkjetMeshIdentity.ts";
  * mesh identity, never a caller-supplied workspace id.
  *
  * every step through {@link WorkjetMailboxStore}, every value through the
- * `@t3tools/contracts` mailbox schemas, and the delegation lifecycle through
+ * `@workjet/contracts` mailbox schemas, and the delegation lifecycle through
  * the store's enforced transition table (`queued → delivered`).
  *
  * A target in ANOTHER environment is enqueued as pending outbound and reported
@@ -351,7 +351,7 @@ export interface WorkjetMailboxDeliveryShape {
 export class WorkjetMailboxDelivery extends Context.Service<
   WorkjetMailboxDelivery,
   WorkjetMailboxDeliveryShape
->()("t3/workjet/mailbox/WorkjetMailboxDelivery") {}
+>()("workjet/workjet/mailbox/WorkjetMailboxDelivery") {}
 
 export interface WorkjetMailboxDeliverySources {
   readonly randomUUID: Effect.Effect<string>;

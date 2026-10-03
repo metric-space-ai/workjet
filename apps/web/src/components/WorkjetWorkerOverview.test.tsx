@@ -1,5 +1,5 @@
-import type { EnvironmentId, ThreadId, WorkjetThreadConfig } from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentId, ThreadId, WorkjetThreadConfig } from "@workjet/contracts";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ReactElement } from "react";
 import { isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

@@ -1,4 +1,4 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { ProviderInstanceId, ThreadId } from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -12,7 +12,10 @@ import type { ThreadCapabilityContext } from "../workjet/ThreadCapabilityContext
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpProviderSession from "./McpProviderSession.ts";
 
+import type { CtoxCrewMcpCapability } from "./CtoxCrewMcpCapability.ts";
+
 export interface McpCredentialRequest {
+  readonly ctoxCrewExecution?: CtoxCrewMcpCapability;
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
   readonly threadCapabilityContext: ThreadCapabilityContext;
@@ -42,7 +45,7 @@ export interface McpSessionRegistryShape {
 export class McpSessionRegistry extends Context.Service<
   McpSessionRegistry,
   McpSessionRegistryShape
->()("t3/mcp/McpSessionRegistry") {}
+>()("workjet/mcp/McpSessionRegistry") {}
 
 interface CredentialRecord {
   readonly tokenHash: string;
@@ -141,7 +144,13 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         ...(request.threadCapabilityContext.decisionHubConnectionId !== undefined
           ? { decisionHubConnectionId: request.threadCapabilityContext.decisionHubConnectionId }
           : {}),
+        ...(request.threadCapabilityContext.ctoxBusinessOsBinding !== undefined
+          ? { ctoxBusinessOsBinding: request.threadCapabilityContext.ctoxBusinessOsBinding }
+          : {}),
         ...(cwd ? { cwd } : {}),
+        ...(request.ctoxCrewExecution
+          ? { ctoxCrewExecution: Object.freeze({ ...request.ctoxCrewExecution }) }
+          : {}),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {

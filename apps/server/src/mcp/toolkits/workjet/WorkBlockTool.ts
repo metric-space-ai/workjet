@@ -1,5 +1,5 @@
 // @effect-diagnostics preferSchemaOverJson:off -- MCP text mirrors bounded validated structured content.
-import { CommandId, EventId, type OrchestrationCommand, ThreadId } from "@t3tools/contracts";
+import { CommandId, EventId, type OrchestrationCommand, ThreadId } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";

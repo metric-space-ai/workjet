@@ -13,12 +13,24 @@ describe("shared Workjet product shell", () => {
     const chrome = read("./WorkjetProductChrome.tsx");
 
     expect(app).toContain("<WorkjetProductChrome />");
-    expect(app).toContain("<Navigation linking={appLinking}");
-    expect(app).toContain("<BusinessOsSetupScreen active=");
+    expect(app).toMatch(/<Navigation\s+linking=\{appLinking\}/u);
+    expect(app).toMatch(/<BusinessOsSetupScreen\s+active=/u);
     expect(app).not.toContain('if (mode === "business_os") return');
     expect(chrome).toContain('<ModeButton label="Code"');
     expect(chrome).toContain('label="Business OS"');
     expect(chrome).toContain('name="sidebar.left"');
+  });
+
+  it("keeps the sibling Business OS root independent of navigation context", () => {
+    const app = read("../../App.tsx");
+    const setup = read("./BusinessOsSetupScreen.tsx");
+    const root = read("../business-os/launcher/BusinessOsMobileRoot.tsx");
+    expect(root).not.toContain("useNavigation");
+    expect(root).toContain("const openSettings = props.onOpenSettings;");
+    expect(setup).toContain("onOpenSettings={props.onOpenSettings}");
+    expect(app).toContain("ref={navigationRef}");
+    expect(app).toContain("onOpenSettings={openBusinessOsSettings}");
+    expect(app).toContain('navigationRef.navigate("SettingsSheet",');
   });
 
   it("does not let the hidden Business OS root consume Android back or app lifecycle", () => {

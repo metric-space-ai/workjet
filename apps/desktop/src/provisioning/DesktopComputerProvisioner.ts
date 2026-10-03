@@ -14,6 +14,7 @@ import type {
   DesktopSshEnvironmentTarget,
   WorkjetProvisioningEvent,
   WorkjetProvisioningGetResult,
+  WorkjetProvisioningListResult,
   WorkjetProvisioningPreflight,
   WorkjetProvisioningPreflightInput,
   WorkjetProvisioningPreflightResult,
@@ -22,10 +23,10 @@ import type {
   WorkjetProvisioningStartResult,
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
-} from "@t3tools/contracts";
-import { isSshAuthFailure } from "@t3tools/ssh/auth";
-import { runSshCommand, targetConnectionKey } from "@t3tools/ssh/command";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+} from "@workjet/contracts";
+import { isSshAuthFailure } from "@workjet/ssh/auth";
+import { runSshCommand, targetConnectionKey } from "@workjet/ssh/command";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -35,11 +36,14 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 
 import * as DesktopSshPasswordPrompts from "../ssh/DesktopSshPasswordPrompts.ts";
 import * as CtoxInstanceRegistry from "../ctox/CtoxInstanceRegistry.ts";
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { ProvisioningJournal, type ProvisioningRecord } from "./ProvisioningJournal.ts";
+import { reuseHealthyCtox } from "./ctoxBootstrap.ts";
 
 const PREFLIGHT_TTL_MS = 10 * 60 * 1_000;
-const OPERATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
+
 const CTOX_MANIFEST_URL =
-  "https://github.com/metric-space-ai/ctox/releases/latest/download/ctox-install-manifest-v1.json";
+  "https://github.com/metric-space-ai/ctox/releases/download/ctox-install-bootstrap-v1/ctox-install-manifest-v1.json";
 const WORKJET_MANIFEST_URL =
   "https://github.com/metric-space-ai/workjet/releases/latest/download/workjet-desktop-install-manifest-v1.json";
 
@@ -62,9 +66,8 @@ interface CommandResult {
   readonly stderr: string;
 }
 
-interface MutableOperation {
+interface MutableOperation extends Omit<ProvisioningRecord, "snapshot"> {
   snapshot: WorkjetProvisioningSnapshot;
-  updatedAtMs: number;
 }
 
 function runLocalCommand(
@@ -156,7 +159,7 @@ TryExec=/opt/workjet/Workjet.AppImage
 Icon=applications-development
 Terminal=false
 Categories=Development;Utility;
-StartupWMClass=t3code
+StartupWMClass=workjet
 MimeType=x-scheme-handler/workjet;x-scheme-handler/workjet-dev;x-scheme-handler/workjet-preview;
 `;
 
@@ -305,19 +308,21 @@ export class DesktopComputerProvisioner extends Context.Service<
       input: WorkjetProvisioningStartInput,
     ) => Effect.Effect<WorkjetProvisioningStartResult>;
     readonly get: (operationId: string) => Effect.Effect<WorkjetProvisioningGetResult>;
+    readonly list: () => Effect.Effect<WorkjetProvisioningListResult>;
   }
->()("@t3tools/desktop/provisioning/DesktopComputerProvisioner") {}
+>()("@workjet/desktop/provisioning/DesktopComputerProvisioner") {}
 
 export const make = Effect.gen(function* () {
   const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
   const registry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const hostProcessPlatform = yield* HostProcessPlatform;
+  const journal = new ProvisioningJournal(environment.stateDir, hostProcessPlatform);
   const runtimeContext = yield* Effect.context<
     ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
   >();
   const hostKeys = new Map<string, HostKeyRecord>();
   const preflights = new Map<string, PreflightRecord>();
-  const operations = new Map<string, MutableOperation>();
 
   const scanHostKey = (target: DesktopSshEnvironmentTarget) =>
     Effect.tryPromise(async () => {
@@ -580,17 +585,21 @@ export const make = Effect.gen(function* () {
     entry.snapshot = {
       ...entry.snapshot,
       events: [
-        ...entry.snapshot.events,
-        { ...event, sequence: entry.snapshot.events.length, timestamp: new Date().toISOString() },
+        ...entry.snapshot.events.slice(-255),
+        {
+          ...event,
+          sequence: (entry.snapshot.events.at(-1)?.sequence ?? -1) + 1,
+          timestamp: new Date().toISOString(),
+        },
       ],
     };
-    entry.updatedAtMs = Date.now();
+    return Effect.tryPromise(() => journal.save(entry));
   };
 
   const runOperation = (entry: MutableOperation, record: PreflightRecord) =>
     Effect.gen(function* () {
       entry.snapshot = { ...entry.snapshot, state: "running" };
-      appendEvent(entry, {
+      yield* appendEvent(entry, {
         phase: "preflight",
         status: "completed",
         percent: 5,
@@ -612,7 +621,13 @@ export const make = Effect.gen(function* () {
         );
       }
       let administratorPassword: string | null = null;
-      if (record.public.administratorPasswordRequired) {
+      if (
+        record.public.administratorPasswordRequired &&
+        (action === "install" ||
+          action === "repair" ||
+          action === "update" ||
+          action === "rollback")
+      ) {
         administratorPassword = yield* prompts.request({
           attempt: 1,
           destination:
@@ -630,10 +645,12 @@ export const make = Effect.gen(function* () {
         administratorPassword === null
           ? `run_admin() { if [ "$(id -u)" = 0 ]; then "$@"; else sudo -n "$@"; fi; }`
           : `CTOX_SUDO_PASSWORD=${shellSingleQuote(administratorPassword)}; export CTOX_SUDO_PASSWORD\nrun_admin() { if [ "$(id -u)" = 0 ]; then "$@"; else printf '%s\\n' "$CTOX_SUDO_PASSWORD" | sudo -S -p '' "$@"; fi; }`;
-      const ctoxPosix =
+      const ctoxInstallPosix =
         action === "install" || action === "repair"
-          ? `printf '{"phase":"download","status":"started","percent":15,"message":"Downloading verified CTOX bootstrap"}\\n'\ncurl -fsSL '${CTOX_MANIFEST_URL}' -o "$tmp/ctox-manifest.json"\npython3 - "$tmp/ctox-manifest.json" "$tmp/install.sh" <<'PY'\nimport hashlib,json,sys,urllib.request\nm=json.load(open(sys.argv[1],encoding='utf-8')); b=m['bootstrap']['unix']\nif m.get('schema')!='ctox.install-manifest.v1' or m.get('repository')!='metric-space-ai/ctox' or not b['url'].startswith('https://github.com/'): raise SystemExit('invalid CTOX manifest')\ndata=urllib.request.urlopen(b['url'],timeout=30).read()\nif hashlib.sha256(data).hexdigest()!=b['sha256'].lower(): raise SystemExit('CTOX bootstrap checksum mismatch')\nopen(sys.argv[2],'wb').write(data)\nPY\nprintf '{"phase":"verification","status":"completed","percent":30,"message":"CTOX bootstrap checksum verified"}\\n'\nCTOX_SKIP_DESKTOP_HOST_BUILD=1 bash "$tmp/install.sh"\nprintf '{"phase":"health","status":"running","percent":78,"message":"Checking CTOX service"}\\n'\n"$HOME/.local/bin/ctox" status >/dev/null`
+          ? `printf '{"phase":"download","status":"started","percent":15,"message":"Downloading verified CTOX bootstrap"}\\n'\ncurl -fsSL '${CTOX_MANIFEST_URL}' -o "$tmp/ctox-manifest.json"\npython3 - "$tmp/ctox-manifest.json" "$tmp/install.sh" <<'PY'\nimport hashlib,json,sys,urllib.request\nm=json.load(open(sys.argv[1],encoding='utf-8')); b=m['bootstrap']['unix']\nif m.get('schema')!='ctox.install-manifest.v1' or m.get('repository')!='metric-space-ai/ctox' or not b['url'].startswith('https://github.com/'): raise SystemExit('invalid CTOX manifest')\ndata=urllib.request.urlopen(b['url'],timeout=30).read()\nif hashlib.sha256(data).hexdigest()!=b['sha256'].lower(): raise SystemExit('CTOX bootstrap checksum mismatch')\nopen(sys.argv[2],'wb').write(data)\nPY\nprintf '{"phase":"verification","status":"completed","percent":30,"message":"CTOX bootstrap checksum verified"}\\n'\nCTOX_SKIP_DESKTOP_HOST_BUILD=1 bash "$tmp/install.sh"\nprintf '{"phase":"health","status":"running","percent":78,"message":"Checking CTOX service"}\\n'\nctox_bin="$(command -v ctox || printf '%s' "$HOME/.local/bin/ctox")"\n"$ctox_bin" status >/dev/null`
           : `ctox_bin="$(command -v ctox || printf '%s' "$HOME/.local/bin/ctox")"\ncase '${action}' in status) "$ctox_bin" status ;; start) "$ctox_bin" start ;; stop) "$ctox_bin" stop ;; restart) "$ctox_bin" stop; "$ctox_bin" start ;; update) "$ctox_bin" update apply --latest ;; rollback) "$ctox_bin" update rollback ;; *) exit 64 ;; esac`;
+      const ctoxPosix =
+        action === "install" ? reuseHealthyCtox(ctoxInstallPosix) : ctoxInstallPosix;
       const workjetPosix =
         action === "status"
           ? `if [ "$(uname -s)" = Darwin ]; then test -d /Applications/Workjet.app; else test -x /opt/workjet/Workjet.AppImage; fi`
@@ -648,7 +665,7 @@ export const make = Effect.gen(function* () {
           ? `if(-not (Test-Path (Join-Path $env:ProgramFiles 'Workjet\\Workjet.exe'))){throw 'Workjet is not installed'}`
           : `$m=Invoke-RestMethod '${WORKJET_MANIFEST_URL}'; if($m.schema -ne 'workjet.desktop-install-manifest.v1' -or $m.repository -ne 'metric-space-ai/workjet'){throw 'invalid Workjet manifest'}; $x=@($m.artifacts|Where-Object {$_.platform -eq 'windows' -and $_.arch -eq 'x64'}); if($x.Count -ne 1){throw 'Workjet Windows artifact unavailable'}; $installer=Join-Path $env:TEMP ('workjet-'+[guid]::NewGuid().ToString('N')+'.exe'); Invoke-WebRequest -UseBasicParsing $x[0].url -OutFile $installer; if((Get-Item $installer).Length -ne $x[0].size -or (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $x[0].sha256.ToLowerInvariant()){throw 'Workjet installer verification failed'}; $p=Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru; if($p.ExitCode -ne 0){throw 'Workjet installer failed'}`;
       const windowsAction = `$ErrorActionPreference='Stop'; ${components.includes("ctox-backend") ? ctoxWindows : ""}; ${components.includes("workjet") ? workjetWindows : ""}; Write-Output '{"phase":"complete","status":"completed","percent":100,"message":"Requested components are ready"}'`;
-      appendEvent(entry, {
+      yield* appendEvent(entry, {
         phase: "authorization",
         status: "running",
         percent: 10,
@@ -702,7 +719,7 @@ export const make = Effect.gen(function* () {
             message?: string;
           };
           if (typeof value.message === "string" && typeof value.percent === "number")
-            appendEvent(entry, {
+            yield* appendEvent(entry, {
               phase:
                 value.phase === "complete"
                   ? "complete"
@@ -732,7 +749,7 @@ export const make = Effect.gen(function* () {
       // flag only becomes true after the normal Business OS attach path.
       const activeConnection = false;
       if (components.includes("ctox-backend") && (action === "install" || action === "repair")) {
-        appendEvent(entry, {
+        yield* appendEvent(entry, {
           phase: "pairing",
           status: "running",
           percent: 96,
@@ -758,7 +775,7 @@ export const make = Effect.gen(function* () {
           yield* registry.addSshManagedInstance(managedInput);
         } else
           return yield* Effect.fail(new Error("Approved SSH host key is missing for pairing."));
-        appendEvent(entry, {
+        yield* appendEvent(entry, {
           phase: "pairing",
           status: "completed",
           percent: 98,
@@ -773,7 +790,7 @@ export const make = Effect.gen(function* () {
           (event) => event.phase === "complete" && event.status === "completed",
         )
       )
-        appendEvent(entry, {
+        yield* appendEvent(entry, {
           phase: "complete",
           status: "completed",
           percent: 100,
@@ -787,28 +804,39 @@ export const make = Effect.gen(function* () {
         activeConnection,
         installedVersion: record.public.ctoxInstalledVersion,
       };
+      yield* Effect.tryPromise(() => journal.save(entry));
     }).pipe(
       Effect.catch((error) =>
-        Effect.sync(() => {
-          appendEvent(entry, {
-            phase: "failed",
-            status: "failed",
-            percent: 100,
-            message: safeMessage(error, "Provisioning failed"),
-          });
+        Effect.gen(function* () {
+          // A failed remote command may already have changed the target.
           entry.snapshot = {
             ...entry.snapshot,
-            state: "failed",
-            serviceState: "failed",
+            state: "interrupted",
+            serviceState: "unknown",
             backendHealthy: false,
-            errorCode: "operation_failed",
+            activeConnection: false,
+            errorCode: "outcome_unknown",
           };
+          yield* appendEvent(entry, {
+            phase: "failed",
+            status: "failed",
+            percent: entry.snapshot.events.at(-1)?.percent ?? 0,
+            message: safeMessage(error, "Provisioning failed"),
+          });
         }),
       ),
     );
 
   const start = (input: WorkjetProvisioningStartInput) =>
     Effect.gen(function* () {
+      // The approved preflight is the durable request ID, even if the IPC
+      // response was lost or the desktop restarted.
+      const replay = yield* Effect.tryPromise(() => journal.replay(input));
+      if (replay)
+        return {
+          _tag: "started",
+          operation: replay.snapshot,
+        } satisfies WorkjetProvisioningStartResult;
       const record = preflights.get(input.preflightId);
       if (!record || Date.now() - record.createdAtMs > PREFLIGHT_TTL_MS)
         return {
@@ -822,28 +850,61 @@ export const make = Effect.gen(function* () {
           code: "component_unavailable",
           message: "Workjet is unavailable on a headless target.",
         } satisfies WorkjetProvisioningStartResult;
-      const operationId = NodeCrypto.randomUUID();
-      const entry: MutableOperation = {
-        snapshot: initialSnapshot(input, operationId),
-        updatedAtMs: Date.now(),
-      };
-      operations.set(operationId, entry);
-      yield* runOperation(entry, record).pipe(Effect.forkDetach);
+      const saved = yield* Effect.tryPromise(() =>
+        journal.create(input, record.public.target, initialSnapshot(input, input.preflightId)),
+      );
+      if (saved.created) {
+        const entry: MutableOperation = { ...saved.record };
+        yield* runOperation(entry, record).pipe(Effect.forkDetach);
+      }
       return {
         _tag: "started",
-        operation: entry.snapshot,
+        operation: saved.record.snapshot,
       } satisfies WorkjetProvisioningStartResult;
-    });
+    }).pipe(
+      Effect.catch(() =>
+        Effect.succeed<WorkjetProvisioningStartResult>({
+          _tag: "failed",
+          code: "operation_unavailable",
+          message:
+            "The installation journal could not accept this request. Check the saved operation before retrying.",
+        }),
+      ),
+    );
 
   const get = (operationId: string) =>
-    Effect.sync((): WorkjetProvisioningGetResult => {
-      for (const [id, entry] of operations)
-        if (Date.now() - entry.updatedAtMs > OPERATION_RETENTION_MS) operations.delete(id);
-      const entry = operations.get(operationId);
+    Effect.tryPromise(async (): Promise<WorkjetProvisioningGetResult> => {
+      const entry = await journal.get(operationId);
       return entry ? { _tag: "found", operation: entry.snapshot } : { _tag: "not_found" };
-    });
+    }).pipe(
+      Effect.catch(() =>
+        Effect.succeed<WorkjetProvisioningGetResult>({
+          _tag: "failed",
+          message: "The installation journal could not be read. No operation was restarted.",
+        }),
+      ),
+    );
 
-  return DesktopComputerProvisioner.of({ inspectHostKey, preflight, start, get });
+  const list = () =>
+    Effect.tryPromise(
+      async (): Promise<WorkjetProvisioningListResult> => ({
+        _tag: "found",
+        operations: (await journal.list()).map((record) => ({
+          target: record.target,
+          operation: record.snapshot,
+        })),
+      }),
+    ).pipe(
+      Effect.catch(() =>
+        Effect.succeed<WorkjetProvisioningListResult>({
+          _tag: "failed",
+          message:
+            "Saved installations could not be read. Check the target before starting another operation.",
+        }),
+      ),
+    );
+
+  return DesktopComputerProvisioner.of({ inspectHostKey, preflight, start, get, list });
 });
 
 export const layer = Layer.effect(DesktopComputerProvisioner, make);

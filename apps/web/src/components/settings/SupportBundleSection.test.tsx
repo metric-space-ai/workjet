@@ -1,4 +1,4 @@
-import type { DesktopSupportBundleResult } from "@t3tools/contracts";
+import type { DesktopSupportBundleResult } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -11,7 +11,8 @@ import {
 } from "./SupportBundleSection";
 
 const RESULT: DesktopSupportBundleResult = {
-  filePath: "/Users/alice/Library/Application Support/.t3/userdata/support-bundles/bundle.json",
+  filePath:
+    "/Users/alice/Library/Application Support/.workjet/userdata/support-bundles/bundle.json",
   byteLength: 20_480,
   fieldCount: 142,
   redactedFieldCount: 7,

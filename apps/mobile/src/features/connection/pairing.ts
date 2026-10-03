@@ -1,4 +1,4 @@
-import { readHostedPairingRequest } from "@t3tools/shared/remote";
+import { readHostedPairingRequest } from "@workjet/shared/remote";
 import * as Schema from "effect/Schema";
 import { normalizeIncomingWorkjetUrl } from "../../lib/workjetLinks";
 

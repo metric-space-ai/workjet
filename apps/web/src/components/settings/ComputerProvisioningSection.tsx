@@ -1,9 +1,10 @@
 import type {
   WorkjetProvisioningPreflight,
   WorkjetProvisioningSnapshot,
+  WorkjetProvisioningListResult,
   WorkjetProvisioningTarget,
   WorkjetSshHostKeyInspectResult,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   CheckCircle2Icon,
   LaptopIcon,
@@ -11,7 +12,7 @@ import {
   ServerCogIcon,
   ShieldCheckIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -32,14 +33,24 @@ function stageLabel(snapshot: WorkjetProvisioningSnapshot): string {
   return snapshot.events.at(-1)?.message ?? "Preparing operation";
 }
 
-export function ComputerProvisioningSection() {
+export function ComputerProvisioningSection({
+  initialKind = "local",
+  fixedTargetKind = false,
+  onCompleted,
+  onBusyChange,
+}: {
+  readonly initialKind?: "local" | "ssh";
+  readonly fixedTargetKind?: boolean;
+  readonly onCompleted?: () => void;
+  readonly onBusyChange?: (busy: boolean) => void;
+} = {}) {
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
   const supported =
     bridge?.inspectProvisioningHostKey !== undefined &&
     bridge.preflightProvisioningTarget !== undefined &&
     bridge.startProvisioningOperation !== undefined &&
     bridge.getProvisioningOperation !== undefined;
-  const [kind, setKind] = useState<"local" | "ssh">("local");
+  const [kind, setKind] = useState<"local" | "ssh">(initialKind);
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
   const [port, setPort] = useState("22");
@@ -50,6 +61,31 @@ export function ComputerProvisioningSection() {
   const [installWorkjet, setInstallWorkjet] = useState(false);
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<WorkjetProvisioningSnapshot | null>(null);
+  const [saved, setSaved] = useState<
+    Extract<WorkjetProvisioningListResult, { _tag: "found" }>["operations"]
+  >([]);
+  const [journalError, setJournalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!bridge?.listProvisioningOperations) return;
+    void bridge
+      .listProvisioningOperations()
+      .then((result) => {
+        if (cancelled) return;
+        if (result._tag === "found") setSaved(result.operations);
+        else setJournalError(result.message);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setJournalError(
+            "Saved installations could not be loaded. Check the target before starting again.",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bridge]);
 
   const target = useMemo<WorkjetProvisioningTarget>(() => {
     if (kind === "local") return { _tag: "local" };
@@ -66,18 +102,60 @@ export function ComputerProvisioningSection() {
   }, [host, kind, port, username]);
 
   useEffect(() => {
-    if (!operation || operation.state === "completed" || operation.state === "failed") return;
+    if (!operation || (operation.state !== "queued" && operation.state !== "running")) return;
     const timer = window.setInterval(() => {
       const currentBridge = window.desktopBridge;
       if (!currentBridge?.getProvisioningOperation) return;
-      void currentBridge.getProvisioningOperation(operation.operationId).then((result) => {
-        if (result._tag === "found") setOperation(result.operation);
-      });
+      void currentBridge
+        .getProvisioningOperation(operation.operationId)
+        .then((result) => {
+          if (result._tag === "found") {
+            setOperation(result.operation);
+            setSaved((entries) =>
+              entries.map((entry) =>
+                entry.operation.operationId === result.operation.operationId
+                  ? { ...entry, operation: result.operation }
+                  : entry,
+              ),
+            );
+            setJournalError(null);
+          } else {
+            setJournalError(
+              result._tag === "failed"
+                ? result.message
+                : "The saved operation is missing. Check the target before starting again.",
+            );
+          }
+        })
+        .catch(() =>
+          setJournalError(
+            "The installation status is unavailable. The operation has not been restarted.",
+          ),
+        );
     }, 500);
     return () => window.clearInterval(timer);
   }, [operation]);
 
-  if (!supported) return null;
+  const completedId = useRef<string | null>(null);
+  const running =
+    busy || (operation !== null && operation.state !== "completed" && operation.state !== "failed");
+  useEffect(() => {
+    onBusyChange?.(running);
+    return () => onBusyChange?.(false);
+  }, [running, onBusyChange]);
+  useEffect(() => {
+    if (operation?.state === "completed" && completedId.current !== operation.operationId) {
+      completedId.current = operation.operationId;
+      onCompleted?.();
+    }
+  }, [operation, onCompleted]);
+
+  if (!supported)
+    return fixedTargetKind ? (
+      <p role="alert" className="text-sm">
+        Zum Einrichten dieser Instanz wird die aktuelle Workjet-Desktop-App benötigt.
+      </p>
+    ) : null;
 
   const inspect = async () => {
     if (kind === "ssh" && host.trim() === "") return;
@@ -122,23 +200,32 @@ export function ComputerProvisioningSection() {
     }
   };
 
-  const start = async () => {
+  const start = async (action: "install" | "start" = "install") => {
     if (!preflight) return;
     setBusy(true);
     try {
       const result = await bridge.startProvisioningOperation!({
         preflightId: preflight.preflightId,
-        action: "install",
-        components: installWorkjet ? ["ctox-backend", "workjet"] : ["ctox-backend"],
+        action,
+        components:
+          action === "install" && installWorkjet ? ["ctox-backend", "workjet"] : ["ctox-backend"],
         channel: "stable",
       });
       if (result._tag === "failed") throw new Error(result.message);
       setOperation(result.operation);
+      setSaved((entries) =>
+        [
+          { target: preflight.target, operation: result.operation },
+          ...entries.filter(
+            (entry) => entry.operation.operationId !== result.operation.operationId,
+          ),
+        ].slice(0, 50),
+      );
       setStage("operation");
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Could not start installation",
+        title: action === "start" ? "Could not start backend" : "Could not start installation",
         description: errorText(error),
       });
     } finally {
@@ -161,24 +248,53 @@ export function ComputerProvisioningSection() {
         description="Install a CTOX backend on this computer or an SSH target. Workjet can also be installed when a graphical session is available. Downloads happen on the target and are checksum-verified against the official signed release manifest."
       >
         <div className="max-w-2xl space-y-4 pb-4 pt-2">
+          {journalError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {journalError}
+            </p>
+          ) : null}
           {stage === "target" ? (
             <>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Button
-                  type="button"
-                  variant={kind === "local" ? "default" : "outline"}
-                  onClick={() => setKind("local")}
-                >
-                  <LaptopIcon className="size-4" /> This computer
-                </Button>
-                <Button
-                  type="button"
-                  variant={kind === "ssh" ? "default" : "outline"}
-                  onClick={() => setKind("ssh")}
-                >
-                  <ServerCogIcon className="size-4" /> Remote over SSH
-                </Button>
-              </div>
+              {saved.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Saved installations</p>
+                  {saved.map((entry) => (
+                    <Button
+                      key={entry.operation.operationId}
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setOperation(entry.operation);
+                        setStage("operation");
+                      }}
+                    >
+                      {entry.target._tag === "local" ? "This computer" : entry.target.ssh.hostname}
+                      {" · "}
+                      {entry.operation.state === "interrupted"
+                        ? "Result unknown — review target"
+                        : entry.operation.state}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+              {!fixedTargetKind ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    variant={kind === "local" ? "default" : "outline"}
+                    onClick={() => setKind("local")}
+                  >
+                    <LaptopIcon className="size-4" /> This computer
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={kind === "ssh" ? "default" : "outline"}
+                    onClick={() => setKind("ssh")}
+                  >
+                    <ServerCogIcon className="size-4" /> Remote over SSH
+                  </Button>
+                </div>
+              ) : null}
               {kind === "ssh" ? (
                 <div className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-3">
                   <label className="space-y-1 text-xs font-medium sm:col-span-3">
@@ -270,6 +386,22 @@ export function ComputerProvisioningSection() {
 
           {stage === "components" && preflight ? (
             <div className="space-y-4">
+              {preflight.ctoxInstalledVersion !== null ? (
+                <div className="rounded-lg border border-border p-3">
+                  <p className="text-sm font-medium">CTOX is already installed</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Start the existing backend to reconnect projects on this computer.
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-3"
+                    disabled={busy}
+                    onClick={() => void start("start")}
+                  >
+                    Start backend
+                  </Button>
+                </div>
+              ) : null}
               <div className="rounded-lg border border-border p-3 text-sm">
                 <p className="font-medium">
                   {preflight.platform} · {preflight.architecture}
@@ -323,7 +455,7 @@ export function ComputerProvisioningSection() {
               <div className="flex items-center gap-2 text-sm font-medium">
                 {operation.state === "completed" ? (
                   <CheckCircle2Icon className="size-4 text-emerald-500" />
-                ) : operation.state === "failed" ? (
+                ) : operation.state !== "running" && operation.state !== "queued" ? (
                   <span className="size-2 rounded-full bg-destructive" />
                 ) : (
                   <Spinner className="size-4" />
@@ -349,12 +481,18 @@ export function ComputerProvisioningSection() {
               </div>
               {operation.state === "completed" ? (
                 <p className="text-xs text-muted-foreground">
-                  CTOX is installed, healthy and paired with this Workjet profile. Select the
-                  backend for a Business OS session below; a remotely installed Workjet app was not
-                  started.
+                  {operation.action === "start"
+                    ? "The backend has started. Select it in Business OS settings to connect."
+                    : "CTOX is installed and paired with this Workjet profile. Select the backend in Business OS settings to connect."}
                 </p>
               ) : null}
-              {operation.state === "completed" || operation.state === "failed" ? (
+              {operation.state === "interrupted" ? (
+                <p role="alert" className="text-sm text-destructive">
+                  The target may already have changed. Verify its installation and service state
+                  before running a new preflight. This operation will not be repeated automatically.
+                </p>
+              ) : null}
+              {operation.state !== "running" && operation.state !== "queued" ? (
                 <Button type="button" variant="outline" onClick={reset}>
                   <RefreshCwIcon className="size-4" /> Provision another computer
                 </Button>

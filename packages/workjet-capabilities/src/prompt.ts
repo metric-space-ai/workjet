@@ -1,4 +1,4 @@
-import type { CapabilityManifest, WorkjetThreadRole } from "@t3tools/contracts";
+import type { CapabilityManifest, WorkjetThreadRole } from "@workjet/contracts";
 
 export interface CompileCapabilityPromptInput {
   readonly role: WorkjetThreadRole;
@@ -24,7 +24,7 @@ const roleSection = (role: WorkjetThreadRole): string => {
       return [
         "## Workjet Role: Orchestrator",
         "",
-        "You are a Workjet orchestrator. Workers are ordinary T3 threads in the same server environment. Use `workjet_dispatch_worker` as the dispatch boundary. Delegate bounded tasks and use the returned worker thread ID to track the dispatched work.",
+        "You are a Workjet orchestrator. Workers are ordinary Workjet threads in the same server environment. Use `workjet_dispatch_worker` as the dispatch boundary. Delegate bounded tasks and use the returned worker thread ID to track the dispatched work.",
       ].join("\n");
     case "worker":
       return [

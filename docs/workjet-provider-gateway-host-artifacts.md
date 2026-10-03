@@ -21,21 +21,22 @@ consume the gateway the same way Workjet consumes the shell.
 Six targets, one artifact each. Every `(os, arch)` pair is unique, so a consumer
 picks its artifact from `process.platform` / `process.arch` without ambiguity.
 
-| Rust target triple          | `process.platform` | `process.arch` | Build runner                     |
-| --------------------------- | ------------------ | -------------- | -------------------------------- |
-| `aarch64-apple-darwin`      | `darwin`           | `arm64`        | `blacksmith-12vcpu-macos-26`     |
-| `x86_64-apple-darwin`       | `darwin`           | `x64`          | `blacksmith-12vcpu-macos-26`     |
-| `x86_64-unknown-linux-gnu`  | `linux`            | `x64`          | `blacksmith-32vcpu-ubuntu-2404`  |
-| `aarch64-unknown-linux-gnu` | `linux`            | `arm64`        | `ubuntu-24.04-arm`               |
-| `x86_64-pc-windows-msvc`    | `win32`            | `x64`          | `blacksmith-32vcpu-windows-2025` |
-| `aarch64-pc-windows-msvc`   | `win32`            | `arm64`        | `windows-11-arm`                 |
+| Rust target triple          | `process.platform` | `process.arch` | Build runner                 |
+| --------------------------- | ------------------ | -------------- | ---------------------------- |
+| `aarch64-apple-darwin`      | `darwin`           | `arm64`        | `macos-latest`               |
+| `x86_64-apple-darwin`       | `darwin`           | `x64`          | `macos-latest`               |
+| `x86_64-unknown-linux-gnu`  | `linux`            | `x64`          | `ubuntu-24.04`               |
+| `aarch64-unknown-linux-gnu` | `linux`            | `arm64`        | `ubuntu-24.04-arm`           |
+| `x86_64-pc-windows-msvc`    | `win32`            | `x64`          | `windows-2025`               |
+| `aarch64-pc-windows-msvc`   | `win32`            | `arm64`        | `windows-2025` (cross-build) |
 
-Every triple builds on a runner of its own architecture, except
-`x86_64-apple-darwin`, which builds on the arm64 macOS runner — that is already
-this repository's practice for the resource monitor in `release.yml`. The two
-ARM64 non-Apple triples use GitHub-hosted ARM runners because the repository has
-no Blacksmith ARM labels; a hand-rolled MSVC/GCC cross-linking setup would be
-considerably more fragile than a native run.
+Most targets build on a runner of their own architecture. macOS x64 is built
+on the arm64 macOS runner, as in the resource-monitor release. Windows ARM64
+uses the ARM64 tools on the x64 Windows runner: `btls-sys` 0.5.6 enables its
+upstream portable crypto configuration for this cross-build, while its native
+Windows ARM path returns before that configuration and fails with MSVC LNK1181
+on incompatible assembly objects. This uses the dependency's existing build
+path without patching TLS code. All six targets use GitHub-hosted runners.
 
 A release is all-or-nothing: `collect` refuses to build a manifest that is
 missing any of the six targets, so a partially successful matrix fails the run
@@ -120,8 +121,11 @@ The pin has two states:
 - `"status": "unreleased"` — a first-class state recording that no gateway
   release exists yet, with a human-readable `unreleasedReason`. It is **not** a
   licence to download something unverified; it makes the resolver report an
-  unmet pin. The pin checked in today is in this state, because no
-  `provider-gateway-host-v*` release has been published.
+  unmet pin.
+
+The checked-in pin selects `provider-gateway-host-v0.1.1`, published from
+`main` commit `9b2c23c2d000c5f50715b3e0bb6ff9e4bf500dba`. Its manifest and all six
+target digests come from the verified release workflow, not a dry-run build.
 
 CTOX pins the same way: it consumes the manifest and per-target digests from a
 release tag and verifies the bytes it downloads. Because the manifest is
@@ -158,9 +162,26 @@ size, wrong digest, unsupported platform, or no pinned release). A packaged app
 has no Rust toolchain, so a silent fallback would only surface later as a
 confusing "the gateway will not start".
 
-Today, with an `unreleased` pin, every development build uses path 1 or 3 and a
-packaged build would fail fast — which is correct: nothing has been released to
-package.
+The standalone desktop builder prepares the host before invoking
+electron-builder. `scripts/lib/prepare-provider-gateway-host.ts` requires a
+released pin, verifies the release manifest against the pin, and downloads only
+the executables for the requested target. A universal macOS package includes
+both Apple targets. The staging cache is
+`.deps/workjet-provider-gateway-host/<version>/<os>-<arch>/`; cached files are
+verified again before reuse, and corrupt entries are replaced only by a
+verified download. The builder copies this directory into the resource path
+above. An unreleased pin, mismatched manifest, or invalid executable fails the
+build before a package can be produced.
+
+macOS packaging preserves the published host executable's bytes instead of
+re-signing the nested resource and invalidating its pinned digest. The enclosing
+app signature still seals the resource directory. A host that needs a different
+signing identity must be signed before its release digest is generated.
+
+The macOS install-artifact workflow also starts the packaged app with a fresh
+temporary profile. It requires a listening backend and a rendered app window,
+and rejects a reported `ProviderGatewayHostArtifactError`. Signature and Electron
+executable checks alone cannot establish that Workjet's services start.
 
 ## 5. Licensing obligations
 
@@ -175,6 +196,15 @@ and the repository `NOTICE.md`. The `collect` subcommand copies them and
 `verify` fails if any is missing, so a release cannot be published without its
 notices. `scripts/lib/release-notice.ts` remains the source of truth for what
 the notice says about this component.
+
+The NOTICE generator stays offline. Ordinary package metadata comes from the
+installed pnpm manifests; exact-version metadata for platform-specific packages
+is reviewed in `scripts/lib/release-platform-license-metadata.ts`, with a source
+URL for every published manifest. This prevents a Linux preflight from losing
+the macOS and Windows license records that pnpm does not install there. When a
+platform dependency version changes, review its new published manifest, update
+the corresponding record, and regenerate NOTICE. An installed license that
+conflicts with the reviewed record fails generation instead of being hidden.
 
 ## 6. Reproducing a release locally
 

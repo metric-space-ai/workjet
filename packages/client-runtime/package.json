@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/client-runtime",
+  "name": "@workjet/client-runtime",
   "private": true,
   "type": "module",
   "exports": {
@@ -103,6 +103,14 @@
       "types": "./src/state/projectGrouping.ts",
       "default": "./src/state/projectGrouping.ts"
     },
+    "./state/business-data-subscription": {
+      "types": "./src/state/businessDataSubscription.ts",
+      "default": "./src/state/businessDataSubscription.ts"
+    },
+    "./state/project-chats": {
+      "types": "./src/state/projectChats.ts",
+      "default": "./src/state/projectChats.ts"
+    },
     "./state/worker-overview": {
       "types": "./src/state/workerOverview.ts",
       "default": "./src/state/workerOverview.ts"
@@ -169,8 +177,8 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@workjet/contracts": "workspace:*",
+    "@workjet/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

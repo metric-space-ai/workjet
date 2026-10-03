@@ -9,22 +9,22 @@
  * access is intentionally named as such so environment-sensitive consumers
  * cannot silently read the wrong server's settings.
  */
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
   ServerSettings,
   type ServerSettingsPatch,
-} from "@t3tools/contracts";
+} from "@workjet/contracts";
 import {
   type ClientSettingsPatch,
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
   type EnvironmentIdentificationMode,
   type UnifiedSettings,
-} from "@t3tools/contracts/settings";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+} from "@workjet/contracts/settings";
+import { safeErrorLogAttributes } from "@workjet/client-runtime/errors";
 import { ensureLocalApi } from "~/localApi";
 import {
   getThemeDefinition,
@@ -34,12 +34,21 @@ import {
   themeAllowsSidebarArtwork,
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
-import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
+import {
+  primaryServerConfigAtom,
+  primaryServerSettingsAtom,
+  primaryServerWelcomeAtom,
+  serverEnvironment,
+} from "~/state/server";
 import { usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { createAutomaticCurrentComputerHydrator } from "~/state/workjetSettings";
 import { useTheme } from "./useTheme";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
+const hydrateAutomaticCurrentComputer = createAutomaticCurrentComputerHydrator();
+
+export { createAutomaticCurrentComputerHydrator };
 
 type UnifiedSettingsPatch = ServerSettingsPatch & ClientSettingsPatch;
 
@@ -336,6 +345,58 @@ export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {
 
 export function useUpdatePrimarySettings() {
   return useUpdateSettingsTarget(usePrimaryEnvironment()?.environmentId ?? null);
+}
+
+/**
+ * Persist this renderer's primary computer as the startup default after the
+ * live server welcome arrives. ServerConfig can come from IndexedDB before the
+ * RPC transport is ready; using the primary-environment identity also keeps
+ * hydration aligned with the "This machine" probe in Computers settings.
+ */
+export function useHydratePrimaryWorkjetSettings(): void {
+  const serverConfig = useAtomValue(primaryServerConfigAtom);
+  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const primaryEnvironment = usePrimaryEnvironment();
+  const persistServerSettings = useAtomCommand(
+    serverEnvironment.updateSettings,
+    "server settings update",
+  );
+
+  useEffect(() => {
+    if (serverConfig === null || primaryEnvironment === null || serverWelcome === null) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const localEnvironmentId = primaryEnvironment.environmentId;
+    const attemptHydration = () => {
+      hydrateAutomaticCurrentComputer({
+        configuration: serverConfig.settings.workjet,
+        localEnvironmentId,
+        ready: true,
+        update: async (workjet) => {
+          const result = await persistServerSettings({
+            environmentId: localEnvironmentId,
+            input: { patch: { workjet } },
+          });
+          const persisted = result._tag === "Success";
+          if (!persisted && !cancelled) {
+            retryTimer = setTimeout(attemptHydration, 500);
+          }
+          return persisted;
+        },
+      });
+    };
+
+    attemptHydration();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [persistServerSettings, primaryEnvironment, serverConfig, serverWelcome]);
 }
 
 export function useUpdateClientSettings() {

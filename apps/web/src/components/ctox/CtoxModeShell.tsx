@@ -1,3 +1,6 @@
+import { openInstanceSetup } from "../../instanceSetup";
+import { InstanceSetupDialog } from "./InstanceSetupDialog";
+import { decodeBusinessOsManualCredential } from "../settings/businessOsManualCredential";
 import type {
   CtoxDiscoveryResult,
   CtoxGuestBounds,
@@ -11,8 +14,8 @@ import type {
   CtoxManualPairingImportInput,
   CtoxSshManagedInstanceAddInput,
   DesktopCtoxBridge,
-} from "@t3tools/contracts";
-import { CtoxHostThemeColor } from "@t3tools/contracts";
+} from "@workjet/contracts";
+import { CtoxHostThemeColor } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -53,6 +56,7 @@ import {
 import { cn } from "../../lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "../../workspaceTitlebar";
 import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
+import { WorkjetHeaderContent } from "../WorkjetHeaderSlots";
 import { ctoxInstanceDisplayTitle } from "./ctoxInstanceDisplayTitle";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -140,7 +144,7 @@ const SOURCE_LABELS: Record<CtoxManagedInstanceSource, string> = {
 const CONNECTION_LABELS: Record<string, string> = {
   idle: "Nicht verbunden",
   connecting: "Wird verbunden…",
-  ready: "Verbunden",
+  ready: "Geöffnet",
   error: "Verbindungsfehler",
   revoked: "Zugriff entzogen",
 };
@@ -179,7 +183,8 @@ interface CtoxModeContextValue {
   readonly removeSshManagedInstance: (
     instance: CtoxManagedInstance,
   ) => Promise<CtoxMutationOutcome>;
-  readonly select: (instance: CtoxManagedInstance) => void;
+  readonly select: (instance: CtoxManagedInstance) => Promise<boolean>;
+  readonly showNetwork: () => Promise<boolean>;
   /** Re-check async mutations against the live selected instance ref. */
   readonly isSelected: (instanceId: string) => boolean;
   readonly setConnection: (state: CtoxConnectionState) => void;
@@ -506,10 +511,11 @@ export function CtoxModeProvider({
 
   const clearSelection = useCallback(
     (nextConnection: CtoxConnectionState) => {
-      void requestActiveWorkjetSelection(null).then((accepted) => {
-        if (!accepted || !mountedRef.current) return;
+      return requestActiveWorkjetSelection(null).then((accepted) => {
+        if (!accepted || !mountedRef.current) return false;
         setConnection(nextConnection);
         releaseCtoxGuest(bridge);
+        return true;
       });
     },
     [bridge],
@@ -634,17 +640,30 @@ export function CtoxModeProvider({
     [bridge, clearSelection, refresh],
   );
 
-  const select = useCallback((instance: CtoxManagedInstance) => {
-    if (!canActivateCtoxInstance(instance)) return;
-    // Re-selecting the already-connected instance must not tear the guest
-    // down; the row click then only surfaces the instance and its apps.
-    if (selectedIdRef.current === instance.id) return;
-    void requestActiveWorkjetSelection(instance.id).then((accepted) => {
-      if (!accepted || !mountedRef.current) return;
-      setActivationKey((current) => current + 1);
-      setConnection("connecting");
-    });
-  }, []);
+  const select = useCallback(
+    async (instance: CtoxManagedInstance) => {
+      if (!canActivateCtoxInstance(instance)) return false;
+      // A re-selection retries a failed or stalled guest. A ready guest remains
+      // attached without a needless reload.
+      if (selectedIdRef.current === instance.id) {
+        if (connection !== "ready") {
+          setActivationKey((current) => current + 1);
+          setConnection("connecting");
+        }
+        return true;
+      }
+      try {
+        const accepted = await requestActiveWorkjetSelection(instance.id);
+        if (!accepted || !mountedRef.current) return false;
+        setActivationKey((current) => current + 1);
+        setConnection("connecting");
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [connection],
+  );
   const isSelected = useCallback((instanceId: string) => selectedIdRef.current === instanceId, []);
 
   const [appRailVersion, setAppRailVersion] = useState(0);
@@ -881,6 +900,7 @@ export function CtoxModeProvider({
       addSshManagedInstance,
       removeSshManagedInstance,
       select,
+      showNetwork: () => clearSelection("idle"),
       isSelected,
       setConnection,
       openApp,
@@ -895,6 +915,7 @@ export function CtoxModeProvider({
       addSshManagedInstance,
       appRailVersion,
       bridge,
+      clearSelection,
       connection,
       discovery,
       guestStates,
@@ -918,7 +939,12 @@ export function CtoxModeProvider({
     ],
   );
 
-  return <CtoxModeContext value={value}>{children}</CtoxModeContext>;
+  return (
+    <CtoxModeContext value={value}>
+      {children}
+      <InstanceSetupDialog />
+    </CtoxModeContext>
+  );
 }
 
 export function ctoxInstanceStatusLabel(instance: CtoxManagedInstance, connected = false): string {
@@ -968,7 +994,23 @@ export function shouldRenderCtoxShellUpdateStatus(
   instance: CtoxManagedInstance,
   mobileHost: boolean,
 ): boolean {
-  return !(mobileHost && instance.shellUpdate === undefined);
+  const status = instance.shellUpdate;
+  if (mobileHost && status === undefined) return false;
+  // The local fleet cannot inspect shell updates on a managed remote backend.
+  // Its synthetic blocked row does not describe the remote shell's health.
+  if (
+    instance.source !== "local_daemon" &&
+    instance.source !== "ssh_managed" &&
+    instance.status !== "offline" &&
+    status?.phase === "blocked" &&
+    !status.administrable &&
+    status.activeVersion === null &&
+    status.errorCode === null &&
+    status.pause === null
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isWorkjetMobileHostDocument(): boolean {
@@ -1012,7 +1054,7 @@ function CtoxShellUpdateButton({
 }
 
 /**
- * The T3 analogy row set: instance = project, app = session. Docked apps are
+ * The Workjet analogy row set: instance = project, app = session. Docked apps are
  * always listed (greyed via the disabled instance state while disconnected);
  * undocked apps appear only while open; the open app carries a dock-style dot.
  */
@@ -1649,43 +1691,42 @@ const fieldClassName =
 export function PairingAddSurface({
   onClose,
   onImported,
+  initialInvite = "",
+  initialChoice = "invite",
+  existingOnly = false,
+  onBusyChange,
 }: {
   readonly onClose: () => void;
   readonly onImported: (outcome: CtoxMutationOutcome) => void;
+  readonly initialInvite?: string;
+  readonly initialChoice?: "invite" | "manual";
+  readonly existingOnly?: boolean;
+  readonly onBusyChange?: (busy: boolean) => void;
 }) {
   const { importInvite, importManualPairing, addSshManagedInstance } = useCtoxMode();
-  const [choice, setChoice] = useState<"invite" | "manual" | "ssh">("invite");
-  const [invite, setInvite] = useState("");
+  const [choice, setChoice] = useState<"invite" | "manual" | "ssh">(initialChoice);
+  const [invite, setInvite] = useState(initialInvite);
   const [sshHost, setSshHost] = useState("");
   const [sshDisplayName, setSshDisplayName] = useState("");
   const [sshStateRoot, setSshStateRoot] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [instanceId, setInstanceId] = useState("");
   const [syncRoom, setSyncRoom] = useState("");
   const [signalingUrls, setSignalingUrls] = useState("");
   const [browserToken, setBrowserToken] = useState("");
-  const [browserTokenHash, setBrowserTokenHash] = useState("");
-  const [nativeTokenHash, setNativeTokenHash] = useState("");
-  const [capabilityToken, setCapabilityToken] = useState("");
-  const [capabilityExpiresAtMs, setCapabilityExpiresAtMs] = useState("");
-  const [role, setRole] = useState("");
-  const [userId, setUserId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<CtoxMutationOutcome | null>(null);
+
+  useEffect(() => {
+    onBusyChange?.(submitting);
+    return () => onBusyChange?.(false);
+  }, [submitting, onBusyChange]);
 
   const clearPairingState = useCallback(() => {
     setInvite("");
     setDisplayName("");
-    setInstanceId("");
     setSyncRoom("");
     setSignalingUrls("");
     setBrowserToken("");
-    setBrowserTokenHash("");
-    setNativeTokenHash("");
-    setCapabilityToken("");
-    setCapabilityExpiresAtMs("");
-    setRole("");
-    setUserId("");
     setSshHost("");
     setSshDisplayName("");
     setSshStateRoot("");
@@ -1693,6 +1734,7 @@ export function PairingAddSurface({
   }, []);
 
   const close = () => {
+    if (submitting) return;
     clearPairingState();
     onClose();
   };
@@ -1702,7 +1744,7 @@ export function PairingAddSurface({
     if (!outcome.ok) return;
     clearPairingState();
     onImported(outcome);
-    onClose();
+    if (!existingOnly) onClose();
   };
 
   const submitInvite = (event: FormEvent<HTMLFormElement>) => {
@@ -1718,19 +1760,23 @@ export function PairingAddSurface({
     event.preventDefault();
     setSubmitting(true);
     setFeedback(null);
-    const input = buildCtoxManualPairingInput({
-      displayName,
-      instanceId,
-      syncRoom,
-      signalingUrls,
-      browserToken,
-      browserTokenHash,
-      nativeTokenHash,
-      capabilityToken,
-      capabilityExpiresAtMs,
-      role,
-      userId,
-    });
+    let input: CtoxManualPairingImportInput;
+    try {
+      input = decodeBusinessOsManualCredential({
+        displayName,
+        room: syncRoom,
+        signalingUrls,
+        password: browserToken,
+      });
+    } catch (cause) {
+      setFeedback({
+        ok: false,
+        message:
+          cause instanceof Error ? cause.message : "Verbindung konnte nicht vorbereitet werden.",
+      });
+      setSubmitting(false);
+      return;
+    }
     void importManualPairing(input)
       .then(finish)
       .finally(() => setSubmitting(false));
@@ -1759,56 +1805,59 @@ export function PairingAddSurface({
   return (
     <div className="mt-3 rounded-lg border border-sidebar-border/70 bg-sidebar-accent/10 p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-sidebar-foreground">CTOX Backend hinzufügen</p>
+        <p className="text-sm font-medium text-sidebar-foreground">Vorhandene Instanz verbinden</p>
         <button
           type="button"
           className="text-xs text-sidebar-muted-foreground hover:text-sidebar-foreground"
           onClick={close}
+          disabled={submitting}
         >
           Abbrechen
         </button>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-1 rounded-md bg-sidebar-accent/30 p-1">
-        <button
-          type="button"
-          className={cn(
-            "rounded px-2 py-1 text-xs",
-            choice === "invite"
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-muted-foreground",
-          )}
-          aria-pressed={choice === "invite"}
-          onClick={() => choose("invite")}
-        >
-          Einladung
-        </button>
-        <button
-          type="button"
-          className={cn(
-            "rounded px-2 py-1 text-xs",
-            choice === "manual"
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-muted-foreground",
-          )}
-          aria-pressed={choice === "manual"}
-          onClick={() => choose("manual")}
-        >
-          Manuell
-        </button>
-        <button
-          type="button"
-          className={cn(
-            "rounded px-2 py-1 text-xs",
-            choice === "ssh"
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-muted-foreground",
-          )}
-          aria-pressed={choice === "ssh"}
-          onClick={() => choose("ssh")}
-        >
-          SSH
-        </button>
-      </div>
+      {!existingOnly ? (
+        <div className="mt-2 grid grid-cols-3 gap-1 rounded-md bg-sidebar-accent/30 p-1">
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-1 text-xs",
+              choice === "invite"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-muted-foreground",
+            )}
+            aria-pressed={choice === "invite"}
+            onClick={() => choose("invite")}
+          >
+            Einladung
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-1 text-xs",
+              choice === "manual"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-muted-foreground",
+            )}
+            aria-pressed={choice === "manual"}
+            onClick={() => choose("manual")}
+          >
+            Manuell
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2 py-1 text-xs",
+              choice === "ssh"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-muted-foreground",
+            )}
+            aria-pressed={choice === "ssh"}
+            onClick={() => choose("ssh")}
+          >
+            SSH
+          </button>
+        </div>
+      ) : null}
 
       {choice === "ssh" ? (
         <form className="mt-3 space-y-2" onSubmit={submitSsh}>
@@ -1863,7 +1912,7 @@ export function PairingAddSurface({
       ) : choice === "invite" ? (
         <form className="mt-3" onSubmit={submitInvite}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Einladungs-JSON oder CTOX-Desktop-Einladungslink
+            Einladungslink
             <textarea
               className={cn(fieldClassName, "min-h-20 resize-y")}
               value={invite}
@@ -1885,28 +1934,17 @@ export function PairingAddSurface({
       ) : (
         <form className="mt-3 space-y-2" onSubmit={submitManual}>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Anzeigename
+            Name (optional)
             <input
               className={fieldClassName}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               autoComplete="off"
-              required
               maxLength={256}
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Instanz-ID (optional)
-            <input
-              className={fieldClassName}
-              value={instanceId}
-              onChange={(event) => setInstanceId(event.target.value)}
-              autoComplete="off"
-              maxLength={256}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Synchronisierungskennung
+            Raum
             <input
               className={fieldClassName}
               value={syncRoom}
@@ -1917,7 +1955,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Verbindungsadressen (eine pro Zeile oder durch Komma getrennt)
+            Signaling-Server
             <textarea
               className={cn(fieldClassName, "min-h-16 resize-y")}
               value={signalingUrls}
@@ -1928,7 +1966,7 @@ export function PairingAddSurface({
             />
           </label>
           <label className="block text-xs text-sidebar-muted-foreground">
-            Browser-Signaling-Token
+            Verbindungspasswort
             <input
               type="password"
               className={fieldClassName}
@@ -1936,76 +1974,7 @@ export function PairingAddSurface({
               onChange={(event) => setBrowserToken(event.target.value)}
               autoComplete="off"
               required
-              maxLength={4_096}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Browser-Token-SHA-256
-            <input
-              className={fieldClassName}
-              value={browserTokenHash}
-              onChange={(event) => setBrowserTokenHash(event.target.value)}
-              autoComplete="off"
-              required
-              minLength={64}
-              maxLength={64}
-              pattern="[a-f0-9]{64}"
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Native-Token-SHA-256
-            <input
-              className={fieldClassName}
-              value={nativeTokenHash}
-              onChange={(event) => setNativeTokenHash(event.target.value)}
-              autoComplete="off"
-              required
-              minLength={64}
-              maxLength={64}
-              pattern="[a-f0-9]{64}"
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Berechtigungstoken (optional)
-            <input
-              type="password"
-              className={fieldClassName}
-              value={capabilityToken}
-              onChange={(event) => setCapabilityToken(event.target.value)}
-              autoComplete="off"
-              maxLength={16_384}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Token-Ablauf (optional)
-            {/* A raw Unix-milliseconds number field was operator-hostile and
-                let typos become near-NaN payloads (Befund K-B15); the picker
-                converts to epoch ms in the build step. */}
-            <input
-              type="datetime-local"
-              className={fieldClassName}
-              value={capabilityExpiresAtMs}
-              onChange={(event) => setCapabilityExpiresAtMs(event.target.value)}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Rolle (optional)
-            <input
-              className={fieldClassName}
-              value={role}
-              onChange={(event) => setRole(event.target.value)}
-              autoComplete="off"
-              maxLength={128}
-            />
-          </label>
-          <label className="block text-xs text-sidebar-muted-foreground">
-            Benutzer-ID (optional)
-            <input
-              className={fieldClassName}
-              value={userId}
-              onChange={(event) => setUserId(event.target.value)}
-              autoComplete="off"
-              maxLength={256}
+              maxLength={131_072}
             />
           </label>
           <button
@@ -2105,20 +2074,15 @@ export function CtoxSidebarFooter() {
   );
 }
 
-export function CtoxSidebarShell() {
-  const { discovery, bridge, removePairedInstance, removeSshManagedInstance } = useCtoxMode();
-  const [addOpen, setAddOpen] = useState(false);
+export function CtoxSidebarShell({ showChrome = true }: { readonly showChrome?: boolean }) {
+  const { discovery, bridge, selectedId, removePairedInstance, removeSshManagedInstance } =
+    useCtoxMode();
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [mutationFeedback, setMutationFeedback] = useState<CtoxMutationOutcome | null>(null);
   const managedState = getCtoxManagedState(discovery);
   const readyInstances =
     discovery !== "loading" && discovery._tag === "ready" ? discovery.instances : [];
-  const groups = groupCtoxInstances(readyInstances);
-  const managed = groups.find((group) => group.key === "managed")!;
-  const paired = groups.find((group) => group.key === "paired")!;
-  const supplementalGroups = groups.filter(
-    (group) => (group.key === "local" || group.key === "ssh") && group.instances.length > 0,
-  );
+  const activeInstance = readyInstances.find((instance) => instance.id === selectedId);
 
   const remove = (instance: CtoxManagedInstance) => {
     setRemovingId(instance.id);
@@ -2131,11 +2095,11 @@ export function CtoxSidebarShell() {
 
   return (
     <>
-      <SidebarChromeHeader isElectron />
+      {showChrome ? <SidebarChromeHeader isElectron /> : null}
       <SidebarContent className="gap-0" data-ctox-sidebar-shell="">
         <SidebarGroup className="px-[calc(var(--sidebar-content-inset)+0.5rem)] py-4">
           <div className="mb-4 flex items-center justify-between gap-2 px-1">
-            <p className="text-sm font-semibold text-sidebar-foreground">CTOX Backends</p>
+            <p className="text-sm font-semibold text-sidebar-foreground">Aktives Backend</p>
             <div className="flex items-center gap-1">
               {/* Refresh lives ONCE, in the footer strip — the second copy
                   fifteen lines away confused more than it helped (K-B10). */}
@@ -2144,12 +2108,11 @@ export function CtoxSidebarShell() {
                 className="rounded-md p-1 text-sidebar-muted-foreground transition-colors hover:bg-sidebar-accent/40 hover:text-sidebar-foreground disabled:opacity-50"
                 onClick={() => {
                   setMutationFeedback(null);
-                  setAddOpen((open) => !open);
+                  openInstanceSetup();
                 }}
                 disabled={bridge === undefined}
-                aria-label="CTOX Backend hinzufügen"
-                aria-expanded={addOpen}
-                title="CTOX Backend hinzufügen"
+                aria-label="Instanz hinzufügen"
+                title="Instanz hinzufügen"
               >
                 <Plus className="size-3.5" aria-hidden />
               </button>
@@ -2179,102 +2142,27 @@ export function CtoxSidebarShell() {
             <p className="text-xs text-destructive" role="alert">
               CTOX Backends konnten nicht geladen werden. Bitte aktualisieren.
             </p>
+          ) : activeInstance === undefined ? (
+            <div className="space-y-3">
+              <p className="text-xs text-sidebar-muted-foreground" role="status">
+                Wähle ein Backend im Dropdown oben aus.
+              </p>
+              <ManagedAccountState state={managedState} hasPairedInstances={false} />
+            </div>
           ) : (
             <div className="space-y-3">
-              <section aria-labelledby="ctox-managed-heading">
-                <div className="mb-1 flex min-h-6 items-center justify-between gap-2 px-1">
-                  <h2
-                    id="ctox-managed-heading"
-                    className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
-                  >
-                    CTOX Backend
-                  </h2>
-                  {managedState === "ready" ? (
-                    <ManagedAccountState
-                      state={managedState}
-                      hasPairedInstances={paired.instances.length > 0}
-                    />
-                  ) : null}
-                </div>
-                {managedState === "ready" ? (
-                  managed.instances.length === 0 ? (
-                    <p className="text-xs text-sidebar-muted-foreground" role="status">
-                      Keine CTOX Backends verfügbar.
-                    </p>
-                  ) : (
-                    <CtoxManagedInstanceList instances={managed.instances} />
-                  )
-                ) : (
-                  <ManagedAccountState
-                    state={managedState}
-                    hasPairedInstances={paired.instances.length > 0}
-                  />
-                )}
-              </section>
-
-              <section aria-labelledby="ctox-paired-heading">
-                <div className="mb-1 flex min-h-6 items-center justify-between px-1">
-                  <h2
-                    id="ctox-paired-heading"
-                    className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
-                  >
-                    Verbundene Backends
-                  </h2>
-                  {paired.instances.length > 0 ? (
-                    <span className="text-[10px] tabular-nums text-sidebar-muted-foreground/60">
-                      {paired.instances.length}
-                    </span>
-                  ) : null}
-                </div>
-                {discovery === "loading" ? (
-                  <p className="text-xs text-sidebar-muted-foreground" role="status">
-                    Verbundene Backends werden geladen…
-                  </p>
-                ) : paired.instances.length === 0 ? (
-                  <p className="text-xs text-sidebar-muted-foreground" role="status">
-                    Keine verbundenen Backends.
-                  </p>
-                ) : (
-                  <>
-                    <CtoxInstanceList
-                      instances={paired.instances}
-                      label="Verbundene Backends"
-                      removingId={removingId}
-                      onRemove={remove}
-                    />
-                  </>
-                )}
-              </section>
-
-              {supplementalGroups.map((group) => (
-                <section key={group.key} aria-labelledby={`ctox-${group.key}-heading`}>
-                  <div className="mb-1 flex min-h-6 items-center justify-between px-1">
-                    <h2
-                      id={`ctox-${group.key}-heading`}
-                      className="text-[10px] font-medium uppercase tracking-[0.1em] text-sidebar-muted-foreground"
-                    >
-                      {group.label}
-                    </h2>
-                    <span className="text-[10px] tabular-nums text-sidebar-muted-foreground/60">
-                      {group.instances.length}
-                    </span>
-                  </div>
-                  <CtoxInstanceList
-                    instances={group.instances}
-                    label={group.label}
-                    {...(group.key === "ssh" ? { removingId, onRemove: remove } : {})}
-                  />
-                </section>
-              ))}
+              <ManagedAccountState state={managedState} hasPairedInstances={true} />
+              <CtoxInstanceList
+                instances={[activeInstance]}
+                label="Aktives Backend"
+                removingId={removingId}
+                onRemove={remove}
+              />
             </div>
           )}
-
-          {addOpen ? (
-            <PairingAddSurface onClose={() => setAddOpen(false)} onImported={setMutationFeedback} />
-          ) : null}
         </SidebarGroup>
       </SidebarContent>
-      <CtoxSidebarFooter />
+      {showChrome ? <CtoxSidebarFooter /> : null}
     </>
   );
 }
@@ -2307,11 +2195,16 @@ export function retainCtoxGuestBounds(
 }
 
 export function claimCtoxGuestActivation(
-  activatedKey: { current: number },
+  activatedKey: { current: { readonly activationKey: number; readonly instanceId: string } | null },
   activationKey: number,
+  instanceId: string,
 ): boolean {
-  if (activatedKey.current === activationKey) return false;
-  activatedKey.current = activationKey;
+  if (
+    activatedKey.current?.activationKey === activationKey &&
+    activatedKey.current.instanceId === instanceId
+  )
+    return false;
+  activatedKey.current = { activationKey, instanceId };
   return true;
 }
 
@@ -2336,6 +2229,26 @@ export function isCurrentCtoxGuestActivation(
     current.modeReady === expected.modeReady &&
     current.selectedId === expected.selectedId
   );
+}
+
+export function scheduleCtoxGuestActivationDeadline(
+  expected: CtoxGuestActivationState,
+  current: () => CtoxGuestActivationState,
+  mounted: () => boolean,
+  onSlow: () => void,
+  onTimeout: () => void,
+): () => void {
+  const stillCurrent = () => isCurrentCtoxGuestActivation(mounted(), current(), expected);
+  const hint = setTimeout(() => {
+    if (stillCurrent()) onSlow();
+  }, 15_000);
+  const deadline = setTimeout(() => {
+    if (stillCurrent()) onTimeout();
+  }, 30_000);
+  return () => {
+    clearTimeout(hint);
+    clearTimeout(deadline);
+  };
 }
 
 export function trackCtoxGuestActivation(
@@ -2365,10 +2278,14 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
     selectedId,
     setConnection,
     reportGuestBounds,
+    select,
   } = useCtoxMode();
   const hostRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
-  const activatedKeyRef = useRef(0);
+  const activatedKeyRef = useRef<{
+    readonly activationKey: number;
+    readonly instanceId: string;
+  } | null>(null);
   const activationStateRef = useRef({
     activationKey,
     bridge,
@@ -2413,7 +2330,7 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
       bounds.height === 0 ||
       !modeReady ||
       selectedId !== instance.id ||
-      !claimCtoxGuestActivation(activatedKeyRef, activationKey)
+      !claimCtoxGuestActivation(activatedKeyRef, activationKey, instance.id)
     )
       return;
     const expectedActivation = {
@@ -2445,17 +2362,30 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
     void bridge.setGuestBounds(bounds).catch(() => undefined);
   }, [bounds, bridge, connection]);
 
-  // A connect that never settles used to stand as static text forever
-  // (Befund K-BH1) — after 30s the copy changes to an actionable hint.
+  // A native activation may never settle if its IPC or navigation stalls.
+  // Stop claiming that the backend is still opening and allow a retry.
   const [connectingTooLong, setConnectingTooLong] = useState(false);
   useEffect(() => {
-    if (connection !== "connecting") {
+    if (connection !== "connecting" || !modeReady) {
       setConnectingTooLong(false);
       return;
     }
-    const id = setTimeout(() => setConnectingTooLong(true), 30_000);
-    return () => clearTimeout(id);
-  }, [connection]);
+    setConnectingTooLong(false);
+    const expectedActivation = {
+      activationKey,
+      bridge,
+      instanceId: instance.id,
+      modeReady,
+      selectedId,
+    };
+    return scheduleCtoxGuestActivationDeadline(
+      expectedActivation,
+      () => activationStateRef.current,
+      () => mountedRef.current,
+      () => setConnectingTooLong(true),
+      () => setConnection("error"),
+    );
+  }, [activationKey, bridge, connection, instance.id, modeReady, selectedId, setConnection]);
 
   const fallback = {
     connecting: connectingTooLong
@@ -2481,20 +2411,31 @@ function CtoxGuestHost({ instance }: { readonly instance: CtoxManagedInstance })
           reader noise and a false claim if the view ever vanished
           (Befund K-BH2) — ready renders no fallback at all. */}
       {connection === "ready" ? null : (
-        <p
+        <div
           className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-muted-foreground"
           role="status"
           aria-busy={connection === "connecting"}
         >
-          {connection === "connecting" ? (
-            <span className="inline-flex items-center gap-2">
-              <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-              {fallback}
-            </span>
-          ) : (
-            fallback
-          )}
-        </p>
+          <span className="flex flex-col items-center gap-3">
+            {connection === "connecting" ? (
+              <span className="inline-flex items-center gap-2">
+                <RefreshCw className="size-3.5 animate-spin" aria-hidden />
+                {fallback}
+              </span>
+            ) : (
+              fallback
+            )}
+            {(connectingTooLong || connection === "error") && (
+              <button
+                type="button"
+                className="rounded-md border border-border px-3 py-1.5 text-xs text-foreground hover:bg-muted"
+                onClick={() => void select(instance)}
+              >
+                Erneut verbinden
+              </button>
+            )}
+          </span>
+        </div>
       )}
     </div>
   );
@@ -2520,7 +2461,7 @@ export function CtoxMainShell() {
         ? {
             title: "CTOX Backend nicht verfügbar",
             description:
-              "CTOX Backends konnten nicht geladen werden. Bitte aktualisieren Sie die Seitenleiste.",
+              "Instanzen konnten nicht geladen werden. Öffnen Sie Einstellungen → Business OS, um die Verbindung zu aktualisieren.",
           }
         : discovery === "loading"
           ? {
@@ -2534,10 +2475,10 @@ export function CtoxMainShell() {
 
   return (
     <SidebarInset
-      className="flex h-dvh min-h-0 flex-col overflow-hidden overscroll-y-none bg-background text-foreground"
+      className="flex h-full min-h-0 flex-col overflow-hidden overscroll-y-none bg-background text-foreground"
       data-ctox-main-shell=""
     >
-      <header
+      <WorkjetHeaderContent
         data-ctox-main-chrome=""
         className={cn(
           "workspace-topbar drag-region flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
@@ -2545,11 +2486,9 @@ export function CtoxMainShell() {
         )}
       >
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">
-            {selected?.displayName ?? "Business OS"}
-          </p>
+          <p className="truncate text-sm font-medium text-foreground">Desktop</p>
           <p className="truncate text-[11px] text-muted-foreground">
-            {selected === undefined ? emptyState.title : "Business OS"}
+            {selected === undefined ? emptyState.title : null}
           </p>
         </div>
         {selected !== undefined &&
@@ -2564,14 +2503,14 @@ export function CtoxMainShell() {
             <span
               className={cn(
                 "size-1.5 rounded-full",
-                connection === "ready" ? "bg-emerald-500" : "bg-muted-foreground/45",
+                connection === "ready" ? "bg-primary" : "bg-muted-foreground/45",
               )}
               aria-hidden
             />
-            {connection === "ready" ? "Verbunden" : "Wird verbunden…"}
+            {CONNECTION_LABELS[connection]}
           </span>
         ) : null}
-      </header>
+      </WorkjetHeaderContent>
       {selected === undefined ? (
         <Empty className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">

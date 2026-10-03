@@ -26,6 +26,12 @@ describe("MiniMax Code runtime selection", () => {
     expect(resolveMiniMaxModelValue(options([tokenRoute, apiRoute]), model, [{ id: "providerRoute", value: apiRoute }])).toBe(apiRoute);
     expect(() => resolveMiniMaxModelValue(options(), model, [{ id: "providerRoute", value: apiRoute }])).toThrow("selected route");
   });
+  it("keeps the native provider and variant when switching to another advertised model", () => {
+    expect(resolveMiniMaxModelValue(options(["m:minimax_oauth:older-model:u", tokenRoute, apiRoute]), model)).toBe(tokenRoute);
+    const fastRoute = `m:minimax_oauth:${model}:v:fast`;
+    expect(resolveMiniMaxModelValue(options(["m:minimax_oauth:older-model:v:fast", fastRoute, tokenRoute, apiRoute]), model)).toBe(fastRoute);
+    expect(() => resolveMiniMaxModelValue(options(["m:minimax_oauth:older-model:v:other-variant", tokenRoute, apiRoute]), model)).toThrow("Choose a MiniMax Code provider route");
+  });
   it("requires a route when multiple non-current routes advertise a model", () => {
     expect(() => resolveMiniMaxModelValue(options(["m:other:other-model:u", tokenRoute, apiRoute]), model)).toThrow("Choose a MiniMax Code provider route");
   });

@@ -104,6 +104,7 @@ import {
 } from "../composerFooterLayout";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { getGreppyManualModelCatalog } from "./greppyManualModels";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -1577,6 +1578,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       (workjetGatewayCatalogQuery.data === null
         ? "The Workjet gateway catalog is not available — type a model id."
         : "The gateway catalog lists no models — type a model id."));
+  const greppyManualModels = useMemo(
+    () =>
+      getGreppyManualModelCatalog(
+        selectedProviderEntry,
+        settings.providerInstances?.[selectedInstanceId]?.routeViaGateway === true,
+      ),
+    [selectedProviderEntry, selectedInstanceId, settings.providerInstances],
+  );
+  const manualModels = greppyManualModels ?? manualGatewayModels;
   /**
    * The instances a manual harness choice may target: configured in this
    * build, and — on a thread locked to a continuation provider — of the
@@ -3442,9 +3452,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         selectedHarness={harnessForProviderInstanceId(selectedInstanceId)}
         onSelectHarness={handleSelectManualHarness}
-        models={manualGatewayModels}
+        modelSource={greppyManualModels === null ? "gateway" : "configured"}
+        models={manualModels}
         modelsUnavailableReason={
-          manualGatewayModels.length === 0 ? manualModelsUnavailableReason : null
+          manualModels.length === 0
+            ? greppyManualModels === null
+              ? manualModelsUnavailableReason
+              : "No models configured for this Greppy profile — enter a model ID."
+            : null
         }
         selectedModelId={selectedModelForPickerWithCustomFallback}
         onSelectModel={handleSelectManualModel}

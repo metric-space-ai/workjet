@@ -570,7 +570,8 @@ export interface ComposerManualTargetControlsProps {
   readonly unavailableHint?: string | undefined;
   readonly selectedHarness: WorkjetHarness | null;
   readonly onSelectHarness: (harness: WorkjetHarness) => void;
-  /** The FULL gateway catalog; the menu groups the models by provider. */
+  /** Configured profiles allow custom IDs; gateway catalogs group by provider. */
+  readonly modelSource?: "gateway" | "configured";
   readonly models: ReadonlyArray<WorkjetGatewayModelSummary>;
   /** Why the model list may be empty; shown instead of a silent blank. */
   readonly modelsUnavailableReason: string | null;
@@ -585,8 +586,9 @@ export interface ComposerManualTargetControlsProps {
 
 /** Exported unwrapped so a test can call it; `memo` returns an object. */
 export function ComposerManualTargetControlsView(props: ComposerManualTargetControlsProps) {
-  // Free-text fallback: the gateway catalog is a discovery aid, not an
-  // authority — any model id the gateway accepts may be typed directly.
+  const configuredModels = props.modelSource === "configured";
+  // Configured IDs and gateway discovery both allow a custom model ID.
+  // The selected runtime verifies availability when the turn starts.
   const [localCustomModelDraft, setLocalCustomModelDraft] = useState<string | null>(null);
   const customModelDraft = props.customModelEditor
     ? props.customModelEditor.draft
@@ -602,10 +604,11 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     harnessOptions.find((option) => option.id === props.selectedHarness) ?? null;
   const selectedModelSummary = props.models.find((model) => model.id === props.selectedModelId);
   const modelInCatalog = selectedModelSummary !== undefined;
-  const modelGroups = composerGatewayModelMenuGroups(props.models);
-  const selectedModelProvider =
-    props.models.find((model) => model.id === props.selectedModelId)?.providers[0] ??
-    inferGatewayProviderFromModelId(props.selectedModelId);
+  const modelGroups = configuredModels ? [] : composerGatewayModelMenuGroups(props.models);
+  const selectedModelProvider = configuredModels
+    ? null
+    : (selectedModelSummary?.providers[0] ??
+      inferGatewayProviderFromModelId(props.selectedModelId));
   // The rail's active provider: the explicit pick, else the provider of the
   // current model, else the first group.
   const activeModelProvider =
@@ -613,12 +616,13 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     selectedModelProvider ??
     modelGroups.find(([, models]) => models.length > 0)?.[0] ??
     COMPOSER_GATEWAY_PROVIDER_RAIL[0];
-  const activeProviderModels =
-    modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? [];
+  const activeProviderModels = configuredModels
+    ? props.models
+    : (modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? []);
   const showCurrentCustomModel =
     !modelInCatalog &&
     props.selectedModelId.length > 0 &&
-    (selectedModelProvider ?? activeModelProvider) === activeModelProvider;
+    (configuredModels || (selectedModelProvider ?? activeModelProvider) === activeModelProvider);
 
   const backToModels = () => {
     setCustomModelEditorOpen(false);
@@ -629,6 +633,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     <span
       className="flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-1"
       data-composer-manual-target-controls="true"
+      data-model-catalog-source={props.modelSource ?? "gateway"}
     >
       {/* Harness */}
       <Tooltip>
@@ -689,7 +694,11 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             className="min-w-0 max-w-56"
             aria-label="Model"
             type="button"
-            title="Served by the Workjet gateway; choose a catalog model or enter its ID."
+            title={
+              configuredModels
+                ? "Configured for this Greppy profile; choose a model or enter its ID."
+                : "Served by the Workjet gateway; choose a catalog model or enter its ID."
+            }
           >
             <ComposerControlIcon icon={CpuIcon} />
             <span className="min-w-0 truncate">
@@ -702,7 +711,11 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         onBack={backToModels}
         backLabel="Back to models"
         detailTitle="Custom model"
-        detailDescription="Enter a model ID accepted by your gateway. Choose Use model to apply it to this chat."
+        detailDescription={
+          configuredModels
+            ? "Enter a model ID accepted by this Greppy profile's endpoint. Choose Use model to apply it to this chat."
+            : "Enter a model ID accepted by your gateway. Choose Use model to apply it to this chat."
+        }
         detail={
           customModelEditorOpen ? (
             <ComposerCustomModelEditor
@@ -723,39 +736,48 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
         }
         list={
           <div className="flex min-w-0 flex-row" data-composer-model-mini-menu="true">
-            <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
-              {modelGroups.map(([provider]) => {
-                const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
-                const active = provider === activeModelProvider;
-                return (
-                  <button
-                    key={provider}
-                    type="button"
-                    aria-label={GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
-                    aria-pressed={active}
-                    className={
-                      "inline-flex size-8 items-center justify-center rounded-md text-foreground/80 transition-colors " +
-                      (active ? "bg-accent text-accent-foreground" : "hover:bg-muted")
-                    }
-                    onClick={() => setModelProviderChoice(provider)}
-                  >
-                    {RailIcon ? (
-                      <RailIcon className="size-4" />
-                    ) : (
-                      <span className="text-[11px] font-semibold uppercase">
-                        {(GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider).slice(0, 1)}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            {configuredModels ? null : (
+              <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
+                {modelGroups.map(([provider]) => {
+                  const RailIcon = GATEWAY_PROVIDER_RAIL_ICONS[provider];
+                  const active = provider === activeModelProvider;
+                  return (
+                    <button
+                      key={provider}
+                      type="button"
+                      aria-label={GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider}
+                      aria-pressed={active}
+                      className={
+                        "inline-flex size-8 items-center justify-center rounded-md text-foreground/80 transition-colors " +
+                        (active ? "bg-accent text-accent-foreground" : "hover:bg-muted")
+                      }
+                      onClick={() => setModelProviderChoice(provider)}
+                    >
+                      {RailIcon ? (
+                        <RailIcon className="size-4" />
+                      ) : (
+                        <span className="text-[11px] font-semibold uppercase">
+                          {(GATEWAY_PROVIDER_GROUP_LABELS[provider] ?? provider).slice(0, 1)}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="flex max-h-80 min-w-0 flex-1 flex-col overflow-y-auto p-1.5">
               <div className="px-2 pt-1 pb-1.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                {GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
-                  activeModelProvider ??
-                  "Models"}
+                {configuredModels
+                  ? "Configured models"
+                  : (GATEWAY_PROVIDER_GROUP_LABELS[activeModelProvider ?? ""] ??
+                    activeModelProvider ??
+                    "Models")}
               </div>
+              {configuredModels ? (
+                <p className="px-2 pb-1.5 text-xs leading-4 text-muted-foreground">
+                  Configured for this Greppy profile. Availability is checked when a turn starts.
+                </p>
+              ) : null}
               {activeProviderModels.map((model) => (
                 <button
                   key={model.id}

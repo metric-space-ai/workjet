@@ -17,6 +17,43 @@ export const TAILSCALE_PROBE_TIMEOUT = Duration.millis(2_500);
 const tailscaleCommandForPlatform = (platform: NodeJS.Platform): "tailscale" | "tailscale.exe" =>
   platform === "win32" ? "tailscale.exe" : "tailscale";
 
+// Finder-launched macOS apps do not inherit a login shell's PATH. The App Store
+// binary is also a CLI when explicitly requested, while standalone installs
+// expose a launcher and Homebrew may install the CLI outside the GUI PATH.
+const macCliFallbacks = [
+  "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+  "/usr/local/bin/tailscale",
+  "/opt/homebrew/bin/tailscale",
+] as const;
+
+const spawnTailscale = (
+  spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+  platform: NodeJS.Platform,
+  args: ReadonlyArray<string>,
+) => {
+  const spawn = (executable: string) =>
+    spawner.spawn(
+      executable === macCliFallbacks[0]
+        ? ChildProcess.make(executable, args, {
+            env: { TAILSCALE_BE_CLI: "1" },
+            extendEnv: true,
+          })
+        : ChildProcess.make(executable, args),
+    );
+  const primary = spawn(tailscaleCommandForPlatform(platform));
+  return platform !== "darwin"
+    ? primary
+    : macCliFallbacks.reduce(
+        (previous, candidate) =>
+          previous.pipe(
+            Effect.catch((error) =>
+              error.reason._tag === "NotFound" ? spawn(candidate) : Effect.fail(error),
+            ),
+          ),
+        primary,
+      );
+};
+
 const TailscaleCommandContext = {
   executable: Schema.Literals(["tailscale", "tailscale.exe"]),
   subcommand: Schema.Literals(["status", "serve"]),
@@ -229,11 +266,9 @@ const readTailscaleStatusJson = Effect.gen(function* () {
     argumentCount: args.length,
   };
   return yield* Effect.gen(function* () {
-    const child = yield* spawner
-      .spawn(ChildProcess.make(executable, args))
-      .pipe(
-        Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
-      );
+    const child = yield* spawnTailscale(spawner, hostPlatform, args).pipe(
+      Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
+    );
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [
         collectStdout(child.stdout),
@@ -351,11 +386,9 @@ const runTailscaleCommand = (
     };
     const timeout = Duration.fromInputUnsafe(timeoutInput);
     return yield* Effect.gen(function* () {
-      const child = yield* spawner
-        .spawn(ChildProcess.make(executable, args))
-        .pipe(
-          Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
-        );
+      const child = yield* spawnTailscale(spawner, hostPlatform, args).pipe(
+        Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
+      );
       const [stderr, exitCode] = yield* Effect.all(
         [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],
         { concurrency: "unbounded" },

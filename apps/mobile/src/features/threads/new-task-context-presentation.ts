@@ -12,10 +12,11 @@ export function resolveNewTaskWorkspaceLabel(input: {
 
 export function resolveNewTaskBranchWorktreePath(input: {
   readonly workspaceMode: WorkspaceMode;
-  readonly projectCwd: string;
+  readonly projectCwd: string | null;
   readonly branchWorktreePath: string | null | undefined;
 }): string | null {
   if (
+    input.projectCwd === null ||
     input.workspaceMode === "worktree" ||
     !input.branchWorktreePath ||
     input.branchWorktreePath === input.projectCwd
@@ -31,12 +32,14 @@ export function resolveNewTaskLocalWorkspaceSelection(input: {
     readonly current: boolean;
     readonly worktreePath?: string | null;
   }>;
-  readonly projectCwd: string;
+  readonly projectCwd: string | null;
 }): {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly awaitsCurrentBranch: boolean;
 } {
+  if (input.projectCwd === null)
+    return { branch: null, worktreePath: null, awaitsCurrentBranch: false };
   const currentBranch = input.branches.find((branch) => branch.current) ?? null;
   if (!currentBranch) {
     return {

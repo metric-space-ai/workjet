@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./localServiceTarget": {
+      "types": "./src/localServiceTarget.ts",
+      "import": "./src/localServiceTarget.ts"
+    },
+    "./providerGatewayHostDiagnostic": {
+      "types": "./src/providerGatewayHostDiagnostic.ts",
+      "import": "./src/providerGatewayHostDiagnostic.ts"
+    },
     "./projectFavicon": {
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"

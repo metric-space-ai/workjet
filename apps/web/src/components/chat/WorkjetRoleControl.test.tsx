@@ -253,7 +253,7 @@ describe("WorkjetRoleControl", () => {
     const markup = renderControl({ ...baseProps, role: "worker" });
 
     expect(markup).toContain('data-workjet-role="worker"');
-    expect(markup).toContain("Worker");
+    expect(markup).toContain("Luma");
     expect(markup).not.toContain('data-workjet-role="standard"');
     expect(markup).not.toContain('data-workjet-role="orchestrator"');
 
@@ -323,7 +323,7 @@ describe("WorkjetRoleControl compact variant", () => {
     expect(text).toContain("Workjet");
     expect(text).toContain("Code");
     expect(text).toContain("Orchestrator");
-    expect(text).not.toContain("Worker");
+    expect(text).not.toContain("Luma");
     expect(text).toContain(WORKJET_ROLE_NEXT_SESSION_HINT);
     expect(text).toContain("Workjet settings");
 
@@ -345,7 +345,7 @@ describe("WorkjetRoleControl compact variant", () => {
     });
     const text = textContent(content);
 
-    expect(text).toContain("Worker");
+    expect(text).toContain("Luma");
     expect(text).toContain(WORKJET_WORKER_ROLE_REASON);
 
     const [radioGroup] = collectByAttribute(content, "onValueChange");

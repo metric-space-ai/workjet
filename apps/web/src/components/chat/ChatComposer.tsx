@@ -1047,7 +1047,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (draftWorkjetConfig.ctoxCrewChat !== undefined && workerId !== selectedWorkjetWorkerId) {
         toastManager.add({
           type: "info",
-          title: "Open a new thread to choose a different worker.",
+          title: "Open a new thread to choose a different Luma.",
         });
         return;
       }
@@ -1199,7 +1199,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : selectedWorkjetWorker === null
       ? null
       : workerBoundComputer === null
-        ? "This worker's computer is no longer in the Workjet catalog — the thread stays on its current environment."
+        ? "This Luma's computer is no longer in the Workjet catalog — the thread stays on its current environment."
         : workerBoundComputer.environmentId !== environmentId
           ? `${workerBoundComputer.label} does not have this project — the thread stays on its current environment.`
           : null;
@@ -1509,7 +1509,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         (nativeDraftIntent.projectId !== nativeProject.id ||
           nativeDraftIntent.workerProfileId !== selectedWorkjetWorker.id)) ||
       (privateChatBinding !== undefined && nativeDraftIntent === undefined))
-      ? "Choose the project and worker belonging to this draft's private chat."
+      ? "Choose the project and Luma belonging to this draft's private chat."
       : null;
   const privateChatSendDisabledReason =
     !composerTargetIsThread &&
@@ -1530,7 +1530,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedWorkjetWorker !== null &&
     nativeProject !== undefined &&
     draftWorkjetConfig.ctoxCrewChat === undefined
-      ? "Open a private worker chat before sending."
+      ? "Open a private Luma chat before sending."
       : null);
   const isSendDisabled = effectiveSendDisabledReason !== null;
   // Live per-provider model discovery — the same source the settings pools

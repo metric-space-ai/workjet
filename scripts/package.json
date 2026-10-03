@@ -14,6 +14,7 @@
     "@metric-space-ai/workjet-capabilities": "workspace:*",
     "@workjet/contracts": "workspace:*",
     "@workjet/shared": "workspace:*",
+    "@workjet/ssh": "workspace:*",
     "@workjet/tailscale": "workspace:*",
     "effect": "catalog:",
     "pngjs": "7.0.0",

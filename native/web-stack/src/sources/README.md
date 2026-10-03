@@ -43,6 +43,8 @@ erfolgreichem Warm-up an genau einen Adapter-Retry übergeben. Der Fallback
 übergibt weder Credentials noch Seiteninhalt, folgt keinen fremden Domains und
 löst keine CAPTCHAs. Andere Klassifikationen starten ihn nicht.
 
+D&B Direct+ darf `wz_code` nur aus ausdrücklich als WZ 2008 bezeichneten Unterklassen liefern: fünf Ziffern oder das Format `20.14.0`. Die Evidenz erhält die originale Klassifikationsbezeichnung und den originalen Code. NACE, SIC, NOGA, ÖNACE, ältere WZ-Ausgaben sowie unvollständige oder widersprüchliche WZ-Einträge ergeben keinen WZ-Wert. Schreibvarianten derselben Unterklasse gelten dabei nicht als Widerspruch.
+
 ## Datei-Konventionen
 
 Pro Quelle wird **genau eine** Datei angefasst:

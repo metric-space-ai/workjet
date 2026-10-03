@@ -41,9 +41,12 @@ const makeProjectionSnapshotQueryLayer = (project: OrchestrationProject) =>
     getFirstActiveThreadIdByProjectId: () => Effect.die("unused"),
     getThreadCheckpointContext: () => Effect.die("unused"),
     getThreadWorktreeCleanupContext: () => Effect.die("unused"),
+    listDeletedWorkerWorktreeCleanupThreadIds: () => Effect.die("unused"),
     getFullThreadDiffContext: () => Effect.die("unused"),
     getThreadShellById: () => Effect.die("unused"),
     getThreadDetailById: () => Effect.die("unused"),
+    isThreadTurnTerminal: () => Effect.die("unused"),
+    getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
     getThreadDetailSnapshot: () => Effect.die("unused"),
     searchThreads: () => Effect.succeed({ matches: [] }),
   });
@@ -58,6 +61,7 @@ const makeTerminalManagerLayer = (
     clear: () => Effect.void,
     restart: () => Effect.die(new Error("unused")),
     close: () => Effect.void,
+    closeForCleanup: () => Effect.die(new Error("unused")),
     subscribe: () => Effect.succeed(() => undefined),
     subscribeMetadata: () => Effect.succeed(() => undefined),
   });

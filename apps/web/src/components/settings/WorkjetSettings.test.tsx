@@ -133,7 +133,7 @@ describe("Workjet configuration settings", () => {
       expect(markup).not.toContain(gone);
     }
     expect(markup).toContain('role="tablist"');
-    expect(markup).toContain("No saved workers");
+    expect(markup).toContain("No saved Lumas");
     expect(markup).not.toContain("Connection targets");
     // The Greppy RUNTIME sits under Workers now — it supports composition.
     expect(markup).toContain("Greppy Runtime");
@@ -153,7 +153,7 @@ describe("Workjet configuration settings", () => {
       />,
     );
     expect(telemetryMarkup).toContain("Claude Code events");
-    expect(telemetryMarkup).toContain("Worker runtime events");
+    expect(telemetryMarkup).toContain("Luma runtime events");
     expect(telemetryMarkup).toContain("Workjet telemetry retention days");
     expect(telemetryMarkup).not.toContain("Greppy Runtime");
 
@@ -269,7 +269,7 @@ describe("Workjet Greppy runtime settings", () => {
     // Computers stands beside Models and Harnesses.
     expect(SETTINGS_NAV_ITEMS).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Worker", to: "/settings/workjet" }),
+        expect.objectContaining({ label: "Lumas", to: "/settings/workjet" }),
         expect.objectContaining({ label: "Computers", to: "/settings/computers" }),
       ]),
     );

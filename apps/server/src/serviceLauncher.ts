@@ -8,6 +8,11 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import {
+  acquireProfileOwnership,
+  withProfileOwnership,
+  withDatabaseAccess,
+} from "./profileOwnership.ts";
 
 import type {
   PendingServiceUpdate,
@@ -22,6 +27,7 @@ import {
   decodeServiceLauncherChildMessage,
   isExactServiceVersion,
   parseServiceState,
+  serviceChildArguments,
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
   SERVICE_STATE_FILE,
@@ -54,7 +60,7 @@ const runtimePaths = (baseDir: string, version: string) => {
 const DB_FILE_SUFFIXES = ["", "-wal", "-shm"] as const;
 const RESTORE_MARKER = ".restore-pending";
 
-const databaseBackupDir = (baseDir: string, updateId: string) =>
+export const databaseBackupDir = (baseDir: string, updateId: string) =>
   NodePath.join(baseDir, "runtime", "db-backup", updateId);
 
 const databaseBackupFile = (backupDir: string, suffix: (typeof DB_FILE_SUFFIXES)[number]) =>
@@ -93,7 +99,10 @@ async function syncDirectory(directory: string): Promise<void> {
  * backup is never overwritten because a restarted launcher may be looking at
  * database writes from an earlier attempt by the same trial.
  */
-async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate): Promise<void> {
+export async function backupDatabaseOnce(
+  baseDir: string,
+  pending: Pick<PendingServiceUpdate, "id" | "dbPath">,
+): Promise<void> {
   const backupDir = databaseBackupDir(baseDir, pending.id);
   if (await pathExists(backupDir)) return;
 
@@ -108,12 +117,31 @@ async function backupDatabaseOnce(baseDir: string, pending: PendingServiceUpdate
       await NodeFSP.copyFile(source, destination);
       await syncFile(destination);
     }
+    await syncDirectory(stagingDir);
     await NodeFSP.rename(stagingDir, backupDir);
     await syncDirectory(NodePath.dirname(backupDir));
   } catch (cause) {
     await NodeFSP.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
     throw cause;
   }
+}
+
+/** Stream fingerprints without loading a possibly large profile database into memory. */
+export async function fingerprintDatabaseFiles(dbPath: string): Promise<{
+  readonly database: string;
+  readonly wal: string | null;
+  readonly shm: string | null;
+}> {
+  const hash = async (file: string): Promise<string> => {
+    const digest = NodeCrypto.createHash("sha256");
+    for await (const chunk of NodeFS.createReadStream(file)) digest.update(chunk);
+    return digest.digest("hex");
+  };
+  return {
+    database: await hash(dbPath),
+    wal: (await pathExists(`${dbPath}-wal`)) ? await hash(`${dbPath}-wal`) : null,
+    shm: (await pathExists(`${dbPath}-shm`)) ? await hash(`${dbPath}-shm`) : null,
+  };
 }
 
 const restoreMarkerPath = (baseDir: string, updateId: string) =>
@@ -281,16 +309,22 @@ export class Launcher {
   }
 
   async run(): Promise<void> {
+    const ownership = await acquireProfileOwnership(this.#baseDir, "launcher");
     const onSigterm = () => void this.stop("SIGTERM");
     const onSigint = () => void this.stop("SIGINT");
     process.once("SIGTERM", onSigterm);
     process.once("SIGINT", onSigint);
     try {
+      if (this.#stopRequested) return;
+      // The constructor's snapshot may predate another launcher's exit.
+      this.#state = await readServiceState(this.#statePath);
+      if (this.#stopRequested) return;
       this.#enqueue(() => this.#recover());
       await this.#completion.promise;
     } finally {
       process.off("SIGTERM", onSigterm);
       process.off("SIGINT", onSigint);
+      ownership.release();
     }
   }
 
@@ -373,9 +407,12 @@ export class Launcher {
   }
 
   async #startTrial(pending: PendingServiceUpdate): Promise<void> {
-    // The previous child is dead here, so all three SQLite files are quiescent.
+    // The previous child is dead, but a manually started server could own the
+    // same profile. Hold runtime exclusion throughout the snapshot operation.
     try {
-      await backupDatabaseOnce(this.#baseDir, pending);
+      await withProfileOwnership(this.#baseDir, "runtime", () =>
+        withDatabaseAccess(pending.dbPath, () => backupDatabaseOnce(this.#baseDir, pending)),
+      );
     } catch {
       await this.#returnToPrevious(pending, "failed", "db-backup-failed");
       return;
@@ -399,10 +436,25 @@ export class Launcher {
       childVersion: version,
       ...(update === undefined ? {} : { update }),
     };
-    const child = NodeChildProcess.spawn(process.execPath, [paths.entryPath, "serve"], {
-      env: { ...process.env, [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context) },
-      stdio: ["inherit", "inherit", "inherit", "ipc"],
-    });
+    const childEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context),
+    };
+    if (this.#state.desktop !== undefined) {
+      // The service has no UI-owned descriptors or development proxy. Do not
+      // inherit these from a shell/launchd environment after Desktop exits.
+      delete childEnv.WORKJET_BOOTSTRAP_FD;
+      delete childEnv.VITE_DEV_SERVER_URL;
+      delete childEnv.WORKJET_TAILSCALE_SERVE;
+    }
+    const child = NodeChildProcess.spawn(
+      process.execPath,
+      [paths.entryPath, ...serviceChildArguments(this.#baseDir, this.#state.desktop)],
+      {
+        env: childEnv,
+        stdio: ["inherit", "inherit", "inherit", "ipc"],
+      },
+    );
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       child.once("error", onError);
@@ -585,7 +637,9 @@ export class Launcher {
       this.#child = null;
       await terminateChild(child.process);
     }
-    await restoreDatabaseBackup(this.#baseDir, pending);
+    await withProfileOwnership(this.#baseDir, "runtime", () =>
+      withDatabaseAccess(pending.dbPath, () => restoreDatabaseBackup(this.#baseDir, pending)),
+    );
     const outcome = terminalUpdate({ pending, status, reason });
     const next: ServiceState = {
       ...this.#state,
@@ -599,7 +653,7 @@ export class Launcher {
   }
 }
 
-async function main(): Promise<void> {
+export async function runServiceLauncher(): Promise<void> {
   const baseDir = process.env.WORKJET_HOME?.trim();
   if (baseDir === undefined || baseDir === "") {
     throw new Error("WORKJET_HOME is required by the Workjet service launcher.");
@@ -607,12 +661,4 @@ async function main(): Promise<void> {
   const statePath = NodePath.join(baseDir, "runtime", SERVICE_STATE_FILE);
   const state = await readServiceState(statePath);
   await new Launcher(baseDir, state).run();
-}
-
-if (import.meta.main) {
-  main().catch((cause: unknown) => {
-    const error = cause instanceof Error ? cause : new Error(String(cause));
-    process.stderr.write(`[service-launcher] ${error.message}\n`);
-    process.exitCode = 1;
-  });
 }

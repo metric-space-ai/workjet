@@ -3819,6 +3819,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
         });
       }
+      if (input.resumePolicy === "require-existing") {
+        // The SDK returns a query before it confirms that `resume` opened the
+        // saved conversation. Starting a Crew continuation here could send a
+        // second prompt into a fresh session after an ambiguous restart.
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "startSession",
+          issue: "Claimed Crew recovery cannot verify the saved Claude session before sending.",
+        });
+      }
 
       const existingContext = sessions.get(input.threadId);
       if (existingContext) {

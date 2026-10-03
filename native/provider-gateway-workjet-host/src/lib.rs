@@ -1,8 +1,11 @@
+pub mod account_health;
+pub mod account_policy;
 pub mod config;
 pub mod loopback;
 pub mod oauth;
 pub mod runtime;
 pub mod secret_store;
+pub mod usage;
 
 use std::fmt;
 use std::future::Future;
@@ -120,6 +123,16 @@ impl Drop for RunningHost {
 }
 
 pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError> {
+    let directory = config
+        .secret_root
+        .parent()
+        .ok_or(HostError::Runtime)?
+        .join("provider-gateway-usage");
+    tokio::fs::create_dir_all(&directory)
+        .await
+        .map_err(|_| HostError::Runtime)?;
+    let journal = usage::UsageJournal::new(directory);
+    let usage_default_provider = config.default_provider.clone().unwrap_or_default();
     let store = Arc::new(
         WorkjetSecretStore::new(config.secret_root.clone()).map_err(|_| HostError::Secret)?,
     );
@@ -146,19 +159,30 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
     let routes = build_provider_routes(
         &config.runtime,
         config.default_provider.as_deref(),
-        store,
+        store.clone(),
         config.antigravity_oauth,
     )
     .map_err(|_| HostError::Runtime)?
     .map(Arc::new);
     let provider_endpoint = format!("http://{provider_address}");
     let management_endpoint = format!("http://{management_address}");
-    let management_source = Arc::new(HostManagementSource::new(
-        provider_endpoint.clone(),
-        management_endpoint.clone(),
-        config.default_provider,
-        &config.runtime,
-    ));
+    let account_state = match routes.as_ref() {
+        Some(routes) => routes.account_state.clone(),
+        None => {
+            account_policy::AccountState::open(store.clone()).map_err(|_| HostError::Runtime)?
+        }
+    };
+    let account_health =
+        account_health::AccountHealthSource::new(account_state, store, &config.runtime);
+    let management_source = Arc::new(
+        HostManagementSource::new(
+            provider_endpoint.clone(),
+            management_endpoint.clone(),
+            config.default_provider,
+            &config.runtime,
+        )
+        .with_account_health(account_health),
+    );
     let authenticator = Arc::new(
         ManagementAuthenticator::new(
             management_key.as_str(),
@@ -191,6 +215,8 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
                         continue;
                     }
                     let routes = routes.clone();
+                    let journal = journal.clone();
+                    let default_provider = usage_default_provider.clone();
                     connections.spawn(async move {
                         let Some(routes) = routes else {
                             // Bootstrap host: no account is configured yet, so
@@ -200,15 +226,20 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
                                 .await
                                 .map_err(|_| HostError::Task);
                         };
-                        serve_provider_connection(
-                            &mut stream,
-                            routes.responses.as_ref(),
-                            routes.messages.as_deref(),
-                            &routes.models,
-                            routes.auxiliary.as_deref(),
-                        )
-                        .await
-                        .map_err(|_| HostError::Task)
+                        let observation = Arc::new(std::sync::Mutex::new(usage::Observation::default()));
+                        let responses = usage::ObservedResponses { inner: routes.responses.as_ref(), observation: observation.clone(), default_provider: &default_provider };
+                        let messages = routes.messages.as_deref().map(|inner| usage::ObservedMessages { inner, observation: observation.clone(), default_provider: &default_provider });
+                        let mut observed = usage::ObservedStream { inner: &mut stream, observation: observation.clone() };
+                        let result = serve_provider_connection(
+                            &mut observed, &responses, messages.as_ref(), &routes.models, routes.auxiliary.as_deref(),
+                        ).await;
+                        let receipt = observation.lock().unwrap().finish(result.is_err());
+                        if let Some(receipt) = receipt {
+                            if journal.append(receipt).await.is_err() {
+                                eprintln!("provider gateway usage persistence failed");
+                            }
+                        }
+                        result.map_err(|_| HostError::Task)
                     });
                 }
                 completed = connections.join_next(), if !connections.is_empty() => {

@@ -73,6 +73,7 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
+  { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "ManagerTool.ts", enforcer: "requireWorkjetMember" },
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },

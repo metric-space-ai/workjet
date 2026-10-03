@@ -77,6 +77,10 @@ import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
+  reviewSignalReceivedCommand,
+  WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX,
+} from "./WorkjetMailboxDelivery.ts";
+import {
   WorkjetMailboxAuditEmitter,
   emitAudit,
   type WorkjetMailboxAuditSink,
@@ -124,6 +128,9 @@ const WORKJET_DELEGATION_EXECUTOR_CYCLE_TIMEOUT = Duration.seconds(60);
 /** Thread-visible activity kinds appended by the executor. */
 export const WORKJET_DELEGATION_STARTED_ACTIVITY_KIND = "workjet.delegation.started";
 export const WORKJET_DELEGATION_REFUSED_ACTIVITY_KIND = "workjet.delegation.refused";
+export const WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND = "workjet.review.delivery-failed";
+export const WORKJET_REWORK_RECOVERY_EXHAUSTED_ACTIVITY_KIND =
+  "workjet.review.rework-recovery-exhausted";
 /**
  * Appended to the SOURCE thread when a delegation's result returns to it.
  *
@@ -493,9 +500,8 @@ const delegationActivityEventId = (delegationId: WorkjetDelegationId, suffix: st
  * window between the turn-start request and the provider session, and
  * `session.activeTurnId` covers a live session.
  *
- * The orchestration decider does NOT refuse a `thread.turn.start` on a busy
- * thread — it happily appends a second user message — so this check is the only
- * thing standing between a delegation and a trampled turn.
+ * This snapshot check avoids unnecessary attempts. Final admission happens in
+ * the engine queue via deferWhileBusy, covering races and unadopted starts.
  */
 export const threadHasActiveTurn = (thread: OrchestrationThread): boolean =>
   thread.latestTurn?.state === "running" || (thread.session?.activeTurnId ?? null) !== null;
@@ -540,6 +546,8 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   const identity = yield* WorkjetMeshIdentity;
 
   let cycles = 0;
+  let localRecoveryAfterId: string | undefined;
+  let reworkRecoveryAfterId: string | undefined;
   let scanned = 0;
   let executed = 0;
   let backpressure = 0;
@@ -639,7 +647,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         createdAt: input.createdAt,
       } as const satisfies OrchestrationCommand;
       return engine.dispatch(command);
-    }).pipe(Effect.ignore);
+    }).pipe(Effect.match({ onFailure: () => false, onSuccess: () => true }));
 
   /**
    * Bounded activity payload: ids and lifecycle state only — never the prompt,
@@ -811,7 +819,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         createdAt: input.now,
       } as const satisfies OrchestrationCommand;
 
-      const dispatched = yield* Effect.result(engine.dispatch(command));
+      const dispatched = yield* Effect.result(engine.dispatch(command, { deferWhileBusy: true }));
       if (dispatched._tag === "Failure") {
         if (isNonRetryableDispatchError(dispatched.failure)) {
           return yield* refuse({
@@ -853,7 +861,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
    * The grants the delegation's PARENT holds, when this machine can know them.
    *
    * "Parent" is the authority the delegation descends from, and there are two
-   * shapes of it, checked in this order:
+   * shapes of it. All locally available owners constrain the grants:
    *
    *  1. `delegation.parent` — a review/revise/follow-up chain. Its `owner` is
    *     the address authoritative for that delegation, which is the parent
@@ -881,36 +889,36 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   > =>
     Effect.gen(function* () {
       const parentRef = input.delegation.parent;
-      const parentThreadId =
-        parentRef !== undefined && parentRef.owner.environmentId === input.environmentId
-          ? parentRef.owner.threadId
-          : input.delegation.source.environmentId === input.environmentId
-            ? input.delegation.source.threadId
-            : null;
-      if (parentThreadId === null) return { _tag: "unknowable" } as const;
-
-      const parentOption = yield* query.getThreadDetailById(parentThreadId).pipe(Effect.option);
-      // A projection hiccup is NOT evidence about grants. Retry rather than
-      // decide, exactly as the target read above does.
-      if (Option.isNone(parentOption)) return { _tag: "unreadable" } as const;
-
-      const parent = Option.getOrUndefined(parentOption.value);
-      // The parent thread is gone or deleted. FAIL CLOSED: with no authority on
-      // record, the empty set is the only defensible superset, so a target
-      // holding no capabilities still runs and one holding any is refused.
-      // Running under a parent that no longer exists is what this check is for.
-      if (parent === undefined || parent.deletedAt !== null) {
-        return { _tag: "grants", capabilityIds: new Set<string>() } as const;
+      const localOwners = new Set<ThreadId>();
+      if (input.delegation.source.environmentId === input.environmentId) {
+        localOwners.add(input.delegation.source.threadId);
       }
-      return {
-        _tag: "grants",
-        capabilityIds: new Set<string>(
-          resolveDelegatedCapabilities({
-            parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
-            targetRole: "worker",
-          }).capabilityIds,
-        ),
-      } as const;
+      if (parentRef?.owner.environmentId === input.environmentId) {
+        localOwners.add(parentRef.owner.threadId);
+      }
+      if (localOwners.size === 0) return { _tag: "unknowable" } as const;
+
+      let capabilityIds: Set<string> | undefined;
+      for (const ownerId of localOwners) {
+        const ownerRead = yield* query.getThreadDetailById(ownerId).pipe(Effect.option);
+        // Read failures cannot establish authority; retain the retryable state.
+        if (Option.isNone(ownerRead)) return { _tag: "unreadable" } as const;
+        const owner = Option.getOrUndefined(ownerRead.value);
+        const grants = new Set<string>(
+          owner === undefined || owner.deletedAt !== null || owner.archivedAt != null
+            ? []
+            : resolveDelegatedCapabilities({
+                parentCapabilityIds: owner.workjetConfig.enabledCapabilityIds,
+                targetRole: "worker",
+              }).capabilityIds,
+        );
+        // Graph ancestry never replaces the current sender's authority.
+        capabilityIds =
+          capabilityIds === undefined
+            ? grants
+            : new Set([...capabilityIds].filter((capabilityId) => grants.has(capabilityId)));
+      }
+      return { _tag: "grants", capabilityIds: capabilityIds ?? new Set<string>() } as const;
     });
 
   /**
@@ -1249,7 +1257,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       const source = delegation.source;
 
       if (source.environmentId === input.environmentId) {
-        yield* appendActivity({
+        const returned = yield* appendActivity({
           threadId: source.threadId,
           delegationId: delegation.delegationId,
           suffix: "result",
@@ -1259,6 +1267,49 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           payload: resultActivityPayload({ delegation, result: input.result }),
           createdAt: input.now,
         });
+        if (!returned) {
+          // Keep the durable result pending; the existing return scan retries
+          // the same activity command identity after a failure or restart.
+          yield* Effect.logWarning("Workjet local delegation result return deferred");
+          return;
+        }
+        const parentRead = yield* query.getThreadDetailById(source.threadId).pipe(Effect.option);
+        if (Option.isNone(parentRead)) return;
+        const parent = Option.getOrUndefined(parentRead.value);
+        // A missing projection is not proof that no team continuation is needed.
+        // Keep the durable result pending until the parent can be inspected.
+        if (!parent) return;
+        const team =
+          parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+        if (team && team.role !== "worker") {
+          // The existing pending-result row remains the durable retry owner.
+          // Never acknowledge before the continuation has an engine receipt.
+          if (parent.deletedAt !== null || parent.archivedAt !== null) return;
+          const continuation = yield* Effect.result(
+            engine.dispatch(
+              {
+                type: "thread.turn.start",
+                commandId: CommandId.make(
+                  `server:workjet-result-continuation:${delegation.delegationId}`,
+                ),
+                threadId: parent.id,
+                message: {
+                  messageId: MessageId.make(
+                    `workjet-result-continuation:${delegation.delegationId}`,
+                  ),
+                  role: "user",
+                  text: `A delegated task returned. Review the persisted delegation result activity for ${delegation.delegationId} (outcome: ${input.result.outcome}). Verify its evidence, arrange rework if needed, and continue your remaining project goal. A reported completion is not independent verification.`,
+                  attachments: [],
+                },
+                runtimeMode: parent.runtimeMode,
+                interactionMode: parent.interactionMode,
+                createdAt: input.result.reportedAt,
+              },
+              { deferWhileBusy: true },
+            ),
+          );
+          if (continuation._tag === "Failure") return;
+        }
         resultsReturned += 1;
         // A local return has no outbound envelope to redeliver, so the marker
         // is what keeps the row out of the cross-environment retry scan.
@@ -1468,11 +1519,12 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
 
   /**
    * Advance a `running` delegation whose target thread is LOCAL. The delegation
-   * is completed ONLY when the exact turn this executor dispatched has ended:
+   * receives a result ONLY when the exact turn this executor dispatched has ended:
    * the correlated user message's turn is the latest turn, that turn is no
    * longer running, and the session is not still driving it. A turn that ended
-   * in error or interruption moves `running → failed`. Idempotent: the store
-   * refuses a second finalize and returns the stored result.
+   * in error or interruption moves it to `failed`. A successful turn enters
+   * `review-requested` when review rounds are budgeted, otherwise `completed`.
+   * Idempotent: the store refuses a second result write and returns the stored result.
    */
   const advanceRunning = (input: {
     readonly record: WorkjetDelegationRecord;
@@ -1575,10 +1627,14 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         interrupted,
       });
 
+      const finalState =
+        outcome === "completed" && delegation.budget.maxReviewRounds > 0
+          ? "review-requested"
+          : outcome;
       const finalized = yield* store
         .finalizeDelegationResult({
           delegationId: delegation.delegationId,
-          to: outcome,
+          to: finalState,
           result,
           changedAt: input.now as WorkjetMailboxTimestamp,
         })
@@ -1598,16 +1654,18 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
         now: input.now,
       });
 
-      // Emitted AFTER the durable finalize, carrying only the terminal outcome.
-      yield* emit({
-        _tag: "delegation-completed",
-        occurredAt: input.now as WorkjetMailboxTimestamp,
-        delegationId: delegation.delegationId,
-        envelopeId: delegation.envelopeId,
-        source: auditAddress(delegation.source),
-        target: auditAddress(delegation.target),
-        outcome,
-      });
+      // A successful turn awaiting review is not a completed delegation.
+      if (finalState !== "review-requested") {
+        yield* emit({
+          _tag: "delegation-completed",
+          occurredAt: input.now as WorkjetMailboxTimestamp,
+          delegationId: delegation.delegationId,
+          envelopeId: delegation.envelopeId,
+          source: auditAddress(delegation.source),
+          target: auditAddress(delegation.target),
+          outcome,
+        });
+      }
 
       return outcome === "completed"
         ? ({ _tag: "completed" } as const)
@@ -1619,6 +1677,47 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
   const runCycle = Effect.fn("WorkjetDelegationExecutor.runCycle")(function* () {
     const environmentId = yield* sources.environmentId;
     const now = yield* sources.nowIso;
+
+    // The review state, outbox and local inbox commit together. If the server
+    // stopped before the thread-visible activity was appended, replay the
+    // accepted inbox row with a command ID derived from its envelope ID. A
+    // crash after that command but before the processed marker is harmless.
+    const pendingReviewSignals = yield* store
+      .listUnprocessedReviewSignals(WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
+      .pipe(Effect.orElseSucceed(() => []));
+    for (const signal of pendingReviewSignals) {
+      if (
+        !signal.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX) ||
+        signal.envelope.targetEnvironmentId !== environmentId ||
+        signal.payload._tag !== "message"
+      ) {
+        yield* Effect.logWarning("Workjet review signal inbox row cannot be projected");
+        yield* store
+          .markInboundProcessed(signal.envelopeId, now as WorkjetMailboxTimestamp)
+          .pipe(Effect.ignore);
+        continue;
+      }
+      const delegationIdRead = signal.payload.message.inReplyTo
+        ? yield* store
+            .findDelegationIdByEnvelopeId(signal.payload.message.inReplyTo)
+            .pipe(Effect.option)
+        : Option.some(Option.none());
+      if (Option.isNone(delegationIdRead)) continue;
+      const delegationId = delegationIdRead.value;
+      const projected = yield* engine
+        .dispatch(
+          reviewSignalReceivedCommand({
+            message: signal.payload.message,
+            ...(Option.isSome(delegationId) ? { delegationId: delegationId.value } : {}),
+          }),
+        )
+        .pipe(Effect.option);
+      if (Option.isSome(projected)) {
+        yield* store
+          .markInboundProcessed(signal.envelopeId, now as WorkjetMailboxTimestamp)
+          .pipe(Effect.ignore);
+      }
+    }
 
     /**
      * Threads this cycle has already dispatched into. The projection is
@@ -1707,7 +1806,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * instead of aborting the whole batch. A transient store outage still fails
      * the read, which `Effect.option` folds into an empty batch for this cycle.
      */
-    const scan = (state: "accepted" | "delivered" | "running") =>
+    const scan = (state: "queued" | "accepted" | "delivered" | "running" | "review-requested") =>
       store
         .listDelegationRowsByState(state, WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
         .pipe(
@@ -1717,7 +1816,7 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
 
     /**
      * Result REDELIVERY, before anything else finalizes a delegation in this
-     * cycle: a terminal delegation whose durable result was never handed to the
+     * cycle: a delegation whose durable result was never handed to the
      * outbox (its enqueue failed transiently on the cycle that produced it, or
      * the process died between the finalize and the enqueue). Nothing used to
      * re-read those rows — the result stayed on the row and the source was
@@ -1746,10 +1845,9 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }
       const delegation = row.record.delegation;
       if (delegation.source.environmentId === environmentId) {
-        // A SAME-environment result was returned as a thread activity, which
-        // leaves no outbound envelope to redeliver. Rows finalized before this
-        // marker existed land here exactly once and are then stamped.
-        yield* markResultReturned(row.record.delegationId, now);
+        // Reuse the derived activity id for both failed returns and legacy
+        // unmarked rows. Only a successful durable append acknowledges it.
+        yield* deliverResult({ delegation, result: row.result, environmentId, now });
         continue;
       }
       const outcome = yield* enqueueCrossEnvironmentResult({
@@ -1773,6 +1871,125 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       yield* Effect.logWarning("Workjet delegation result redelivery deferred");
     }
 
+    // A review rejection and its replacement delegation are separate commands.
+    // The first reminder is replayed with one command identity until its
+    // message is projected. If its turn ends without a linked child, a second,
+    // distinct identity gives the parent one bounded recovery turn. A receipt
+    // for the first command alone cannot restart a completed turn. The child
+    // enqueue commits its `revises` edge atomically and ends this scan.
+    const pendingReworkRead = yield* store
+      .listDelegationsAwaitingRework(
+        environmentId,
+        identity.workspaceId,
+        reworkRecoveryAfterId,
+        WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE,
+      )
+      .pipe(Effect.option);
+    const pendingRework = Option.getOrElse(
+      pendingReworkRead,
+      () => [] as ReadonlyArray<WorkjetDelegationRowResult>,
+    );
+    if (Option.isSome(pendingReworkRead)) {
+      const last = pendingRework.at(-1);
+      reworkRecoveryAfterId =
+        pendingRework.length === WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE && last
+          ? last._tag === "corrupt"
+            ? last.rowId
+            : last.record.delegationId
+          : undefined;
+    }
+    for (const entry of pendingRework) {
+      scanned += 1;
+      if (entry._tag === "corrupt") {
+        yield* Effect.logWarning("Workjet rework row unreadable by this server version");
+        record({ _tag: "version-unsupported" });
+        continue;
+      }
+      const delegation = entry.record.delegation;
+      const parentRead = yield* query
+        .getThreadDetailById(delegation.source.threadId)
+        .pipe(Effect.option);
+      if (Option.isNone(parentRead)) continue;
+      const parent = Option.getOrUndefined(parentRead.value);
+      if (!parent || parent.id !== delegation.source.threadId) continue;
+      if (parent.deletedAt !== null || parent.archivedAt !== null) continue;
+      const team = parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
+      if (!team || team.role === "worker") continue;
+      const reminderId = `workjet-review-rework:${delegation.delegationId}`;
+      const firstMessage = parent.messages.find((message) => message.id === reminderId);
+      const retryMessage = parent.messages.find((message) => message.id === `${reminderId}:retry`);
+      if (retryMessage) {
+        const retryTurnId = retryMessage.turnId;
+        if (
+          retryTurnId !== null &&
+          retryTurnId !== undefined &&
+          (yield* query
+            .isThreadTurnTerminal(parent.id, retryTurnId)
+            .pipe(Effect.orElseSucceed(() => false)))
+        ) {
+          const suffix = "rework-recovery-exhausted";
+          if (
+            !parent.activities.some(
+              (activity) =>
+                activity.id === delegationActivityEventId(delegation.delegationId, suffix),
+            )
+          ) {
+            const alerted = yield* appendActivity({
+              threadId: parent.id,
+              delegationId: delegation.delegationId,
+              suffix,
+              kind: WORKJET_REWORK_RECOVERY_EXHAUSTED_ACTIVITY_KIND,
+              tone: "error",
+              summary:
+                "Rework still needs a decision: both parent continuations ended without a linked delegation. Create the bounded rework task or cancel the rejected delegation.",
+              payload: {
+                schemaVersion: 1,
+                delegationId: delegation.delegationId,
+                state: "changes-requested",
+              },
+              createdAt: now,
+            });
+            if (!alerted) {
+              yield* Effect.logWarning("Workjet rework recovery alert will be retried");
+            }
+          }
+        }
+        continue;
+      }
+      const firstTurnId = firstMessage?.turnId;
+      const firstTurnFinished =
+        firstTurnId !== null &&
+        firstTurnId !== undefined &&
+        (yield* query
+          .isThreadTurnTerminal(parent.id, firstTurnId)
+          .pipe(Effect.orElseSucceed(() => false)));
+      if (firstMessage && !firstTurnFinished) continue;
+      const retry = firstTurnFinished;
+      const commandSuffix = retry ? ":retry" : "";
+      const resumed = yield* Effect.result(
+        engine.dispatch(
+          {
+            type: "thread.turn.start",
+            commandId: CommandId.make(`server:${reminderId}${commandSuffix}`),
+            threadId: parent.id,
+            message: {
+              messageId: MessageId.make(`${reminderId}${commandSuffix}`),
+              role: "user",
+              text: `Review requested changes for delegation ${delegation.delegationId}, but no linked rework delegation is recorded. ${retry ? "The previous continuation ended without resolving it. " : ""}Resume the project goal: create a bounded linked delegation with parentDelegationId ${delegation.delegationId} for the same worker, or cancel the rejected delegation explicitly.`,
+              attachments: [],
+            },
+            runtimeMode: parent.runtimeMode,
+            interactionMode: parent.interactionMode,
+            createdAt: retry ? now : delegation.stateChangedAt,
+          },
+          { deferWhileBusy: true },
+        ),
+      );
+      if (resumed._tag === "Failure") {
+        yield* Effect.logWarning("Workjet rework parent continuation will be retried");
+      }
+    }
+
     /**
      * `running` FIRST, and before any accept moves a fresh row into `running`:
      * this scan observes only delegations that were ALREADY running at cycle
@@ -1789,6 +2006,23 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       }
       const row = entry.record;
       if (row.terminal) continue;
+      record(yield* advanceRunning({ record: row, environmentId, now }));
+    }
+
+    // A worker can request review before its turn has finished. Such a row is
+    // already in `review-requested`, but still needs the ended turn's durable
+    // result before the source may decide. The result check keeps completed
+    // review rows out of the execution scan after a restart.
+    for (const entry of yield* scan("review-requested")) {
+      scanned += 1;
+      if (entry._tag === "corrupt") {
+        yield* Effect.logWarning("Workjet review row unreadable by this server version");
+        record({ _tag: "version-unsupported" });
+        continue;
+      }
+      const row = entry.record;
+      const resultRead = yield* store.getDelegationResult(row.delegationId).pipe(Effect.option);
+      if (Option.isNone(resultRead) || Option.isSome(resultRead.value)) continue;
       record(yield* advanceRunning({ record: row, environmentId, now }));
     }
 
@@ -1830,6 +2064,64 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
           now,
         }),
       );
+    }
+
+    // Local outbox work is excluded from the network transport. Recover the
+    // gap between enqueue and local delivery, including a crash after inbox
+    // insertion or the delivered marker but before the lifecycle transition.
+    const localQueued = yield* store
+      .listDelegationRowsByState("queued", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE, {
+        environmentId,
+        workspaceId: identity.workspaceId,
+        ...(localRecoveryAfterId ? { afterId: localRecoveryAfterId } : {}),
+      })
+      .pipe(Effect.option);
+    const localBatch = Option.getOrElse(
+      localQueued,
+      () => [] as ReadonlyArray<WorkjetDelegationRowResult>,
+    );
+    // Advance past permanently invalid rows as well as runnable ones. Wrap
+    // after the last page; foreign queues cannot consume this local batch.
+    if (Option.isSome(localQueued)) {
+      const last = localBatch.at(-1);
+      localRecoveryAfterId =
+        localBatch.length === WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE && last
+          ? last._tag === "corrupt"
+            ? last.rowId
+            : last.record.delegationId
+          : undefined;
+    }
+    for (const entry of localBatch) {
+      if (entry._tag === "corrupt") continue;
+      const delegation = entry.record.delegation;
+      if (
+        delegation.source.environmentId !== environmentId ||
+        delegation.target.environmentId !== environmentId ||
+        delegation.source.workspaceId !== identity.workspaceId ||
+        delegation.target.workspaceId !== identity.workspaceId
+      )
+        continue;
+      const recovered = yield* Effect.gen(function* () {
+        const outbound = yield* store.getOutbound(delegation.envelopeId);
+        if (Option.isNone(outbound) || outbound.value.state === "dead") return;
+        const { envelope, payload } = outbound.value;
+        if (
+          envelope.kind !== "delegation" ||
+          envelope.sourceEnvironmentId !== environmentId ||
+          envelope.targetEnvironmentId !== environmentId ||
+          envelope.sourceWorkspaceId !== identity.workspaceId ||
+          envelope.targetWorkspaceId !== identity.workspaceId ||
+          payload._tag !== "delegation" ||
+          payload.delegation.delegationId !== delegation.delegationId ||
+          !(yield* identity.verifyRoutingEnvelope(envelope))
+        )
+          return;
+        const inbound = yield* store.recordInboundEnvelope(envelope, payload, now);
+        if (inbound._tag === "expired") return;
+        yield* store.markDelivered(envelope.envelopeId, now);
+        yield* store.transitionDelegationState(delegation.delegationId, "queued", "delivered", now);
+      }).pipe(Effect.exit);
+      if (recovered._tag === "Failure") transientSkips += 1;
     }
 
     for (const entry of yield* scan("delivered")) {
@@ -1920,13 +2212,16 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
      * delivered, which must not reopen or re-fail the finished delegation.
      * Idempotent: a delegation already terminal is skipped.
      *
-     * Each row is examined EXACTLY ONCE. The scan is restricted to rows without
-     * the migration-049 `reconciled_at_ms` marker and stamps every row it sees —
-     * including the ones it deliberately skips — because a dead envelope is
-     * never resurrected, so re-reading it on every ten-second cycle for the rest
-     * of the row's life buys nothing. A row pinned before the marker existed is
-     * unmarked, so it reconciles one last time (harmlessly: the check above is
-     * idempotent) and is then stamped.
+     * A dead remote review signal gets one more delivery budget while its
+     * original signed envelope is unexpired and the delegation awaits review.
+     * The transport seals the stored payload at send time. Keeping the signed
+     * id and expiry lets the receiver deduplicate a lost acknowledgement and
+     * prevents this retry from extending the review request's lifetime.
+     *
+     * The scan is restricted to rows without the migration-049
+     * `reconciled_at_ms` marker. Transient lookup or redrive failures leave a
+     * row unmarked. The redrive count is changed atomically with `dead → pending`,
+     * so restart cannot grant another delivery budget. Terminal rows are stamped.
      */
     for (const outbox of yield* store
       .listUnreconciledOutboundByState("dead", WORKJET_DELEGATION_EXECUTOR_BATCH_SIZE)
@@ -1940,6 +2235,103 @@ export const makeWorkjetDelegationExecutorWithSources = Effect.fn(
       const markReconciled = store
         .markOutboundReconciled(outbox.envelopeId, now as WorkjetMailboxTimestamp)
         .pipe(Effect.ignore);
+      if (
+        outbox.payload._tag === "message" &&
+        outbox.envelopeId.startsWith(WORKJET_REVIEW_SIGNAL_ENVELOPE_PREFIX)
+      ) {
+        const original = outbox.payload.message;
+        const lookup = yield* Effect.result(
+          original.inReplyTo
+            ? store.findDelegationIdByEnvelopeId(original.inReplyTo)
+            : Effect.succeed(Option.none<WorkjetDelegationId>()),
+        );
+        if (lookup._tag === "Failure") {
+          yield* Effect.logWarning("dead review signal delegation lookup deferred", {
+            envelopeId: outbox.envelopeId,
+            cause: lookup.failure,
+          });
+          continue;
+        }
+        const foundId = Option.getOrUndefined(lookup.success);
+        const record = foundId ? yield* Effect.result(store.getDelegation(foundId)) : undefined;
+        if (record?._tag === "Failure") {
+          yield* Effect.logWarning("dead review signal state lookup deferred", {
+            envelopeId: outbox.envelopeId,
+            cause: record.failure,
+          });
+          continue;
+        }
+        const awaiting =
+          record?._tag === "Success" ? Option.getOrUndefined(record.success) : undefined;
+        if (awaiting?.state !== "review-requested") {
+          yield* markReconciled;
+          continue;
+        }
+        const nowInstant = Option.getOrUndefined(DateTime.make(now));
+        const budgetEnd = Option.getOrUndefined(
+          DateTime.make(awaiting.delegation.budget.expiresAt),
+        );
+        if (
+          outbox.reviewRedriveCount === 0 &&
+          nowInstant &&
+          budgetEnd &&
+          DateTime.toEpochMillis(budgetEnd) > DateTime.toEpochMillis(nowInstant) &&
+          outbox.expiresAtMillis > DateTime.toEpochMillis(nowInstant)
+        ) {
+          const redrive = yield* Effect.result(
+            store.redriveDeadReviewSignal(outbox.envelopeId, now as WorkjetMailboxTimestamp),
+          );
+          if (redrive._tag === "Failure") {
+            yield* Effect.logWarning("dead review signal redrive deferred", {
+              envelopeId: outbox.envelopeId,
+              cause: redrive.failure,
+            });
+            continue;
+          }
+          if (redrive.success) continue;
+        }
+        yield* Effect.logWarning("remote review signal delivery ended without review", {
+          envelopeId: outbox.envelopeId,
+        });
+        const sourceThreadId = awaiting.delegation.source.threadId;
+        const sourceRead = yield* Effect.result(query.getThreadDetailById(sourceThreadId));
+        if (sourceRead._tag === "Failure") {
+          yield* Effect.logWarning("dead review signal source lookup deferred", {
+            envelopeId: outbox.envelopeId,
+            cause: sourceRead.failure,
+          });
+          continue;
+        }
+        const sourceThread = Option.getOrUndefined(sourceRead.success);
+        if (!sourceThread || sourceThread.deletedAt !== null) {
+          yield* markReconciled;
+          continue;
+        }
+        const alerted = yield* appendActivity({
+          threadId: sourceThreadId,
+          delegationId: awaiting.delegationId,
+          suffix: `review-delivery-failed:${outbox.envelopeId}`,
+          kind: WORKJET_REVIEW_DELIVERY_FAILED_ACTIVITY_KIND,
+          tone: "error",
+          summary:
+            "Remote review request was not delivered. Notify the reviewer again or resolve the delegation.",
+          payload: {
+            schemaVersion: 1,
+            delegationId: awaiting.delegationId,
+            envelopeId: outbox.envelopeId,
+            state: "dead",
+          },
+          createdAt: now,
+        });
+        if (!alerted) {
+          yield* Effect.logWarning("dead review signal activity deferred", {
+            envelopeId: outbox.envelopeId,
+          });
+          continue;
+        }
+        yield* markReconciled;
+        continue;
+      }
       if (outbox.payload._tag !== "delegation") {
         yield* markReconciled;
         continue;

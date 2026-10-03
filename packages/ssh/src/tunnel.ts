@@ -64,6 +64,8 @@ export interface RemoteWorkjetRunnerOptions {
 export interface SshEnvironmentManagerOptions {
   readonly resolveCliPackageSpec?: () => string;
   readonly resolveCliRunner?: Effect.Effect<RemoteWorkjetRunnerOptions>;
+  /** Stable per-client scope for remote PID, port and runner state. */
+  readonly remoteStateNamespace?: string;
 }
 
 interface SshTunnelEntry {
@@ -458,10 +460,6 @@ trap cleanup_runner_next EXIT
 cat >"$RUNNER_NEXT" <<'SH'
 @@WORKJET_RUNNER_SCRIPT@@
 SH
-RUNNER_CHANGED=0
-if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
-  RUNNER_CHANGED=1
-fi
 mv "$RUNNER_NEXT" "$RUNNER_FILE"
 chmod 700 "$RUNNER_FILE"
 if ! ensure_remote_node_path && ! { install_workjet_node && use_workjet_node; }; then
@@ -518,14 +516,23 @@ if [ -n "$DEFAULT_RUNTIME_INFO" ]; then
   DEFAULT_RUNTIME_PID="\${DEFAULT_RUNTIME_INFO%% *}"
   DEFAULT_REMOTE_PORT="\${DEFAULT_RUNTIME_INFO#* }"
 fi
-if [ -n "$DEFAULT_REMOTE_PORT" ]; then
+OWN_MANAGED_READY=false
+if [ "$REMOTE_MANAGED" = "managed" ] && [ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && kill -0 "$REMOTE_PID" 2>/dev/null; then
+  if wait_ready "@@WORKJET_REUSE_READY_TIMEOUT_MS@@"; then
+    OWN_MANAGED_READY=true
+  fi
+fi
+if [ "$OWN_MANAGED_READY" != "true" ] && [ -n "$DEFAULT_REMOTE_PORT" ]; then
   REMOTE_PORT="$DEFAULT_REMOTE_PORT"
   if wait_ready "@@WORKJET_REUSE_READY_TIMEOUT_MS@@"; then
-    if [ "$REMOTE_MANAGED" = "managed" ]; then
-      PID_TO_STOP="\${REMOTE_PID:-$DEFAULT_RUNTIME_PID}"
-      if [ -n "$PID_TO_STOP" ] && kill -0 "$PID_TO_STOP" 2>/dev/null; then
-        kill "$PID_TO_STOP" 2>/dev/null || true
-        wait_for_pid_exit "$PID_TO_STOP"
+    if [ "$REMOTE_MANAGED" = "managed" ] && [ -n "$REMOTE_PID" ] && [ "$REMOTE_PID" = "$DEFAULT_RUNTIME_PID" ]; then
+      # The default runtime is this managed server. Preserve its PID and
+      # ownership so a second attach cannot kill an active worker run.
+      printf '%s\\n' "$REMOTE_PORT" >"$PORT_FILE"
+    elif [ "$REMOTE_MANAGED" = "managed" ]; then
+      if [ -n "$REMOTE_PID" ] && kill -0 "$REMOTE_PID" 2>/dev/null; then
+        kill "$REMOTE_PID" 2>/dev/null || true
+        wait_for_pid_exit "$REMOTE_PID"
       fi
       REMOTE_PID=""
       REMOTE_PORT="$DEFAULT_REMOTE_PORT"
@@ -552,13 +559,7 @@ if [ "$REMOTE_MANAGED" = "external" ]; then
     REMOTE_MANAGED=""
   fi
 elif [ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && kill -0 "$REMOTE_PID" 2>/dev/null; then
-  if [ "$RUNNER_CHANGED" -eq 1 ]; then
-    kill "$REMOTE_PID" 2>/dev/null || true
-    wait_for_pid_exit "$REMOTE_PID"
-    REMOTE_PID=""
-    REMOTE_PORT=""
-    REMOTE_MANAGED=""
-  elif ! wait_ready "@@WORKJET_REUSE_READY_TIMEOUT_MS@@"; then
+  if ! wait_ready "@@WORKJET_REUSE_READY_TIMEOUT_MS@@"; then
     kill "$REMOTE_PID" 2>/dev/null || true
     wait_for_pid_exit "$REMOTE_PID"
     REMOTE_PID=""
@@ -677,22 +678,29 @@ export function buildRemoteLaunchScript(input?: RemoteWorkjetRunnerOptions): str
 export function buildRemotePairingScript(
   target: DesktopSshEnvironmentTarget,
   input?: RemoteWorkjetRunnerOptions,
+  remoteStateNamespace?: string,
 ): string {
   return applyScriptPlaceholders(REMOTE_PAIRING_SCRIPT, {
-    WORKJET_STATE_KEY: remoteStateKey(target),
+    WORKJET_STATE_KEY: remoteStateKey(target, remoteStateNamespace),
     WORKJET_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteWorkjetRunnerScript(input)),
   });
 }
 
-export function buildRemoteStopScript(target: DesktopSshEnvironmentTarget): string {
+export function buildRemoteStopScript(
+  target: DesktopSshEnvironmentTarget,
+  remoteStateNamespace?: string,
+): string {
   return applyScriptPlaceholders(REMOTE_STOP_SCRIPT, {
-    WORKJET_STATE_KEY: remoteStateKey(target),
+    WORKJET_STATE_KEY: remoteStateKey(target, remoteStateNamespace),
   });
 }
 
-function buildRemoteLogTailScript(target: DesktopSshEnvironmentTarget): string {
+function buildRemoteLogTailScript(
+  target: DesktopSshEnvironmentTarget,
+  remoteStateNamespace?: string,
+): string {
   return applyScriptPlaceholders(REMOTE_LOG_TAIL_SCRIPT, {
-    WORKJET_STATE_KEY: remoteStateKey(target),
+    WORKJET_STATE_KEY: remoteStateKey(target, remoteStateNamespace),
   });
 }
 
@@ -701,6 +709,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     target: DesktopSshEnvironmentTarget,
     input?: SshAuthOptions,
     runner?: RemoteWorkjetRunnerOptions,
+    remoteStateNamespace?: string,
   ): Effect.fn.Return<
     { readonly remotePort: number; readonly remoteServerKind: "external" | "managed" | null },
     SshCommandError | SshInvalidTargetError | SshLaunchError,
@@ -709,10 +718,10 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
     yield* Effect.logInfo("ssh.remoteServer.launch.start", {
       ...sshTargetLogFields(target),
       ...sshRunnerLogFields(runner),
-      stateKey: remoteStateKey(target),
+      stateKey: remoteStateKey(target, remoteStateNamespace),
     });
     const result = yield* runSshCommand(target, {
-      remoteCommandArgs: ["sh", "-s", "--", remoteStateKey(target)],
+      remoteCommandArgs: ["sh", "-s", "--", remoteStateKey(target, remoteStateNamespace)],
       stdin: buildRemoteLaunchScript(runner),
       timeoutMs: 10 * 60 * 1_000,
       ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
@@ -745,7 +754,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       ...sshTargetLogFields(target),
       remotePort: parsed.remotePort,
       remoteServerKind: parsed.serverKind ?? null,
-      stateKey: remoteStateKey(target),
+      stateKey: remoteStateKey(target, remoteStateNamespace),
     });
     return {
       remotePort: parsed.remotePort,
@@ -758,6 +767,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
   target: DesktopSshEnvironmentTarget,
   input?: SshAuthOptions,
   runner?: RemoteWorkjetRunnerOptions,
+  remoteStateNamespace?: string,
 ): Effect.fn.Return<
   {
     readonly credential: string;
@@ -767,11 +777,11 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
 > {
   yield* Effect.logDebug("ssh.remoteServer.pairingToken.start", {
     ...sshTargetLogFields(target),
-    stateKey: remoteStateKey(target),
+    stateKey: remoteStateKey(target, remoteStateNamespace),
   });
   const result = yield* runSshCommand(target, {
     remoteCommandArgs: ["sh", "-s"],
-    stdin: buildRemotePairingScript(target, runner),
+    stdin: buildRemotePairingScript(target, runner, remoteStateNamespace),
     ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
     ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
     ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
@@ -800,7 +810,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
   }
   yield* Effect.logDebug("ssh.remoteServer.pairingToken.created", {
     ...sshTargetLogFields(target),
-    stateKey: remoteStateKey(target),
+    stateKey: remoteStateKey(target, remoteStateNamespace),
   });
   return {
     credential: parsed.credential,
@@ -810,6 +820,7 @@ export const issueRemotePairingToken = Effect.fn("ssh/tunnel.issueRemotePairingT
 export const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(function* (
   target: DesktopSshEnvironmentTarget,
   input?: SshAuthOptions,
+  remoteStateNamespace?: string,
 ): Effect.fn.Return<
   void,
   SshCommandError | SshInvalidTargetError,
@@ -817,24 +828,25 @@ export const stopRemoteServer = Effect.fn("ssh/tunnel.stopRemoteServer")(functio
 > {
   yield* Effect.logInfo("ssh.remoteServer.stop.start", {
     ...sshTargetLogFields(target),
-    stateKey: remoteStateKey(target),
+    stateKey: remoteStateKey(target, remoteStateNamespace),
   });
   yield* runSshCommand(target, {
     remoteCommandArgs: ["sh", "-s"],
-    stdin: buildRemoteStopScript(target),
+    stdin: buildRemoteStopScript(target, remoteStateNamespace),
     ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
     ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
     ...(input?.interactiveAuth === undefined ? {} : { interactiveAuth: input.interactiveAuth }),
   });
   yield* Effect.logInfo("ssh.remoteServer.stop.succeeded", {
     ...sshTargetLogFields(target),
-    stateKey: remoteStateKey(target),
+    stateKey: remoteStateKey(target, remoteStateNamespace),
   });
 });
 
 const readRemoteServerLogTail = Effect.fn("ssh/tunnel.readRemoteServerLogTail")(function* (
   target: DesktopSshEnvironmentTarget,
   input?: SshAuthOptions,
+  remoteStateNamespace?: string,
 ): Effect.fn.Return<
   string,
   SshCommandError | SshInvalidTargetError,
@@ -842,7 +854,7 @@ const readRemoteServerLogTail = Effect.fn("ssh/tunnel.readRemoteServerLogTail")(
 > {
   const result = yield* runSshCommand(target, {
     remoteCommandArgs: ["sh", "-s"],
-    stdin: buildRemoteLogTailScript(target),
+    stdin: buildRemoteLogTailScript(target, remoteStateNamespace),
     timeoutMs: 10_000,
     ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),
     ...(input?.batchMode === undefined ? {} : { batchMode: input.batchMode }),
@@ -936,6 +948,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
   readonly wsBaseUrl: string;
   readonly authOptions: SshAuthOptions;
   readonly remoteServerKind: "external" | "managed" | null;
+  readonly remoteStateNamespace?: string;
 }): Effect.fn.Return<
   SshTunnelEntry,
   SshCommandError | SshInvalidTargetError | SshReadinessError,
@@ -1000,7 +1013,11 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
           net.canListenOnHost(input.localPort, "127.0.0.1"),
         );
         const remoteLogTailExit = yield* Effect.exit(
-          readRemoteServerLogTail(input.resolvedTarget, input.authOptions),
+          readRemoteServerLogTail(
+            input.resolvedTarget,
+            input.authOptions,
+            input.remoteStateNamespace,
+          ),
         );
         const processRunning = Exit.isSuccess(processRunningExit) ? processRunningExit.value : null;
         const localPortAvailable = Exit.isSuccess(localPortAvailableExit)
@@ -1077,12 +1094,13 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
 
   const releaseTunnelEntry = Effect.fn("ssh/tunnel.releaseTunnelEntry")(function* (
     entry: SshTunnelEntry,
+    options?: { readonly retainAuthSecret?: boolean },
   ) {
     if (tunnels.get(entry.key) !== entry) {
       return;
     }
-    // The normal scope finalizer also stops the remote server. A replacement
-    // only retires this local forward, and the new profile may use that server.
+    // A replacement only retires this local forward. The remote user service
+    // keeps executing turns independently of the Desktop window.
     tunnels.delete(entry.key);
     yield* entry.process
       .kill({
@@ -1091,7 +1109,7 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       })
       .pipe(Effect.ignore);
     yield* Scope.close(entry.scope, Exit.void).pipe(Effect.ignore);
-    authSecrets.delete(entry.key);
+    if (!options?.retainAuthSecret) authSecrets.delete(entry.key);
   });
 
   const cancelPendingTunnelEntry = Effect.fn("ssh/tunnel.cancelPendingTunnelEntry")(function* (
@@ -1241,7 +1259,12 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       key: input.key,
       target: input.resolvedTarget,
       operation: (authOptions) =>
-        launchOrReuseRemoteServer(input.resolvedTarget, authOptions, input.runner),
+        launchOrReuseRemoteServer(
+          input.resolvedTarget,
+          authOptions,
+          input.runner,
+          options.remoteStateNamespace,
+        ),
     });
     const remotePort = remoteLaunch.remotePort;
     yield* Effect.logDebug("ssh.environment.remotePort.ready", {
@@ -1273,6 +1296,9 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
           wsBaseUrl,
           authOptions,
           remoteServerKind: remoteLaunch.remoteServerKind,
+          ...(options.remoteStateNamespace === undefined
+            ? {}
+            : { remoteStateNamespace: options.remoteStateNamespace }),
         }).pipe(Effect.provideService(Scope.Scope, entryScope)),
     }).pipe(
       Effect.onExit((exit) =>
@@ -1280,9 +1306,6 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       ),
     );
     tunnels.set(input.key, tunnelEntry);
-    const spawnerService = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const fileSystemService = yield* FileSystem.FileSystem;
-    const pathService = yield* Path.Path;
     yield* Scope.addFinalizer(
       entryScope,
       Effect.gen(function* () {
@@ -1296,33 +1319,14 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
           remotePort: tunnelEntry.remotePort,
         });
         tunnels.delete(tunnelEntry.key);
-        const authSecret = authSecrets.get(tunnelEntry.key) ?? null;
-        yield* Effect.all(
-          [
-            tunnelEntry.process.kill({
-              killSignal: "SIGTERM",
-              forceKillAfter: TUNNEL_SHUTDOWN_TIMEOUT_MS,
-            }),
-            stopRemoteServer(
-              tunnelEntry.target,
-              authSecret === null
-                ? {
-                    batchMode: "yes",
-                    interactiveAuth: false,
-                  }
-                : {
-                    authSecret,
-                    batchMode: "no",
-                    interactiveAuth: true,
-                  },
-            ).pipe(
-              Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawnerService),
-              Effect.provideService(FileSystem.FileSystem, fileSystemService),
-              Effect.provideService(Path.Path, pathService),
-            ),
-          ],
-          { concurrency: "unbounded" },
-        ).pipe(Effect.ignore);
+        // UI quit closes only the local forward. Stopping the remote server
+        // here would interrupt a standalone worker still running on the host.
+        yield* tunnelEntry.process
+          .kill({
+            killSignal: "SIGTERM",
+            forceKillAfter: TUNNEL_SHUTDOWN_TIMEOUT_MS,
+          })
+          .pipe(Effect.ignore);
         yield* Effect.logDebug("ssh.environment.tunnel.finalizer.succeeded", {
           ...sshTargetLogFields(tunnelEntry.target),
           key: tunnelEntry.key,
@@ -1373,7 +1377,9 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
         remotePort: entry.remotePort,
         cause: readinessExit.cause,
       });
-      yield* closeTunnelEntry(entry);
+      // A failed local forward does not prove the remote server is unhealthy.
+      // Keep it running while the replacement reuses or repairs it.
+      yield* releaseTunnelEntry(entry, { retainAuthSecret: true });
       yield* cancelPendingTunnelEntry(key, resolvedTarget);
       entry = null;
     }
@@ -1466,7 +1472,13 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       ? yield* runWithSshAuth({
           key,
           target: entry.target,
-          operation: (authOptions) => issueRemotePairingToken(entry.target, authOptions, runner),
+          operation: (authOptions) =>
+            issueRemotePairingToken(
+              entry.target,
+              authOptions,
+              runner,
+              options.remoteStateNamespace,
+            ),
         })
       : null;
     const pairingToken = pairingResult?.credential ?? null;
@@ -1511,13 +1523,14 @@ const makeSshEnvironmentManager = Effect.fn("ssh/tunnel.SshEnvironmentManager.ma
       yield* closeTunnelEntry(entry);
     }
     yield* cancelPendingTunnelEntry(key, resolvedTarget);
-    if (entry === null) {
-      yield* runWithSshAuth({
-        key,
-        target: resolvedTarget,
-        operation: (authOptions) => stopRemoteServer(resolvedTarget, authOptions),
-      });
-    }
+    // Disconnect is explicit user intent. A window closing or local tunnel
+    // replacement never reaches this stop path.
+    yield* runWithSshAuth({
+      key,
+      target: resolvedTarget,
+      operation: (authOptions) =>
+        stopRemoteServer(resolvedTarget, authOptions, options.remoteStateNamespace),
+    });
     yield* Effect.logInfo("ssh.environment.disconnect.succeeded", {
       ...sshTargetLogFields(resolvedTarget),
       key,

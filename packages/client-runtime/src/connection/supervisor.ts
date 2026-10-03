@@ -276,9 +276,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     lastFailure: ConnectionAttemptError | null,
     progress: ConnectionDriver.ConnectionDriverProgress,
   ) {
-    if ("prepared" in progress) {
-      yield* SubscriptionRef.set(prepared, Option.some(progress.prepared));
-    }
+    // HTTP snapshot/session consumers observe `prepared`. Expose it only with
+    // the successful lease below, after the authenticated initial config has
+    // passed identity checks; setup progress is not a usable connection.
     yield* setState(
       connectingState(yield* Ref.get(intent), generation, attempt, lastFailure, progress.stage),
     );

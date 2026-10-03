@@ -204,8 +204,10 @@ const ACTION_ACCESS_REFUSALS: Record<PullRequestAction, string> = {
 const REVIEWER_REQUEST_REFUSAL = "You need write access on this repository to ask for a review.";
 
 /** A project this page can read: its remote is on a host with an implementation. */
+type WorkspaceProject = OrchestrationProjectShell & { readonly workspaceRoot: string };
+
 interface SupportedProject {
-  readonly project: OrchestrationProjectShell;
+  readonly project: WorkspaceProject;
   readonly api: PullRequestProviderApi;
   readonly repository: string;
   /** The host the repository lives on, which is the account boundary rather than the kind. */
@@ -396,11 +398,11 @@ export const make = Effect.gen(function* () {
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
 
   const refineUnknownProjectKinds = (
-    projects: ReadonlyArray<OrchestrationProjectShell>,
+    projects: ReadonlyArray<WorkspaceProject>,
     filter: Pick<PullRequestListInput, "projectId" | "host">,
   ) => {
     type RefinementCandidate = {
-      readonly project: OrchestrationProjectShell;
+      readonly project: WorkspaceProject;
       readonly provider: SourceControlProviderInfo;
       readonly remoteName: string;
       readonly remoteUrl: string;
@@ -465,6 +467,12 @@ export const make = Effect.gen(function* () {
             cause: error,
           }),
       ),
+      Effect.map((snapshot) => ({
+        ...snapshot,
+        projects: snapshot.projects.filter(
+          (project): project is WorkspaceProject => project.workspaceRoot !== null,
+        ),
+      })),
       Effect.flatMap((snapshot) =>
         refineUnknownProjectKinds(snapshot.projects, filter).pipe(
           Effect.map((refinedKinds) => ({ refinedKinds, snapshot })),

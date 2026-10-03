@@ -11,7 +11,10 @@ export function workjetBrowserSurfaceEnabled(input: {
   const config: WorkjetThreadConfig | null = input.isServerThread
     ? input.serverConfig
     : (draft ?? DEFAULT_WORKJET_THREAD_CONFIG);
-  return config?.enabledCapabilityIds.includes("web-stack-browser") ?? false;
+  return (
+    config?.enabledCapabilityIds.some((capabilityId) => capabilityId === "web-stack-browser") ??
+    false
+  );
 }
 
 /** Presentation only: preserve stored sessions, selection and panel visibility on disable. */

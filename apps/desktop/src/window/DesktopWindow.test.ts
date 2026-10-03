@@ -93,7 +93,7 @@ function makeFakeBrowserWindow() {
     isMaximized: vi.fn(() => false),
     isMinimized: vi.fn(() => false),
     isVisible: vi.fn(() => true),
-    loadURL: vi.fn(() => Promise.resolve()),
+    loadURL: vi.fn((_url: string) => Promise.resolve()),
     maximize: vi.fn(),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
       windowListeners.set(eventName, listener);
@@ -206,6 +206,7 @@ function makeTestLayer(input: {
     bounds: DesktopAppSettings.DesktopWindowBounds,
   ) => Effect.Effect<void>;
   readonly openedExternalUrls?: unknown[];
+  readonly packaged?: boolean;
 }) {
   let desktopSettings = input.desktopSettings ?? DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS;
   const desktopAppSettingsLayer = Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
@@ -264,7 +265,16 @@ function makeTestLayer(input: {
     Layer.provide(
       Layer.mergeAll(
         desktopAssetsLayer,
-        desktopEnvironmentLayer,
+        input.packaged
+          ? DesktopEnvironment.layer({ ...environmentInput, isPackaged: true }).pipe(
+              Layer.provide(
+                Layer.mergeAll(
+                  NodeServices.layer,
+                  DesktopConfig.layerTest({ WORKJET_PORT: "3773" }),
+                ),
+              ),
+            )
+          : desktopEnvironmentLayer,
         desktopAppSettingsLayer,
         desktopServerExposureLayer,
         DesktopState.layer,
@@ -456,6 +466,37 @@ describe("DesktopWindow", () => {
         assert.equal(fakeWindow.openDevTools.mock.calls.length, 1);
       }).pipe(Effect.provide(layer));
     }),
+  );
+
+  it.effect(
+    "opens and reopens the shipped shell before backend readiness without replacing it",
+    () =>
+      Effect.gen(function* () {
+        const fakeWindow = makeFakeBrowserWindow();
+        const createCount = yield* Ref.make(0);
+        const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+        const layer = makeTestLayer({
+          window: fakeWindow.window,
+          createCount,
+          mainWindow,
+          packaged: true,
+        });
+        yield* Effect.gen(function* () {
+          const desktopWindow = yield* DesktopWindow.DesktopWindow;
+          yield* desktopWindow.ensureMain;
+          assert.equal(yield* Ref.get(createCount), 1);
+          assert.deepEqual(fakeWindow.loadURL.mock.calls, [["workjet://app/"]]);
+          yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+          yield* desktopWindow.handleBackendNotReady;
+          yield* desktopWindow.activate;
+          assert.equal(yield* Ref.get(createCount), 1);
+          assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
+          yield* Ref.set(mainWindow, Option.none());
+          yield* desktopWindow.activate;
+          assert.equal(yield* Ref.get(createCount), 2);
+          assert.equal(fakeWindow.loadURL.mock.calls[1]?.[0], "workjet://app/");
+        }).pipe(Effect.provide(layer));
+      }),
   );
 
   it.effect("blocks only repeated Cmd+W input before it reaches the native window menu", () =>
@@ -1145,6 +1186,30 @@ describe("DesktopWindow", () => {
           assert.equal(Option.getOrThrow(registeredMain), main.window);
         }).pipe(Effect.provide(scenario.layer));
       }),
+  );
+
+  it.effect("replaces a blocked first-start spinner with a visible escaped failure", () =>
+    Effect.gen(function* () {
+      const splash = makeFakeBrowserWindow();
+      const scenario = yield* makeSplashScenario([splash.window]);
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.showConnectingSplash;
+        assert.isTrue(
+          yield* desktopWindow.handleBackendBlocked(
+            'Could not encrypt <local> credential & open "keychain".',
+          ),
+        );
+        assert.equal(yield* Ref.get(scenario.createCalls), 1);
+        const url = splash.loadURL.mock.lastCall?.[0] as string;
+        const html = decodeURIComponent(url.split(",")[1] ?? "");
+        assert.include(html, "Workjet needs attention");
+        assert.include(html, "&lt;local&gt; credential &amp; open &quot;keychain&quot;");
+        assert.notInclude(html, "<local>");
+        assert.notInclude(html, '<div class="spinner"></div>');
+        assert.deepEqual(yield* Ref.get(scenario.revealedWindows), [splash.window]);
+      }).pipe(Effect.provide(scenario.layer));
+    }),
   );
 
   it.effect(

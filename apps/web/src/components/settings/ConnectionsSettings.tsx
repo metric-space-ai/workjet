@@ -1,6 +1,6 @@
 import { PlusIcon, QrCodeIcon, RefreshCwIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
-import { type ReactNode, memo, useCallback, useId, useMemo, useState } from "react";
+import { type ReactNode, memo, useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
@@ -1627,7 +1627,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         description: enabled
           ? "This environment is available through Workjet Connect."
           : publishAgentActivity
-            ? "The managed tunnel was removed. Agent activity publishing stays on."
+            ? "The managed tunnel was removed. Luma activity publishing stays on."
             : "This environment is no longer available through Workjet Connect.",
       });
     }
@@ -1640,10 +1640,10 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
     if (ok) {
       toastManager.add({
         type: "success",
-        title: enabled ? "Agent activity enabled" : "Agent activity disabled",
+        title: enabled ? "Luma activity enabled" : "Luma activity disabled",
         description: enabled
-          ? "This environment publishes agent activity to your mobile clients."
-          : "This environment will stop publishing agent activity.",
+          ? "This environment publishes Luma activity to your mobile clients."
+          : "This environment will stop publishing Luma activity.",
       });
     }
     setIsUpdatingPreference(false);
@@ -1669,11 +1669,11 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         }
       />
       <SettingsRow
-        title="Publish agent activity"
+        title="Publish Luma activity"
         description="Send activity from this environment to your mobile clients for push notifications and Live Activities. Works without a Workjet Connect tunnel."
         control={
           <CloudLinkSwitch
-            ariaLabel="Publish agent activity to mobile clients"
+            ariaLabel="Publish Luma activity to mobile clients"
             checked={publishAgentActivity}
             disabled={!canManageRelay || !isSignedIn || primaryCloudLinkState.isPending || isBusy}
             disabledReason={disabledReason}
@@ -1783,6 +1783,10 @@ export function useComputerConnections({
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
   const [isRecoveringCatalog, setIsRecoveringCatalog] = useState(false);
   const [catalogRecoveryMessage, setCatalogRecoveryMessage] = useState<string | null>(null);
+  const [catalogReadError, setCatalogReadError] = useState<string | null>(null);
+  const [isCheckingCatalog, setIsCheckingCatalog] = useState(
+    desktopBridge?.getConnectionCatalog !== undefined,
+  );
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const desktopSshHosts = useEnvironmentQuery(
@@ -1791,6 +1795,28 @@ export function useComputerConnections({
       : null,
   );
   const refreshSshHosts = desktopSshHosts.refresh;
+  useEffect(() => {
+    if (!desktopBridge?.getConnectionCatalog || (!inline && !addBackendDialogOpen)) return;
+    let active = true;
+    setIsCheckingCatalog(true);
+    void desktopBridge.getConnectionCatalog().then(
+      () => {
+        if (!active) return;
+        setCatalogReadError(null);
+        setIsCheckingCatalog(false);
+      },
+      (error: unknown) => {
+        if (!active) return;
+        setCatalogReadError(
+          error instanceof Error ? error.message : "Could not read saved connections.",
+        );
+        setIsCheckingCatalog(false);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [addBackendDialogOpen, desktopBridge, inline]);
   const discoveredSshHosts = desktopSshHosts.data ?? EMPTY_DISCOVERED_SSH_HOSTS;
   const unsavedDiscoveredSshHosts = useMemo(
     () =>
@@ -1813,7 +1839,7 @@ export function useComputerConnections({
     sshConnectionError ?? (savedBackendMode === "ssh" ? desktopSshHosts.error : null);
   const catalogRecoveryAvailable =
     desktopBridge?.recoverConnectionCatalog !== undefined &&
-    [savedBackendError, sshConnectionError, desktopSshHosts.error].some(
+    [catalogReadError, savedBackendError, sshConnectionError, desktopSshHosts.error].some(
       (message) =>
         message !== null &&
         (message.includes("decrypt-catalog") ||
@@ -1826,6 +1852,7 @@ export function useComputerConnections({
     setCatalogRecoveryMessage(null);
     try {
       const backupPath = await desktopBridge.recoverConnectionCatalog();
+      setCatalogReadError(null);
       setSavedBackendError(null);
       setSshConnectionError(null);
       refreshSshHosts();
@@ -2106,6 +2133,9 @@ export function useComputerConnections({
         )}
         disabled={isAddingSavedBackend || connectingSshHostAlias !== null}
         onClick={() => {
+          if (input.mode !== savedBackendMode) {
+            setSavedBackendSshHost("");
+          }
           setSavedBackendMode(input.mode);
           setSavedBackendError(null);
           setSshConnectionError(null);
@@ -2237,9 +2267,9 @@ export function useComputerConnections({
             : "Use an IP address, hostname, or saved SSH alias."}{" "}
           If a password is required, Workjet asks for it when connecting.
         </p>
-        {savedBackendError || discoveredSshHostsError ? (
+        {catalogReadError || savedBackendError || discoveredSshHostsError ? (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            {savedBackendError ?? discoveredSshHostsError}
+            {catalogReadError ?? savedBackendError ?? discoveredSshHostsError}
           </div>
         ) : null}
         {catalogRecoveryAvailable ? (
@@ -2266,7 +2296,13 @@ export function useComputerConnections({
         <Button
           variant="outline"
           className="w-full"
-          disabled={isAddingSavedBackend || isRecoveringCatalog || connectingSshHostAlias !== null}
+          disabled={
+            isCheckingCatalog ||
+            catalogReadError !== null ||
+            isAddingSavedBackend ||
+            isRecoveringCatalog ||
+            connectingSshHostAlias !== null
+          }
           onClick={() => void handleAddSavedBackend()}
         >
           <PlusIcon className="size-3.5" />

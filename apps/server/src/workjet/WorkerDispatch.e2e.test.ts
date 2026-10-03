@@ -65,6 +65,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+import * as ResourceMonitorBinary from "../resourceTelemetry/ResourceMonitorBinary.ts";
+import * as NativeWorkerWorktreeRemover from "./NativeWorkerWorktreeRemover.ts";
+import * as WorkerDispatchRollback from "./WorkerDispatchRollback.ts";
 import * as GitManager from "../git/GitManager.ts";
 import { GitWorkflowService, layer as gitWorkflowLayer } from "../git/GitWorkflowService.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
@@ -183,15 +186,26 @@ const makeRealStackLayer = (fixture: Fixture) => {
     Layer.provide(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
     Layer.provide(OrchestrationEventStoreLive),
-    Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+    Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
     Layer.provide(SqlitePersistenceMemory),
     Layer.provide(hostLayer),
   );
-  return Layer.mergeAll(orchestrationLayer, gitLayer, gitVcsDriverLayer, hostLayer);
+  const rollbackLayer = WorkerDispatchRollback.layer.pipe(
+    Layer.provide(gitVcsDriverLayer),
+    Layer.provideMerge(
+      NativeWorkerWorktreeRemover.layer.pipe(
+        Layer.provide(ResourceMonitorBinary.layer),
+        Layer.provide(hostLayer),
+      ),
+    ),
+  );
+  return Layer.mergeAll(orchestrationLayer, gitLayer, gitVcsDriverLayer, hostLayer, rollbackLayer);
 };
 
 type RealStackServices =
+  | WorkerDispatchRollback.WorkerDispatchRollback
+  | NativeWorkerWorktreeRemover.NativeWorkerWorktreeRemover
   | OrchestrationEngineService
   | ProjectionSnapshotQuery
   | GitWorkflowService
@@ -392,7 +406,81 @@ it.effect(
 );
 
 it.effect(
-  "removes the worker worktree when the real engine rejects the worker thread",
+  "reports the original receipt when the real native admin quarantine collides",
+  () =>
+    withRealStack((fixture) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const workflow = yield* GitWorkflowService;
+        const remover = yield* NativeWorkerWorktreeRemover.NativeWorkerWorktreeRemover;
+        const branch = yield* seedRepository(fixture.repositoryRoot);
+        const refName = "workjet/worker/partial-recovery";
+        const created = yield* workflow.createWorktree({
+          cwd: fixture.repositoryRoot,
+          path: null,
+          refName: branch,
+          newRefName: refName,
+        });
+        const captured = yield* remover.capture(created.worktree.path);
+        const candidateAdmin = path.join(
+          path.dirname(path.dirname(captured.adminPath)),
+          "workjet-rejected",
+          `${path.basename(captured.adminPath)}-${captured.adminIno}`,
+        );
+        yield* fs.makeDirectory(candidateAdmin, { recursive: true });
+        yield* fs.writeFileString(path.join(candidateAdmin, "foreign-sentinel"), "not our receipt");
+        const headOid = yield* git(fixture.repositoryRoot, ["rev-parse", "HEAD"]);
+        const error = yield* remover
+          .quarantineCaptured(captured, { headOid, branchRef: refName })
+          .pipe(Effect.flip);
+        assert.equal(error.recoveryLocationStatus, "candidate");
+        assert.equal(error.originalWorktreePath, captured.worktreePath);
+        assert.equal(error.originalAdminPath, captured.adminPath);
+        assert.equal(error.recoveryAdminPath, candidateAdmin);
+        if (error.originalAdminPath === undefined || error.recoveryWorktreePath === undefined) {
+          return yield* Effect.die("Partial recovery did not identify its original receipt.");
+        }
+        // Read our receipt at the ORIGINAL admin, never from the collided target.
+        const receipt = yield* fs.readFileString(
+          path.join(error.originalAdminPath, "workjet-rollback-receipt.json"),
+        );
+        assert.include(receipt, headOid);
+        assert.include(receipt, captured.worktreePath);
+        assert.include(receipt, refName);
+        assert.equal(
+          yield* fs.exists(path.join(candidateAdmin, "workjet-rollback-receipt.json")),
+          false,
+        );
+        assert.equal(
+          yield* fs.readFileString(path.join(candidateAdmin, "foreign-sentinel")),
+          "not our receipt",
+        );
+        assert.equal(yield* fs.exists(captured.worktreePath), false);
+        assert.equal(
+          yield* fs.readFileString(path.join(error.recoveryWorktreePath, "PLAN.md")),
+          "orchestrator plan\n",
+        );
+        const progress = yield* fs.readFileString(
+          path.join(error.originalAdminPath, "workjet-rollback-progress.jsonl"),
+        );
+        assert.include(progress, "checkout-quarantined");
+        assert.notInclude(progress, "checkout-and-admin-quarantined");
+        assert.include(
+          yield* git(fixture.repositoryRoot, [
+            "for-each-ref",
+            "--format=%(refname:short)",
+            `refs/heads/${refName}`,
+          ]),
+          refName,
+        );
+      }),
+    ),
+  { timeout: 120_000 },
+);
+
+it.effect(
+  "quarantines source and unregisters the worktree when the real engine rejects the worker thread",
   () =>
     withRealStack((fixture) =>
       Effect.gen(function* () {
@@ -433,25 +521,48 @@ it.effect(
         const workerDispatch = yield* makeWorkerDispatchWithSources(sources);
         const parentBefore = yield* checkoutState(fixture.repositoryRoot);
 
-        const outcome = yield* Effect.exit(
-          workerDispatch.dispatch(invocation, { task: "This dispatch must roll back." }),
-        );
-        assert.equal(outcome._tag, "Failure");
+        const error = yield* workerDispatch
+          .dispatch(invocation, { task: "This dispatch must roll back." })
+          .pipe(Effect.flip);
+        assert.equal(error.reason, "create-failed");
+        const recovery = error.recoveryWorktreePath;
+        const recoveryAdmin = error.recoveryAdminPath;
+        if (recovery === undefined || recoveryAdmin === undefined) {
+          return yield* Effect.die("Rejected dispatch did not return its recovery locations.");
+        }
 
-        // The rollback removed the worktree the dispatch had already created:
-        // nothing is left under the storage root, and Git no longer lists it.
+        // No active checkout or registration remains. Source is retained,
+        // including any writes racing the last status check (native regression).
         const workerRef = `${WORKER_REF_PREFIX}${collidingThreadId}`;
         const remaining = yield* fileSystem.readDirectory(fixture.worktreeRoot).pipe(
           Effect.flatMap((repositoryDirectories) =>
             Effect.forEach(repositoryDirectories, (directory) =>
               fileSystem
                 .readDirectory(`${fixture.worktreeRoot}/${directory}`)
-                .pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<string>)),
+                .pipe(
+                  Effect.map((entries) =>
+                    entries.map((entry) => `${fixture.worktreeRoot}/${directory}/${entry}`),
+                  ),
+                ),
             ),
           ),
           Effect.map((entries) => entries.flat()),
         );
-        assert.deepStrictEqual(remaining, []);
+        assert.deepStrictEqual(remaining, [recovery]);
+        assert.equal(
+          yield* fileSystem.readFileString(`${recovery}/PLAN.md`),
+          "orchestrator plan\n",
+        );
+        const receipt = yield* fileSystem.readFileString(
+          `${recoveryAdmin}/workjet-rollback-receipt.json`,
+        );
+        assert.include(receipt, workerRef);
+        assert.include(receipt, yield* git(fixture.repositoryRoot, ["rev-parse", "HEAD"]));
+        assert.include(receipt, recovery);
+        const progress = yield* fileSystem.readFileString(
+          `${recoveryAdmin}/workjet-rollback-progress.jsonl`,
+        );
+        assert.include(progress, "checkout-and-admin-quarantined");
         const worktreeList = yield* git(fixture.repositoryRoot, [
           "worktree",
           "list",

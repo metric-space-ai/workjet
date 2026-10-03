@@ -4,6 +4,8 @@ import {
 } from "@workjet/client-runtime/state/runtime";
 import type {
   EnvironmentId,
+  WorkjetGatewayAccountSummary,
+  WorkjetGatewayCatalog,
   WorkjetGatewayApiKeyProvider,
   WorkjetGatewayOauthProvider,
   WorkjetGatewayUpdateRoutingInput,
@@ -30,6 +32,8 @@ import type {
   WorkjetGatewayPoolsSectionState,
   WorkjetGatewayRoutingState,
 } from "./WorkjetGatewayPools";
+import type { ModelsManagementState } from "./WorkjetModelsProviders";
+import { modelsAccountHealth } from "./WorkjetModelsHealth";
 
 /**
  * Runtime state for the Workjet provider-gateway account surface.
@@ -42,7 +46,8 @@ import type {
  */
 export function useWorkjetGatewaySection(
   environmentId: EnvironmentId | null,
-): WorkjetGatewaySectionState & { readonly pools: WorkjetGatewayPoolsSectionState } {
+): WorkjetGatewaySectionState &
+  ModelsManagementState & { readonly pools: WorkjetGatewayPoolsSectionState } {
   const statusQuery = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -85,6 +90,13 @@ export function useWorkjetGatewaySection(
     reportFailure: false,
   });
   const [login, setLogin] = useState<WorkjetGatewayLoginState>({ status: "idle" });
+  const [loginAccountId, setLoginAccountId] = useState<string | null>(null);
+  const [accountErrors, setAccountErrors] = useState<Readonly<Record<string, string>>>({});
+  const [editedCatalog, setEditedCatalog] = useState<WorkjetGatewayCatalog | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  useEffect(() => {
+    setEditedCatalog(null);
+  }, [catalogQuery.data]);
   const [apiKey, setApiKey] = useState<WorkjetGatewayApiKeyState>({ status: "idle" });
   // Guards a second submit while one key is in flight; the value itself is
   // never held here.
@@ -104,8 +116,61 @@ export function useWorkjetGatewaySection(
 
   const [routing, setRouting] = useState<WorkjetGatewayRoutingState>({ status: "idle" });
   const routingRef = useRef(false);
+  const quotaPollAttempts = useRef(0);
+  useEffect(() => {
+    if (
+      !(healthQuery.data?.accounts ?? []).some((account) => account.quotaRefreshing) ||
+      quotaPollAttempts.current >= 30
+    )
+      return;
+    const timer = setTimeout(() => {
+      quotaPollAttempts.current += 1;
+      healthQuery.refresh();
+    }, 2_000);
+    return () => clearTimeout(timer);
+  }, [healthQuery]);
+  useEffect(() => {
+    if (
+      environmentId === null ||
+      statusQuery.data?.phase !== "ready" ||
+      healthQuery.data === null ||
+      healthQuery.isPending
+    )
+      return;
+    const now = Date.now();
+    const deadlines = healthQuery.data.accounts
+      .flatMap((account) => [
+        account.cooldownUntilMs,
+        ...account.quota.flatMap((window) => [window.resetsAtMs, window.observedAtMs + 300_000]),
+      ])
+      .filter((deadline): deadline is number => deadline !== null && deadline > now);
+    // One owned timer while this page is mounted. Reset and freshness boundaries
+    // refresh real readings; unmounting or a new response cancels the timer.
+    const delay = Math.max(
+      1_000,
+      Math.min(300_000, ...deadlines.map((deadline) => deadline - now)),
+    );
+    const timer = setTimeout(() => {
+      quotaPollAttempts.current = 0;
+      healthQuery.refresh();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [
+    environmentId,
+    healthQuery.data,
+    healthQuery.isPending,
+    healthQuery.refresh,
+    statusQuery.data?.phase,
+  ]);
+  const clearAccountError = (accountId: string) =>
+    setAccountErrors((previous) => {
+      const next = { ...previous };
+      delete next[accountId];
+      return next;
+    });
 
   const refresh = useCallback(() => {
+    quotaPollAttempts.current = 0;
     statusQuery.refresh();
     catalogQuery.refresh();
     healthQuery.refresh();
@@ -134,12 +199,70 @@ export function useWorkjetGatewaySection(
           return;
         }
         setRouting({ status: "completed" });
+        setEditedCatalog(result.value.catalog);
         refresh();
       })().finally(() => {
         routingRef.current = false;
       });
     },
     [environmentId, refresh, updateRouting],
+  );
+
+  const editAccounts = useCallback(
+    async (
+      accounts: ReadonlyArray<WorkjetGatewayAccountSummary>,
+      patch: {
+        readonly label?: string;
+        readonly enabled?: boolean;
+        readonly models?: ReadonlyArray<string>;
+      },
+    ): Promise<boolean> => {
+      const strategy = (editedCatalog ?? catalogQuery.data)?.routingStrategy;
+      if (
+        environmentId === null ||
+        routingRef.current ||
+        accounts.length === 0 ||
+        strategy === undefined
+      )
+        return false;
+      routingRef.current = true;
+      setRouting({ status: "saving" });
+      for (const account of accounts) clearAccountError(account.id);
+      try {
+        const result = await updateRouting({
+          environmentId,
+          input: {
+            strategy,
+            accounts: accounts.map((account) => ({
+              accountId: account.id,
+              enabled: patch.enabled ?? account.enabled,
+              priority: account.priority,
+              weight: account.weight,
+              ...(patch.label !== undefined ? { label: patch.label } : {}),
+              ...(patch.models !== undefined ? { models: patch.models } : {}),
+            })),
+          },
+        });
+        if (result._tag === "Failure") {
+          const message = isAtomCommandInterrupted(result)
+            ? "Change interrupted. Save again."
+            : workjetGatewayFailureDescription(squashAtomCommandFailure(result));
+          setAccountErrors((previous) => ({
+            ...previous,
+            ...Object.fromEntries(accounts.map((account) => [account.id, message])),
+          }));
+          setRouting({ status: "failed", message });
+          return false;
+        }
+        setEditedCatalog(result.value.catalog);
+        setRouting({ status: "completed" });
+        refresh();
+        return true;
+      } finally {
+        routingRef.current = false;
+      }
+    },
+    [environmentId, refresh, updateRouting, editedCatalog, catalogQuery.data],
   );
 
   const retry = useCallback(() => {
@@ -163,10 +286,11 @@ export function useWorkjetGatewaySection(
   }, [environmentId, refresh, startGateway]);
 
   const addAccount = useCallback(
-    (provider: WorkjetGatewayOauthProvider) => {
+    (provider: WorkjetGatewayOauthProvider, accountId?: string) => {
       if (environmentId === null || loginRef.current !== null) return;
       const token = { aborted: false };
       loginRef.current = token;
+      setLoginAccountId(accountId ?? null);
       setLogin({ status: "starting", provider });
       const fail = (message: string) => {
         if (!token.aborted) setLogin({ status: "failed", provider, message });
@@ -174,14 +298,23 @@ export function useWorkjetGatewaySection(
       void (async () => {
         // The server autostarts the gateway for this call, so the surface never
         // needs a start button ahead of it.
-        const started = await startGatewayOauth({ environmentId, input: { provider } });
+        const started = await startGatewayOauth({
+          environmentId,
+          input: {
+            provider,
+            ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}),
+          },
+        });
         if (started._tag === "Failure") {
           if (!isAtomCommandInterrupted(started)) {
             fail(workjetGatewayFailureDescription(squashAtomCommandFailure(started)));
           }
           return;
         }
-        if (token.aborted) return;
+        if (token.aborted) {
+          void cancelGatewayOauth({ environmentId, input: { state: started.value.state } });
+          return;
+        }
         const session = started.value;
         setLogin({
           status: "pending",
@@ -238,7 +371,7 @@ export function useWorkjetGatewaySection(
         if (loginRef.current === token) loginRef.current = null;
       });
     },
-    [environmentId, pollGatewayOauth, refresh, startGatewayOauth],
+    [cancelGatewayOauth, environmentId, pollGatewayOauth, refresh, startGatewayOauth],
   );
 
   /**
@@ -248,15 +381,26 @@ export function useWorkjetGatewaySection(
    * contract's own bounded copy.
    */
   const addApiKey = useCallback(
-    (provider: WorkjetGatewayApiKeyProvider, value: string) => {
-      if (environmentId === null || apiKeyRef.current) return;
-      const label = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
+    async (
+      provider: WorkjetGatewayApiKeyProvider,
+      value: string,
+      label = WORKJET_GATEWAY_PROVIDER_LABELS[provider],
+      models?: ReadonlyArray<string>,
+      accountId?: string,
+    ): Promise<boolean> => {
+      if (environmentId === null || apiKeyRef.current) return false;
       apiKeyRef.current = true;
       setApiKey({ status: "saving", provider });
-      void (async () => {
+      try {
         const result = await addApiKeyAccount({
           environmentId,
-          input: { provider, label, apiKey: value },
+          input: {
+            provider,
+            label,
+            apiKey: value,
+            ...(models !== undefined ? { models } : {}),
+            ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}),
+          },
         });
         if (result._tag === "Failure") {
           if (!isAtomCommandInterrupted(result)) {
@@ -266,49 +410,65 @@ export function useWorkjetGatewaySection(
               message: workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
             });
           }
-          return;
+          return false;
         }
         setApiKey({ status: "completed", provider });
         // The server persisted the account and reloaded the gateway, so the new
         // account only appears after a fresh catalog read.
         refresh();
-      })().finally(() => {
+        return true;
+      } finally {
         apiKeyRef.current = false;
-      });
+      }
     },
     [addApiKeyAccount, environmentId, refresh],
   );
 
   const cancelLogin = useCallback(() => {
-    if (login.status !== "pending") return;
+    if (login.status === "idle" || login.status === "completed") return;
     if (loginRef.current) loginRef.current.aborted = true;
     loginRef.current = null;
     setLogin({ status: "idle" });
-    if (environmentId === null) return;
+    setLoginAccountId(null);
+    if (environmentId === null || login.status !== "pending") return;
     void cancelGatewayOauth({ environmentId, input: { state: login.state } });
   }, [cancelGatewayOauth, environmentId, login]);
 
   const removeRef = useRef(false);
   const removeAccountById = useCallback(
-    (accountId: string) => {
-      if (environmentId === null || removeRef.current) return;
+    async (accountId: string): Promise<boolean> => {
+      if (environmentId === null || removeRef.current) return false;
       removeRef.current = true;
-      void (async () => {
+      setIsDeleting(true);
+      clearAccountError(accountId);
+      try {
         const result = await removeAccount({
           environmentId,
           input: { accountId: WorkjetGatewayAccountId.make(accountId) },
         });
-        if (result._tag === "Success") refresh();
-      })().finally(() => {
+        if (result._tag === "Failure") {
+          setAccountErrors((previous) => ({
+            ...previous,
+            [accountId]: isAtomCommandInterrupted(result)
+              ? "Removal interrupted. Try again."
+              : workjetGatewayFailureDescription(squashAtomCommandFailure(result)),
+          }));
+          return false;
+        }
+        setEditedCatalog(null);
+        refresh();
+        return true;
+      } finally {
         removeRef.current = false;
-      });
+        setIsDeleting(false);
+      }
     },
     [environmentId, refresh, removeAccount],
   );
 
   return {
     status: statusQuery.data,
-    catalog: catalogQuery.data,
+    catalog: editedCatalog ?? catalogQuery.data,
     isInitialLoading: statusQuery.isPending && statusQuery.data === null,
     isRefreshing:
       statusQuery.isPending ||
@@ -326,6 +486,26 @@ export function useWorkjetGatewaySection(
     apiKey,
     onAddApiKey: addApiKey,
     onRemoveAccount: removeAccountById,
+    onDeleteAccount: removeAccountById,
+    onSaveApiKey: addApiKey,
+    onRelogin: addAccount,
+    onEditAccount: (account, patch) => editAccounts([account], patch),
+    onEditModels: (accounts, models) => editAccounts(accounts, { models }),
+    loginAccountId,
+    accountErrors,
+    accountHealth: Object.fromEntries(
+      (healthQuery.data?.accounts ?? []).map((account) => [
+        account.accountId,
+        modelsAccountHealth(account, Date.now()),
+      ]),
+    ),
+    mutationBusy:
+      routing.status === "saving" ||
+      apiKey.status === "saving" ||
+      isOperating ||
+      isDeleting ||
+      login.status === "starting" ||
+      login.status === "pending",
     pools: {
       catalog: catalogQuery.data,
       health: healthQuery.data,

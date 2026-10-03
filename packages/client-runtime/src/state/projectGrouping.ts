@@ -41,7 +41,7 @@ function deriveRepositoryRelativeProjectPath(
   project: Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
 ): string | null {
   const rootPath = project.repositoryIdentity?.rootPath?.trim();
-  if (!rootPath) {
+  if (!rootPath || project.workspaceRoot === null) {
     return null;
   }
 
@@ -69,25 +69,27 @@ export function derivePhysicalProjectKeyFromPath(environmentId: string, cwd: str
 }
 
 export function derivePhysicalProjectKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot" | "id" | "ctoxRegistration">,
 ): string {
-  return derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
+  return project.workspaceRoot === null || project.ctoxRegistration != null
+    ? scopedProjectKey(scopeProjectRef(project.environmentId, project.id))
+    : derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
 }
 
 export function deriveProjectGroupingOverrideKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot" | "id" | "ctoxRegistration">,
 ): string {
   return derivePhysicalProjectKey(project);
 }
 
 export function getProjectOrderKey(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot" | "id" | "ctoxRegistration">,
 ): string {
   return derivePhysicalProjectKey(project);
 }
 
 export function resolveProjectGroupingMode(
-  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
+  project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot" | "id" | "ctoxRegistration">,
   settings: ProjectGroupingSettings,
 ): SidebarProjectGroupingMode {
   return (
@@ -122,12 +124,14 @@ function deriveRepositoryScopedKey(
 export function deriveLogicalProjectKey(
   project: Pick<
     EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity"
+    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "ctoxRegistration"
   >,
   options?: {
     readonly groupingMode?: SidebarProjectGroupingMode;
   },
 ): string {
+  if (project.ctoxRegistration != null)
+    return scopedProjectKey(scopeProjectRef(project.environmentId, project.id));
   const groupingMode = options?.groupingMode ?? "repository";
   if (groupingMode === "separate") {
     return derivePhysicalProjectKey(project);
@@ -143,7 +147,7 @@ export function deriveLogicalProjectKey(
 export function deriveLogicalProjectKeyFromSettings(
   project: Pick<
     EnvironmentProject,
-    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity"
+    "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "ctoxRegistration"
   >,
   settings: ProjectGroupingSettings,
 ): string {
@@ -155,7 +159,10 @@ export function deriveLogicalProjectKeyFromSettings(
 export function deriveLogicalProjectKeyFromRef(
   projectRef: ScopedProjectRef,
   project:
-    | Pick<EnvironmentProject, "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity">
+    | Pick<
+        EnvironmentProject,
+        "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity" | "ctoxRegistration"
+      >
     | null
     | undefined,
   options?: {

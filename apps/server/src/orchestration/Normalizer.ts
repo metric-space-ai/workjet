@@ -82,10 +82,13 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
     if (canonicalCommand.type === "project.create") {
       return {
         ...canonicalCommand,
-        workspaceRoot: yield* normalizeProjectWorkspaceRootForCreate(
-          canonicalCommand.workspaceRoot,
-          canonicalCommand.createWorkspaceRootIfMissing,
-        ),
+        workspaceRoot:
+          canonicalCommand.workspaceRoot === null
+            ? null
+            : yield* normalizeProjectWorkspaceRootForCreate(
+                canonicalCommand.workspaceRoot,
+                canonicalCommand.createWorkspaceRootIfMissing,
+              ),
         createWorkspaceRootIfMissing: canonicalCommand.createWorkspaceRootIfMissing === true,
       } satisfies OrchestrationCommand;
     }
@@ -96,7 +99,10 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
     ) {
       return {
         ...canonicalCommand,
-        workspaceRoot: yield* normalizeProjectWorkspaceRoot(canonicalCommand.workspaceRoot),
+        workspaceRoot:
+          canonicalCommand.workspaceRoot === null
+            ? null
+            : yield* normalizeProjectWorkspaceRoot(canonicalCommand.workspaceRoot),
       } satisfies OrchestrationCommand;
     }
 

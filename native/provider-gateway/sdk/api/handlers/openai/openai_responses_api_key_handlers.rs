@@ -123,6 +123,7 @@ pub struct ApiKeyAccountPool {
     accounts: Vec<ApiKeyAccount>,
     executor: OpenAiCompatExecutor,
     cursor: AtomicUsize,
+    policy: Option<Arc<dyn crate::sdk::cliproxy::auth::conductor_execution::AccountPolicy>>,
 }
 
 impl ApiKeyAccountPool {
@@ -145,7 +146,16 @@ impl ApiKeyAccountPool {
             accounts,
             executor,
             cursor: AtomicUsize::new(0),
+            policy: None,
         })
+    }
+
+    pub fn with_policy(
+        mut self,
+        policy: Arc<dyn crate::sdk::cliproxy::auth::conductor_execution::AccountPolicy>,
+    ) -> Self {
+        self.policy = Some(policy);
+        self
     }
 
     pub fn provider(&self) -> &str {
@@ -155,7 +165,32 @@ impl ApiKeyAccountPool {
     /// Round-robin over the enabled accounts that serve `model`, highest
     /// configured priority first. Returns `None` when the provider has no
     /// usable account for the requested model.
-    fn select(&self, model: &str) -> Option<&ApiKeyAccount> {
+    fn select(&self, model: &str, body: &[u8]) -> Option<&ApiKeyAccount> {
+        if let Some(policy) = &self.policy {
+            let candidates = self
+                .accounts
+                .iter()
+                .map(|a| crate::sdk::cliproxy::auth::AccountCandidate {
+                    auth_id: a.id.clone(),
+                    provider: self.provider.clone(),
+                    priority: a.priority,
+                    disabled: a.disabled,
+                    supported_models: a.models.clone(),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>();
+            let selected = policy
+                .select(
+                    &self.provider,
+                    Some(model),
+                    account_policy_now_ms(),
+                    &candidates,
+                    &[],
+                    body,
+                )
+                .ok()?;
+            return self.accounts.iter().find(|a| a.id == selected.auth_id);
+        }
         let mut eligible: Vec<&ApiKeyAccount> = self
             .accounts
             .iter()
@@ -199,13 +234,17 @@ impl ApiKeyAccountPool {
     }
 
     pub async fn execute(&self, model: &str, body: &[u8]) -> Result<Vec<u8>, ApiKeyPoolError> {
-        let account = self.select(model).ok_or(ApiKeyPoolError::NoAccount)?;
+        let account = self.select(model, body).ok_or(ApiKeyPoolError::NoAccount)?;
         let request = self.executor_request(account, model, body, false);
         self.executor
             .execute(request)
             .await
-            .map(|response| response.payload)
-            .map_err(|_| ApiKeyPoolError::Upstream(502))
+            .map(|response| { if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, 200, account_policy_now_ms()); } response.payload })
+            .map_err(|error| {
+                let status = error.downcast_ref::<crate::internal::runtime::executor::openai_compat_executor::OpenAiCompatError>().map_or(502, |error| error.status_code);
+                if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, status, account_policy_now_ms()); }
+                ApiKeyPoolError::Upstream(status)
+            })
     }
 
     pub async fn execute_stream(
@@ -213,14 +252,26 @@ impl ApiKeyAccountPool {
         model: &str,
         body: &[u8],
     ) -> Result<mpsc::Receiver<ExecutorStreamChunk>, ApiKeyPoolError> {
-        let account = self.select(model).ok_or(ApiKeyPoolError::NoAccount)?;
+        let account = self.select(model, body).ok_or(ApiKeyPoolError::NoAccount)?;
         let request = self.executor_request(account, model, body, true);
         self.executor
             .execute_stream(request)
             .await
-            .map(|response| response.chunks)
-            .map_err(|_| ApiKeyPoolError::Upstream(502))
+            .map(|response| { if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, 200, account_policy_now_ms()); } response.chunks })
+            .map_err(|error| {
+                let status = error.downcast_ref::<crate::internal::runtime::executor::openai_compat_executor::OpenAiCompatError>().map_or(502, |error| error.status_code);
+                if let Some(policy) = &self.policy { policy.outcome(&self.provider, &account.id, model, status, account_policy_now_ms()); }
+                ApiKeyPoolError::Upstream(status)
+            })
     }
+}
+
+fn account_policy_now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(i64::MAX)
 }
 
 impl std::fmt::Debug for ApiKeyAccountPool {

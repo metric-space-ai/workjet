@@ -10,6 +10,7 @@ import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as Socket from "effect/unstable/socket/Socket";
 
 import { makeWsRpcProtocolClient, type WsRpcProtocolClient } from "./protocol.ts";
+import { environmentMismatchError } from "../connection/errors.ts";
 import type {
   ConnectionAttemptError,
   ConnectionTransientError,
@@ -117,6 +118,27 @@ export const make = Effect.gen(function* () {
     const initialConfig = yield* Effect.cached(
       client[WS_METHODS.serverGetConfig]({}).pipe(
         Effect.mapError(mapSessionRpcError),
+        Effect.tap((config) =>
+          Effect.gen(function* () {
+            if (config.environment.environmentId !== connection.environmentId) {
+              return yield* environmentMismatchError({
+                expected: connection.environmentId,
+                actual: config.environment.environmentId,
+              });
+            }
+            if (
+              connection.runtimeInstanceId !== undefined &&
+              config.environment.runtimeInstanceId !== connection.runtimeInstanceId
+            ) {
+              // Re-prepare after a replacement; never publish this socket as
+              // ready or replay a command using the stale discovery result.
+              return yield* new ConnectionTransientErrorClass({
+                reason: "remote-unavailable",
+                detail: "The server restarted while connecting. A fresh connection is required.",
+              });
+            }
+          }),
+        ),
         Effect.withSpan("environment.initialSync"),
       ),
     );

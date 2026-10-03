@@ -76,6 +76,7 @@ minimumReleaseAgeExclude:
   - "@legendapp/list@3.3.5"
 
 overrides:
+  image-size: 2.0.4
   browserslist: ">=4.28.7"
   "@clerk/backend": "catalog:"
   "@clerk/clerk-js": "catalog:"
@@ -104,16 +105,15 @@ overrides:
   "@hono/node-server": 1.19.15
   "@pierre/diffs>@shikijs/transformers": ^4.2.0
   "@types/node": "catalog:"
-  brace-expansion: 5.0.9
+  brace-expansion: 5.0.11
   builder-util-runtime: 9.7.0
   effect: "catalog:"
   expo-modules-jsi: 56.0.10
-  fast-uri: 3.1.6
+  fast-uri: 3.1.7
   form-data: 4.0.6
   "expo-sharing>@expo/config-plugins": 56.0.9
   "expo-sharing>@expo/config-types": 56.0.6
   hono: 4.12.34
-  image-size: 2.0.4
   ip-address: 10.3.1
   js-yaml: 4.3.2
   nanoid: 3.3.18
@@ -123,7 +123,7 @@ overrides:
   shell-quote: 1.10.0
   svgo: 4.1.0
   tar: 7.5.22
-  undici: 6.28.0
+  undici: 6.28.1
   uuid: 11.1.1
   vite: "catalog:"
   yaml: "catalog:"

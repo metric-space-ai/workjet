@@ -27,8 +27,10 @@ export default defineConfig({
     testTimeout: 60_000,
   },
   staged: {
-    // Formatter only for now — no lint or typecheck on commit.
-    "*": "vp fmt",
+    // Syntax-only checks for Python; formatter excludes unsupported source types.
+    "!(*.rs|*.py)": "vp fmt --threads 2",
+    "*.rs": "node scripts/check-staged-rust.mjs",
+    "*.py": "python3 scripts/check-staged-python.py",
   },
   fmt: {
     ignorePatterns: [

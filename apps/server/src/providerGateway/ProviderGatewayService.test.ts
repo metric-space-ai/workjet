@@ -140,6 +140,45 @@ const readyHarness = () => {
 };
 
 describe("ProviderGatewayService", () => {
+  it("reads durable environment usage while the host is stopped and never starts it", async () => {
+    const now = Date.parse("2026-10-02T12:00:00Z");
+    const day = Math.floor(now / 86_400_000);
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      now: () => now,
+      spawn: () => {
+        throw new Error("must not spawn");
+      },
+      readText: async (path) => {
+        if (path === `/state/provider-gateway-usage/${day}.jsonl`)
+          return `${JSON.stringify({ completedAtMs: now - 1000, provider: "codex", model: "gpt-6", modelSource: "response", error: false, inputTokens: 7, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null })}\n`;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+    };
+    const result = await runGateway(platform, (gateway) =>
+      gateway.usage({ days: 7, timeZone: "Europe/Berlin" }),
+    );
+    expect(result.totals.requests).toBe(1);
+    expect(result.totals.inputTokens).toBe(7);
+    expect(result.timeZone).toBe("Europe/Berlin");
+  });
+
+  it("reports usage-specific query and storage failures", async () => {
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      readText: async () => {
+        throw Object.assign(new Error("denied"), { code: "EACCES" });
+      },
+    };
+    const query = await runGateway(platform, (gateway) =>
+      gateway.usage({ days: 7, timeZone: "Invalid/Zone" }).pipe(Effect.flip),
+    );
+    expect(query.reason).toBe("invalid-usage-query");
+    const storage = await runGateway(platform, (gateway) =>
+      gateway.usage({ days: 7 }).pipe(Effect.flip),
+    );
+    expect(storage.reason).toBe("usage-unavailable");
+  });
   it("persists a scoped grant without copying credentials to another computer", async () => {
     const files = new Map<string, string>([["/state/provider-gateway.json", configuration]]);
     const platform: ProviderGatewayPlatform = {
@@ -350,144 +389,181 @@ describe("ProviderGatewayService", () => {
     expect(harness.spawnCount()).toBe(1);
   });
 
-  it("runs begin, poll, claim, persist, and reload for a provider login", async () => {
-    const storedSecrets = new Map<string, string>();
-    const secretStore = ServerSecretStore.ServerSecretStore.of({
-      get: () => Effect.succeed(Option.some(new TextEncoder().encode("provider-secret"))),
-      set: (name, value) =>
-        Effect.sync(() => {
-          storedSecrets.set(name, new TextDecoder().decode(value));
-        }),
-      create: () => Effect.void,
-      getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
-      remove: () => Effect.void,
-    });
-    const writes: Array<{ readonly path: string; readonly content: string }> = [];
-    const claims: Array<string> = [];
-    let spawnCount = 0;
-    let polls = 0;
-    const spawnProcess = (): GatewayHostProcess => {
-      const exit = deferredExit();
-      return {
-        pid: 321,
-        stdout: iterable([
-          '{"schema":"workjet.provider-gateway-host.readiness.v1","pid":321,"providerEndpoint":"http://127.0.0.1:41000/","managementEndpoint":"http://127.0.0.1:41001/","phase":"ready"}\n',
-        ]),
-        stderr: iterable([]),
-        exit: exit.promise,
-        kill: (signal) => {
-          exit.resolve({ code: null, signal });
-          return true;
+  it.each([false, true])(
+    "runs begin, poll, claim, persist, and reload (targeted re-login: %s)",
+    async (targeted) => {
+      const storedSecrets = new Map<string, string>();
+      const secretStore = ServerSecretStore.ServerSecretStore.of({
+        get: () => Effect.succeed(Option.some(new TextEncoder().encode("provider-secret"))),
+        set: (name, value) =>
+          Effect.sync(() => {
+            storedSecrets.set(name, new TextDecoder().decode(value));
+          }),
+        create: () => Effect.void,
+        getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
+        remove: () => Effect.void,
+      });
+      const writes: Array<{ readonly path: string; readonly content: string }> = [];
+      const claims: Array<string> = [];
+      let spawnCount = 0;
+      let polls = 0;
+      const spawnProcess = (): GatewayHostProcess => {
+        const exit = deferredExit();
+        return {
+          pid: 321,
+          stdout: iterable([
+            '{"schema":"workjet.provider-gateway-host.readiness.v1","pid":321,"providerEndpoint":"http://127.0.0.1:41000/","managementEndpoint":"http://127.0.0.1:41001/","phase":"ready"}\n',
+          ]),
+          stderr: iterable([]),
+          exit: exit.promise,
+          kill: (signal) => {
+            exit.resolve({ code: null, signal });
+            return true;
+          },
+        };
+      };
+      const platform: ProviderGatewayPlatform = {
+        ...nodeProviderGatewayPlatform,
+        readText: async (path) => {
+          if (path.endsWith("provider-gateway.json")) {
+            const written = writes.findLast((entry) =>
+              entry.path.endsWith("provider-gateway.json"),
+            );
+            return written?.content ?? configuration;
+          }
+          return configuration;
+        },
+        writePrivateText: async (path, content) => {
+          writes.push({ path, content });
+        },
+        remove: async () => undefined,
+        spawn: () => {
+          spawnCount += 1;
+          return spawnProcess();
+        },
+        managementGet: async (_endpoint, route) => {
+          if (route.endsWith("codex-auth-url")) {
+            return {
+              provider: "codex",
+              state: "state-1",
+              authorization_url: "https://auth.example.test/authorize?state=state-1",
+            };
+          }
+          if (route.startsWith("/v0/management/oauth/status")) {
+            polls += 1;
+            return polls === 1
+              ? { pending: true, error: null, credentials: [] }
+              : {
+                  pending: false,
+                  error: null,
+                  credentials: [
+                    { id: "codex:acct", provider: "codex", label: "user@example.test" },
+                  ],
+                };
+          }
+          return route.endsWith("runtime-status")
+            ? { schema: "workjet.provider-gateway.runtime-status.v1" }
+            : { schema: "workjet.provider-gateway.runtime-summary.v1" };
+        },
+        managementRequest: async (_endpoint, route, _key, method) => {
+          claims.push(`${method} ${route}`);
+          return {
+            credentials: [
+              {
+                account: {
+                  id: "codex:acct",
+                  auth_index: "acct",
+                  label: "user@example.test",
+                  provider: "codex",
+                  disabled: false,
+                  models: [],
+                },
+                secrets: {
+                  id_token_secret: "id-token-material",
+                  access_token_secret: "access-token-material",
+                  refresh_token_secret: "refresh-token-material",
+                },
+              },
+            ],
+          };
         },
       };
-    };
-    const platform: ProviderGatewayPlatform = {
-      ...nodeProviderGatewayPlatform,
-      readText: async (path) => {
-        if (path.endsWith("provider-gateway.json")) {
-          const written = writes.findLast((entry) => entry.path.endsWith("provider-gateway.json"));
-          return written?.content ?? configuration;
-        }
-        return configuration;
-      },
-      writePrivateText: async (path, content) => {
-        writes.push({ path, content });
-      },
-      remove: async () => undefined,
-      spawn: () => {
-        spawnCount += 1;
-        return spawnProcess();
-      },
-      managementGet: async (_endpoint, route) => {
-        if (route.endsWith("codex-auth-url")) {
-          return {
+
+      await Effect.scoped(
+        Effect.gen(function* () {
+          const gateway = yield* make({ platform, executable: "/gateway-host" });
+          yield* gateway.start();
+          const session = yield* gateway.oauthStart({
             provider: "codex",
-            state: "state-1",
-            authorization_url: "https://auth.example.test/authorize?state=state-1",
-          };
-        }
-        if (route.startsWith("/v0/management/oauth/status")) {
-          polls += 1;
-          return polls === 1
-            ? { pending: true, error: null, credentials: [] }
-            : {
-                pending: false,
-                error: null,
-                credentials: [{ id: "codex:acct", provider: "codex", label: "user@example.test" }],
-              };
-        }
-        return route.endsWith("runtime-status")
-          ? { schema: "workjet.provider-gateway.runtime-status.v1" }
-          : { schema: "workjet.provider-gateway.runtime-summary.v1" };
-      },
-      managementRequest: async (_endpoint, route, _key, method) => {
-        claims.push(`${method} ${route}`);
-        return {
-          credentials: [
-            {
-              account: {
-                id: "codex:acct",
-                auth_index: "acct",
-                label: "user@example.test",
-                provider: "codex",
-                disabled: false,
-                models: [],
-              },
-              secrets: {
-                id_token_secret: "id-token-material",
-                access_token_secret: "access-token-material",
-                refresh_token_secret: "refresh-token-material",
-              },
-            },
-          ],
-        };
-      },
-    };
+            ...(targeted ? { accountId: WorkjetGatewayAccountId.make("codex-primary") } : {}),
+          });
+          expect(session.state).toBe("state-1");
+          expect(session.authorizationUrl.startsWith("https://")).toBe(true);
+          const first = yield* gateway.oauthPoll({ state: session.state });
+          expect(first.pending).toBe(true);
+          const second = yield* gateway.oauthPoll({ state: session.state });
+          expect(second.pending).toBe(false);
+          expect(second.failed).toBe(false);
+          expect(second.completedAccountIds).toEqual([
+            targeted ? "codex-primary" : "codex-user-example.test",
+          ]);
+        }),
+      ).pipe(
+        Effect.provideService(ServerConfig.ServerConfig, testConfig),
+        Effect.provideService(ServerSecretStore.ServerSecretStore, secretStore),
+        Effect.runPromise,
+      );
 
-    await Effect.scoped(
-      Effect.gen(function* () {
-        const gateway = yield* make({ platform, executable: "/gateway-host" });
-        yield* gateway.start();
-        const session = yield* gateway.oauthStart({ provider: "codex" });
-        expect(session.state).toBe("state-1");
-        expect(session.authorizationUrl.startsWith("https://")).toBe(true);
-        const first = yield* gateway.oauthPoll({ state: session.state });
-        expect(first.pending).toBe(true);
-        const second = yield* gateway.oauthPoll({ state: session.state });
-        expect(second.pending).toBe(false);
-        expect(second.failed).toBe(false);
-        expect(second.completedAccountIds).toEqual(["codex-user-example.test"]);
-      }),
-    ).pipe(
-      Effect.provideService(ServerConfig.ServerConfig, testConfig),
-      Effect.provideService(ServerSecretStore.ServerSecretStore, secretStore),
-      Effect.runPromise,
-    );
-
-    expect(claims).toEqual(["POST /v0/management/oauth/session/state-1/claim"]);
-    expect(
-      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-access-token"),
-    ).toBe("access-token-material");
-    expect(
-      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-id-token"),
-    ).toBe("id-token-material");
-    expect(
-      storedSecrets.get("workjet-provider-gateway.account-codex-user-example.test-refresh-token"),
-    ).toBe("refresh-token-material");
-    const configWrite = writes.findLast((entry) => entry.path.endsWith("provider-gateway.json"));
-    expect(configWrite).toBeDefined();
-    expect(configWrite?.content).toContain('"codex-user-example.test"');
-    expect(configWrite?.content).not.toContain("access-token-material");
-    expect(configWrite?.content).not.toContain("refresh-token-material");
-    // The login reloads the gateway so the new account is served.
-    expect(spawnCount).toBe(2);
-  });
+      expect(claims).toEqual(["POST /v0/management/oauth/session/state-1/claim"]);
+      expect(
+        storedSecrets.get(
+          targeted
+            ? "workjet-provider-gateway.codex.access"
+            : "workjet-provider-gateway.account-codex-user-example.test-access-token",
+        ),
+      ).toBe("access-token-material");
+      expect(
+        storedSecrets.get(
+          targeted
+            ? "workjet-provider-gateway.codex.id"
+            : "workjet-provider-gateway.account-codex-user-example.test-id-token",
+        ),
+      ).toBe("id-token-material");
+      expect(
+        storedSecrets.get(
+          targeted
+            ? "workjet-provider-gateway.codex.refresh"
+            : "workjet-provider-gateway.account-codex-user-example.test-refresh-token",
+        ),
+      ).toBe("refresh-token-material");
+      const configWrite = writes.findLast((entry) => entry.path.endsWith("provider-gateway.json"));
+      expect(configWrite).toBeDefined();
+      expect(configWrite?.content).toContain(
+        targeted ? '"codex-primary"' : '"codex-user-example.test"',
+      );
+      if (targeted) {
+        const persisted = JSON.parse(configWrite!.content);
+        expect(persisted.accounts).toHaveLength(1);
+        expect(persisted.accounts[0]).toMatchObject({
+          id: "codex-primary",
+          label: "Primary Codex",
+          models: ["gpt-test"],
+        });
+      }
+      expect(configWrite?.content).not.toContain("access-token-material");
+      expect(configWrite?.content).not.toContain("refresh-token-material");
+      // The login reloads the gateway so the new account is served.
+      expect(spawnCount).toBe(2);
+    },
+  );
 
   it("reports a failed login without claiming credentials", async () => {
     const harness = readyHarness();
     const platform: ProviderGatewayPlatform = {
       ...harness.platform,
       managementGet: async (endpoint, route, key, maximumBytes) => {
+        if (route.endsWith("-auth-url"))
+          return { state: "state-x", authorization_url: "https://auth.example/authorize" };
         if (route.startsWith("/v0/management/oauth/status")) {
           return { pending: false, error: "denied", credentials: [] };
         }
@@ -500,12 +576,186 @@ describe("ProviderGatewayService", () => {
     await runGateway(platform, (gateway) =>
       Effect.gen(function* () {
         yield* gateway.start();
-        const result = yield* gateway.oauthPoll({ state: "state-x" });
+        const session = yield* gateway.oauthStart({ provider: "codex" });
+        const result = yield* gateway.oauthPoll({ state: session.state });
         expect(result.failed).toBe(true);
         expect(result.completedAccountIds).toEqual([]);
       }),
     );
   });
+
+  it.each(["unknown", "expired", "cancelled"] as const)(
+    "rejects %s OAuth bindings before polling or claiming",
+    async (kind) => {
+      const harness = readyHarness();
+      let now = 1_700_000_000_000;
+      let begins = 0;
+      const claims: string[] = [];
+      const platform: ProviderGatewayPlatform = {
+        ...harness.platform,
+        now: () => now,
+        managementGet: async (endpoint, route, key, maximumBytes) => {
+          if (route.endsWith("-auth-url"))
+            return {
+              state: `state-${++begins}`,
+              authorization_url: "https://auth.example/authorize",
+            };
+          if (route.startsWith("/v0/management/oauth/status"))
+            throw new Error("invalid session must not reach the host");
+          return harness.platform.managementGet(endpoint, route, key, maximumBytes);
+        },
+        managementRequest: async (_endpoint, route, _key, method) => {
+          claims.push(`${method} ${route}`);
+          return {};
+        },
+      };
+      await runGateway(platform, (gateway) =>
+        Effect.gen(function* () {
+          yield* gateway.start();
+          const session = yield* gateway.oauthStart({
+            provider: "codex",
+            accountId: WorkjetGatewayAccountId.make("codex-primary"),
+          });
+          if (kind === "expired") {
+            now += 10 * 60_000;
+            // A second start prunes the expired binding: the stale poll must still
+            // fail rather than being interpreted as an add-account operation.
+            yield* gateway.oauthStart({ provider: "codex" });
+          } else if (kind === "cancelled") yield* gateway.oauthCancel({ state: session.state });
+          const failure = yield* gateway
+            .oauthPoll({ state: kind === "unknown" ? "foreign-state" : session.state })
+            .pipe(Effect.flip);
+          expect(failure.reason).toBe("oauth-session-invalid");
+        }),
+      );
+      expect(claims.every((claim) => claim.startsWith("DELETE "))).toBe(true);
+    },
+  );
+
+  it("rejects a credential claim from a different provider than the bound OAuth session", async () => {
+    const harness = readyHarness();
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      managementGet: async (endpoint, route, key, maximumBytes) => {
+        if (route.endsWith("-auth-url"))
+          return { state: "bound-state", authorization_url: "https://auth.example/authorize" };
+        if (route.startsWith("/v0/management/oauth/status"))
+          return { pending: false, credentials: [{}] };
+        return harness.platform.managementGet(endpoint, route, key, maximumBytes);
+      },
+      managementRequest: async () => ({
+        credentials: [
+          {
+            account: { provider: "claude", label: "account@example.test", models: [] },
+            secrets: { access_token_secret: "fake-access", refresh_token_secret: "fake-refresh" },
+          },
+        ],
+      }),
+    };
+    await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const session = yield* gateway.oauthStart({ provider: "codex" });
+        const failure = yield* gateway.oauthPoll({ state: session.state }).pipe(Effect.flip);
+        expect(failure.reason).toBe("oauth-session-invalid");
+      }),
+    );
+    expect(harness.writes.join("\n")).not.toContain("account@example.test");
+  });
+
+  it.each(["secret", "configuration"] as const)(
+    "restores existing OAuth credentials when %s persistence fails",
+    async (failureAt) => {
+      const harness = readyHarness();
+      const original = new Map([
+        ["workjet-provider-gateway.codex.id", "old-id"],
+        ["workjet-provider-gateway.codex.access", "old-access"],
+        ["workjet-provider-gateway.codex.refresh", "old-refresh"],
+      ]);
+      const stored = new Map(original);
+      let claimStarted = false;
+      let failSecretOnce = true;
+      const store = ServerSecretStore.ServerSecretStore.of({
+        get: (name) =>
+          Effect.succeed(
+            stored.has(name)
+              ? Option.some(new TextEncoder().encode(stored.get(name)!))
+              : Option.none(),
+          ),
+        set: (name, value) =>
+          Effect.sync(() => {
+            if (
+              claimStarted &&
+              failureAt === "secret" &&
+              name.endsWith("codex.refresh") &&
+              failSecretOnce
+            ) {
+              failSecretOnce = false;
+              throw new Error("fixture write failure");
+            }
+            stored.set(name, new TextDecoder().decode(value));
+          }),
+        create: () => Effect.void,
+        remove: (name) =>
+          Effect.sync(() => {
+            stored.delete(name);
+          }),
+        getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
+      });
+      const platform: ProviderGatewayPlatform = {
+        ...harness.platform,
+        writePrivateText: async (path, content) => {
+          if (
+            claimStarted &&
+            failureAt === "configuration" &&
+            path.endsWith("provider-gateway.json")
+          )
+            throw new Error("fixture config failure");
+          await harness.platform.writePrivateText(path, content);
+        },
+        managementGet: async (endpoint, route, key, maximumBytes) => {
+          if (route.endsWith("-auth-url"))
+            return { state: "replace-state", authorization_url: "https://auth.example/authorize" };
+          if (route.startsWith("/v0/management/oauth/status"))
+            return { pending: false, credentials: [{}] };
+          return harness.platform.managementGet(endpoint, route, key, maximumBytes);
+        },
+        managementRequest: async () => ({
+          credentials: [
+            {
+              account: { provider: "codex", label: "Fixture", models: [] },
+              secrets: {
+                id_token_secret: "new-id",
+                access_token_secret: "new-access",
+                refresh_token_secret: "new-refresh",
+              },
+            },
+          ],
+        }),
+      };
+      await Effect.scoped(
+        Effect.gen(function* () {
+          const gateway = yield* make({ platform, executable: "/gateway-host" });
+          yield* gateway.start();
+          const session = yield* gateway.oauthStart({
+            provider: "codex",
+            accountId: WorkjetGatewayAccountId.make("codex-primary"),
+          });
+          claimStarted = true;
+          const failure = yield* gateway.oauthPoll({ state: session.state }).pipe(Effect.flip);
+          expect(failure.reason).toBe(
+            failureAt === "secret" ? "secret-unavailable" : "invalid-configuration",
+          );
+          expect(stored).toEqual(original);
+          expect(harness.spawnCount()).toBe(1);
+        }),
+      ).pipe(
+        Effect.provideService(ServerConfig.ServerConfig, testConfig),
+        Effect.provideService(ServerSecretStore.ServerSecretStore, store),
+        Effect.runPromise,
+      );
+    },
+  );
 
   it("rejects malformed readiness as a redacted protocol failure", async () => {
     const exit = deferredExit();
@@ -618,6 +868,95 @@ describe("ProviderGatewayService · API-key accounts", () => {
       expect(result.accountId).toBe(`${provider}-key`);
       expect(harness.writes.join("\n")).not.toContain(API_KEY);
     }
+  });
+
+  it("replaces a key in place without losing disabled state, models or stable identity", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "zai-stable",
+      provider: "zai",
+      label: "Team",
+      enabled: false,
+      priority: 0,
+      weight: 1,
+      models: ["glm-test"],
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    const document = {
+      ...JSON.parse(configuration),
+      accounts: [...JSON.parse(configuration).accounts, account],
+    };
+    harness.platform = { ...harness.platform, readText: async () => JSON.stringify(document) };
+    const result = await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        accountId: WorkjetGatewayAccountId.make("zai-stable"),
+        provider: "zai",
+        label: "Team",
+        apiKey: API_KEY,
+      }),
+    );
+    expect(result.accountId).toBe("zai-stable");
+    const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(
+      stored.accounts.filter((entry: { provider: string }) => entry.provider === "zai"),
+    ).toEqual([{ ...account, credentialSuffix: "abcd" }]);
+    expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("restores the previous key if persisting its new configuration fails", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "zai-stable",
+      provider: "zai",
+      label: "Team",
+      models: ["glm-test"],
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+    };
+    harness.platform = {
+      ...harness.platform,
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [...JSON.parse(configuration).accounts, account],
+        }),
+      writePrivateText: async () => {
+        throw new Error("fixture write failed");
+      },
+    };
+    const failure = await runWithSecrets(harness, (gateway) =>
+      gateway
+        .addApiKeyAccount({
+          accountId: WorkjetGatewayAccountId.make("zai-stable"),
+          provider: "zai",
+          label: "Team",
+          apiKey: API_KEY,
+        })
+        .pipe(Effect.flip),
+    );
+    expect(failure.reason).toBe("invalid-configuration");
+    expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(
+      "provider-secret",
+    );
+    expect(harness.spawnCount()).toBe(0);
+  });
+
+  it("rejects replacement of another provider before touching any secret", async () => {
+    const harness = apiKeyHarness();
+    const failure = await runWithSecrets(harness, (gateway) =>
+      gateway
+        .addApiKeyAccount({
+          accountId: WorkjetGatewayAccountId.make("codex-primary"),
+          provider: "zai",
+          label: "Team",
+          apiKey: API_KEY,
+        })
+        .pipe(Effect.flip),
+    );
+    expect(failure.reason).toBe("invalid-configuration");
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes).toEqual([]);
   });
 
   it("refuses an out-of-bounds or control-character key without writing anything", async () => {
@@ -834,7 +1173,7 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(harness.routes.some((route) => route.includes("model-definitions/zai"))).toBe(false);
   });
 
-  it("persists a strategy and membership edit and returns the pools it produced", async () => {
+  it("persists legacy strategy and membership edits while projecting the fixed host policy", async () => {
     const harness = poolHarness();
     const result = await runPools(harness, (gateway) =>
       gateway.updateRouting({
@@ -865,17 +1204,82 @@ describe("ProviderGatewayService pools, health, and models", () => {
       weight: 9,
     });
     const claudePool = result.catalog.providerPools.find((pool) => pool.provider === "claude");
-    expect(claudePool?.strategy).toBe("weighted-round-robin");
-    expect(claudePool?.weightHonored).toBe(true);
-    // Priority still gates before weight, exactly as the host's scheduler does.
+    expect(result.catalog.routingStrategy).toBe("fill-first");
+    expect(claudePool?.strategy).toBe("fill-first");
+    expect(claudePool?.weightHonored).toBe(false);
+    expect(claudePool?.priorityExclusive).toBe(false);
+    // Persist accepted legacy settings while keeping every enabled account
+    // available to the fixed host policy and its runtime health checks.
     expect(claudePool?.members.map((member) => [member.accountId, member.selectable])).toEqual([
       ["claude-a", true],
-      ["claude-b", false],
+      ["claude-b", true],
     ]);
-    // The host runtime document carries the new strategy, not the old default.
+    expect(harness.writes.findLast((entry) => entry.includes('"routing_strategy":'))).toContain(
+      '"routing_strategy":"fill-first"',
+    );
     expect(
       harness.writes.some((entry) => entry.includes('"routing_strategy":"weighted-round-robin"')),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it("edits display label and models while preserving the account and secret references", async () => {
+    const harness = poolHarness();
+    const before = JSON.parse(harness.configuration()).accounts.find(
+      (entry: { id: string }) => entry.id === "claude-a",
+    );
+    const result = await runPools(harness, (gateway) =>
+      gateway.updateRouting({
+        strategy: "fill-first",
+        accounts: [
+          {
+            accountId: WorkjetGatewayAccountId.make("claude-a"),
+            enabled: true,
+            priority: 0,
+            weight: 1,
+            label: "Renamed account",
+            models: ["claude-test"],
+          },
+        ],
+      }),
+    );
+    const after = JSON.parse(harness.configuration()).accounts.find(
+      (entry: { id: string }) => entry.id === "claude-a",
+    );
+    expect(after).toEqual({
+      ...before,
+      label: "Renamed account",
+      enabled: true,
+      priority: 0,
+      weight: 1,
+      models: ["claude-test"],
+    });
+    expect(result.catalog.accounts.find((entry) => entry.id === "claude-a")?.label).toBe(
+      "Renamed account",
+    );
+  });
+
+  it("saves a display-name edit without restarting an in-flight host", async () => {
+    const harness = readyHarness();
+    await runGateway(harness.platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const result = yield* gateway.updateRouting({
+          strategy: "fill-first",
+          accounts: [
+            {
+              accountId: WorkjetGatewayAccountId.make("codex-primary"),
+              enabled: true,
+              priority: 0,
+              weight: 1,
+              label: "Renamed account",
+            },
+          ],
+        });
+        expect(result.catalog.accounts[0]?.label).toBe("Renamed account");
+        expect(harness.spawnCount()).toBe(1);
+        expect(harness.kills).toEqual([]);
+      }),
+    );
   });
 
   it("refuses an edit naming an account the configuration does not have", async () => {
@@ -900,37 +1304,41 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(JSON.parse(harness.configuration())).toMatchObject({ routingStrategy: "round-robin" });
   });
 
-  it("refuses an edit that would leave the default provider with no enabled account", async () => {
+  it("allows disabling all default-provider accounts without losing them", async () => {
     const harness = poolHarness();
-    const failure = await runPools(harness, (gateway) =>
-      gateway
-        .updateRouting({
-          strategy: "round-robin",
-          accounts: [
-            {
-              accountId: WorkjetGatewayAccountId.make("claude-a"),
-              enabled: false,
-              priority: 0,
-              weight: 1,
-            },
-            {
-              accountId: WorkjetGatewayAccountId.make("claude-b"),
-              enabled: false,
-              priority: 0,
-              weight: 1,
-            },
-          ],
-        })
-        .pipe(Effect.flip),
+    const result = await runPools(harness, (gateway) =>
+      gateway.updateRouting({
+        strategy: "round-robin",
+        accounts: [
+          {
+            accountId: WorkjetGatewayAccountId.make("claude-a"),
+            enabled: false,
+            priority: 0,
+            weight: 1,
+          },
+          {
+            accountId: WorkjetGatewayAccountId.make("claude-b"),
+            enabled: false,
+            priority: 0,
+            weight: 1,
+          },
+        ],
+      }),
     );
-    expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
-    // The edit was not applied: the host would have refused to start on it.
-    // (`start()` itself persists the allocated provider port, so the document
-    // is compared by content rather than byte-for-byte.)
     const document = JSON.parse(harness.configuration()) as {
       accounts: ReadonlyArray<{ id: string; enabled: boolean }>;
     };
-    expect(document.accounts.every((account) => account.enabled)).toBe(true);
+    expect(document.accounts).toHaveLength(3);
+    expect(
+      document.accounts
+        .filter((account) => account.id.startsWith("claude"))
+        .every((account) => !account.enabled),
+    ).toBe(true);
+    expect(
+      result.catalog.accounts
+        .filter((account) => account.provider === "claude")
+        .every((account) => !account.enabled),
+    ).toBe(true);
   });
 });
 

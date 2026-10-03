@@ -62,6 +62,37 @@ const failingSessionLookupCredentialLayer = Layer.effect(
 );
 
 it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+  it.effect(
+    "carries signed local Desktop authority into WebSocket tickets without trusting labels",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const ordinary = yield* sessions.issue({
+          subject: "workjet-desktop-enrollment:spoof",
+          client: { deviceType: "desktop", label: "Workjet Desktop" },
+        });
+        expect((yield* sessions.verify(ordinary.token)).localDesktopEnvironmentId).toBeUndefined();
+        const desktop = yield* sessions.issue({
+          method: "bearer-access-token",
+          localDesktopEnvironmentId: "environment-a",
+        });
+        const verified = yield* sessions.verify(desktop.token);
+        expect(verified.localDesktopEnvironmentId).toBe("environment-a");
+        const ticket = yield* sessions.issueWebSocketToken(verified.sessionId, {
+          ...(verified.localDesktopEnvironmentId === undefined
+            ? {}
+            : { localDesktopEnvironmentId: verified.localDesktopEnvironmentId }),
+        });
+        expect((yield* sessions.verifyWebSocketToken(ticket.token)).localDesktopEnvironmentId).toBe(
+          "environment-a",
+        );
+        const ordinaryTicket = yield* sessions.issueWebSocketToken(ordinary.sessionId);
+        expect(
+          (yield* sessions.verifyWebSocketToken(ordinaryTicket.token)).localDesktopEnvironmentId,
+        ).toBeUndefined();
+      }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+
   it.effect("issues and verifies signed browser session tokens", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;

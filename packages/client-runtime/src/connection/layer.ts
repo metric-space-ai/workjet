@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
+
 import * as Stream from "effect/Stream";
 
 import * as ConnectionResolver from "./resolver.ts";
@@ -30,19 +30,17 @@ const connectionServicesLayer = Layer.mergeAll(
   onboardingLayer,
 );
 
-const connectionStartupLayer = Layer.effectDiscard(
+export const connectionStartupLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
     const platformSource = yield* PlatformConnectionSource.PlatformConnectionSource;
-    const registrations = yield* platformSource.registrations.pipe(
-      Stream.broadcast({ capacity: 1, strategy: "sliding", replay: 1 }),
-    );
-    const initial = yield* Stream.runHead(registrations);
-    if (Option.isSome(initial)) {
-      yield* registry.reconcilePlatform(initial.value);
-    }
+    // Persisted environments and their cache are usable while the host's
+    // current primary/WSL discovery is still waiting on network or installation.
     yield* registry.start;
-    yield* registrations.pipe(Stream.runForEach(registry.reconcilePlatform), Effect.forkScoped);
+    yield* platformSource.registrations.pipe(
+      Stream.runForEach(registry.reconcilePlatform),
+      Effect.forkScoped,
+    );
   }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
 );
 

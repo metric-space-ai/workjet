@@ -190,6 +190,7 @@ function ActiveSshPasswordPrompt({
               </div>
               <Input
                 ref={inputRef}
+                aria-label="SSH password"
                 autoComplete="current-password"
                 disabled={isResponding || isExpired}
                 name="ssh-password"

@@ -415,6 +415,7 @@ function ArchivedThreadRow(props: {
   readonly isFirst: boolean;
   readonly isLast: boolean;
   readonly onDelete: () => void;
+  readonly onOpenWorker: () => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly simultaneousSwipeGesture?: ComponentProps<
@@ -428,21 +429,80 @@ function ArchivedThreadRow(props: {
   const iconColor = useThemeColor("--color-icon-subtle");
   const separatorColor = useThemeColor("--color-separator");
   const timestamp = relativeTime(props.thread.archivedAt ?? props.thread.updatedAt);
-  const subtitle = [props.environmentLabel, props.thread.branch].filter((part): part is string =>
-    Boolean(part),
+  const isDeletedWorker = props.thread.deletedAt != null;
+  const subtitle = [
+    isDeletedWorker ? "Completed worker" : null,
+    props.environmentLabel,
+    props.thread.branch,
+  ].filter((part): part is string => Boolean(part));
+  const containerStyle = {
+    borderTopLeftRadius: props.isFirst ? 20 : 0,
+    borderTopRightRadius: props.isFirst ? 20 : 0,
+    borderBottomLeftRadius: props.isLast ? 20 : 0,
+    borderBottomRightRadius: props.isLast ? 20 : 0,
+    overflow: "hidden" as const,
+  };
+  const content = (
+    <View
+      className="flex-row items-center gap-3 bg-card px-4 py-3"
+      style={{
+        borderBottomColor: separatorColor,
+        borderBottomWidth: props.isLast ? 0 : 1,
+      }}
+    >
+      <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
+        <SymbolView name="archivebox.fill" size={15} tintColor={iconColor} type="monochrome" />
+      </View>
+
+      <View className="min-w-0 flex-1 gap-1">
+        <View className="flex-row items-center gap-2">
+          <Text
+            className="min-w-0 flex-1 text-base font-workjet-bold leading-snug text-foreground"
+            numberOfLines={1}
+          >
+            {props.thread.title}
+          </Text>
+          <Text className="min-w-[30px] text-right text-xs tabular-nums text-foreground-tertiary">
+            {timestamp}
+          </Text>
+        </View>
+        {subtitle.length > 0 ? (
+          <View className="flex-row items-center gap-1.5">
+            <SymbolView
+              name="arrow.triangle.branch"
+              size={10}
+              tintColor={iconColor}
+              type="monochrome"
+            />
+            <Text
+              className="min-w-0 flex-1 font-mono text-2xs text-foreground-tertiary"
+              numberOfLines={1}
+            >
+              {subtitle.join(" · ")}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
   );
+  if (isDeletedWorker) {
+    return (
+      <Pressable
+        accessibilityLabel={`Open completed worker ${props.thread.title}`}
+        accessibilityRole="button"
+        onPress={props.onOpenWorker}
+        style={containerStyle}
+      >
+        {content}
+      </Pressable>
+    );
+  }
   return (
     <ThreadSwipeable
       backgroundColor={cardColor}
       // Round + clip the swipeable container so the group's corners stay
       // rounded while rows swipe; the row itself stays square inside.
-      containerStyle={{
-        borderTopLeftRadius: props.isFirst ? 20 : 0,
-        borderTopRightRadius: props.isFirst ? 20 : 0,
-        borderBottomLeftRadius: props.isLast ? 20 : 0,
-        borderBottomRightRadius: props.isLast ? 20 : 0,
-        overflow: "hidden",
-      }}
+      containerStyle={containerStyle}
       fullSwipeWidth={windowWidth - 32}
       onDelete={props.onDelete}
       onSwipeableClose={props.onSwipeableClose}
@@ -456,49 +516,7 @@ function ArchivedThreadRow(props: {
       simultaneousWithExternalGesture={props.simultaneousSwipeGesture}
       threadTitle={props.thread.title}
     >
-      {() => (
-        <View
-          className="flex-row items-center gap-3 bg-card px-4 py-3"
-          style={{
-            borderBottomColor: separatorColor,
-            borderBottomWidth: props.isLast ? 0 : 1,
-          }}
-        >
-          <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
-            <SymbolView name="archivebox.fill" size={15} tintColor={iconColor} type="monochrome" />
-          </View>
-
-          <View className="min-w-0 flex-1 gap-1">
-            <View className="flex-row items-center gap-2">
-              <Text
-                className="min-w-0 flex-1 text-base font-workjet-bold leading-snug text-foreground"
-                numberOfLines={1}
-              >
-                {props.thread.title}
-              </Text>
-              <Text className="min-w-[30px] text-right text-xs tabular-nums text-foreground-tertiary">
-                {timestamp}
-              </Text>
-            </View>
-            {subtitle.length > 0 ? (
-              <View className="flex-row items-center gap-1.5">
-                <SymbolView
-                  name="arrow.triangle.branch"
-                  size={10}
-                  tintColor={iconColor}
-                  type="monochrome"
-                />
-                <Text
-                  className="min-w-0 flex-1 font-mono text-2xs text-foreground-tertiary"
-                  numberOfLines={1}
-                >
-                  {subtitle.join(" · ")}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      )}
+      {() => content}
     </ThreadSwipeable>
   );
 }
@@ -528,6 +546,7 @@ export function ArchivedThreadsScreen(props: {
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly sortOrder: ArchivedThreadSortOrder;
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
+  readonly onOpenWorker: (thread: EnvironmentThreadShell) => void;
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onRefresh: () => void;
   readonly onSearchQueryChange: (query: string) => void;
@@ -600,6 +619,7 @@ export function ArchivedThreadsScreen(props: {
           isFirst={item.isFirst}
           isLast={item.isLast}
           onDelete={() => onDeleteThread(item.thread)}
+          onOpenWorker={() => props.onOpenWorker(item.thread)}
           onSwipeableClose={handleSwipeableClose}
           onSwipeableWillOpen={handleSwipeableWillOpen}
           onUnarchive={() => onUnarchiveThread(item.thread)}
@@ -613,6 +633,7 @@ export function ArchivedThreadsScreen(props: {
       handleSwipeableClose,
       handleSwipeableWillOpen,
       onDeleteThread,
+      props.onOpenWorker,
       onUnarchiveThread,
     ],
   );

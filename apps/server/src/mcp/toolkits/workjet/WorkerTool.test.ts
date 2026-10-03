@@ -204,7 +204,16 @@ it.effect("returns only the bounded dispatched result", () => {
 
 it.effect("keeps dispatch failures bounded and redacted", () => {
   const dispatch = () =>
-    Effect.fail(new WorkerDispatch.WorkerDispatchError({ reason: "rollback-failed" }));
+    Effect.fail(
+      new WorkerDispatch.WorkerDispatchError({
+        reason: "rollback-failed",
+        originalWorktreePath: "/workers/one",
+        originalAdminPath: "/repo/.git/worktrees/one",
+        recoveryLocationStatus: "candidate",
+        recoveryWorktreePath: "/workers/one.workjet-rejected-2",
+        recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
+      }),
+    );
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const result = yield* server
@@ -222,7 +231,17 @@ it.effect("keeps dispatch failures bounded and redacted", () => {
     expect(result).toMatchObject({
       isError: true,
       structuredContent: {
-        error: { reason: "rollback-failed" },
+        error: {
+          reason: "rollback-failed",
+          recovery: {
+            requiresPreservation: true,
+            originalWorktreePath: "/workers/one",
+            originalAdminPath: "/repo/.git/worktrees/one",
+            recoveryLocationStatus: "candidate",
+            recoveryWorktreePath: "/workers/one.workjet-rejected-2",
+            recoveryAdminPath: "/repo/.git/workjet-rejected/one-3",
+          },
+        },
       },
     });
     expect(JSON.stringify(result)).not.toContain("FAILURE_TASK_CANARY");

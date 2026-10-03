@@ -7,6 +7,7 @@ import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   resolveDefaultProviderModelSelection,
+  resolveProjectTeamModelSelection,
   resolveSelectableProviderInstance,
   resolveProviderDriverKindForInstanceSelection,
 } from "./providerInstances";
@@ -43,6 +44,83 @@ const model = (slug: string, isCustom = false, isDefault = false) => ({
   isCustom,
   ...(isDefault ? { isDefault: true } : {}),
   capabilities: {},
+});
+
+describe("resolveProjectTeamModelSelection", () => {
+  it("selects the advertised standard model without inheriting a historic Claude route", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: [model("claude-sonnet-5", false, true)],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        models: [model("gpt-5.6-sol", false, true), model("gpt-6.1-sol")],
+      }),
+    ];
+    expect(resolveProjectTeamModelSelection(providers)).toEqual({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-6.1-sol",
+    });
+    expect(providers[0]?.models[0]?.slug).toBe("claude-sonnet-5");
+  });
+
+  it("does not invent the standard route when only a different model is advertised", () => {
+    expect(
+      resolveProjectTeamModelSelection([
+        provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "codex",
+          models: [model("gpt-5.6-sol")],
+        }),
+      ]),
+    ).toBeNull();
+  });
+
+  it("rejects disabled, unavailable and errored advertised routes", () => {
+    const standard = [model("gpt-6.1-sol")];
+    expect(
+      resolveProjectTeamModelSelection([
+        provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "disabled",
+          enabled: false,
+          models: standard,
+        }),
+        provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "unavailable",
+          availability: "unavailable",
+          models: standard,
+        }),
+        provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "errored",
+          status: "error",
+          models: standard,
+        }),
+      ]),
+    ).toBeNull();
+  });
+
+  it("prefers a ready configured instance over an unready instance", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        status: "warning",
+        models: [model("gpt-6.1-sol")],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_team",
+        models: [model("gpt-6.1-sol")],
+      }),
+    ];
+    expect(resolveProjectTeamModelSelection(providers)?.instanceId).toBe("codex_team");
+  });
 });
 
 describe("isProviderInstancePickerReady", () => {

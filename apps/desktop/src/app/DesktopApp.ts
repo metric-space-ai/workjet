@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Path from "effect/Path";
 
 import * as NetService from "@workjet/shared/Net";
 import * as Crypto from "effect/Crypto";
@@ -17,6 +18,7 @@ import * as DesktopDeepLinkRouter from "./DesktopDeepLinkRouter.ts";
 import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
+import * as DesktopLocalServiceAttachment from "../backend/DesktopLocalServiceAttachment.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
@@ -156,7 +158,11 @@ const bootstrap = Effect.gen(function* () {
     return yield* new DesktopDevelopmentBackendPortRequiredError();
   }
 
-  const backendPortSelection = yield* resolveDesktopBackendPort(environment.configuredBackendPort);
+  const serviceAttachment = yield* DesktopLocalServiceAttachment.DesktopLocalServiceAttachment;
+  const servicePort = yield* serviceAttachment.resolvePort;
+  const backendPortSelection = yield* resolveDesktopBackendPort(
+    Option.isSome(servicePort) ? servicePort : environment.configuredBackendPort,
+  );
   const backendPort = backendPortSelection.port;
   yield* logBootstrapInfo(
     backendPortSelection.selectedByScan
@@ -177,6 +183,7 @@ const bootstrap = Effect.gen(function* () {
   const serverExposureState = yield* serverExposure.configureFromSettings({ port: backendPort });
   const backendConfig = yield* serverExposure.backendConfig;
   const electronProtocol = yield* ElectronProtocol.ElectronProtocol;
+  const path = yield* Path.Path;
   const rendererTarget = environment.isDevelopment
     ? Option.getOrThrow(environment.devServerUrl)
     : backendConfig.httpBaseUrl;
@@ -185,6 +192,9 @@ const bootstrap = Effect.gen(function* () {
     targetOrigin: rendererTarget,
     backendOrigin: backendConfig.httpBaseUrl,
     clerkFrontendApiHostname: DesktopClerk.desktopClerkFrontendApiHostname,
+    ...(!environment.isDevelopment
+      ? { bundledRendererRoot: path.join(environment.appRoot, "apps/server/dist/client") }
+      : {}),
   });
   yield* logBootstrapInfo("bootstrap resolved backend endpoint", {
     baseUrl: backendConfig.httpBaseUrl.href,
@@ -203,11 +213,11 @@ const bootstrap = Effect.gen(function* () {
   yield* logBootstrapInfo("bootstrap ipc handlers registered");
 
   if (!(yield* Ref.get(state.quitting))) {
-    // In wsl-only mode the renderer is served by the WSL backend, which can be
-    // slow to cold-boot — show a "Connecting to WSL" splash immediately so the
-    // app feels responsive instead of presenting no window until WSL is ready.
-    // (Dual mode opens fast off the Windows primary, so no splash there.)
-    if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
+    // Shipped UI assets and persisted client state do not depend on service
+    // installation. Create the actual shell before starting the backend.
+    if (!environment.isDevelopment) {
+      yield* desktopWindow.ensureMain;
+    } else if (Option.isNone(servicePort) || (settings.wslOnly && settings.wslBackendEnabled)) {
       yield* desktopWindow.showConnectingSplash;
     }
     yield* primaryBackend.start;
@@ -318,11 +328,9 @@ const scopedProgram = Effect.scoped(
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
         const pool = yield* DesktopBackendPool.DesktopBackendPool;
-        // Stop every backend in the pool, not just the primary. The
-        // electronApp.quit() path can race ahead of the layer-scope
-        // cascade, so leaving the WSL instance for its parent scope
-        // finalizer means it gets hard-killed by the OS instead of
-        // receiving SIGTERM + grace. Stops run concurrently.
+        // Release every scoped runner. Foreground/WSL children receive
+        // SIGTERM; a service attachment closes only its authenticated RPC.
+        // launchd retains ownership of the independent service and its work.
         const instances = yield* pool.list;
         yield* Effect.forEach(instances, (instance) => instance.stop(), {
           concurrency: "unbounded",

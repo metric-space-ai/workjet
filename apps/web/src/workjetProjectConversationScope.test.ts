@@ -45,19 +45,22 @@ const projects = [
 
 describe("one project's conversation scope", () => {
   it("includes physical histories and logical drafts without exposing other projects or hosts", () => {
-    expect([...workjetProjectConversationKeys({ project, computers, projects })]).toEqual([
-      "local:physical-project",
-      "local:logical-project",
-    ]);
+    expect([
+      ...workjetProjectConversationKeys({ instanceId: "welsch", project, computers, projects }),
+    ]).toEqual(["local:physical-project", "local:logical-project"]);
   });
 
   it("has no all-project fallback before a project is chosen", () => {
-    expect(workjetProjectConversationKeys({ project: null, computers, projects }).size).toBe(0);
+    expect(
+      workjetProjectConversationKeys({ instanceId: "welsch", project: null, computers, projects })
+        .size,
+    ).toBe(0);
   });
 
   it("excludes detached copies and unknown computers", () => {
     expect(
       workjetProjectConversationKeys({
+        instanceId: "welsch",
         project: {
           ...project,
           workingCopies: project.workingCopies.map((copy) => ({ ...copy, status: "detached" })),
@@ -66,7 +69,10 @@ describe("one project's conversation scope", () => {
         projects,
       }).size,
     ).toBe(0);
-    expect(workjetProjectConversationKeys({ project, computers: [], projects }).size).toBe(0);
+    expect(
+      workjetProjectConversationKeys({ instanceId: "welsch", project, computers: [], projects })
+        .size,
+    ).toBe(0);
   });
 
   it("adds another host only through an explicit active working copy", () => {
@@ -83,7 +89,12 @@ describe("one project's conversation scope", () => {
       ],
     };
     expect([
-      ...workjetProjectConversationKeys({ project: twoCopies, computers, projects }),
+      ...workjetProjectConversationKeys({
+        instanceId: "welsch",
+        project: twoCopies,
+        computers,
+        projects,
+      }),
     ]).toEqual([
       "local:physical-project",
       "local:logical-project",
@@ -95,6 +106,7 @@ describe("one project's conversation scope", () => {
   it("does not treat a coincidentally equal project ID as a working-copy binding", () => {
     expect(
       workjetProjectConversationKeys({
+        instanceId: "welsch",
         project,
         computers,
         projects: [{ id: project.id, environmentId: remote, workspaceRoot: "/work/project" }],

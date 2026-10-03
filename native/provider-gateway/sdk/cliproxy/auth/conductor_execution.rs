@@ -116,6 +116,29 @@ pub fn publish_selected_auth_metadata(metadata: &mut ExecutionMetadata, auth: &m
 pub struct AccountRouter {
     scheduler: AuthScheduler,
     store: Arc<dyn CooldownStateStore>,
+    policy: Option<Arc<dyn AccountPolicy>>,
+}
+
+/// Optional embedding-host policy. Portable callers retain their scheduler.
+pub trait AccountPolicy: Send + Sync {
+    fn select(
+        &self,
+        provider: &str,
+        model: Option<&str>,
+        now_ms: i64,
+        candidates: &[AccountCandidate],
+        cooldowns: &[super::CooldownStateRecord],
+        body: &[u8],
+    ) -> Result<AccountCandidate, AccountSelectionError>;
+    fn outcome(
+        &self,
+        _provider: &str,
+        _account_id: &str,
+        _model: &str,
+        _status: u16,
+        _now_ms: i64,
+    ) {
+    }
 }
 
 impl AccountRouter {
@@ -123,6 +146,7 @@ impl AccountRouter {
         Self {
             scheduler: AuthScheduler::new(SchedulerStrategy::RoundRobin),
             store,
+            policy: None,
         }
     }
 
@@ -130,6 +154,7 @@ impl AccountRouter {
         Self {
             scheduler: AuthScheduler::new(strategy),
             store,
+            policy: None,
         }
     }
 
@@ -140,6 +165,9 @@ impl AccountRouter {
         now_ms: i64,
         candidates: &[AccountCandidate],
     ) -> Result<AccountCandidate, AccountRoutingError> {
+        if self.policy.is_some() {
+            return self.select_for_request(provider, model, now_ms, candidates, &[]);
+        }
         self.select_with_options(
             provider,
             model,
@@ -161,6 +189,28 @@ impl AccountRouter {
         self.scheduler
             .pick_single(provider, model, now_ms, candidates, &cooldowns, options)
             .map_err(AccountRoutingError::Selection)
+    }
+
+    pub fn with_policy(mut self, policy: Arc<dyn AccountPolicy>) -> Self {
+        self.policy = Some(policy);
+        self
+    }
+
+    pub fn select_for_request(
+        &self,
+        provider: &str,
+        model: Option<&str>,
+        now_ms: i64,
+        candidates: &[AccountCandidate],
+        body: &[u8],
+    ) -> Result<AccountCandidate, AccountRoutingError> {
+        if let Some(policy) = &self.policy {
+            let cooldowns = self.store.load().map_err(AccountRoutingError::Store)?;
+            return policy
+                .select(provider, model, now_ms, candidates, &cooldowns, body)
+                .map_err(AccountRoutingError::Selection);
+        }
+        self.select(provider, model, now_ms, candidates)
     }
 
     pub fn select_mixed(

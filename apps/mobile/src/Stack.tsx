@@ -17,6 +17,7 @@ import { useResolveClassNames } from "uniwind";
 import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
+import { ArchivedWorkerDetailRouteScreen } from "./features/archive/ArchivedWorkerDetailRouteScreen";
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardingNavigation";
@@ -183,6 +184,13 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "archive",
       options: {
         title: "Archived Threads",
+      },
+    }),
+    SettingsArchivedWorker: createNativeStackScreen({
+      screen: ArchivedWorkerDetailRouteScreen,
+      linking: "archive/worker/:environmentId/:threadId",
+      options: {
+        title: "Completed worker",
       },
     }),
     SettingsAppearance: createNativeStackScreen({

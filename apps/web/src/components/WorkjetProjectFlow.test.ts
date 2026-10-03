@@ -4,6 +4,7 @@ import commandPaletteSource from "./CommandPalette.tsx?raw";
 import commandPaletteResultsSource from "./CommandPaletteResults.tsx?raw";
 import sidebarSource from "./Sidebar.tsx?raw";
 import chatIndexSource from "../routes/_chat.index.tsx?raw";
+import registrationSource from "../localProjectRegistration.tsx?raw";
 
 describe("CTOX-native project story", () => {
   it("does not gate the visible Add project flow on an Environment or computer assignment", () => {
@@ -11,54 +12,44 @@ describe("CTOX-native project story", () => {
     const end = commandPaletteSource.indexOf("useLayoutEffect", start);
     const visibleFlow = commandPaletteSource.slice(start, end);
 
-    expect(visibleFlow).toContain('value: "action:add-project:choose-folder"');
-    expect(visibleFlow).toContain("createLogicalProjectFromFolder");
-    expect(visibleFlow).toContain('value: "action:add-project:enter-folder-path"');
-    expect(visibleFlow).toContain("startAddProjectBrowse(environmentId, true)");
+    expect(visibleFlow).toContain("setIsLogicalProjectNameEntry(true)");
+    expect(visibleFlow).toContain("setLogicalProjectFolder(null)");
+    expect(commandPaletteSource).toContain("Attach folder (optional)");
     expect(visibleFlow).not.toContain("addProjectEnvironmentOptions");
     expect(visibleFlow).not.toContain("No Code computer assigned");
     expect(visibleFlow).not.toContain("projectEnvironment.create");
   });
 
-  it("creates the local Code project before confirming its authoritative CTOX projection", () => {
-    const start = commandPaletteSource.indexOf("const createLogicalProjectFromPath");
-    const end = commandPaletteSource.indexOf("const createLogicalProjectFromFolder", start);
+  it("saves a name-only project locally before any native catalog request and retains its retry identity", () => {
+    const start = commandPaletteSource.indexOf("const createLogicalProject =");
+    const end = commandPaletteSource.indexOf("const createLogicalProjectFromPath", start);
     const creation = commandPaletteSource.slice(start, end);
-
+    expect(creation).toContain("workspaceRoot: string | null");
     expect(creation).toContain("await createProject");
     expect(creation).toContain(".get(environmentProjects.projectsAtom)");
     expect(creation).toContain(".filter((project) => project.environmentId === environmentId)");
     expect(creation).not.toContain("unscopedProjects.filter");
-    expect(creation.indexOf("await listWorkjetProjects")).toBeLessThan(
-      creation.indexOf("await createProject"),
+    expect(creation).not.toContain("listWorkjetProjects");
+    expect(creation).not.toContain("runWorkjetProjectCreation");
+    expect(creation).toMatch(
+      /ctoxRegistration:\s*\{\s*instanceId,\s*commandId:\s*attempt.commandId,\s*status:\s*"pending"/,
     );
-    expect(creation.indexOf("await createProject")).toBeLessThan(
-      creation.indexOf("await runWorkjetProjectCreation"),
-    );
-    expect(creation).toContain("resolveLocalWorkjetWorkingCopy({");
-    expect(creation).toContain("resolvedComputer,");
-    expect(creation).toContain("localEnvironmentId: primaryEnvironmentId");
-    expect(creation).toContain("path: cwd");
-    expect(creation).toContain("workingCopy: localWorkingCopy");
-    expect(creation).toContain('title: "No local computer registered"');
-    expect(creation).toContain("const confirmedProject = outcome.project");
-    expect(creation).toContain('if (outcome._tag === "failed")');
-    expect(creation.indexOf('if (outcome._tag === "failed")')).toBeLessThan(
-      creation.indexOf("const confirmedProject = outcome.project"),
-    );
-    expect(creation).not.toContain("confirmedRegistry.projects.find");
-    expect(creation).toContain("recordWorkjetProjectProjection");
-    expect(creation).toContain("readWorkjetProjectRegistry(presentationInstanceId).projects.some");
-    expect(creation.indexOf("setOpen(false)")).toBeGreaterThan(
-      creation.indexOf("readWorkjetProjectRegistry(presentationInstanceId).projects.some"),
-    );
-    expect(creation).toContain("setIsLogicalProjectCreating(true)");
+    expect(creation).toContain("logicalProjectAttemptRef.current?.key !== attemptKey");
     expect(creation).toContain("setLogicalProjectCreationError(description)");
-    expect(creation).toContain("Workjet could not reach the active CTOX shell");
+    expect(registrationSource).toContain("commandId: intent.commandId");
+    expect(registrationSource).toContain("projectId: project.id");
+    expect(registrationSource).toContain("currentScope.selectionRevision !== selectionRevision");
+    expect(
+      registrationSource.search(
+        /if \(outcome\._tag === "visible"\)\s*recordWorkjetProjectProjection/,
+      ),
+    ).toBeGreaterThan(registrationSource.indexOf("await runWorkjetProjectCreation"));
+    expect(registrationSource).toMatch(/status:\s*"pending",\s*lastFailure:\s*outcome.code/);
+    expect(registrationSource).not.toContain("setInterval");
   });
 
   it("submits an entered local folder path through the same authoritative CTOX flow", () => {
-    expect(commandPaletteSource).toContain('title: "Enter folder path…"');
+    expect(commandPaletteSource).toContain("Create project");
     expect(commandPaletteSource).toContain("setIsLogicalProjectPathEntry(logicalProjectPathEntry)");
     expect(commandPaletteSource).toContain("isLogicalProjectPathEntry &&");
     expect(commandPaletteSource).toContain(

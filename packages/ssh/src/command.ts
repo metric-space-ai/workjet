@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -73,9 +74,13 @@ export function targetConnectionKey(target: DesktopSshEnvironmentTarget): string
   return `${target.alias}\u0000${target.hostname}\u0000${target.username ?? ""}\u0000${target.port ?? ""}`;
 }
 
-export function remoteStateKey(target: DesktopSshEnvironmentTarget): string {
+export function remoteStateKey(target: DesktopSshEnvironmentTarget, namespace?: string): string {
   return NodeCrypto.createHash("sha256")
-    .update(targetConnectionKey(target))
+    .update(
+      namespace === undefined
+        ? targetConnectionKey(target)
+        : `${namespace}\u0000${targetConnectionKey(target)}`,
+    )
     .digest("hex")
     .slice(0, 16);
 }
@@ -157,6 +162,13 @@ function normalizeSshErrorMessage(input: {
   return cleanedStdout.length > 0 ? cleanedStdout : input.fallbackMessage;
 }
 
+function tailscaleSshCheckMessage(stderr: string): string | null {
+  if (!stderr.includes("Tailscale SSH requires an additional check.")) return null;
+  const match = /https:\/\/login\.tailscale\.com\/a\/[A-Za-z0-9-]+/u.exec(stderr);
+  if (!match) return null;
+  return `Tailscale SSH requires an additional check. Open ${match[0]} in your browser, approve access, then retry.`;
+}
+
 function sshTargetLogFields(target: DesktopSshEnvironmentTarget) {
   return {
     alias: target.alias,
@@ -174,6 +186,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   target: DesktopSshEnvironmentTarget,
   input: RunSshCommandOptions,
   commandScope: Scope.Scope,
+  timeoutStderr: Ref.Ref<string>,
 ): Effect.fn.Return<
   SshCommandResult,
   SshCommandError | SshInvalidTargetError,
@@ -242,7 +255,18 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   const [stdout, stderr, exitCode] = yield* Effect.all(
     [
       collectProcessOutput(child.stdout),
-      collectProcessOutput(child.stderr),
+      child.stderr.pipe(
+        Stream.decodeText(),
+        Stream.tap((chunk) =>
+          Ref.update(timeoutStderr, (previous) =>
+            `${previous}${chunk}`.slice(-MAX_SSH_ERROR_OUTPUT_LENGTH),
+          ),
+        ),
+        Stream.runFold(
+          () => "",
+          (acc, chunk) => acc + chunk,
+        ),
+      ),
       child.exitCode.pipe(Effect.map(Number)),
     ],
     { concurrency: "unbounded" },
@@ -297,8 +321,9 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
   SshCommandError | SshInvalidTargetError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
+  const timeoutStderr = yield* Ref.make("");
   return yield* Effect.scopedWith((commandScope) =>
-    runSshCommandInScope(target, input, commandScope),
+    runSshCommandInScope(target, input, commandScope, timeoutStderr),
   ).pipe(
     Effect.timeoutOption(Duration.millis(input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS)),
     Effect.flatMap((result) =>
@@ -306,6 +331,7 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
         onSome: Effect.succeed,
         onNone: () =>
           Effect.gen(function* () {
+            const tailscaleCheck = tailscaleSshCheckMessage(yield* Ref.get(timeoutStderr));
             yield* Effect.logWarning("ssh.command.timedOut", {
               ...sshTargetLogFields(target),
               timeoutMs: input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS,
@@ -317,7 +343,9 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
               command: ["ssh"],
               exitCode: null,
               stderr: "",
-              message: `SSH command timed out after ${input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS}ms.`,
+              message:
+                tailscaleCheck ??
+                `SSH command timed out after ${input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS}ms.`,
             });
           }),
       }),

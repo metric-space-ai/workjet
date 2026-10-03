@@ -79,7 +79,18 @@ export class OrchestrationListenerCallbackError extends Schema.TaggedErrorClass<
   }
 }
 
+/** Transient admission outcome: no rejected receipt is persisted. */
+export class OrchestrationCommandDeferredError extends Schema.TaggedErrorClass<OrchestrationCommandDeferredError>()(
+  "OrchestrationCommandDeferredError",
+  { commandId: Schema.String, threadId: Schema.String },
+) {
+  override get message(): string {
+    return `Thread ${this.threadId} is busy; retry command ${this.commandId}.`;
+  }
+}
+
 export type OrchestrationDispatchError =
+  | OrchestrationCommandDeferredError
   | ProjectionRepositoryError
   | OrchestrationCommandInvariantError
   | OrchestrationCommandPreviouslyRejectedError

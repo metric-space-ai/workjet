@@ -6,6 +6,7 @@ import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { isElectron } from "../env";
 import type { WorkjetProductMode } from "../workjetProductMode";
 import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
+import { BrowserBusinessOsNavigation } from "./BrowserBusinessOsNavigation";
 import { WorkjetProductModeSwitch } from "./sidebar/SidebarChrome";
 import { SidebarTrigger } from "./ui/sidebar";
 import { WorkjetHeaderSlotContext } from "./WorkjetHeaderSlots";
@@ -13,10 +14,12 @@ import { WorkjetHeaderSlotContext } from "./WorkjetHeaderSlots";
 export function WorkjetHeaderFrame({
   mode,
   sidebarAvailable,
+  showInstanceSelector = true,
   children,
 }: {
   readonly mode: WorkjetProductMode;
   readonly sidebarAvailable: boolean;
+  readonly showInstanceSelector?: boolean;
   readonly children: ReactNode;
 }) {
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
@@ -35,7 +38,9 @@ export function WorkjetHeaderFrame({
           data-workjet-header-navigation=""
         >
           {sidebarAvailable ? <SidebarTrigger aria-label="Toggle main sidebar" /> : null}
-          {isElectron ? <ActiveCtoxInstanceSelector placement="header" /> : null}
+          {isElectron && showInstanceSelector ? (
+            <ActiveCtoxInstanceSelector placement="header" />
+          ) : null}
           {isElectron ? (
             <WorkjetProductModeSwitch
               mode={mode}
@@ -46,7 +51,7 @@ export function WorkjetHeaderFrame({
               }}
             />
           ) : (
-            <span className="text-sm font-medium">Workjet</span>
+            <BrowserBusinessOsNavigation />
           )}
         </div>
         <div

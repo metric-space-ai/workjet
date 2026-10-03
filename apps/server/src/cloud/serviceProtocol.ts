@@ -20,9 +20,18 @@ export interface PendingServiceUpdate {
 
 export type ServiceUpdateRecord = PendingServiceUpdate | ServerSelfUpdateOutcome;
 
+/** Non-secret Desktop configuration owned by the launcher, preserved across trials/rollback. */
+export interface DesktopServiceLaunchConfig {
+  readonly port: number;
+  readonly host: "127.0.0.1" | "::1";
+  readonly tailscaleServeEnabled: boolean;
+  readonly tailscaleServePort: number;
+}
+
 export interface ServiceState {
   readonly protocol: typeof SERVICE_LAUNCHER_PROTOCOL;
   readonly activeVersion: string;
+  readonly desktop?: DesktopServiceLaunchConfig;
   readonly update?: ServiceUpdateRecord;
 }
 
@@ -70,6 +79,50 @@ export const isExactServiceVersion = (version: string): boolean =>
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+export function decodeDesktopServiceLaunchConfig(
+  value: unknown,
+): DesktopServiceLaunchConfig | undefined {
+  if (!isRecord(value)) return undefined;
+  const isPort = (port: unknown): port is number =>
+    typeof port === "number" && Number.isInteger(port) && port > 0 && port <= 65535;
+  if (
+    !isPort(value.port) ||
+    !isPort(value.tailscaleServePort) ||
+    (value.host !== "127.0.0.1" && value.host !== "::1") ||
+    typeof value.tailscaleServeEnabled !== "boolean"
+  )
+    return undefined;
+  return {
+    port: value.port,
+    host: value.host,
+    tailscaleServeEnabled: value.tailscaleServeEnabled,
+    tailscaleServePort: value.tailscaleServePort,
+  };
+}
+
+/** Explicit profile/endpoint arguments override ambient launcher configuration. */
+export function serviceChildArguments(
+  baseDir: string,
+  desktop?: DesktopServiceLaunchConfig,
+): string[] {
+  return desktop === undefined
+    ? ["serve"]
+    : [
+        "serve",
+        "--mode",
+        "desktop",
+        "--base-dir",
+        baseDir,
+        "--host",
+        desktop.host,
+        "--port",
+        String(desktop.port),
+        "--tailscale-serve-port",
+        String(desktop.tailscaleServePort),
+        ...(desktop.tailscaleServeEnabled ? ["--tailscale-serve"] : []),
+      ];
+}
 
 export function decodeServiceUpdate(value: unknown): ServiceUpdateRecord | undefined {
   if (!isRecord(value)) return undefined;
@@ -144,11 +197,14 @@ export function compareExactServiceVersions(left: string, right: string): number
 
 export function decodeServiceState(value: unknown): ServiceState | undefined {
   if (!isRecord(value)) return undefined;
+  const desktop =
+    value.desktop === undefined ? undefined : decodeDesktopServiceLaunchConfig(value.desktop);
   const update = value.update === undefined ? undefined : decodeServiceUpdate(value.update);
   if (
     value.protocol !== SERVICE_LAUNCHER_PROTOCOL ||
     typeof value.activeVersion !== "string" ||
     !isExactServiceVersion(value.activeVersion) ||
+    (value.desktop !== undefined && desktop === undefined) ||
     (value.update !== undefined && update === undefined) ||
     (update !== undefined &&
       compareExactServiceVersions(update.targetVersion, update.fromVersion) <= 0) ||
@@ -162,6 +218,7 @@ export function decodeServiceState(value: unknown): ServiceState | undefined {
   return {
     protocol: SERVICE_LAUNCHER_PROTOCOL,
     activeVersion: value.activeVersion,
+    ...(desktop === undefined ? {} : { desktop }),
     ...(update === undefined ? {} : { update }),
   };
 }

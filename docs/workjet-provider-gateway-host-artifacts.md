@@ -162,6 +162,32 @@ size, wrong digest, unsupported platform, or no pinned release). A packaged app
 has no Rust toolchain, so a silent fallback would only surface later as a
 confusing "the gateway will not start".
 
+### Explicit local Mac deployment
+
+The standalone builder accepts `--diagnostic-provider-gateway-host <receipt-path>`
+for an explicit local Mac package before the next six-platform release. This is
+a build input, not a runtime environment toggle or a replacement release pin.
+The default release path and all-six-target publication checks stay unchanged.
+
+Run `node scripts/build-provider-gateway-host-diagnostic.ts --arch arm64 --out-dir
+<fresh disposable artifact directory>` through the shared admission gate with
+`CARGO_TARGET_DIR` and `TMPDIR` on the disposable development volume. It compiles
+the locked native source with two workers, refuses native changes during the
+build, and records the actual binary's source commit, both native Git trees,
+architecture, crate version, byte length and SHA-256 in
+`diagnostic-package.manifest.json`. No foreign-platform artifact is invented.
+
+Packaging requires the same native trees as the composed checkout and verifies
+the digest and Mach-O architecture. The binary and receipt are sealed inside the
+app. UI-only commits can reuse the native artifact; native changes need a new
+build. Uncommitted native files, symlinks, corruption, malformed receipts and
+wrong architectures fail closed. Universal/non-Mac diagnostic packages are
+unsupported. A packaged diagnostic app verifies the receipt on normal launch
+and reopen and never falls back to the older release binary on a mismatch.
+Development retains its existing resolver and explicit override priority.
+This compile receipt does not establish upstream parity or live acceptance;
+retain source-bound checks and real installed workflow evidence separately.
+
 The standalone desktop builder prepares the host before invoking
 electron-builder. `scripts/lib/prepare-provider-gateway-host.ts` requires a
 released pin, verifies the release manifest against the pin, and downloads only

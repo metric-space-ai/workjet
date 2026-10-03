@@ -31,6 +31,21 @@ authoritative inside its closed CTOX instance.
 
 ## Desktop composition
 
+The shipped renderer is served from the packaged `apps/server/dist/client`
+assets at the stable desktop origin. The main window opens before local-service
+installation or readiness. Runtime API requests retain their authenticated
+server path; missing assets never receive a remote or HTML fallback. Development
+continues to use its configured renderer server.
+
+Desktop shell access is distinct from server authentication. The trusted native
+bootstrap can open the local shell without minting a session or marking a
+connection live. Saved connections and their per-environment shell/configuration
+caches hydrate before current host discovery completes. Discovery and transport
+reconciliation run within the client runtime's scope; opening the shell or
+completing discovery never makes cached data live. Only the existing
+authoritative synchronization path can establish that state.
+Opening the window is not evidence that remote data has converged.
+
 The existing Workjet renderer remains the privileged application chrome. A
 top-level product-mode switch selects one of two navigation models:
 

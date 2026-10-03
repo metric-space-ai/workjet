@@ -302,6 +302,58 @@ describe("CtoxInstanceRegistry", () => {
     });
   });
 
+  it.effect(
+    "keeps paired metadata visible when decryption fails and retains other readable pairs",
+    () => {
+      const { memory, registry } = registryHarness();
+      return Effect.gen(function* () {
+        const service = yield* registry;
+        const broken = yield* service.importManualPairing(manualPairing);
+        const healthy = yield* service.importManualPairing({
+          ...manualPairing,
+          instanceId: "office-2",
+          displayName: "Second Office",
+        });
+        const secretPath = "/state/ctox/secrets.json";
+        const original = memory.files.get(secretPath) ?? "";
+        const document = decodeUnknownJson(original) as {
+          readonly version: number;
+          readonly records: readonly { readonly id: string; readonly ciphertext: string }[];
+        };
+        const damaged = encodeUnknownJson({
+          ...document,
+          records: document.records.map((record) =>
+            record.id === broken.id ? { ...record, ciphertext: "invalid-base64!" } : record,
+          ),
+        });
+        memory.files.set(secretPath, damaged);
+
+        const discovery = yield* service.merge({ _tag: "signed_out" });
+        assert.equal(discovery._tag, "ready");
+        if (discovery._tag !== "ready") return;
+        assert.equal(discovery.pairedUnavailable, true);
+        assert.equal(discovery.instances.find((item) => item.id === broken.id)?.status, "error");
+        assert.equal(discovery.instances.find((item) => item.id === healthy.id)?.status, "paired");
+        assert.equal(memory.files.get(secretPath), damaged);
+
+        const locked = yield* registryHarness({
+          fileSystem: memory,
+          storage: safeStorage({ failDecrypt: true }),
+        }).registry;
+        const unavailable = yield* locked.merge({ _tag: "signed_out" });
+        assert.equal(unavailable._tag, "ready");
+        if (unavailable._tag === "ready") {
+          assert.equal(unavailable.pairedUnavailable, true);
+          assert.deepEqual(
+            unavailable.instances.map((item) => item.status),
+            ["error", "error"],
+          );
+        }
+        assert.equal(memory.files.get(secretPath), damaged);
+      });
+    },
+  );
+
   it.effect("rejects a ciphertext moved to another principal without rotating either key", () => {
     const { memory, registry } = registryHarness();
     const first = { instanceId: "native-one", userId: "user-one" };
@@ -727,7 +779,7 @@ describe("CtoxInstanceRegistry", () => {
       return Effect.gen(function* () {
         const service = yield* registry;
         const managed = { _tag: "failed", code: "network_error" } as const;
-        assert.deepEqual(yield* service.merge(managed), managed);
+        assert.deepEqual(yield* service.merge(managed), { ...managed, pairedUnavailable: true });
         const before = memory.files.get("/state/ctox/secrets.json");
         const result = yield* Effect.result(service.importManualPairing(manualPairing));
         assert.equal(failureCode(result), "persistence_failed");

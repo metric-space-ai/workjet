@@ -579,6 +579,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         );
       }
 
+      if (
+        resumed.threadId !== input.binding.threadId ||
+        (resumed.providerInstanceId !== undefined &&
+          resumed.providerInstanceId !== bindingInstanceId)
+      ) {
+        yield* clearMcpSession(input.binding.threadId);
+        return yield* toValidationError(
+          input.operation,
+          "The recovered provider session does not match the stored conversation identity.",
+        );
+      }
+
       yield* upsertSessionBinding(
         { ...resumed, providerInstanceId: bindingInstanceId },
         input.binding.threadId,

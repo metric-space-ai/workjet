@@ -1520,6 +1520,50 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  for (const mismatch of ["thread", "instance"] as const) {
+    it.effect(
+      `rejects a recovered ${mismatch} identity without sending or rewriting its binding`,
+      () =>
+        Effect.gen(function* () {
+          const provider = yield* ProviderService.ProviderService;
+          const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+          const initial = yield* provider.startSession(asThreadId("thread-1"), {
+            provider: ProviderDriverKind.make("codex"),
+            providerInstanceId: codexInstanceId,
+            threadId: asThreadId("thread-1"),
+            cwd: "/tmp/project-recovery-identity",
+            runtimeMode: "full-access",
+          });
+          const before = yield* directory.getBinding(initial.threadId);
+          yield* routing.codex.stopAll();
+          routing.codex.startSession.mockClear();
+          routing.codex.sendTurn.mockClear();
+          routing.codex.startSession.mockImplementationOnce(() =>
+            Effect.succeed({
+              ...initial,
+              ...(mismatch === "thread"
+                ? { threadId: asThreadId("another-conversation") }
+                : { providerInstanceId: ProviderInstanceId.make("another-instance") }),
+            }),
+          );
+
+          const result = yield* Effect.exit(
+            provider.sendTurn({
+              threadId: initial.threadId,
+              requestId: "command:recover-original-conversation",
+              input: "Continue the original work",
+              attachments: [],
+            }),
+          );
+
+          assert.equal(Exit.isFailure(result), true);
+          assert.equal(routing.codex.startSession.mock.calls.length, 1);
+          assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
+          assert.deepEqual(yield* directory.getBinding(initial.threadId), before);
+        }),
+    );
+  }
+
   it.effect("recovers stale sessions for sendTurn using persisted cwd", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

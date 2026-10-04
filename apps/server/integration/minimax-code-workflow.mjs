@@ -85,7 +85,7 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
           const answers = {};
           for (const question of event.payload.questions) {
             const guest = question.options.find(
-              (option) => option.label === "Guest" || option.label === "Guest (Recommended)",
+              (option) => /^Guest(?:$|[\s—–:(])/.test(option.label),
             );
             if (guest) answers[question.id] = [guest.label];
           }

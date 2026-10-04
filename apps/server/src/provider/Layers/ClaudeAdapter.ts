@@ -3893,19 +3893,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ? yield* Deferred.make<void, ProviderAdapterValidationError>()
         : undefined;
       let originalSessionConfirmed = false;
+      let recoveryRejected = false;
       const verifyOriginalSession: HookCallback = async (hookInput) => {
         // Subagent lifecycle hooks cannot establish the parent's identity.
         if (hookInput.agent_id !== undefined) return {};
         if (
+          !recoveryRejected &&
           hookInput.session_id === existingResumeSessionId &&
-          (originalSessionConfirmed ||
-            (hookInput.hook_event_name === "SessionStart" && hookInput.source === "resume"))
+          (hookInput.hook_event_name === "SessionStart"
+            ? hookInput.source === "resume" ||
+              (originalSessionConfirmed && hookInput.source === "compact")
+            : hookInput.hook_event_name === "UserPromptSubmit" && originalSessionConfirmed)
         ) {
           originalSessionConfirmed = true;
           if (resumeConfirmed) await runPromise(Deferred.succeed(resumeConfirmed, undefined));
           return {};
         }
         const issue = "Claude did not confirm resuming the original saved conversation.";
+        recoveryRejected = true;
+        originalSessionConfirmed = false;
+        const failedContext = await runPromise(Ref.get(contextRef));
+        if (failedContext) {
+          failedContext.session = { ...failedContext.session, status: "closed" };
+        }
         if (resumeConfirmed) {
           await runPromise(
             Deferred.fail(

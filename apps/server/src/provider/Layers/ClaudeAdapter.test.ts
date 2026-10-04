@@ -3713,6 +3713,12 @@ describe("ClaudeAdapterLive", () => {
         const busy = yield* adapter.startSession(strictRecoveryInput).pipe(Effect.flip);
         assert.equal(busy._tag, "ProviderAdapterValidationError");
         assert.equal(harness.query.closeCalls, 0);
+        const restarted = yield* Effect.promise(() =>
+          callback({ ...proof, source: "startup" }, undefined, {
+            signal: new AbortController().signal,
+          }),
+        );
+        assert.equal("continue" in restarted && restarted.continue, false);
         const submit = options.hooks?.UserPromptSubmit?.[0]?.hooks[0];
         assert.ok(submit);
         const refused = yield* Effect.promise(() =>
@@ -3729,6 +3735,16 @@ describe("ClaudeAdapterLive", () => {
           ),
         );
         assert.equal("continue" in refused && refused.continue, false);
+        const reproof = yield* Effect.promise(() =>
+          callback(proof, undefined, {
+            signal: new AbortController().signal,
+          }),
+        );
+        assert.equal("continue" in reproof && reproof.continue, false);
+        const denied = yield* adapter
+          .sendTurn({ threadId: RESUME_THREAD_ID, input: "Must not dispatch", attachments: [] })
+          .pipe(Effect.flip);
+        assert.equal(denied._tag, "ProviderAdapterSessionClosedError");
       }).pipe(
         Effect.provideService(Random.Random, makeDeterministicRandomService()),
         Effect.provide(harness.layer),

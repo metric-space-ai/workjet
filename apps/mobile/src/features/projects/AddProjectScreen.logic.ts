@@ -30,6 +30,7 @@ export function resolveProjectSupervisorTarget(input: {
     (thread) =>
       thread.environmentId === input.environmentId &&
       thread.projectId === input.projectId &&
+      "team" in thread.workjetConfig &&
       thread.workjetConfig.team?.role === "supervisor",
   );
   const active = supervisors.filter((thread) => !thread.archivedAt && !thread.deletedAt);
@@ -38,8 +39,9 @@ export function resolveProjectSupervisorTarget(input: {
   }
   if (active.length !== 1) return { status: "conflict" };
   const thread = active[0]!;
-  const team = thread.workjetConfig.team!;
+  const team = "team" in thread.workjetConfig ? thread.workjetConfig.team : undefined;
   if (
+    !team ||
     thread.workjetConfig.role !== "orchestrator" ||
     team.projectId !== input.projectId ||
     team.threadId !== thread.id ||

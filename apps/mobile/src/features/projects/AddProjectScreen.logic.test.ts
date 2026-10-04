@@ -71,6 +71,16 @@ describe("resolveProjectSupervisorTarget", () => {
       target([supervisor(), supervisor(ENVIRONMENT_A, ThreadId.make("supervisor-b"))]),
     ).toEqual({ status: "conflict" });
   });
+  it("does not adopt a legacy orchestrator without a persisted team binding", () => {
+    expect(
+      target([
+        {
+          ...supervisor(),
+          workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, role: "orchestrator" },
+        },
+      ]),
+    ).toEqual({ status: "pending" });
+  });
   it("rejects a supervisor with a foreign project or mismatched thread binding", () => {
     const saved = supervisor();
     expect(

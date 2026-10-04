@@ -227,12 +227,17 @@ fn parse_js_config_section(script: &str, marker: &str) -> BTreeMap<String, Share
     let rest = &script[start..];
     let end = rest.find("\n});").unwrap_or(rest.len());
     let section = &rest[..end];
-    let entry_re =
-        Regex::new(r#"(?s)"([a-z0-9][a-z0-9.-]*)"\s*:\s*\{(.*?)\}"#).expect("entry regex compiles");
+    let entry_re = Regex::new(
+        r#"(?s)(?:^|[\r\n,])\s*(?:"([a-z0-9][a-z0-9.-]*)"|([A-Za-z_$][A-Za-z0-9_$]*))\s*:\s*\{(.*?)\}"#,
+    ).expect("entry regex compiles");
     for caps in entry_re.captures_iter(section) {
-        let body = &caps[2];
+        let body = &caps[3];
         out.insert(
-            caps[1].to_string(),
+            caps.get(1)
+                .or_else(|| caps.get(2))
+                .expect("entry has a key")
+                .as_str()
+                .to_string(),
             SharedEntry {
                 domains: js_string_list(body, "domains"),
                 login_url: js_string_field(body, "login_url"),
@@ -2002,6 +2007,23 @@ const SOURCE_CONFIG = Object.freeze({
             redact_text("Authorization: Bearer abcdef123456789"),
             "[redacted]"
         );
+    }
+
+    #[test]
+    fn source_config_parser_accepts_identifier_keys_and_preserves_quoted_hosts() {
+        let parsed = parse_js_config_section(
+            r#"const SOURCE_CONFIG = Object.freeze({
+  impressum: { native: true, native_only: true, domains: [] },
+  "public.example": { native: false, domains: ["public.example"] },
+  bad-host: { native: true, domains: [] },
+});"#,
+            "const SOURCE_CONFIG = Object.freeze({",
+        );
+        assert_eq!(parsed.len(), 2);
+        assert!(parsed["impressum"].domains.is_empty());
+        assert_eq!(parsed["public.example"].domains, vec!["public.example"]);
+        assert!(!parsed.contains_key("bad-host"));
+        assert!(!parsed.contains_key("host"));
     }
 
     #[test]

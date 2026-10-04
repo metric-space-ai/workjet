@@ -1165,6 +1165,22 @@ pub fn merge_person_research_source_records(
         .and_then(Value::as_str)
         .unwrap_or_else(|| tier_label(module.tier()))
         .to_string();
+    // Flat fields contain only the highest-ranked person. Other contacts'
+    // evidence must also participate in repeated-capture deduplication.
+    let prior_person_evidence = payload
+        .get("person_records")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|person| {
+            person
+                .get("evidence")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let fields = payload
         .get_mut("fields")
         .and_then(Value::as_object_mut)
@@ -1239,12 +1255,17 @@ pub fn merge_person_research_source_records(
             .or_insert_with(|| Value::Array(Vec::new()))
             .as_array_mut()
             .context("person-research field candidates must be an array")?;
-        let duplicate = candidates.iter().any(|existing| {
-            existing.get("value") == candidate.get("value")
-                && existing.get("source_id") == candidate.get("source_id")
-                && existing.get("source_url") == candidate.get("source_url")
-                && existing.get("person_key") == candidate.get("person_key")
-        });
+        let duplicate = candidates
+            .iter()
+            .chain(prior_person_evidence.iter().filter(|evidence| {
+                evidence.get("field").and_then(Value::as_str) == Some(field.as_str())
+            }))
+            .any(|existing| {
+                existing.get("value") == candidate.get("value")
+                    && existing.get("source_id") == candidate.get("source_id")
+                    && existing.get("source_url") == candidate.get("source_url")
+                    && existing.get("person_key") == candidate.get("person_key")
+            });
         if duplicate {
             continue;
         }
@@ -3494,10 +3515,15 @@ mod tests {
             merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap();
 
         assert_eq!(added, 8);
+        let first_capture = payload.clone();
         assert_eq!(
             merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap(),
             0,
             "repeating a profile capture must not add duplicate person evidence"
+        );
+        assert_eq!(
+            payload, first_capture,
+            "repeat capture preserves every contact and field"
         );
         assert_eq!(payload["person_records"].as_array().map(Vec::len), Some(2));
         assert_eq!(payload["person_records"][0]["person_vorname"], "Ada");

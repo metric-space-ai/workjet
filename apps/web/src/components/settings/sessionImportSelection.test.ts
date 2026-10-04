@@ -16,6 +16,7 @@ const candidate = (index: number): WorkjetSessionImportCandidate => ({
 });
 const lastPage = (candidates: readonly WorkjetSessionImportCandidate[] = []) => ({
   sources: [],
+  discoveryVersion: "a".repeat(64),
   candidates,
   truncated: false,
   nextOffset: null,
@@ -28,6 +29,7 @@ describe("complete conversation selection", () => {
       const end = Math.min(offset + limit, 5002);
       return {
         sources: [],
+        discoveryVersion: "a".repeat(64),
         candidates: Array.from({ length: end - offset }, (_, i) => candidate(offset + i)),
         truncated: end < 5002,
         nextOffset: end < 5002 ? end : null,
@@ -95,6 +97,7 @@ describe("complete conversation selection", () => {
 
   it("refuses incomplete discovery, missing continuation and non-advancing cursors", async () => {
     for (const page of [
+      { ...lastPage(), discoveryVersion: undefined },
       { ...lastPage(), discoveryLimitReached: true },
       { ...lastPage(), truncated: true },
       { ...lastPage(), truncated: true, nextOffset: 0 },
@@ -112,5 +115,22 @@ describe("complete conversation selection", () => {
       ).rejects.toThrow();
       expect(onCandidates).not.toHaveBeenCalled();
     }
+  });
+  it("rejects reordered discovery before adding an inconsistent second page", async () => {
+    const onCandidates = vi.fn();
+    await expect(
+      selectAllSessionImportCandidates({
+        query: "",
+        source: "all",
+        isActive: () => true,
+        inspect: async ({ offset }) =>
+          offset === 0
+            ? { ...lastPage([candidate(1), candidate(2)]), truncated: true, nextOffset: 2 }
+            : { ...lastPage([candidate(2), candidate(4)]), discoveryVersion: "b".repeat(64) },
+        onCandidates,
+      }),
+    ).rejects.toThrow("changed during selection");
+    expect(onCandidates).toHaveBeenCalledOnce();
+    expect(onCandidates).toHaveBeenCalledWith([candidate(1), candidate(2)], 2);
   });
 });

@@ -473,6 +473,13 @@ export const make = Effect.gen(function* () {
         try: () => discoverFiles(locations),
         catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
       });
+      const discoveryHash = NodeCrypto.createHash("sha256");
+      for (const file of files) {
+        if (input.source && file.source !== input.source) continue;
+        if (file.size > MAX_TRANSCRIPT_BYTES) continue;
+        discoveryHash.update(JSON.stringify([file.sourceKey, file.size, file.mtimeMs]));
+      }
+      const discoveryVersion = discoveryHash.digest("hex");
       const rows =
         yield* sql<ImportRow>`SELECT source_key, thread_id, imported_message_count, prefix_hash FROM workjet_session_imports`;
       const fileKeys = new Set(files.map((file) => file.sourceKey));
@@ -565,6 +572,7 @@ export const make = Effect.gen(function* () {
         sources: summaries,
         candidates,
         truncated: hasMore,
+        discoveryVersion,
         nextOffset: hasMore ? offset + candidates.length : null,
         discoveryLimitReached: false,
       };

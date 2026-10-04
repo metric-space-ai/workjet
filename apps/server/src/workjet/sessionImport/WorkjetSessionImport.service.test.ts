@@ -298,6 +298,9 @@ describe("project-directed static session imports", () => {
         expect(first.nextOffset).toBe(2);
         expect(second.nextOffset).toBe(4);
         expect(last.nextOffset).toBeNull();
+        expect(first.discoveryVersion).toMatch(/^[a-f0-9]{64}$/u);
+        expect(second.discoveryVersion).toBe(first.discoveryVersion);
+        expect(last.discoveryVersion).toBe(first.discoveryVersion);
         expect(
           new Set(
             [...first.candidates, ...second.candidates, ...last.candidates].map(
@@ -307,6 +310,11 @@ describe("project-directed static session imports", () => {
         ).toBe(5);
         const found = yield* service.inspect({ query: "older selected", source: "codex" });
         expect(found.candidates.map(({ title }) => title)).toEqual(["Older selected work"]);
+        yield* Effect.promise(() =>
+          NodeFSP.utimes(NodePath.join(root, "sessions", "0.jsonl"), 1_800_000_000, 1_800_000_000),
+        );
+        const reordered = yield* service.inspect({ limit: 2, offset: first.nextOffset! });
+        expect(reordered.discoveryVersion).not.toBe(first.discoveryVersion);
         expect(found.candidates[0]?.previewMessages?.[0]?.text).toBe("Older selected work");
         expect((yield* service.inspect({ source: "claude-code" })).candidates).toEqual([]);
       }),

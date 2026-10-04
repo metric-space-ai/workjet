@@ -19,6 +19,7 @@ export async function selectAllSessionImportCandidates(input: {
   ) => void;
 }): Promise<void> {
   let offset = 0;
+  let discoveryVersion: string | undefined;
   const seen = new Set<string>();
   while (input.isActive()) {
     const page = await input.inspect({
@@ -28,6 +29,15 @@ export async function selectAllSessionImportCandidates(input: {
       ...(input.source === "all" ? {} : { source: input.source }),
     });
     if (!input.isActive()) return;
+    if (!page.discoveryVersion)
+      throw new Error(
+        "The connected server cannot detect source changes. Update it before selecting all.",
+      );
+    if (discoveryVersion !== undefined && page.discoveryVersion !== discoveryVersion)
+      throw new Error(
+        "The source conversations changed during selection. Refresh and select all again.",
+      );
+    discoveryVersion = page.discoveryVersion;
     if (page.discoveryLimitReached)
       throw new Error(
         "The source scan is incomplete. Refresh or update the connected server before selecting all.",

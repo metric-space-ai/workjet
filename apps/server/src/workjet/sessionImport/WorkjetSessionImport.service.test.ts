@@ -236,6 +236,47 @@ describe("project-directed static session imports", () => {
       ),
   );
 
+  it.effect("discovers and imports another harness beyond a large first-source archive", () =>
+    withFixture(({ root, service, threads }) =>
+      Effect.gen(function* () {
+        const seed = NodePath.join(root, "sessions", "seed.jsonl");
+        yield* Effect.promise(() => NodeFSP.writeFile(seed, transcript("Large Codex archive")));
+        yield* Effect.forEach(
+          Array.from({ length: 5_001 }, (_, index) => index),
+          (index) =>
+            Effect.promise(() =>
+              NodeFSP.link(seed, NodePath.join(root, "sessions", `copy-${index}.jsonl`)),
+            ),
+          { concurrency: 2, discard: true },
+        );
+        const claudeRoot = NodePath.join(NodePath.dirname(root), "claude", "projects", "fixture");
+        yield* Effect.promise(() => NodeFSP.mkdir(claudeRoot, { recursive: true }));
+        const file = NodePath.join(claudeRoot, "later-source.jsonl");
+        const original =
+          encodeJson({
+            type: "user",
+            message: { role: "user", content: "Work beyond the first 5,000 files" },
+            timestamp: NOW,
+          }) + "\n";
+        yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+        const found = yield* service.inspect({ source: "claude-code", query: "beyond the first" });
+        expect(found.candidates.map(({ title }) => title)).toEqual([
+          "Work beyond the first 5,000 files",
+        ]);
+        expect(found.sources.find(({ source }) => source === "codex")?.discoveredCount).toBe(5_002);
+        expect(found.discoveryLimitReached).toBe(false);
+        expect(found.truncated).toBe(false);
+        const result = yield* service.importSessions({
+          candidateIds: [found.candidates[0]!.candidateId],
+          projectId: ProjectId.make("project-a"),
+        });
+        expect(result.items[0]?.status).toBe("imported");
+        expect(threads.get(result.items[0]!.threadId!)?.projectId).toBe("project-a");
+        expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(original);
+      }),
+    ),
+  );
+
   it.effect("finds older matches beyond the first page and keeps page boundaries stable", () =>
     withFixture(({ root, service }) =>
       Effect.gen(function* () {

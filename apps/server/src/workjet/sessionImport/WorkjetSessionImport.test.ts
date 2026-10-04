@@ -8,6 +8,85 @@ import {
 const NOW = "2026-08-25T12:00:00.000Z";
 
 describe("static Workjet session transcript parsing", () => {
+  it("retains ordinary requests that discuss Codex context markers", () => {
+    for (const request of [
+      "Explain how <recommended_plugins> is handled.",
+      "Review # AGENTS.md instructions in the attached document.",
+      "Describe the <permissions instructions> marker in a transcript.",
+      "Keep a request that quotes <environment_context>.",
+      "<recommended_plugins> wird hier wörtlich besprochen. Bitte erklären.",
+      "# AGENTS.md instructions sollen als normale Anfrage erhalten bleiben.",
+      "<permissions instructions> ist ein Marker, den ich ändern möchte.",
+      "<environment_context> ist in meinem Prompt falsch. Bitte korrigieren.",
+    ]) {
+      const parsed = parseCodexSessionTranscript(
+        [
+          JSON.stringify({
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: request }],
+            },
+          }),
+        ],
+        NOW,
+      );
+      expect(parsed?.title).toBe(request);
+      expect(parsed?.messages).toEqual([{ role: "user", text: request, createdAt: NOW }]);
+    }
+  });
+
+  it("still excludes generated context prefixes with leading whitespace", () => {
+    for (const context of [
+      "<recommended_plugins>hidden</recommended_plugins>",
+      "# AGENTS.md instructions for /workspace",
+      "<permissions instructions>hidden</permissions instructions>",
+      "<environment_context>hidden</environment_context>",
+    ]) {
+      expect(
+        parseCodexSessionTranscript(
+          [
+            JSON.stringify({
+              type: "response_item",
+              payload: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: "\n  " + context }],
+              },
+            }),
+          ],
+          NOW,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("retains requests following generated context in the same user message", () => {
+    const request = "Fix the source parser without losing the conversation.";
+    for (const prefix of [
+      "<environment_context>cwd=/workspace</environment_context>\n",
+      "<recommended_plugins>hidden</recommended_plugins>\n<permissions instructions>hidden</permissions instructions>\n",
+      "# AGENTS.md instructions for /workspace\n<INSTRUCTIONS>hidden</INSTRUCTIONS>\n<environment_context>cwd=/workspace</environment_context>\n",
+    ]) {
+      const parsed = parseCodexSessionTranscript(
+        [
+          JSON.stringify({
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: prefix + request }],
+            },
+          }),
+        ],
+        NOW,
+      );
+      expect(parsed?.title).toBe(request);
+      expect(parsed?.messages).toEqual([{ role: "user", text: request, createdAt: NOW }]);
+    }
+  });
+
   it("retains readable histories without a recorded source folder", () => {
     const codex = parseCodexSessionTranscript(
       [
@@ -197,6 +276,38 @@ describe("static Workjet session transcript parsing", () => {
         NOW,
       ),
     ).toBeNull();
+  });
+
+  it("handles reordered Codex context without losing the following request", () => {
+    const request = "Import this actual request";
+    const instructions =
+      "# AGENTS.md instructions for /workspace\n<INSTRUCTIONS>hidden</INSTRUCTIONS>\n";
+    const plugins = "<recommended_plugins>hidden</recommended_plugins>\n";
+    const environment = "<environment_context>hidden</environment_context>\n";
+    const literal = "# AGENTS.md instructions for /workspace\nDiscuss this literal heading";
+    const cases = [
+      [plugins + instructions + environment + request, request],
+      [environment + instructions + plugins + request, request],
+      [plugins + literal, literal],
+    ] as const;
+    for (const [text, expected] of cases) {
+      const parsed = parseCodexSessionTranscript(
+        [
+          JSON.stringify({ type: "session_meta", payload: { cwd: "/workspace" } }),
+          JSON.stringify({
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text }],
+            },
+          }),
+        ],
+        NOW,
+      );
+      expect(parsed?.messages).toEqual([{ role: "user", text: expected, createdAt: NOW }]);
+      expect(parsed?.title).toBe(expected.replace(/\s+/gu, " "));
+    }
   });
 
   it("drops injected Codex context and internal health probes", () => {

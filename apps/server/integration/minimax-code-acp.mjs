@@ -53,24 +53,17 @@ const config = decodeSettings({ enabled: true, binaryPath, dataDirectory: dataDi
 
 await Effect.runPromise(
   Effect.gen(function* () {
-    const questionIds = new Set();
     const adapter = yield* makeMiniMaxAdapter(config, {
       instanceId,
       protocolLogging: {
-        logIncoming: true,
         logOutgoing: true,
         logger: (event) =>
           Effect.sync(() => {
-            if (event.stage !== "raw" || typeof event.payload !== "string") return;
-            const frame = JSON.parse(event.payload);
-            if (event.direction === "incoming" && frame.method === "elicitation/create") {
-              questionIds.add(String(frame.id));
-            } else if (
-              event.direction === "outgoing" &&
-              questionIds.has(String(frame.id)) &&
-              !frame.method
-            ) {
-              process.stdout.write(`NATIVE_QUESTION_RESPONSE ${JSON.stringify(frame)}\n`);
+            if (event.stage !== "decoded" || event.direction !== "outgoing") return;
+            const frame = event.payload;
+            const value = frame?.exit?.value;
+            if (value && ["accept", "decline", "cancel"].includes(value.action)) {
+              process.stdout.write(`NATIVE_QUESTION_RESPONSE ${JSON.stringify(value)}\n`);
             }
           }),
       },
@@ -83,7 +76,9 @@ await Effect.runPromise(
     });
     const workflow =
       mode === "workflow" ? yield* makeMiniMaxWorkflowProbe(adapter, { threadId, cwd }) : undefined;
+    process.stdout.write("NATIVE_STAGE start-session\n");
     const first = yield* adapter.startSession(start);
+    process.stdout.write("NATIVE_STAGE session-ready\n");
     const stopResults = [];
     const stop = Effect.gen(function* () {
       const result = yield* adapter.stopSession(threadId);
@@ -97,7 +92,10 @@ await Effect.runPromise(
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
     NodeAssert.ok(first.resumeCursor.sessionId);
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
-    if (workflow) yield* workflow.editAndCancel;
+    if (workflow) {
+      process.stdout.write("NATIVE_STAGE edit-and-cancel\n");
+      yield* workflow.editAndCancel;
+    }
     yield* stop;
     NodeAssert.equal((yield* adapter.listSessions()).length, 0);
     const resumed = yield* adapter.startSession({

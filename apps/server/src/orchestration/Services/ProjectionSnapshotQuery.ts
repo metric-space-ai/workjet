@@ -8,6 +8,7 @@
  */
 import type {
   CheckpointRef,
+  MessageId,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -212,6 +213,11 @@ export interface ProjectionSnapshotQueryShape {
     threadId: ThreadId,
     turnId: TurnId,
   ) => Effect.Effect<boolean, ProjectionRepositoryError>;
+
+  /** Stable ids acknowledged by completed static session imports. */
+  readonly getThreadImportedMessageIds?: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ReadonlyArray<MessageId>, ProjectionRepositoryError>;
 
   /**
    * Read a single active thread detail together with the projection snapshot

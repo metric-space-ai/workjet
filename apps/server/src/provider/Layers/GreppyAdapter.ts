@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
+
 import {
   ApprovalRequestId,
   EventId,
@@ -55,12 +56,25 @@ import { plainHttpEndpoint } from "../greppy/GreppyProtocol.ts";
 const PROVIDER = ProviderDriverKind.make("greppy");
 const Resume = Schema.Struct({ protocol: Schema.Literal("acp"), sessionId: Schema.String });
 const decodeResume = Schema.decodeUnknownOption(Resume);
+const decodeImportHistoryCapability = Schema.decodeUnknownOption(
+  Schema.Struct({ version: Schema.Literal(1) }),
+);
+const decodeImportHistoryAcknowledgement = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    acceptedMessageIds: Schema.Array(Schema.String),
+  }),
+);
+
 const requestError = (method: string, detail: string) =>
   new ProviderAdapterRequestError({ provider: PROVIDER, method, detail });
 
 interface SessionContext {
   session: ProviderSession;
   readonly acp: AcpSessionRuntime["Service"];
+  readonly acpSessionId: string;
+  readonly supportsImportHistory: boolean;
+  importedHistoryKey: string | undefined;
+
   readonly scope: Scope.Closeable;
   readonly processes: ProviderTrackedProcess[];
   readonly pending: Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>;
@@ -325,7 +339,14 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
           const ctx: SessionContext = {
             session,
             acp,
+            acpSessionId: started.sessionId,
+            supportsImportHistory:
+              decodeImportHistoryCapability(
+                started.initializeResult.agentCapabilities?._meta?.workjetImportHistory,
+              )._tag === "Some",
+            importedHistoryKey: undefined,
             scope,
+
             processes,
             pending,
             turns: [],
@@ -471,12 +492,54 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
             );
           ctx.session = { ...ctx.session, model: selected };
         }
+        if (input.importedHistory?.length && !ctx.cancelled && !ctx.stopped) {
+          if (!ctx.supportsImportHistory)
+            return yield* requestError(
+              "_workjet/import_history",
+              "This Greppy build cannot replay imported conversations. Update Greppy to a build with Workjet history synchronization.",
+            );
+          const historyKey = NodeCrypto.createHash("sha256")
+            .update(JSON.stringify(input.importedHistory))
+            .digest("hex");
+          if (historyKey !== ctx.importedHistoryKey) {
+            const response = yield* ctx.acp
+              .request("_workjet/import_history", {
+                sessionId: ctx.acpSessionId,
+                messages: input.importedHistory,
+              })
+              .pipe(
+                Effect.mapError((cause) =>
+                  mapAcpToAdapterError(PROVIDER, input.threadId, "_workjet/import_history", cause),
+                ),
+              );
+            const acknowledgement = yield* decodeImportHistoryAcknowledgement(response).pipe(
+              Effect.mapError(() =>
+                requestError(
+                  "_workjet/import_history",
+                  "Greppy did not acknowledge the imported conversation history.",
+                ),
+              ),
+            );
+            if (
+              acknowledgement.acceptedMessageIds.length !== input.importedHistory.length ||
+              !input.importedHistory.every(
+                (message, index) => acknowledgement.acceptedMessageIds[index] === message.id,
+              )
+            )
+              return yield* requestError(
+                "_workjet/import_history",
+                "Greppy acknowledged an incomplete or different imported conversation.",
+              );
+            ctx.importedHistoryKey = historyKey;
+          }
+        }
         if (ctx.cancelled || ctx.stopped) {
           yield* finish(ctx, turnId, "cancelled");
           return { threadId: input.threadId, turnId, resumeCursor: ctx.session.resumeCursor };
         }
         yield* emit(input.threadId, {
           type: "turn.started",
+
           turnId,
           payload: { model: ctx.session.model },
         });

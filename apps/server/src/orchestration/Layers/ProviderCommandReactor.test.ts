@@ -229,6 +229,7 @@ describe("ProviderCommandReactor", () => {
     readonly crewAdmission?: CtoxCrewTurnAdmission["Service"];
     readonly initialProviderSession?: boolean;
     readonly providerBinding?: ProviderRuntimeBinding;
+    readonly importedMessageIds?: ReadonlyArray<MessageId>;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -445,6 +446,18 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(RepositoryIdentityResolver.layer),
       Layer.provide(SqlitePersistenceMemory),
     );
+    const archiveSnapshotLayer = input?.importedMessageIds
+      ? Layer.effect(
+          ProjectionSnapshotQuery,
+          Effect.gen(function* () {
+            const query = yield* ProjectionSnapshotQuery;
+            return {
+              ...query,
+              getThreadImportedMessageIds: () => Effect.succeed(input.importedMessageIds!),
+            };
+          }),
+        ).pipe(Layer.provide(projectionSnapshotLayer))
+      : projectionSnapshotLayer;
     let titleRegenerationCompletionDispatchAttempts = 0;
     const reactorOrchestrationLayer = Layer.effect(
       OrchestrationEngineService,
@@ -474,7 +487,7 @@ describe("ProviderCommandReactor", () => {
     ).pipe(Layer.provide(orchestrationLayer));
     const layer = ProviderCommandReactorLive.pipe(
       Layer.provideMerge(reactorOrchestrationLayer),
-      Layer.provideMerge(projectionSnapshotLayer),
+      Layer.provideMerge(archiveSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
       Layer.provideMerge(
         input?.crewAdmission
@@ -641,6 +654,92 @@ describe("ProviderCommandReactor", () => {
       },
     };
   }
+
+  it("sends only durable archive roles to Greppy alongside one current prompt", async () => {
+    const archiveIds = ["archive-user", "archive-assistant", "later-user", "later-assistant"].map(
+      asMessageId,
+    );
+    const harness = await createHarness({
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("greppy"),
+        model: "fixture-model",
+      },
+      importedMessageIds: archiveIds,
+    });
+    const now = "2026-01-01T00:00:00.000Z";
+    const archived = [
+      {
+        messageId: archiveIds[0]!,
+        role: "user" as const,
+        text: "Original archive question",
+        createdAt: now,
+      },
+      {
+        messageId: archiveIds[1]!,
+        role: "assistant" as const,
+        text: "Original archive answer",
+        createdAt: now,
+      },
+      {
+        messageId: asMessageId("native-user"),
+        role: "user" as const,
+        text: "Earlier Workjet prompt",
+        createdAt: now,
+      },
+      {
+        messageId: asMessageId("native-assistant"),
+        role: "assistant" as const,
+        text: "Earlier native answer",
+        createdAt: now,
+      },
+      {
+        messageId: archiveIds[2]!,
+        role: "user" as const,
+        text: "Appended archive question",
+        createdAt: now,
+      },
+      {
+        messageId: archiveIds[3]!,
+        role: "assistant" as const,
+        text: "Appended archive answer",
+        createdAt: now,
+      },
+    ];
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.history.import",
+        commandId: CommandId.make("cmd-greppy-history-fixture"),
+        threadId: ThreadId.make("thread-1"),
+        messages: archived,
+        createdAt: now,
+      }),
+    );
+    await harness.drain();
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-greppy-history-turn"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("current-workjet-prompt"),
+          role: "user",
+          text: "Current continuation",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: "Current continuation",
+      importedHistory: archived
+        .filter((message) => archiveIds.includes(message.messageId))
+        .map(({ messageId: id, role, text }) => ({ id, role, text })),
+    });
+  });
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();

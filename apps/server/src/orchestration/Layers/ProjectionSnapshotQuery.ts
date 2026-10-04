@@ -70,7 +70,10 @@ import {
   type ProjectionSnapshotQueryShape,
 } from "../Services/ProjectionSnapshotQuery.ts";
 
+import { importedSessionMessageIds } from "../../workjet/sessionImport/sessionImportIds.ts";
+
 const decodeReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
+
 const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapshot);
 const decodeThread = Schema.decodeUnknownEffect(OrchestrationThread);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
@@ -1105,6 +1108,18 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           ELSE 0 END
         LIMIT 1
       `,
+  });
+
+  const listThreadImportReceipts = SqlSchema.findAll({
+    Request: ThreadIdLookupInput,
+    Result: Schema.Struct({
+      sourceKey: Schema.String,
+      importedMessageCount: NonNegativeInt,
+    }),
+    execute: ({ threadId }) =>
+      sql`SELECT source_key AS "sourceKey", imported_message_count AS "importedMessageCount"
+          FROM workjet_session_imports WHERE thread_id = ${threadId}
+          ORDER BY source_key`,
   });
 
   const listThreadMessageRowsByThread = SqlSchema.findAll({
@@ -2764,6 +2779,20 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       ),
     );
 
+  const getThreadImportedMessageIds = Effect.fn(
+    "ProjectionSnapshotQuery.getThreadImportedMessageIds",
+  )(function* (threadId: ThreadId) {
+    const receipts = yield* listThreadImportReceipts({ threadId }).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getThreadImportedMessageIds:query",
+          "ProjectionSnapshotQuery.getThreadImportedMessageIds:decode",
+        ),
+      ),
+    );
+    return importedSessionMessageIds(threadId, receipts);
+  });
+
   // Bounds pathological fan-out: one user turn that spawned hundreds of
   // subagent turns still pages in bounded chunks, at the cost of splitting the
   // fan-out group across pages (the cursor continues the same group). Also
@@ -2941,6 +2970,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getThreadShellById,
     getThreadDetailById,
     isThreadTurnTerminal,
+    getThreadImportedMessageIds,
     getThreadDetailSnapshot,
     getArchivedTeamWorkerDetailSnapshot,
   } satisfies ProjectionSnapshotQueryShape;

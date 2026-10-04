@@ -1,25 +1,19 @@
 diff --git a/lib/parse.js b/lib/parse.js
 --- a/lib/parse.js
 +++ b/lib/parse.js
-@@ -81,6 +81,12 @@
+@@ -81,2 +81,8 @@
      block = stack[stack.length - 1];
      value = advance();
- 
++
 +    // Bound recursive consumers before constructing another nested AST block.
 +    if ((value === CHAR_LEFT_PARENTHESES || value === CHAR_LEFT_CURLY_BRACE) &&
 +        stack.length >= 256) {
 +      throw new SyntaxError('Input nesting exceeds max depth (256)');
 +    }
-+
-     /**
-      * Invalid chars
-      */
 diff --git a/lib/compile.js b/lib/compile.js
 --- a/lib/compile.js
 +++ b/lib/compile.js
-@@ -4,5 +4,8 @@
- const utils = require('./utils');
- 
+@@ -6,3 +6,6 @@
  const compile = (ast, options = {}) => {
 -  const walk = (node, parent = {}) => {
 +  const walk = (node, parent = {}, depth = 0) => {
@@ -27,8 +21,7 @@ diff --git a/lib/compile.js b/lib/compile.js
 +      throw new SyntaxError('Input nesting exceeds max depth (256)');
 +    }
      const invalidBlock = utils.isInvalidBrace(parent);
-@@ -48,4 +51,4 @@
-     if (node.nodes) {
+@@ -49,3 +52,3 @@
        for (const child of node.nodes) {
 -        output += walk(child, node);
 +        output += walk(child, node, depth + 1);
@@ -36,16 +29,14 @@ diff --git a/lib/compile.js b/lib/compile.js
 diff --git a/lib/expand.js b/lib/expand.js
 --- a/lib/expand.js
 +++ b/lib/expand.js
-@@ -37,4 +37,7 @@
-   const rangeLimit = options.rangeLimit === undefined ? 1000 : options.rangeLimit;
- 
+@@ -39,2 +39,5 @@
 -  const walk = (node, parent = {}) => {
 +  const walk = (node, parent = {}, depth = 0) => {
 +    if (depth > 256) {
 +      throw new SyntaxError('Input nesting exceeds max depth (256)');
 +    }
      node.queue = [];
-@@ -100,3 +103,3 @@
+@@ -102,3 +105,3 @@
        if (child.nodes) {
 -        walk(child, node);
 +        walk(child, node, depth + 1);
@@ -53,9 +44,7 @@ diff --git a/lib/expand.js b/lib/expand.js
 diff --git a/lib/stringify.js b/lib/stringify.js
 --- a/lib/stringify.js
 +++ b/lib/stringify.js
-@@ -3,5 +3,8 @@
- const utils = require('./utils');
- 
+@@ -5,3 +5,6 @@
  module.exports = (ast, options = {}) => {
 -  const stringify = (node, parent = {}) => {
 +  const stringify = (node, parent = {}, depth = 0) => {
@@ -63,8 +52,7 @@ diff --git a/lib/stringify.js b/lib/stringify.js
 +      throw new SyntaxError('Input nesting exceeds max depth (256)');
 +    }
      const invalidBlock = options.escapeInvalid && utils.isInvalidBrace(parent);
-@@ -22,4 +25,4 @@
-     if (node.nodes) {
+@@ -23,3 +26,3 @@
        for (const child of node.nodes) {
 -        output += stringify(child);
 +        output += stringify(child, undefined, depth + 1);

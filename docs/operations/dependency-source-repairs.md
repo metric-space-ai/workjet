@@ -34,6 +34,15 @@ Primary advisories:
 - https://github.com/advisories/GHSA-ch52-4w7c-c8xp
 - https://github.com/advisories/GHSA-vfj7-8cjw-p6xm
 
-Status: source prepared; pristine/patched behavior comparison, generated lock,
-frozen installation, normal review, and current-source delivery remain pending.
-The earlier 4ea9 diagnostic desktop package is not a package of these repairs.
+The isolated comparison exercised all 21 cases: pristine packages produced
+4 passes and 17 failures; the patched copies passed all 21. Each patch applied
+successfully. Normal package installation and dependency routing still need
+separate verification; this fixture result is not installed-product acceptance.
+
+The published devalue 5.9.3 repair from existing PR79 commit 9a88e8db146fceba5e35b8338458e5ee6c179564 is also composed. Previously integrated fast-uri,
+undici and brace-expansion repairs are retained.
+
+Status: generated patch-lock hashes, frozen installation, independent review,
+and current-source delivery remain pending. The required production audit stays
+red and is not waived. The earlier 4ea9 diagnostic desktop package is not a
+package of these repairs.

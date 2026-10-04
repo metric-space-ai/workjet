@@ -92,9 +92,9 @@ await Effect.runPromise(
       process.stdout.write(`NATIVE_CLEANUP ${JSON.stringify(result)}\n`);
     });
     yield* Effect.addFinalizer(() =>
-      adapter.listSessions().pipe(
-        Effect.flatMap((sessions) => (sessions.length > 0 ? stop : Effect.void)),
-      ),
+      adapter
+        .listSessions()
+        .pipe(Effect.flatMap((sessions) => (sessions.length > 0 ? stop : Effect.void))),
     );
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");

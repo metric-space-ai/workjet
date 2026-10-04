@@ -3752,6 +3752,44 @@ describe("ClaudeAdapterLive", () => {
     },
   );
 
+  it.effect("rejects Claude resume proof revoked while the query is being created", () => {
+    let hookResults!: Promise<unknown>;
+    const harness = makeHarness({
+      onCreateQuery: ({ options }) => {
+        const callback = options.hooks?.SessionStart?.[0]?.hooks[0];
+        assert.ok(callback);
+        const proof = {
+          hook_event_name: "SessionStart" as const,
+          source: "resume" as const,
+          session_id: CLAUDE_RECOVERY_SESSION_ID,
+          transcript_path: "/fixture/claude-history.jsonl",
+          cwd: "/fixture/project",
+        };
+        const signal = new AbortController().signal;
+        // Both hooks begin before createQuery returns and context is installed.
+        hookResults = Promise.all([
+          callback(proof, undefined, { signal }),
+          callback({ ...proof, source: "startup" }, undefined, { signal }),
+        ]);
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const error = yield* adapter.startSession(strictRecoveryInput).pipe(Effect.flip);
+      yield* Effect.promise(() => hookResults);
+      assert.equal(error._tag, "ProviderAdapterValidationError");
+      assert.equal(harness.query.closeCalls, 1);
+      assert.deepEqual(yield* adapter.listSessions(), []);
+      assert.equal(
+        yield* Effect.promise(() => readFirstPromptMessage(harness.getLastCreateQueryInput())),
+        undefined,
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("closes a recovered Claude runtime if its stream changes the confirmed session", () => {
     const harness = makeRecoveryHarness();
     return Effect.gen(function* () {

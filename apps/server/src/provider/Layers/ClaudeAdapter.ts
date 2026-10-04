@@ -4474,17 +4474,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         // SDK has acknowledged the exact main session with source=resume.
         yield* Deferred.await(resumeConfirmed).pipe(
           Effect.timeoutOption("10 seconds"),
-          Effect.flatMap((confirmed) =>
-            Option.isSome(confirmed)
-              ? Effect.void
-              : Effect.fail(
-                  new ProviderAdapterValidationError({
-                    provider: PROVIDER,
-                    operation: "startSession",
-                    issue: "Claude resume confirmation timed out; no continuation was sent.",
-                  }),
-                ),
-          ),
+          Effect.flatMap((confirmed) => {
+            if (!Option.isSome(confirmed)) {
+              return Effect.fail(
+                new ProviderAdapterValidationError({
+                  provider: PROVIDER,
+                  operation: "startSession",
+                  issue: "Claude resume confirmation timed out; no continuation was sent.",
+                }),
+              );
+            }
+            // A successful Deferred is immutable; a later rejection can only
+            // revoke its proof through the live lifecycle state.
+            if (recoveryRejected || !originalSessionConfirmed) {
+              return Effect.fail(
+                new ProviderAdapterValidationError({
+                  provider: PROVIDER,
+                  operation: "startSession",
+                  issue: "Claude resume confirmation was revoked before session startup.",
+                }),
+              );
+            }
+            return Effect.void;
+          }),
           Effect.onExit((exit) =>
             Exit.isFailure(exit)
               ? terminateProviderProcesses({

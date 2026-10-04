@@ -175,11 +175,18 @@ const makeOrchestrationEngine = Effect.gen(function* () {
               for (const nextEvent of eventBases) {
                 const savedEvent = yield* eventStore.append(nextEvent);
                 nextCommandReadModel = yield* projectEvent(nextCommandReadModel, savedEvent);
-                yield* projectionPipeline.projectEvent(savedEvent);
+                if (!projectionPipeline.projectEvents) {
+                  yield* projectionPipeline.projectEvent(savedEvent);
+                }
+
                 committedEvents.push(savedEvent);
               }
 
+              const postCommit = projectionPipeline.projectEvents
+                ? yield* projectionPipeline.projectEvents(committedEvents)
+                : Effect.void;
               const lastSavedEvent = committedEvents.at(-1) ?? null;
+
               if (lastSavedEvent === null) {
                 return yield* new OrchestrationCommandInvariantError({
                   commandType: envelope.command.type,
@@ -201,6 +208,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 committedEvents,
                 lastSequence: lastSavedEvent.sequence,
                 nextCommandReadModel,
+                postCommit,
               } as const;
             }),
           )
@@ -213,6 +221,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           );
 
         commandReadModel = committedCommand.nextCommandReadModel;
+        yield* committedCommand.postCommit;
         for (const [index, event] of committedCommand.committedEvents.entries()) {
           yield* PubSub.publish(eventPubSub, event);
           if (index === 0) {

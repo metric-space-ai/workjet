@@ -1710,6 +1710,51 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           ),
         );
 
+    const projectEvents = (events: ReadonlyArray<OrchestrationEvent>) =>
+      Effect.gen(function* () {
+        const lastEvent = events.at(-1);
+        if (!lastEvent) return Effect.void;
+        const attachmentSideEffects: AttachmentSideEffects = {
+          deletedThreadIds: new Set<string>(),
+          prunedThreadRelativePaths: new Map<string, Set<string>>(),
+        };
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            for (const event of events) {
+              for (const projector of projectors) {
+                yield* projector.apply(event, attachmentSideEffects);
+              }
+            }
+            for (const projector of projectors) {
+              yield* projectionStateRepository.upsert({
+                projector: projector.name,
+                lastAppliedSequence: lastEvent.sequence,
+                updatedAt: lastEvent.occurredAt,
+              });
+            }
+          }),
+        );
+        return runAttachmentSideEffects(attachmentSideEffects).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(ServerConfig, serverConfig),
+
+          Effect.catch((cause) =>
+            Effect.logWarning("failed to apply projected attachment side-effects", {
+              sequence: lastEvent.sequence,
+              cause,
+            }),
+          ),
+        );
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem),
+        Effect.provideService(Path.Path, path),
+        Effect.provideService(ServerConfig, serverConfig),
+        Effect.catchTag("SqlError", (sqlError) =>
+          Effect.fail(toPersistenceSqlError("ProjectionPipeline.projectEvents:query")(sqlError)),
+        ),
+      );
+
     const projectEvent: OrchestrationProjectionPipelineShape["projectEvent"] = (event) =>
       Effect.forEach(projectors, (projector) => runProjectorForEvent(projector, event), {
         concurrency: 1,
@@ -1745,6 +1790,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     return {
       bootstrap,
       projectEvent,
+      projectEvents,
     } satisfies OrchestrationProjectionPipelineShape;
   },
 );

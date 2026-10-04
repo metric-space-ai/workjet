@@ -163,7 +163,7 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
       "Native question must resolve before acceptance.",
     );
     process.stdout.write("NATIVE_STAGE waiting-for-native-approval-receipt\n");
-    yield* Deferred.await(nativeApproval);
+    yield* awaitNativeReceipt(nativeApproval);
     process.stdout.write("NATIVE_STAGE native-approval-receipt\n");
     NodeAssert.ok(
       events.some(
@@ -189,8 +189,8 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
       })}`,
     );
     process.stdout.write("NATIVE_STAGE waiting-for-native-edit-and-test-completion\n");
-    yield* Deferred.await(nativeEditCompleted);
-    yield* Deferred.await(nativeTestCompleted);
+    yield* awaitNativeReceipt(nativeEditCompleted);
+    yield* awaitNativeReceipt(nativeTestCompleted);
     process.stdout.write("NATIVE_STAGE native-edit-and-test-completed\n");
     const status = yield* Effect.promise(() =>
       execute("git", ["status", "--porcelain", "--untracked-files=all"], { cwd, timeout: 20_000 }),

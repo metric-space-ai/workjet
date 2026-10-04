@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import appSidebarLayoutSource from "../AppSidebarLayout.tsx?raw";
 import machinesRouteSource from "../../routes/machines.tsx?raw";
 import connectionsRouteSource from "../../routes/settings.connections.tsx?raw";
+import keybindingsRouteSource from "../../routes/settings.keybindings.tsx?raw";
 import settingsRouteSource from "../../routes/settings.tsx?raw";
 import sidebarChromeSource from "../sidebar/SidebarChrome.tsx?raw";
 import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
@@ -44,6 +45,8 @@ describe("Workjet settings information architecture", () => {
     expect(settingsRouteSource).toContain('redirect({ to: "/settings/business-os"');
     expect(connectionsRouteSource).toContain('redirect({ to: "/settings/computers"');
     expect(connectionsRouteSource).not.toContain("ConnectionsSettings");
+    expect(keybindingsRouteSource).toContain('redirect({ to: "/settings/general"');
+    expect(keybindingsRouteSource).not.toContain("KeybindingsSettingsPanel");
     expect(machinesRouteSource).toContain('redirect({ to: "/settings/business-os"');
     expect(machinesRouteSource).not.toContain("MachinesPage");
   });

@@ -35,9 +35,9 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
-const MAX_DISCOVERED_FILES = 5_000;
 const MAX_TRANSCRIPT_BYTES = 20 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 1024 * 1024;
+const MAX_CACHED_PREVIEWS = 512;
 const MAX_MESSAGE_COUNT = 5_000;
 const MAX_MESSAGE_CHARS = 200_000;
 const IMPORT_CHUNK_SIZE = 200;
@@ -129,11 +129,31 @@ const visibleText = (
     .join("\n");
 };
 
-const isInjectedCodexContext = (text: string): boolean =>
-  text.includes("<recommended_plugins>") ||
-  text.includes("# AGENTS.md instructions") ||
-  text.includes("<permissions instructions>") ||
-  text.includes("<environment_context>");
+const stripInjectedCodexContext = (text: string): string => {
+  let remaining = text.trimStart();
+  let stripped = false;
+  for (;;) {
+    const header = /^# AGENTS\.md instructions(?: for [^\r\n]+)?(?:\r?\n|$)/u.exec(remaining);
+    if (header) {
+      const body = remaining.slice(header[0].length).trimStart();
+      if (!body) return "";
+      const instructions = /^<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/u.exec(body);
+      if (!instructions) return stripped ? remaining : text;
+      remaining = body.slice(instructions[0].length).trimStart();
+      stripped = true;
+      continue;
+    }
+    const context =
+      /^<(recommended_plugins|permissions instructions|environment_context)>[\s\S]*?<\/\1>/u.exec(
+        remaining,
+      );
+    if (!context) break;
+    remaining = remaining.slice(context[0].length).trimStart();
+    stripped = true;
+  }
+  // A literal marker or unknown envelope remains user text.
+  return stripped ? remaining : text;
+};
 
 // These are UI context messages, not the user's conversation title or history.
 const stripCodexUiContext = (text: string): string =>
@@ -176,10 +196,11 @@ export const parseCodexSessionTranscript = (
     if (record?.type !== "response_item" || payload?.type !== "message") continue;
     const role = payload.role;
     if (role !== "user" && role !== "assistant") continue;
-    const text = stripCodexUiContext(
+    const sourceText = stripCodexUiContext(
       visibleText(payload.content, role === "user" ? "input_text" : "output_text"),
     );
-    if (!text || (role === "user" && isInjectedCodexContext(text))) continue;
+    const text = role === "user" ? stripInjectedCodexContext(sourceText) : sourceText;
+    if (!text) continue;
     messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
   }
   if (!messages.some((message) => message.role === "user")) return null;
@@ -333,7 +354,7 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
   const files: SourceFile[] = [];
   for (const location of locations) {
     const stack = [location.root];
-    while (stack.length > 0 && files.length < MAX_DISCOVERED_FILES) {
+    while (stack.length > 0) {
       const directory = stack.pop();
       if (!directory) break;
       try {
@@ -363,7 +384,6 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
           } catch {
             // Files can disappear while the source app rotates its sessions.
           }
-          if (files.length >= MAX_DISCOVERED_FILES) break;
         }
       } catch {
         continue;
@@ -482,6 +502,10 @@ export const make = Effect.gen(function* () {
                 .map(({ role, text }) => ({ role, text: text.slice(0, 1_000) })),
             };
             previewCache.set(file.sourceKey, { fingerprint, session: parsed });
+            if (previewCache.size > MAX_CACHED_PREVIEWS) {
+              const oldestKey = previewCache.keys().next().value;
+              if (oldestKey !== undefined) previewCache.delete(oldestKey);
+            }
           }
         }
         if (!parsed) continue;
@@ -540,9 +564,9 @@ export const make = Effect.gen(function* () {
       return {
         sources: summaries,
         candidates,
-        truncated: hasMore || files.length >= MAX_DISCOVERED_FILES,
+        truncated: hasMore,
         nextOffset: hasMore ? offset + candidates.length : null,
-        discoveryLimitReached: files.length >= MAX_DISCOVERED_FILES,
+        discoveryLimitReached: false,
       };
     }).pipe(
       Effect.mapError((error) =>

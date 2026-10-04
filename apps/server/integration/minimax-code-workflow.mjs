@@ -36,6 +36,12 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
   const nonce = `workjet-native-${NodeCrypto.randomUUID()}`;
   const cancelStream = yield* Deferred.make();
   const nativeApproval = yield* Deferred.make();
+  const nativeEditCompleted = yield* Deferred.make();
+  const nativeTestCompleted = yield* Deferred.make();
+  const approvedEdits = new Set();
+  const approvedTests = new Set();
+  const completedEdits = new Set();
+  const completedTests = new Set();
   let phase = "edit";
   let choiceResolved = false;
   const safePath = (path) =>
@@ -57,6 +63,19 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
           yield* Deferred.succeed(cancelStream, undefined);
         if (event.type === "request.resolved" && event.payload.decision === "accept")
           yield* Deferred.succeed(nativeApproval, undefined);
+        if (event.type === "item.completed" && phase === "edit") {
+          if (approvedEdits.has(event.itemId) || approvedTests.has(event.itemId)) {
+            NodeAssert.equal(event.payload.status, "completed", "The authorized native tool must complete successfully.");
+            if (approvedEdits.has(event.itemId)) {
+              completedEdits.add(event.itemId);
+              yield* Deferred.succeed(nativeEditCompleted, undefined);
+            }
+            if (approvedTests.has(event.itemId)) {
+              completedTests.add(event.itemId);
+              yield* Deferred.succeed(nativeTestCompleted, undefined);
+            }
+          }
+        }
         if (event.type === "request.opened" && event.requestId) {
           const tool = event.raw?.payload?.toolCall;
           const input = tool?.rawInput;
@@ -83,6 +102,10 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
             phase === "edit" &&
             tool?.kind === "execute" &&
             command === "greppy bash-smart -- node --test --test-concurrency=1 test/greet.test.mjs";
+          if (edit || test) {
+            NodeAssert.equal(typeof tool?.toolCallId, "string", "Associate approved tools with actual native completion IDs.");
+            (edit ? approvedEdits : approvedTests).add(tool.toolCallId);
+          }
           yield* adapter.respondToRequest(
             threadId,
             ApprovalRequestId.make(event.requestId),
@@ -158,6 +181,10 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
           })),
       })}`,
     );
+    process.stdout.write("NATIVE_STAGE waiting-for-native-edit-and-test-completion\n");
+    yield* Deferred.await(nativeEditCompleted);
+    yield* Deferred.await(nativeTestCompleted);
+    process.stdout.write("NATIVE_STAGE native-edit-and-test-completed\n");
     const status = yield* Effect.promise(() =>
       execute("git", ["status", "--porcelain", "--untracked-files=all"], { cwd, timeout: 20_000 }),
     );
@@ -248,11 +275,14 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
       approvedTools: events.filter(
         ({ event }) => event.type === "request.resolved" && event.payload.decision === "accept",
       ).length,
+      completedNativeEditTools: completedEdits.size,
+      completedNativeTestTools: completedTests.size,
       sourceSha256: NodeCrypto.createHash("sha256").update(source).digest("hex"),
       streamedEvents: events.filter(({ event }) => event.type === "content.delta").length,
       gates: [
         "native-question",
         "approved-native-tools",
+        "completed-native-edit-and-test",
         "real-source-edit",
         "source-tests",
         "streamed-thought-and-reply",

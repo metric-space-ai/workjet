@@ -82,6 +82,64 @@ const settings = (binaryPath: string) => decodeMiniMaxSettings({ binaryPath });
 const environment = (log: string) => Effect.succeed({ ...process.env, MINIMAX_TEST_LOG: log });
 
 describe("MiniMax Code adapter protocol fixture", () => {
+  it.live("refuses approval-required turns on a permissive native profile without changing it", () =>
+    runTest((cwd, binaryPath, log) =>
+      Effect.gen(function* () {
+        for (const permissionMode of ["auto", "bypassPermissions"]) {
+          const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), {
+            instanceId,
+            resolveSessionEnvironment: () =>
+              Effect.succeed({
+                ...process.env,
+                MINIMAX_TEST_LOG: log,
+                MINIMAX_TEST_PERMISSION_MODE: permissionMode,
+              }),
+          });
+          const refusedStart = yield* adapter.startSession(input(cwd)).pipe(Effect.flip);
+          expect(refusedStart.message).toContain('permission mode "Ask"');
+          expect(yield* adapter.hasSession(threadId)).toBe(false);
+          const session = yield* adapter.startSession({ ...input(cwd), runtimeMode: "full-access" });
+          const initialWire = NodeFS.readFileSync(log, "utf8");
+          const refusedTurn = yield* adapter.sendTurn(turn("must not run")).pipe(Effect.flip);
+          expect(refusedTurn.message).toContain('permission mode "Ask"');
+          expect((yield* adapter.listSessions())[0]).toEqual(session);
+          expect(NodeFS.readFileSync(log, "utf8")).toBe(initialWire);
+          expect(initialWire).not.toContain('"configId":"permissionMode"');
+          yield* adapter.stopSession(threadId);
+        }
+      }),
+    ),
+  );
+  it.live("uses the current turn's approval mode when switching out of full access", () =>
+    runTest((cwd, binaryPath, log) =>
+      Effect.gen(function* () {
+        const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), {
+          instanceId,
+          resolveSessionEnvironment: () => environment(log),
+        });
+        let approvalRequests = 0;
+        const consumer = yield* adapter.streamEvents.pipe(
+          Stream.runForEach((event) =>
+            Effect.gen(function* () {
+              if (event.type === "request.opened" && event.requestId) {
+                approvalRequests++;
+                yield* adapter.respondToRequest(threadId, ApprovalRequestId.make(event.requestId), "accept");
+              }
+            }),
+          ),
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* adapter.startSession({ ...input(cwd), runtimeMode: "full-access" });
+        yield* adapter.sendTurn({ ...turn("approved-edit"), runtimeMode: "full-access" });
+        expect(approvalRequests).toBe(0);
+        yield* adapter.sendTurn(turn("approved-edit"));
+        expect(approvalRequests).toBe(1);
+        expect((yield* adapter.listSessions())[0]?.runtimeMode).toBe("approval-required");
+        expect(NodeFS.readFileSync(log, "utf8")).not.toContain('"configId":"permissionMode"');
+        yield* Fiber.interrupt(consumer);
+      }),
+    ),
+  );
   it.live(
     "streams reasoning/tools, waits for approval, edits a fixture, answers a question and resumes without replay",
     () => {

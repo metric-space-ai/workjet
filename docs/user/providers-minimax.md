@@ -8,6 +8,8 @@ The preferred model is **MiniMax-M3.1-Flash-Preview**. Workjet offers it only wh
 
 Thinking is always enabled for this preview model. Workjet sends only the effort choices advertised by the selected runtime: Low, Medium, High, Extra high, and Max. Automatic retains the runtime's effort setting. Responses can arrive without a visible reasoning transcript.
 
+Approval-required tasks need the native MiniMax Code permission mode **Ask**. If the profile uses Auto or Bypass, switch it to Ask in MiniMax Code and reconnect. Workjet refuses approval-required tasks on a permissive profile and does not rewrite its permission setting.
+
 Tasks stream replies, reasoning when provided, tool activity, file changes, permission prompts, and questions. Answer questions or approve tools in the conversation. Plan mode is available when the runtime advertises it. This CLI's ACP interface currently advertises text prompts; the model's separate image/video capabilities do not imply attachment support in ACP.
 
 Stop interrupts the active task. Reopen a saved thread to resume its same MiniMax Code session on the same computer and profile. A missing or incompatible saved session is reported; Workjet does not silently start a replacement task. If the CLI disconnects, reconnect by resuming that saved thread.

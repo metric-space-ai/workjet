@@ -50,6 +50,7 @@ import {
   miniMaxEffortValue,
   resolveMiniMaxModelValue,
   MINIMAX_CODE_RELEASE,
+  assertMiniMaxApprovalMode,
 } from "../minimax/MiniMaxProtocol.ts";
 import {
   miniMaxElicitationForm,
@@ -483,6 +484,10 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
               "startSession",
               `Select MiniMax Code ${MINIMAX_CODE_RELEASE.version} executable.`,
             );
+          if (input.runtimeMode !== "full-access") {
+            const configOptions = yield* acp.getConfigOptions;
+            yield* checked("session/permissionMode", () => assertMiniMaxApprovalMode(configOptions));
+          }
           yield* withDeadline(
             "session/set_config_option",
             applyModel(acp, input.threadId, model, selection?.options),
@@ -667,6 +672,10 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           const model = input.modelSelection?.model.trim() || ctx.session.model;
           if (!model) return yield* error("sendTurn", "Choose a MiniMax Code model.");
           const configOptions = yield* ctx.acp.getConfigOptions;
+          if (input.runtimeMode !== "full-access")
+            yield* checked("session/permissionMode", () =>
+              assertMiniMaxApprovalMode(configOptions),
+            );
           yield* checked("session/set_config_option", () =>
             resolveMiniMaxModelValue(configOptions, model, input.modelSelection?.options),
           );
@@ -683,6 +692,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           ctx.turnId = turnId;
           ctx.session = {
             ...ctx.session,
+            runtimeMode: input.runtimeMode,
             status: "running",
             activeTurnId: turnId,
             updatedAt: yield* now,

@@ -24,6 +24,13 @@ const notify = (update) => send({ method: "session/update", params: { sessionId,
 const configOptions = () => [
   {
     type: "select",
+    id: "permissionMode",
+    name: "Permission mode",
+    currentValue: process.env.MINIMAX_TEST_PERMISSION_MODE || "default",
+    options: ["default", "auto", "bypassPermissions"].map((value) => ({ value, name: value })),
+  },
+  {
+    type: "select",
     id: "model",
     category: "model",
     name: "Model",

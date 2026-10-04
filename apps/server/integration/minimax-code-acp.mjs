@@ -99,6 +99,19 @@ await Effect.runPromise(
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
     NodeAssert.ok(first.resumeCursor.sessionId);
+    yield* Effect.promise(() =>
+      NodeFSP.writeFile(
+        `${recordPath}.started.json`,
+        `${JSON.stringify({
+          status: "started",
+          workflow: workflowName,
+          model: first.model,
+          resumeCursor: first.resumeCursor,
+          acceptance: "pending",
+        }, null, 2)}\n`,
+        { mode: 0o600 },
+      ),
+    );
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
     if (workflow) {
       process.stdout.write("NATIVE_STAGE edit-and-cancel\n");

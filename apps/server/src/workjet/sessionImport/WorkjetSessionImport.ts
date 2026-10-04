@@ -746,47 +746,36 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      let threadId = existing
+      const threadId = existing
         ? ThreadId.make(existing.thread_id)
         : existingRows.some((row) => row.source_key === importKey)
           ? ThreadId.make(NodeCrypto.randomUUID())
           : ThreadId.make(stableUuid(`thread:${importKey}`));
       const messageSeed =
         existing?.source_key === candidateId ? candidateId : `${importKey}:${threadId}`;
-      let thread = Option.getOrUndefined(yield* query.getThreadDetailById(threadId));
-      if (!thread) {
-        if (existing)
-          return yield* new WorkjetSessionImportError({
-            reason: "source_changed",
-            subject: candidateId,
-          });
-
-        yield* engine.dispatch({
-          type: "thread.create",
-          commandId: CommandId.make(NodeCrypto.randomUUID()),
-          threadId,
-          projectId: project.id,
-          title: parsed.title,
-          modelSelection: {
-            instanceId: file.providerInstanceId,
-            model: parsed.model ?? "unknown",
-          },
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
-          branch: null,
-          worktreePath: null,
-          createdAt: parsed.createdAt,
-        } as const satisfies OrchestrationCommand);
-        thread = Option.getOrUndefined(yield* query.getThreadDetailById(threadId));
-      }
-
-      if (!thread) {
+      const thread = Option.getOrUndefined(yield* query.getThreadDetailById(threadId));
+      if (!thread && existing) {
         return yield* new WorkjetSessionImportError({
-          reason: "import_failed",
+          reason: "source_changed",
           subject: candidateId,
         });
       }
+      const createThread = thread
+        ? undefined
+        : {
+            projectId: project.id,
+            title: parsed.title,
+            modelSelection: {
+              instanceId: file.providerInstanceId,
+              model: parsed.model ?? "unknown",
+            },
+            runtimeMode: "approval-required" as const,
+            interactionMode: "default" as const,
+            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+            branch: null,
+            worktreePath: null,
+            createdAt: parsed.createdAt,
+          };
       const sourceIndexByMessageId = new Map(
         parsed.messages.map((_, index) => [
           MessageId.make(stableUuid(`message:${messageSeed}:${index}`)),
@@ -794,7 +783,7 @@ export const make = Effect.gen(function* () {
         ]),
       );
       const persistedSourceIndexes = new Set<number>();
-      for (const persisted of thread.messages) {
+      for (const persisted of thread?.messages ?? []) {
         const index = sourceIndexByMessageId.get(persisted.id);
         const sourceMessage = index === undefined ? undefined : parsed.messages[index];
         if (
@@ -831,6 +820,7 @@ export const make = Effect.gen(function* () {
           type: "thread.history.import",
           commandId: CommandId.make(NodeCrypto.randomUUID()),
           threadId,
+          ...(offset === 0 && createThread ? { bootstrap: { createThread } } : {}),
           messages: chunk.map((message, index) => ({
             messageId: MessageId.make(
               stableUuid(`message:${messageSeed}:${alreadyImported + offset + index}`),

@@ -122,6 +122,16 @@ const withFixture = <A, E>(
                 messages: [],
               } as unknown as OrchestrationThread);
             if (command.type === "thread.history.import") {
+              if (command.bootstrap) {
+                const created = command.bootstrap.createThread;
+                threads.set(command.threadId, {
+                  id: command.threadId,
+                  projectId: created.projectId,
+                  title: created.title,
+                  modelSelection: created.modelSelection,
+                  messages: [],
+                } as unknown as OrchestrationThread);
+              }
               const thread = threads.get(command.threadId)!;
               threads.set(thread.id, {
                 ...thread,
@@ -408,7 +418,12 @@ describe("project-directed static session imports", () => {
             "project-a",
             "project-b",
           ]);
-          expect(commands.filter((command) => command.type === "thread.create")).toHaveLength(2);
+          expect(commands.filter((command) => command.type === "thread.create")).toHaveLength(0);
+          expect(
+            commands.filter(
+              (command) => command.type === "thread.history.import" && command.bootstrap,
+            ),
+          ).toHaveLength(2);
         }),
       ),
   );
@@ -585,7 +600,14 @@ describe("project-directed static session imports", () => {
         ]);
         const models = Object.fromEntries(
           commands.flatMap((command) =>
-            command.type === "thread.create" ? [[command.title, command.modelSelection.model]] : [],
+            command.type === "thread.history.import" && command.bootstrap
+              ? [
+                  [
+                    command.bootstrap.createThread.title,
+                    command.bootstrap.createThread.modelSelection.model,
+                  ],
+                ]
+              : [],
           ),
         );
         expect(models).toEqual({

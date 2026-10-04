@@ -35,6 +35,7 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
   const events = [];
   const nonce = `workjet-native-${NodeCrypto.randomUUID()}`;
   const cancelStream = yield* Deferred.make();
+  const nativeApproval = yield* Deferred.make();
   let phase = "edit";
   let choiceResolved = false;
   const safePath = (path) =>
@@ -54,6 +55,8 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
         }
         if (event.type === "content.delta" && phase === "cancel" && event.payload.delta.trim())
           yield* Deferred.succeed(cancelStream, undefined);
+        if (event.type === "request.resolved" && event.payload.decision === "accept")
+          yield* Deferred.succeed(nativeApproval, undefined);
         if (event.type === "request.opened" && event.requestId) {
           const tool = event.raw?.payload?.toolCall;
           const input = tool?.rawInput;
@@ -129,6 +132,9 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
       events.some(({ event }) => event.type === "user-input.resolved"),
       "Native question must resolve before acceptance.",
     );
+    process.stdout.write("NATIVE_STAGE waiting-for-native-approval-receipt\n");
+    yield* Deferred.await(nativeApproval);
+    process.stdout.write("NATIVE_STAGE native-approval-receipt\n");
     NodeAssert.ok(
       events.some(
         ({ event }) => event.type === "request.resolved" && event.payload.decision === "accept",

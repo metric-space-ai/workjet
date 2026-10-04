@@ -50,7 +50,11 @@ export function SessionImportSection({
   readonly readOnly: boolean;
 }) {
   const navigate = useNavigate();
-  const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
+  const {
+    selectedInstanceId: presentationInstanceId,
+    selectionRevision,
+    mode,
+  } = useActiveWorkjetScope();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const settings = useEnvironmentSettings(environmentId);
   const registry = useWorkjetProjectRegistry(presentationInstanceId);
@@ -89,7 +93,7 @@ export function SessionImportSection({
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<readonly WorkjetSessionImportItemResult[]>([]);
-  const scopeKey = JSON.stringify([environmentId, presentationInstanceId]);
+  const scopeKey = JSON.stringify([environmentId, presentationInstanceId, selectionRevision, mode]);
   const scopeRef = useRef(scopeKey);
   scopeRef.current = scopeKey;
   const mountedRef = useRef(true);
@@ -98,7 +102,9 @@ export function SessionImportSection({
   const isActive = () =>
     mountedRef.current &&
     scopeRef.current === scopeKey &&
-    readActiveWorkjetScope().selectedInstanceId === presentationInstanceId;
+    readActiveWorkjetScope().selectedInstanceId === presentationInstanceId &&
+    readActiveWorkjetScope().selectionRevision === selectionRevision &&
+    readActiveWorkjetScope().mode === mode;
   const inspection = useEnvironmentQuery(
     open
       ? serverEnvironment.workjetSessionImport({
@@ -166,7 +172,7 @@ export function SessionImportSection({
     setProgress("Selecting conversations…");
     try {
       await selectAllSessionImportCandidates({
-        query: debouncedQuery,
+        query,
         source,
         isActive: () => isActive() && !stoppedRef.current,
         inspect: async (input) => {

@@ -59,6 +59,22 @@ await Effect.runPromise(
         logOutgoing: true,
         logger: (event) =>
           Effect.sync(() => {
+            if (event.direction === "incoming") {
+              if (event.stage !== "raw") return;
+              const frame = JSON.parse(event.payload);
+              const permission = frame.result?.configOptions?.find(
+                (option) => option.id === "permissionMode",
+              );
+              process.stdout.write(
+                `NATIVE_INCOMING_FRAME ${JSON.stringify({
+                  id: frame.id,
+                  method: frame.method,
+                  sessionUpdate: frame.params?.update?.sessionUpdate,
+                  ...(permission ? { permissionMode: permission.currentValue } : {}),
+                })}\n`,
+              );
+              return;
+            }
             if (event.direction !== "outgoing") return;
             const frame = event.stage === "raw" ? JSON.parse(event.payload) : event.payload;
             const value = event.stage === "raw" ? frame?.result : frame?.exit?.value;

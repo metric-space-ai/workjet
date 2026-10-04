@@ -3,15 +3,15 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeUtil from "node:util";
 import { ApprovalRequestId } from "@workjet/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 
-const execute = promisify(execFile);
+const execute = NodeUtil.promisify(NodeChildProcess.execFile);
 export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(function* (
   adapter,
   { threadId, cwd },

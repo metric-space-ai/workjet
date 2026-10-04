@@ -65,7 +65,11 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
           yield* Deferred.succeed(nativeApproval, undefined);
         if (event.type === "item.completed" && phase === "edit") {
           if (approvedEdits.has(event.itemId) || approvedTests.has(event.itemId)) {
-            NodeAssert.equal(event.payload.status, "completed", "The authorized native tool must complete successfully.");
+            NodeAssert.equal(
+              event.payload.status,
+              "completed",
+              "The authorized native tool must complete successfully.",
+            );
             if (approvedEdits.has(event.itemId)) {
               completedEdits.add(event.itemId);
               yield* Deferred.succeed(nativeEditCompleted, undefined);
@@ -103,7 +107,11 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
             tool?.kind === "execute" &&
             command === "greppy bash-smart -- node --test --test-concurrency=1 test/greet.test.mjs";
           if (edit || test) {
-            NodeAssert.equal(typeof tool?.toolCallId, "string", "Associate approved tools with actual native completion IDs.");
+            NodeAssert.equal(
+              typeof tool?.toolCallId,
+              "string",
+              "Associate approved tools with actual native completion IDs.",
+            );
             (edit ? approvedEdits : approvedTests).add(tool.toolCallId);
           }
           yield* adapter.respondToRequest(
@@ -141,7 +149,11 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
     Effect.raceFirst(
       Deferred.await(receipt),
       Fiber.join(consumer).pipe(
-        Effect.andThen(Effect.die(new Error("Native event stream ended before required tool completion receipts."))),
+        Effect.andThen(
+          Effect.die(
+            new Error("Native event stream ended before required tool completion receipts."),
+          ),
+        ),
       ),
     );
   const text = (stage) =>

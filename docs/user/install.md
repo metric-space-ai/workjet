@@ -61,6 +61,12 @@ For multi-account setups, see [Codex](./providers-codex.md) and [Claude](./provi
 
 ## Next Steps
 
+After connecting an instance, select it in the instance dropdown to open its
+Code workspace. Opening Business OS first is not required. Code loads that
+instance's native project list and assigned computers independently; connection,
+permission, and assignment errors still prevent the affected action. A selected
+instance does not by itself confirm that its data connection is ready.
+
 - [Permission modes](./permission-modes.md): how much Workjet asks before acting
 - [Remote access](./remote-access.md): connect from a phone, tablet, or another desktop
 - [Keeping Workjet in sync](./updating.md): client and server version skew

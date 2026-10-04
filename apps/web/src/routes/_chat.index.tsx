@@ -1,5 +1,6 @@
 import {
   InstanceOnboarding,
+  canMountSelectedInstance,
   resolveInstanceOnboardingState,
 } from "../components/ctox/InstanceOnboarding";
 import { useCtoxMode } from "../components/ctox/CtoxModeShell";
@@ -65,7 +66,7 @@ function ChatIndexRouteView() {
     mode.selectedId,
     mode.connection,
   );
-  if (mode.bridge !== undefined && onboarding !== "ready")
+  if (mode.bridge !== undefined && !canMountSelectedInstance(onboarding))
     return <InstanceOnboarding state={onboarding} />;
 
   if (authGateState.status === "hosted-static" && environments.length === 0) {

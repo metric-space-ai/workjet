@@ -1292,7 +1292,11 @@ pub fn merge_person_research_source_records(
         }
         added += 1;
     }
-    rebuild_grouped_person_records(payload)?;
+    // A repeated capture that adds no evidence must leave the saved result
+    // untouched, including candidate metadata and the chosen flat fields.
+    if added > 0 {
+        rebuild_grouped_person_records(payload)?;
+    }
     Ok(added)
 }
 

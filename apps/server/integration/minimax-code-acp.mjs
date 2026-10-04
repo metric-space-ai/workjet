@@ -40,7 +40,11 @@ NodeAssert.equal((await NodeFSP.stat(dataDir)).isDirectory(), true);
 const decodeSettings = Schema.decodeUnknownSync(MiniMaxSettings);
 const instanceId = ProviderInstanceId.make("minimax-native-acceptance");
 const threadId = ThreadId.make("minimax-native-session-probe");
-const modelSelection = { instanceId, model: MINIMAX_PREVIEW_MODEL };
+const modelSelection = {
+  instanceId,
+  model: MINIMAX_PREVIEW_MODEL,
+  ...(mode === "workflow" ? { options: [{ id: "thinkingEffort", value: "high" }] } : {}),
+};
 const start = { threadId, cwd, modelSelection, runtimeMode: "approval-required" };
 const config = decodeSettings({ enabled: true, binaryPath, dataDirectory: dataDir });
 
@@ -83,6 +87,7 @@ await Effect.runPromise(
       workflow: workflowName,
       pinnedIdentityValidatedByAdapter: MINIMAX_CODE_RELEASE,
       model: resumed.model,
+      requestedThinkingEffort: mode === "workflow" ? "high" : "automatic",
       resumeCursor: resumed.resumeCursor,
       modelPromptSent: false,
       modelRouteExecution: "not-run",

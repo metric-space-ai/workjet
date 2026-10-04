@@ -128,7 +128,17 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
       events.some(
         ({ event }) => event.type === "request.resolved" && event.payload.decision === "accept",
       ),
-      "A real native tool approval must resolve.",
+      `A real native tool approval must resolve: ${JSON.stringify({
+        requests: events
+          .filter(({ event }) => event.type.startsWith("request."))
+          .map(({ event }) => ({
+            type: event.type,
+            payload: event.payload,
+            toolCall: event.raw?.payload?.toolCall,
+            rawPayloadKeys: event.raw?.payload ? Object.keys(event.raw.payload) : [],
+          })),
+        reply: text("edit"),
+      })}`,
     );
     const status = yield* Effect.promise(() =>
       execute("git", ["status", "--porcelain", "--untracked-files=all"], { cwd, timeout: 20_000 }),

@@ -48,7 +48,6 @@ const turn = (text: string) => ({
   threadId,
   modelSelection,
   input: text,
-  runtimeMode: "approval-required" as const,
   interactionMode: "default" as const,
 });
 
@@ -83,7 +82,7 @@ const environment = (log: string) => Effect.succeed({ ...process.env, MINIMAX_TE
 
 describe("MiniMax Code adapter protocol fixture", () => {
   it.live(
-    "refuses approval-required turns on a permissive native profile without changing it",
+    "refuses approval-required sessions on a permissive native profile without replacing the active session",
     () =>
       runTest((cwd, binaryPath, log) =>
         Effect.gen(function* () {
@@ -104,18 +103,25 @@ describe("MiniMax Code adapter protocol fixture", () => {
               ...input(cwd),
               runtimeMode: "full-access",
             });
-            const initialWire = NodeFS.readFileSync(log, "utf8");
-            const refusedTurn = yield* adapter.sendTurn(turn("must not run")).pipe(Effect.flip);
-            expect(refusedTurn.message).toContain('permission mode "Ask"');
-            expect((yield* adapter.listSessions())[0]).toEqual(session);
-            expect(NodeFS.readFileSync(log, "utf8")).toBe(initialWire);
-            expect(initialWire).not.toContain('"configId":"permissionMode"');
+            const promptCount = (NodeFS.readFileSync(log, "utf8").match(/"method":"session\/prompt"/g) ?? []).length;
+            yield* adapter.sendTurn(turn("approved-edit"));
+            const activeSession = (yield* adapter.listSessions())[0];
+            const refusedSwitch = yield* adapter.startSession({
+              ...input(cwd),
+              resumeCursor: session.resumeCursor,
+              resumePolicy: "require-existing",
+            }).pipe(Effect.flip);
+            expect(refusedSwitch.message).toContain('permission mode "Ask"');
+            expect((yield* adapter.listSessions())[0]).toEqual(activeSession);
+            const wire = NodeFS.readFileSync(log, "utf8");
+            expect(wire).not.toContain('"configId":"permissionMode"');
+            expect(wire.match(/"method":"session\/prompt"/g)).toHaveLength(promptCount + 1);
             yield* adapter.stopSession(threadId);
           }
         }),
       ),
   );
-  it.live("uses the current turn's approval mode when switching out of full access", () =>
+  it.live("restores approval callbacks when resuming a full-access session in approval-required mode", () =>
     runTest((cwd, binaryPath, log) =>
       Effect.gen(function* () {
         const adapter = yield* makeMiniMaxAdapter(settings(binaryPath), {
@@ -138,9 +144,15 @@ describe("MiniMax Code adapter protocol fixture", () => {
           ),
           Effect.forkChild({ startImmediately: true }),
         );
-        yield* adapter.startSession({ ...input(cwd), runtimeMode: "full-access" });
-        yield* adapter.sendTurn({ ...turn("approved-edit"), runtimeMode: "full-access" });
+        const first = yield* adapter.startSession({ ...input(cwd), runtimeMode: "full-access" });
+        yield* adapter.sendTurn(turn("approved-edit"));
         expect(approvalRequests).toBe(0);
+        const resumed = yield* adapter.startSession({
+          ...input(cwd),
+          resumeCursor: first.resumeCursor,
+          resumePolicy: "require-existing",
+        });
+        expect(resumed.resumeCursor).toEqual(first.resumeCursor);
         yield* adapter.sendTurn(turn("approved-edit"));
         expect(approvalRequests).toBe(1);
         expect((yield* adapter.listSessions())[0]?.runtimeMode).toBe("approval-required");

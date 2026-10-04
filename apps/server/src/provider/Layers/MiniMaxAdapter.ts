@@ -674,7 +674,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           const model = input.modelSelection?.model.trim() || ctx.session.model;
           if (!model) return yield* error("sendTurn", "Choose a MiniMax Code model.");
           const configOptions = yield* ctx.acp.getConfigOptions;
-          if (input.runtimeMode !== "full-access")
+          if (ctx.session.runtimeMode !== "full-access")
             yield* checked("session/permissionMode", () =>
               assertMiniMaxApprovalMode(configOptions),
             );
@@ -694,7 +694,6 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           ctx.turnId = turnId;
           ctx.session = {
             ...ctx.session,
-            runtimeMode: input.runtimeMode,
             status: "running",
             activeTurnId: turnId,
             updatedAt: yield* now,

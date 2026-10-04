@@ -37,6 +37,7 @@ function props(): SessionImportBrowserProps {
     selected: new Map(),
     onSelect: vi.fn(),
     onClearSelection: vi.fn(),
+    onSelectAll: vi.fn(),
     preview: null,
     onPreview: vi.fn(),
     projects: [
@@ -88,6 +89,21 @@ describe("conversation import browser controls", () => {
     ).toBeDefined();
     (control(input, `Select ${unknown.title}`).onCheckedChange as (value: boolean) => void)(true);
     expect(input.onSelect).toHaveBeenCalledWith(unknown, true);
+  });
+
+  it("selects every matching page and disables selection while a query or operation is pending", () => {
+    const input = props();
+    (control(input, "Select all matching conversations").onClick as () => void)();
+    expect(input.onSelectAll).toHaveBeenCalledOnce();
+    expect(input.onSelect).not.toHaveBeenCalled();
+    for (const state of [
+      { pending: true },
+      { readOnly: true },
+      { progress: "Selecting conversations…" },
+    ])
+      expect(control({ ...input, ...state }, "Select all matching conversations").disabled).toBe(
+        true,
+      );
   });
 
   it("opens a preview independently from selecting the conversation", () => {

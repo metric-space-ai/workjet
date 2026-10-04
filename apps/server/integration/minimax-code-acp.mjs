@@ -89,7 +89,13 @@ await Effect.runPromise(
         NodeAssert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
       }
       stopResults.push(result);
+      process.stdout.write(`NATIVE_CLEANUP ${JSON.stringify(result)}\n`);
     });
+    yield* Effect.addFinalizer(() =>
+      adapter.listSessions().pipe(
+        Effect.flatMap((sessions) => (sessions.length > 0 ? stop : Effect.void)),
+      ),
+    );
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
     NodeAssert.ok(first.resumeCursor.sessionId);

@@ -8,12 +8,14 @@ import { MiniMaxSettings, ProviderInstanceId, ThreadId } from "@workjet/contract
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { makeMiniMaxAdapter } from "../src/provider/Layers/MiniMaxAdapter.ts";
+import { makeMiniMaxWorkflowProbe } from "./minimax-code-workflow.mjs";
 import {
   MINIMAX_CODE_RELEASE,
   MINIMAX_PREVIEW_MODEL,
 } from "../src/provider/minimax/MiniMaxProtocol.ts";
 
-const [binaryPath, dataDir, cwd, recordPath] = process.argv.slice(2);
+const [binaryPath, dataDir, cwd, recordPath, mode] = process.argv.slice(2);
+NodeAssert.ok(mode === undefined || mode === "workflow", "Optional mode must be workflow.");
 for (const value of [binaryPath, dataDir, cwd, recordPath]) {
   NodeAssert.ok(
     value && NodePath.isAbsolute(value),
@@ -52,11 +54,15 @@ await Effect.runPromise(
           TMPDIR: process.env.TMPDIR,
         }),
     });
+    const workflow = mode === "workflow"
+      ? yield* makeMiniMaxWorkflowProbe(adapter, { threadId, cwd })
+      : undefined;
     const first = yield* adapter.startSession(start);
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
     NodeAssert.ok(first.resumeCursor.sessionId);
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
+    if (workflow) yield* workflow.editAndCancel;
     yield* adapter.stopSession(threadId);
     NodeAssert.equal((yield* adapter.listSessions()).length, 0);
     const resumed = yield* adapter.startSession({
@@ -67,6 +73,8 @@ await Effect.runPromise(
     NodeAssert.deepEqual(resumed.resumeCursor, first.resumeCursor);
     NodeAssert.equal(resumed.model, MINIMAX_PREVIEW_MODEL);
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
+    if (workflow) yield* workflow.afterReload;
+    const workflowReceipt = workflow ? yield* workflow.receipt : undefined;
     yield* adapter.stopSession(threadId);
     NodeAssert.equal((yield* adapter.listSessions()).length, 0);
     const receipt = {
@@ -75,23 +83,25 @@ await Effect.runPromise(
       pinnedIdentityValidatedByAdapter: MINIMAX_CODE_RELEASE,
       model: resumed.model,
       resumeCursor: resumed.resumeCursor,
+      modelPromptSent: false,
+      modelRouteExecution: "not-run",
+      sourceEditAcceptance: "not-run",
+      cancellationAcceptance: "not-run",
+      uiAcceptance: "not-run",
+      ...workflowReceipt,
       gates: [
         "native-session-start",
         "exact-preview-model",
         "stop",
         "strict-same-cursor-load",
         "stop-after-reload",
+        ...(workflowReceipt?.gates ?? []),
       ],
-      modelPromptSent: false,
-      modelRouteExecution: "not-run",
-      sourceEditAcceptance: "not-run",
-      cancellationAcceptance: "not-run",
-      uiAcceptance: "not-run",
     };
     yield* Effect.promise(() =>
       NodeFSP.writeFile(recordPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 }),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.timeout("90 seconds")),
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.timeout(mode === "workflow" ? "4 minutes" : "90 seconds")),
 );
 process.stdout.write(
   `${JSON.stringify({ status: "passed", workflow: "minimax-official-cli-workjet-session", model: MINIMAX_PREVIEW_MODEL, receipt: recordPath, uiAcceptance: "not-run" })}\n`,

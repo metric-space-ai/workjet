@@ -15,6 +15,10 @@ const execute = promisify(execFile);
 export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(function* (
   adapter, { threadId, cwd },
 ) {
+  const baseline = yield* Effect.promise(() => execute("git", ["rev-parse", "HEAD"], { cwd, timeout: 20_000 }));
+  NodeAssert.equal(baseline.stdout.trim(), "e0d35ac48c29d3986e3db11ed89da780a6c21314", "Use the prepared acceptance fixture baseline.");
+  const before = yield* Effect.promise(() => execute("git", ["status", "--porcelain", "--untracked-files=all"], { cwd, timeout: 20_000 }));
+  NodeAssert.equal(before.stdout.trim(), "", "Native acceptance requires the clean prepared fixture.");
   const events = [];
   const nonce = `workjet-native-${NodeCrypto.randomUUID()}`;
   const cancelStream = yield* Deferred.make();

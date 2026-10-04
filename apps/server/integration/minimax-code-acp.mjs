@@ -1,5 +1,5 @@
 // Run through the shared heavy-job gate with the pinned official CLI and an explicit native profile.
-// This checks real Workjet session/model discovery and strict reload without sending a model prompt.
+// Default mode checks sessions without a prompt; workflow mode exercises the bounded native fixture.
 import * as NodeAssert from "node:assert/strict";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -16,6 +16,7 @@ import {
 
 const [binaryPath, dataDir, cwd, recordPath, mode] = process.argv.slice(2);
 NodeAssert.ok(mode === undefined || mode === "workflow", "Optional mode must be workflow.");
+const workflowName = mode === "workflow" ? "minimax-official-cli-workjet-workflow" : "minimax-official-cli-workjet-session";
 for (const value of [binaryPath, dataDir, cwd, recordPath]) {
   NodeAssert.ok(
     value && NodePath.isAbsolute(value),
@@ -79,7 +80,7 @@ await Effect.runPromise(
     NodeAssert.equal((yield* adapter.listSessions()).length, 0);
     const receipt = {
       status: "passed",
-      workflow: "minimax-official-cli-workjet-session",
+      workflow: workflowName,
       pinnedIdentityValidatedByAdapter: MINIMAX_CODE_RELEASE,
       model: resumed.model,
       resumeCursor: resumed.resumeCursor,
@@ -104,5 +105,5 @@ await Effect.runPromise(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.timeout(mode === "workflow" ? "4 minutes" : "90 seconds")),
 );
 process.stdout.write(
-  `${JSON.stringify({ status: "passed", workflow: "minimax-official-cli-workjet-session", model: MINIMAX_PREVIEW_MODEL, receipt: recordPath, uiAcceptance: "not-run" })}\n`,
+  `${JSON.stringify({ status: "passed", workflow: workflowName, model: MINIMAX_PREVIEW_MODEL, receipt: recordPath, uiAcceptance: "not-run" })}\n`,
 );

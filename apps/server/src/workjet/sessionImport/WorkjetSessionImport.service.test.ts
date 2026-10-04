@@ -7,6 +7,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   DEFAULT_SERVER_SETTINGS,
+  MessageId,
   ProjectId,
   type OrchestrationCommand,
   type OrchestrationProjectShell,
@@ -435,8 +436,99 @@ describe("project-directed static session imports", () => {
       ),
   );
 
+  it.effect("appends archive messages after local continuation and rejects changed history", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        const file = NodePath.join(root, "sessions", "continued.jsonl");
+        const original = transcript("Imported question", ["Imported answer"]);
+        yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
+        const first = yield* service.importSessions(input);
+        const threadId = first.items[0]!.threadId!;
+        const imported = threads.get(threadId)!;
+        const localMessages = [
+          {
+            ...imported.messages[0]!,
+            id: MessageId.make("local-user"),
+            role: "user" as const,
+            text: "Continue in Workjet",
+          },
+          {
+            ...imported.messages[1]!,
+            id: MessageId.make("local-assistant"),
+            role: "assistant" as const,
+            text: "Workjet continuation answer",
+          },
+        ];
+        threads.set(threadId, { ...imported, messages: [...imported.messages, ...localMessages] });
+        const commandsBeforeRepeat = commands.length;
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
+        expect(commands).toHaveLength(commandsBeforeRepeat);
+        const appended =
+          original +
+          [
+            encodeJson({
+              type: "response_item",
+              timestamp: NOW,
+              payload: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: "Later archive question" }],
+              },
+            }),
+            encodeJson({
+              type: "response_item",
+              timestamp: NOW,
+              payload: {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "Later archive answer" }],
+              },
+            }),
+          ].join("\n") +
+          "\n";
+        yield* Effect.promise(() => NodeFSP.writeFile(file, appended));
+        const updated = yield* service.importSessions(input);
+        expect(updated.items[0]?.status).toBe("updated");
+        expect(updated.items[0]?.importedMessages).toBe(2);
+        const continued = threads.get(threadId)!;
+        expect(continued.messages.map(({ role, text }) => ({ role, text }))).toEqual([
+          { role: "user", text: "Imported question" },
+          { role: "assistant", text: "Imported answer" },
+          { role: "user", text: "Continue in Workjet" },
+          { role: "assistant", text: "Workjet continuation answer" },
+          { role: "user", text: "Later archive question" },
+          { role: "assistant", text: "Later archive answer" },
+        ]);
+        expect(continued.messages.slice(2, 4)).toEqual(localMessages);
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
+        const commandsBeforeFailure = commands.length;
+        threads.set(threadId, {
+          ...continued,
+          messages: continued.messages.filter(({ id }) => id !== imported.messages[0]!.id),
+        });
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("failed");
+        threads.set(threadId, {
+          ...continued,
+          messages: continued.messages.map((message, index) =>
+            index === 0 ? { ...message, text: "Changed imported question" } : message,
+          ),
+        });
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("failed");
+        threads.set(threadId, continued);
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(file, appended.replace("Imported question", "Changed source question")),
+        );
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("failed");
+        expect(commands).toHaveLength(commandsBeforeFailure);
+      }),
+    ),
+  );
+
   it.effect(
     "resolves a selected destination once per bounded request and refreshes it for the next request",
+
     () =>
       withFixture(({ root, service, projects, projectLookups }) =>
         Effect.gen(function* () {

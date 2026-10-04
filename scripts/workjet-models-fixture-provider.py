@@ -14,6 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--output', required=True)
 parser.add_argument('--owner', required=True)
 parser.add_argument('--seconds', type=int, default=900)
+parser.add_argument('--primary-status', type=int, choices=(200, 401, 402, 403, 404, 429, 500, 503), default=200)
 parser.add_argument('--hold-result', help='Synthetic arithmetic result to hold until release-reply.json exists')
 parser.add_argument('--hold-timeout-seconds', type=int, default=90)
 args = parser.parse_args()
@@ -32,6 +33,7 @@ os.chmod(root, 0o700)
 started = time.time()
 keys = {
     'fixture-primary-not-a-real-key-p001': 'fixture-primary',
+    'fixture-primary-replacement-not-a-real-key-r004': 'fixture-primary',
     'fixture-secondary-not-a-real-key-s002': 'fixture-secondary',
     'fixture-other-not-a-real-key-o003': 'fixture-other',
 }
@@ -39,8 +41,8 @@ models = ('gpt-6.1-sol', 'fixture-model-before', 'fixture-model-one', 'fixture-m
 record = dict(schema='workjet.models.local-provider-fixture.v1', owner=args.owner,
               pid=os.getpid(), process_group=os.getpgrp(), purpose='Sanitized loopback inference fixture',
               output=str(root), started_unix=started, deadline_unix=started + args.seconds,
-              stop_condition='SIGTERM or <=900s wall deadline; at most 200 accepted inference requests',
-              requests=0, terminal=False,
+              stop_condition='SIGTERM or <=900s wall deadline; at most 200 inference attempts',
+              requests=0, attempts=0, primary_status=args.primary_status, terminal=False,
               model_execution='Deterministic local transport only; gpt-6.1-sol is a test alias, no external model executes')
 
 def save():
@@ -79,11 +81,13 @@ class Handler(BaseHTTPRequestHandler):
         super().setup()
         self.connection.settimeout(3)
 
-    def send_json(self, status, body):
+    def send_json(self, status, body, headers=None):
         payload = json.dumps(body).encode()
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(payload)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(payload)
 
@@ -94,9 +98,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(404, dict(error=dict(message='Local fixture route unavailable')))
 
     def do_POST(self):
-        if record['requests'] >= 200:
+        if record['attempts'] >= 200:
             self.send_json(429, dict(error=dict(message='Local fixture request bound reached')))
             return
+        record['attempts'] += 1
         route = urlsplit(self.path).path
         if route not in ('/v1/chat/completions', '/v1/responses'):
             self.send_json(404, dict(error=dict(message='Local fixture route unavailable')))
@@ -119,12 +124,30 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(model, str) or model not in models:
             self.send_json(400, dict(error=dict(message='Choose a model advertised by the local fixture', code='model_not_found')))
             return
+        credential = authorization.removeprefix('Bearer ')
+        if credential == 'fixture-primary-not-a-real-key-p001' and args.primary_status != 200:
+            status = args.primary_status
+            code = {
+                401: 'invalid_api_key', 402: 'billing_error', 403: 'permission_denied',
+                404: 'model_not_found', 429: 'insufficient_quota',
+                500: 'server_error', 503: 'server_error',
+            }[status]
+            receipt = dict(attempt=record['attempts'], route=route, status=status, model=model,
+                           fixture_account_id=keys[credential], observed_unix=time.time())
+            with (root / 'requests.jsonl').open('a') as journal:
+                journal.write(json.dumps(receipt) + '\n')
+            save()
+            self.send_json(
+                status, dict(error=dict(message='Synthetic fixture failure: ' + code, code=code)),
+                {'Retry-After': '60'} if status == 429 else None,
+            )
+            return
         question = re.search(r'\bWhat is\s+(\d{1,12})\s*\+\s*(\d{1,12})\s*\?', user_text(body))
         reply = str(int(question[1]) + int(question[2])) if question else 'fixture reply'
         record['requests'] += 1
         number = record['requests']
         identity = 'fixture-response-' + str(number)
-        receipt = dict(number=number, route=route, status=200, model=model,
+        receipt = dict(number=number, attempt=record['attempts'], route=route, status=200, model=model,
                        fixture_account_id=keys[authorization.removeprefix('Bearer ')],
                        streamed=body.get('stream') is True, observed_unix=time.time())
         # No authorization value, request body, prompt or raw session/cache identity is recorded.

@@ -1,5 +1,18 @@
 # Isolated Models provider fixture
 
+For a held-response chapter, pass `--hold-result` with the expected arithmetic
+result and an optional `--hold-timeout-seconds` from 1 to 120 before launch.
+The fixture records the received request, waits for its owned
+`release-reply.json` containing the same owner and request number, then sends
+the real HTTP reply. It reports delivered, delivery-failed or timed-out after
+that attempt. This exercises a pending transport; it never inserts app history,
+changes a provider account or bypasses the visible UI.
+
+Held replies and prelaunch `--primary-status` modes coexist. Only the original
+Primary key receives the selected failure; its replacement, Secondary and Other
+retain their own identities. Failed attempts count toward the 200-attempt bound
+and never increment successful response numbers or produce a held reply.
+
 This is test preparation for the normal Workjet server and native gateway. It
 uses three clearly synthetic API keys, two Z.ai accounts and one Kimi account,
 all configured with an explicit loopback upstream. It writes the ordinary
@@ -24,7 +37,7 @@ the normal native client sends an inference request to the fixture.
 
    Its private `receipt.json` names the PID, endpoint and deadline. Keep the
    supervisor handle and terminate only that owned group at the unit's end. The
-   server accepts at most 200 inference requests and exits by SIGTERM or its 900s
+   server accepts at most 200 inference attempts and exits by SIGTERM or its 900s
    wall deadline. It stores sanitized request receipts, never request prompts,
    authorization headers or raw session/cache identities.
 
@@ -58,6 +71,20 @@ the normal native client sends an inference request to the fixture.
    `What is 297 + 306?` and check the real streamed reply 603,
    requested-model receipt, reload and normal Quit/reopen persistence. This is fixture transport
    acceptance, not evidence of real-provider availability or token consumption.
+
+For a separate error chapter, choose `--primary-status 401`, `402`, `403`,
+`404`, `429`, `500` or `503` before launching a new fixture and profile. The
+original Primary key returns that real HTTP status; Secondary and Other remain
+healthy. A synthetic replacement key
+`fixture-primary-replacement-not-a-real-key-r004` maps to Primary and succeeds,
+so the visible existing-account key replacement can be tested without changing
+the fixture after launch. Never add this replacement as a new account or use
+any of these synthetic keys against a real vendor. Error receipts contain
+status/account/model/attempt only, and successful completions have a separate
+number. A429 supplies a60-second Retry-After; this is a local retry signal,
+not a measured provider percentage, subscription reset or cache report. These
+modes are prepared fixtures, not proof that the packaged UI chapters have run.
+They do not provide OAuth login, quota endpoints or configuration-write faults.
 
 Limits and balance are deliberately unknown. The fixture supplies no measured
 token counts or cache counters, so those remain absent. Do not inject older usage

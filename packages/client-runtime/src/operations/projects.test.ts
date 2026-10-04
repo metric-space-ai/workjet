@@ -13,6 +13,7 @@ import {
   canCreateProjectInEnvironment,
   findExistingAddProject,
   getAddProjectInitialQuery,
+  resolveAddProjectInput,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
 } from "./projects.ts";
@@ -129,6 +130,60 @@ describe("add project shared logic", () => {
 
     expect(findExistingAddProject({ projects, environmentId: env, path: "/repo" })?.id).toBe(
       "project",
+    );
+  });
+
+  it("creates a named project without a workspace directory", () => {
+    const resolved = resolveAddProjectInput({
+      title: "  Gallery  ",
+      rawPath: null,
+      platform: "linux",
+    });
+    expect(resolved).toEqual({ ok: true, title: "Gallery", workspaceRoot: null });
+    if (!resolved.ok) throw new Error(resolved.error);
+    expect(
+      buildProjectCreateCommand({
+        commandId: CommandId.make("command"),
+        projectId: ProjectId.make("project"),
+        title: resolved.title,
+        workspaceRoot: resolved.workspaceRoot,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toMatchObject({
+      type: "project.create",
+      title: "Gallery",
+      workspaceRoot: null,
+      createWorkspaceRootIfMissing: false,
+    });
+  });
+
+  it("requires a name when no folder is chosen", () => {
+    expect(resolveAddProjectInput({ title: "  ", rawPath: null, platform: "linux" })).toEqual({
+      ok: false,
+      error: "Enter a project name.",
+    });
+    expect(() =>
+      buildProjectCreateCommand({
+        commandId: CommandId.make("command"),
+        projectId: ProjectId.make("project"),
+        workspaceRoot: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    ).toThrow("Enter a project name.");
+  });
+
+  it("preserves optional folder validation and a chosen project name", () => {
+    expect(
+      resolveAddProjectInput({ title: "Gallery", rawPath: "/work/repo", platform: "linux" }),
+    ).toEqual({ ok: true, title: "Gallery", workspaceRoot: "/work/repo" });
+    expect(resolveAddProjectInput({ title: "", rawPath: "/work/repo", platform: "linux" })).toEqual(
+      { ok: true, title: "repo", workspaceRoot: "/work/repo" },
+    );
+    expect(
+      resolveAddProjectInput({ title: "Gallery", rawPath: "./repo", platform: "linux" }).ok,
+    ).toBe(false);
+    expect(resolveAddProjectInput({ title: "Gallery", rawPath: " ", platform: "linux" }).ok).toBe(
+      false,
     );
   });
 

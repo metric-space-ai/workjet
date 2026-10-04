@@ -17,6 +17,16 @@ that the instance has accepted it.
 If Workjet reports that the instance does not provide project management,
 update its Business OS shell in **Settings**.
 
+## Add a project on mobile
+
+Choose **New project** and enter its name. **Choose a folder (optional)** adds
+a working folder on the selected computer; it is not required.
+
+After the project is saved, Workjet opens its Supervisor conversation. If the
+conversation is still synchronizing, the project is kept and Workjet shows
+the waiting state. **Back to projects** leaves that view without creating
+another project or conversation.
+
 ## Browse projects
 
 In the desktop or web app, choose **All projects** above the project picker to

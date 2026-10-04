@@ -39,6 +39,7 @@ import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestin
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectRepositoryRoute } from "./features/projects/AddProjectRepositoryRoute";
 import { AddProjectSourceRoute } from "./features/projects/AddProjectSourceRoute";
+import { ProjectSupervisorRouteScreen } from "./features/projects/ProjectSupervisorRouteScreen";
 import { NewTaskDraftRouteScreen } from "./features/threads/NewTaskDraftRouteScreen";
 import {
   NewTaskBranchPickerRouteScreen,
@@ -489,6 +490,10 @@ export const RootStack = createNativeStackNavigator({
         headerBackVisible: false,
         ...getCompactBrandHeaderOptions(),
       },
+    }),
+    ProjectSupervisor: createNativeStackScreen({
+      screen: ProjectSupervisorRouteScreen,
+      options: GLASS_HEADER_OPTIONS,
     }),
     Thread: createNativeStackScreen({
       screen: ThreadRouteScreen,

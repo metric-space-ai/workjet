@@ -3478,6 +3478,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ? manualModelsUnavailableReason
                 : "No models configured for this Greppy profile — enter a model ID."
               : null
+
         }
         selectedModelId={selectedModelForPickerWithCustomFallback}
         onSelectModel={handleSelectManualModel}

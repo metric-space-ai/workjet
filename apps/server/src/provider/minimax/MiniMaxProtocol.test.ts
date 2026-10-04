@@ -38,18 +38,25 @@ const options = (values: readonly string[] = [tokenRoute]): AcpSchema.SessionCon
 
 describe("MiniMax Code runtime selection", () => {
   it("requires an advertised native Ask mode and rejects missing or permissive permission controls", () => {
-    const permission = (currentValue: string, values = ["default", "auto", "bypassPermissions"]): AcpSchema.SessionConfigOption[] => [{
-      type: "select",
-      id: "permissionMode",
-      name: "Permission mode",
-      currentValue,
-      options: values.map((value) => ({ value, name: value })),
-    }];
+    const permission = (
+      currentValue: string,
+      values = ["default", "auto", "bypassPermissions"],
+    ): AcpSchema.SessionConfigOption[] => [
+      {
+        type: "select",
+        id: "permissionMode",
+        name: "Permission mode",
+        currentValue,
+        options: values.map((value) => ({ value, name: value })),
+      },
+    ];
     expect(() => assertMiniMaxApprovalMode(permission("default"))).not.toThrow();
     for (const value of ["auto", "bypassPermissions", "off", "acceptEdits", "unknown"])
       expect(() => assertMiniMaxApprovalMode(permission(value))).toThrow('permission mode "Ask"');
     expect(() => assertMiniMaxApprovalMode([])).toThrow('permission mode "Ask"');
-    expect(() => assertMiniMaxApprovalMode(permission("default", ["auto"]))).toThrow('permission mode "Ask"');
+    expect(() => assertMiniMaxApprovalMode(permission("default", ["auto"]))).toThrow(
+      'permission mode "Ask"',
+    );
   });
   it("preserves the exact model, provider and variant in the shipped encoding", () => {
     expect(parseMiniMaxModelValue(`m:custom%3Aroute:${model}:v:fast%3Amode`)).toMatchObject({

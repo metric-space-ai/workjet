@@ -12,6 +12,7 @@ import { HostProcessPlatform } from "@workjet/shared/hostProcess";
  */
 import {
   type CanUseTool,
+  type HookCallback,
   query,
   type Options as ClaudeQueryOptions,
   type PermissionMode,
@@ -251,6 +252,7 @@ interface ClaudeSessionContext {
    * effort override inherit this. */
   currentEffort: string | undefined;
   resumeSessionId: string | undefined;
+  readonly requiredResumeSessionId: string | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{
@@ -2037,6 +2039,16 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (!hasDurableClaudeSessionId(message)) {
       return;
     }
+    if (
+      context.requiredResumeSessionId !== undefined &&
+      message.session_id !== context.requiredResumeSessionId
+    ) {
+      return yield* new ProviderAdapterValidationError({
+        provider: PROVIDER,
+        operation: "resume",
+        issue: "Claude runtime changed the original recovered conversation identity.",
+      });
+    }
     const nextThreadId = message.session_id;
     context.resumeSessionId = message.session_id;
     yield* updateResumeCursor(context);
@@ -3819,18 +3831,34 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           issue: `Expected provider '${PROVIDER}' but received '${input.provider}'.`,
         });
       }
-      if (input.resumePolicy === "require-existing") {
-        // The SDK returns a query before it confirms that `resume` opened the
-        // saved conversation. Starting a Crew continuation here could send a
-        // second prompt into a fresh session after an ambiguous restart.
+      const resumeState = readClaudeResumeState(input.resumeCursor);
+      const strictResume = input.resumePolicy === "require-existing";
+      if (strictResume && (!resumeState?.resume || resumeState.threadId !== input.threadId)) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,
           operation: "startSession",
-          issue: "Claimed Crew recovery cannot verify the saved Claude session before sending.",
+          issue: "Claimed Claude recovery requires the original session and Workjet conversation.",
         });
       }
 
       const existingContext = sessions.get(input.threadId);
+      if (existingContext && strictResume) {
+        if (
+          (existingContext.requiredResumeSessionId ?? existingContext.lastThreadStartedId) !==
+            resumeState?.resume ||
+          existingContext.session.status !== "ready" ||
+          existingContext.turnState !== undefined ||
+          existingContext.liveTaskIds.size > 0
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue:
+              "The original Claude conversation is not confirmed idle; recovery will not replace it.",
+          });
+        }
+        return { ...existingContext.session };
+      }
       if (existingContext) {
         yield* Effect.logWarning("claude.session.replacing", {
           threadId: input.threadId,
@@ -3852,7 +3880,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       }
 
       const startedAt = yield* nowIso;
-      const resumeState = readClaudeResumeState(input.resumeCursor);
       const threadId = input.threadId;
       const existingResumeSessionId = resumeState?.resume;
       const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;
@@ -3861,6 +3888,38 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const runtimeContext = yield* Effect.context<never>();
       const runFork = Effect.runForkWith(runtimeContext);
       const runPromise = Effect.runPromiseWith(runtimeContext);
+
+      const resumeConfirmed = strictResume
+        ? yield* Deferred.make<void, ProviderAdapterValidationError>()
+        : undefined;
+      let originalSessionConfirmed = false;
+      const verifyOriginalSession: HookCallback = async (hookInput) => {
+        // Subagent lifecycle hooks cannot establish the parent's identity.
+        if (hookInput.agent_id !== undefined) return {};
+        if (
+          hookInput.session_id === existingResumeSessionId &&
+          (originalSessionConfirmed ||
+            (hookInput.hook_event_name === "SessionStart" && hookInput.source === "resume"))
+        ) {
+          originalSessionConfirmed = true;
+          if (resumeConfirmed) await runPromise(Deferred.succeed(resumeConfirmed, undefined));
+          return {};
+        }
+        const issue = "Claude did not confirm resuming the original saved conversation.";
+        if (resumeConfirmed) {
+          await runPromise(
+            Deferred.fail(
+              resumeConfirmed,
+              new ProviderAdapterValidationError({
+                provider: PROVIDER,
+                operation: "startSession",
+                issue,
+              }),
+            ),
+          );
+        }
+        return { continue: false, stopReason: issue };
+      };
 
       const promptQueue = yield* Queue.unbounded<PromptQueueItem>();
       const prompt = Stream.fromQueue(promptQueue).pipe(
@@ -4278,6 +4337,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
+        ...(resumeConfirmed
+          ? {
+              hooks: {
+                SessionStart: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+                UserPromptSubmit: [{ hooks: [verifyOriginalSession], timeout: 10 }],
+              },
+            }
+          : {}),
         includePartialMessages: true,
         canUseTool,
         env: sessionEnvironment,
@@ -4374,6 +4441,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         currentApiModelId: apiModelId,
         currentEffort: effectiveEffort ?? undefined,
         resumeSessionId: sessionId,
+        requiredResumeSessionId: strictResume ? existingResumeSessionId : undefined,
         pendingApprovals,
         pendingUserInputs,
         turns: [],
@@ -4391,6 +4459,32 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         stopped: false,
       };
       yield* Ref.set(contextRef, context);
+      if (resumeConfirmed) {
+        // No session binding, ready event or user prompt is exposed until the
+        // SDK has acknowledged the exact main session with source=resume.
+        yield* Deferred.await(resumeConfirmed).pipe(
+          Effect.timeoutOption("10 seconds"),
+          Effect.flatMap((confirmed) =>
+            Option.isSome(confirmed)
+              ? Effect.void
+              : Effect.fail(
+                  new ProviderAdapterValidationError({
+                    provider: PROVIDER,
+                    operation: "startSession",
+                    issue: "Claude resume confirmation timed out; no continuation was sent.",
+                  }),
+                ),
+          ),
+          Effect.onExit((exit) =>
+            Exit.isFailure(exit)
+              ? terminateProviderProcesses({
+                  processes: context.processes,
+                  cooperative: stopSessionInternal(context, { emitExitEvent: false }),
+                }).pipe(Effect.ignore)
+              : Effect.void,
+          ),
+        );
+      }
       sessions.set(threadId, context);
 
       const sessionStartedStamp = yield* makeEventStamp();

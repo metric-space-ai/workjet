@@ -935,7 +935,7 @@ export function createServerEnvironmentAtoms<R, E>(
     label: "environment-data:workjet:session-import:select",
     tag: WS_METHODS.workjetSessionImportInspect,
     concurrency: {
-      mode: "singleFlight",
+      mode: "serial",
       key: ({ environmentId }) => environmentId,
     },
   });
@@ -943,7 +943,7 @@ export function createServerEnvironmentAtoms<R, E>(
     label: "environment-data:workjet:session-import:import",
     tag: WS_METHODS.workjetSessionImport,
     concurrency: {
-      mode: "singleFlight",
+      mode: "serial",
       key: ({ environmentId }) => environmentId,
     },
   });

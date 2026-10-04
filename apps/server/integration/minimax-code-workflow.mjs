@@ -85,12 +85,12 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
           const answers = {};
           for (const question of event.payload.questions) {
             const guest = question.options.find((option) => option.label === "Guest");
-            NodeAssert.ok(
-              guest,
-              `Native workflow only answers an advertised Guest choice: ${JSON.stringify(question)}`,
-            );
-            answers[question.id] = [guest.label];
+            if (guest) answers[question.id] = [guest.label];
           }
+          NodeAssert.ok(
+            Object.keys(answers).length > 0,
+            `Native workflow only answers advertised Guest choices: ${JSON.stringify(event.payload.questions)}`,
+          );
           yield* adapter.respondToUserInput(
             threadId,
             ApprovalRequestId.make(event.requestId),

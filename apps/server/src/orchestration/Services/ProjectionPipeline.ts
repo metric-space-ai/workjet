@@ -24,6 +24,16 @@ export interface OrchestrationProjectionPipelineShape {
   readonly bootstrap: Effect.Effect<void, ProjectionRepositoryError>;
 
   /**
+   * Project the ordered events of one command atomically, advancing each
+   * projector cursor once after the complete batch. Returns filesystem cleanup
+   * to run only after the surrounding command transaction commits. Older test
+   * adapters may expose only projectEvent.
+   */
+  readonly projectEvents?: (
+    events: ReadonlyArray<OrchestrationEvent>,
+  ) => Effect.Effect<Effect.Effect<void>, ProjectionRepositoryError>;
+
+  /**
    * Project a single orchestration event into projection repositories.
    *
    * Projectors are executed sequentially to preserve deterministic ordering.

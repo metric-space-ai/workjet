@@ -31,6 +31,8 @@ import { OrchestrationEngineLive } from "../../orchestration/Layers/Orchestratio
 import { OrchestrationProjectionPipelineLive } from "../../orchestration/Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "../../orchestration/Layers/ProjectionSnapshotQuery.ts";
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
+import { OrchestrationProjectionPipeline } from "../../orchestration/Services/ProjectionPipeline.ts";
+
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../../orchestration/ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../../orchestration/ThreadPlanProgress.ts";
@@ -75,11 +77,16 @@ const claudeTranscript = (index: number) =>
     .map((row) => JSON.stringify(row))
     .join("\n") + "\n";
 
-const runtimeLayer = (dbPath: string, workspace: string, root: string) =>
+const runtimeLayer = (
+  dbPath: string,
+  workspace: string,
+  root: string,
+  pipeline = OrchestrationProjectionPipelineLive,
+) =>
   Layer.mergeAll(
     OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
-      Layer.provide(OrchestrationProjectionPipelineLive),
+      Layer.provide(pipeline),
     ),
     OrchestrationProjectionSnapshotQueryLive,
   ).pipe(
@@ -103,6 +110,29 @@ it.live("rolls back a fresh thread when its first message fails, then safely ret
     );
     const workspace = NodePath.join(root, "workspace");
     yield* Effect.promise(() => NodeFSP.mkdir(workspace));
+    let postCommitRuns = 0;
+    const monitoredPipeline = Layer.effect(
+      OrchestrationProjectionPipeline,
+      Effect.gen(function* () {
+        const livePipeline = yield* OrchestrationProjectionPipeline;
+        const sql = yield* SqlClient.SqlClient;
+        const projectEvents = livePipeline.projectEvents;
+        if (!projectEvents) return yield* Effect.die("Live command batch is required");
+        return {
+          ...livePipeline,
+          projectEvents: (events: Parameters<typeof projectEvents>[0]) =>
+            projectEvents(events).pipe(
+              Effect.map((cleanup) =>
+                Effect.gen(function* () {
+                  expect((yield* Effect.serviceOption(sql.transactionService))._tag).toBe("None");
+                  postCommitRuns += 1;
+                  yield* cleanup;
+                }),
+              ),
+            ),
+        };
+      }),
+    ).pipe(Layer.provide(OrchestrationProjectionPipelineLive));
     yield* Effect.gen(function* () {
       const engine = yield* OrchestrationEngineService;
       const query = yield* ProjectionSnapshotQuery;
@@ -118,6 +148,8 @@ it.live("rolls back a fresh thread when its first message fails, then safely ret
         createWorkspaceRootIfMissing: false,
         createdAt: NOW,
       });
+      const baselineThreads = (yield* query.getSnapshot()).threads;
+      const baselinePostCommitRuns = postCommitRuns;
       const command: Extract<OrchestrationCommand, { type: "thread.history.import" }> = {
         type: "thread.history.import",
         commandId: CommandId.make("atomic-first"),
@@ -152,20 +184,47 @@ it.live("rolls back a fresh thread when its first message fails, then safely ret
         WHEN NEW.event_type = 'thread.message-sent'
         BEGIN SELECT RAISE(ABORT, 'fixture import failure'); END`;
       yield* engine.dispatch(command).pipe(Effect.flip);
-      expect((yield* query.getSnapshot()).threads).toHaveLength(0);
+      expect((yield* query.getSnapshot()).threads).toEqual(baselineThreads);
       const rows = yield* sql<{
         count: number;
       }>`SELECT COUNT(*) AS count FROM orchestration_events WHERE stream_id = ${threadId}`;
       expect(rows[0]?.count).toBe(0);
       yield* sql`DROP TRIGGER reject_import_message`;
+      yield* sql`CREATE TRIGGER reject_import_projection BEFORE INSERT ON projection_thread_messages
+        BEGIN SELECT RAISE(ABORT, 'fixture projection failure'); END`;
+      yield* engine
+        .dispatch({ ...command, commandId: CommandId.make("atomic-projection") })
+        .pipe(Effect.flip);
+      expect((yield* query.getSnapshot()).threads).toEqual(baselineThreads);
+      const rolledBack = yield* sql<{ count: number }>`
+        SELECT COUNT(*) AS count FROM orchestration_events WHERE stream_id = ${threadId}
+      `;
+      expect(rolledBack[0]?.count).toBe(0);
+      yield* sql`DROP TRIGGER reject_import_projection`;
+      yield* sql`CREATE TRIGGER reject_import_receipt BEFORE INSERT ON orchestration_command_receipts
+        WHEN NEW.command_id = 'atomic-receipt'
+        BEGIN SELECT RAISE(ABORT, 'fixture receipt failure'); END`;
+      yield* engine
+        .dispatch({ ...command, commandId: CommandId.make("atomic-receipt") })
+        .pipe(Effect.flip);
+      expect(postCommitRuns).toBe(baselinePostCommitRuns);
+      expect((yield* query.getSnapshot()).threads).toEqual(baselineThreads);
+      const rejectedReceiptEvents = yield* sql<{ count: number }>`
+        SELECT COUNT(*) AS count FROM orchestration_events WHERE stream_id = ${threadId}
+      `;
+      expect(rejectedReceiptEvents[0]?.count).toBe(0);
+      yield* sql`DROP TRIGGER reject_import_receipt`;
+
       yield* engine.dispatch({ ...command, commandId: CommandId.make("atomic-retry") });
+      expect(postCommitRuns).toBe(baselinePostCommitRuns + 1);
       const snapshot = yield* query.getSnapshot();
-      expect(snapshot.threads).toHaveLength(1);
-      expect(snapshot.threads[0]?.messages).toMatchObject([
-        { role: "user", text: "Preserved", turnId: null },
-      ]);
-      expect(snapshot.threads[0]?.session).toBeNull();
-      expect(snapshot.threads[0]?.latestTurn).toBeNull();
+      expect(snapshot.threads).toHaveLength(baselineThreads.length + 1);
+      expect(snapshot.threads.filter((thread) => thread.id !== threadId)).toEqual(baselineThreads);
+      const imported = snapshot.threads.find((thread) => thread.id === threadId);
+      expect(imported?.messages).toMatchObject([{ role: "user", text: "Preserved", turnId: null }]);
+      expect(imported?.session).toBeNull();
+      expect(imported?.latestTurn).toBeNull();
+
       const chunkThreadId = ThreadId.make("chunked-copy");
       yield* engine.dispatch({
         ...command,
@@ -213,7 +272,9 @@ it.live("rolls back a fresh thread when its first message fails, then safely ret
       }>`SELECT COUNT(*) AS count FROM projection_thread_messages WHERE thread_id = ${chunkThreadId}`;
       expect(retainedMessages[0]?.count).toBe(200);
     }).pipe(
-      Effect.provide(runtimeLayer(NodePath.join(root, "persisted.sqlite"), workspace, root)),
+      Effect.provide(
+        runtimeLayer(NodePath.join(root, "persisted.sqlite"), workspace, root, monitoredPipeline),
+      ),
       Effect.scoped,
     );
   }),
@@ -300,7 +361,7 @@ it.live(
       yield* report("fixtures-ready", 5002);
       const existingProjectId = ProjectId.make("existing-import-project");
       const newProjectId = ProjectId.make("new-import-project");
-      const { before, first } = yield* Effect.gen(function* () {
+      const { before, first, baselineThreadIds } = yield* Effect.gen(function* () {
         const engine = yield* OrchestrationEngineService;
         const query = yield* ProjectionSnapshotQuery;
         const importer = yield* make.pipe(
@@ -334,7 +395,11 @@ it.live(
             createdAt: NOW,
           });
         }
+        const baselineThreadIds = new Set(
+          (yield* query.getSnapshot()).threads.map((thread) => thread.id),
+        );
         yield* report("projects-ready", 2);
+
         const candidates: WorkjetSessionImportCandidate[] = [];
         let offset = 0;
         let version: string | undefined;
@@ -388,25 +453,28 @@ it.live(
         });
         expect(unchanged.items.every((item) => item.status === "unchanged")).toBe(true);
         const before = yield* query.getSnapshot();
-        expect(before.threads).toHaveLength(5003);
-        return { before, first };
+        expect(before.threads).toHaveLength(5003 + baselineThreadIds.size);
+        return { before, first, baselineThreadIds };
       }).pipe(Effect.provide(live), Effect.scoped);
       // Close the first SQL connection and engine before building a fresh runtime.
       yield* Effect.gen(function* () {
         const reopenedQuery = yield* ProjectionSnapshotQuery;
         const reopened = yield* reopenedQuery.getSnapshot();
         yield* report("reopened", reopened.threads.length);
-        expect(reopened.threads.filter((thread) => thread.projectId === newProjectId)).toHaveLength(
+        const importedThreads = reopened.threads.filter(
+          (thread) => !baselineThreadIds.has(thread.id),
+        );
+        expect(importedThreads.filter((thread) => thread.projectId === newProjectId)).toHaveLength(
           5002,
         );
         expect(
-          reopened.threads.filter((thread) => thread.projectId === existingProjectId),
+          importedThreads.filter((thread) => thread.projectId === existingProjectId),
         ).toHaveLength(1);
         expect(reopened.threads.map((thread) => thread.id).sort()).toEqual(
           before.threads.map((thread) => thread.id).sort(),
         );
         const importedTitles = new Set<string>();
-        for (const thread of reopened.threads) {
+        for (const thread of importedThreads) {
           const index = Number(thread.title.slice("Archived work ".length));
           expect(Number.isInteger(index) && index >= 0 && index < 5002).toBe(true);
           expect(thread.messages.map(({ role, text }) => ({ role, text }))).toEqual([

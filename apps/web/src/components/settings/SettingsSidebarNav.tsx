@@ -11,7 +11,6 @@ import { ArrowLeftIcon, SearchIcon, XIcon } from "lucide-react";
 import { useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
-import { ActiveCtoxInstanceSelector } from "../ActiveCtoxInstanceSelector";
 import { useCtoxMode } from "../ctox/CtoxModeShell";
 import { resolveSettingsInstanceContext } from "./settingsInstanceContext";
 import { SETTINGS_NAV_ITEMS, SETTINGS_SECTION_ICONS } from "./settingsNavigation";
@@ -304,11 +303,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                           <Icon />
                           <span className="truncate">{item.label}</span>
                         </SidebarMenuButton>
-                        {item.to === "/settings/business-os" &&
-                        instanceContext.requiresInstanceSelection &&
-                        (instanceContext.isMultiInstance || !instanceContext.hasActiveInstance) ? (
-                          <ActiveCtoxInstanceSelector placement="settings" />
-                        ) : null}
                       </SidebarMenuItem>
                     </Fragment>
                   );

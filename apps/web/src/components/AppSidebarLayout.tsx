@@ -266,11 +266,7 @@ function HydratedAppSidebarLayout({ children }: { children: ReactNode }) {
       <BusinessOsCodeScopeSynchronizer />
       <WorkjetProjectRegistrySynchronizer />
       <CtoxModeProvider businessOsVisible={isCtoxShell}>
-        <WorkjetHeaderFrame
-          mode={productMode}
-          sidebarAvailable={!isCtoxShell}
-          showInstanceSelector={sidebarSurface !== "settings"}
-        >
+        <WorkjetHeaderFrame mode={productMode} sidebarAvailable={!isCtoxShell}>
           {!isCtoxShell ? <ProjectProjectionRetention /> : null}
           {/*
             Ops renders NO instance sidebar. The network map became its own main

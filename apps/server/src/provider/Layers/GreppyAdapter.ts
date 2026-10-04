@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { randomUUID } from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import {
   ApprovalRequestId,
   EventId,
@@ -106,7 +106,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
   const sessions = new Map<ThreadId, SessionContext>();
   const now = Effect.map(DateTime.now, DateTime.formatIso);
   const stamp = Effect.gen(function* () {
-    return { eventId: EventId.make(randomUUID()), createdAt: yield* now };
+    return { eventId: EventId.make(NodeCrypto.randomUUID()), createdAt: yield* now };
   });
   const publish = (event: ProviderRuntimeEvent) =>
     PubSub.publish(events, { ...event, providerInstanceId: options.instanceId }).pipe(
@@ -253,7 +253,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
                     : { outcome: "cancelled" as const },
                 };
               }
-              const requestId = ApprovalRequestId.make(randomUUID());
+              const requestId = ApprovalRequestId.make(NodeCrypto.randomUUID());
               const decision = yield* Deferred.make<ProviderApprovalDecision>();
               pending.set(requestId, decision);
               const parsed = parsePermissionRequest(params);
@@ -443,7 +443,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
             );
           if (!input.input?.trim())
             return yield* requestError("sendTurn", "A text prompt is required.");
-          const turnId = TurnId.make(randomUUID());
+          const turnId = TurnId.make(NodeCrypto.randomUUID());
           ctx.turnId = turnId;
           ctx.cancelled = false;
           ctx.session = {

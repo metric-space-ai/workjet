@@ -15,6 +15,19 @@ export const MINIMAX_CODE_RELEASE = {
 export const MINIMAX_PREVIEW_MODEL = "MiniMax-M3.1-Flash-Preview";
 export const MINIMAX_THINKING_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
+/** ACP permission changes persist in the native profile; validate instead of rewriting it. */
+export function assertMiniMaxApprovalMode(options: readonly AcpSchema.SessionConfigOption[]) {
+  const permission = options.find((option) => option.id === "permissionMode");
+  if (
+    permission?.type !== "select" ||
+    permission.currentValue !== "default" ||
+    !collectSessionConfigOptionValues(permission).includes("default")
+  )
+    throw new Error(
+      'Approval-required turns need MiniMax Code permission mode "Ask". Change the native profile to Ask and reconnect.',
+    );
+}
+
 const ModelConfigValue = Schema.String.check(Schema.isPattern(/^m:[^:]+:[^:]+:(?:u|v:[^:]*)$/));
 const decodeModelValue = Schema.decodeUnknownOption(ModelConfigValue);
 

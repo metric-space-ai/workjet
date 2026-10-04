@@ -486,7 +486,9 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
             );
           if (input.runtimeMode !== "full-access") {
             const configOptions = yield* acp.getConfigOptions;
-            yield* checked("session/permissionMode", () => assertMiniMaxApprovalMode(configOptions));
+            yield* checked("session/permissionMode", () =>
+              assertMiniMaxApprovalMode(configOptions),
+            );
           }
           yield* withDeadline(
             "session/set_config_option",

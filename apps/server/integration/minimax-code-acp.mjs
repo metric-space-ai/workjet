@@ -82,8 +82,11 @@ await Effect.runPromise(
                       sessionUpdate: frame.params?.update?.sessionUpdate,
                       stopReason: ["end_turn", "cancelled", "max_turn_requests"].includes(
                         frame.result?.stopReason,
-                      ) ? frame.result.stopReason : undefined,
-                      errorCode: typeof frame.error?.code === "number" ? frame.error.code : undefined,
+                      )
+                        ? frame.result.stopReason
+                        : undefined,
+                      errorCode:
+                        typeof frame.error?.code === "number" ? frame.error.code : undefined,
                       ...(permission ? { permissionMode: permission.currentValue } : {}),
                     })}\n`,
                   );
@@ -131,21 +134,29 @@ await Effect.runPromise(
         .pipe(Effect.flatMap((sessions) => (sessions.length > 0 ? stop : Effect.void))),
     );
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
-    NodeAssert.equal(nativeModelSelection?.modelId, MINIMAX_PREVIEW_MODEL, "Record the actual advertised native model route.");
+    NodeAssert.equal(
+      nativeModelSelection?.modelId,
+      MINIMAX_PREVIEW_MODEL,
+      "Record the actual advertised native model route.",
+    );
     const firstNativeModelSelection = nativeModelSelection;
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
     NodeAssert.ok(first.resumeCursor.sessionId);
     yield* Effect.promise(() =>
       NodeFSP.writeFile(
         `${recordPath}.started.json`,
-        `${JSON.stringify({
-          status: "started",
-          workflow: workflowName,
-          model: first.model,
-          nativeModelSelection: firstNativeModelSelection,
-          resumeCursor: first.resumeCursor,
-          acceptance: "pending",
-        }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            status: "started",
+            workflow: workflowName,
+            model: first.model,
+            nativeModelSelection: firstNativeModelSelection,
+            resumeCursor: first.resumeCursor,
+            acceptance: "pending",
+          },
+          null,
+          2,
+        )}\n`,
         { mode: 0o600 },
       ),
     );
@@ -164,7 +175,11 @@ await Effect.runPromise(
     });
     NodeAssert.deepEqual(resumed.resumeCursor, first.resumeCursor);
     NodeAssert.equal(resumed.model, MINIMAX_PREVIEW_MODEL);
-    NodeAssert.deepEqual(nativeModelSelection, firstNativeModelSelection, "Reload must preserve the native provider route and variant.");
+    NodeAssert.deepEqual(
+      nativeModelSelection,
+      firstNativeModelSelection,
+      "Reload must preserve the native provider route and variant.",
+    );
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
     if (workflow) yield* workflow.afterReload;
     const workflowReceipt = workflow ? yield* workflow.receipt : undefined;

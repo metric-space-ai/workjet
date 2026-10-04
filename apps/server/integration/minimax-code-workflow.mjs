@@ -124,15 +124,6 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
       events.some(({ event }) => event.type === "user-input.resolved"),
       "Native question must resolve before acceptance.",
     );
-    if (
-      events.some(
-        ({ event }) => event.payload?.data?.rawOutput?.details?.waiting_for_user === true,
-      )
-    ) {
-      yield* run(
-        "The structured answer is Guest. Continue the original task with that answer: change only src/greet.mjs, then run exactly greppy bash-smart -- node --test --test-concurrency=1 test/greet.test.mjs. Do not ask again or change any other file.",
-      );
-    }
     NodeAssert.ok(
       events.some(
         ({ event }) => event.type === "request.resolved" && event.payload.decision === "accept",

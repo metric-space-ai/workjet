@@ -72,12 +72,35 @@ const claudeTranscript = (index: number) =>
 
 it("imports every conversation from a >5000 mixed archive into real projects and survives reopening SQLite", async () => {
   const startedAt = NodePerformance.performance.now();
+  const measurements = {
+    dispatch: { calls: 0, elapsedMs: 0 },
+    projectQuery: { calls: 0, elapsedMs: 0 },
+    threadQuery: { calls: 0, elapsedMs: 0 },
+  };
+  const measured = <A, E, R>(kind: keyof typeof measurements, effect: Effect.Effect<A, E, R>) =>
+    Effect.suspend(() => {
+      const started = NodePerformance.performance.now();
+      return effect.pipe(
+        Effect.onExit(() =>
+          Effect.sync(() => {
+            measurements[kind].calls += 1;
+            measurements[kind].elapsedMs += NodePerformance.performance.now() - started;
+          }),
+        ),
+      );
+    });
   const report = (phase: string, count = 0) =>
     console.info(
       "FULL_IMPORT_PROGRESS",
       phase,
       count,
       Math.round(NodePerformance.performance.now() - startedAt),
+      Object.fromEntries(
+        Object.entries(measurements).map(([kind, value]) => [
+          kind,
+          { calls: value.calls, elapsedMs: Math.round(value.elapsedMs) },
+        ]),
+      ),
     );
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-full-import-"));
   const codexRoot = NodePath.join(root, "codex");
@@ -143,7 +166,21 @@ it("imports every conversation from a >5000 mixed archive into real projects and
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const query = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const importer = await runtime.runPromise(
-      make.pipe(Effect.provideService(ServerSettingsService, settingsService)),
+      make.pipe(
+        Effect.provideService(ServerSettingsService, settingsService),
+        Effect.provideService(OrchestrationEngineService, {
+          ...engine,
+          dispatch: (command) => measured("dispatch", engine.dispatch(command)),
+        }),
+        Effect.provideService(ProjectionSnapshotQuery, {
+          ...query,
+          getProjectShellById: (id) => measured("projectQuery", query.getProjectShellById(id)),
+          getActiveProjectByWorkspaceRoot: (path) =>
+            measured("projectQuery", query.getActiveProjectByWorkspaceRoot(path)),
+          getThreadShellById: (id) => measured("threadQuery", query.getThreadShellById(id)),
+          getThreadDetailById: (id) => measured("threadQuery", query.getThreadDetailById(id)),
+        }),
+      ),
     );
     const existingProjectId = ProjectId.make("existing-import-project");
     const newProjectId = ProjectId.make("new-import-project");

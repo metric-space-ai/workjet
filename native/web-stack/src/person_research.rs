@@ -423,15 +423,37 @@ fn run_person_research_with_checkpoint(
                                 .filter_map(|evidence| {
                                     evidence["person_key"]
                                         .as_str()
-                                        .or_else(|| evidence["source_url"].as_str())
+                                        .filter(|key| !key.trim().is_empty())
+                                        .map(str::to_string)
+                                        .or_else(|| {
+                                            evidence["source_url"]
+                                                .as_str()
+                                                .and_then(person_profile_key)
+                                        })
                                 })
-                                .filter(|key| !key.is_empty())
                                 .collect::<BTreeSet<_>>();
-                            candidate["person_key"] = json!(if keys.len() == 1 {
-                                keys.into_iter().next().unwrap().to_string()
+                            let person_key = if keys.len() == 1 {
+                                keys.iter().next().unwrap().clone()
                             } else {
                                 format!("email:{email}")
-                            });
+                            };
+                            if keys.is_empty() {
+                                // A provider/company URL is provenance, not a person.
+                                // Bind an otherwise unbound address and its verdict
+                                // to the same subject without merging known people.
+                                for evidence in field_evidence
+                                    .get_mut(&FieldKey::PersonEmail)
+                                    .into_iter()
+                                    .flatten()
+                                {
+                                    if evidence["value"].as_str().map(str::trim) == Some(email)
+                                        && !candidate_has_person_binding(evidence)
+                                    {
+                                        evidence["person_key"] = json!(person_key);
+                                    }
+                                }
+                            }
+                            candidate["person_key"] = json!(person_key);
                         }
                         field_evidence.entry(field).or_default().push(candidate);
                         scrape_covered_fields.insert(field);
@@ -3487,6 +3509,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(validators, vec!["experte.de", "mailtester.com"]);
+        assert_eq!(
+            result["fields"]["person_email"]["value"],
+            "contact@fixture.test"
+        );
+        assert_eq!(
+            result["fields"]["person_email"]["person_key"],
+            "email:contact@fixture.test"
+        );
         assert_eq!(
             result["fields"]["person_email_validation"]["value"],
             "valid"

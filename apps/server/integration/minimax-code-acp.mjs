@@ -53,8 +53,27 @@ const config = decodeSettings({ enabled: true, binaryPath, dataDirectory: dataDi
 
 await Effect.runPromise(
   Effect.gen(function* () {
+    const questionIds = new Set();
     const adapter = yield* makeMiniMaxAdapter(config, {
       instanceId,
+      protocolLogging: {
+        logIncoming: true,
+        logOutgoing: true,
+        logger: (event) =>
+          Effect.sync(() => {
+            if (event.stage !== "raw" || typeof event.payload !== "string") return;
+            const frame = JSON.parse(event.payload);
+            if (event.direction === "incoming" && frame.method === "elicitation/create") {
+              questionIds.add(String(frame.id));
+            } else if (
+              event.direction === "outgoing" &&
+              questionIds.has(String(frame.id)) &&
+              !frame.method
+            ) {
+              process.stdout.write(`NATIVE_QUESTION_RESPONSE ${JSON.stringify(frame)}\n`);
+            }
+          }),
+      },
       resolveSessionEnvironment: () =>
         Effect.succeed({
           HOME: process.env.HOME,

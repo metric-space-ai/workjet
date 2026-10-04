@@ -43,7 +43,7 @@ import {
   makeAcpToolCallEvent,
 } from "../acp/AcpCoreRuntimeEvents.ts";
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
-import type { AcpSessionRuntime } from "../acp/AcpSessionRuntime.ts";
+import type { AcpSessionRuntime, AcpSessionRuntimeOptions } from "../acp/AcpSessionRuntime.ts";
 import { makeMiniMaxAcpRuntime } from "../acp/MiniMaxAcpSupport.ts";
 import {
   miniMaxRequestedEffort,
@@ -135,6 +135,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
   config: MiniMaxSettings,
   options: {
     readonly instanceId: ProviderInstanceId;
+    readonly protocolLogging?: AcpSessionRuntimeOptions["protocolLogging"];
     readonly resolveSessionEnvironment: () => Effect.Effect<
       NodeJS.ProcessEnv,
       ProviderAdapterError
@@ -324,6 +325,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
           spawner,
           cwd: input.cwd,
           clientInfo: { name: "workjet", version: "1" },
+          ...(options.protocolLogging ? { protocolLogging: options.protocolLogging } : {}),
           ...(resume._tag === "Some"
             ? { resumeSessionId: resume.value.sessionId, requireLoadResponse: true }
             : {}),

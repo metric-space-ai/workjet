@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -396,11 +397,51 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
 };
 
 const readSession = async (file: SourceFile): Promise<ParsedSession | null> => {
-  if (file.size > MAX_TRANSCRIPT_BYTES) {
-    throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
+  const expected = await NodeFSP.lstat(file.path);
+  if (
+    !expected.isFile() ||
+    sourceKeyFor(file.source, file.providerInstanceId, await NodeFSP.realpath(file.path)) !==
+      file.sourceKey
+  ) {
+    throw new WorkjetSessionImportError({ reason: "candidate_expired", subject: file.sourceKey });
   }
-  const text = await NodeFSP.readFile(file.path, "utf8");
-  return parseSession(file, text);
+  const handle = await NodeFSP.open(
+    file.path,
+    NodeFS.constants.O_RDONLY | (NodeFS.constants.O_NOFOLLOW ?? 0),
+  );
+  try {
+    const stat = await handle.stat();
+    if (
+      !stat.isFile() ||
+      stat.dev !== expected.dev ||
+      stat.ino !== expected.ino ||
+      stat.size !== expected.size ||
+      stat.mtimeMs !== expected.mtimeMs
+    ) {
+      throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    }
+    if (stat.size > MAX_TRANSCRIPT_BYTES) {
+      throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
+    }
+    // One extra byte detects growth; reads remain bounded even if the source app keeps appending.
+    const buffer = Buffer.alloc(stat.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = await handle.read(buffer, length, buffer.length - length, null);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    const after = await handle.stat();
+    if (length !== stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) {
+      throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    }
+    return parseSession(
+      { ...file, size: stat.size, mtimeMs: stat.mtimeMs },
+      buffer.subarray(0, length).toString("utf8"),
+    );
+  } finally {
+    await handle.close();
+  }
 };
 
 const readSessionPreview = async (file: SourceFile): Promise<ParsedSession | null> => {
@@ -449,6 +490,24 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const path = yield* Path.Path;
 
+  // Reuse source paths across import batches, without retaining transcript content.
+  let indexedLocations: readonly SourceLocation[] = [];
+  let indexedFiles = new Map<string, SourceFile>();
+  const rememberFiles = (locations: readonly SourceLocation[], files: readonly SourceFile[]) => {
+    indexedLocations = locations;
+    indexedFiles = new Map(files.map((file) => [file.sourceKey, file]));
+  };
+  const sameLocations = (locations: readonly SourceLocation[]) =>
+    locations.length === indexedLocations.length &&
+    locations.every((location, index) => {
+      const previous = indexedLocations[index];
+      return (
+        previous?.source === location.source &&
+        previous.providerInstanceId === location.providerInstanceId &&
+        previous.root === location.root
+      );
+    });
+
   const previewCache = new Map<
     string,
     {
@@ -473,6 +532,20 @@ export const make = Effect.gen(function* () {
         try: () => discoverFiles(locations),
         catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
       });
+      rememberFiles(locations, files);
+      const discoveryHash = NodeCrypto.createHash("sha256");
+      for (const file of files) {
+        if (input.source && file.source !== input.source) continue;
+        if (file.size > MAX_TRANSCRIPT_BYTES) continue;
+        discoveryHash
+          .update(file.sourceKey)
+          .update("\0")
+          .update(String(file.size))
+          .update("\0")
+          .update(String(file.mtimeMs))
+          .update("\n");
+      }
+      const discoveryVersion = discoveryHash.digest("hex");
       const rows =
         yield* sql<ImportRow>`SELECT source_key, thread_id, imported_message_count, prefix_hash FROM workjet_session_imports`;
       const fileKeys = new Set(files.map((file) => file.sourceKey));
@@ -565,6 +638,7 @@ export const make = Effect.gen(function* () {
         sources: summaries,
         candidates,
         truncated: hasMore,
+        discoveryVersion,
         nextOffset: hasMore ? offset + candidates.length : null,
         discoveryLimitReached: false,
       };
@@ -808,11 +882,15 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const settings = yield* settingsService.getSettings;
       const locations = resolveLocations(settings, path);
-      const files = yield* Effect.tryPromise({
-        try: () => discoverFiles(locations),
-        catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
-      });
-      const byId = new Map(files.map((file) => [file.sourceKey, file]));
+      if (!sameLocations(locations) || input.candidateIds.some((id) => !indexedFiles.has(id))) {
+        const files = yield* Effect.tryPromise({
+          try: () => discoverFiles(locations),
+          catch: () =>
+            new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
+        });
+        rememberFiles(locations, files);
+      }
+      const byId = indexedFiles;
       const items = yield* Effect.forEach([...new Set(input.candidateIds)], (candidateId) =>
         importOne(candidateId, byId.get(candidateId), input.projectId).pipe(
           Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),

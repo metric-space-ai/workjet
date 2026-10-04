@@ -936,11 +936,19 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetSessionImportInspect,
     staleTimeMs: WORKJET_SESSION_IMPORT_STALE_TIME_MS,
   });
+  const inspectWorkjetSessions = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:session-import:select",
+    tag: WS_METHODS.workjetSessionImportInspect,
+    concurrency: {
+      mode: "serial",
+      key: ({ environmentId }) => environmentId,
+    },
+  });
   const importWorkjetSessions = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:session-import:import",
     tag: WS_METHODS.workjetSessionImport,
     concurrency: {
-      mode: "singleFlight",
+      mode: "serial",
       key: ({ environmentId }) => environmentId,
     },
   });
@@ -1162,6 +1170,7 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetLegacyImport,
     decideWorkjetLegacyImport,
     workjetSessionImport,
+    inspectWorkjetSessions,
     importWorkjetSessions,
     settingsValueAtom,
     providersValueAtom,

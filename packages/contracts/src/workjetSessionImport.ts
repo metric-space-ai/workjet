@@ -49,7 +49,10 @@ export type WorkjetSessionImportSourceSummary = typeof WorkjetSessionImportSourc
 
 export const WorkjetSessionImportInspectInput = Schema.Struct({
   offset: Schema.optionalKey(
-    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(5_000)),
+    Schema.Int.check(
+      Schema.isGreaterThanOrEqualTo(0),
+      Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+    ),
   ),
   query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(256))),
   source: Schema.optionalKey(WorkjetSessionImportSource),
@@ -68,6 +71,7 @@ export const WorkjetSessionImportInspection = Schema.Struct({
     Schema.isMaxLength(WORKJET_SESSION_IMPORT_MAX_CANDIDATES),
   ),
   truncated: Schema.Boolean,
+  discoveryVersion: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u))),
   nextOffset: Schema.optionalKey(Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))),
   discoveryLimitReached: Schema.optionalKey(Schema.Boolean),
 });

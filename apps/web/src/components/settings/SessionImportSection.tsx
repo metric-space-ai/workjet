@@ -39,6 +39,7 @@ import {
 import { Button } from "../ui/button";
 import { SessionImportBrowser, sessionImportFolderName } from "./SessionImportBrowser";
 import { prepareSessionImportProject, type SessionImportProject } from "./sessionImportProject";
+import { selectAllSessionImportCandidates } from "./sessionImportSelection";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 const PAGE_SIZE = 20;
@@ -51,7 +52,11 @@ export function SessionImportSection({
   readonly readOnly: boolean;
 }) {
   const navigate = useNavigate();
-  const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
+  const {
+    selectedInstanceId: presentationInstanceId,
+    selectionRevision,
+    mode,
+  } = useActiveWorkjetScope();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { environments } = useEnvironments();
   const settings = useEnvironmentSettings(environmentId);
@@ -98,7 +103,7 @@ export function SessionImportSection({
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<readonly WorkjetSessionImportItemResult[]>([]);
-  const scopeKey = JSON.stringify([environmentId, presentationInstanceId]);
+  const scopeKey = JSON.stringify([environmentId, presentationInstanceId, selectionRevision, mode]);
   const scopeRef = useRef(scopeKey);
   scopeRef.current = scopeKey;
   const mountedRef = useRef(true);
@@ -108,7 +113,9 @@ export function SessionImportSection({
   const isActive = () =>
     mountedRef.current &&
     scopeRef.current === scopeKey &&
-    readActiveWorkjetScope().selectedInstanceId === presentationInstanceId;
+    readActiveWorkjetScope().selectedInstanceId === presentationInstanceId &&
+    readActiveWorkjetScope().selectionRevision === selectionRevision &&
+    readActiveWorkjetScope().mode === mode;
   const inspection = useEnvironmentQuery(
     open
       ? serverEnvironment.workjetSessionImport({
@@ -122,6 +129,9 @@ export function SessionImportSection({
         })
       : null,
   );
+  const inspectForSelection = useAtomCommand(serverEnvironment.inspectWorkjetSessions, {
+    reportFailure: false,
+  });
   const runImport = useAtomCommand(serverEnvironment.importWorkjetSessions, {
     reportFailure: false,
   });
@@ -166,6 +176,47 @@ export function SessionImportSection({
     importingRef.current = false;
     stoppedRef.current = true;
   }, [scopeKey]);
+
+  const selectAllMatches = async () => {
+    if (readOnly || importingRef.current || !isActive()) return;
+    importingRef.current = true;
+    stoppedRef.current = false;
+    setError(null);
+    setProgress("Selecting conversations…");
+    try {
+      await selectAllSessionImportCandidates({
+        query,
+        source,
+        isActive: () => isActive() && !stoppedRef.current,
+        inspect: async (input) => {
+          const result = await inspectForSelection({ environmentId, input });
+          if (result._tag === "Failure") {
+            const failure = squashAtomCommandFailure(result);
+            throw failure instanceof Error
+              ? failure
+              : new Error("The conversations could not be selected. You can retry.");
+          }
+          return result.value;
+        },
+        onCandidates: (candidates, count) => {
+          setSelected((current) => {
+            const next = new Map(current);
+            for (const candidate of candidates) next.set(candidate.candidateId, candidate);
+            return next;
+          });
+          setProgress(`Selecting conversations… ${count} found`);
+        },
+      });
+    } catch (cause) {
+      if (isActive() && !stoppedRef.current)
+        setError(cause instanceof Error ? cause.message : "The selection could not be completed.");
+    } finally {
+      if (isActive()) {
+        importingRef.current = false;
+        setProgress(null);
+      }
+    }
+  };
 
   const importSelected = async () => {
     if (!canImport || importingRef.current || !isActive()) return;
@@ -420,6 +471,7 @@ export function SessionImportSection({
           })
         }
         onClearSelection={() => setSelected(new Map())}
+        onSelectAll={() => void selectAllMatches()}
         preview={preview}
         onPreview={setPreview}
         projects={projects}

@@ -50,6 +50,7 @@ export interface SessionImportBrowserProps {
   readonly selected: ReadonlyMap<string, WorkjetSessionImportCandidate>;
   readonly onSelect: (candidate: WorkjetSessionImportCandidate, checked: boolean) => void;
   readonly onClearSelection: () => void;
+  readonly onSelectAll: () => void;
   readonly preview: WorkjetSessionImportCandidate | null;
   readonly onPreview: (candidate: WorkjetSessionImportCandidate | null) => void;
   readonly projects: readonly SessionImportProject[];
@@ -136,7 +137,7 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
         </div>
         <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
           <div className={cn("flex min-h-0 min-w-0 flex-col", first && "max-lg:hidden")}>
-            <div className="flex shrink-0 items-center justify-between px-6 py-3 text-xs text-muted-foreground">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-6 py-3 text-xs text-muted-foreground">
               <span>
                 {props.pending
                   ? "Finding conversations…"
@@ -145,10 +146,20 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
               <Button
                 size="xs"
                 variant="ghost"
-                disabled={busy || props.readOnly || candidates.length === 0}
+                disabled={busy || props.readOnly || props.pending || candidates.length === 0}
                 onClick={() => candidates.forEach((candidate) => props.onSelect(candidate, true))}
               >
                 Select page
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                aria-label="Select all matching conversations"
+                data-workjet-action="session-import.select-all"
+                disabled={busy || props.readOnly || props.pending || candidates.length === 0}
+                onClick={props.onSelectAll}
+              >
+                Select all matches
               </Button>
             </div>
             <div
@@ -470,7 +481,8 @@ export function SessionImportBrowser(props: SessionImportBrowserProps) {
           </p>
           {props.inspection?.discoveryLimitReached ? (
             <p className="mt-1 text-[11px] text-muted-foreground">
-              The source scan reached its safety limit of 5,000 session files.
+              The source scan is incomplete. Refresh or update the connected server before selecting
+              all.
             </p>
           ) : null}
           {props.readOnly ? (

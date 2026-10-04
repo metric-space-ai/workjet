@@ -47,6 +47,11 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
       Effect.gen(function* () {
         if (event.threadId !== threadId) return;
         events.push({ phase, event });
+        if (event.type !== "content.delta") {
+          process.stdout.write(
+            `NATIVE_EVENT ${JSON.stringify({ phase, type: event.type, status: event.payload?.state, title: event.payload?.title })}\n`,
+          );
+        }
         if (event.type === "content.delta" && phase === "cancel" && event.payload.delta.trim())
           yield* Deferred.succeed(cancelStream, undefined);
         if (event.type === "request.opened" && event.requestId) {

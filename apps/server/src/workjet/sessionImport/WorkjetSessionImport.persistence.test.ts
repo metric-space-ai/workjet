@@ -166,6 +166,52 @@ it.live("rolls back a fresh thread when its first message fails, then safely ret
       ]);
       expect(snapshot.threads[0]?.session).toBeNull();
       expect(snapshot.threads[0]?.latestTurn).toBeNull();
+      const chunkThreadId = ThreadId.make("chunked-copy");
+      yield* engine.dispatch({
+        ...command,
+        commandId: CommandId.make("chunked-first"),
+        threadId: chunkThreadId,
+        messages: Array.from({ length: 200 }, (_, index) => ({
+          messageId: MessageId.make(`chunk-${index}`),
+          role: "user" as const,
+          text: `Preserved ${index}`,
+          createdAt: NOW,
+        })),
+      });
+      yield* engine.dispatch({
+        type: "project.delete",
+        commandId: CommandId.make("delete-between-chunks"),
+        projectId,
+        force: true,
+      });
+      const beforeAppend = yield* sql<{
+        count: number;
+      }>`SELECT COUNT(*) AS count FROM orchestration_events WHERE stream_id = ${chunkThreadId}`;
+      const appendError = yield* engine
+        .dispatch({
+          type: "thread.history.import",
+          commandId: CommandId.make("chunked-second"),
+          threadId: chunkThreadId,
+          messages: [
+            {
+              messageId: MessageId.make("chunk-200"),
+              role: "assistant",
+              text: "Must not append",
+              createdAt: NOW,
+            },
+          ],
+          createdAt: NOW,
+        })
+        .pipe(Effect.flip);
+      expect(appendError._tag).toBe("OrchestrationCommandInvariantError");
+      const afterAppend = yield* sql<{
+        count: number;
+      }>`SELECT COUNT(*) AS count FROM orchestration_events WHERE stream_id = ${chunkThreadId}`;
+      expect(afterAppend[0]?.count).toBe(beforeAppend[0]?.count);
+      const retainedMessages = yield* sql<{
+        count: number;
+      }>`SELECT COUNT(*) AS count FROM projection_thread_messages WHERE thread_id = ${chunkThreadId}`;
+      expect(retainedMessages[0]?.count).toBe(200);
     }).pipe(
       Effect.provide(runtimeLayer(NodePath.join(root, "persisted.sqlite"), workspace, root)),
       Effect.scoped,

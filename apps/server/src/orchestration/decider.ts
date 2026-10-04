@@ -1058,23 +1058,26 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
 
     case "thread.history.import": {
       const createThread = command.bootstrap?.createThread;
-      if (createThread) {
-        const project = yield* requireProject({
-          readModel,
-          command,
-          projectId: createThread.projectId,
-        });
-        if (project.deletedAt !== null) {
-          return yield* new OrchestrationCommandInvariantError({
-            commandType: command.type,
-            detail: `Import destination project '${createThread.projectId}' is deleted.`,
-          });
-        }
-        yield* requireThreadAbsent({ readModel, command, threadId: command.threadId });
-      }
       const targetThread = createThread
         ? undefined
         : yield* requireThread({ readModel, command, threadId: command.threadId });
+      if (targetThread && targetThread.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Import destination thread '${command.threadId}' is deleted.`,
+        });
+      }
+      const projectId = createThread?.projectId ?? targetThread!.projectId;
+      const project = yield* requireProject({ readModel, command, projectId });
+      if (project.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Import destination project '${projectId}' is deleted.`,
+        });
+      }
+      if (createThread) {
+        yield* requireThreadAbsent({ readModel, command, threadId: command.threadId });
+      }
       const existingMessageIds = new Set(targetThread?.messages.map((message) => message.id) ?? []);
       const commandMessageIds = new Set<string>();
       for (const message of command.messages) {

@@ -16,6 +16,7 @@ import {
   WORKJET_SESSION_IMPORT_MAX_CANDIDATES,
   WorkjetSessionImportError,
   type OrchestrationCommand,
+  type OrchestrationProjectShell,
   type ServerSettings,
   type WorkjetSessionImportCandidate,
   type WorkjetSessionImportInput,
@@ -654,6 +655,7 @@ export const make = Effect.gen(function* () {
     candidateId: string,
     file: SourceFile | undefined,
     destinationProjectId?: ProjectId,
+    destinationProject?: OrchestrationProjectShell,
   ) =>
     Effect.gen(function* () {
       if (!file)
@@ -675,7 +677,7 @@ export const make = Effect.gen(function* () {
         });
 
       let project = destinationProjectId
-        ? Option.getOrUndefined(yield* query.getProjectShellById(destinationProjectId))
+        ? destinationProject
         : parsed.workspaceRoot
           ? Option.getOrUndefined(
               yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot),
@@ -754,7 +756,7 @@ export const make = Effect.gen(function* () {
       const messageSeed =
         existing?.source_key === candidateId ? candidateId : `${importKey}:${threadId}`;
       const thread = Option.getOrUndefined(yield* query.getThreadDetailById(threadId));
-      if (!thread && existing) {
+      if ((!thread && existing) || thread?.deletedAt != null) {
         return yield* new WorkjetSessionImportError({
           reason: "source_changed",
           subject: candidateId,
@@ -814,6 +816,15 @@ export const make = Effect.gen(function* () {
         });
       }
       const missingMessages = parsed.messages.slice(alreadyImported);
+      if (
+        missingMessages.length === 0 &&
+        Option.isNone(yield* query.getProjectShellById(project.id))
+      ) {
+        return yield* new WorkjetSessionImportError({
+          reason: "project_unavailable",
+          subject: candidateId,
+        });
+      }
       for (let offset = 0; offset < missingMessages.length; offset += IMPORT_CHUNK_SIZE) {
         const chunk = missingMessages.slice(offset, offset + IMPORT_CHUNK_SIZE);
         yield* engine.dispatch({
@@ -881,8 +892,13 @@ export const make = Effect.gen(function* () {
         rememberFiles(locations, files);
       }
       const byId = indexedFiles;
+      // Resolve the explicitly chosen destination once per bounded request. The
+      // engine checks active thread/project state again before every saved chunk.
+      const destinationProject = input.projectId
+        ? Option.getOrUndefined(yield* query.getProjectShellById(input.projectId))
+        : undefined;
       const items = yield* Effect.forEach([...new Set(input.candidateIds)], (candidateId) =>
-        importOne(candidateId, byId.get(candidateId), input.projectId).pipe(
+        importOne(candidateId, byId.get(candidateId), input.projectId, destinationProject).pipe(
           Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),
         ),
       );

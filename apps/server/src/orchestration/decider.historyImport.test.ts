@@ -19,7 +19,18 @@ const THREAD_ID = ThreadId.make("thread-1");
 const MESSAGE_ID = MessageId.make("message-1");
 const readModel: OrchestrationReadModel = {
   snapshotSequence: 0,
-  projects: [],
+  projects: [
+    {
+      id: ProjectId.make("project-1"),
+      title: "Destination",
+      workspaceRoot: "/destination",
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      deletedAt: null,
+    },
+  ],
   threads: [
     {
       id: THREAD_ID,
@@ -176,6 +187,28 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
         const error = yield* decideOrchestrationCommand({
           command: bootstrapCommand,
           readModel: { ...freshReadModel, projects },
+        }).pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      }
+    }),
+  );
+  it.effect("rejects append chunks after the destination thread or project disappears", () =>
+    Effect.gen(function* () {
+      const appendCommand: Extract<OrchestrationCommand, { type: "thread.history.import" }> = {
+        type: "thread.history.import",
+        commandId: CommandId.make("append-after-delete"),
+        threadId: THREAD_ID,
+        messages: bootstrapCommand.messages,
+        createdAt: NOW,
+      };
+      for (const changed of [
+        { ...readModel, projects: [] },
+        { ...readModel, projects: [{ ...readModel.projects[0]!, deletedAt: NOW }] },
+        { ...readModel, threads: [{ ...readModel.threads[0]!, deletedAt: NOW }] },
+      ]) {
+        const error = yield* decideOrchestrationCommand({
+          command: appendCommand,
+          readModel: changed,
         }).pipe(Effect.flip);
         expect(error._tag).toBe("OrchestrationCommandInvariantError");
       }

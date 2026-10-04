@@ -76,6 +76,7 @@ const withFixture = <A, E>(
     readonly projects: Map<string, OrchestrationProjectShell>;
     readonly threads: Map<string, OrchestrationThread>;
     readonly commands: OrchestrationCommand[];
+    readonly projectLookups: string[];
     readonly setCodexHome: (homePath: string) => void;
   }) => Effect.Effect<A, E>,
 ) =>
@@ -109,6 +110,7 @@ const withFixture = <A, E>(
       ]);
       const threads = new Map<string, OrchestrationThread>();
       const commands: OrchestrationCommand[] = [];
+      const projectLookups: string[] = [];
       const engine = {
         dispatch: (command: OrchestrationCommand) =>
           Effect.sync(() => {
@@ -150,7 +152,11 @@ const withFixture = <A, E>(
         streamDomainEvents: Stream.empty,
       } as unknown as OrchestrationEngineService["Service"];
       const query = {
-        getProjectShellById: (id: string) => Effect.succeed(Option.fromNullishOr(projects.get(id))),
+        getProjectShellById: (id: string) =>
+          Effect.sync(() => {
+            projectLookups.push(id);
+            return Option.fromNullishOr(projects.get(id));
+          }),
         getActiveProjectByWorkspaceRoot: (path: string) =>
           Effect.succeed(
             Option.fromNullishOr(
@@ -181,6 +187,7 @@ const withFixture = <A, E>(
           projects,
           threads,
           commands,
+          projectLookups,
           setCodexHome: (homePath) => {
             settings.providers.codex.homePath = homePath;
           },
@@ -428,6 +435,39 @@ describe("project-directed static session imports", () => {
       ),
   );
 
+  it.effect(
+    "resolves a selected destination once per bounded request and refreshes it for the next request",
+    () =>
+      withFixture(({ root, service, projects, projectLookups }) =>
+        Effect.gen(function* () {
+          for (let index = 0; index < 3; index += 1) {
+            yield* Effect.promise(() =>
+              NodeFSP.writeFile(
+                NodePath.join(root, "sessions", `batch-${index}.jsonl`),
+                transcript(`Batch ${index}`),
+              ),
+            );
+          }
+          const candidateIds = (yield* service.inspect()).candidates.map(
+            ({ candidateId }) => candidateId,
+          );
+          const result = yield* service.importSessions({
+            projectId: ProjectId.make("project-a"),
+            candidateIds,
+          });
+          expect(result.items).toHaveLength(3);
+          expect(result.items.every(({ status }) => status === "imported")).toBe(true);
+          expect(projectLookups).toEqual(["project-a"]);
+          projects.delete("project-a");
+          const next = yield* service.importSessions({
+            projectId: ProjectId.make("project-a"),
+            candidateIds,
+          });
+          expect(next.items.every(({ status }) => status === "failed")).toBe(true);
+          expect(projectLookups).toEqual(["project-a", "project-a"]);
+        }),
+      ),
+  );
   it.effect("discovers and imports another harness beyond a large first-source archive", () =>
     withFixture(({ root, service, threads }) =>
       Effect.gen(function* () {

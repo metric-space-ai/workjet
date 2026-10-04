@@ -720,7 +720,6 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                 : configuredModels
                   ? "Configured for this Greppy profile; choose a model or enter its ID."
                   : "Served by the Workjet gateway; choose a catalog model or enter its ID."
-
             }
           >
             <ComposerControlIcon icon={CpuIcon} />
@@ -767,7 +766,6 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             data-composer-model-mini-menu="true"
             data-model-catalog-source={props.modelSource ?? "gateway"}
           >
-
             {configuredModels ? null : (
               <div className="flex shrink-0 flex-col gap-1 border-r border-border/60 bg-muted/30 p-1.5">
                 {modelGroups.map(([provider]) => {

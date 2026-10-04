@@ -1822,6 +1822,48 @@ printf '%s' '{"ok":false,"classification":{"status":"authorization_required"},"r
     }
 
     #[test]
+    #[cfg(unix)]
+    fn runtime_target_passes_only_a_nonempty_owner_as_a_separate_argument() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!(
+            "ctox-runtime-owner-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let script = root.join("fake-ctox");
+        std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.args\"\nprintf '%s\\n' '{\"ok\":true,\"status\":\"completed_empty\",\"records\":[]}'\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        for owner in [None, Some("   "), Some(" owner;not-shell-code ")] {
+            let result = run_via_runtime_target(
+                &root,
+                &script,
+                "xing.com",
+                "https://www.xing.com/",
+                "fixture-target",
+                &[],
+                "Fixture GmbH",
+                Country::De,
+                owner,
+            );
+            assert_eq!(result.classification, "completed_empty");
+            let arguments = std::fs::read_to_string(root.join("fake-ctox.args")).unwrap();
+            let arguments = arguments.lines().collect::<Vec<_>>();
+            assert!(arguments
+                .windows(2)
+                .any(|pair| pair == ["--target-key", "fixture-target"]));
+            if owner.is_some_and(|value| !value.trim().is_empty()) {
+                assert!(arguments
+                    .windows(2)
+                    .any(|pair| pair == ["--owner-user-id", "owner;not-shell-code"]));
+            } else {
+                assert!(!arguments.contains(&"--owner-user-id"));
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn fresh_identity_matched_success_can_cover_a_transient_access_failure() {
         let root = std::env::temp_dir().join(format!(
             "ctox-scrape-cache-{}-{}",

@@ -1264,6 +1264,9 @@ fn grouped_person_records(
             continue;
         };
         for candidate in candidates {
+            if !aggregate_candidate_eligible(*field, candidate) {
+                continue;
+            }
             let Some(value) = candidate.get("value").and_then(browser_extract_scalar) else {
                 continue;
             };
@@ -1282,10 +1285,10 @@ fn grouped_person_records(
                 .map(str::to_string);
             let profile_value = matches!(field, FieldKey::PersonXing | FieldKey::PersonLinkedin)
                 .then_some(value.as_str())
-                .filter(|value| valid_http_url(value));
+                .and_then(person_profile_key);
             let person_key = explicit_key
-                .or_else(|| profile_value.map(str::to_string))
-                .or_else(|| (!source_url.is_empty()).then(|| source_url.clone()))
+                .or(profile_value)
+                .or_else(|| person_profile_key(&source_url))
                 .or_else(|| person_name_key_from_candidate(candidate))
                 .unwrap_or_else(|| {
                     format!(
@@ -1353,7 +1356,7 @@ fn grouped_person_records(
         }
     }
 
-    let mut records = coalesce_name_only_person_records(grouped)
+    let mut records = grouped
         .into_values()
         .filter_map(|record| {
             let has_identity = [
@@ -1375,69 +1378,6 @@ fn grouped_person_records(
         .collect::<Vec<_>>();
     records.sort_by(|left, right| compare_person_records(left, right, priorities));
     records
-}
-
-fn coalesce_name_only_person_records(
-    grouped: BTreeMap<String, serde_json::Map<String, Value>>,
-) -> BTreeMap<String, serde_json::Map<String, Value>> {
-    let mut out = BTreeMap::new();
-    for (key, mut record) in grouped {
-        let first = record
-            .get("person_vorname")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let last = record
-            .get("person_nachname")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let source_url = record
-            .get("source_url")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let target_key = if source_url.is_empty() && (!first.is_empty() || !last.is_empty()) {
-            format!("name:{}", normalize_person_name(&format!("{first} {last}")))
-        } else {
-            key
-        };
-        if let Some(existing) = out.get_mut(&target_key) {
-            merge_grouped_record(existing, &mut record);
-        } else {
-            record.insert("person_key".to_string(), Value::String(target_key.clone()));
-            out.insert(target_key, record);
-        }
-    }
-    out
-}
-
-fn merge_grouped_record(
-    existing: &mut serde_json::Map<String, Value>,
-    incoming: &mut serde_json::Map<String, Value>,
-) {
-    let incoming_count = incoming
-        .get("evidence_count")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let existing_count = existing
-        .get("evidence_count")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let incoming_evidence = incoming
-        .get("evidence")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    for (field, value) in incoming.iter() {
-        if field != "evidence" && existing.get(field).is_none_or(Value::is_null) {
-            existing.insert(field.clone(), value.clone());
-        }
-    }
-    if let Some(evidence) = existing.get_mut("evidence").and_then(Value::as_array_mut) {
-        evidence.extend(incoming_evidence);
-    }
-    existing.insert(
-        "evidence_count".to_string(),
-        json!(existing_count + incoming_count),
-    );
 }
 
 fn assign_name_only_person_keys(raw: &mut BTreeMap<FieldKey, Vec<Value>>) {
@@ -1472,13 +1412,37 @@ fn assign_name_only_person_keys(raw: &mut BTreeMap<FieldKey, Vec<Value>>) {
     }
     for field in PERSON_EVIDENCE_FIELDS {
         let mut ordinals = BTreeMap::<String, usize>::new();
+        let mut counts = BTreeMap::<String, usize>::new();
+        for candidate in raw.get(field).into_iter().flatten() {
+            if !candidate_has_person_binding(candidate) {
+                *counts
+                    .entry(person_candidate_provenance(candidate))
+                    .or_default() += 1;
+            }
+        }
         for candidate in raw.get_mut(field).into_iter().flatten() {
             if candidate_has_person_binding(candidate) {
                 continue;
             }
             let provenance = person_candidate_provenance(candidate);
+            let person_count = names.keys().filter(|(key, _)| key == &provenance).count();
+            // A sparse field list does not identify which of several people it
+            // belongs to. Keep it unbound rather than guessing by its position.
+            if person_count > 1 && counts.get(&provenance).copied() != Some(person_count) {
+                continue;
+            }
+            if person_count > 1
+                && names.iter().any(|((key, _), (first, last))| {
+                    key == &provenance && (first.is_empty() || last.is_empty())
+                })
+            {
+                continue;
+            }
             let ordinal = ordinals.entry(provenance.clone()).or_default();
             if let Some((first, last)) = names.get(&(provenance, *ordinal)) {
+                if person_count > 1 && (first.is_empty() || last.is_empty()) {
+                    continue;
+                }
                 let normalized = normalize_person_name(&format!("{first} {last}"));
                 if !normalized.is_empty() {
                     candidate["person_key"] = Value::String(format!("name:{normalized}"));
@@ -1499,7 +1463,22 @@ fn candidate_has_person_binding(candidate: &Value) -> bool {
         || candidate
             .get("source_url")
             .and_then(Value::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
+            .and_then(person_profile_key)
+            .is_some()
+}
+
+// A company page can mention several people. Only an individual profile URL
+// is an identity; shared company-page provenance must never merge contacts.
+fn person_profile_key(value: &str) -> Option<String> {
+    let parsed = url::Url::parse(value).ok()?;
+    let host = parsed.host_str()?;
+    let profile = (host == "xing.com" || host.ends_with(".xing.com"))
+        && parsed.path().starts_with("/profile/")
+        && parsed.path().trim_end_matches('/').len() > "/profile".len()
+        || (host == "linkedin.com" || host.ends_with(".linkedin.com"))
+            && parsed.path().starts_with("/in/")
+            && parsed.path().trim_end_matches('/').len() > "/in".len();
+    (profile && matches!(parsed.scheme(), "http" | "https")).then(|| value.to_string())
 }
 
 fn person_candidate_provenance(candidate: &Value) -> String {
@@ -1653,6 +1632,22 @@ pub fn merge_person_research_source_records(
         .and_then(Value::as_str)
         .unwrap_or_else(|| tier_label(module.tier()))
         .to_string();
+    // Flat fields contain only the highest-ranked person. Other contacts'
+    // evidence must also participate in repeated-capture deduplication.
+    let prior_person_evidence = payload
+        .get("person_records")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .flat_map(|person| {
+            person
+                .get("evidence")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let fields = payload
         .get_mut("fields")
         .and_then(Value::as_object_mut)
@@ -1697,6 +1692,13 @@ pub fn merge_person_research_source_records(
             .and_then(Value::as_str)
             .filter(|value| matches!(*value, "high" | "medium" | "low" | "user_provided"))
             .unwrap_or("low");
+        let person_key = record
+            .get("person_key")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .or_else(|| source_url.and_then(person_profile_key));
         let candidate = json!({
             "value": value,
             "confidence": confidence,
@@ -1705,6 +1707,9 @@ pub fn merge_person_research_source_records(
             "tier": tier,
             "via": "authenticated_source_capture",
             "note": record.get("note").and_then(Value::as_str).unwrap_or_default(),
+            "person_key": person_key,
+            "person_vorname": record.get("person_vorname").cloned().unwrap_or(Value::Null),
+            "person_nachname": record.get("person_nachname").cloned().unwrap_or(Value::Null),
         });
         let Some(field_result) = fields
             .get_mut(field.as_str())
@@ -1717,11 +1722,17 @@ pub fn merge_person_research_source_records(
             .or_insert_with(|| Value::Array(Vec::new()))
             .as_array_mut()
             .context("person-research field candidates must be an array")?;
-        let duplicate = candidates.iter().any(|existing| {
-            existing.get("value") == candidate.get("value")
-                && existing.get("source_id") == candidate.get("source_id")
-                && existing.get("source_url") == candidate.get("source_url")
-        });
+        let duplicate = candidates
+            .iter()
+            .chain(prior_person_evidence.iter().filter(|evidence| {
+                evidence.get("field").and_then(Value::as_str) == Some(field.as_str())
+            }))
+            .any(|existing| {
+                existing.get("value") == candidate.get("value")
+                    && existing.get("source_id") == candidate.get("source_id")
+                    && existing.get("source_url") == candidate.get("source_url")
+                    && existing.get("person_key") == candidate.get("person_key")
+            });
         if duplicate {
             continue;
         }
@@ -1748,7 +1759,11 @@ pub fn merge_person_research_source_records(
         }
         added += 1;
     }
-    rebuild_grouped_person_records(payload)?;
+    // A repeated capture that adds no evidence must leave the saved result
+    // untouched, including candidate metadata and the chosen flat fields.
+    if added > 0 {
+        rebuild_grouped_person_records(payload)?;
+    }
     Ok(added)
 }
 
@@ -1868,6 +1883,7 @@ fn push_unique_person_candidate(
         existing.get("value") == candidate.get("value")
             && existing.get("source_id") == candidate.get("source_id")
             && existing.get("source_url") == candidate.get("source_url")
+            && existing.get("person_key") == candidate.get("person_key")
     }) {
         candidates.push(candidate);
     }
@@ -4109,11 +4125,12 @@ mod tests {
             ],
         );
 
+        let records = grouped_person_records(&mut raw, &[]);
         let aggregated = aggregate_fields(
             &[FieldKey::PersonVorname, FieldKey::PersonNachname],
             &[],
             raw,
-            &[],
+            &records,
         );
 
         assert_eq!(aggregated["person_vorname"]["value"], "Frank");
@@ -4798,6 +4815,16 @@ mod tests {
             merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap();
 
         assert_eq!(added, 8);
+        let first_capture = payload.clone();
+        assert_eq!(
+            merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap(),
+            0,
+            "repeating a profile capture must not add duplicate person evidence"
+        );
+        assert_eq!(
+            payload, first_capture,
+            "repeat capture preserves every contact and field"
+        );
         assert_eq!(payload["person_records"].as_array().map(Vec::len), Some(2));
         assert_eq!(payload["person_records"][0]["person_vorname"], "Ada");
         assert_eq!(
@@ -4809,6 +4836,164 @@ mod tests {
             payload["person_records"][0]["source_url"],
             payload["person_records"][1]["source_url"]
         );
+    }
+
+    #[test]
+    fn only_individual_provider_profiles_bind_an_identity() {
+        for value in [
+            "https://www.xing.com/profile/Ada_Lovelace",
+            "https://www.linkedin.com/in/ada-lovelace",
+        ] {
+            assert_eq!(person_profile_key(value).as_deref(), Some(value));
+        }
+        for value in [
+            "https://fixture.test/team",
+            "https://www.xing.com/profile/",
+            "https://www.linkedin.com/in/",
+            "https://www.linkedin.com/company/fixture",
+            "https://linkedin.com.evil.test/in/ada",
+        ] {
+            assert!(person_profile_key(value).is_none());
+        }
+    }
+
+    #[test]
+    fn shared_company_page_keeps_people_separate_and_sparse_fields_unbound() {
+        let mut raw = BTreeMap::new();
+        for (field, values) in [
+            (FieldKey::PersonVorname, vec!["Ada", "Grace"]),
+            (FieldKey::PersonNachname, vec!["Lovelace", "Hopper"]),
+            (FieldKey::PersonTelefon, vec!["+49 123 456"]),
+        ] {
+            raw.insert(
+                field,
+                values
+                    .into_iter()
+                    .map(|value| {
+                        json!({
+                            "value": value, "source_id": "impressum", "tier": "P",
+                            "source_url": "https://fixture.test/team"
+                        })
+                    })
+                    .collect(),
+            );
+        }
+        let records = grouped_person_records(&mut raw, &[]);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["person_key"], "name:adalovelace");
+        assert_eq!(records[1]["person_key"], "name:gracehopper");
+        assert!(records
+            .iter()
+            .all(|record| record.get("person_telefon").is_none()));
+        assert!(raw[&FieldKey::PersonTelefon][0]["person_key"]
+            .as_str()
+            .unwrap()
+            .starts_with("unbound:"));
+    }
+
+    #[test]
+    fn incomplete_name_lists_do_not_bind_other_contacts_by_ordinal() {
+        let mut raw = BTreeMap::from([
+            (
+                FieldKey::PersonVorname,
+                vec![
+                    json!({"value":"Ada","source_id":"impressum"}),
+                    json!({"value":"Grace","source_id":"impressum"}),
+                ],
+            ),
+            (
+                FieldKey::PersonNachname,
+                vec![json!({"value":"Hopper","source_id":"impressum"})],
+            ),
+        ]);
+        let records = grouped_person_records(&mut raw, &[]);
+        assert!(records
+            .iter()
+            .all(|record| !(record.get("person_vorname").is_some()
+                && record.get("person_nachname").is_some())));
+        assert!(records.iter().all(|record| record["person_key"]
+            .as_str()
+            .unwrap()
+            .starts_with("unbound:")));
+    }
+
+    #[test]
+    fn source_capture_retains_distinct_explicit_keys_even_for_identical_names() {
+        let mut payload = json!({
+            "plan": [{"source_id":"xing.com", "tier":"C", "target_fields":["person_vorname", "person_nachname"]}],
+            "fields": {
+                "person_vorname":{"value":null,"candidates":[]},
+                "person_nachname":{"value":null,"candidates":[]}
+            }
+        });
+        let records = ["person-a", "person-b", "name:crm-a", "name:crm-b"]
+            .into_iter()
+            .flat_map(|key| {
+                [
+                    json!({"field":"person_vorname","value":"Alex","person_key":key}),
+                    json!({"field":"person_nachname","value":"Müller","person_key":key}),
+                ]
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            merge_person_research_source_records(&mut payload, "xing.com", &records).unwrap(),
+            8
+        );
+        let people = payload["person_records"].as_array().unwrap();
+        assert_eq!(people.len(), 4);
+        assert_eq!(
+            people
+                .iter()
+                .map(|person| person["person_key"].as_str().unwrap())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["person-a", "person-b", "name:crm-a", "name:crm-b"])
+        );
+        for person in people {
+            assert!(person["evidence"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|e| e["person_key"] == person["person_key"]));
+        }
+    }
+
+    #[test]
+    fn skipped_research_preserves_priorities_and_known_crm_records_without_external_evidence() {
+        let request = PersonResearchRequest {
+            company: "Fixture GmbH".into(),
+            country: Country::De,
+            mode: ResearchMode::HaveData,
+            fields: Vec::new(),
+            include_private: Vec::new(),
+            person_priorities: vec![
+                "Einkauf".into(),
+                "Geschäftsführung/Gesamtverantwortung".into(),
+            ],
+            known_person_records: vec![KnownPersonRecord {
+                vorname: Some("Ada".into()),
+                nachname: Some("Lovelace".into()),
+                email: Some("ada@fixture.test".into()),
+                sellify_contact_id: Some("crm-42".into()),
+                ..Default::default()
+            }],
+            workspace: None,
+            persist_workspace: false,
+        };
+        let response = empty_plan_response("Fixture GmbH", &request, "mode_skipped");
+        assert_eq!(
+            response["person_priorities"],
+            json!(request.person_priorities)
+        );
+        assert_eq!(
+            response["known_person_records"][0]["sellify_contact_id"],
+            "crm-42"
+        );
+        assert_eq!(
+            response["known_person_records"][0]["email"],
+            "ada@fixture.test"
+        );
+        assert_eq!(response["person_records"], json!([]));
+        assert_eq!(response["fields"], json!({}));
     }
 
     #[test]

@@ -305,6 +305,25 @@ mod tests {
     }
 
     #[test]
+    fn configured_priority_order_overrides_the_default_categories() {
+        let priorities = vec![
+            "Einkauf".to_string(),
+            "Geschäftsführung/Gesamtverantwortung".to_string(),
+        ];
+        let buyer =
+            json!({"person_vorname":"Ada","person_funktion":"Leitung Einkauf","evidence_count":1});
+        let director = json!({"person_vorname":"Grace","person_funktion":"Geschäftsführung","evidence_count":99});
+        assert_eq!(
+            compare_person_records(&buyer, &director, &priorities),
+            Ordering::Less
+        );
+        assert_eq!(
+            compare_person_records(&buyer, &director, &[]),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
     fn role_validation_rejects_names_places_and_titles() {
         for (value, expected) in [
             ("Leipzig", false),

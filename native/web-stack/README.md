@@ -159,6 +159,25 @@ path and continue through their existing repair/evidence handling. Research
 results expose the attempt count, initial classification, and redacted browser
 outcome for auditability.
 
+## Person research result and caller context
+
+`PersonResearchRequest` preserves the calling application’s ordered
+`person_priorities` and `known_person_records` (including CRM contact IDs).
+Known CRM values are returned as caller context; they do not become external
+research evidence. `person_records` groups evidence by person identity and
+ranks contacts by the configured role categories, then evidence count and name.
+Flat person fields refer to the selected contact rather than mixing values
+from several people. An explicit `person_key` survives source-capture merging,
+including two people with identical names. Individual LinkedIn/XING profile
+URLs identify people; a shared company page does not. Sparse unbound fields
+remain unassigned when the source contains several people.
+
+The runtime-target bridge forwards a supplied nonempty owner ID as a separate
+CLI argument. This is caller context, not a replacement for the embedding
+host’s authentication and policy checks. These shared-source contracts alone
+do not prove a tenant’s durable writeback, browser reload, CRM export or
+provider-session readiness.
+
 ## Deep research
 
 `ctox web deep-research` runs a multi-query evidence gathering workflow over the

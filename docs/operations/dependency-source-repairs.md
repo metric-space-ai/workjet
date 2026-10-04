@@ -11,7 +11,7 @@ upstream release.
 | http-cache-semantics 4.2.0 | Marketing Astro                                    | Refuse cached-response hits for non-storable, no-cache, wildcard-Vary, and shared non-public cookie responses, before considering client max-stale. |
 | braces 3.0.3               | Mobile Expo/Metro via micromatch                   | Bound parser nesting and all recursive AST entry points, including caller-supplied ASTs.                                                            |
 
-The source patches are applied through the workspace's existing
+The source patches are configured through the workspace's existing
 patchedDependencies mechanism. Their hashes must be generated into the
 pnpm lockfile and a frozen install must succeed before delivery.
 
@@ -42,7 +42,16 @@ separate verification; this fixture result is not installed-product acceptance.
 The published devalue 5.9.3 repair from existing PR79 commit 9a88e8db146fceba5e35b8338458e5ee6c179564 is also composed. Previously integrated fast-uri,
 undici and brace-expansion repairs are retained.
 
-Status: generated patch-lock hashes, frozen installation, independent review,
-and current-source delivery remain pending. The required production audit stays
-red and is not waived. The earlier 4ea9 diagnostic desktop package is not a
-package of these repairs.
+The independent source review found no blocking defect in the three patch
+implementations. A subsequent pnpm 11.10.0 run generated all three patch hashes
+and completed the frozen installation command successfully. However, the same
+21-case suite against the real Expo/Metro and Astro dependency paths passed only
+14 cases: all seven Braces protections failed. Its resolved package directory
+included the correct patch hash, but the loaded Braces source lacked the guards.
+Dependency patch application remains an open delivery finding.
+
+The actual consumer failure stopped that run before its production audit and
+composed host checks. Those checks remain unexecuted on this generated lock;
+the previous red production audit is retained and is not waived. No current
+package or installed-product acceptance is established. The earlier 4ea9
+diagnostic desktop package is not a package of these repairs.

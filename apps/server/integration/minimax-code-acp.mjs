@@ -7,6 +7,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { MiniMaxSettings, ProviderInstanceId, ThreadId } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import { makeMiniMaxAdapter } from "../src/provider/Layers/MiniMaxAdapter.ts";
 import { makeMiniMaxWorkflowProbe } from "./minimax-code-workflow.mjs";
 import {
@@ -52,6 +53,7 @@ const modelSelection = {
 const start = { threadId, cwd, modelSelection, runtimeMode: "approval-required" };
 const config = decodeSettings({ enabled: true, binaryPath, dataDirectory: dataDir });
 let nativeModelSelection;
+let incomingFraming = RpcSerialization.ndjson.makeUnsafe();
 
 await Effect.runPromise(
   Effect.gen(function* () {
@@ -64,26 +66,31 @@ await Effect.runPromise(
           Effect.sync(() => {
             if (event.direction === "incoming") {
               if (event.stage !== "raw") return;
-              const frame = JSON.parse(event.payload);
-              const permission = frame.result?.configOptions?.find(
-                (option) => option.id === "permissionMode",
-              );
-              const model = frame.result?.configOptions?.find(
-                (option) => option.category === "model",
-              );
-              if (model) nativeModelSelection = parseMiniMaxModelValue(model.currentValue);
-              process.stdout.write(
-                `NATIVE_INCOMING_FRAME ${JSON.stringify({
-                  id: frame.id,
-                  method: frame.method,
-                  sessionUpdate: frame.params?.update?.sessionUpdate,
-                  stopReason: ["end_turn", "cancelled", "max_turn_requests"].includes(
-                    frame.result?.stopReason,
-                  ) ? frame.result.stopReason : undefined,
-                  errorCode: typeof frame.error?.code === "number" ? frame.error.code : undefined,
-                  ...(permission ? { permissionMode: permission.currentValue } : {}),
-                })}\n`,
-              );
+              try {
+                for (const frame of incomingFraming.decode(event.payload)) {
+                  const permission = frame.result?.configOptions?.find(
+                    (option) => option.id === "permissionMode",
+                  );
+                  const model = frame.result?.configOptions?.find(
+                    (option) => option.category === "model",
+                  );
+                  if (model) nativeModelSelection = parseMiniMaxModelValue(model.currentValue);
+                  process.stdout.write(
+                    `NATIVE_INCOMING_FRAME ${JSON.stringify({
+                      id: frame.id,
+                      method: frame.method,
+                      sessionUpdate: frame.params?.update?.sessionUpdate,
+                      stopReason: ["end_turn", "cancelled", "max_turn_requests"].includes(
+                        frame.result?.stopReason,
+                      ) ? frame.result.stopReason : undefined,
+                      errorCode: typeof frame.error?.code === "number" ? frame.error.code : undefined,
+                      ...(permission ? { permissionMode: permission.currentValue } : {}),
+                    })}\n`,
+                  );
+                }
+              } catch {
+                process.stdout.write("NATIVE_INCOMING_FRAME_PARSE_FAILED\n");
+              }
               return;
             }
             if (event.direction !== "outgoing") return;
@@ -149,6 +156,7 @@ await Effect.runPromise(
     }
     yield* stop;
     NodeAssert.equal((yield* adapter.listSessions()).length, 0);
+    incomingFraming = RpcSerialization.ndjson.makeUnsafe();
     const resumed = yield* adapter.startSession({
       ...start,
       resumeCursor: first.resumeCursor,

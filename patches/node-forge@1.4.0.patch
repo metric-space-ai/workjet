@@ -1,0 +1,16 @@
+diff --git a/lib/rsa.js b/lib/rsa.js
+--- a/lib/rsa.js
++++ b/lib/rsa.js
+@@ -1171,6 +1171,11 @@
+           // validate DigestInfo structure and element count
+           var capture = {};
+           var errors = [];
+           if(!asn1.validate(obj, digestInfoValidator, capture, errors) ||
+-            obj.value.length !== 2) {
++            obj.value.length !== 2 ||
++            // AlgorithmIdentifier may contain only its OID and optional NULL.
++            // Checking only the outer sequence permits nested signature padding.
++            obj.value[0].value.length !==
++              (('parameters' in capture) ? 2 : 1) ||
++            (('parameters' in capture) && obj.value[0].value[1].value !== '')) {
+             var error = new Error(

@@ -1,0 +1,36 @@
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -392,6 +392,21 @@
+     evaluateRequest(req) {
+         this._assertRequestHasHeaders(req);
+ 
++        // A client max-stale directive must not revive security-zeroed entries.
++        // Keep explicitly public/immutable cookie responses and private caches.
++        if (
++            !this.storable() ||
++            this._rescc['no-cache'] ||
++            this._resHeaders.vary === '*' ||
++            (this._isShared && this._rescc['proxy-revalidate']) ||
++            (this._isShared &&
++                this._resHeaders['set-cookie'] &&
++                !this._rescc.public &&
++                !this._rescc.immutable)
++        ) {
++            return this._evaluateRequestMissResult(req);
++        }
++
+         // In all circumstances, a cache MUST NOT ignore the must-revalidate directive
+         if (this._rescc['must-revalidate']) {
+             return this._evaluateRequestMissResult(req);
+@@ -423,6 +438,10 @@
+         // the stored response is either:
+         // fresh, or allowed to be served stale
+         if (this.stale()) {
++            // s-maxage requires shared-cache revalidation after expiration.
++            if (this._isShared && 's-maxage' in this._rescc) {
++                return this._evaluateRequestMissResult(req);
++            }
+             // If a value is present, then the client is willing to accept a response that has
+             // exceeded its freshness lifetime by no more than the specified number of seconds
+             const allowsStaleWithoutRevalidation = 'max-stale' in requestCC &&

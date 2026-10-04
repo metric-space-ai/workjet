@@ -12,6 +12,7 @@ import { makeMiniMaxWorkflowProbe } from "./minimax-code-workflow.mjs";
 import {
   MINIMAX_CODE_RELEASE,
   MINIMAX_PREVIEW_MODEL,
+  parseMiniMaxModelValue,
 } from "../src/provider/minimax/MiniMaxProtocol.ts";
 
 const [binaryPath, dataDir, cwd, recordPath, mode] = process.argv.slice(2);
@@ -50,12 +51,14 @@ const modelSelection = {
 };
 const start = { threadId, cwd, modelSelection, runtimeMode: "approval-required" };
 const config = decodeSettings({ enabled: true, binaryPath, dataDirectory: dataDir });
+let nativeModelSelection;
 
 await Effect.runPromise(
   Effect.gen(function* () {
     const adapter = yield* makeMiniMaxAdapter(config, {
       instanceId,
       protocolLogging: {
+        logIncoming: true,
         logOutgoing: true,
         logger: (event) =>
           Effect.sync(() => {
@@ -65,11 +68,19 @@ await Effect.runPromise(
               const permission = frame.result?.configOptions?.find(
                 (option) => option.id === "permissionMode",
               );
+              const model = frame.result?.configOptions?.find(
+                (option) => option.category === "model",
+              );
+              if (model) nativeModelSelection = parseMiniMaxModelValue(model.currentValue);
               process.stdout.write(
                 `NATIVE_INCOMING_FRAME ${JSON.stringify({
                   id: frame.id,
                   method: frame.method,
                   sessionUpdate: frame.params?.update?.sessionUpdate,
+                  stopReason: ["end_turn", "cancelled", "max_turn_requests"].includes(
+                    frame.result?.stopReason,
+                  ) ? frame.result.stopReason : undefined,
+                  errorCode: typeof frame.error?.code === "number" ? frame.error.code : undefined,
                   ...(permission ? { permissionMode: permission.currentValue } : {}),
                 })}\n`,
               );
@@ -113,6 +124,8 @@ await Effect.runPromise(
         .pipe(Effect.flatMap((sessions) => (sessions.length > 0 ? stop : Effect.void))),
     );
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
+    NodeAssert.equal(nativeModelSelection?.modelId, MINIMAX_PREVIEW_MODEL, "Record the actual advertised native model route.");
+    const firstNativeModelSelection = nativeModelSelection;
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
     NodeAssert.ok(first.resumeCursor.sessionId);
     yield* Effect.promise(() =>
@@ -122,6 +135,7 @@ await Effect.runPromise(
           status: "started",
           workflow: workflowName,
           model: first.model,
+          nativeModelSelection: firstNativeModelSelection,
           resumeCursor: first.resumeCursor,
           acceptance: "pending",
         }, null, 2)}\n`,
@@ -142,6 +156,7 @@ await Effect.runPromise(
     });
     NodeAssert.deepEqual(resumed.resumeCursor, first.resumeCursor);
     NodeAssert.equal(resumed.model, MINIMAX_PREVIEW_MODEL);
+    NodeAssert.deepEqual(nativeModelSelection, firstNativeModelSelection, "Reload must preserve the native provider route and variant.");
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
     if (workflow) yield* workflow.afterReload;
     const workflowReceipt = workflow ? yield* workflow.receipt : undefined;
@@ -152,6 +167,7 @@ await Effect.runPromise(
       workflow: workflowName,
       pinnedIdentityValidatedByAdapter: MINIMAX_CODE_RELEASE,
       model: resumed.model,
+      nativeModelSelection,
       requestedThinkingEffort: mode === "workflow" ? "high" : "automatic",
       resumeCursor: resumed.resumeCursor,
       processCleanup: { status: "passed", stopResults },

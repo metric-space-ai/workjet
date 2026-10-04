@@ -1,5 +1,18 @@
 # Isolated Models provider fixture
 
+For a held-response chapter, pass `--hold-result` with the expected arithmetic
+result and an optional `--hold-timeout-seconds` from 1 to 120 before launch.
+The fixture records the received request, waits for its owned
+`release-reply.json` containing the same owner and request number, then sends
+the real HTTP reply. It reports delivered, delivery-failed or timed-out after
+that attempt. This exercises a pending transport; it never inserts app history,
+changes a provider account or bypasses the visible UI.
+
+Held replies and prelaunch `--primary-status` modes coexist. Only the original
+Primary key receives the selected failure; its replacement, Secondary and Other
+retain their own identities. Failed attempts count toward the 200-attempt bound
+and never increment successful response numbers or produce a held reply.
+
 This is test preparation for the normal Workjet server and native gateway. It
 uses three clearly synthetic API keys, two Z.ai accounts and one Kimi account,
 all configured with an explicit loopback upstream. It writes the ordinary

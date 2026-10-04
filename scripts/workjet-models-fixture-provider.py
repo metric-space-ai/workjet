@@ -15,7 +15,13 @@ parser.add_argument('--output', required=True)
 parser.add_argument('--owner', required=True)
 parser.add_argument('--seconds', type=int, default=900)
 parser.add_argument('--primary-status', type=int, choices=(200, 401, 402, 403, 404, 429, 500, 503), default=200)
+parser.add_argument('--hold-result', help='Synthetic arithmetic result to hold until release-reply.json exists')
+parser.add_argument('--hold-timeout-seconds', type=int, default=90)
 args = parser.parse_args()
+if args.hold_result is not None and not re.fullmatch(r'\d{1,13}', args.hold_result):
+    raise SystemExit('Held fixture result must be a non-secret arithmetic value')
+if not 1 <= args.hold_timeout_seconds <= 120:
+    raise SystemExit('Held reply deadline must be between 1 and 120 seconds')
 root = Path(args.output)
 allowed = Path('/Volumes/tmp/dev-artifacts/workjet')
 if not root.is_absolute() or not root.resolve().is_relative_to(allowed) or root.resolve() == allowed:
@@ -27,15 +33,15 @@ os.chmod(root, 0o700)
 started = time.time()
 keys = {
     'fixture-primary-not-a-real-key-p001': 'fixture-primary',
+    'fixture-primary-replacement-not-a-real-key-r004': 'fixture-primary',
     'fixture-secondary-not-a-real-key-s002': 'fixture-secondary',
     'fixture-other-not-a-real-key-o003': 'fixture-other',
-    'fixture-primary-replacement-not-a-real-key-r004': 'fixture-primary',
 }
 models = ('gpt-6.1-sol', 'fixture-model-before', 'fixture-model-one', 'fixture-model-two', 'fixture-shared-model')
 record = dict(schema='workjet.models.local-provider-fixture.v1', owner=args.owner,
               pid=os.getpid(), process_group=os.getpgrp(), purpose='Sanitized loopback inference fixture',
               output=str(root), started_unix=started, deadline_unix=started + args.seconds,
-              stop_condition='SIGTERM or <=900s wall deadline; at most 200 accepted inference attempts',
+              stop_condition='SIGTERM or <=900s wall deadline; at most 200 inference attempts',
               requests=0, attempts=0, primary_status=args.primary_status, terminal=False,
               model_execution='Deterministic local transport only; gpt-6.1-sol is a test alias, no external model executes')
 
@@ -59,6 +65,17 @@ def user_text(body):
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *values):
         pass
+
+    def handle(self):
+        try:
+            super().handle()
+        except OSError as error:
+            held = record.get('held_reply', {})
+            if held.get('phase') == 'released':
+                held.update(phase='delivery-failed', error_type=type(error).__name__, finished_unix=time.time())
+                save()
+            else:
+                raise
 
     def setup(self):
         super().setup()
@@ -140,10 +157,45 @@ class Handler(BaseHTTPRequestHandler):
         with (root / 'requests.jsonl').open('a') as journal:
             journal.write(json.dumps(receipt) + '\n')
         save()
+        held = args.hold_result is not None and reply == args.hold_result
+        if held:
+            record['held_request_count'] = record.get('held_request_count', 0) + 1
+            record['held_reply'] = dict(number=number, response_id=identity, phase='waiting',
+                                       accepted_unix=time.time(), deadline_unix=time.time() + args.hold_timeout_seconds)
+            save()
+            release = root / 'release-reply.json'
+            while time.time() < record['held_reply']['deadline_unix']:
+                if release.exists():
+                    try:
+                        release_authority = json.loads(release.read_text())
+                    except (OSError, ValueError):
+                        release_authority = {}
+                    if release_authority.get('owner') == args.owner and release_authority.get('number') == number:
+                        break
+                time.sleep(.05)
+            else:
+                record['held_reply'].update(phase='timed-out', finished_unix=time.time())
+                save()
+                self.send_json(504, dict(error=dict(message='Held fixture reply was not released within its deadline')))
+                return
+            record['held_reply'].update(phase='released', released_unix=time.time())
+            save()
         response = dict(id=identity, object='response', status='completed', model=model,
                         output=[dict(id='fixture-message-' + str(number), type='message', role='assistant', status='completed', content=[dict(type='output_text', text=reply, annotations=[])])])
         if body.get('stream') is not True:
-            self.send_json(200, response if route.endswith('/responses') else dict(id=identity, object='chat.completion', created=int(time.time()), model=model, choices=[dict(index=0, message=dict(role='assistant', content=reply), finish_reason='stop')]))
+            try:
+                self.send_json(200, response if route.endswith('/responses') else dict(id=identity, object='chat.completion', created=int(time.time()), model=model, choices=[dict(index=0, message=dict(role='assistant', content=reply), finish_reason='stop')]))
+                self.wfile.flush()
+            except OSError as error:
+                if not held:
+                    raise
+                if held:
+                    record['held_reply'].update(phase='delivery-failed', error_type=type(error).__name__, finished_unix=time.time())
+                    save()
+                return
+            if held:
+                record['held_reply'].update(phase='delivered', finished_unix=time.time())
+                save()
             return
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
@@ -172,6 +224,9 @@ class Handler(BaseHTTPRequestHandler):
         # Usage is absent because this deterministic fixture does not measure model tokens.
         self.wfile.write(b'data: [DONE]\n\n')
         self.wfile.flush()
+        if held:
+            record['held_reply'].update(phase='delivered', finished_unix=time.time())
+            save()
         self.close_connection = True
 
 server = HTTPServer(('127.0.0.1', 0), Handler)

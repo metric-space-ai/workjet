@@ -16,7 +16,10 @@ import {
 
 const [binaryPath, dataDir, cwd, recordPath, mode] = process.argv.slice(2);
 NodeAssert.ok(mode === undefined || mode === "workflow", "Optional mode must be workflow.");
-const workflowName = mode === "workflow" ? "minimax-official-cli-workjet-workflow" : "minimax-official-cli-workjet-session";
+const workflowName =
+  mode === "workflow"
+    ? "minimax-official-cli-workjet-workflow"
+    : "minimax-official-cli-workjet-session";
 for (const value of [binaryPath, dataDir, cwd, recordPath]) {
   NodeAssert.ok(
     value && NodePath.isAbsolute(value),
@@ -59,9 +62,8 @@ await Effect.runPromise(
           TMPDIR: process.env.TMPDIR,
         }),
     });
-    const workflow = mode === "workflow"
-      ? yield* makeMiniMaxWorkflowProbe(adapter, { threadId, cwd })
-      : undefined;
+    const workflow =
+      mode === "workflow" ? yield* makeMiniMaxWorkflowProbe(adapter, { threadId, cwd }) : undefined;
     const first = yield* adapter.startSession(start);
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
@@ -107,7 +109,11 @@ await Effect.runPromise(
     yield* Effect.promise(() =>
       NodeFSP.writeFile(recordPath, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 }),
     );
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.timeout(mode === "workflow" ? "4 minutes" : "90 seconds")),
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(NodeServices.layer),
+    Effect.timeout(mode === "workflow" ? "4 minutes" : "90 seconds"),
+  ),
 );
 process.stdout.write(
   `${JSON.stringify({ status: "passed", workflow: workflowName, model: MINIMAX_PREVIEW_MODEL, receipt: recordPath, uiAcceptance: "not-run" })}\n`,

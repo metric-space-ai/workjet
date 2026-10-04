@@ -138,6 +138,11 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
             rawPayloadKeys: event.raw?.payload ? Object.keys(event.raw.payload) : [],
           })),
         reply: text("edit"),
+        events: events.map(({ event }) => ({
+          type: event.type,
+          payload: event.payload,
+          raw: event.raw,
+        })),
       })}`,
     );
     const status = yield* Effect.promise(() =>

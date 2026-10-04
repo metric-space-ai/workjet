@@ -132,16 +132,17 @@ const visibleText = (
 const stripInjectedCodexContext = (text: string): string => {
   let remaining = text.trimStart();
   let stripped = false;
-  const header = /^# AGENTS\.md instructions(?: for [^\r\n]+)?(?:\r?\n|$)/u.exec(remaining);
-  if (header) {
-    const body = remaining.slice(header[0].length).trimStart();
-    if (!body) return "";
-    const instructions = /^<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/u.exec(body);
-    if (!instructions) return text;
-    remaining = body.slice(instructions[0].length).trimStart();
-    stripped = true;
-  }
   for (;;) {
+    const header = /^# AGENTS\.md instructions(?: for [^\r\n]+)?(?:\r?\n|$)/u.exec(remaining);
+    if (header) {
+      const body = remaining.slice(header[0].length).trimStart();
+      if (!body) return "";
+      const instructions = /^<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/u.exec(body);
+      if (!instructions) return stripped ? remaining : text;
+      remaining = body.slice(instructions[0].length).trimStart();
+      stripped = true;
+      continue;
+    }
     const context =
       /^<(recommended_plugins|permissions instructions|environment_context)>[\s\S]*?<\/\1>/u.exec(
         remaining,

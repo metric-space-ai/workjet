@@ -278,6 +278,38 @@ describe("static Workjet session transcript parsing", () => {
     ).toBeNull();
   });
 
+  it("handles reordered Codex context without losing the following request", () => {
+    const request = "Import this actual request";
+    const instructions =
+      "# AGENTS.md instructions for /workspace\n<INSTRUCTIONS>hidden</INSTRUCTIONS>\n";
+    const plugins = "<recommended_plugins>hidden</recommended_plugins>\n";
+    const environment = "<environment_context>hidden</environment_context>\n";
+    const literal = "# AGENTS.md instructions for /workspace\nDiscuss this literal heading";
+    const cases = [
+      [plugins + instructions + environment + request, request],
+      [environment + instructions + plugins + request, request],
+      [plugins + literal, literal],
+    ] as const;
+    for (const [text, expected] of cases) {
+      const parsed = parseCodexSessionTranscript(
+        [
+          JSON.stringify({ type: "session_meta", payload: { cwd: "/workspace" } }),
+          JSON.stringify({
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text }],
+            },
+          }),
+        ],
+        NOW,
+      );
+      expect(parsed?.messages).toEqual([{ role: "user", text: expected, createdAt: NOW }]);
+      expect(parsed?.title).toBe(expected.replace(/\s+/gu, " "));
+    }
+  });
+
   it("drops injected Codex context and internal health probes", () => {
     expect(
       parseCodexSessionTranscript(

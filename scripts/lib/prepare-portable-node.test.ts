@@ -65,12 +65,23 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
   // Effect caches the Fetch reference's default. Keep one mock identity for the
   // whole suite so later cases cannot fall through a restored spy to the network.
   const download = vi.fn<typeof fetch>();
-  beforeAll(() => vi.stubGlobal("fetch", download));
-  beforeEach(() => {
+  let archiveCache: string;
+  beforeAll(async () => {
+    archiveCache = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "workjet-node-cache-test-"),
+    );
+    vi.stubGlobal("fetch", download);
+  });
+  beforeEach(async () => {
+    await NodeFSP.rm(archiveCache, { recursive: true, force: true });
+    await NodeFSP.mkdir(archiveCache);
     download.mockReset();
     download.mockRejectedValue(new Error("Unexpected portable Node network request"));
   });
-  afterAll(() => vi.unstubAllGlobals());
+  afterAll(async () => {
+    vi.unstubAllGlobals();
+    await NodeFSP.rm(archiveCache, { recursive: true, force: true });
+  });
 
   it("verifies and stages an isolated archive with its license and release receipt", async () => {
     await fixture(async (input, root) => {
@@ -130,6 +141,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
             destination: input.destination,
             platform: hostPlatform,
             arch: hostArchitecture,
+            archiveCacheDirectory: archiveCache,
           });
           expect(await NodeFSP.readFile(executable, "utf8")).toContain("IDENTITY");
           expect(await NodeFSP.readFile(NodePath.join(input.destination, "padding"))).toEqual(
@@ -144,6 +156,47 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
             ),
           ).toBe(false);
           expect(download).toHaveBeenCalledOnce();
+          download.mockRejectedValue(new Error("Second package stage is offline"));
+          const secondDestination = NodePath.join(root, "second-stage");
+          const secondExecutable = await preparePortableNode({
+            destination: secondDestination,
+            platform: hostPlatform,
+            arch: hostArchitecture,
+            archiveCacheDirectory: archiveCache,
+          });
+          expect(await NodeFSP.readFile(secondExecutable, "utf8")).toContain("IDENTITY");
+          expect(await NodeFSP.readFile(NodePath.join(secondDestination, "LICENSE"), "utf8")).toBe(
+            "Fixture notice\n",
+          );
+          expect(
+            JSON.parse(
+              await NodeFSP.readFile(
+                NodePath.join(secondDestination, "workjet-runtime.json"),
+                "utf8",
+              ),
+            ),
+          ).toEqual(input.pin);
+          expect(download).toHaveBeenCalledOnce();
+          const cachedArchive = NodePath.join(
+            archiveCache,
+            `${input.pin.directoryName}-${input.pin.sha256}.tar.gz`,
+          );
+          expect(await NodeFSP.readFile(cachedArchive)).toEqual(bytes);
+          await NodeFSP.appendFile(cachedArchive, "corrupt");
+          const refusedDestination = NodePath.join(root, "refused-stage");
+          await expect(
+            preparePortableNode({
+              destination: refusedDestination,
+              platform: hostPlatform,
+              arch: hostArchitecture,
+              archiveCacheDirectory: archiveCache,
+            }),
+          ).rejects.toThrow("checksum verification failed");
+          await expect(NodeFSP.access(refusedDestination)).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+          expect(download).toHaveBeenCalledOnce();
+          expect(await NodeFSP.readdir(archiveCache)).toEqual([NodePath.basename(cachedArchive)]);
         } finally {
           pin.mockRestore();
         }
@@ -202,6 +255,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
           destination: NodePath.join(root, "node"),
           platform: hostPlatform,
           arch: hostArchitecture,
+          archiveCacheDirectory: archiveCache,
         }),
       ).rejects.toThrow("checksum verification failed");
       expect(await NodeFSP.readdir(root)).toEqual([]);
@@ -223,6 +277,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
           destination: NodePath.join(root, "node"),
           platform: hostPlatform,
           arch: hostArchitecture,
+          archiveCacheDirectory: archiveCache,
         }),
       ).rejects.toThrow(
         /Could not download pinned portable Node .* from https:\/\/nodejs\.org\/.*\(0 bytes received\)/,
@@ -258,6 +313,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
         destination: NodePath.join(root, "node"),
         platform: hostPlatform,
         arch: hostArchitecture,
+        archiveCacheDirectory: archiveCache,
       });
       const rejected = expect(pending).rejects.toThrow(/0 bytes received.*TimeoutError/);
       await vi.waitFor(() => expect(download).toHaveBeenCalledOnce());
@@ -280,6 +336,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
           destination: NodePath.join(root, "node"),
           platform: hostPlatform,
           arch: hostArchitecture,
+          archiveCacheDirectory: archiveCache,
         }),
       ).rejects.toThrow("Portable Node download failed (503)");
       expect(await NodeFSP.readdir(root)).toEqual([]);
@@ -314,6 +371,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
           destination: NodePath.join(root, "node"),
           platform: hostPlatform,
           arch: hostArchitecture,
+          archiveCacheDirectory: archiveCache,
         }),
       ).rejects.toThrow("size limit");
       expect(cancelled).toBe(true);

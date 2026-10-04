@@ -4,6 +4,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
 import * as Data from "effect/Data";
 import * as Stream from "effect/Stream";
@@ -87,12 +88,29 @@ export async function preparePortableNode(input: {
   readonly destination: string;
   readonly platform: string;
   readonly arch: string;
+  readonly archiveCacheDirectory?: string;
 }) {
   const pin = managedNodeArchive(input.platform, input.arch);
   await NodeFSP.mkdir(NodePath.dirname(input.destination), { recursive: true });
-  const download = await NodeFSP.mkdtemp(
-    NodePath.join(NodePath.dirname(input.destination), ".node-download-"),
+  const cache =
+    input.archiveCacheDirectory ?? NodePath.join(NodeOS.tmpdir(), "workjet-node-archives");
+  await NodeFSP.mkdir(cache, { recursive: true, mode: 0o700 });
+  const cachedArchive = NodePath.join(cache, `${pin.directoryName}-${pin.sha256}.tar.gz`);
+  const cached = await NodeFSP.stat(cachedArchive).then(
+    () => true,
+    (cause: NodeJS.ErrnoException) => {
+      if (cause.code === "ENOENT") return false;
+      throw cause;
+    },
   );
+  if (cached) {
+    return await stageVerifiedNodeArchive({
+      archivePath: cachedArchive,
+      destination: input.destination,
+      pin,
+    });
+  }
+  const download = await NodeFSP.mkdtemp(NodePath.join(cache, ".node-download-"));
   try {
     const archivePath = NodePath.join(download, "node.tar.gz");
     // Preserve progress before the failed download's private stage is removed.
@@ -151,7 +169,20 @@ export async function preparePortableNode(input: {
         cause,
       });
     }
-    return await stageVerifiedNodeArchive({ archivePath, destination: input.destination, pin });
+    const executable = await stageVerifiedNodeArchive({
+      archivePath,
+      destination: input.destination,
+      pin,
+    });
+    // Publish only after checksum and executable identity verification. Both
+    // packaging stages share the build TMPDIR; no second network fetch is needed.
+    try {
+      await NodeFSP.rename(archivePath, cachedArchive);
+    } catch (cause) {
+      await NodeFSP.rm(input.destination, { recursive: true, force: true });
+      throw cause;
+    }
+    return executable;
   } finally {
     await NodeFSP.rm(download, { recursive: true, force: true });
   }

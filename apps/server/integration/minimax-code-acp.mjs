@@ -65,12 +65,21 @@ await Effect.runPromise(
     const workflow =
       mode === "workflow" ? yield* makeMiniMaxWorkflowProbe(adapter, { threadId, cwd }) : undefined;
     const first = yield* adapter.startSession(start);
+    const stopResults = [];
+    const stop = Effect.gen(function* () {
+      const result = yield* adapter.stopSession(threadId);
+      NodeAssert.equal(result?.terminated, true, "Native process shutdown must complete.");
+      for (const pid of result.pids) {
+        NodeAssert.throws(() => process.kill(pid, 0), { code: "ESRCH" });
+      }
+      stopResults.push(result);
+    });
     NodeAssert.equal(first.model, MINIMAX_PREVIEW_MODEL);
     NodeAssert.equal(first.resumeCursor?.protocol, "minimax-acp");
     NodeAssert.ok(first.resumeCursor.sessionId);
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
     if (workflow) yield* workflow.editAndCancel;
-    yield* adapter.stopSession(threadId);
+    yield* stop;
     NodeAssert.equal((yield* adapter.listSessions()).length, 0);
     const resumed = yield* adapter.startSession({
       ...start,
@@ -82,7 +91,7 @@ await Effect.runPromise(
     NodeAssert.equal((yield* adapter.listSessions()).length, 1);
     if (workflow) yield* workflow.afterReload;
     const workflowReceipt = workflow ? yield* workflow.receipt : undefined;
-    yield* adapter.stopSession(threadId);
+    yield* stop;
     NodeAssert.equal((yield* adapter.listSessions()).length, 0);
     const receipt = {
       status: "passed",
@@ -91,6 +100,7 @@ await Effect.runPromise(
       model: resumed.model,
       requestedThinkingEffort: mode === "workflow" ? "high" : "automatic",
       resumeCursor: resumed.resumeCursor,
+      processCleanup: { status: "passed", stopResults },
       modelPromptSent: false,
       modelRouteExecution: "not-run",
       sourceEditAcceptance: "not-run",
@@ -103,6 +113,7 @@ await Effect.runPromise(
         "stop",
         "strict-same-cursor-load",
         "stop-after-reload",
+        "native-owned-processes-absent",
         ...(workflowReceipt?.gates ?? []),
       ],
     };

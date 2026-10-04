@@ -1845,6 +1845,7 @@ printf '%s' '{"ok":false,"classification":{"status":"authorization_required"},"r
                 "Fixture GmbH",
                 Country::De,
                 owner,
+                None,
             );
             assert_eq!(result.classification, "completed_empty");
             let arguments = std::fs::read_to_string(root.join("fake-ctox.args")).unwrap();

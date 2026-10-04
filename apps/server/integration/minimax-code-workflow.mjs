@@ -137,6 +137,13 @@ export const makeMiniMaxWorkflowProbe = Effect.fn("makeMiniMaxWorkflowProbe")(fu
   );
   const run = (input) =>
     Effect.raceFirst(adapter.sendTurn({ threadId, input }), Fiber.join(consumer));
+  const awaitNativeReceipt = (receipt) =>
+    Effect.raceFirst(
+      Deferred.await(receipt),
+      Fiber.join(consumer).pipe(
+        Effect.andThen(Effect.die(new Error("Native event stream ended before required tool completion receipts."))),
+      ),
+    );
   const text = (stage) =>
     events
       .filter(

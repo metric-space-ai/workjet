@@ -927,6 +927,73 @@ describe("DesktopBackendManager", () => {
     );
   }
 
+  it.effect("ignores readiness from a stopping run and an older attachment", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const callbacks = yield* Queue.unbounded<DesktopBackendManager.RunBackendProcessOptions>();
+        const teardownStarted = yield* Deferred.make<void>();
+        const finishTeardown = yield* Deferred.make<void>();
+        let readyCount = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.succeed(makeProcess())),
+          ),
+          run: (options) =>
+            Effect.gen(function* () {
+              const completion = yield* Deferred.make<DesktopBackendManager.BackendProcessExit>();
+              const scope = yield* Scope.Scope;
+              yield* Scope.addFinalizer(
+                scope,
+                Deferred.succeed(teardownStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(finishTeardown)),
+                  Effect.andThen(
+                    Deferred.succeed(completion, {
+                      code: Option.none(),
+                      reason: "attachment released",
+                      restart: false,
+                    }),
+                  ),
+                  Effect.asVoid,
+                ),
+              );
+              yield* Queue.offer(callbacks, options);
+              yield* options.onStarted?.(123) ?? Effect.void;
+              return yield* Deferred.await(completion);
+            }),
+          onReady: Effect.sync(() => {
+            readyCount += 1;
+          }),
+        });
+        // Unblock owned teardown even when a regression assertion fails.
+        yield* Effect.addFinalizer(() =>
+          Deferred.succeed(finishTeardown, undefined).pipe(Effect.asVoid),
+        );
+
+        yield* instance.start;
+        const first = yield* Queue.take(callbacks);
+        const stopping = yield* instance.stop().pipe(Effect.forkChild);
+        yield* Deferred.await(teardownStarted).pipe(Effect.timeout("1 second"));
+
+        yield* first.onReady?.() ?? Effect.void;
+        assert.equal(readyCount, 0, "a readiness response during stop must not reopen the UI");
+        assert.isFalse((yield* instance.snapshot).ready);
+        yield* Deferred.succeed(finishTeardown, undefined);
+        yield* Fiber.join(stopping).pipe(Effect.timeout("1 second"));
+
+        yield* instance.start;
+        const second = yield* Queue.take(callbacks);
+        yield* first.onReady?.() ?? Effect.void;
+        assert.equal(readyCount, 0, "the released attachment must not mark a new run ready");
+        yield* second.onReady?.() ?? Effect.void;
+        assert.equal(readyCount, 1);
+        assert.isTrue((yield* instance.snapshot).ready);
+        yield* instance.stop().pipe(Effect.timeout("1 second"));
+        assert.isFalse((yield* instance.snapshot).ready);
+      }),
+    ),
+  );
+
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.scoped(
       Effect.gen(function* () {

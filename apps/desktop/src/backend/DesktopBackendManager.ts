@@ -942,7 +942,9 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           onReady: Effect.fn("desktop.backendInstance.onReady")(function* () {
             const isCurrentRun = yield* Ref.modify(state, (latest) => {
               const activeRun = Option.getOrUndefined(latest.active);
-              if (activeRun?.id !== runId) {
+              // A late readiness response must not reopen the UI while its
+              // attachment is being released, even if start was requested again.
+              if (!latest.desiredRunning || activeRun?.id !== runId || activeRun.stopRequested) {
                 return [false, latest] as const;
               }
 

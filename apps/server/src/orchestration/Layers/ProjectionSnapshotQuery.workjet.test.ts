@@ -248,4 +248,45 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
       );
     }),
   );
+
+  it.effect("reads archive IDs from durable receipts without including native continuation", () =>
+    Effect.gen(function* () {
+      const query = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-import-context");
+      yield* sql`DELETE FROM workjet_session_imports WHERE thread_id IN (${threadId}, 'other-import-thread')`;
+      for (const [sourceKey, targetThreadId, count] of [
+        ["wjsi_fixture", threadId, 2],
+        ["wjsi_fixture:projectA", threadId, 2],
+        ["wjsi_other:projectA", "other-import-thread", 9],
+      ] as const) {
+        yield* sql`
+          INSERT INTO workjet_session_imports (
+            source_key, source, provider_instance_id, thread_id,
+            imported_message_count, prefix_hash, created_at, updated_at
+          ) VALUES (
+            ${sourceKey}, 'codex', 'codex', ${targetThreadId},
+            ${count}, 'immutable-fixture-prefix', ${NOW}, ${NOW}
+          )
+        `;
+      }
+      assert.deepEqual(yield* query.getThreadImportedMessageIds!(threadId), [
+        "82229b5d-1df4-5ef9-9607-5987e46d3824",
+        "18667ca3-8d6f-592e-966d-ad836efa0579",
+        "ca0be181-7423-5c99-8c14-056cf88e3aa4",
+        "17b22bfa-39cd-508c-a383-23d8b7ddb73b",
+      ]);
+      assert.deepEqual(
+        yield* query.getThreadImportedMessageIds!(ThreadId.make("never-imported-thread")),
+        [],
+      );
+      yield* sql`
+        UPDATE workjet_session_imports SET imported_message_count = 3
+        WHERE source_key = 'wjsi_fixture:projectA'
+      `;
+      const appended = yield* query.getThreadImportedMessageIds!(threadId);
+      assert.equal(appended.length, 5);
+      assert.equal(new Set(appended).size, 5);
+    }),
+  );
 });

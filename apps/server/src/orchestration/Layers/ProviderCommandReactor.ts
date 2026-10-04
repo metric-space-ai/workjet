@@ -821,9 +821,34 @@ const make = Effect.gen(function* () {
           : requestedModelSelection
         : input.modelSelection;
 
+    const importedMessageIds =
+      activeSession?.provider === "greppy" && projectionSnapshotQuery.getThreadImportedMessageIds
+        ? yield* projectionSnapshotQuery.getThreadImportedMessageIds(input.threadId)
+        : [];
+    const messagesById = new Map(thread.messages.map((message) => [message.id, message]));
+    const importedHistory = yield* Effect.forEach(importedMessageIds, (id) =>
+      Effect.gen(function* () {
+        const message = messagesById.get(id);
+        if (
+          !message ||
+          message.streaming ||
+          (message.role !== "user" && message.role !== "assistant")
+        )
+          return yield* new ProviderAdapterRequestError({
+            provider: "greppy",
+            method: "thread.turn.start",
+            detail:
+              "Imported conversation history is incomplete. Refresh the import before continuing.",
+          });
+        return { id, role: message.role, text: message.text };
+      }),
+    );
+
     return {
       threadId: input.threadId,
       requestId: input.requestId,
+      ...(importedHistory.length > 0 ? { importedHistory } : {}),
+
       ...(normalizedInput ? { input: normalizedInput } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),

@@ -1192,12 +1192,36 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.history.import": {
-      const targetThread = yield* requireThread({
-        readModel,
-        command,
-        threadId: command.threadId,
-      });
-      const existingMessageIds = new Set(targetThread.messages.map((message) => message.id));
+      const createThread = command.bootstrap?.createThread;
+      const targetThread = createThread
+        ? undefined
+        : yield* requireThread({ readModel, command, threadId: command.threadId });
+      if (targetThread && targetThread.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Import destination thread '${command.threadId}' is deleted.`,
+        });
+      }
+      const projectId = createThread?.projectId ?? targetThread!.projectId;
+      const project = yield* requireProject({ readModel, command, projectId });
+      if (project.deletedAt !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Import destination project '${projectId}' is deleted.`,
+        });
+      }
+      if (createThread) {
+        yield* requireProjectTeamOwnership({
+          commandType: command.type,
+          threadId: command.threadId,
+          projectId: createThread.projectId,
+          config: createThread.workjetConfig,
+          readModel,
+          environmentId,
+        });
+        yield* requireThreadAbsent({ readModel, command, threadId: command.threadId });
+      }
+      const existingMessageIds = new Set(targetThread?.messages.map((message) => message.id) ?? []);
       const commandMessageIds = new Set<string>();
       for (const message of command.messages) {
         if (existingMessageIds.has(message.messageId) || commandMessageIds.has(message.messageId)) {
@@ -1208,7 +1232,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         }
         commandMessageIds.add(message.messageId);
       }
-      return yield* Effect.forEach(command.messages, (message) =>
+      const messageEvents = yield* Effect.forEach(command.messages, (message) =>
         Effect.gen(function* () {
           return {
             ...(yield* withEventBase({
@@ -1232,6 +1256,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           };
         }),
       );
+      if (!createThread) return messageEvents;
+      return [
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: createThread.createdAt,
+            commandId: command.commandId,
+          })),
+          type: "thread.created" as const,
+          payload: {
+            threadId: command.threadId,
+            ...createThread,
+            updatedAt: createThread.createdAt,
+          },
+        },
+        ...messageEvents,
+      ];
     }
 
     case "thread.turn.interrupt": {

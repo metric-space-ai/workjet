@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import {
   CommandId,
+  MessageId,
   DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   ProjectId,
@@ -177,6 +178,53 @@ describe("durable project teams", () => {
         );
         expect(duplicate._tag).toBe("Failure");
       }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("preserves team ownership when static history atomically creates a conversation", () =>
+    Effect.gen(function* () {
+      const { state } = yield* apply(createEmptyReadModel(now), create);
+      const supervisor = state.threads[0]!;
+      const supervisorTeam =
+        supervisor.workjetConfig.schemaVersion === 2 ? supervisor.workjetConfig.team : undefined;
+      if (!supervisorTeam) throw new Error("Fixture supervisor missing");
+      const importedId = ThreadId.make("imported-supervisor");
+      for (const threadId of [importedId, supervisor.id]) {
+        const error = yield* apply(state, {
+          type: "thread.history.import",
+          commandId: CommandId.make(`import-team-${threadId}`),
+          threadId: importedId,
+          bootstrap: {
+            createThread: {
+              projectId,
+              title: "Imported history",
+              modelSelection: supervisor.modelSelection,
+              runtimeMode: supervisor.runtimeMode,
+              interactionMode: supervisor.interactionMode,
+              workjetConfig: {
+                ...DEFAULT_WORKJET_THREAD_CONFIG,
+                role: "orchestrator",
+                team: { ...supervisorTeam, threadId },
+              },
+              branch: null,
+              worktreePath: null,
+              createdAt: now,
+            },
+          },
+          messages: [
+            {
+              messageId: MessageId.make("imported-message"),
+              role: "user",
+              text: "Original history",
+              createdAt: now,
+            },
+          ],
+          createdAt: now,
+        }).pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      }
+      expect(state.threads).toHaveLength(1);
+      expect(state.threads[0]?.id).toBe(supervisor.id);
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect(

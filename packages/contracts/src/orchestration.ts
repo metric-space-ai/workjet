@@ -821,7 +821,7 @@ export const ThreadWorkjetConfigSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
-const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
+const ThreadBootstrapCreateThread = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
@@ -843,7 +843,7 @@ const ThreadTurnStartBootstrapPrepareWorktree = Schema.Struct({
 });
 
 const ThreadTurnStartBootstrap = Schema.Struct({
-  createThread: Schema.optional(ThreadTurnStartBootstrapCreateThread),
+  createThread: Schema.optional(ThreadBootstrapCreateThread),
   prepareWorktree: Schema.optional(ThreadTurnStartBootstrapPrepareWorktree),
   runSetupScript: Schema.optional(Schema.Boolean),
 });
@@ -1022,13 +1022,14 @@ const ThreadMessageAssistantCompleteCommand = Schema.Struct({
 });
 
 /**
- * Server-internal static history import. It deliberately creates message events
- * without starting a provider turn or binding a native provider session.
+ * Server-internal static history import. A fresh copy can create its thread and
+ * first messages atomically without starting a provider turn or binding a session.
  */
 const ThreadHistoryImportCommand = Schema.Struct({
   type: Schema.Literal("thread.history.import"),
   commandId: CommandId,
   threadId: ThreadId,
+  bootstrap: Schema.optional(Schema.Struct({ createThread: ThreadBootstrapCreateThread })),
   messages: Schema.Array(
     Schema.Struct({
       messageId: MessageId,

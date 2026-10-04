@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -396,19 +397,51 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
 };
 
 const readSession = async (file: SourceFile): Promise<ParsedSession | null> => {
-  const stat = await NodeFSP.lstat(file.path);
+  const expected = await NodeFSP.lstat(file.path);
   if (
-    !stat.isFile() ||
+    !expected.isFile() ||
     sourceKeyFor(file.source, file.providerInstanceId, await NodeFSP.realpath(file.path)) !==
       file.sourceKey
   ) {
     throw new WorkjetSessionImportError({ reason: "candidate_expired", subject: file.sourceKey });
   }
-  if (stat.size > MAX_TRANSCRIPT_BYTES) {
-    throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
+  const handle = await NodeFSP.open(
+    file.path,
+    NodeFS.constants.O_RDONLY | (NodeFS.constants.O_NOFOLLOW ?? 0),
+  );
+  try {
+    const stat = await handle.stat();
+    if (
+      !stat.isFile() ||
+      stat.dev !== expected.dev ||
+      stat.ino !== expected.ino ||
+      stat.size !== expected.size ||
+      stat.mtimeMs !== expected.mtimeMs
+    ) {
+      throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    }
+    if (stat.size > MAX_TRANSCRIPT_BYTES) {
+      throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
+    }
+    // One extra byte detects growth; reads remain bounded even if the source app keeps appending.
+    const buffer = Buffer.alloc(stat.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = await handle.read(buffer, length, buffer.length - length, null);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    const after = await handle.stat();
+    if (length !== stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) {
+      throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    }
+    return parseSession(
+      { ...file, size: stat.size, mtimeMs: stat.mtimeMs },
+      buffer.subarray(0, length).toString("utf8"),
+    );
+  } finally {
+    await handle.close();
   }
-  const text = await NodeFSP.readFile(file.path, "utf8");
-  return parseSession({ ...file, size: stat.size, mtimeMs: stat.mtimeMs }, text);
 };
 
 const readSessionPreview = async (file: SourceFile): Promise<ParsedSession | null> => {

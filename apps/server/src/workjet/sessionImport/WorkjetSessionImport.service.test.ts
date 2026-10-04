@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
@@ -23,6 +24,27 @@ import * as Sqlite from "../../persistence/NodeSqliteClient.ts";
 import importMigration from "../../persistence/Migrations/056_WorkjetSessionImports.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { make } from "./WorkjetSessionImport.ts";
+
+const sourceRace = vi.hoisted(() => ({
+  path: null as string | null,
+  beforeOpen: null as (() => Promise<void>) | null,
+}));
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    realpath: async (...args: Parameters<typeof actual.realpath>) => {
+      const resolved = await actual.realpath(...args);
+      const swap = sourceRace.beforeOpen;
+      if (args[0] === sourceRace.path && swap) {
+        sourceRace.path = null;
+        sourceRace.beforeOpen = null;
+        await swap();
+      }
+      return resolved;
+    },
+  };
+});
 
 const NOW = "2026-10-02T12:00:00.000Z";
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -170,6 +192,65 @@ const withFixture = <A, E>(
   );
 
 describe("project-directed static session imports", () => {
+  it.effect("rejects a selected transcript that grows beyond the size limit after inspection", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        const file = NodePath.join(root, "sessions", "grown.jsonl");
+        yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Small preview")));
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        yield* Effect.promise(() => NodeFSP.truncate(file, 21 * 1024 * 1024));
+        const result = yield* service.importSessions({
+          candidateIds: [candidateId],
+          projectId: ProjectId.make("project-a"),
+        });
+        expect(result.items[0]?.status).toBe("failed");
+        expect(commands).toHaveLength(0);
+        expect(threads.size).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect(
+    "rejects a symlink swap between path validation and opening the selected transcript",
+    () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          const file = NodePath.join(root, "sessions", "race.jsonl");
+          const outside = NodePath.join(root, "outside-race.jsonl");
+          const outsideContent = transcript("Unselected target", ["Must not be copied"]);
+          yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Selected source")));
+          yield* Effect.promise(() => NodeFSP.writeFile(outside, outsideContent));
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          let swapped = false;
+          yield* Effect.sync(() => {
+            sourceRace.path = file;
+            sourceRace.beforeOpen = async () => {
+              await NodeFSP.unlink(file);
+              await NodeFSP.symlink(outside, file);
+              swapped = true;
+            };
+          });
+          const result = yield* service
+            .importSessions({ candidateIds: [candidateId], projectId: ProjectId.make("project-a") })
+            .pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  sourceRace.path = null;
+                  sourceRace.beforeOpen = null;
+                }),
+              ),
+            );
+          expect(swapped).toBe(true);
+          expect(result.items[0]?.status).toBe("failed");
+          expect(commands).toHaveLength(0);
+          expect(threads.size).toBe(0);
+          expect(yield* Effect.promise(() => NodeFSP.readFile(outside, "utf8"))).toBe(
+            outsideContent,
+          );
+        }),
+      ),
+  );
+
   it.effect(
     "revalidates cached files after deletion and reads their current content after restoration",
     () =>

@@ -59,11 +59,13 @@ await Effect.runPromise(
         logOutgoing: true,
         logger: (event) =>
           Effect.sync(() => {
-            if (event.stage !== "decoded" || event.direction !== "outgoing") return;
-            const frame = event.payload;
-            const value = frame?.exit?.value;
+            if (event.direction !== "outgoing") return;
+            const frame = event.stage === "raw" ? JSON.parse(event.payload) : event.payload;
+            const value = event.stage === "raw" ? frame?.result : frame?.exit?.value;
             if (value && ["accept", "decline", "cancel"].includes(value.action)) {
-              process.stdout.write(`NATIVE_QUESTION_RESPONSE ${JSON.stringify(value)}\n`);
+              process.stdout.write(
+                `NATIVE_QUESTION_RESPONSE ${JSON.stringify({ stage: event.stage, id: frame?.id ?? frame?.requestId, value })}\n`,
+              );
             }
           }),
       },

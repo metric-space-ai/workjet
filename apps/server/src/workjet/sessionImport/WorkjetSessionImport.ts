@@ -787,9 +787,11 @@ export const make = Effect.gen(function* () {
       const persistedSourceIndexes = new Set<number>();
       for (const persisted of thread?.messages ?? []) {
         const index = sourceIndexByMessageId.get(persisted.id);
-        const sourceMessage = index === undefined ? undefined : parsed.messages[index];
+        // Local continuations have their own ids; the prefix and receipt
+        // checks below still require every previously imported message.
+        if (index === undefined) continue;
+        const sourceMessage = parsed.messages[index];
         if (
-          index === undefined ||
           sourceMessage === undefined ||
           persisted.role !== sourceMessage.role ||
           persisted.text !== sourceMessage.text

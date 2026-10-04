@@ -396,11 +396,19 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
 };
 
 const readSession = async (file: SourceFile): Promise<ParsedSession | null> => {
-  if (file.size > MAX_TRANSCRIPT_BYTES) {
+  const stat = await NodeFSP.lstat(file.path);
+  if (
+    !stat.isFile() ||
+    sourceKeyFor(file.source, file.providerInstanceId, await NodeFSP.realpath(file.path)) !==
+      file.sourceKey
+  ) {
+    throw new WorkjetSessionImportError({ reason: "candidate_expired", subject: file.sourceKey });
+  }
+  if (stat.size > MAX_TRANSCRIPT_BYTES) {
     throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
   }
   const text = await NodeFSP.readFile(file.path, "utf8");
-  return parseSession(file, text);
+  return parseSession({ ...file, size: stat.size, mtimeMs: stat.mtimeMs }, text);
 };
 
 const readSessionPreview = async (file: SourceFile): Promise<ParsedSession | null> => {
@@ -449,6 +457,24 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const path = yield* Path.Path;
 
+  // Reuse source paths across import batches, without retaining transcript content.
+  let indexedLocations: readonly SourceLocation[] = [];
+  let indexedFiles = new Map<string, SourceFile>();
+  const rememberFiles = (locations: readonly SourceLocation[], files: readonly SourceFile[]) => {
+    indexedLocations = locations;
+    indexedFiles = new Map(files.map((file) => [file.sourceKey, file]));
+  };
+  const sameLocations = (locations: readonly SourceLocation[]) =>
+    locations.length === indexedLocations.length &&
+    locations.every((location, index) => {
+      const previous = indexedLocations[index];
+      return (
+        previous?.source === location.source &&
+        previous.providerInstanceId === location.providerInstanceId &&
+        previous.root === location.root
+      );
+    });
+
   const previewCache = new Map<
     string,
     {
@@ -473,11 +499,18 @@ export const make = Effect.gen(function* () {
         try: () => discoverFiles(locations),
         catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
       });
+      rememberFiles(locations, files);
       const discoveryHash = NodeCrypto.createHash("sha256");
       for (const file of files) {
         if (input.source && file.source !== input.source) continue;
         if (file.size > MAX_TRANSCRIPT_BYTES) continue;
-        discoveryHash.update(JSON.stringify([file.sourceKey, file.size, file.mtimeMs]));
+        discoveryHash
+          .update(file.sourceKey)
+          .update("\0")
+          .update(String(file.size))
+          .update("\0")
+          .update(String(file.mtimeMs))
+          .update("\n");
       }
       const discoveryVersion = discoveryHash.digest("hex");
       const rows =
@@ -816,11 +849,15 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const settings = yield* settingsService.getSettings;
       const locations = resolveLocations(settings, path);
-      const files = yield* Effect.tryPromise({
-        try: () => discoverFiles(locations),
-        catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
-      });
-      const byId = new Map(files.map((file) => [file.sourceKey, file]));
+      if (!sameLocations(locations) || input.candidateIds.some((id) => !indexedFiles.has(id))) {
+        const files = yield* Effect.tryPromise({
+          try: () => discoverFiles(locations),
+          catch: () =>
+            new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
+        });
+        rememberFiles(locations, files);
+      }
+      const byId = indexedFiles;
       const items = yield* Effect.forEach([...new Set(input.candidateIds)], (candidateId) =>
         importOne(candidateId, byId.get(candidateId), input.projectId).pipe(
           Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),

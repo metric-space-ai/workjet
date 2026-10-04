@@ -2,6 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodePerformance from "node:perf_hooks";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
@@ -70,6 +71,14 @@ const claudeTranscript = (index: number) =>
     .join("\n") + "\n";
 
 it("imports every conversation from a >5000 mixed archive into real projects and survives reopening SQLite", async () => {
+  const startedAt = NodePerformance.performance.now();
+  const report = (phase: string, count = 0) =>
+    console.info(
+      "FULL_IMPORT_PROGRESS",
+      phase,
+      count,
+      Math.round(NodePerformance.performance.now() - startedAt),
+    );
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-full-import-"));
   const codexRoot = NodePath.join(root, "codex");
   const sessionRoot = NodePath.join(codexRoot, "sessions");
@@ -129,6 +138,7 @@ it("imports every conversation from a >5000 mixed archive into real projects and
     );
     const claudeFile = NodePath.join(claudeProjects, "5001.jsonl");
     await NodeFSP.writeFile(claudeFile, claudeTranscript(5001));
+    report("fixtures-ready", 5002);
     runtime = open();
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const query = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
@@ -155,6 +165,7 @@ it("imports every conversation from a >5000 mixed archive into real projects and
         }),
       );
     }
+    report("projects-ready", 2);
     const candidates: WorkjetSessionImportCandidate[] = [];
     let offset = 0;
     let version: string | undefined;
@@ -168,6 +179,7 @@ it("imports every conversation from a >5000 mixed archive into real projects and
       expect(page.nextOffset).toBeGreaterThan(offset);
       offset = page.nextOffset;
     } while (true);
+    report("selection-ready", candidates.length);
     expect(candidates).toHaveLength(5002);
     expect(new Set(candidates.map((item) => item.candidateId)).size).toBe(5002);
     expect(candidates.filter((item) => item.source === "claude-code")).toHaveLength(1);
@@ -183,6 +195,8 @@ it("imports every conversation from a >5000 mixed archive into real projects and
       expect(
         result.items.every((item) => item.status === "imported" && item.importedMessages === 2),
       ).toBe(true);
+      const completed = Math.min(index + WORKJET_SESSION_IMPORT_MAX_SELECTION, candidates.length);
+      if (completed % 1000 === 0 || completed === candidates.length) report("imported", completed);
     }
     const first = candidates[0]!;
     const copy = await runtime.runPromise(
@@ -202,6 +216,7 @@ it("imports every conversation from a >5000 mixed archive into real projects and
     runtime = open();
     const reopenedQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const reopened = await runtime.runPromise(reopenedQuery.getSnapshot());
+    report("reopened", reopened.threads.length);
     expect(reopened.threads.filter((thread) => thread.projectId === newProjectId)).toHaveLength(
       5002,
     );

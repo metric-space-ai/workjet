@@ -54,6 +54,7 @@ const withFixture = <A, E>(
     readonly projects: Map<string, OrchestrationProjectShell>;
     readonly threads: Map<string, OrchestrationThread>;
     readonly commands: OrchestrationCommand[];
+    readonly setCodexHome: (homePath: string) => void;
   }) => Effect.Effect<A, E>,
 ) =>
   Effect.scoped(
@@ -142,7 +143,16 @@ const withFixture = <A, E>(
       return yield* Effect.gen(function* () {
         yield* importMigration;
         const service = yield* make;
-        return yield* run({ root: codex, service, projects, threads, commands });
+        return yield* run({
+          root: codex,
+          service,
+          projects,
+          threads,
+          commands,
+          setCodexHome: (homePath) => {
+            settings.providers.codex.homePath = homePath;
+          },
+        });
       }).pipe(
         Effect.provideService(OrchestrationEngineService, engine),
         Effect.provideService(ProjectionSnapshotQuery, query),
@@ -160,6 +170,92 @@ const withFixture = <A, E>(
   );
 
 describe("project-directed static session imports", () => {
+  it.effect(
+    "revalidates cached files after deletion and reads their current content after restoration",
+    () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          const file = NodePath.join(root, "sessions", "cached.jsonl");
+          yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Before rotation")));
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
+          yield* Effect.promise(() => NodeFSP.unlink(file));
+          expect((yield* service.importSessions(input)).items[0]?.status).toBe("failed");
+          expect(commands).toHaveLength(0);
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(file, transcript("After rotation", ["Current reply"])),
+          );
+          const imported = yield* service.importSessions(input);
+          expect(imported.items[0]?.status).toBe("imported");
+          expect(
+            threads.get(imported.items[0]!.threadId!)?.messages.map(({ text }) => text),
+          ).toEqual(["After rotation", "Current reply"]);
+        }),
+      ),
+  );
+
+  it.effect(
+    "refuses a cached path replaced with a symlink without reading or importing its target",
+    () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          const file = NodePath.join(root, "sessions", "cached.jsonl");
+          const privateFile = NodePath.join(root, "outside.jsonl");
+          const privateContent = transcript("Outside the selected source", ["Private fixture"]);
+          yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Original source")));
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          yield* Effect.promise(() => NodeFSP.writeFile(privateFile, privateContent));
+          yield* Effect.promise(() => NodeFSP.unlink(file));
+          yield* Effect.promise(() => NodeFSP.symlink(privateFile, file));
+          const result = yield* service.importSessions({
+            candidateIds: [candidateId],
+            projectId: ProjectId.make("project-a"),
+          });
+          expect(result.items[0]?.status).toBe("failed");
+          expect(commands).toHaveLength(0);
+          expect(threads.size).toBe(0);
+          expect(yield* Effect.promise(() => NodeFSP.readFile(privateFile, "utf8"))).toBe(
+            privateContent,
+          );
+        }),
+      ),
+  );
+
+  it.effect("invalidates the cached source inventory when the configured home changes", () =>
+    withFixture(({ root, service, threads, commands, setCodexHome }) =>
+      Effect.gen(function* () {
+        const firstFile = NodePath.join(root, "sessions", "first.jsonl");
+        yield* Effect.promise(() => NodeFSP.writeFile(firstFile, transcript("Old home")));
+        const firstId = (yield* service.inspect()).candidates[0]!.candidateId;
+        const nextHome = NodePath.join(root, "next-home");
+        yield* Effect.promise(() =>
+          NodeFSP.mkdir(NodePath.join(nextHome, "sessions"), { recursive: true }),
+        );
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(nextHome, "sessions", "next.jsonl"),
+            transcript("New home"),
+          ),
+        );
+        setCodexHome(nextHome);
+        const refused = yield* service.importSessions({
+          candidateIds: [firstId],
+          projectId: ProjectId.make("project-a"),
+        });
+        expect(refused.items[0]?.status).toBe("failed");
+        expect(commands).toHaveLength(0);
+        const next = (yield* service.inspect()).candidates;
+        expect(next.map(({ title }) => title)).toEqual(["New home"]);
+        const imported = yield* service.importSessions({
+          candidateIds: [next[0]!.candidateId],
+          projectId: ProjectId.make("project-a"),
+        });
+        expect(imported.items[0]?.status).toBe("imported");
+        expect([...threads.values()].map(({ title }) => title)).toEqual(["New home"]);
+      }),
+    ),
+  );
+
   it.effect("imports missing-folder history only into an explicit destination", () =>
     withFixture(({ root, service, threads, commands }) =>
       Effect.gen(function* () {

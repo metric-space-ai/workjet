@@ -13,7 +13,12 @@ import * as Option from "effect/Option";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { describe, expect, it } from "vite-plus/test";
-import { AVAILABLE_CONNECTION_STATE, PrimaryConnectionTarget } from "../connection/model.ts";
+import {
+  AVAILABLE_CONNECTION_STATE,
+  PrimaryConnectionTarget,
+  type PreparedConnection,
+} from "../connection/model.ts";
+import type { RpcSession } from "../rpc/session.ts";
 import { EnvironmentRegistry } from "../connection/registry.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { EnvironmentCacheStore } from "../platform/persistence.ts";
@@ -33,7 +38,7 @@ async function fixture(client: WsRpcProtocolClient) {
       return EnvironmentSupervisor.of({
         target,
         state: yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE),
-        session: yield* SubscriptionRef.make(
+        session: yield* SubscriptionRef.make<Option.Option<RpcSession>>(
           Option.some({
             client,
             initialConfig: Effect.die("config is unused"),
@@ -42,7 +47,7 @@ async function fixture(client: WsRpcProtocolClient) {
             closed: Effect.never,
           }),
         ),
-        prepared: yield* SubscriptionRef.make(Option.none()),
+        prepared: yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(Option.none()),
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
@@ -50,10 +55,8 @@ async function fixture(client: WsRpcProtocolClient) {
     }),
   );
   const connectionRegistry = {
-    run: (
-      _environmentId: EnvironmentId,
-      effect: Effect.Effect<unknown, unknown, EnvironmentSupervisor>,
-    ) => effect.pipe(Effect.provideService(EnvironmentSupervisor, supervisor)),
+    run: <A, E, R>(_environmentId: EnvironmentId, effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(Effect.provideService(EnvironmentSupervisor, supervisor)),
   } as unknown as EnvironmentRegistry["Service"];
   const runtime = Atom.runtime(
     Layer.succeed(EnvironmentRegistry, connectionRegistry),

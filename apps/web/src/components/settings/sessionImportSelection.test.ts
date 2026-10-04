@@ -97,7 +97,7 @@ describe("complete conversation selection", () => {
 
   it("refuses incomplete discovery, missing continuation and non-advancing cursors", async () => {
     for (const page of [
-      { ...lastPage(), discoveryVersion: undefined },
+      { sources: [], candidates: [], truncated: false, nextOffset: null },
       { ...lastPage(), discoveryLimitReached: true },
       { ...lastPage(), truncated: true },
       { ...lastPage(), truncated: true, nextOffset: 0 },

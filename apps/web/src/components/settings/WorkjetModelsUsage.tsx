@@ -82,7 +82,10 @@ export function WorkjetModelsUsageView({
     (a, b) => b.requests - a.requests || modelName(a.model).localeCompare(modelName(b.model)),
   );
   const daily = usage ? usageDays(usage) : [];
-  const max = Math.max(1, ...daily.map((day) => day.requests));
+  const max = Math.max(
+    2,
+    Math.ceil(Math.max(0, ...daily.map((day) => day.requests)) / 2) * 2,
+  );
   const chartModels = rows.slice(0, 6).map((row) => row.model);
   const hasOther = rows.length > chartModels.length;
   const dateLabel = (date: string) =>

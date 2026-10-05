@@ -39,9 +39,12 @@ it.effect(
         yield* runMigrations({ toMigrationInclusive: 73 });
         yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at) VALUES ('legacy', 'Legacy', NULL, '[]', '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z')`;
         const before = yield* sql`SELECT * FROM projection_projects WHERE project_id = 'legacy'`;
-        yield* runMigrations({ toMigrationInclusive: 74 });
+        assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 74 }), [
+          [74, "ProjectOverview"],
+        ]);
+        // Prepare the post-migration query against the new schema.
         assert.deepEqual(
-          yield* sql`SELECT * FROM projection_projects WHERE project_id = 'legacy'`,
+          yield* sql`SELECT * FROM projection_projects WHERE project_id = 'legacy' LIMIT 1`,
           before.map((row) => ({ ...row, overview_json: null })),
         );
         const repo = yield* ProjectionProjectRepository;

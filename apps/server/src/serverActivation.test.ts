@@ -24,21 +24,17 @@ it.effect("proves a root is parked before returning and releases it with one gat
   ),
 );
 
-it.effect(
-  "receives the first published event when starting a root without an activation gate",
-  () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const events = yield* PubSub.unbounded<string>();
-        const received = yield* Deferred.make<string>();
+it.live("receives the first published event when starting a root without an activation gate", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const events = yield* PubSub.unbounded<string>();
+      const received = yield* Deferred.make<string>();
 
-        yield* forkParked(
-          Stream.runForEach(Stream.fromPubSub(events), (value) =>
-            Deferred.succeed(received, value),
-          ),
-        );
-        yield* PubSub.publish(events, "first");
-        expect(yield* Deferred.await(received).pipe(Effect.timeout("1 second"))).toBe("first");
-      }),
-    ),
+      yield* forkParked(
+        Stream.runForEach(Stream.fromPubSub(events), (value) => Deferred.succeed(received, value)),
+      );
+      yield* PubSub.publish(events, "first");
+      expect(yield* Deferred.await(received).pipe(Effect.timeout("1 second"))).toBe("first");
+    }),
+  ),
 );

@@ -1173,7 +1173,7 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(harness.routes.some((route) => route.includes("model-definitions/zai"))).toBe(false);
   });
 
-  it("persists a strategy and membership edit and returns the pools it produced", async () => {
+  it("persists legacy strategy and membership edits while projecting the fixed host policy", async () => {
     const harness = poolHarness();
     const result = await runPools(harness, (gateway) =>
       gateway.updateRouting({
@@ -1204,17 +1204,22 @@ describe("ProviderGatewayService pools, health, and models", () => {
       weight: 9,
     });
     const claudePool = result.catalog.providerPools.find((pool) => pool.provider === "claude");
-    expect(claudePool?.strategy).toBe("weighted-round-robin");
-    expect(claudePool?.weightHonored).toBe(true);
-    // Priority still gates before weight, exactly as the host's scheduler does.
+    expect(result.catalog.routingStrategy).toBe("fill-first");
+    expect(claudePool?.strategy).toBe("fill-first");
+    expect(claudePool?.weightHonored).toBe(false);
+    expect(claudePool?.priorityExclusive).toBe(false);
+    // Persist accepted legacy settings while keeping every enabled account
+    // available to the fixed host policy and its runtime health checks.
     expect(claudePool?.members.map((member) => [member.accountId, member.selectable])).toEqual([
       ["claude-a", true],
-      ["claude-b", false],
+      ["claude-b", true],
     ]);
-    // The host runtime document carries the new strategy, not the old default.
+    expect(harness.writes.findLast((entry) => entry.includes('"routing_strategy":'))).toContain(
+      '"routing_strategy":"fill-first"',
+    );
     expect(
       harness.writes.some((entry) => entry.includes('"routing_strategy":"weighted-round-robin"')),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("edits display label and models while preserving the account and secret references", async () => {

@@ -1232,13 +1232,26 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         }
         commandMessageIds.add(message.messageId);
       }
+      // Copied history keeps transcript order when archived clocks tie or go
+      // backwards, including across batches and after local continuations.
+      let previousCreatedAt =
+        targetThread?.messages.reduce(
+          (latest, message) =>
+            Math.max(latest, DateTime.toEpochMillis(DateTime.makeUnsafe(message.createdAt))),
+          Number.NEGATIVE_INFINITY,
+        ) ?? Number.NEGATIVE_INFINITY;
       const messageEvents = yield* Effect.forEach(command.messages, (message) =>
         Effect.gen(function* () {
+          previousCreatedAt = Math.max(
+            DateTime.toEpochMillis(DateTime.makeUnsafe(message.createdAt)),
+            previousCreatedAt + 1,
+          );
+          const createdAt = DateTime.formatIso(DateTime.makeUnsafe(previousCreatedAt));
           return {
             ...(yield* withEventBase({
               aggregateKind: "thread",
               aggregateId: command.threadId,
-              occurredAt: message.createdAt,
+              occurredAt: createdAt,
               commandId: command.commandId,
             })),
             type: "thread.message-sent" as const,
@@ -1250,8 +1263,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               attachments: [],
               turnId: null,
               streaming: false,
-              createdAt: message.createdAt,
-              updatedAt: message.createdAt,
+              createdAt,
+              updatedAt: createdAt,
             },
           };
         }),

@@ -7,7 +7,7 @@ Open **Settings → Harnesses → Import sessions → Browse conversations**.
 3. Choose a destination project, or **New project** and enter a name and folder. The destination belongs to the active CTOX instance and the selected Code computer. If the project has no folder on that computer yet, choose one.
 4. Select **Import**. Larger selections run in batches. **Stop after this batch** preserves completed imports and leaves the remaining selection available.
 
-The importer reads source transcripts without changing them. The result is an independent Workjet conversation in the chosen project. Importing the same source into the same project again adds new source messages without duplicating the history. Importing into another project creates a separate copy. New copies appear with their first messages; a failure during that initial save leaves no empty conversation. Longer histories can be retried from their last completed batch.
+The importer reads source transcripts without changing them. Copied messages keep their transcript order when source timestamps are equal or go backwards; the Workjet copy advances timestamps where necessary. The result is an independent Workjet conversation in the chosen project. Importing the same source into the same project again adds new source messages without duplicating the history. Importing into another project creates a separate copy. New copies appear with their first messages; a failure during that initial save leaves no empty conversation. Longer histories can be retried from their last completed batch.
 
 The imported thread retains the recorded source model identifier. If the transcript contains no model identifier, it is shown as unknown; choose an available model before starting new work.
 

@@ -26,6 +26,7 @@ it.effect(
           Layer.provideMerge(NodeSqliteClient.layer({ filename })),
         );
       const overview: ProjectOverview = {
+        repositoryUrl: "https://github.com/owner/repository",
         websiteUrl: "https://example.org",
         slots: [
           { kind: "text", label: "Phase", value: "Review" },

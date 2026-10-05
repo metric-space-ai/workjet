@@ -29,6 +29,29 @@ describe("project overview wire contract", () => {
       }).slots,
     ).toHaveLength(3);
   });
+  it("persists a repository independently of the website and accepts legacy records", () => {
+    const legacy = { websiteUrl: null, slots: [null, null, null] };
+    expect(decode(legacy)).toEqual(legacy);
+    const configured = {
+      ...legacy,
+      repositoryUrl: "https://github.com/owner/repository",
+    };
+    expect(decode(configured)).toEqual(configured);
+    expect(decode({ ...configured, repositoryUrl: null }).repositoryUrl).toBeNull();
+    for (const repositoryUrl of [
+      "javascript:alert(1)",
+      "https://user:secret@example.org",
+      "invalid",
+    ])
+      expect(() => decode({ ...legacy, repositoryUrl })).toThrow();
+    const command = {
+      type: "project.meta.update",
+      commandId: "repository-change",
+      projectId: "existing-project",
+      overview: configured,
+    };
+    expect(decodeCommand(command)).toEqual(command);
+  });
   it("rejects fewer or more than three slots", () => {
     for (const slots of [[], [null, null], [null, null, null, null]])
       expect(() => decode({ websiteUrl: null, slots })).toThrow();

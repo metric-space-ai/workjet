@@ -17,6 +17,7 @@ export function ProjectOverviewCard({
   const [showPreview, setShowPreview] = useState(false);
   const overview = project.local?.overview;
   const website = overview?.websiteUrl;
+  const repository = overview?.repositoryUrl;
   const slots = overview?.slots ?? [null, null, null];
   return (
     <article
@@ -32,6 +33,16 @@ export function ProjectOverviewCard({
       >
         {project.title}
       </button>
+      {repository && (
+        <a
+          href={repository}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="truncate text-sm text-primary underline"
+        >
+          Open repository
+        </a>
+      )}
       {website && (
         <div className="grid gap-2">
           {showPreview && (

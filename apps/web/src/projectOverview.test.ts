@@ -53,6 +53,19 @@ describe("real project overview", () => {
     const empty = overviewDraft(null);
     expect(decodeOverviewDraft(empty)).toEqual({ websiteUrl: null, slots: [null, null, null] });
   });
+  it("round trips and clears repository metadata without changing website or fields", () => {
+    const overview: ProjectOverview = {
+      repositoryUrl: "https://github.com/owner/repository",
+      websiteUrl: null,
+      slots: [{ kind: "text", label: "Status", value: "Review" }, null, null],
+    };
+    expect(decodeOverviewDraft(overviewDraft(overview))).toEqual(overview);
+    const draft = overviewDraft(overview);
+    draft.repositoryUrl = "";
+    expect(decodeOverviewDraft(draft)).toEqual({ ...overview, repositoryUrl: null });
+    const legacy = { websiteUrl: null, slots: [null, null, null] } as ProjectOverview;
+    expect(decodeOverviewDraft(overviewDraft(legacy))).toEqual(legacy);
+  });
   it("never turns an empty entered metric into zero", () => {
     const draft = overviewDraft(null);
     draft.slots[0] = { kind: "metric", label: "Total", value: "", unit: "" };

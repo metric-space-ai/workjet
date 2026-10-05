@@ -57,6 +57,24 @@ export function ProjectOverviewEditor({
         }
       }}
     >
+      <label className="grid gap-1 text-sm" htmlFor={`${id}-repository`}>
+        Repository (optional)
+        <Input
+          id={`${id}-repository`}
+          type="url"
+          maxLength={2048}
+          value={draft.repositoryUrl ?? ""}
+          onChange={(event) => {
+            setState({ pending: false, message: "" });
+            setDraft((current) => ({ ...current, repositoryUrl: event.target.value }));
+          }}
+          placeholder="https://github.com/owner/repository"
+          disabled={state.pending}
+        />
+        <span className="text-xs text-muted-foreground">
+          Save a repository link for this project. This does not change its checkout or website.
+        </span>
+      </label>
       <label className="grid gap-1 text-sm" htmlFor={`${id}-website`}>
         Website (optional)
         <Input

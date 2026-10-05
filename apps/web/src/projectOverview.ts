@@ -15,6 +15,7 @@ export type OverviewSlotDraft = {
   unit: string;
 };
 export type OverviewDraft = {
+  repositoryUrl?: string | undefined;
   websiteUrl: string;
   slots: [OverviewSlotDraft, OverviewSlotDraft, OverviewSlotDraft];
 };
@@ -37,7 +38,12 @@ export function overviewDraft(overview: ProjectOverview | null | undefined): Ove
       unit: slot.kind === "metric" ? slot.unit : "",
     };
   };
-  return { websiteUrl: overview?.websiteUrl ?? "", slots: [draft(0), draft(1), draft(2)] };
+  return {
+    repositoryUrl:
+      overview?.repositoryUrl === undefined ? undefined : (overview.repositoryUrl ?? ""),
+    websiteUrl: overview?.websiteUrl ?? "",
+    slots: [draft(0), draft(1), draft(2)],
+  };
 }
 const decodeOverview = Schema.decodeUnknownSync(ProjectOverview);
 export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
@@ -50,6 +56,9 @@ export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
     return { kind: item.kind, label: item.label, value: Number(item.value), unit: item.unit };
   };
   return decodeOverview({
+    ...(draft.repositoryUrl === undefined
+      ? {}
+      : { repositoryUrl: draft.repositoryUrl.trim() || null }),
     websiteUrl: draft.websiteUrl.trim() || null,
     slots: draft.slots.map(slot),
   });

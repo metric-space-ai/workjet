@@ -37,6 +37,9 @@ import {
 } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { useAvailableProjectContext } from "../../availableProjects";
+import { recordWorkjetProjectProjection } from "../../workjetProjectRegistry";
+import { syncWorkjetProjectTitle } from "../../workjetProjectRename";
 import { isElectron } from "../../env";
 import {
   useClientSettings,
@@ -307,6 +310,9 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const navigate = useNavigate();
   const { environments } = useEnvironments();
   const settings = usePrimarySettings();
+  const { workjetProjectRegistry, workjetProjects } = useAvailableProjectContext();
+  const [isSavingName, setIsSavingName] = useState(false);
+  const savingNameRef = useRef(false);
   const updateClientSettings = useUpdateClientSettings();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
@@ -405,11 +411,44 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         toastManager.add({ type: "warning", title: "Project title cannot be empty" });
         return;
       }
-      if (title === group.displayName) return;
-      if (group.memberProjects.every((member) => member.title === title)) return;
-      await updateAllMembers({ title }, "Failed to rename project");
+      if (savingNameRef.current) return;
+      savingNameRef.current = true;
+      setIsSavingName(true);
+      try {
+        const instanceId = workjetProjectRegistry.presentationInstanceId;
+        const confirmed = await syncWorkjetProjectTitle({
+          instanceId,
+          nativeProjects: workjetProjects,
+          projects: group.memberProjects,
+          computers: settings.workjet.computers,
+          title,
+        });
+        if (instanceId !== null) {
+          for (const project of confirmed) recordWorkjetProjectProjection(instanceId, project);
+        }
+        if (!group.memberProjects.every((member) => member.title === title)) {
+          await updateAllMembers({ title }, "Failed to rename project");
+        }
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to synchronize project name",
+            description: error instanceof Error ? error.message : "Reconnect and retry.",
+          }),
+        );
+      } finally {
+        savingNameRef.current = false;
+        setIsSavingName(false);
+      }
     },
-    [group.displayName, group.memberProjects, updateAllMembers],
+    [
+      group.memberProjects,
+      settings.workjet.computers,
+      updateAllMembers,
+      workjetProjectRegistry.presentationInstanceId,
+      workjetProjects,
+    ],
   );
 
   // ----- default model -----
@@ -773,6 +812,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                 key={`${group.projectKey}:${group.displayName}`}
                 className="w-full sm:w-64"
                 aria-label="Project name"
+                disabled={isSavingName}
                 defaultValue={group.displayName}
                 onBlur={(event) => {
                   void renameGroup(event.currentTarget.value);

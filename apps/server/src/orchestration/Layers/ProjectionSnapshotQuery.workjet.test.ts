@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  MessageId,
   ModelSelection,
   ProviderInstanceId,
   ThreadId,
@@ -271,10 +272,10 @@ layer("ProjectionSnapshotQuery Workjet configuration", (it) => {
         `;
       }
       assert.deepEqual(yield* query.getThreadImportedMessageIds!(threadId), [
-        "82229b5d-1df4-5ef9-9607-5987e46d3824",
-        "18667ca3-8d6f-592e-966d-ad836efa0579",
-        "ca0be181-7423-5c99-8c14-056cf88e3aa4",
-        "17b22bfa-39cd-508c-a383-23d8b7ddb73b",
+        MessageId.make("82229b5d-1df4-5ef9-9607-5987e46d3824"),
+        MessageId.make("18667ca3-8d6f-592e-966d-ad836efa0579"),
+        MessageId.make("ca0be181-7423-5c99-8c14-056cf88e3aa4"),
+        MessageId.make("17b22bfa-39cd-508c-a383-23d8b7ddb73b"),
       ]);
       assert.deepEqual(
         yield* query.getThreadImportedMessageIds!(ThreadId.make("never-imported-thread")),

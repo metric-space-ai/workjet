@@ -94,7 +94,9 @@ const withAdapter = <A, E>(
         cwd: "/fixture/project",
         runtimeMode: "full-access",
       });
-      return yield* run(adapter, threadId).pipe(Effect.ensuring(adapter.stopSession(threadId)));
+      return yield* run(adapter, threadId).pipe(
+        Effect.ensuring(adapter.stopSession(threadId).pipe(Effect.orDie)),
+      );
     }),
   ).pipe(Effect.provide(NodeServices.layer));
 

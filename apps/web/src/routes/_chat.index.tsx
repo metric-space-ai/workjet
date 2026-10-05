@@ -14,7 +14,11 @@ import {
   type CommandId,
   type ProjectOverview,
 } from "@workjet/contracts";
-import { buildProjectGallery, type GalleryProject } from "../projectOverview";
+import {
+  buildProjectGallery,
+  resolveGalleryProjectHistory,
+  type GalleryProject,
+} from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
@@ -131,13 +135,7 @@ function IndexDraftLanding() {
     if (!bootstrapped) return null;
     const ordered = sortScopedProjectsForSidebar(projects, threads, "updated_at");
     if (selectedNative !== null)
-      return (
-        ordered.find(
-          (project) =>
-            project.id === selectedNative.id &&
-            project.ctoxRegistration?.instanceId === activeCtoxInstanceId,
-        ) ?? null
-      );
+      return resolveGalleryProjectHistory(ordered, galleryProjects, selectedNative.id);
     if (selectedLegacyProject === null) return null;
     const local =
       ordered.find(
@@ -154,6 +152,7 @@ function IndexDraftLanding() {
   }, [
     activeCtoxInstanceId,
     bootstrapped,
+    galleryProjects,
     projects,
     selectedLegacyProject,
     selectedNative,

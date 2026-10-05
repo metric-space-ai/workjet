@@ -11,6 +11,7 @@ import {
   decodeOverviewDraft,
   overviewDraft,
   projectUpdateAge,
+  resolveGalleryProjectHistory,
   type GalleryLocalProject,
 } from "./projectOverview";
 const local = (
@@ -146,6 +147,15 @@ describe("real project overview", () => {
     expect(cards[0]?.local?.overview?.websiteUrl).toBe("https://example.org");
     expect(cards[1]?.local).toBeNull();
     expect(physical.id).toBe("retained-history");
+    const foreignEnvironment = {
+      ...physical,
+      environmentId: EnvironmentId.make("other"),
+    };
+    expect(resolveGalleryProjectHistory([foreignEnvironment, physical], cards, canonical.id)).toBe(
+      physical,
+    );
+    expect(resolveGalleryProjectHistory([foreignEnvironment], cards, canonical.id)).toBeNull();
+    expect(resolveGalleryProjectHistory([physical], cards, older.id)).toBeNull();
   });
   it("derives age from actual project time and never invents an unavailable timestamp", () => {
     const now = Date.parse("2026-10-02T02:00:00Z");

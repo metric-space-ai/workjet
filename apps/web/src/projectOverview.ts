@@ -85,6 +85,20 @@ export type GalleryProject = {
   readonly local: GalleryLocalProject | null;
   readonly native: boolean;
 };
+/** Open the exact history already joined by the gallery's persisted identity proof. */
+export function resolveGalleryProjectHistory<Project extends GalleryLocalProject>(
+  projects: readonly Project[],
+  gallery: readonly GalleryProject[],
+  nativeProjectId: string,
+): Project | null {
+  const local = gallery.find((project) => project.native && project.id === nativeProjectId)?.local;
+  if (local == null) return null;
+  return (
+    projects.find(
+      (project) => project.id === local.id && project.environmentId === local.environmentId,
+    ) ?? null
+  );
+}
 /** Join real local and native records by tenant and ID, including pending local intent. */
 export function buildProjectGallery(input: {
   readonly projects: readonly GalleryLocalProject[];

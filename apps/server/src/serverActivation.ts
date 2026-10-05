@@ -15,7 +15,8 @@ export const forkParked = <A, E, R>(
   Effect.gen(function* () {
     const activation = yield* ServerActivation;
     if (activation === undefined) {
-      yield* Effect.forkScoped(effect);
+      // Hot streams must subscribe before the caller can publish its first event.
+      yield* Effect.forkScoped(effect, { startImmediately: true });
       return;
     }
     const parked = yield* Deferred.make<void>();

@@ -181,6 +181,106 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
       ]);
     }),
   );
+  it.effect("keeps tied and decreasing archive timestamps in source order", () =>
+    Effect.gen(function* () {
+      const command = {
+        ...bootstrapCommand,
+        messages: [
+          ...bootstrapCommand.messages,
+          {
+            messageId: MessageId.make("older-clock-message"),
+            role: "user" as const,
+            text: "Clock moved backwards",
+            createdAt: "2026-08-25T11:59:59.000Z",
+          },
+          {
+            messageId: MessageId.make("later-clock-message"),
+            role: "assistant" as const,
+            text: "Later reply",
+            createdAt: "2026-08-25T12:00:00.010Z",
+          },
+        ],
+      };
+      const result = yield* decideOrchestrationCommand({
+        command,
+        readModel: freshReadModel,
+      });
+      const messages = Array.isArray(result)
+        ? result.filter((event) => event.type === "thread.message-sent")
+        : [];
+      expect(messages.map(({ payload }) => payload.createdAt)).toEqual([
+        NOW,
+        "2026-08-25T12:00:00.001Z",
+        "2026-08-25T12:00:00.002Z",
+        "2026-08-25T12:00:00.010Z",
+      ]);
+      expect(messages.map(({ occurredAt }) => occurredAt)).toEqual(
+        messages.map(({ payload }) => payload.createdAt),
+      );
+      expect(
+        messages.map(({ payload: { messageId, role, text } }) => ({ messageId, role, text })),
+      ).toEqual(command.messages.map(({ messageId, role, text }) => ({ messageId, role, text })));
+      expect(command.messages[1]?.createdAt).toBe(NOW);
+    }),
+  );
+  it.effect("appends archive batches after saved messages and local continuations", () =>
+    Effect.gen(function* () {
+      const saved = {
+        ...readModel,
+        threads: [
+          {
+            ...readModel.threads[0]!,
+            messages: [
+              {
+                id: MessageId.make("native-continuation"),
+                role: "assistant" as const,
+                text: "Native reply",
+                attachments: [],
+                turnId: null,
+                streaming: false,
+                createdAt: "2026-08-25T12:00:00.010Z",
+                updatedAt: "2026-08-25T12:00:00.010Z",
+              },
+              {
+                id: MessageId.make("prior-archive-batch"),
+                role: "user" as const,
+                text: "Prior copied batch",
+                attachments: [],
+                turnId: null,
+                streaming: false,
+                createdAt: NOW,
+                updatedAt: NOW,
+              },
+            ],
+          },
+        ],
+      };
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.history.import",
+          commandId: CommandId.make("next-archive-batch"),
+          threadId: THREAD_ID,
+          messages: bootstrapCommand.messages,
+          createdAt: NOW,
+        },
+        readModel: saved,
+      });
+      const messages = Array.isArray(result)
+        ? result.filter((event) => event.type === "thread.message-sent")
+        : [];
+      expect(messages.map(({ payload }) => payload.createdAt)).toEqual([
+        "2026-08-25T12:00:00.011Z",
+        "2026-08-25T12:00:00.012Z",
+      ]);
+      expect(messages.map(({ payload }) => payload.messageId)).toEqual(
+        bootstrapCommand.messages.map(({ messageId }) => messageId),
+      );
+      expect(saved.threads[0]?.messages.map(({ text }) => text)).toEqual([
+        "Native reply",
+        "Prior copied batch",
+      ]);
+    }),
+  );
   it.effect("rejects missing or deleted destinations before creating a copy", () =>
     Effect.gen(function* () {
       for (const projects of [[], [{ ...freshReadModel.projects[0]!, deletedAt: NOW }]]) {

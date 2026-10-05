@@ -361,32 +361,39 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
       if (!directory) break;
       try {
         const entries = await NodeFSP.readdir(directory, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isSymbolicLink()) continue;
-          const entryPath = NodePath.join(directory, entry.name);
-          if (entry.isDirectory()) {
-            stack.push(entryPath);
-            continue;
+        let entryIndex = 0;
+        // Refresh source metadata on every inspection with at most two filesystem workers.
+        const readEntries = async (): Promise<void> => {
+          while (entryIndex < entries.length) {
+            const entry = entries[entryIndex];
+            entryIndex += 1;
+            if (!entry || entry.isSymbolicLink()) continue;
+            const entryPath = NodePath.join(directory, entry.name);
+            if (entry.isDirectory()) {
+              stack.push(entryPath);
+              continue;
+            }
+            if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+            try {
+              const stat = await NodeFSP.stat(entryPath);
+              files.push({
+                sourceKey: sourceKeyFor(
+                  location.source,
+                  location.providerInstanceId,
+                  await NodeFSP.realpath(entryPath),
+                ),
+                source: location.source,
+                providerInstanceId: location.providerInstanceId,
+                path: entryPath,
+                size: stat.size,
+                mtimeMs: stat.mtimeMs,
+              });
+            } catch {
+              // Files can disappear while the source app rotates its sessions.
+            }
           }
-          if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-          try {
-            const stat = await NodeFSP.stat(entryPath);
-            files.push({
-              sourceKey: sourceKeyFor(
-                location.source,
-                location.providerInstanceId,
-                await NodeFSP.realpath(entryPath),
-              ),
-              source: location.source,
-              providerInstanceId: location.providerInstanceId,
-              path: entryPath,
-              size: stat.size,
-              mtimeMs: stat.mtimeMs,
-            });
-          } catch {
-            // Files can disappear while the source app rotates its sessions.
-          }
-        }
+        };
+        await Promise.all([readEntries(), readEntries()]);
       } catch {
         continue;
       }

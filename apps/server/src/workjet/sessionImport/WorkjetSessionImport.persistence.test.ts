@@ -81,7 +81,11 @@ const runtimeLayer = (
   dbPath: string,
   workspace: string,
   root: string,
-  pipeline = OrchestrationProjectionPipelineLive,
+  pipeline: Layer.Layer<
+    OrchestrationProjectionPipeline,
+    Layer.Error<typeof OrchestrationProjectionPipelineLive>,
+    Layer.Services<typeof OrchestrationProjectionPipelineLive>
+  > = OrchestrationProjectionPipelineLive,
 ) =>
   Layer.mergeAll(
     OrchestrationEngineLive.pipe(

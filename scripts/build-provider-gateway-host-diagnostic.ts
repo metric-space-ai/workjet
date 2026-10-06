@@ -52,4 +52,4 @@ const manifestPath = await stageDiagnosticProviderGatewayHost({
   expectedNativeSource: before.nativeSource,
   binaryPath: NodePath.join(targetDir, triple, "release/workjet-provider-gateway-host"),
 });
-console.log(`Diagnostic host receipt: ${manifestPath}`);
+Effect.runSync(Effect.log(`Diagnostic host receipt: ${manifestPath}`));

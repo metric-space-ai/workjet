@@ -18,11 +18,11 @@ This is a living glossary for Workjet. It explains what common terms mean in thi
 
 #### Project
 
-The top-level workspace record in the app. In [the orchestration contracts][1], a project has a `workspaceRoot` and a title. It does not contain threads: `OrchestrationProject` and `OrchestrationThread` are separate arrays on the read model, and a project can have zero threads. See [workspace-layout.md][2].
+The top-level logical work record in the app. A name is sufficient to create it, together with one durable default Supervisor thread. In [the orchestration contracts][1], `workspaceRoot` is nullable: a folder, computer or Git repository can be attached later while retaining the project and Supervisor identities and history. `OrchestrationProject` and `OrchestrationThread` remain separate arrays on the read model. A tenant-bound native registration can be pending; local creation does not claim that CTOX has confirmed it. See [workspace-layout.md][2].
 
 #### Workspace root
 
-The root filesystem path for a project. In [the orchestration model][1], it is the base directory for branches and optional worktrees. See [workspace-layout.md][2].
+The optional root filesystem path attached to a project. In [the orchestration model][1], an attached root is the base directory for branches and optional worktrees. A null root means that no folder is attached; it must never fall back to the process working directory or an invented folder. Filesystem, terminal and Git actions require an actual attached root. See [workspace-layout.md][2].
 
 #### Worktree
 

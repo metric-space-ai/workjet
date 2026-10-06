@@ -128,7 +128,7 @@ describe("ComposerFooterControls", () => {
       sendToWorkerControl: <span data-test-send="true">send</span>,
     });
 
-    expect(markup).toContain('aria-label="Worker"');
+    expect(markup).toContain('aria-label="Luma"');
     expect(markup).toContain('data-test-computer="true"');
     expect(markup).toContain('aria-label="Thread tools"');
 
@@ -150,7 +150,7 @@ describe("ComposerFooterControls", () => {
       manualTargetControls: <span data-test-manual-targets="true">targets</span>,
     });
 
-    const workerIndex = markup.indexOf('aria-label="Worker"');
+    const workerIndex = markup.indexOf('aria-label="Luma"');
     const computerIndex = markup.indexOf('data-test-computer="true"');
     const providerIndex = markup.indexOf('data-test-provider-target="true"');
     const targetsIndex = markup.indexOf('data-test-manual-targets="true"');
@@ -188,7 +188,7 @@ describe("ComposerFooterControls", () => {
     });
 
     const orderedMarkers = [
-      'aria-label="Worker"',
+      'aria-label="Luma"',
       'data-test-computer="true"',
       'data-test-manual-targets="true"',
       'data-test-effort="true"',

@@ -28,6 +28,8 @@ export const ChangeRequest = Schema.Struct({
   url: Schema.String,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
+  /** Provider-reported PR head; missing/null means unknown, never local HEAD. */
+  headCommitOid: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   state: ChangeRequestState,
   updatedAt: Schema.Option(Schema.DateTimeUtc),
   isCrossRepository: Schema.optional(Schema.Boolean),

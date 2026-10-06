@@ -446,7 +446,8 @@ function ThreadNavigationSidebarPane(
   const projectCwdByKey = useMemo(() => {
     const map = new Map<string, string>();
     for (const project of instanceScopedProjects) {
-      map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
+      if (project.workspaceRoot !== null)
+        map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
     }
     return map;
   }, [instanceScopedProjects]);

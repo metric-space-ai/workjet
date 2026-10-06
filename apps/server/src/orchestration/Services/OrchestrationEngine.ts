@@ -10,7 +10,13 @@
  *
  * @module OrchestrationEngineService
  */
-import type { OrchestrationCommand, OrchestrationEvent } from "@workjet/contracts";
+import type {
+  OrchestrationCommand,
+  OrchestrationEvent,
+  WorkjetDelegation,
+  WorkjetRoutingEnvelope,
+  ThreadId,
+} from "@workjet/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -21,7 +27,27 @@ import type { OrchestrationEventStoreError } from "../../persistence/Errors.ts";
 /**
  * OrchestrationEngineShape - Service API for orchestration command and event flow.
  */
+export interface OrchestrationDispatchOptions {
+  readonly deferWhileBusy?: true;
+  /** Internal only: commit a prepared team-worker delegation with thread creation. */
+  readonly workerDelegation?: {
+    readonly envelope: WorkjetRoutingEnvelope;
+    readonly delegation: WorkjetDelegation;
+  };
+}
+
 export interface OrchestrationEngineShape {
+  /**
+   * Start a provider turn only while the thread is live. This holds the same
+   * fence as thread and forced-project deletion through the provider start
+   * acknowledgement, so deletion cannot commit between the final check and
+   * the actual send. False means the thread was already deleted.
+   */
+  readonly runTurnStartIfActive: <A, E, R>(
+    threadId: ThreadId,
+    start: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<boolean, E, R>;
+
   /**
    * Replay persisted orchestration events from an exclusive sequence cursor.
    *
@@ -44,10 +70,13 @@ export interface OrchestrationEngineShape {
    * @returns Effect containing the sequence of the persisted event.
    *
    * Dispatch is serialized through an internal queue and deduplicated via
-   * command receipts.
+   * command receipts. Internal background callers may request deferWhileBusy:
+   * turn starts are admitted only when idle, after receipt lookup. A deferred
+   * command writes no receipt and may retry with its original command ID.
    */
   readonly dispatch: (
     command: OrchestrationCommand,
+    options?: OrchestrationDispatchOptions,
   ) => Effect.Effect<{ sequence: number }, OrchestrationDispatchError, never>;
 
   /**

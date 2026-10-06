@@ -190,14 +190,14 @@ export function buildResourceTelemetryHistory(
       snapshot.externalProcesses ??
       Option.match(input.desktopSnapshot, {
         onNone: () => [],
-        onSome: (desktopSnapshot) => [
-          {
-            pid: desktopSnapshot.electronPid,
-            startTimeMs: desktopSnapshot.electronProcesses.find(
-              (metric) => metric.pid === desktopSnapshot.electronPid,
-            )?.creationTimeMs,
-          },
-        ],
+        onSome: (desktopSnapshot) => {
+          const root = desktopSnapshot.electronProcesses.find(
+            (metric) => metric.pid === desktopSnapshot.electronPid,
+          );
+          return desktopSnapshot.power.stale || root === undefined
+            ? []
+            : [{ pid: root.pid, startTimeMs: root.creationTimeMs }];
+        },
       });
     const electronRootPids = new Set(recordedExternalProcesses.map((process) => process.pid));
     const electronRootStartTimes = new Map(

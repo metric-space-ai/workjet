@@ -1045,7 +1045,7 @@ export function EnvironmentProviderSettings({
                 {piCodeProbe === null
                   ? "Checking…"
                   : piCodeProbe.availability === "available"
-                    ? "Installed · available to Workjet workers"
+                    ? "Installed · available to Workjet Lumas"
                     : "Not installed on this machine"}
               </p>
             </div>

@@ -40,6 +40,7 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
           url: "https://github.com/metric-space-ai/workjet/pull/42",
           baseRefName: "main",
           headRefName: "feature/source-control",
+          headCommitOid: "a".repeat(40),
           state: "open",
           isCrossRepository: true,
           headRepositoryNameWithOwner: "fork/workjet",
@@ -59,6 +60,7 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
       url: "https://github.com/metric-space-ai/workjet/pull/42",
       baseRefName: "main",
       headRefName: "feature/source-control",
+      headCommitOid: "a".repeat(40),
       state: "open",
       updatedAt: Option.none(),
       isCrossRepository: true,
@@ -151,7 +153,7 @@ it.effect("uses gh json listing for non-open change request state queries", () =
       "--limit",
       "10",
       "--json",
-      "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+      "number,title,url,baseRefName,headRefName,headRefOid,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
     ]);
     assert.strictEqual(changeRequests[0]?.provider, "github");
     assert.strictEqual(changeRequests[0]?.state, "merged");

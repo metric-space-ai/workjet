@@ -84,6 +84,10 @@ impl SourceModule for LinkedIn {
         &["api.linkedin.com"]
     }
 
+    fn scrape_target_key(&self) -> Option<&'static str> {
+        Some("linkedin-com")
+    }
+
     fn tier(&self) -> Tier {
         Tier::C
     }
@@ -129,6 +133,10 @@ impl SourceModule for LinkedIn {
     fn shape_query(&self, _query: &str, _ctx: &SourceCtx<'_>) -> Option<ShapedQuery> {
         // API-Pfad: kein Search-Engine-Fallback. Scrape ist TOS-verboten.
         None
+    }
+
+    fn has_direct_api(&self) -> bool {
+        true
     }
 
     fn fetch_direct(

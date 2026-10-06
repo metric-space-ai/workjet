@@ -51,7 +51,8 @@ We need to be on the same page with terminology. When communicating, use this la
 - **provider** means the agent runtime or harness Workjet talks to, such as Codex, Claude, Cursor, or OpenCode.
 - **client** means the web, desktop, or mobile UI.
 - **environment** means one running Workjet server and the machine, filesystem, provider credentials, and state it owns.
-- **project** means an environment-local workspace record rooted at a directory.
+- **project** means a logical work record with an optional workspace directory and one durable default Supervisor thread.
+- **Luma** is the user-facing name for an assistant; the plural is **Lumas**. Internal worker/agent schema keys, roles, provider identifiers and saved profile identities retain their existing names.
 - **thread** means the durable conversation and work history for a project.
 - **turn** means one user-to-agent cycle, including follow-up work such as checkpointing.
 - **Workjet home** means the base data directory. Runtime state normally lives below its userdata directory.

@@ -5,6 +5,10 @@ import {
   type DesktopBridge,
   type DesktopSshEnvironmentTarget,
 } from "@workjet/contracts";
+import {
+  ConnectionBlockedError,
+  ConnectionTransientError,
+} from "@workjet/client-runtime/connection";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
@@ -93,6 +97,39 @@ describe("desktop SSH pairing", () => {
       ).pipe(Effect.flip);
 
       expect(calls).toEqual(["ensure", "descriptor"]);
+    }),
+  );
+
+  it.effect("blocks rejected SSH credentials and tailnet ACLs without retrying", () =>
+    Effect.gen(function* () {
+      for (const [message, reason] of [
+        ["Permission denied (publickey,password).", "authentication"],
+        ["Authentication failed", "authentication"],
+        ["tailnet policy does not permit metricspace", "permission"],
+        ["Host key verification failed", "configuration"],
+      ] as const) {
+        const calls: string[] = [];
+        const bridge = makeBridge(calls);
+        bridge.ensureSshEnvironment = async () => {
+          calls.push("ensure");
+          throw new Error(message);
+        };
+        const error = yield* provisionDesktopSshEnvironment(bridge, TARGET).pipe(Effect.flip);
+        expect(error).toBeInstanceOf(ConnectionBlockedError);
+        expect(error).toMatchObject({ reason });
+        expect(calls).toEqual(["ensure"]);
+      }
+    }),
+  );
+
+  it.effect("keeps a timed-out SSH target retryable", () =>
+    Effect.gen(function* () {
+      const bridge = makeBridge([]);
+      bridge.ensureSshEnvironment = async () => {
+        throw new Error("Connection timed out");
+      };
+      const error = yield* provisionDesktopSshEnvironment(bridge, TARGET).pipe(Effect.flip);
+      expect(error).toBeInstanceOf(ConnectionTransientError);
     }),
   );
 });

@@ -82,7 +82,7 @@ describe("Business OS settings scope", () => {
     };
     expect(
       await importBusinessOsSettingsInvite(bridge, "fixture-invite", select, refresh),
-    ).toContain("nicht hinzugefügt");
+    ).toContain("could not be added");
     expect(select).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
   });
@@ -114,31 +114,67 @@ describe("Business OS settings scope", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView instances={[]} activeInstanceId={null} />,
     );
-    expect(markup).toContain("Keine CTOX-Instanz verbunden");
-    expect(markup).toContain("Instanz hinzufügen");
-    expect(markup).toContain("Gerät hinzufügen");
+    expect(markup).toContain("No CTOX instance connected");
+    expect(markup).toContain("Add instance");
+    expect(markup).toContain("Add device");
     expect(markup).toContain("disabled");
     expect(markup).not.toContain("environment-alpha");
   });
 
-  it("renders the real instance selector, scoped device area and computer inventory", () => {
+  it("distinguishes a discovery failure from an empty registry and explains retry", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[]}
+        activeInstanceId={null}
+        discoveryFailed
+        onRefresh={() => undefined}
+      />,
+    );
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("Could not load CTOX instances");
+    expect(markup).toContain("Refresh");
+    expect(markup).not.toContain("No CTOX instance connected");
+  });
+
+  it("keeps the connected-host settings hub available without native discovery", () => {
+    const markup = renderToStaticMarkup(
+      <BusinessOsSettingsView
+        instances={[]}
+        activeInstanceId={null}
+        requiresInstanceSelection={false}
+      />,
+    );
+    expect(markup).toContain("Models");
+    expect(markup).toContain("Harnesses");
+    expect(markup).toContain("Computers");
+    expect(markup).toContain("Lumas");
+    expect(markup).not.toContain("Wähle zuerst eine Instanz aus.");
+  });
+
+  it("makes instance management primary and links to the selected instance settings", () => {
     const markup = renderToStaticMarkup(
       <BusinessOsSettingsView
         instances={[instance("paired:backend-alpha", "WELSCH")]}
         activeInstanceId="paired:backend-alpha"
-        computerCount={3}
       />,
     );
-    expect(markup).toContain('aria-label="CTOX-Instanz auswählen"');
+    expect(markup).toContain('aria-label="CTOX instances"');
+    expect(markup).toContain('aria-label="Active instance"');
     expect(markup).toContain("WELSCH");
-    expect(markup).toContain("Geräte für WELSCH");
-    expect(markup).toContain("Zuweisungen zu WELSCH");
-    expect(markup).toContain("3 Rechner sind eingerichtet");
+    expect(markup).toContain("Devices for WELSCH");
+    expect(markup).toContain("Models");
+    expect(markup).toContain("Harnesses");
+    expect(markup).toContain("Computers");
+    expect(markup).toContain("Lumas");
+    expect(markup).not.toContain("globalen Computer-Inventar");
+    expect(markup).not.toContain("Rechner für Code");
+    expect(markup).toContain("<details");
+    expect(markup).not.toContain("<details open");
     expect(markup).not.toContain("Technische Details");
     expect(markup).not.toContain("Darstellungs-ID");
     expect(markup).not.toContain("ctox_dev");
-    expect(markup.indexOf("Workjet-Geräte")).toBeLessThan(markup.indexOf("Rechner für Code"));
-    expect(markup).not.toContain("Diagnose");
+    expect(markup.indexOf("CTOX instances")).toBeLessThan(markup.indexOf(">Models<"));
+    expect(markup.indexOf(">Models<")).toBeLessThan(markup.indexOf("Connected devices"));
   });
 
   it("keeps opaque authority identifiers out of regular instance labels", () => {
@@ -157,11 +193,10 @@ describe("Business OS settings scope", () => {
       <BusinessOsSettingsView
         instances={[instance("managed:welsch", "WELSCH", "ctox_dev")]}
         activeInstanceId="managed:welsch"
-        computerCount={3}
         deviceManagementBlockedReason="WELSCH konnte noch nicht bestätigt werden."
       />,
     );
-    expect(markup).toContain("Gerät hinzufügen");
+    expect(markup).toContain("Add device");
     expect(markup).toContain("WELSCH konnte noch nicht bestätigt werden");
     expect(markup).toContain("disabled");
     expect(markup).not.toContain("serverautoritativ");
@@ -186,8 +221,8 @@ describe("Business OS settings scope", () => {
         onRevokeDevice={() => undefined}
       />,
     );
-    expect(markup).toContain("Workjet-Gerät · abcdefgh");
-    expect(markup).toContain("Widerrufen");
+    expect(markup).toContain("Workjet device · abcdefgh");
+    expect(markup).toContain("Revoke");
     expect(markup).not.toContain("welsch-authority");
     expect(markup).not.toContain("pairing-1");
   });

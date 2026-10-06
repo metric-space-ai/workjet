@@ -76,6 +76,7 @@ minimumReleaseAgeExclude:
   - "@legendapp/list@3.3.5"
 
 overrides:
+  image-size: 2.0.4
   browserslist: ">=4.28.7"
   "@clerk/backend": "catalog:"
   "@clerk/clerk-js": "catalog:"
@@ -104,8 +105,10 @@ overrides:
   "@hono/node-server": 1.19.15
   "@pierre/diffs>@shikijs/transformers": ^4.2.0
   "@types/node": "catalog:"
-  brace-expansion: 5.0.9
+  brace-expansion: 5.0.11
   builder-util-runtime: 9.7.0
+  compression: 1.8.2
+  devalue: 5.9.3
   effect: "catalog:"
   expo-modules-jsi: 56.0.10
   fast-uri: 3.1.7
@@ -113,14 +116,16 @@ overrides:
   "expo-sharing>@expo/config-plugins": 56.0.9
   "expo-sharing>@expo/config-types": 56.0.6
   hono: 4.12.34
-  image-size: 2.0.4
   ip-address: 10.3.1
   js-yaml: 4.3.2
   nanoid: 3.3.18
   path-to-regexp: 6.3.0
   postcss: 8.5.23
+  proxy-addr: 2.0.8
+  seroval: 1.6.3
   sharp: 0.35.4
   shell-quote: 1.10.0
+  source-map-js: 1.2.2
   svgo: 4.1.0
   tar: 7.5.22
   undici: 6.28.1
@@ -143,6 +148,12 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
+  seroval@1.6.3: patches/seroval@1.6.3.patch
+  source-map-js@1.2.2: patches/source-map-js@1.2.2.patch
+
+  braces@3.0.3: patches/braces@3.0.3.patch
+  http-cache-semantics@4.2.0: patches/http-cache-semantics@4.2.0.patch
+  node-forge@1.4.0: patches/node-forge@1.4.0.patch
   "@clerk/expo@4.2.0": patches/@clerk__expo@4.2.0.patch
   "@effect/vitest@4.0.0-beta.103": patches/@effect__vitest@4.0.0-beta.103.patch
   "@expo/metro-config@56.0.14": patches/@expo%2Fmetro-config@56.0.14.patch

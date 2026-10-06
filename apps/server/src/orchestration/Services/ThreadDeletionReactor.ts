@@ -27,6 +27,9 @@ export interface ThreadDeletionReactorShape {
    * Intended for test use to replace timing-sensitive sleeps.
    */
   readonly drain: Effect.Effect<void>;
+
+  /** Retry cleanup for deleted worker checkouts retained before a later merge. */
+  readonly reconcileRetainedWorkerWorktrees: Effect.Effect<void>;
 }
 
 /**

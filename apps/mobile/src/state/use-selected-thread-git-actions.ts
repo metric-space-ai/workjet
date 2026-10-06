@@ -265,6 +265,10 @@ export function useSelectedThreadGitActions() {
         "create_worktree",
         "Creating worktree",
         async ({ thread, project }) => {
+          if (project.workspaceRoot === null)
+            return AsyncResult.failure(
+              Cause.fail(new Error("Attach a working copy before creating a worktree.")),
+            );
           const result = await createWorktree({
             environmentId: thread.environmentId,
             input: {

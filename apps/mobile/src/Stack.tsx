@@ -17,6 +17,7 @@ import { useResolveClassNames } from "uniwind";
 import { AppText as Text } from "./components/AppText";
 import { getCompactBrandHeaderOptions } from "./components/CompactBrandTitle";
 import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRouteScreen";
+import { ArchivedWorkerDetailRouteScreen } from "./features/archive/ArchivedWorkerDetailRouteScreen";
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
 import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardingNavigation";
@@ -38,6 +39,7 @@ import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestin
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { AddProjectRepositoryRoute } from "./features/projects/AddProjectRepositoryRoute";
 import { AddProjectSourceRoute } from "./features/projects/AddProjectSourceRoute";
+import { ProjectSupervisorRouteScreen } from "./features/projects/ProjectSupervisorRouteScreen";
 import { NewTaskDraftRouteScreen } from "./features/threads/NewTaskDraftRouteScreen";
 import {
   NewTaskBranchPickerRouteScreen,
@@ -183,6 +185,13 @@ const SettingsContentStack = createNativeStackNavigator({
       linking: "archive",
       options: {
         title: "Archived Threads",
+      },
+    }),
+    SettingsArchivedWorker: createNativeStackScreen({
+      screen: ArchivedWorkerDetailRouteScreen,
+      linking: "archive/worker/:environmentId/:threadId",
+      options: {
+        title: "Completed worker",
       },
     }),
     SettingsAppearance: createNativeStackScreen({
@@ -481,6 +490,10 @@ export const RootStack = createNativeStackNavigator({
         headerBackVisible: false,
         ...getCompactBrandHeaderOptions(),
       },
+    }),
+    ProjectSupervisor: createNativeStackScreen({
+      screen: ProjectSupervisorRouteScreen,
+      options: GLASS_HEADER_OPTIONS,
     }),
     Thread: createNativeStackScreen({
       screen: ThreadRouteScreen,

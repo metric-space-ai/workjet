@@ -181,7 +181,7 @@ export function NetworkDiagram({
               style={{ left: start + (count - 1) * 224 - 100, top: 426 }}
               disabled={empty || !canAdd}
               onClick={onAdd}
-              aria-label="Satelliten-PC hinzufügen"
+              aria-label="Computer hinzufügen"
             >
               <span className="network-node-icon">
                 <PlusIcon size={22} />

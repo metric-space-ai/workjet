@@ -18,6 +18,32 @@ const ARCHIVES = {
   ],
 } as const;
 
+export interface ManagedNodeArchive {
+  readonly version: string;
+  readonly platform: string;
+  readonly arch: string;
+  readonly directoryName: string;
+  readonly sha256: string;
+  readonly url: string;
+}
+
+/** Shared by SSH setup and portable desktop/server packaging. */
+export function managedNodeArchive(platform: string, arch: string): ManagedNodeArchive {
+  const selected = Object.values(ARCHIVES).find(([target]) => target === `${platform}-${arch}`);
+  if (selected === undefined)
+    throw new Error(`No pinned Workjet Node runtime for ${platform}-${arch}.`);
+  const [target, sha256] = selected;
+  const directoryName = `node-v${SSH_NODE_VERSION}-${target}`;
+  return {
+    version: SSH_NODE_VERSION,
+    platform,
+    arch,
+    directoryName,
+    sha256,
+    url: `https://nodejs.org/dist/v${SSH_NODE_VERSION}/${directoryName}.tar.gz`,
+  } as const;
+}
+
 export function buildManagedRemoteNodeScript(): string {
   const platforms = Object.entries(ARCHIVES)
     .map(

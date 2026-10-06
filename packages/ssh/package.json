@@ -23,6 +23,10 @@
       "types": "./src/localForward.ts",
       "import": "./src/localForward.ts"
     },
+    "./remoteNode": {
+      "types": "./src/remoteNode.ts",
+      "import": "./src/remoteNode.ts"
+    },
     "./tunnel": {
       "types": "./src/tunnel.ts",
       "import": "./src/tunnel.ts"

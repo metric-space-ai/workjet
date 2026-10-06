@@ -132,6 +132,28 @@ function desktopSnapshot(): DesktopHostTelemetrySnapshot {
 }
 
 describe("buildResourceTelemetryHistory", () => {
+  it("does not infer an Electron root from a detached Desktop sample", () => {
+    const desktop = desktopSnapshot();
+    const history = buildResourceTelemetryHistory({
+      readAt: DateTime.makeUnsafe(STARTED_AT_MS + 2_000),
+      windowMs: 10_000,
+      bucketMs: 10_000,
+      sampleIntervalMs: 1_000,
+      serverPid: SERVER_PID,
+      sidecarPid: Option.none(),
+      desktopSnapshot: Option.some({
+        ...desktop,
+        electronProcesses: [],
+        power: { ...desktop.power, stale: true },
+      }),
+      snapshots: [snapshot(1, STARTED_AT_MS, 100, 1_000)],
+      health,
+    });
+    expect(
+      history.topProcesses.find((process) => process.identity.pid === ELECTRON_PID)?.category,
+    ).not.toBe("electron-main");
+  });
+
   it("normalizes query bounds before requesting native history", () => {
     expect(normalizeResourceTelemetryHistoryInput({ windowMs: 0, bucketMs: 0 })).toEqual({
       windowMs: 1_000,

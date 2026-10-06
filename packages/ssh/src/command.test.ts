@@ -39,12 +39,12 @@ const makeFailedProcess = (input: { readonly stdout: string; readonly stderr?: s
   });
 };
 
-const makeNeverFinishingProcess = () => {
+const makeNeverFinishingProcess = (stderr = "") => {
   let finish: ((exitCode: ChildProcessSpawner.ExitCode) => void) | null = null;
   return ChildProcessSpawner.makeHandle({
     pid: ChildProcessSpawner.ProcessId(123),
     stdout: Stream.empty,
-    stderr: Stream.empty,
+    stderr: stderr ? Stream.make(encoder.encode(stderr)) : Stream.empty,
     all: Stream.empty,
     exitCode: Effect.callback<ChildProcessSpawner.ExitCode>((resume) => {
       finish = (exitCode) => resume(Effect.succeed(exitCode));
@@ -233,5 +233,30 @@ describe("ssh command", () => {
         assert.include(result.failure.message, "SSH command timed out after 1ms.");
       }
     }).pipe(Effect.provide(processLayer));
+  });
+
+  it.live("explains a Tailscale SSH identity check instead of hiding it behind a timeout", () => {
+    const spawner = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        makeNeverFinishingProcess(
+          "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/abc123\n",
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
+      const result = yield* Effect.result(
+        runSshCommand(
+          { alias: "gpu1-a6000", hostname: "100.87.204.48", username: "deck", port: 22 },
+          { timeoutMs: 500 },
+        ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
+      );
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, SshCommandError);
+        assert.include(result.failure.message, "Tailscale SSH requires an additional check");
+        assert.include(result.failure.message, "https://login.tailscale.com/a/abc123");
+        assert.notInclude(result.failure.message, "timed out");
+      }
+    }).pipe(Effect.provide(NodeServices.layer));
   });
 });

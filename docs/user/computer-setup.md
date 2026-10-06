@@ -8,6 +8,8 @@ The computer list checks coding tools on each connected machine and shows its in
 
 Previously saved connections appear in the same computer list automatically. Connect and disconnect from the computer’s row. Expand **Coding tools** to inspect availability; use Edit to change the name or enabled tools. Editing a computer keeps its connection fixed. Remove its Business OS assignment before removing the computer.
 
+Closing the Desktop window leaves a managed SSH computer running so its active work can continue. Reopen Workjet to reconnect. **Disconnect** stops the SSH server managed by this Desktop profile; it does not stop a server owned by another Workjet profile on the same computer.
+
 For an already running Workjet host, use **Already running Workjet? → Use a pairing link** in the same add dialog. Installation and repair tools remain under **Advanced setup and repair**.
 
 ## Adding a project

@@ -127,6 +127,9 @@ export const make = Effect.gen(function* () {
   });
 
   const environmentId = EnvironmentId.make(environmentIdRaw);
+  // Keep this stable across descriptor reads, but never recover it from disk:
+  // a replacement runtime must not inherit the previous process's identity.
+  const runtimeInstanceId = yield* crypto.randomUUIDv4;
   const cwdBaseName = path.basename(serverConfig.cwd).trim();
   const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
   const launcher = yield* resolveServiceLauncherMode();
@@ -137,6 +140,7 @@ export const make = Effect.gen(function* () {
 
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId,
+    runtimeInstanceId,
     label,
     platform: {
       os: platformOs(hostPlatform),

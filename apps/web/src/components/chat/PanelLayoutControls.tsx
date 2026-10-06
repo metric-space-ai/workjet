@@ -68,7 +68,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
               onPressedChange={onToggleRightPanel}
               aria-label={
                 liveAgentCount > 0
-                  ? `Toggle right panel, ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
+                  ? `Toggle right panel, ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} working`
                   : "Toggle right panel"
               }
               variant="ghost"
@@ -91,7 +91,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           {rightPanelAvailable
             ? `Toggle right panel${rightPanelShortcutLabel ? ` (${rightPanelShortcutLabel})` : ""}${
                 liveAgentCount > 0
-                  ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "agent" : "agents"} working`
+                  ? ` · ${liveAgentCount} ${liveAgentCount === 1 ? "Luma" : "Lumas"} working`
                   : ""
               }`
             : "Right panel is unavailable"}

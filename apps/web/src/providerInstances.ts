@@ -13,6 +13,7 @@
  * @module providerInstances
  */
 import {
+  matchesWorkjetGatewayModelPattern,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
@@ -324,6 +325,20 @@ export function resolveSelectableProviderInstance(
 ): ProviderInstanceId | undefined {
   const entries = deriveProviderInstanceEntries(providers);
   return resolveSelectableProviderInstanceEntry(entries, instanceId)?.instanceId;
+}
+
+/** New project team members use the explicitly configured standard route.
+ * Imported selections remain untouched by this resolver.
+ */
+export function resolveProjectTeamModelSelection(
+  providers: ReadonlyArray<ServerProvider>,
+): ModelSelection | null {
+  const model = "gpt-6.1-sol";
+  const candidates = deriveProviderInstanceEntries(providers).filter((entry) =>
+    entry.models.some((candidate) => matchesWorkjetGatewayModelPattern(candidate.slug, model)),
+  );
+  const entry = resolveSelectableProviderInstanceEntry(candidates, undefined);
+  return entry ? { instanceId: entry.instanceId, model } : null;
 }
 
 /**

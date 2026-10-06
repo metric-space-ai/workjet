@@ -49,6 +49,18 @@ export function resolveThreadCapabilityContext(
     activation.config.capabilityBindings,
     "decision-hub",
   );
+  const team = workjetConfig.schemaVersion === 2 ? workjetConfig.team : undefined;
+  const teamInstructions = team
+    ? `Project team role: ${team.role}. Goal: ${team.goal}\n${
+        team.parentThreadId
+          ? `Your durable parent thread is ${team.parentThreadId}. Return results and blockers to that parent.`
+          : "Retain ownership of this project across specialist and worker deliveries."
+      }\n${
+        team.role === "worker"
+          ? "You are a leaf worker. Deliver the assigned package and accept consolidated rework; do not spawn children."
+          : "Keep your goal and remaining work durable. Report meaningful transitions, not repeated status messages."
+      }`
+    : "";
 
   const ctoxBinding = bindingForCapability(
     activation.config.capabilityBindings,
@@ -63,6 +75,7 @@ export function resolveThreadCapabilityContext(
       managedInstructions: [
         globalManagedInstructions.trim(),
         workjetConfig.managedInstructions.trim(),
+        teamInstructions,
       ]
         .filter((value) => value.length > 0)
         .join("\n\n"),

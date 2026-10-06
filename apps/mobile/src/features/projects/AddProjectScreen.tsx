@@ -7,6 +7,7 @@ import {
   canCreateProjectInEnvironment,
   findExistingAddProject,
   getAddProjectInitialQuery,
+  resolveAddProjectInput,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
@@ -24,7 +25,6 @@ import {
 import {
   appendBrowsePathSegment,
   ensureBrowseDirectoryPath,
-  inferProjectTitleFromPath,
 } from "@workjet/client-runtime/state/projects";
 import { CommandId, type EnvironmentId, ProjectId } from "@workjet/contracts";
 import { CommonActions, StackActions, useNavigation } from "@react-navigation/native";
@@ -499,8 +499,8 @@ export function AddProjectSourceScreen() {
         <>
           <ListSection>
             <ListRow
-              title="Local folder"
-              subtitle="Browse a folder on disk"
+              title="New project"
+              subtitle="Name and optional folder"
               icon={
                 <SymbolView
                   name="folder.badge.plus"
@@ -548,14 +548,17 @@ function useCreateProject(environment: EnvironmentOption | null) {
   const projects = useProjects();
 
   return useCallback(
-    async (workspaceRoot: string) => {
+    async (workspaceRoot: string | null, title?: string) => {
       if (!environment || !canCreateProjectInEnvironment(environment.connectionState)) return;
 
-      const existing = findExistingAddProject({
-        projects,
-        environmentId: environment.environmentId,
-        path: workspaceRoot,
-      });
+      const existing =
+        workspaceRoot === null
+          ? null
+          : findExistingAddProject({
+              projects,
+              environmentId: environment.environmentId,
+              path: workspaceRoot,
+            });
       if (existing) {
         Alert.alert("Project already exists", existing.title);
         navigation.dispatch(
@@ -563,11 +566,10 @@ function useCreateProject(environment: EnvironmentOption | null) {
             index: 0,
             routes: [
               {
-                name: "NewTaskDraft",
+                name: "ProjectSupervisor",
                 params: {
                   environmentId: existing.environmentId,
                   projectId: existing.id,
-                  title: existing.title,
                 },
               },
             ],
@@ -581,6 +583,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
         commandId: CommandId.make(uuidv4()),
         projectId,
         workspaceRoot,
+        ...(title === undefined ? {} : { title }),
         createdAt: new Date().toISOString(),
       });
       const result = await createProject({
@@ -595,11 +598,10 @@ function useCreateProject(environment: EnvironmentOption | null) {
           index: 0,
           routes: [
             {
-              name: "NewTaskDraft",
+              name: "ProjectSupervisor",
               params: {
                 environmentId: environment.environmentId,
                 projectId,
-                title: inferProjectTitleFromPath(workspaceRoot),
               },
             },
           ],
@@ -790,6 +792,8 @@ function FolderBrowser(props: {
 export function AddProjectLocalFolderScreen(props: { readonly environmentId?: string | string[] }) {
   const environment = useEnvironmentFromParam(props.environmentId);
   const createProject = useCreateProject(environment);
+  const [nameInput, setNameInput] = useState("");
+  const [useWorkspaceRoot, setUseWorkspaceRoot] = useState(false);
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
     useBrowsePathInput(environment);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -798,8 +802,9 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
   const submitPath = useCallback(async () => {
     if (!environment || isBrowseNavigating || isSubmitting) return;
     setError(null);
-    const resolved = resolveAddProjectPath({
-      rawPath: pathInput,
+    const resolved = resolveAddProjectInput({
+      title: nameInput,
+      rawPath: useWorkspaceRoot ? pathInput : null,
       currentProjectCwd: null,
       platform: environment.platform,
     });
@@ -809,35 +814,73 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     }
 
     setIsSubmitting(true);
-    const result = await createProject(resolved.path);
-    if (result && AsyncResult.isFailure(result)) {
-      setError(errorMessage(Cause.squash(result.cause)));
+    try {
+      const result = await createProject(resolved.workspaceRoot, resolved.title);
+      if (result && AsyncResult.isFailure(result)) {
+        setError(errorMessage(Cause.squash(result.cause)));
+      }
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
-  }, [createProject, environment, isBrowseNavigating, isSubmitting, pathInput]);
+  }, [
+    createProject,
+    environment,
+    isBrowseNavigating,
+    isSubmitting,
+    nameInput,
+    pathInput,
+    useWorkspaceRoot,
+  ]);
 
   return (
     <AddProjectShell>
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
-          <ProjectPathInput
-            value={pathInput}
-            onChangeText={setPathInput}
-            onSubmit={() => void submitPath()}
+          <SectionTitle>Project name</SectionTitle>
+          <TextInput
+            className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
+            value={nameInput}
+            onChangeText={setNameInput}
+            accessibilityLabel="Project name"
+            placeholder="My project"
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={() => void submitPath()}
           />
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: useWorkspaceRoot }}
+            accessibilityLabel="Use a folder for this project"
+            disabled={isBrowseNavigating || isSubmitting}
+            onPress={() => setUseWorkspaceRoot((value) => !value)}
+            className="py-3"
+          >
+            <Text>{useWorkspaceRoot ? "Remove folder" : "Choose a folder (optional)"}</Text>
+          </Pressable>
+          {useWorkspaceRoot ? (
+            <ProjectPathInput
+              value={pathInput}
+              onChangeText={setPathInput}
+              onSubmit={() => void submitPath()}
+            />
+          ) : null}
           <PrimaryActionButton
             label="Add project"
             disabled={isBrowseNavigating || isSubmitting}
             onPress={() => void submitPath()}
             loading={isSubmitting}
           />
-          <FolderBrowser
-            environment={environment}
-            navigateToBrowsePath={navigateToBrowsePath}
-            pathInput={pathInput}
-            setPathInput={setPathInput}
-          />
+          {useWorkspaceRoot ? (
+            <FolderBrowser
+              environment={environment}
+              navigateToBrowsePath={navigateToBrowsePath}
+              pathInput={pathInput}
+              setPathInput={setPathInput}
+            />
+          ) : null}
         </>
       ) : (
         <EmptyEnvironmentState />

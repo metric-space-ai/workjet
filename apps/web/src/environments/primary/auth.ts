@@ -21,6 +21,7 @@ import {
 
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
+import { readPrimaryEnvironmentTarget } from "./target";
 
 const PrimaryEnvironmentRequestOperation = Schema.Literals([
   "fetch-session-state",
@@ -530,6 +531,20 @@ export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGat
         bootstrapPromise = null;
       }
     });
+}
+
+/**
+ * The trusted desktop host can open its own persisted shell before its local
+ * service answers. This grants no server session; each connection still uses
+ * its normal native credential and server authorization.
+ */
+export function resolveInitialAppShellGateState(): Promise<
+  ServerAuthGateState | { readonly status: "desktop-local" }
+> {
+  if (readPrimaryEnvironmentTarget()?.source === "desktop-managed") {
+    return Promise.resolve({ status: "desktop-local" });
+  }
+  return resolveInitialServerAuthGateState();
 }
 
 // Used by the WSL backend swap: invalidate the cached authenticated state

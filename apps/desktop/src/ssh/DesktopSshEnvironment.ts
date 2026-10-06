@@ -70,6 +70,7 @@ export class DesktopSshEnvironment extends Context.Service<
 export interface DesktopSshEnvironmentLayerOptions {
   readonly resolveCliPackageSpec?: () => string;
   readonly resolveCliRunner?: Effect.Effect<SshTunnel.RemoteWorkjetRunnerOptions>;
+  readonly remoteStateNamespace?: string;
 }
 
 function discoverDesktopSshHostsEffect(input?: { readonly homeDir?: string }) {
@@ -176,6 +177,9 @@ export const layer = (options: DesktopSshEnvironmentLayerOptions = {}) =>
         ...(options.resolveCliRunner === undefined
           ? {}
           : { resolveCliRunner: options.resolveCliRunner }),
+        ...(options.remoteStateNamespace === undefined
+          ? {}
+          : { remoteStateNamespace: options.remoteStateNamespace }),
       }),
     ),
   );

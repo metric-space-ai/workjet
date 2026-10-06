@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import * as NodeSQLite from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 import { isSessionInitializationPrompt } from "@workjet/contracts";
 
 const cleanTitle = (value: unknown): string | undefined =>
@@ -34,9 +34,9 @@ export async function readCodexSessionTitles(home: string): Promise<ReadonlyMap<
       .filter((entry) => entry.isFile() && /^state_\d+\.sqlite$/u.test(entry.name))
       .sort((a, b) => Number(a.name.match(/\d+/u)?.[0]) - Number(b.name.match(/\d+/u)?.[0]));
     for (const entry of databases) {
-      let database: NodeSQLite.DatabaseSync | undefined;
+      let database: NodeSqlite.DatabaseSync | undefined;
       try {
-        database = new NodeSQLite.DatabaseSync(NodePath.join(home, entry.name), { readOnly: true });
+        database = new NodeSqlite.DatabaseSync(NodePath.join(home, entry.name), { readOnly: true });
         const columns = database.prepare("PRAGMA table_info(threads)").all();
         if (
           !columns.some((column) => column.name === "id") ||

@@ -2,7 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import * as NodeSQLite from "node:sqlite";
+import * as NodeSqlite from "node:sqlite";
 import { describe, expect, it } from "@effect/vitest";
 import { readCodexSessionTitles } from "./sourceSessionTitles.ts";
 
@@ -11,7 +11,7 @@ describe("Codex source titles", () => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-titles-"));
     try {
       const source = NodePath.join(root, "state_5.sqlite");
-      const db = new NodeSQLite.DatabaseSync(source);
+      const db = new NodeSqlite.DatabaseSync(source);
       db.exec("CREATE TABLE threads (id TEXT, title TEXT, name TEXT)");
       db.prepare("INSERT INTO threads VALUES (?, ?, ?)").run(
         "crew",

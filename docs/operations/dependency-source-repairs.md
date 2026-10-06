@@ -106,3 +106,10 @@ nonzero-offset DataViews, exercise every Seroval distribution, and check
 before/exact/after adjacent indexed source-map boundaries. Fixtures stay small.
 Their patch hashes require actual lock generation and frozen import; source
 review or patch presence alone does not establish acceptance.
+
+On October 6 the exact 79a9942055 Linux source passed all 40 consumer cases
+through the real package routes after normal lock generation and frozen import.
+The generated lock records both patch hashes, without changing package versions
+or registry integrity values. The raw production audit returned exit 1 with
+only the three original advisories above. No clean audit, macOS dependency
+import, new Desktop package or installed UI acceptance is claimed by that run.

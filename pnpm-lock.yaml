@@ -118,6 +118,8 @@ patchedDependencies:
   react-native-keyboard-controller@1.21.13: 20be72c84d74253acdcfefbc6defe36dc396944f1a44cab2bdd0e3cd572ae008
   react-native-nitro-modules@0.35.9: 825622aae63a8fb5b904f3c77908a0e216261d727ea171709f2c0b6088422675
   react-native-screens@4.25.2: 5358774c7ff4d94e99e54d42a88ca472d385d922801f8f73edc0f359454a47b4
+  seroval@1.6.3: f6e9fd6afbeaa7b1027b89ceae29c034cce2be4102aa5a4be0e25b17a7abf6c7
+  source-map-js@1.2.2: 23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d
 
 importers:
 
@@ -12125,7 +12127,7 @@ snapshots:
       jiti: 2.7.0
       lightningcss: 1.31.1
       magic-string: 0.30.21
-      source-map-js: 1.2.2
+      source-map-js: 1.2.2(patch_hash=23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d)
       tailwindcss: 4.2.1
 
   '@tailwindcss/node@4.3.0':
@@ -12135,7 +12137,7 @@ snapshots:
       jiti: 2.7.0
       lightningcss: 1.32.0
       magic-string: 0.30.21
-      source-map-js: 1.2.2
+      source-map-js: 1.2.2(patch_hash=23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d)
       tailwindcss: 4.3.0
 
   '@tailwindcss/oxide-android-arm64@4.2.1':
@@ -12292,8 +12294,8 @@ snapshots:
     dependencies:
       '@tanstack/history': 1.162.0
       cookie-es: 3.1.1
-      seroval: 1.6.3
-      seroval-plugins: 1.5.4(seroval@1.6.3)
+      seroval: 1.6.3(patch_hash=f6e9fd6afbeaa7b1027b89ceae29c034cce2be4102aa5a4be0e25b17a7abf6c7)
+      seroval-plugins: 1.5.4(seroval@1.6.3(patch_hash=f6e9fd6afbeaa7b1027b89ceae29c034cce2be4102aa5a4be0e25b17a7abf6c7))
 
   '@tanstack/router-generator@1.167.12':
     dependencies:
@@ -13703,12 +13705,12 @@ snapshots:
   css-tree@2.2.1:
     dependencies:
       mdn-data: 2.0.28
-      source-map-js: 1.2.2
+      source-map-js: 1.2.2(patch_hash=23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d)
 
   css-tree@3.2.1:
     dependencies:
       mdn-data: 2.27.1
-      source-map-js: 1.2.2
+      source-map-js: 1.2.2(patch_hash=23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d)
 
   css-what@6.2.2: {}
 
@@ -15389,7 +15391,7 @@ snapshots:
     dependencies:
       '@babel/parser': 7.29.7
       '@babel/types': 7.29.7
-      source-map-js: 1.2.2
+      source-map-js: 1.2.2(patch_hash=23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d)
 
   makeerror@1.0.12:
     dependencies:
@@ -16446,7 +16448,7 @@ snapshots:
     dependencies:
       nanoid: 3.3.18
       picocolors: 1.1.1
-      source-map-js: 1.2.2
+      source-map-js: 1.2.2(patch_hash=23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d)
 
   postject@1.0.0-alpha.6:
     dependencies:
@@ -17141,11 +17143,11 @@ snapshots:
       type-fest: 0.13.1
     optional: true
 
-  seroval-plugins@1.5.4(seroval@1.6.3):
+  seroval-plugins@1.5.4(seroval@1.6.3(patch_hash=f6e9fd6afbeaa7b1027b89ceae29c034cce2be4102aa5a4be0e25b17a7abf6c7)):
     dependencies:
-      seroval: 1.6.3
+      seroval: 1.6.3(patch_hash=f6e9fd6afbeaa7b1027b89ceae29c034cce2be4102aa5a4be0e25b17a7abf6c7)
 
-  seroval@1.6.3: {}
+  seroval@1.6.3(patch_hash=f6e9fd6afbeaa7b1027b89ceae29c034cce2be4102aa5a4be0e25b17a7abf6c7): {}
 
   serve-static@1.16.3:
     dependencies:
@@ -17316,7 +17318,7 @@ snapshots:
 
   smol-toml@1.7.1: {}
 
-  source-map-js@1.2.2: {}
+  source-map-js@1.2.2(patch_hash=23f6d265cd3eaaf4b01c4606cc311faf373c128f7db568cc3e5b45ba6277090d): {}
 
   source-map-support@0.5.21:
     dependencies:

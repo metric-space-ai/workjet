@@ -162,6 +162,13 @@ const withFixture = <A, E>(
         streamDomainEvents: Stream.empty,
       } as unknown as OrchestrationEngineService["Service"];
       const query = {
+        getShellSnapshot: () =>
+          Effect.succeed({
+            projects: [...projects.values()],
+            threads: [],
+            snapshotSequence: 0,
+            updatedAt: NOW,
+          }),
         getProjectShellById: (id: string) =>
           Effect.sync(() => {
             projectLookups.push(id);
@@ -227,7 +234,10 @@ describe("existing imported thread names", () => {
           yield* Effect.promise(() =>
             NodeFSP.writeFile(
               NodePath.join(root, "sessions", "session.jsonl"),
-              transcript("Nur BEREIT antworten", ["BEREIT"]),
+              transcript("Nur BEREIT antworten", [
+                "BEREIT",
+                "Synchronization work is now recorded",
+              ]),
             ),
           );
           const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
@@ -266,10 +276,10 @@ describe("legacy provider session titles", () => {
     withFixture(({ root, service, threads }) =>
       Effect.gen(function* () {
         const sourceId = "11111111-1111-1111-1111-111111111111";
-        const source = transcript("hi", ["READY"]).replace(
-          '"id":"source-session"',
-          '"id":"' + sourceId + '"',
-        );
+        const source = transcript("hi", [
+          "READY",
+          "A real synchronization discussion follows",
+        ]).replace('"id":"source-session"', '"id":"' + sourceId + '"');
         yield* Effect.promise(() =>
           NodeFSP.writeFile(NodePath.join(root, "sessions", sourceId + ".jsonl"), source),
         );
@@ -304,20 +314,135 @@ describe("legacy provider session titles", () => {
 });
 
 describe("project-directed static session imports", () => {
-  it.effect("rejects a selected transcript that grows beyond the size limit after inspection", () =>
+  it.effect("assigns a source cwd below an existing project without creating a project", () =>
+    withFixture(({ root, service, projects, commands }) =>
+      Effect.gen(function* () {
+        projects.set("project-a", { ...projects.get("project-a")!, workspaceRoot: "/source" });
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(root, "sessions", "mapped.jsonl"),
+            transcript("Mapped parent"),
+          ),
+        );
+        const candidates = (yield* service.inspect()).candidates;
+        expect(candidates[0]?.sourceThreadId).toBe("source-session");
+        expect(
+          (yield* service.importSessions({ candidateIds: [candidates[0]!.candidateId] })).items[0]
+            ?.status,
+        ).toBe("imported");
+        expect(commands.some((command) => command.type === "project.create")).toBe(false);
+        expect(
+          commands.find((command) => command.type === "thread.history.import")?.bootstrap
+            ?.createThread.projectId,
+        ).toBe("project-a");
+      }),
+    ),
+  );
+  it.effect("leaves unmatched and ambiguous histories unassigned", () =>
+    withFixture(({ root, service, projects, commands, threads }) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(root, "sessions", "unmatched.jsonl"),
+            transcript("Unknown parent"),
+          ),
+        );
+        const input = { candidateIds: [(yield* service.inspect()).candidates[0]!.candidateId] };
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("failed");
+        projects.set("project-a", { ...projects.get("project-a")!, workspaceRoot: "/source" });
+        projects.set("project-b", { ...projects.get("project-b")!, workspaceRoot: "/source" });
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("failed");
+        expect(commands).toHaveLength(0);
+        expect(threads.size).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect(
+    "copies more than 5000 visible messages in bounded batches and reimports unchanged",
+    () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          const file = NodePath.join(root, "sessions", "long-parent.jsonl");
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              file,
+              transcript(
+                "Parent history",
+                Array.from({ length: 5101 }, (_, index) => `Reply ${index}`),
+              ),
+            ),
+          );
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
+          const result = yield* service.importSessions(input);
+          expect(result.items[0]?.totalMessages).toBe(5102);
+          expect(result.items[0]?.status).toBe("imported");
+          expect([...threads.values()][0]?.messages).toHaveLength(5102);
+          const imports = commands.filter((command) => command.type === "thread.history.import");
+          expect(imports).toHaveLength(26);
+          expect(imports.every((command) => command.messages.length <= 200)).toBe(true);
+          expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
+          expect(
+            commands.filter((command) => command.type === "thread.history.import"),
+          ).toHaveLength(26);
+        }),
+      ),
+  );
+  it.effect("does not create a chat for an initialization-only exchange", () =>
+    withFixture(({ root, service, threads }) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(root, "sessions", "init.jsonl"),
+            transcript("Nur BEREIT antworten", ["BEREIT"]),
+          ),
+        );
+        expect((yield* service.inspect()).candidates).toHaveLength(0);
+        expect(threads.size).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect("imports visible messages across a tool result larger than the former file limit", () =>
     withFixture(({ root, service, threads, commands }) =>
       Effect.gen(function* () {
         const file = NodePath.join(root, "sessions", "grown.jsonl");
         yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Small preview")));
         const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
-        yield* Effect.promise(() => NodeFSP.truncate(file, 21 * 1024 * 1024));
+        yield* Effect.promise(() =>
+          NodeFSP.appendFile(
+            file,
+            encodeJson({
+              type: "response_item",
+              payload: { type: "function_call_output", output: "x".repeat(21 * 1024 * 1024) },
+            }) +
+              "\n" +
+              encodeJson({
+                type: "response_item",
+                timestamp: NOW,
+                payload: {
+                  type: "message",
+                  role: "assistant",
+                  content: [{ type: "output_text", text: "Visible answer after a large tool" }],
+                },
+              }) +
+              "\n",
+          ),
+        );
         const result = yield* service.importSessions({
           candidateIds: [candidateId],
           projectId: ProjectId.make("project-a"),
         });
-        expect(result.items[0]?.status).toBe("failed");
-        expect(commands).toHaveLength(0);
-        expect(threads.size).toBe(0);
+        expect(result.items[0]?.status).toBe("imported");
+        expect(result.items[0]?.totalMessages).toBe(2);
+        expect(commands.filter((command) => command.type === "thread.history.import")).toHaveLength(
+          1,
+        );
+        expect([...threads.values()][0]?.messages.map((message) => message.text)).toEqual([
+          "Small preview",
+          "Visible answer after a large tool",
+        ]);
       }),
     ),
   );

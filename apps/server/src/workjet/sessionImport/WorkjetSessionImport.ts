@@ -4,12 +4,18 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeReadline from "node:readline";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeUtil from "node:util";
+import { matchSessionProject } from "./sessionProjectMatch.ts";
+import { projectTranscriptRecords } from "./transcriptRecords.ts";
 
 import {
   CommandId,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   hideSessionInitialization,
+  isSessionInitializationPrompt,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -38,10 +44,8 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
-const MAX_TRANSCRIPT_BYTES = 20 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 1024 * 1024;
 const MAX_CACHED_PREVIEWS = 512;
-const MAX_MESSAGE_COUNT = 5_000;
 const MAX_MESSAGE_CHARS = 200_000;
 const IMPORT_CHUNK_SIZE = 200;
 
@@ -69,6 +73,8 @@ interface ImportedMessage {
 }
 
 interface ParsedSession {
+  readonly sourceThreadId?: string;
+  readonly repositoryUrl?: string;
   readonly title: string;
   readonly model: string | null;
   readonly workspaceRoot: string | null;
@@ -166,117 +172,144 @@ const stripCodexUiContext = (text: string): string =>
 const isInternalHealthProbe = (text: string): boolean =>
   text.trimStart().startsWith("WORKJET HEALTH PROBE V1.");
 
+const initializationText = (text: string): boolean =>
+  isSessionInitializationPrompt(text) ||
+  /^(?:hi|hello|hallo|READY|BEREIT)[.!]?$/iu.test(text.trim());
+
+const transcriptParser = (
+  source: WorkjetSessionImportSource,
+  fallbackIso: string,
+  sourceTitles: ReadonlyMap<string, string> = new Map(),
+) => {
+  let workspaceRoot = "";
+  let sourceThreadId: string | undefined;
+  let repositoryUrl: string | undefined;
+  let recordedTitle = "";
+  let customTitle = "";
+  let createdAt = fallbackIso;
+  let updatedAt = fallbackIso;
+  let model: string | null = null;
+  let valid = true;
+  let userFound = false;
+  let meaningful = false;
+  let count = 0;
+  let firstUser = "";
+  let firstContentUser = "";
+  const feed = (line: string): ImportedMessage | null => {
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      return null;
+    }
+    const record = asRecord(value);
+    if (!record) return null;
+    let role: unknown;
+    let text = "";
+    if (source === "codex") {
+      const payload = asRecord(record.payload);
+      if (record.type === "session_meta" && payload) {
+        if (payload.parent_thread_id || payload.agent_path) valid = false;
+        workspaceRoot = asString(payload.cwd) ?? workspaceRoot;
+        sourceThreadId = asString(payload.id)?.trim().slice(0, 256) || sourceThreadId;
+        repositoryUrl = asString(asRecord(payload.git)?.repository_url) ?? repositoryUrl;
+        recordedTitle =
+          sourceTitles.get(asString(payload.id) ?? "") ??
+          asString(payload.title) ??
+          asString(payload.thread_name) ??
+          recordedTitle;
+        createdAt = isoOr(payload.timestamp ?? record.timestamp, createdAt);
+        model = recordedModel(payload.model) ?? model;
+        return null;
+      }
+      if (record.type === "turn_context" && payload) {
+        model = recordedModel(payload.model) ?? model;
+        return null;
+      }
+      if (record.type !== "response_item" || payload?.type !== "message") return null;
+      if (payload.channel === "analysis") return null;
+      role = payload.role;
+      const visible = stripCodexUiContext(
+        visibleText(payload.content, role === "user" ? "input_text" : "output_text"),
+      );
+      text = role === "user" ? stripInjectedCodexContext(visible) : visible;
+    } else {
+      if (record.isSidechain === true) valid = false;
+      workspaceRoot = asString(record.cwd) ?? workspaceRoot;
+      sourceThreadId ||= asString(record.sessionId)?.trim().slice(0, 256) || undefined;
+      if (record.type === "ai-title")
+        recordedTitle = asString(record.aiTitle) ?? asString(record.title) ?? recordedTitle;
+      if (record.type === "custom-title") customTitle = asString(record.customTitle) ?? customTitle;
+      if (record.type !== "user" && record.type !== "assistant") return null;
+      const message = asRecord(record.message);
+      role = message?.role;
+      if (role === "assistant") model = recordedModel(message?.model) ?? model;
+      text = visibleText(message?.content, "text").trim();
+    }
+    if ((role !== "user" && role !== "assistant") || !text) return null;
+    if (role === "user") {
+      userFound = true;
+      firstUser ||= text;
+      if (!initializationText(text)) firstContentUser ||= text;
+      if (isInternalHealthProbe(text)) valid = false;
+    }
+    meaningful ||= !initializationText(text);
+    const timestamp = isoOr(record.timestamp, fallbackIso);
+    if (source === "claude-code" && count === 0) createdAt = timestamp;
+    count += 1;
+    updatedAt = timestamp;
+    return { role, text, createdAt: timestamp };
+  };
+  return {
+    feed,
+    hasContent: () => meaningful,
+    finish: (messages: ReadonlyArray<ImportedMessage>): ParsedSession | null => {
+      if (!valid || !userFound) return null;
+      const title =
+        customTitle ||
+        recordedTitle ||
+        firstContentUser ||
+        firstUser ||
+        (source === "codex" ? "Codex session" : "Claude Code session");
+      return {
+        title: title.replace(/\s+/gu, " ").slice(0, 120).trim(),
+        model,
+        workspaceRoot: workspaceRoot || null,
+        createdAt,
+        updatedAt,
+        messages,
+        ...(sourceThreadId ? { sourceThreadId } : {}),
+        ...(repositoryUrl ? { repositoryUrl } : {}),
+      };
+    },
+  };
+};
+
 export const parseCodexSessionTranscript = (
   lines: ReadonlyArray<string>,
   fallbackIso: string,
   sourceTitles: ReadonlyMap<string, string> = new Map(),
 ): ParsedSession | null => {
-  let workspaceRoot = "";
-  let recordedTitle = "";
-  let createdAt = fallbackIso;
-  let model: string | null = null;
-  const messages: ImportedMessage[] = [];
-  for (const line of lines) {
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const record = asRecord(value);
-    const payload = asRecord(record?.payload);
-    if (record?.type === "session_meta" && payload) {
-      if (payload.parent_thread_id || payload.agent_path) return null;
-      workspaceRoot = asString(payload.cwd) ?? workspaceRoot;
-      recordedTitle =
-        sourceTitles.get(asString(payload.id) ?? "") ??
-        asString(payload.title) ??
-        asString(payload.thread_name) ??
-        recordedTitle;
-      createdAt = isoOr(payload.timestamp ?? record.timestamp, createdAt);
-      model = recordedModel(payload.model) ?? model;
-      continue;
-    }
-    if (record?.type === "turn_context" && payload) {
-      model = recordedModel(payload.model) ?? model;
-      continue;
-    }
-    if (record?.type !== "response_item" || payload?.type !== "message") continue;
-    const role = payload.role;
-    if (role !== "user" && role !== "assistant") continue;
-    const sourceText = stripCodexUiContext(
-      visibleText(payload.content, role === "user" ? "input_text" : "output_text"),
-    );
-    const text = role === "user" ? stripInjectedCodexContext(sourceText) : sourceText;
-    if (!text) continue;
-    messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
-  }
-  if (!messages.some((message) => message.role === "user")) return null;
-  if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
-    return null;
-  }
-  const title =
-    recordedTitle ||
-    hideSessionInitialization(messages).find((message) => message.role === "user")?.text ||
-    "Codex session";
-  return {
-    title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Codex session",
-    model,
-    workspaceRoot: workspaceRoot || null,
-    createdAt,
-    updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
-    messages,
-  };
+  const parser = transcriptParser("codex", fallbackIso, sourceTitles);
+  return parser.finish(
+    lines.flatMap((line) => {
+      const message = parser.feed(line);
+      return message ? [message] : [];
+    }),
+  );
 };
 
 export const parseClaudeSessionTranscript = (
   lines: ReadonlyArray<string>,
   fallbackIso: string,
 ): ParsedSession | null => {
-  let workspaceRoot = "";
-  let title = "";
-  let customTitle = "";
-  let model: string | null = null;
-  const messages: ImportedMessage[] = [];
-  for (const line of lines) {
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    const record = asRecord(value);
-    if (!record || record.isSidechain === true) return null;
-    workspaceRoot = asString(record.cwd) ?? workspaceRoot;
-    if (record.type === "ai-title")
-      title = asString(record.aiTitle) ?? asString(record.title) ?? title;
-    if (record.type === "custom-title") customTitle = asString(record.customTitle) ?? customTitle;
-    if (record.type !== "user" && record.type !== "assistant") continue;
-    const message = asRecord(record.message);
-    const role = message?.role;
-    if (role !== "user" && role !== "assistant") continue;
-    if (role === "assistant") model = recordedModel(message?.model) ?? model;
-    const text = visibleText(message?.content, "text").trim();
-    if (!text) continue;
-    messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
-  }
-  if (!messages.some((message) => message.role === "user")) return null;
-  if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
-    return null;
-  }
-  title =
-    customTitle ||
-    title ||
-    hideSessionInitialization(messages).find((message) => message.role === "user")?.text ||
-    "Claude Code session";
-  return {
-    title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Claude Code session",
-    model,
-    workspaceRoot: workspaceRoot || null,
-    createdAt: messages[0]?.createdAt ?? fallbackIso,
-    updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
-    messages,
-  };
+  const parser = transcriptParser("claude-code", fallbackIso);
+  return parser.finish(
+    lines.flatMap((line) => {
+      const message = parser.feed(line);
+      return message ? [message] : [];
+    }),
+  );
 };
 
 const parseSession = (file: SourceFile, text: string): ParsedSession | null => {
@@ -286,13 +319,12 @@ const parseSession = (file: SourceFile, text: string): ParsedSession | null => {
     file.source === "codex"
       ? parseCodexSessionTranscript(lines, fallbackIso, file.sourceTitles)
       : parseClaudeSessionTranscript(lines, fallbackIso);
-  if (!parsed) return null;
   if (
-    parsed.messages.length > MAX_MESSAGE_COUNT ||
-    parsed.messages.some((message) => message.text.length > MAX_MESSAGE_CHARS)
-  ) {
-    throw new WorkjetSessionImportError({ reason: "session_too_large", subject: null });
-  }
+    !parsed ||
+    (file.size <= MAX_PREVIEW_BYTES &&
+      parsed.messages.every((message) => initializationText(message.text)))
+  )
+    return null;
   return parsed;
 };
 
@@ -429,19 +461,27 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
   );
 };
 
-const readSession = async (file: SourceFile): Promise<ParsedSession | null> => {
+interface SessionArchive {
+  readonly session: Omit<ParsedSession, "messages">;
+  readonly messageCount: number;
+  readonly fullHash: string;
+  readonly messages: () => AsyncGenerator<ImportedMessage>;
+  readonly dispose: () => Promise<void>;
+}
+
+const readSession = async (file: SourceFile): Promise<SessionArchive | null> => {
   const expected = await NodeFSP.lstat(file.path);
   if (
     !expected.isFile() ||
     sourceKeyFor(file.source, file.providerInstanceId, await NodeFSP.realpath(file.path)) !==
       file.sourceKey
-  ) {
+  )
     throw new WorkjetSessionImportError({ reason: "candidate_expired", subject: file.sourceKey });
-  }
   const handle = await NodeFSP.open(
     file.path,
     NodeFS.constants.O_RDONLY | (NodeFS.constants.O_NOFOLLOW ?? 0),
   );
+  let directory: string | undefined;
   try {
     const stat = await handle.stat();
     if (
@@ -450,28 +490,88 @@ const readSession = async (file: SourceFile): Promise<ParsedSession | null> => {
       stat.ino !== expected.ino ||
       stat.size !== expected.size ||
       stat.mtimeMs !== expected.mtimeMs
-    ) {
+    )
       throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
-    }
-    if (stat.size > MAX_TRANSCRIPT_BYTES) {
-      throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
-    }
-    // One extra byte detects growth; reads remain bounded even if the source app keeps appending.
-    const buffer = Buffer.alloc(stat.size + 1);
-    let length = 0;
-    while (length < buffer.length) {
-      const read = await handle.read(buffer, length, buffer.length - length, null);
-      if (read.bytesRead === 0) break;
-      length += read.bytesRead;
+    directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-visible-history-"));
+    const archivePath = NodePath.join(directory, "messages.jsonl");
+    const sink = await NodeFSP.open(archivePath, "wx", 0o600);
+    const parser = transcriptParser(
+      file.source,
+      new Date(stat.mtimeMs).toISOString(),
+      file.sourceTitles,
+    );
+    let messageCount = 0;
+    let bytesRead = 0;
+    const hash = NodeCrypto.createHash("sha256").update("[");
+    try {
+      const chunks = handle.createReadStream({
+        encoding: "utf8",
+        highWaterMark: 64 * 1024,
+        autoClose: false,
+        start: 0,
+        end: Math.max(0, stat.size - 1),
+      });
+      for await (const line of projectTranscriptRecords(chunks)) {
+        const parsedMessage = parser.feed(line);
+        if (!parsedMessage) continue;
+        const message =
+          parsedMessage.text.length > MAX_MESSAGE_CHARS
+            ? {
+                ...parsedMessage,
+                text:
+                  parsedMessage.text.slice(0, MAX_MESSAGE_CHARS - 25) +
+                  "\n[message text truncated]",
+              }
+            : parsedMessage;
+        const encoded = JSON.stringify(message);
+        if (messageCount) hash.update(",");
+        hash.update(encoded);
+        messageCount += 1;
+        await sink.writeFile(encoded + "\n");
+      }
+      bytesRead = chunks.bytesRead;
+    } finally {
+      await sink.close();
     }
     const after = await handle.stat();
-    if (length !== stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) {
+    const pathname = await NodeFSP.lstat(file.path);
+    if (
+      bytesRead !== stat.size ||
+      after.size !== stat.size ||
+      after.mtimeMs !== stat.mtimeMs ||
+      pathname.dev !== stat.dev ||
+      pathname.ino !== stat.ino
+    )
       throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    const parsed = parser.finish([]);
+    if (!parsed || !parser.hasContent()) {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+      return null;
     }
-    return parseSession(
-      { ...file, size: stat.size, mtimeMs: stat.mtimeMs },
-      buffer.subarray(0, length).toString("utf8"),
-    );
+    const ownedDirectory = directory;
+    const messages = async function* (): AsyncGenerator<ImportedMessage> {
+      const stream = NodeFS.createReadStream(archivePath, {
+        encoding: "utf8",
+        highWaterMark: 64 * 1024,
+      });
+      const lines = NodeReadline.createInterface({ input: stream, crlfDelay: Infinity });
+      try {
+        for await (const line of lines) yield JSON.parse(line) as ImportedMessage;
+      } finally {
+        lines.close();
+        stream.destroy();
+      }
+    };
+    return {
+      session: parsed,
+      messageCount,
+      fullHash: hash.update("]").digest("hex"),
+      messages,
+      dispose: () => NodeFSP.rm(ownedDirectory, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    if (directory) await NodeFSP.rm(directory, { recursive: true, force: true });
+    throw error;
   } finally {
     await handle.close();
   }
@@ -487,9 +587,6 @@ const readSessionPreview = async (file: SourceFile): Promise<ParsedSession | nul
     await handle.close();
   }
 };
-
-const prefixHash = (messages: ReadonlyArray<ImportedMessage>, count = messages.length): string =>
-  sha256(JSON.stringify(messages.slice(0, count)));
 
 const toFailure = (candidateId: string, error: unknown) => ({
   candidateId,
@@ -570,7 +667,6 @@ export const make = Effect.gen(function* () {
       const discoveryHash = NodeCrypto.createHash("sha256");
       for (const file of files) {
         if (input.source && file.source !== input.source) continue;
-        if (file.size > MAX_TRANSCRIPT_BYTES) continue;
         discoveryHash
           .update(file.sourceKey)
           .update("\0")
@@ -590,7 +686,6 @@ export const make = Effect.gen(function* () {
       let hasMore = false;
       for (const file of files) {
         if (input.source && file.source !== input.source) continue;
-        if (file.size > MAX_TRANSCRIPT_BYTES) continue;
         const fingerprint = `${file.mtimeMs}:${file.size}:${file.titleVersion ?? ""}`;
         let parsed =
           previewCache.get(file.sourceKey)?.fingerprint === fingerprint
@@ -601,6 +696,8 @@ export const make = Effect.gen(function* () {
           if (preview) {
             parsed = {
               title: preview.title,
+              ...(preview.sourceThreadId ? { sourceThreadId: preview.sourceThreadId } : {}),
+              ...(preview.repositoryUrl ? { repositoryUrl: preview.repositoryUrl } : {}),
               model: preview.model,
               workspaceRoot: preview.workspaceRoot,
               createdAt: preview.createdAt,
@@ -646,6 +743,7 @@ export const make = Effect.gen(function* () {
           source: file.source,
           providerInstanceId: file.providerInstanceId,
           title: parsed.title,
+          ...(parsed.sourceThreadId ? { sourceThreadId: parsed.sourceThreadId } : {}),
           workspaceRoot: parsed.workspaceRoot,
           createdAt: parsed.createdAt,
           updatedAt: parsed.updatedAt,
@@ -678,6 +776,7 @@ export const make = Effect.gen(function* () {
         discoveryLimitReached: false,
       };
     }).pipe(
+      Effect.scoped,
       Effect.mapError((error) =>
         isWorkjetSessionImportError(error)
           ? error
@@ -697,56 +796,54 @@ export const make = Effect.gen(function* () {
           reason: "candidate_expired",
           subject: candidateId,
         });
-      const parsed = yield* Effect.tryPromise({
-        try: () => readSession(file),
-        catch: (error) =>
-          isWorkjetSessionImportError(error)
-            ? error
-            : new WorkjetSessionImportError({ reason: "source_unreadable", subject: candidateId }),
-      });
-      if (!parsed)
+      const archive = yield* Effect.acquireRelease(
+        Effect.tryPromise({
+          try: () => readSession(file),
+          catch: (error) =>
+            isWorkjetSessionImportError(error)
+              ? error
+              : new WorkjetSessionImportError({
+                  reason: "source_unreadable",
+                  subject: candidateId,
+                }),
+        }),
+        (archive) => Effect.promise(() => archive?.dispose() ?? Promise.resolve()),
+      );
+      if (!archive)
         return yield* new WorkjetSessionImportError({
           reason: "source_unreadable",
           subject: candidateId,
         });
 
-      let project = destinationProjectId
-        ? destinationProject
-        : parsed.workspaceRoot
-          ? Option.getOrUndefined(
-              yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot),
-            )
-          : undefined;
-      if (destinationProjectId && !project) {
-        return yield* new WorkjetSessionImportError({
-          reason: "project_unavailable",
-          subject: candidateId,
-        });
-      }
-      const now = new Date().toISOString();
-      if (!project) {
-        if (!parsed.workspaceRoot)
-          return yield* new WorkjetSessionImportError({
-            reason: "project_unavailable",
-            subject: candidateId,
+      const parsed = archive.session;
+      let project = destinationProjectId ? destinationProject : undefined;
+      if (!destinationProjectId) {
+        const snapshot = yield* query.getShellSnapshot();
+        project = matchSessionProject(parsed, snapshot.projects);
+        if (!project && !parsed.repositoryUrl && parsed.workspaceRoot) {
+          const remote = yield* Effect.promise(async () => {
+            try {
+              return (
+                await NodeUtil.promisify(NodeChildProcess.execFile)(
+                  "git",
+                  ["-C", parsed.workspaceRoot!, "remote", "get-url", "origin"],
+                  { timeout: 3000, maxBuffer: 8192 },
+                )
+              ).stdout.trim();
+            } catch {
+              return undefined;
+            }
           });
-        const projectId = ProjectId.make(NodeCrypto.randomUUID());
-        yield* engine.dispatch({
-          type: "project.create",
-          commandId: CommandId.make(NodeCrypto.randomUUID()),
-          projectId,
-          title: NodePath.basename(parsed.workspaceRoot) || "Imported sessions",
-          workspaceRoot: parsed.workspaceRoot,
-          createWorkspaceRootIfMissing: false,
-          createdAt: now,
-        } as const satisfies OrchestrationCommand);
-        project = Option.getOrUndefined(yield* query.getProjectShellById(projectId));
+          if (remote)
+            project = matchSessionProject({ ...parsed, repositoryUrl: remote }, snapshot.projects);
+        }
       }
       if (!project)
         return yield* new WorkjetSessionImportError({
           reason: "project_unavailable",
           subject: candidateId,
         });
+      const now = new Date().toISOString();
       // Separate copies in separate projects; legacy single-copy keys remain readable.
       const importKey = `${candidateId}:${project.id}`;
       const existingRows = yield* sql<ImportRow>`
@@ -772,16 +869,6 @@ export const make = Effect.gen(function* () {
         );
         if (legacyThread?.projectId === project.id) existing = legacy;
       }
-      if (
-        existing &&
-        prefixHash(parsed.messages, existing.imported_message_count) !== existing.prefix_hash
-      ) {
-        return yield* new WorkjetSessionImportError({
-          reason: "source_changed",
-          subject: candidateId,
-        });
-      }
-
       const threadId = existing
         ? ThreadId.make(existing.thread_id)
         : existingRows.some((row) => row.source_key === importKey)
@@ -812,48 +899,58 @@ export const make = Effect.gen(function* () {
             worktreePath: null,
             createdAt: parsed.createdAt,
           };
-      const sourceIndexByMessageId = new Map(
-        parsed.messages.map((_, index) => [
-          MessageId.make(stableUuid(`message:${messageSeed}:${index}`)),
-          index,
-        ]),
+      const persistedById = new Map(
+        (thread?.messages ?? []).map((message) => [message.id, message]),
       );
-      const persistedSourceIndexes = new Set<number>();
-      for (const persisted of thread?.messages ?? []) {
-        const index = sourceIndexByMessageId.get(persisted.id);
-        // Local continuations have their own ids; the prefix and receipt
-        // checks below still require every previously imported message.
-        if (index === undefined) continue;
-        const sourceMessage = parsed.messages[index];
-        if (
-          sourceMessage === undefined ||
-          persisted.role !== sourceMessage.role ||
-          persisted.text !== sourceMessage.text
-        ) {
-          return yield* new WorkjetSessionImportError({
-            reason: "source_changed",
-            subject: candidateId,
-          });
-        }
-        persistedSourceIndexes.add(index);
-      }
       let alreadyImported = 0;
-      while (persistedSourceIndexes.has(alreadyImported)) alreadyImported += 1;
-      if (alreadyImported !== persistedSourceIndexes.size) {
+      let sourceIndex = 0;
+      let recordedPrefix: string | undefined;
+      const prefix = NodeCrypto.createHash("sha256").update("[");
+      if (existing?.imported_message_count === 0)
+        recordedPrefix = prefix.copy().update("]").digest("hex");
+      const validationMessages = yield* Effect.acquireRelease(
+        Effect.sync(archive.messages),
+        (iterator) => Effect.promise(() => iterator.return(undefined)),
+      );
+      for (;;) {
+        const next = yield* Effect.promise(() => validationMessages.next());
+        if (next.done) break;
+        const message = next.value;
+        if (sourceIndex) prefix.update(",");
+        prefix.update(JSON.stringify(message));
+        const persisted = persistedById.get(
+          MessageId.make(stableUuid(`message:${messageSeed}:${sourceIndex}`)),
+        );
+        if (persisted) {
+          if (
+            sourceIndex !== alreadyImported ||
+            persisted.role !== message.role ||
+            persisted.text !== message.text
+          )
+            return yield* new WorkjetSessionImportError({
+              reason: "source_changed",
+              subject: candidateId,
+            });
+          alreadyImported += 1;
+        }
+        sourceIndex += 1;
+        if (sourceIndex === existing?.imported_message_count)
+          recordedPrefix = prefix.copy().update("]").digest("hex");
+      }
+      if (existing && recordedPrefix !== existing.prefix_hash)
         return yield* new WorkjetSessionImportError({
           reason: "source_changed",
           subject: candidateId,
         });
-      }
       if (alreadyImported < (existing?.imported_message_count ?? 0)) {
         return yield* new WorkjetSessionImportError({
           reason: "source_changed",
           subject: candidateId,
         });
       }
-      const missingMessages = parsed.messages.slice(alreadyImported);
+      const missingMessageCount = archive.messageCount - alreadyImported;
       if (
-        missingMessages.length === 0 &&
+        missingMessageCount === 0 &&
         Option.isNone(yield* query.getProjectShellById(project.id))
       ) {
         return yield* new WorkjetSessionImportError({
@@ -861,31 +958,48 @@ export const make = Effect.gen(function* () {
           subject: candidateId,
         });
       }
-      for (let offset = 0; offset < missingMessages.length; offset += IMPORT_CHUNK_SIZE) {
-        const chunk = missingMessages.slice(offset, offset + IMPORT_CHUNK_SIZE);
-        yield* engine.dispatch({
+      let offset = 0;
+      let chunk: ImportedMessage[] = [];
+      let chunkChars = 0;
+      const saveChunk = (messages: ImportedMessage[], start: number) =>
+        engine.dispatch({
           type: "thread.history.import",
           commandId: CommandId.make(NodeCrypto.randomUUID()),
           threadId,
-          ...(offset === 0 && createThread ? { bootstrap: { createThread } } : {}),
-          messages: chunk.map((message, index) => ({
-            messageId: MessageId.make(
-              stableUuid(`message:${messageSeed}:${alreadyImported + offset + index}`),
-            ),
+          ...(start === alreadyImported && createThread ? { bootstrap: { createThread } } : {}),
+          messages: messages.map((message, index) => ({
+            messageId: MessageId.make(stableUuid(`message:${messageSeed}:${start + index}`)),
             ...message,
           })),
           createdAt: now,
         } as const satisfies OrchestrationCommand);
+      const importMessages = yield* Effect.acquireRelease(
+        Effect.sync(archive.messages),
+        (iterator) => Effect.promise(() => iterator.return(undefined)),
+      );
+      for (;;) {
+        const next = yield* Effect.promise(() => importMessages.next());
+        if (next.done) break;
+        const message = next.value;
+        if (offset++ < alreadyImported) continue;
+        chunk.push(message);
+        chunkChars += message.text.length;
+        if (chunk.length === IMPORT_CHUNK_SIZE || chunkChars >= 500_000) {
+          yield* saveChunk(chunk, offset - chunk.length);
+          chunk = [];
+          chunkChars = 0;
+        }
       }
+      if (chunk.length) yield* saveChunk(chunk, offset - chunk.length);
 
-      const nextHash = prefixHash(parsed.messages);
+      const nextHash = archive.fullHash;
       yield* sql`
       INSERT INTO workjet_session_imports (
         source_key, source, provider_instance_id, thread_id,
         imported_message_count, prefix_hash, created_at, updated_at
       ) VALUES (
         ${existing?.source_key ?? importKey}, ${file.source}, ${file.providerInstanceId}, ${threadId},
-        ${parsed.messages.length}, ${nextHash}, ${now}, ${now}
+        ${archive.messageCount}, ${nextHash}, ${now}, ${now}
       ) ON CONFLICT(source_key) DO UPDATE SET
         thread_id = excluded.thread_id,
         imported_message_count = excluded.imported_message_count,
@@ -895,19 +1009,20 @@ export const make = Effect.gen(function* () {
       return {
         candidateId,
         status: existing
-          ? missingMessages.length > 0
+          ? missingMessageCount > 0
             ? ("updated" as const)
             : ("unchanged" as const)
           : ("imported" as const),
         threadId,
-        importedMessages: missingMessages.length,
-        totalMessages: parsed.messages.length,
+        importedMessages: missingMessageCount,
+        totalMessages: archive.messageCount,
         message:
-          missingMessages.length > 0
-            ? `${missingMessages.length} messages copied into Workjet.`
+          missingMessageCount > 0
+            ? `${missingMessageCount} messages copied into Workjet.`
             : "The Workjet copy is already up to date.",
       };
     }).pipe(
+      Effect.scoped,
       Effect.mapError((error) =>
         isWorkjetSessionImportError(error)
           ? error

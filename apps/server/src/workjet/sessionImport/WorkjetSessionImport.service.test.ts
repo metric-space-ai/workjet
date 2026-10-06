@@ -14,6 +14,7 @@ import {
   type OrchestrationThread,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -30,11 +31,48 @@ import { make } from "./WorkjetSessionImport.ts";
 const sourceRace = vi.hoisted(() => ({
   path: null as string | null,
   beforeOpen: null as (() => Promise<void>) | null,
+  afterArchivedMessage: null as (() => Promise<void>) | null,
+  afterSourceClose: null as (() => Promise<void>) | null,
+  sourceSignal: null as AbortSignal | null,
+  archivePath: null as string | null,
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args);
+      if (args[0] === sourceRace.path && sourceRace.afterSourceClose) {
+        const createStream = handle.createReadStream.bind(handle);
+        const close = handle.close.bind(handle);
+        vi.spyOn(handle, "createReadStream").mockImplementation((options) => {
+          sourceRace.sourceSignal = options?.signal ?? null;
+          return createStream(options);
+        });
+        vi.spyOn(handle, "close").mockImplementation(async () => {
+          await close();
+          const callback = sourceRace.afterSourceClose;
+          sourceRace.afterSourceClose = null;
+          if (callback) await callback();
+        });
+      }
+      if (
+        args[1] === "wx" &&
+        typeof args[0] === "string" &&
+        args[0].endsWith("/messages.jsonl") &&
+        sourceRace.afterArchivedMessage
+      ) {
+        sourceRace.archivePath = args[0];
+        const write = handle.writeFile.bind(handle);
+        vi.spyOn(handle, "writeFile").mockImplementation(async (...writeArgs) => {
+          await write(...writeArgs);
+          const change = sourceRace.afterArchivedMessage;
+          sourceRace.afterArchivedMessage = null;
+          if (change) await change();
+        });
+      }
+      return handle;
+    },
     realpath: async (...args: Parameters<typeof actual.realpath>) => {
       const resolved = await actual.realpath(...args);
       const swap = sourceRace.beforeOpen;
@@ -445,6 +483,180 @@ describe("project-directed static session imports", () => {
         ]);
       }),
     ),
+  );
+
+  it.effect(
+    "copies a fixed live prefix and imports the newly completed record on the next run",
+    () =>
+      withFixture(({ root, service, threads }) =>
+        Effect.gen(function* () {
+          const file = NodePath.join(root, "sessions", "live.jsonl");
+          const late = Buffer.from(
+            encodeJson({
+              type: "response_item",
+              timestamp: NOW,
+              payload: {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "Completed after snapshot ä 👾" }],
+              },
+            }) + "\n",
+          );
+          const split = late.length - 7;
+          const original = Buffer.concat([
+            Buffer.from(transcript("Snapshot original", ["Already complete ä 👾"])),
+            late.subarray(0, split),
+          ]);
+          yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          yield* Effect.sync(() => {
+            sourceRace.afterArchivedMessage = () => NodeFSP.appendFile(file, late.subarray(split));
+          });
+          const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
+          const first = yield* service.importSessions(input).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                sourceRace.afterArchivedMessage = null;
+              }),
+            ),
+          );
+          expect(first.items[0]?.status).toBe("imported");
+          expect(first.items[0]?.totalMessages).toBe(2);
+          expect(threads.get(first.items[0]!.threadId!)?.messages.map(({ text }) => text)).toEqual([
+            "Snapshot original",
+            "Already complete ä 👾",
+          ]);
+          const second = yield* service.importSessions(input);
+          expect(second.items[0]?.threadId).toBe(first.items[0]?.threadId);
+          expect(second.items[0]?.importedMessages).toBe(1);
+          expect(second.items[0]?.totalMessages).toBe(3);
+          expect(threads.get(second.items[0]!.threadId!)?.messages.at(-1)?.text).toBe(
+            "Completed after snapshot ä 👾",
+          );
+          expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(
+            Buffer.concat([original, late.subarray(split)]).toString("utf8"),
+          );
+        }),
+      ),
+  );
+
+  it.effect("rejects a rewritten prefix even when the source also grows", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        const file = NodePath.join(root, "sessions", "rewrite-live.jsonl");
+        const original = transcript("Snapshot original", ["Already complete"]);
+        const changed =
+          original.replace("Snapshot original", "Snapshot tampered") +
+          transcript("Appended content");
+        yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        yield* Effect.sync(() => {
+          sourceRace.afterArchivedMessage = () => NodeFSP.writeFile(file, changed);
+        });
+        const result = yield* service
+          .importSessions({ candidateIds: [candidateId], projectId: ProjectId.make("project-a") })
+          .pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                sourceRace.afterArchivedMessage = null;
+              }),
+            ),
+          );
+        expect(result.items[0]?.status).toBe("failed");
+        expect(commands).toHaveLength(0);
+        expect(threads.size).toBe(0);
+        expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(changed);
+      }),
+    ),
+  );
+
+  it.effect("rejects a source truncated while its snapshot is read", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        const file = NodePath.join(root, "sessions", "truncate-live.jsonl");
+        const original = transcript("Snapshot original", ["Already complete"]);
+        yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        yield* Effect.sync(() => {
+          sourceRace.afterArchivedMessage = () => NodeFSP.truncate(file, 10);
+        });
+        const result = yield* service
+          .importSessions({ candidateIds: [candidateId], projectId: ProjectId.make("project-a") })
+          .pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                sourceRace.afterArchivedMessage = null;
+              }),
+            ),
+          );
+        expect(result.items[0]?.status).toBe("failed");
+        expect(commands).toHaveLength(0);
+        expect(threads.size).toBe(0);
+        expect((yield* Effect.promise(() => NodeFSP.stat(file))).size).toBe(10);
+      }),
+    ),
+  );
+
+  it.effect(
+    "cancels a snapshot read and removes its private archive before any history is imported",
+    () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          const file = NodePath.join(root, "sessions", "cancel-live.jsonl");
+          const original = transcript("Snapshot original", ["Already complete"]);
+          yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          const reading = Promise.withResolvers<void>();
+          const continueReading = Promise.withResolvers<void>();
+          const cleaned = Promise.withResolvers<void>();
+          yield* Effect.sync(() => {
+            sourceRace.path = file;
+            sourceRace.afterSourceClose = async () => {
+              cleaned.resolve();
+            };
+            sourceRace.afterArchivedMessage = async () => {
+              reading.resolve();
+              await continueReading.promise;
+            };
+          });
+          yield* Effect.gen(function* () {
+            const importing = yield* service
+              .importSessions({
+                candidateIds: [candidateId],
+                projectId: ProjectId.make("project-a"),
+              })
+              .pipe(Effect.forkChild);
+            yield* Effect.promise(() => reading.promise);
+            expect(sourceRace.sourceSignal?.aborted).toBe(false);
+            yield* Fiber.interrupt(importing);
+            expect(sourceRace.sourceSignal?.aborted).toBe(true);
+            continueReading.resolve();
+            yield* Effect.promise(() => cleaned.promise);
+            expect(commands).toHaveLength(0);
+            expect(threads.size).toBe(0);
+            expect(
+              yield* Effect.promise(() =>
+                NodeFSP.access(sourceRace.archivePath!).then(
+                  () => true,
+                  () => false,
+                ),
+              ),
+            ).toBe(false);
+            expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(original);
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                continueReading.resolve();
+                sourceRace.path = null;
+                sourceRace.afterArchivedMessage = null;
+                sourceRace.afterSourceClose = null;
+                sourceRace.sourceSignal = null;
+                sourceRace.archivePath = null;
+              }),
+            ),
+          );
+        }),
+      ),
   );
 
   it.effect(

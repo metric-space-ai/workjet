@@ -235,6 +235,7 @@ export const parseClaudeSessionTranscript = (
 ): ParsedSession | null => {
   let workspaceRoot = "";
   let title = "";
+  let customTitle = "";
   let model: string | null = null;
   const messages: ImportedMessage[] = [];
   for (const line of lines) {
@@ -248,7 +249,7 @@ export const parseClaudeSessionTranscript = (
     if (!record || record.isSidechain === true) return null;
     workspaceRoot = asString(record.cwd) ?? workspaceRoot;
     if (record.type === "ai-title") title = asString(record.title) ?? title;
-    if (record.type === "custom-title") title = asString(record.customTitle) ?? title;
+    if (record.type === "custom-title") customTitle = asString(record.customTitle) ?? customTitle;
     if (record.type !== "user" && record.type !== "assistant") continue;
     const message = asRecord(record.message);
     const role = message?.role;
@@ -262,8 +263,10 @@ export const parseClaudeSessionTranscript = (
   if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
     return null;
   }
-  title ||=
-    hideSessionInitialization(messages).find((message) => message.role === "user")?.text ??
+  title =
+    customTitle ||
+    title ||
+    hideSessionInitialization(messages).find((message) => message.role === "user")?.text ||
     "Claude Code session";
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Claude Code session",

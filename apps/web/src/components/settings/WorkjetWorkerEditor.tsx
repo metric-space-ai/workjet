@@ -49,6 +49,7 @@ export const WORKJET_HARNESS_OPTIONS: ReadonlyArray<{
   { id: "grok-cli", label: "Grok CLI" },
   { id: "cursor-agent", label: "Cursor Agent" },
   { id: "greppy", label: "Greppy" },
+  { id: "minimax-code", label: "MiniMax Code" },
   { id: "pi-code", label: "Pi Code" },
 ];
 
@@ -192,23 +193,6 @@ export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorker
       : [],
     personalization: draft.personalization,
   };
-}
-
-function Field({
-  id,
-  label,
-  children,
-}: {
-  readonly id: string;
-  readonly label: string;
-  readonly children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-    </div>
-  );
 }
 
 /**
@@ -574,9 +558,9 @@ export function WorkjetWorkerEditor({
                         patchDraft({ capabilityIds });
                         return;
                       }
-                      const automatic = connections.filter(
+                      const automatic = connections.find(
                         (connection) => connection.status === "ready",
-                      )[0];
+                      );
                       patchDraft({
                         capabilityIds,
                         capabilityBindings: next

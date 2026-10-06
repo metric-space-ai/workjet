@@ -79,6 +79,7 @@ import {
 } from "../../promptStashStore";
 import { ComposerWorkerControl, providerInstanceIdForHarness } from "./ComposerWorkerControl";
 import { workerReasoningSelections } from "./workerReasoning";
+import { getMiniMaxManualModelCatalog } from "./minimaxManualModels";
 import { getProviderModelCapabilities } from "../../providerModels";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
@@ -3429,6 +3430,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
+  const miniMaxManualCatalog = useMemo(
+    () =>
+      selectedProvider === "minimax"
+        ? getMiniMaxManualModelCatalog(providerStatuses, selectedInstanceId)
+        : null,
+    [providerStatuses, selectedInstanceId, selectedProvider],
+  );
   const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
   const composerManualTargetControls =
     workerModeActive || !workjetManualControlsAvailable ? null : (
@@ -3454,14 +3462,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         selectedHarness={harnessForProviderInstanceId(selectedInstanceId, selectedProvider)}
         onSelectHarness={handleSelectManualHarness}
-        modelSource={greppyManualModels === null ? "gateway" : "configured"}
-        models={manualModels}
+        modelSource={
+          miniMaxManualCatalog !== null
+            ? "native"
+            : greppyManualModels !== null
+              ? "configured"
+              : "gateway"
+        }
+        models={miniMaxManualCatalog?.models ?? manualModels}
         modelsUnavailableReason={
-          manualModels.length === 0
-            ? greppyManualModels === null
-              ? manualModelsUnavailableReason
-              : "No models configured for this Greppy profile — enter a model ID."
-            : null
+          miniMaxManualCatalog !== null
+            ? miniMaxManualCatalog.unavailableReason
+            : manualModels.length === 0
+              ? greppyManualModels === null
+                ? manualModelsUnavailableReason
+                : "No models configured for this Greppy profile — enter a model ID."
+              : null
         }
         selectedModelId={selectedModelForPickerWithCustomFallback}
         onSelectModel={handleSelectManualModel}

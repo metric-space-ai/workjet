@@ -29,6 +29,8 @@ export function providerInstanceIdForHarness(harness: WorkjetHarness): string | 
       return "cursor";
     case "greppy":
       return "greppy";
+    case "minimax-code":
+      return "minimax";
     default:
       return null;
   }

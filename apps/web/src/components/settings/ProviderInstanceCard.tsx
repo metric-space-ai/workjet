@@ -358,6 +358,7 @@ interface ProviderInstanceCardProps {
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
   readonly onRunUpdate?: (() => void) | undefined;
+  readonly onInstallPinnedRuntime?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
 }
 
@@ -403,6 +404,7 @@ export function ProviderInstanceCard({
   onFavoriteModelsChange,
   onModelOrderChange,
   onRunUpdate,
+  onInstallPinnedRuntime,
   isUpdating = false,
 }: ProviderInstanceCardProps) {
   const enabled = instance.enabled ?? true;
@@ -642,6 +644,21 @@ export function ProviderInstanceCard({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {titleHeadNode}
               {versionCodeNode}
+              {onInstallPinnedRuntime ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={isUpdating}
+                  onClick={onInstallPinnedRuntime}
+                >
+                  {isUpdating
+                    ? "Installing"
+                    : liveProvider?.installed
+                      ? "Install supported version"
+                      : "Install MiniMax Code"}
+                </Button>
+              ) : null}
               {versionAdvisory ? (
                 <Popover>
                   <PopoverTrigger

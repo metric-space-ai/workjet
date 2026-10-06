@@ -94,8 +94,8 @@ describe("the bar's leftmost decision", () => {
 
   it("offers setup when no workers are saved", () => {
     const markup = renderToStaticMarkup(list({ workers: [] }));
-    expect(markup).toContain("No saved workers");
-    expect(markup).toContain("Add worker");
+    expect(markup).toContain("No saved Lumas");
+    expect(markup).toContain("Add Luma");
   });
 
   it("disables selection and editing together when unavailable", () => {

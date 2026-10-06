@@ -2,6 +2,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSQLite from "node:sqlite";
+import { isSessionInitializationPrompt } from "@workjet/contracts";
 
 const cleanTitle = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim()
@@ -48,7 +49,12 @@ export async function readCodexSessionTitles(home: string): Promise<ReadonlyMap<
           .all();
         for (const row of rows) {
           const named = cleanTitle(row.name);
-          const title = named ?? titles.get(String(row.id)) ?? cleanTitle(row.title);
+          const firstPrompt = typeof row.title === "string" ? row.title : "";
+          const initTitle =
+            isSessionInitializationPrompt(firstPrompt) ||
+            /^(?:hi|hello|hallo|ready|bereit)[.!]?$/iu.test(firstPrompt.trim());
+          const title =
+            named ?? titles.get(String(row.id)) ?? (initTitle ? undefined : cleanTitle(row.title));
           if (typeof row.id === "string" && title) titles.set(row.id, title);
         }
       } catch {

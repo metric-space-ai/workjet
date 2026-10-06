@@ -32,7 +32,7 @@ export function hideSessionInitialization<
         isSessionInitializationPrompt(request.text) ||
         /^(?:hi|hello|hallo|BEREIT|READY)[.!]?$/iu.test(request.text.trim())
       ) ||
-      !/^(?:BEREIT|READY)[.!]?$/u.test(reply.text.trim())
+      !/^(?:BEREIT|READY|hi|hello|hallo)[.!]?$/iu.test(reply.text.trim())
     )
       break;
     offset += 2;

@@ -19,6 +19,11 @@ describe("Codex source titles", () => {
         "CTOX Crew",
       );
       db.prepare("INSERT INTO threads VALUES (?, ?, ?)").run("indexed", "hi", null);
+      db.prepare("INSERT INTO threads VALUES (?, ?, ?)").run(
+        "unnamed",
+        "Nur BEREIT antworten",
+        null,
+      );
       db.close();
       await NodeFSP.writeFile(
         NodePath.join(root, "session_index.jsonl"),
@@ -28,6 +33,7 @@ describe("Codex source titles", () => {
       const titles = await readCodexSessionTitles(root);
       expect(titles.get("crew")).toBe("CTOX Crew");
       expect(titles.get("indexed")).toBe("Import fixes");
+      expect(titles.has("unnamed")).toBe(false);
       expect(await NodeFSP.readFile(source)).toEqual(before);
     } finally {
       await NodeFSP.rm(root, { recursive: true, force: true });

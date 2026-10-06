@@ -1,0 +1,52 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -1378,3 +1378,3 @@
+ 	const offset = (_node$b = node.b) !== null && _node$b !== void 0 ? _node$b : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new construct(source, offset, node.l));
+@@ -1385,3 +1385,3 @@
+ 	const offset = (_node$b2 = node.b) !== null && _node$b2 !== void 0 ? _node$b2 : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new DataView(source, offset, node.l));
+diff --git a/dist/index.js b/dist/index.js
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1377,3 +1377,3 @@
+ 	const offset = (_node$b = node.b) !== null && _node$b !== void 0 ? _node$b : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new construct(source, offset, node.l));
+@@ -1384,3 +1384,3 @@
+ 	const offset = (_node$b2 = node.b) !== null && _node$b2 !== void 0 ? _node$b2 : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new DataView(source, offset, node.l));
+diff --git a/dist/dev/index.cjs b/dist/dev/index.cjs
+--- a/dist/dev/index.cjs
++++ b/dist/dev/index.cjs
+@@ -1385,3 +1385,3 @@
+ 	const offset = (_node$b = node.b) !== null && _node$b !== void 0 ? _node$b : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new construct(source, offset, node.l));
+@@ -1392,3 +1392,3 @@
+ 	const offset = (_node$b2 = node.b) !== null && _node$b2 !== void 0 ? _node$b2 : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new DataView(source, offset, node.l));
+diff --git a/dist/dev/index.js b/dist/dev/index.js
+--- a/dist/dev/index.js
++++ b/dist/dev/index.js
+@@ -1384,3 +1384,3 @@
+ 	const offset = (_node$b = node.b) !== null && _node$b !== void 0 ? _node$b : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new construct(source, offset, node.l));
+@@ -1391,3 +1391,3 @@
+ 	const offset = (_node$b2 = node.b) !== null && _node$b2 !== void 0 ? _node$b2 : 0;
+-	if (offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
++	if (!(source instanceof ArrayBuffer) || offset < 0 || offset > source.byteLength || node.l > MAX_BASE64_LENGTH) throw new SerovalMalformedNodeError(node);
+ 	return assignIndexedValue$1(ctx, node.i, new DataView(source, offset, node.l));

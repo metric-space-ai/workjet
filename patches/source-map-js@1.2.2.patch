@@ -1,0 +1,9 @@
+diff --git a/lib/source-map-consumer.js b/lib/source-map-consumer.js
+--- a/lib/source-map-consumer.js
++++ b/lib/source-map-consumer.js
+@@ -1071,4 +1071,4 @@
+         return (needle.generatedColumn -
+-                section.generatedOffset.generatedColumn);
++                (section.generatedOffset.generatedColumn - 1));
+       });
+     var section = this._sections[sectionIndex];

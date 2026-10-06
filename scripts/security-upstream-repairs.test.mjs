@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import { PassThrough } from "node:stream";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import zlib from "node:zlib";
 
 const web = createRequire(new URL("../apps/web/package.json", import.meta.url));
@@ -24,17 +25,45 @@ const cli = createRequire(expo.resolve("@expo/cli/package.json"));
 const compression = cli("compression");
 
 // Exercise the real consumer routes, including normal values beside malformed input.
-test("router Seroval retains binary round trips and rejects non-buffer typed-array sources", () => {
-  const original = new Uint8Array([17, 29, 41]);
-  assert.deepEqual(seroval.fromJSON(seroval.toJSON(original)), original);
-  for (const source of [42, "invalid buffer", { length: 3 }]) {
-    const wire = seroval.toJSON(original);
-    const replacement = seroval.toJSON(source).t;
-    replacement.i = wire.t.f.i;
-    wire.t.f = replacement;
-    assert.throws(() => seroval.fromJSON(wire));
-  }
-});
+const serovalDistribution = new URL("./", pathToFileURL(router.resolve("seroval")));
+for (const [name, load] of [
+  ["production CJS", () => seroval],
+  ["development CJS", () => router(new URL("dev/index.cjs", serovalDistribution).pathname)],
+  ["production ESM", () => import(new URL("index.js", serovalDistribution))],
+  ["development ESM", () => import(new URL("dev/index.js", serovalDistribution))],
+]) {
+  test(`${name} Seroval retains binary round trips and rejects non-buffer typed-array sources`, async () => {
+    const api = await load();
+    for (const original of [
+      new Uint8Array([17, 29, 41]),
+      new Uint8Array(new Uint8Array([7, 17, 29, 41, 9]).buffer, 1, 3),
+    ]) {
+      assert.deepEqual(api.fromJSON(api.toJSON(original)), original);
+      for (const source of [42, "invalid buffer", { length: 3 }]) {
+        const wire = api.toJSON(original);
+        const replacement = api.toJSON(source).t;
+        replacement.i = wire.t.f.i;
+        wire.t.f = replacement;
+        assert.throws(() => api.fromJSON(wire));
+      }
+    }
+  });
+  test(`${name} Seroval retains DataView offsets and rejects non-buffer sources`, async () => {
+    const api = await load();
+    const original = new DataView(new Uint8Array([7, 17, 29, 41, 9]).buffer, 1, 3);
+    const restored = api.fromJSON(api.toJSON(original));
+    assert.deepEqual(restored, original);
+    assert.equal(restored.byteOffset, 1);
+    assert.equal(restored.byteLength, 3);
+    for (const source of [42, "invalid buffer", { length: 3 }]) {
+      const wire = api.toJSON(original);
+      const replacement = api.toJSON(source).t;
+      replacement.i = wire.t.f.i;
+      wire.t.f = replacement;
+      assert.throws(() => api.fromJSON(wire));
+    }
+  });
+}
 
 test("router Seroval rejects a forged oversized typed-array node without allocating its claim", () => {
   const wire = seroval.toJSON(new Uint8Array([1]));
@@ -99,6 +128,25 @@ test("Astro source maps reject oversized and cumulative indexed offsets", () => 
     column: 0,
     name: null,
   });
+});
+
+test("Astro indexed source-map section boundaries retain zero-based columns", () => {
+  const consumer = new SourceMapConsumer({
+    version: 3,
+    sections: [
+      { offset: { line: 2, column: 4 }, map: flatMap },
+      { offset: { line: 2, column: 9 }, map: { ...flatMap, sources: ["second.js"] } },
+    ],
+  });
+  const missing = { source: null, line: null, column: null, name: null };
+  const first = { source: "input.js", line: 1, column: 0, name: null };
+  const second = { ...first, source: "second.js" };
+  assert.deepEqual(consumer.originalPositionFor({ line: 3, column: 3 }), missing);
+  assert.deepEqual(consumer.originalPositionFor({ line: 3, column: 4 }), first);
+  assert.deepEqual(consumer.originalPositionFor({ line: 3, column: 5 }), first);
+  assert.deepEqual(consumer.originalPositionFor({ line: 3, column: 8 }), first);
+  assert.deepEqual(consumer.originalPositionFor({ line: 3, column: 9 }), second);
+  assert.deepEqual(consumer.originalPositionFor({ line: 3, column: 10 }), second);
 });
 
 test("MCP Express proxy trust cannot accept arbitrary IPv4 through a malformed mapped subnet", () => {

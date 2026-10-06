@@ -89,3 +89,20 @@ remain in place. No 4.3.0 consumer test or installed repair is claimed.
 Their existing reviewed source patches remain in place. No unavailable package
 version, advisory suppression or protection bypass is accepted. Package and
 installed-product acceptance remain separate from dependency verification.
+
+The real Linux import on source e895d8863e passed 30 of 32 consumer cases.
+The two failures remain preserved: Seroval 1.6.3 caps the typed-array node's
+length but accepts array-like buffer sources, and source-map-js 1.2.2 compares
+a zero-based requested column with its stored one-based section offset.
+Neither failure is waived as an audit or fixture issue.
+
+Two further workspace source patches repair these observed behaviors:
+Seroval validates ArrayBuffer sources before constructing TypedArrays and
+DataViews in all four production/development CJS/ESM distributions. Existing
+offset and allocation limits remain. The source-map comparator converts its
+stored column back to zero-based; offset validation and nested limits remain.
+The consumer tests retain the original failing assertions, add normal
+nonzero-offset DataViews, exercise every Seroval distribution, and check
+before/exact/after adjacent indexed source-map boundaries. Fixtures stay small.
+Their patch hashes require actual lock generation and frozen import; source
+review or patch presence alone does not establish acceptance.

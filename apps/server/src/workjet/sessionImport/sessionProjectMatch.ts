@@ -15,7 +15,9 @@ export const repositoryKey = (remote: string | null | undefined): string | undef
     if (!host || path === "" || path === "/") return undefined;
     if (host === "github.com") path = path.toLowerCase();
     return `${host}${parsed.port ? `:${parsed.port}` : ""}${path}`;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 };
 
 /** Match only evidence belonging to existing projects in the current environment. */
@@ -25,17 +27,25 @@ export const matchSessionProject = (
 ): OrchestrationProjectShell | undefined => {
   if (source.workspaceRoot) {
     const cwd = NodePath.resolve(source.workspaceRoot);
-    const roots = projects.flatMap((project) => {
-      if (!project.workspaceRoot) return [];
-      const root = NodePath.resolve(project.workspaceRoot);
-      const relative = NodePath.relative(root, cwd);
-      return relative === "" || (!relative.startsWith(`..${NodePath.sep}`) && relative !== ".." && !NodePath.isAbsolute(relative))
-        ? [{ project, length: root.length }] : [];
-    }).sort((left, right) => right.length - left.length);
+    const roots = projects
+      .flatMap((project) => {
+        if (!project.workspaceRoot) return [];
+        const root = NodePath.resolve(project.workspaceRoot);
+        const relative = NodePath.relative(root, cwd);
+        return relative === "" ||
+          (!relative.startsWith(`..${NodePath.sep}`) &&
+            relative !== ".." &&
+            !NodePath.isAbsolute(relative))
+          ? [{ project, length: root.length }]
+          : [];
+      })
+      .sort((left, right) => right.length - left.length);
     if (roots.length) return roots[1]?.length === roots[0]!.length ? undefined : roots[0]!.project;
   }
   const remote = repositoryKey(source.repositoryUrl);
   if (!remote) return undefined;
-  const matches = projects.filter((project) => repositoryKey(project.repositoryIdentity?.locator.remoteUrl) === remote);
+  const matches = projects.filter(
+    (project) => repositoryKey(project.repositoryIdentity?.locator.remoteUrl) === remote,
+  );
   return matches.length === 1 ? matches[0] : undefined;
 };

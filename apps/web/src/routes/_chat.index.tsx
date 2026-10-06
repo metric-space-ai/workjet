@@ -56,6 +56,7 @@ import { cn, newCommandId, newThreadId } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import {
   readWorkjetProjectRegistry,
+  refreshWorkjetProjectRegistry,
   selectWorkjetProject,
   useWorkjetProjectRegistry,
 } from "../workjetProjectRegistry";
@@ -346,6 +347,12 @@ function IndexDraftLanding() {
   if (galleryProjects.length > 0)
     return (
       <ProjectGallery
+        onRefresh={
+          activeCtoxInstanceId === null
+            ? undefined
+            : () => refreshWorkjetProjectRegistry(activeCtoxInstanceId)
+        }
+        projectsUnavailable={registry.phase === "blocked"}
         projects={galleryProjects.map((project) => ({
           ...project,
           onOpen: () => {
@@ -400,9 +407,15 @@ function IndexDraftLanding() {
           <EmptyHeader>
             <EmptyTitle>Couldn’t load projects</EmptyTitle>
             <EmptyDescription>Reconnect to this instance to load your projects.</EmptyDescription>
-            <Button render={<Link to="/settings/computers" />} size="sm">
-              Open Computers
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" onClick={() => refreshWorkjetProjectRegistry(activeCtoxInstanceId)}>
+                <RotateCcwIcon className="size-4" />
+                Refresh projects
+              </Button>
+              <Button render={<Link to="/settings/computers" />} size="sm">
+                Open Computers
+              </Button>
+            </div>
           </EmptyHeader>
         </Empty>
       </SidebarInset>
@@ -412,7 +425,11 @@ function IndexDraftLanding() {
 
 function ProjectGallery({
   projects,
+  onRefresh,
+  projectsUnavailable,
 }: {
+  readonly onRefresh: (() => void) | undefined;
+  readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
@@ -429,11 +446,24 @@ function ProjectGallery({
               <h1 className="text-2xl font-semibold">All projects</h1>
               <p className="mt-2 text-sm text-muted-foreground">Choose a project to continue.</p>
             </div>
-            <Button size="sm" onClick={openAddProject}>
-              <PlusIcon className="size-4" />
-              Add project
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              {onRefresh ? (
+                <Button size="sm" variant="outline" onClick={onRefresh}>
+                  <RotateCcwIcon className="size-4" />
+                  Refresh projects
+                </Button>
+              ) : null}
+              <Button size="sm" onClick={openAddProject}>
+                <PlusIcon className="size-4" />
+                Add project
+              </Button>
+            </div>
           </div>
+          {projectsUnavailable ? (
+            <p role="status" className="mb-4 text-sm text-muted-foreground">
+              Couldn’t load projects from this instance. Refresh projects to try again.
+            </p>
+          ) : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {projects.map((project) => (
               <ProjectOverviewCard

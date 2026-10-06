@@ -91,7 +91,22 @@ function answer(response, content, stopReason, model) {
 
 const server = NodeHttp.createServer(async (request, response) => {
   try {
+    if (request.method === "GET" && request.url === "/v1/models") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          object: "list",
+          data: ["fixture-model", "fixture-alt-model"].map((id) => ({
+            id,
+            object: "model",
+            owned_by: "fixture",
+          })),
+        }),
+      );
+      return;
+    }
     NodeAssert.equal(request.url, "/v1/messages");
+    NodeAssert.equal(request.method, "POST");
     NodeAssert.equal(request.headers["x-api-key"], "fixture-only");
     let raw = "";
     for await (const chunk of request) raw += chunk;

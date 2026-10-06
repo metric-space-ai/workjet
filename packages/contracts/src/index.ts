@@ -28,6 +28,7 @@ export * from "./workjetManagedBackendControl.ts";
 export * from "./workjetGatewayRouting.ts";
 export * from "./workjetLegacyImport.ts";
 export * from "./workjetSessionImport.ts";
+export * from "./sessionInitialization.ts";
 export * from "./workjetMailbox.ts";
 export * from "./workjetMailboxAudit.ts";
 export * from "./workjetCrossMode.ts";

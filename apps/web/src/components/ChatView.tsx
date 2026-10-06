@@ -1,3 +1,4 @@
+import { hideSessionInitialization } from "@workjet/contracts";
 import {
   type ApprovalRequestId,
   type CtoxAppModuleId,
@@ -2877,7 +2878,10 @@ function ChatViewContent(props: ChatViewProps) {
       return next;
     });
   }, []);
-  const serverMessages = activeThread?.messages;
+  const serverMessages = useMemo(
+    () => (activeThread?.messages ? hideSessionInitialization(activeThread.messages) : undefined),
+    [activeThread?.messages],
+  );
   const serverAttachmentIds = useMemo(() => {
     const attachmentIds = new Set<string>();
     for (const message of serverMessages ?? []) {

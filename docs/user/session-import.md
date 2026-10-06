@@ -9,6 +9,8 @@ Open **Settings → Harnesses → Import sessions → Browse conversations**.
 
 The importer reads source transcripts without changing them. Copied messages keep their transcript order when source timestamps are equal or go backwards; the Workjet copy advances timestamps where necessary. The result is an independent Workjet conversation in the chosen project. Importing the same source into the same project again adds new source messages without duplicating the history. Importing into another project creates a separate copy. New copies appear with their first messages; a failure during that initial save leaves no empty conversation. Longer histories can be retried from their last completed batch.
 
+Conversation titles use the saved Codex thread name or Claude Code custom title when available. Workjet corrects older automatic first-prompt titles on startup, while preserving titles you renamed locally. Completed opening initialization exchanges such as “Nur BEREIT antworten” / “BEREIT” are hidden in the conversation view; their original copied messages remain intact for safe repeat imports.
+
 The imported thread retains the recorded source model identifier. If the transcript contains no model identifier, it is shown as unknown; choose an available model before starting new work.
 
 If either the source history or the imported Workjet conversation has changed incompatibly, the importer leaves that copy untouched and reports the problem. Failed conversations stay selected for retry. Successful imports include links to the resulting conversations.

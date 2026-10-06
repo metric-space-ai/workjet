@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import { ProjectId, type ProjectOverview } from "@workjet/contracts";
+import { HostProcessEnvironment, HostProcessPlatform } from "@workjet/shared/hostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -19,9 +20,11 @@ it.effect(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-project-overview-" });
-      const temporaryRoot = process.env.TMPDIR ?? "";
+      const environment = yield* HostProcessEnvironment;
+      const platform = yield* HostProcessPlatform;
+      const temporaryRoot = environment.TMPDIR ?? "";
       assert.notEqual(temporaryRoot, "");
-      if (process.platform === "darwin") {
+      if (platform === "darwin") {
         assert.ok(path.resolve(temporaryRoot).startsWith("/Volumes/tmp/"));
       }
       const relative = path.relative(path.resolve(temporaryRoot), directory);

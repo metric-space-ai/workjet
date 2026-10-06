@@ -370,7 +370,11 @@ describe("ProviderGatewayHostArtifact", () => {
         host: { platform: "darwin", arch: "arm64" },
       }).pipe(Effect.flip);
       assert.strictEqual(failure._tag, "ProviderGatewayHostArtifactError");
-      assert.ok(failure.message.includes("pinned Workjet provider-gateway host is unavailable"));
+      assert.strictEqual(failure.reason, "No provider-gateway-host-v* release has been published yet.");
+      assert.strictEqual(
+        failure.message,
+        `The Workjet provider-gateway host is unavailable: ${failure.reason}`,
+      );
     }),
   );
 });

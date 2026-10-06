@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Sealed diagnostic package and failure recovery fixtures.
+import * as NodeAssert from "node:assert/strict";
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -60,7 +61,7 @@ it("resolves an explicit packaged diagnostic host by its own verified receipt", 
   }));
 it("refuses corruption, architecture mismatch and malformed receipt without falling back", () =>
   fixture(async ({ input, executablePath, manifestPath }) => {
-    await assert.rejects(
+    await NodeAssert.rejects(
       Effect.runPromise(
         Artifact.resolveProviderGatewayHostExecutable({
           ...input,
@@ -70,12 +71,12 @@ it("refuses corruption, architecture mismatch and malformed receipt without fall
       /architecture/u,
     );
     await NodeFSP.writeFile(executablePath, "corrupted");
-    await assert.rejects(
+    await NodeAssert.rejects(
       Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
       /bytes/u,
     );
     await NodeFSP.writeFile(manifestPath, "invalid json");
-    await assert.rejects(
+    await NodeAssert.rejects(
       Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
       /receipt is invalid/u,
     );
@@ -107,13 +108,13 @@ it("ignores diagnostic receipts in development and preserves explicit override p
 it("rejects a symlink or oversized diagnostic receipt", () =>
   fixture(async ({ input, manifestPath, root }) => {
     await NodeFSP.writeFile(manifestPath, " ".repeat(20 * 1024));
-    await assert.rejects(
+    await NodeAssert.rejects(
       Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
       /receipt is invalid/u,
     );
     await NodeFSP.rm(manifestPath);
     await NodeFSP.symlink(NodePath.join(root, "missing"), manifestPath);
-    await assert.rejects(
+    await NodeAssert.rejects(
       Effect.runPromise(Artifact.resolveProviderGatewayHostExecutable(input)),
       /receipt is invalid/u,
     );

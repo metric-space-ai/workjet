@@ -22,6 +22,9 @@ export interface SessionImportProjectPort {
   readonly isActive: () => boolean;
   readonly listLogicalProjects: () => Promise<readonly CtoxWorkjetProjectProjection[]>;
   readonly createLocalProject: (project: SessionImportProject) => Promise<void>;
+  readonly attachLocalProjectFolder: (
+    project: SessionImportProject,
+  ) => Promise<SessionImportProject>;
   readonly confirmLogicalProject: (project: SessionImportProject) => Promise<void>;
 }
 
@@ -61,8 +64,9 @@ export async function prepareSessionImportProject(input: {
     assertActive();
     const existing = input.localProjects.find(
       (candidate) =>
+        candidate.workspaceRoot !== null &&
         normalizeProjectPathForComparison(candidate.workspaceRoot) ===
-        normalizeProjectPathForComparison(workspaceRoot),
+          normalizeProjectPathForComparison(workspaceRoot),
     );
     if (existing && existing.id !== id)
       throw new Error(
@@ -77,12 +81,23 @@ export async function prepareSessionImportProject(input: {
   if (!project.workspaceRoot.trim())
     throw new Error("Choose this project's folder on the source computer.");
   const local = input.localProjects.find(({ id }) => id === project.id);
-  if (
-    local &&
-    normalizeProjectPathForComparison(local.workspaceRoot) !==
+  if (local) {
+    if (local.workspaceRoot === null) {
+      const attached = await input.port.attachLocalProjectFolder(project);
+      assertActive();
+      if (
+        attached.id !== project.id ||
+        normalizeProjectPathForComparison(attached.workspaceRoot) !==
+          normalizeProjectPathForComparison(project.workspaceRoot)
+      ) {
+        throw new Error("The project folder binding was not confirmed on this computer.");
+      }
+    } else if (
+      normalizeProjectPathForComparison(local.workspaceRoot) !==
       normalizeProjectPathForComparison(project.workspaceRoot)
-  ) {
-    throw new Error("This project's Code folder changed. Refresh the destination projects.");
+    ) {
+      throw new Error("This project's Code folder changed. Refresh the destination projects.");
+    }
   }
   assertActive();
   if (!local) await input.port.createLocalProject(project);

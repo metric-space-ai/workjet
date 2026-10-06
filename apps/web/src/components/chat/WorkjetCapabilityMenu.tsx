@@ -510,7 +510,7 @@ export function WorkjetCapabilityMenu(props: WorkjetCapabilityMenuProps) {
       }}
       title="Tools for this chat"
       backLabel="Back to tools"
-      detailDescription="Changes apply to this chat. Worker profile defaults are edited in the Worker menu."
+      detailDescription="Changes apply to this chat. Luma profile defaults are edited in the Luma menu."
       trigger={
         <ComposerControl
           type="button"

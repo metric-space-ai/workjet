@@ -56,20 +56,21 @@ describe("instance picker identity and discovery", () => {
     const local = instance("two", "Office", "local_daemon");
     expect(filterCtoxInstances([remote, local], "  CTOX.DEV ")).toEqual([remote]);
     expect(filterCtoxInstances([remote, local], "lokal")).toEqual([local]);
+    expect(filterCtoxInstances([remote, local], "local")).toEqual([local]);
     expect(filterCtoxInstances([remote, local], "unknown")).toEqual([]);
     expect(resolveActiveCtoxInstanceId([remote, local], "two")).toBe("two");
   });
   it("does not call a discoverable instance connected before the data plane is ready", () => {
     const ready = instance("one", "Ready");
-    expect(ctoxInstancePickerStatus(ready)).toBe("Verbunden");
+    expect(ctoxInstancePickerStatus(ready)).toBe("Connected");
     expect(
       ctoxInstancePickerStatus({
         ...ready,
         healthSummary: { ...healthSummary, dataPlaneReady: false },
       }),
-    ).toBe("Verbindung nicht bestätigt");
+    ).toBe("Connection not confirmed");
     expect(ctoxInstancePickerStatus({ ...ready, status: "pairing_expired" })).toBe(
-      "Einladung abgelaufen",
+      "Invitation expired",
     );
   });
 });

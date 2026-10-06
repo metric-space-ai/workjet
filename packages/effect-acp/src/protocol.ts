@@ -125,12 +125,49 @@ const decodeSessionUpdate = Schema.decodeUnknownEffect(AcpSchema.SessionNotifica
 const decodeElicitationComplete = Schema.decodeUnknownEffect(
   AcpSchema.ElicitationCompleteNotification,
 );
-const parserFactory = RpcSerialization.ndJsonRpc();
+// Normalize only plain ACP peer errors, before Effect's decoder loses their
+// wire provenance. Explicit Effect Cause/Defect envelopes stay unchanged.
+function normalizeAcpPeerError(frame: unknown): unknown {
+  if (Array.isArray(frame)) return frame.map(normalizeAcpPeerError);
+  if (
+    typeof frame === "object" &&
+    frame !== null &&
+    !("method" in frame) &&
+    "error" in frame &&
+    isProtocolError(frame.error) &&
+    !("_tag" in frame.error)
+  ) {
+    return {
+      ...frame,
+      error: {
+        _tag: "Cause",
+        code: frame.error.code,
+        message: frame.error.message,
+        data: [{ _tag: "Fail", error: frame.error }],
+      },
+    };
+  }
+  return frame;
+}
+const parserFactory = RpcSerialization.jsonRpc();
 
 export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(function* (
   options: AcpPatchedProtocolOptions,
 ): Effect.fn.Return<AcpPatchedProtocol, never, Scope.Scope> {
-  const parser = parserFactory.makeUnsafe();
+  const rpcParser = parserFactory.makeUnsafe();
+  const framing = RpcSerialization.ndjson.makeUnsafe();
+  const parser = {
+    decode: (data: string | Uint8Array) =>
+      framing
+        .decode(data)
+        .flatMap((frame) => rpcParser.decode(JSON.stringify(normalizeAcpPeerError(frame)))),
+    encode: (message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded) => {
+      const encoded = rpcParser.encode(message);
+      return encoded === undefined
+        ? undefined
+        : `${typeof encoded === "string" ? encoded : new TextDecoder().decode(encoded)}\n`;
+    },
+  };
   const serverQueue = yield* Queue.unbounded<RpcMessage.FromClientEncoded>();
   const clientQueue = yield* Queue.unbounded<RpcMessage.FromServerEncoded>();
   const notificationQueue = yield* Queue.unbounded<AcpIncomingNotification>();

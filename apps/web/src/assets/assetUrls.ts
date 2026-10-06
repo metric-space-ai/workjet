@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { resolveAssetUrl } from "@workjet/client-runtime/state/assets";
 import type { AssetResource, EnvironmentId } from "@workjet/contracts";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useMemo } from "react";
 
 import { assetEnvironment } from "~/state/assets";
@@ -14,18 +14,22 @@ export type AssetUrlState =
   | { readonly _tag: "Failure" }
   | { readonly _tag: "Success"; readonly url: string; readonly sourcePath?: string };
 
+const NO_ASSET_RESULT = Atom.make(AsyncResult.initial<never, never>(false));
+
 export function useAssetUrlState(
   environmentId: EnvironmentId,
-  resource: AssetResource,
+  resource: AssetResource | null,
 ): AssetUrlState {
   const preparedConnection = usePreparedConnection(environmentId);
   const result = useAtomValue(
-    assetEnvironment.createUrl({
-      environmentId,
-      input: { resource },
-    }),
+    resource === null
+      ? NO_ASSET_RESULT
+      : assetEnvironment.createUrl({
+          environmentId,
+          input: { resource },
+        }),
   );
-  if (result._tag === "Failure") {
+  if (resource === null || result._tag === "Failure") {
     return { _tag: "Failure" };
   }
   if (preparedConnection._tag === "None" || result._tag !== "Success") {

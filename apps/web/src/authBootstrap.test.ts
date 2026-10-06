@@ -136,6 +136,25 @@ describe("resolveInitialServerAuthGateState", () => {
     vi.restoreAllMocks();
   });
 
+  it("opens the desktop shell without waiting for or granting a local server session", async () => {
+    installDesktopBootstrap();
+    const blockedHttp = vi.fn().mockRejectedValue(new Error("service is installing"));
+    __setPrimaryHttpRunnerForTests(blockedHttp);
+    const { resolveInitialAppShellGateState } = await import("./environments/primary");
+    await expect(resolveInitialAppShellGateState()).resolves.toEqual({ status: "desktop-local" });
+    expect(blockedHttp).not.toHaveBeenCalled();
+  });
+
+  it("retains the server authentication gate in a regular browser", async () => {
+    const testApi = await installAuthApi({ session: () => unauthenticatedSession(LOOPBACK_AUTH) });
+    const { resolveInitialAppShellGateState } = await import("./environments/primary");
+    await expect(resolveInitialAppShellGateState()).resolves.toEqual({
+      status: "requires-auth",
+      auth: LOOPBACK_AUTH,
+    });
+    expect(testApi.calls.session).toBe(1);
+  });
+
   it("reuses an in-flight silent bootstrap attempt", async () => {
     const nextSession = sequence(
       unauthenticatedSession(DESKTOP_AUTH),

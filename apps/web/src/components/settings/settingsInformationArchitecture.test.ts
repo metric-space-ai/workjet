@@ -3,14 +3,16 @@ import { describe, expect, it } from "vite-plus/test";
 import appSidebarLayoutSource from "../AppSidebarLayout.tsx?raw";
 import machinesRouteSource from "../../routes/machines.tsx?raw";
 import connectionsRouteSource from "../../routes/settings.connections.tsx?raw";
+import keybindingsRouteSource from "../../routes/settings.keybindings.tsx?raw";
 import settingsRouteSource from "../../routes/settings.tsx?raw";
 import sidebarChromeSource from "../sidebar/SidebarChrome.tsx?raw";
 import { SETTINGS_NAV_ITEMS } from "./SettingsSidebarNav";
+import { searchSettings } from "./settingsSearch";
 
 describe("Workjet settings information architecture", () => {
   it("puts instances first, keeps Computers, and hides Connections", () => {
     expect(SETTINGS_NAV_ITEMS[0]).toMatchObject({
-      label: "Instanzen",
+      label: "Instances",
       to: "/settings/business-os",
     });
     expect(SETTINGS_NAV_ITEMS).toEqual(
@@ -19,6 +21,17 @@ describe("Workjet settings information architecture", () => {
       ]),
     );
     expect(SETTINGS_NAV_ITEMS.map((item) => item.label)).not.toContain("Connections");
+    expect(SETTINGS_NAV_ITEMS.map((item) => item.to)).not.toContain("/settings/keybindings");
+    expect(searchSettings("Keybindings")).toEqual([]);
+    expect(
+      searchSettings("shortcut", [
+        {
+          id: "legacy-keybindings",
+          title: "Keyboard shortcuts",
+          to: "/settings/keybindings",
+        },
+      ]),
+    ).toEqual([]);
   });
 
   it("uses the regular Settings route from either product mode", () => {
@@ -32,6 +45,8 @@ describe("Workjet settings information architecture", () => {
     expect(settingsRouteSource).toContain('redirect({ to: "/settings/business-os"');
     expect(connectionsRouteSource).toContain('redirect({ to: "/settings/computers"');
     expect(connectionsRouteSource).not.toContain("ConnectionsSettings");
+    expect(keybindingsRouteSource).toContain('redirect({ to: "/settings/general"');
+    expect(keybindingsRouteSource).not.toContain("KeybindingsSettingsPanel");
     expect(machinesRouteSource).toContain('redirect({ to: "/settings/business-os"');
     expect(machinesRouteSource).not.toContain("MachinesPage");
   });

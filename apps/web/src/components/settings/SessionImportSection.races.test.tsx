@@ -14,11 +14,14 @@ const state = vi.hoisted(() => ({
   inspect: vi.fn(),
   importSessions: vi.fn(),
   createProject: vi.fn(),
+  attachProjectFolder: vi.fn(),
+  shellAtom: Symbol("shell-state"),
   queryInput: vi.fn((input: unknown) => input),
   refresh: vi.fn(),
   inspectCommand: Symbol("inspect"),
   importCommand: Symbol("import"),
   createCommand: Symbol("create"),
+  attachCommand: Symbol("attach-folder"),
 }));
 
 vi.mock("react", async (importOriginal) => {
@@ -36,7 +39,10 @@ vi.mock("react/compiler-runtime", async () => {
   const { reactHookHarness } = await import("../../test/reactHookHarness");
   return { c: reactHookHarness.useMemoCache };
 });
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: unknown) =>
+    atom === state.shellAtom ? { status: "connecting", snapshot: { _tag: "None" } } : [],
+}));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("../../activeWorkjetScope", () => ({
   useActiveWorkjetScope: () => state.scope,
@@ -47,10 +53,16 @@ vi.mock("../../hooks/useSettings", () => ({
   useEnvironmentSettings: () => ({ workjet: { computers: [] } }),
 }));
 vi.mock("../../localApi", () => ({ ensureLocalApi: vi.fn() }));
-vi.mock("../../state/environments", () => ({ usePrimaryEnvironmentId: () => "environment-a" }));
+vi.mock("../../state/environments", () => ({
+  usePrimaryEnvironmentId: () => "environment-a",
+  useEnvironments: () => ({ environments: [] }),
+}));
+vi.mock("../../state/shell", () => ({
+  environmentShell: { stateValueAtom: () => state.shellAtom },
+}));
 vi.mock("../../state/projects", () => ({
   environmentProjects: { environmentProjectsAtom: () => null },
-  projectEnvironment: { create: state.createCommand },
+  projectEnvironment: { create: state.createCommand, update: state.attachCommand },
 }));
 vi.mock("../../state/server", () => ({
   serverEnvironment: {
@@ -73,7 +85,9 @@ vi.mock("../../state/use-atom-command", () => ({
       ? state.inspect
       : command === state.importCommand
         ? state.importSessions
-        : state.createProject,
+        : command === state.attachCommand
+          ? state.attachProjectFolder
+          : state.createProject,
 }));
 vi.mock("../../workjetProjectCreation", () => ({
   workjetProjectCreationFailureMessage: vi.fn(),
@@ -145,6 +159,7 @@ describe("session import scope and search races", () => {
     state.inspect.mockReset().mockResolvedValue(success());
     state.importSessions.mockReset();
     state.createProject.mockReset();
+    state.attachProjectFolder.mockReset();
     state.queryInput.mockClear();
     state.refresh.mockClear();
   });

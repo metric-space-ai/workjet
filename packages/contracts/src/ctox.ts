@@ -306,11 +306,15 @@ export const CtoxDiscoveryResult = Schema.Union([
     instances: CtoxDiscoveryInstances,
     managedState: Schema.optionalKey(Schema.Literals(["ready", "signed_out", "failed"])),
     managedFailureCode: Schema.optionalKey(CtoxManagedDiscoveryFailureCode),
+    pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
   }),
-  Schema.TaggedStruct("signed_out", {}),
+  Schema.TaggedStruct("signed_out", {
+    pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
+  }),
   Schema.TaggedStruct("failed", {
     code: CtoxManagedDiscoveryFailureCode,
     httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+    pairedUnavailable: Schema.optionalKey(Schema.Literal(true)),
   }),
 ]);
 export type CtoxDiscoveryResult = typeof CtoxDiscoveryResult.Type;

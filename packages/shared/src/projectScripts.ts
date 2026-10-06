@@ -2,27 +2,30 @@ import type { ProjectScript } from "@workjet/contracts";
 
 interface ProjectScriptRuntimeEnvInput {
   project: {
-    cwd: string;
+    cwd: string | null;
   };
   worktreePath?: string | null;
   extraEnv?: Record<string, string>;
 }
 
-export function projectScriptCwd(input: {
+export function projectScriptCwd<Cwd extends string | null>(input: {
   project: {
-    cwd: string;
+    cwd: Cwd;
   };
   worktreePath?: string | null;
-}): string {
+}): string | Cwd {
   return input.worktreePath ?? input.project.cwd;
 }
 
 export function projectScriptRuntimeEnv(
   input: ProjectScriptRuntimeEnvInput,
 ): Record<string, string> {
-  const env: Record<string, string> = {
-    WORKJET_PROJECT_ROOT: input.project.cwd,
-  };
+  const env: Record<string, string> =
+    input.project.cwd === null
+      ? {}
+      : {
+          WORKJET_PROJECT_ROOT: input.project.cwd,
+        };
   if (input.worktreePath) {
     env.WORKJET_WORKTREE_PATH = input.worktreePath;
   }

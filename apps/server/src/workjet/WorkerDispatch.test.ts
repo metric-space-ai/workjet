@@ -2,6 +2,9 @@
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  WorkjetMeshWorkspaceId,
+  WorkjetContentDigest,
+  WorkjetSealedPayloadRef,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -13,9 +16,17 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { OrchestrationCommandReceiptRepository } from "../persistence/Services/OrchestrationCommandReceipts.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import {
+  OrchestrationEngineService,
+  type OrchestrationDispatchOptions,
+} from "../orchestration/Services/OrchestrationEngine.ts";
+import { WorkjetSnapshotStore } from "./mailbox/WorkjetSnapshotStore.ts";
+import { WorkjetMeshIdentity } from "./mailbox/WorkjetMeshIdentity.ts";
+import { WorkjetMailboxStore } from "./mailbox/WorkjetMailboxStore.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { WorkerDispatchRollback, WorkerDispatchRollbackError } from "./WorkerDispatchRollback.ts";
 import {
   WorktreeStorage,
   layerTest as worktreeStorageLayerTest,
@@ -52,6 +63,24 @@ const parent = {
   worktreePath: "/workspace/worktree",
   deletedAt: null,
 } as unknown as OrchestrationThread;
+const teamConfig = {
+  ...parent.workjetConfig,
+  schemaVersion: 2,
+  capabilityBindings: [],
+  team: {
+    projectId: parent.projectId,
+    threadId: parent.id,
+    role: "specialist",
+    parentThreadId: ThreadId.make("supervisor"),
+    domain: "implementation",
+    goal: "Implement the project",
+    createdAt: "2026-08-15T12:34:56.000Z",
+  },
+} as const;
+const teamParent = {
+  ...parent,
+  workjetConfig: teamConfig,
+} as OrchestrationThread;
 const invocation: McpInvocationScope = {
   environmentId,
   threadId: parentThreadId,
@@ -97,14 +126,21 @@ const makeHarness = (input?: {
   readonly queryFails?: boolean;
   readonly failCommandTypes?: ReadonlyArray<OrchestrationCommand["type"]>;
   readonly failWorktreeCreate?: boolean;
+  readonly failCreateAttempts?: number;
+  readonly createReceiptStatus?: "accepted" | "rejected" | "missing" | "unavailable";
+  readonly turnReceiptStatus?: "accepted" | "rejected" | "missing";
+  readonly committedDelegation?: boolean;
+  readonly workerProjection?: "matching" | "mismatched";
   readonly failWorktreeRemove?: boolean;
   readonly failBranchDelete?: boolean;
 }) => {
   const commands: Array<OrchestrationCommand> = [];
+  const dispatchOptions: Array<OrchestrationDispatchOptions | undefined> = [];
   const worktreeCreates: Array<WorktreeCreateRecord> = [];
   const worktreeRemovals: Array<{ readonly cwd: string; readonly path: string }> = [];
   const branchDeletions: Array<{ readonly cwd: string; readonly refName: string }> = [];
   let idIndex = 0;
+  let createFailures = input?.failCreateAttempts ?? 0;
   const sources: WorkerDispatchSources = {
     // Deterministic and unbounded, so a second dispatch in the same harness gets
     // genuinely fresh identifiers instead of reusing the first worker's id.
@@ -112,8 +148,13 @@ const makeHarness = (input?: {
     nowIso: Effect.succeed(now),
   };
   const engine = {
-    dispatch: (command: OrchestrationCommand) => {
+    dispatch: (command: OrchestrationCommand, options?: OrchestrationDispatchOptions) => {
       commands.push(command);
+      dispatchOptions.push(options);
+      if (command.type === "thread.create" && createFailures > 0) {
+        createFailures -= 1;
+        return Effect.fail({ _tag: "PersistenceSqlError", detail: "lost acknowledgement" });
+      }
       return input?.failCommandTypes?.includes(command.type)
         ? Effect.fail({
             _tag: "DownstreamTestError",
@@ -123,18 +164,73 @@ const makeHarness = (input?: {
     },
   } as unknown as OrchestrationEngineService["Service"];
   const query = {
-    getThreadDetailById: () =>
-      input?.queryFails
-        ? Effect.fail({ _tag: "QueryTestError", message: "sensitive SQL text" } as const)
-        : Effect.succeed(
-            input && "currentParent" in input
-              ? input.currentParent === undefined
-                ? Option.none()
-                : Option.some(input.currentParent)
-              : Option.some(parent),
-          ),
+    getThreadDetailById: (threadId: ThreadId) => {
+      if (input?.queryFails) {
+        return Effect.fail({ _tag: "QueryTestError", message: "sensitive SQL text" } as const);
+      }
+      if (threadId !== parentThreadId) {
+        if (!input?.workerProjection) return Effect.succeed(Option.none());
+        const workerRef = `${WORKER_REF_PREFIX}${threadId}`;
+        return Effect.succeed(
+          Option.some({
+            ...teamParent,
+            id: threadId,
+            archivedAt: null,
+            branch: input.workerProjection === "matching" ? workerRef : "unrelated/branch",
+            worktreePath: `${worktreeRoot}/repository-hash/${workerRef.replace(/[^A-Za-z0-9._-]+/g, "-")}`,
+            workjetConfig: {
+              ...teamParent.workjetConfig,
+              role: "worker",
+              parent: { environmentId, threadId: parentThreadId },
+              team: {
+                ...teamConfig.team,
+                role: "worker",
+                parentThreadId,
+                threadId,
+                packageId: threadId,
+              },
+            },
+          } as OrchestrationThread),
+        );
+      }
+      return Effect.succeed(
+        input && "currentParent" in input
+          ? input.currentParent === undefined
+            ? Option.none()
+            : Option.some(input.currentParent)
+          : Option.some(parent),
+      );
+    },
     getProjectShellById: () => Effect.succeed(Option.some({ workspaceRoot })),
   } as unknown as ProjectionSnapshotQuery["Service"];
+  const receipts = {
+    getByCommandId: ({ commandId }: { commandId: string }) => {
+      const status = commandId === ids[2] ? input?.turnReceiptStatus : input?.createReceiptStatus;
+      if (status === "unavailable") {
+        return Effect.fail({ _tag: "ReceiptReadError" });
+      }
+      if (!status || status === "missing") {
+        return Effect.succeed(Option.none());
+      }
+      return Effect.succeed(
+        Option.some({
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make(ids[0]),
+          status,
+        }),
+      );
+    },
+  } as unknown as OrchestrationCommandReceiptRepository["Service"];
+  const mailbox = {
+    getDelegation: () => {
+      const delegation = dispatchOptions[0]?.workerDelegation?.delegation;
+      return Effect.succeed(
+        input?.committedDelegation && delegation
+          ? Option.some({ delegation, delegationId: delegation.delegationId, state: "queued" })
+          : Option.none(),
+      );
+    },
+  } as unknown as WorkjetMailboxStore["Service"];
   const gitCommandFailure = {
     _tag: "GitCommandError",
     detail: "downstream git secret",
@@ -171,25 +267,209 @@ const makeHarness = (input?: {
           }),
         );
       },
-      removeWorktree: (removeInput: { readonly cwd: string; readonly path: string }) => {
+      removeWorktree: (removeInput: {
+        readonly cwd: string;
+        readonly path: string;
+        readonly force?: boolean;
+      }) => {
+        expect(removeInput.force).toBe(false);
         worktreeRemovals.push({ cwd: removeInput.cwd, path: removeInput.path });
         return input?.failWorktreeRemove ? Effect.fail(gitCommandFailure) : Effect.void;
       },
-      deleteBranch: (deleteInput: { readonly cwd: string; readonly refName: string }) => {
+      deleteBranch: (deleteInput: {
+        readonly cwd: string;
+        readonly refName: string;
+        readonly force?: boolean;
+      }) => {
+        expect(deleteInput.force).toBe(false);
         branchDeletions.push({ cwd: deleteInput.cwd, refName: deleteInput.refName });
         return input?.failBranchDelete ? Effect.fail(gitCommandFailure) : Effect.void;
       },
     } as unknown as GitWorkflowService["Service"];
     return yield* makeWorkerDispatchWithSources(sources).pipe(
       Effect.provideService(OrchestrationEngineService, engine),
+      Effect.provideService(OrchestrationCommandReceiptRepository, receipts),
+      Effect.provideService(WorkjetMailboxStore, mailbox),
       Effect.provideService(ProjectionSnapshotQuery, query),
       Effect.provideService(GitWorkflowService, gitWorkflow),
+      Effect.provideService(WorkerDispatchRollback, {
+        prepare: (prepared) =>
+          Effect.succeed(
+            Effect.gen(function* () {
+              worktreeRemovals.push({ cwd: prepared.cwd, path: prepared.worktreePath });
+              if (input?.failWorktreeRemove) {
+                return yield* new WorkerDispatchRollbackError({ reason: "changed" });
+              }
+              branchDeletions.push({ cwd: prepared.cwd, refName: prepared.branchRef });
+              if (input?.failBranchDelete) {
+                return yield* new WorkerDispatchRollbackError({ reason: "unavailable" });
+              }
+              return {
+                originalWorktreePath: prepared.worktreePath,
+                originalAdminPath: "/repo/.git/worktrees/worker",
+                recoveryLocationStatus: "verified" as const,
+                recoveryWorktreePath: `${prepared.worktreePath}.workjet-rejected-2`,
+                recoveryAdminPath: "/repo/.git/workjet-rejected/worker-3",
+              };
+            }),
+          ),
+      }),
     );
   }).pipe(Effect.provide(worktreeStorageLayer));
-  return { commands, service, worktreeCreates, worktreeRemovals, branchDeletions };
+  return { commands, dispatchOptions, service, worktreeCreates, worktreeRemovals, branchDeletions };
 };
 
+for (const failCreateAttempts of [0, 1, 2]) {
+  it.effect(`dispatches a team delegation with ${failCreateAttempts} lost acknowledgements`, () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        currentParent: teamParent,
+        failCreateAttempts,
+        createReceiptStatus: failCreateAttempts === 2 ? "accepted" : "missing",
+      });
+      const storedPrompts: string[] = [];
+      const service = yield* harness.service.pipe(
+        Effect.provideService(WorkjetSnapshotStore, {
+          put: (prompt: string) =>
+            Effect.sync(() => {
+              storedPrompts.push(prompt);
+              return {
+                snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+                digest: WorkjetContentDigest.make("a".repeat(64)),
+                byteLength: prompt.length,
+              };
+            }),
+        } as unknown as WorkjetSnapshotStore["Service"]),
+        Effect.provideService(WorkjetMeshIdentity, {
+          workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+          signRoutingEnvelope: (envelope: object) =>
+            Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+        } as unknown as WorkjetMeshIdentity["Service"]),
+      );
+      const result = yield* service.dispatch(invocation, {
+        task: "Implement the complete assigned task.",
+      });
+      expect(storedPrompts).toEqual(["Implement the complete assigned task."]);
+      expect(harness.commands.map((command) => command.type)).toEqual(
+        Array.from({ length: Math.min(failCreateAttempts + 1, 2) }, () => "thread.create"),
+      );
+      expect(new Set(harness.commands.map((command) => command.commandId)).size).toBe(1);
+      expect(
+        harness.dispatchOptions.every(
+          (options) => options?.workerDelegation === harness.dispatchOptions[0]?.workerDelegation,
+        ),
+      ).toBe(true);
+      const prepared = harness.dispatchOptions[0]?.workerDelegation;
+      expect(prepared?.delegation).toMatchObject({
+        state: "queued",
+        source: { threadId: parent.id, environmentId },
+        target: { threadId: result.workerThreadId, environmentId },
+      });
+      expect(prepared?.envelope.envelopeId).toBe(prepared?.delegation.envelopeId);
+      expect(harness.worktreeRemovals).toEqual([]);
+    }),
+  );
+}
+
 const workerRefFor = (threadId: string) => `${WORKER_REF_PREFIX}${threadId}`;
+for (const receiptStatus of ["rejected", "missing", "unavailable"] as const) {
+  it.effect(
+    `reconciles two failed team create acknowledgements with a ${receiptStatus} receipt`,
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          currentParent: teamParent,
+          failCreateAttempts: 2,
+          createReceiptStatus: receiptStatus,
+        });
+        const service = yield* harness.service.pipe(
+          Effect.provideService(WorkjetSnapshotStore, {
+            put: (prompt: string) =>
+              Effect.succeed({
+                snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+                digest: WorkjetContentDigest.make("a".repeat(64)),
+                byteLength: prompt.length,
+              }),
+          } as unknown as WorkjetSnapshotStore["Service"]),
+          Effect.provideService(WorkjetMeshIdentity, {
+            workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+            signRoutingEnvelope: (envelope: object) =>
+              Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+          } as unknown as WorkjetMeshIdentity["Service"]),
+        );
+        const error = yield* service
+          .dispatch(invocation, { task: "Retain or remove only with a durable receipt." })
+          .pipe(Effect.flip);
+        expect(error.reason).toBe(
+          receiptStatus === "rejected" ? "create-failed" : "rollback-failed",
+        );
+        expect(harness.commands.map((command) => command.type)).toEqual([
+          "thread.create",
+          "thread.create",
+        ]);
+        expect(harness.worktreeRemovals).toEqual(
+          receiptStatus === "rejected"
+            ? [{ cwd: parent.worktreePath, path: workerPathFor(ids[0]) }]
+            : [],
+        );
+        expect(harness.branchDeletions).toEqual(
+          receiptStatus === "rejected"
+            ? [{ cwd: parent.worktreePath, refName: workerRefFor(ids[0]) }]
+            : [],
+        );
+      }),
+  );
+}
+for (const receiptStatus of ["missing", "unavailable"] as const) {
+  for (const proof of [
+    { committedDelegation: true, workerProjection: "matching" },
+    { committedDelegation: true, workerProjection: "mismatched" },
+    { committedDelegation: false, workerProjection: "matching" },
+  ] as const) {
+    it.effect(
+      `reconciles a ${receiptStatus} receipt with delegation ${proof.committedDelegation} and ${proof.workerProjection} worker`,
+      () =>
+        Effect.gen(function* () {
+          const harness = makeHarness({
+            currentParent: teamParent,
+            failCreateAttempts: 2,
+            createReceiptStatus: receiptStatus,
+            committedDelegation: proof.committedDelegation,
+            workerProjection: proof.workerProjection,
+          });
+          const service = yield* harness.service.pipe(
+            Effect.provideService(WorkjetSnapshotStore, {
+              put: (prompt: string) =>
+                Effect.succeed({
+                  snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+                  digest: WorkjetContentDigest.make("a".repeat(64)),
+                  byteLength: prompt.length,
+                }),
+            } as unknown as WorkjetSnapshotStore["Service"]),
+            Effect.provideService(WorkjetMeshIdentity, {
+              workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+              signRoutingEnvelope: (envelope: object) =>
+                Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+            } as unknown as WorkjetMeshIdentity["Service"]),
+          );
+          const dispatch = service.dispatch(invocation, { task: "Recover an accepted worker." });
+          if (proof.committedDelegation && proof.workerProjection === "matching") {
+            const result = yield* dispatch;
+            expect(result.workerThreadId).toBe(ThreadId.make(ids[0]));
+            expect(result.status).toBe("dispatched");
+          } else {
+            const error = yield* dispatch.pipe(Effect.flip);
+            expect(error.reason).toBe("rollback-failed");
+          }
+          expect(harness.commands.map((command) => command.type)).toEqual([
+            "thread.create",
+            "thread.create",
+          ]);
+          expect(harness.worktreeRemovals).toEqual([]);
+        }),
+    );
+  }
+}
 const workerPathFor = (threadId: string) =>
   `${worktreeRoot}/repository-hash/${workerRefFor(threadId).replace(/[^A-Za-z0-9._-]+/g, "-")}`;
 
@@ -383,14 +663,14 @@ it.effect("denies a stale invocation role even when the persisted parent is an o
   }),
 );
 
-it.effect("does not delete after create failure and rolls back bounded turn-start failures", () =>
+it.effect("retains a failed dispatch's source after bounded turn-start rollback", () =>
   Effect.gen(function* () {
     const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
     const createService = yield* createFailure.service;
     const createError = yield* createService
       .dispatch(invocation, { task: "Sensitive create task." })
       .pipe(Effect.flip);
-    expect(createError.reason).toBe("create-failed");
+    expect(createError.reason).toBe("rollback-failed");
     expect(createFailure.commands.map(({ type }) => type)).toEqual(["thread.create"]);
 
     const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
@@ -398,28 +678,25 @@ it.effect("does not delete after create failure and rolls back bounded turn-star
     const turnError = yield* turnService
       .dispatch(invocation, { task: "Sensitive turn task." })
       .pipe(Effect.flip);
-    expect(turnError.reason).toBe("turn-start-failed");
+    expect(turnError.reason).toBe("rollback-failed");
     expect(turnFailure.commands.map(({ type }) => type)).toEqual([
       "thread.create",
       "thread.turn.start",
-      "thread.delete",
     ]);
-    expect(turnFailure.commands[2]).toEqual({
-      type: "thread.delete",
-      commandId: ids[4],
-      threadId: ids[0],
-    });
     expect(JSON.stringify(turnError)).not.toContain("downstream secret");
     expect(JSON.stringify(turnError)).not.toContain("Sensitive turn task");
 
     const rollbackFailure = makeHarness({
       failCommandTypes: ["thread.turn.start", "thread.delete"],
+      turnReceiptStatus: "rejected",
     });
     const rollbackService = yield* rollbackFailure.service;
     const rollbackError = yield* rollbackService
       .dispatch(invocation, { task: "Sensitive rollback task." })
       .pipe(Effect.flip);
     expect(rollbackError.reason).toBe("rollback-failed");
+    expect(rollbackFailure.worktreeRemovals).toEqual([]);
+    expect(rollbackFailure.branchDeletions).toEqual([]);
     expect(JSON.stringify(rollbackError)).not.toContain("downstream secret");
     expect(JSON.stringify(rollbackError)).not.toContain("Sensitive rollback task");
   }),
@@ -499,7 +776,7 @@ it.effect("fails bounded when the isolated worker worktree cannot be created", (
   }),
 );
 
-it.effect("removes only the worktree this dispatch created when rollback runs", () =>
+it.effect("retains checkout and ref when rollback cannot safely remove them", () =>
   Effect.gen(function* () {
     const turnFailure = makeHarness({ failCommandTypes: ["thread.turn.start"] });
     const turnService = yield* turnFailure.service;
@@ -507,65 +784,83 @@ it.effect("removes only the worktree this dispatch created when rollback runs", 
       .dispatch(invocation, { task: "Rolled back task." })
       .pipe(Effect.flip);
 
-    expect(turnError.reason).toBe("turn-start-failed");
-    expect(turnFailure.worktreeRemovals).toEqual([
-      { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
-    ]);
-    // `git worktree remove` leaves the branch behind, so the rollback must
-    // delete this dispatch's own worker ref too — and only that one.
-    expect(turnFailure.branchDeletions).toEqual([
-      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
-    ]);
-    // The orchestrator's own worktree and ref are never removal targets.
-    expect(turnFailure.worktreeRemovals.some(({ path }) => path === parent.worktreePath)).toBe(
-      false,
-    );
-    expect(turnFailure.branchDeletions.some(({ refName }) => refName === parent.branch)).toBe(
-      false,
-    );
+    expect(turnError.reason).toBe("rollback-failed");
+    expect(turnFailure.worktreeRemovals).toEqual([]);
+    expect(turnFailure.branchDeletions).toEqual([]);
 
-    // A create failure must not leak the worktree or the ref either.
+    // A rejected create leaves the checkout and ref available for recovery.
     const createFailure = makeHarness({ failCommandTypes: ["thread.create"] });
     const createService = yield* createFailure.service;
     const createError = yield* createService
       .dispatch(invocation, { task: "Create failure task." })
       .pipe(Effect.flip);
-    expect(createError.reason).toBe("create-failed");
-    expect(createFailure.worktreeRemovals).toEqual([
-      { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
-    ]);
-    expect(createFailure.branchDeletions).toEqual([
-      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
-    ]);
+    expect(createError.reason).toBe("rollback-failed");
+    expect(createFailure.worktreeRemovals).toEqual([]);
+    expect(createFailure.branchDeletions).toEqual([]);
+  }),
+);
 
-    // A failed worktree removal is reported as a rollback failure.
-    const removeFailure = makeHarness({
-      failCommandTypes: ["thread.turn.start"],
-      failWorktreeRemove: true,
-    });
-    const removeService = yield* removeFailure.service;
-    const removeError = yield* removeService
-      .dispatch(invocation, { task: "Removal failure task." })
-      .pipe(Effect.flip);
-    expect(removeError.reason).toBe("rollback-failed");
-    expect(JSON.stringify(removeError)).not.toContain("downstream git secret");
-    // A failed worktree removal short-circuits before the ref delete.
-    expect(removeFailure.branchDeletions).toEqual([]);
+for (const stage of ["create", "turn"] as const) {
+  it.effect(`rolls back a durably rejected ${stage} before returning its bounded error`, () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        failCommandTypes: [stage === "create" ? "thread.create" : "thread.turn.start"],
+        createReceiptStatus: "rejected",
+        turnReceiptStatus: "rejected",
+      });
+      const service = yield* harness.service;
+      const error = yield* service
+        .dispatch(invocation, { task: "Rejected worker." })
+        .pipe(Effect.flip);
+      expect(error.reason).toBe(stage === "create" ? "create-failed" : "turn-start-failed");
+      expect(harness.worktreeRemovals).toEqual([
+        { cwd: parent.worktreePath, path: workerPathFor(ids[0]) },
+      ]);
+      expect(harness.branchDeletions).toEqual([
+        { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
+      ]);
+      expect(harness.commands.map(({ type }) => type)).toEqual(
+        stage === "create"
+          ? ["thread.create"]
+          : ["thread.create", "thread.turn.start", "thread.delete"],
+      );
+    }),
+  );
+}
 
-    // A failed ref deletion is a rollback failure too: the dangling ref is the
-    // exact leak this path exists to prevent.
-    const branchFailure = makeHarness({
+it.effect("keeps an accepted first turn after its acknowledgement is lost", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
       failCommandTypes: ["thread.turn.start"],
-      failBranchDelete: true,
+      turnReceiptStatus: "accepted",
     });
-    const branchService = yield* branchFailure.service;
-    const branchError = yield* branchService
-      .dispatch(invocation, { task: "Branch failure task." })
+    const service = yield* harness.service;
+    const error = yield* service
+      .dispatch(invocation, { task: "Accepted, not acknowledged." })
       .pipe(Effect.flip);
-    expect(branchError.reason).toBe("rollback-failed");
-    expect(branchFailure.branchDeletions).toEqual([
-      { cwd: parent.worktreePath, refName: workerRefFor(ids[0]) },
+    expect(error.reason).toBe("rollback-failed");
+    expect(harness.commands.map(({ type }) => type)).toEqual([
+      "thread.create",
+      "thread.turn.start",
     ]);
-    expect(JSON.stringify(branchError)).not.toContain("downstream git secret");
+    expect(harness.worktreeRemovals).toEqual([]);
+    expect(harness.branchDeletions).toEqual([]);
+  }),
+);
+
+it.effect("keeps a checkout already owned by another projected thread", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({
+      failCommandTypes: ["thread.create"],
+      createReceiptStatus: "rejected",
+      workerProjection: "matching",
+    });
+    const service = yield* harness.service;
+    const error = yield* service
+      .dispatch(invocation, { task: "Conflicting owner." })
+      .pipe(Effect.flip);
+    expect(error.reason).toBe("rollback-failed");
+    expect(harness.worktreeRemovals).toEqual([]);
+    expect(harness.branchDeletions).toEqual([]);
   }),
 );

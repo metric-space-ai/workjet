@@ -7,6 +7,7 @@ import {
   type DesktopHostTelemetryMessage as DesktopHostTelemetryMessageValue,
   type DesktopHostTelemetrySnapshot,
   DesktopTelemetryControlMessage,
+  DesktopTelemetryAttachmentError,
   type ResourceTelemetrySourceStatus,
 } from "@workjet/contracts";
 import { resolveServerBackgroundActivitySettings } from "@workjet/shared/backgroundActivitySettings";
@@ -171,6 +172,17 @@ export class DesktopTelemetryReceiver extends Context.Service<
     readonly setDiagnosticsDemand: (
       enabled: boolean,
     ) => Effect.Effect<void, DesktopTelemetryControlError>;
+    readonly attach: (
+      sourceId: string,
+    ) => Effect.Effect<
+      Stream.Stream<DesktopTelemetryControlMessage>,
+      DesktopTelemetryAttachmentError,
+      Scope.Scope
+    >;
+    readonly publish: (
+      sourceId: string,
+      message: DesktopHostTelemetryMessageValue,
+    ) => Effect.Effect<void, DesktopTelemetryAttachmentError>;
   }
 >()("workjet/resourceTelemetry/DesktopTelemetryReceiver") {}
 
@@ -324,6 +336,28 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
   const healthChanges = yield* PubSub.sliding<DesktopTelemetryReceiverHealth>(4);
   const controlMutex = yield* Semaphore.make(1);
   const snapshotMutex = yield* Semaphore.make(1);
+  const controls = yield* PubSub.sliding<ReadonlyMap<string, DesktopTelemetryControlMessage>>(1);
+  const currentControls = yield* Ref.make(
+    new Map<string, DesktopTelemetryControlMessage>([
+      ["setDiagnosticsDemand", { version: 1, type: "setDiagnosticsDemand", enabled: false }],
+      [
+        "setHostPowerIntervals",
+        {
+          version: 1,
+          type: "setHostPowerIntervals",
+          activeIntervalMs: DEFAULT_HOST_POWER_ACTIVE_INTERVAL_MS,
+          idleIntervalMs: DEFAULT_HOST_POWER_IDLE_INTERVAL_MS,
+        },
+      ],
+    ]),
+  );
+  const attached = yield* Ref.make<
+    Option.Option<{
+      readonly id: string;
+      readonly electronPid?: number;
+      readonly sequence?: number;
+    }>
+  >(Option.none());
   const health = yield* Ref.make<DesktopTelemetryReceiverHealth>({
     status: config.desktopTelemetryFd === undefined ? "unavailable" : "starting",
     lastSampleAt: Option.none(),
@@ -352,6 +386,10 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
   const sendControlMessage = (message: DesktopTelemetryControlMessage) =>
     controlMutex.withPermits(1)(
       Effect.gen(function* () {
+        const current = yield* Ref.updateAndGet(currentControls, (current) =>
+          new Map(current).set(message.type, message),
+        );
+        yield* PubSub.publish(controls, current);
         const fd = config.desktopTelemetryControlFd;
         if (fd === undefined) return;
         const encoded = yield* encodeControlMessage(message).pipe(
@@ -410,7 +448,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
       ),
     );
   };
-  if (config.desktopTelemetryControlFd !== undefined) {
+  if (config.desktopTelemetryControlFd !== undefined || config.mode === "desktop") {
     const settingsChanges = yield* serverSettings.subscribeChanges;
     const settings = yield* serverSettings.getSettings;
     yield* sendHostPowerIntervals(settings).pipe(
@@ -433,6 +471,116 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
       Effect.forkScoped,
     );
   }
+
+  // Shared ingestion keeps foreground descriptors and reconnectable attachments
+  // on the same health/snapshot path. Call while holding snapshotMutex.
+  const ingest = (message: DesktopHostTelemetryMessageValue) =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      yield* Ref.set(lastContactAtMs, Option.some(DateTime.toEpochMillis(now)));
+      if (message.type === "desktopTelemetryHello") {
+        yield* updateHealth((current) => ({
+          ...current,
+          status: "healthy",
+          lastError: Option.none(),
+        }));
+        return;
+      }
+      yield* Ref.set(latest, Option.some(message));
+      yield* updateSampleHealth(DateTime.makeUnsafe(message.sampledAtUnixMs));
+      yield* PubSub.publish(changes, message);
+    });
+  const attach: DesktopTelemetryReceiver["Service"]["attach"] = (sourceId) =>
+    Effect.gen(function* () {
+      yield* Effect.acquireRelease(
+        snapshotMutex.withPermits(1)(
+          Effect.gen(function* () {
+            if (
+              config.mode !== "desktop" ||
+              config.desktopTelemetryFd !== undefined ||
+              Option.isSome(yield* Ref.get(attached))
+            )
+              return yield* new DesktopTelemetryAttachmentError({
+                reason: "Desktop telemetry already has an owner or does not support attachments.",
+              });
+            yield* Ref.set(attached, Option.some({ id: sourceId }));
+            yield* Ref.set(latest, Option.none());
+            yield* Ref.set(
+              lastContactAtMs,
+              Option.some(DateTime.toEpochMillis(yield* DateTime.now)),
+            );
+            yield* updateHealth(() => ({
+              status: "starting",
+              lastSampleAt: Option.none(),
+              lastError: Option.none(),
+            }));
+          }),
+        ),
+        () =>
+          snapshotMutex.withPermits(1)(
+            Effect.gen(function* () {
+              const owner = yield* Ref.get(attached);
+              if (Option.isNone(owner) || owner.value.id !== sourceId) return;
+              yield* Ref.set(attached, Option.none());
+              const snapshot = yield* Ref.get(latest);
+              if (Option.isSome(snapshot)) {
+                const stale = {
+                  ...snapshot.value,
+                  electronProcesses: [],
+                  power: { ...snapshot.value.power, stale: true, updatedAt: yield* DateTime.now },
+                };
+                yield* Ref.set(latest, Option.some(stale));
+                yield* PubSub.publish(changes, stale);
+              }
+              yield* updateHealth((current) => ({
+                ...current,
+                status: "stopped",
+                lastError: Option.some("Desktop telemetry attachment closed."),
+              }));
+            }),
+          ),
+      );
+      return yield* controlMutex.withPermits(1)(
+        Effect.gen(function* () {
+          const subscription = yield* PubSub.subscribe(controls);
+          const initial = yield* Ref.get(currentControls);
+          return Stream.concat(Stream.make(initial), Stream.fromSubscription(subscription)).pipe(
+            Stream.flatMap((snapshot) => Stream.fromIterable(snapshot.values())),
+          );
+        }),
+      );
+    });
+  const publish: DesktopTelemetryReceiver["Service"]["publish"] = (sourceId, message) =>
+    snapshotMutex.withPermits(1)(
+      Effect.gen(function* () {
+        const owner = yield* Ref.get(attached);
+        if (Option.isNone(owner) || owner.value.id !== sourceId)
+          return yield* new DesktopTelemetryAttachmentError({
+            reason: "Desktop telemetry attachment is no longer current.",
+          });
+        if (message.type === "desktopTelemetryHello") {
+          if (owner.value.electronPid !== undefined)
+            return yield* new DesktopTelemetryAttachmentError({
+              reason: "Desktop telemetry hello was already received.",
+            });
+          yield* Ref.set(
+            attached,
+            Option.some({ ...owner.value, electronPid: message.electronPid }),
+          );
+        } else {
+          if (owner.value.electronPid !== message.electronPid)
+            return yield* new DesktopTelemetryAttachmentError({
+              reason: "Desktop telemetry source or sequence does not match the current attachment.",
+            });
+          // Snapshot-plus-subscription replay may overlap. Acknowledge without
+          // applying an already observed sequence; never regress live telemetry.
+          if (owner.value.sequence !== undefined && message.sequence <= owner.value.sequence)
+            return;
+          yield* Ref.set(attached, Option.some({ ...owner.value, sequence: message.sequence }));
+        }
+        yield* ingest(message);
+      }),
+    );
 
   if (config.desktopTelemetryFd !== undefined) {
     const fd = config.desktopTelemetryFd;
@@ -483,36 +631,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
       );
 
     yield* messages.pipe(
-      Stream.runForEach((message) => {
-        const recordContact = DateTime.now.pipe(
-          Effect.flatMap((now) =>
-            Ref.set(lastContactAtMs, Option.some(DateTime.toEpochMillis(now))),
-          ),
-        );
-        if (message.type === "desktopTelemetryHello") {
-          return recordContact.pipe(
-            Effect.andThen(
-              updateHealth(
-                (current): DesktopTelemetryReceiverHealth => ({
-                  ...current,
-                  status: "healthy",
-                  lastError: Option.none(),
-                }),
-              ),
-            ),
-          );
-        }
-
-        const sampledAt = DateTime.makeUnsafe(message.sampledAtUnixMs);
-        return snapshotMutex.withPermits(1)(
-          recordContact.pipe(
-            Effect.andThen(Ref.set(latest, Option.some(message))),
-            Effect.andThen(updateSampleHealth(sampledAt)),
-            Effect.andThen(PubSub.publish(changes, message)),
-            Effect.asVoid,
-          ),
-        );
-      }),
+      Stream.runForEach((message) => snapshotMutex.withPermits(1)(ingest(message))),
       Effect.andThen(
         updateHealth(
           (current): DesktopTelemetryReceiverHealth => ({
@@ -533,7 +652,12 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
       ),
       Effect.forkScoped,
     );
-
+  }
+  if (config.desktopTelemetryFd !== undefined || config.mode === "desktop") {
+    const staleMessageFor = (staleAfterMs: number) =>
+      config.desktopTelemetryFd === undefined
+        ? `Desktop telemetry attachment has not updated for ${staleAfterMs}ms.`
+        : new DesktopTelemetryStale({ fd: config.desktopTelemetryFd, staleAfterMs }).message;
     yield* Effect.forever(
       Effect.sleep(STALE_CHECK_INTERVAL).pipe(
         Effect.andThen(
@@ -559,10 +683,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
               if (Option.isNone(staleSnapshot)) {
                 const lastContact = yield* Ref.get(lastContactAtMs);
                 if (!isDesktopTelemetryContactStale(lastContact, nowMs)) return;
-                const staleMessage = new DesktopTelemetryStale({
-                  fd,
-                  staleAfterMs: INITIAL_SAMPLE_DEADLINE_MS,
-                }).message;
+                const staleMessage = staleMessageFor(INITIAL_SAMPLE_DEADLINE_MS);
                 const changed = yield* Ref.modify(health, (current) => {
                   if (
                     current.status === "stopped" ||
@@ -590,7 +711,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
                 lastError:
                   currentHealth.status === "stopped"
                     ? currentHealth.lastError
-                    : Option.some(new DesktopTelemetryStale({ fd, staleAfterMs }).message),
+                    : Option.some(staleMessageFor(staleAfterMs)),
               }));
               yield* PubSub.publish(changes, staleSnapshot.value);
             }),
@@ -616,6 +737,8 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
     health: Ref.get(health),
     subscribeHealth: subscribeBeforeSnapshotWithoutMutex(healthChanges, Ref.get(health)),
     setDiagnosticsDemand,
+    attach,
+    publish,
   });
 });
 
@@ -656,6 +779,8 @@ export const layerTest = (
           })),
         ),
       setDiagnosticsDemand: () => Effect.void,
+      attach: () => Effect.die("Desktop telemetry test attachment is not configured."),
+      publish: () => Effect.die("Desktop telemetry test publication is not configured."),
       ...overrides,
     }),
   );

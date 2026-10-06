@@ -12,6 +12,7 @@ import {
   type WorkjetSessionImportSource,
 } from "@workjet/contracts";
 import { ArrowRightIcon, FolderInputIcon } from "lucide-react";
+import * as Option from "effect/Option";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
@@ -19,10 +20,11 @@ import { isElectron } from "../../env";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { ensureLocalApi } from "../../localApi";
 import { newCommandId } from "../../lib/utils";
-import { resolveDefaultProviderModelSelection } from "../../providerInstances";
-import { usePrimaryEnvironmentId } from "../../state/environments";
+import { resolveProjectTeamModelSelection } from "../../providerInstances";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { environmentProjects, projectEnvironment } from "../../state/projects";
 import { serverEnvironment } from "../../state/server";
+import { environmentShell } from "../../state/shell";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
@@ -56,16 +58,24 @@ export function SessionImportSection({
     mode,
   } = useActiveWorkjetScope();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { environments } = useEnvironments();
   const settings = useEnvironmentSettings(environmentId);
   const registry = useWorkjetProjectRegistry(presentationInstanceId);
   const localProjects = useAtomValue(environmentProjects.environmentProjectsAtom(environmentId));
+  const shellState = useAtomValue(environmentShell.stateValueAtom(environmentId));
+  const shellStateRef = useRef(shellState);
+  shellStateRef.current = shellState;
   const computer = settings.workjet.computers.find(
     (entry) => entry.environmentId === environmentId,
   );
   const projects = useMemo<readonly SessionImportProject[]>(
     () =>
       presentationInstanceId === null
-        ? localProjects.map(({ id, title, workspaceRoot }) => ({ id, title, workspaceRoot }))
+        ? localProjects.map(({ id, title, workspaceRoot }) => ({
+            id,
+            title,
+            workspaceRoot: workspaceRoot ?? "",
+          }))
         : registry.projects.map((project) => ({
             id: project.id,
             title: project.title,
@@ -98,6 +108,7 @@ export function SessionImportSection({
   scopeRef.current = scopeKey;
   const mountedRef = useRef(true);
   const importingRef = useRef(false);
+  const projectCreationAttempts = useRef(new Map<string, ReturnType<typeof newCommandId>>());
   const stoppedRef = useRef(false);
   const isActive = () =>
     mountedRef.current &&
@@ -125,6 +136,7 @@ export function SessionImportSection({
     reportFailure: false,
   });
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
+  const attachProjectFolder = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const destinationProject = projects.find(({ id }) => id === destination);
   const canImport =
     selected.size > 0 &&
@@ -160,6 +172,7 @@ export function SessionImportSection({
     setSource("all");
     setNewProjectTitle("");
     setWorkspaceRoot("");
+    projectCreationAttempts.current.clear();
     importingRef.current = false;
     stoppedRef.current = true;
   }, [scopeKey]);
@@ -213,6 +226,23 @@ export function SessionImportSection({
     setResults([]);
     setProgress("Preparing project…");
     const captured = [...selected.values()];
+    const projectCommandId = (
+      project: SessionImportProject,
+      operation: "create" | "attach-folder" = "create",
+    ) => {
+      const key = JSON.stringify([
+        environmentId,
+        presentationInstanceId,
+        project.id,
+        operation,
+        ...(operation === "attach-folder" ? [project.workspaceRoot] : []),
+      ]);
+      const retained = projectCreationAttempts.current.get(key);
+      if (retained !== undefined) return retained;
+      const commandId = newCommandId();
+      projectCreationAttempts.current.set(key, commandId);
+      return commandId;
+    };
     try {
       const project = await prepareSessionImportProject({
         presentationInstanceId,
@@ -238,15 +268,72 @@ export function SessionImportSection({
               throw new Error("CTOX did not confirm the available projects.");
             return listed.response.projects;
           },
+          attachLocalProjectFolder: async (project) => {
+            if (!isActive()) throw new Error("The active instance or computer changed.");
+            const attached = await attachProjectFolder({
+              environmentId,
+              input: {
+                projectId: project.id,
+                commandId: projectCommandId(project, "attach-folder"),
+                workspaceRoot: project.workspaceRoot,
+              },
+            });
+            if (attached._tag === "Failure") {
+              const failure = squashAtomCommandFailure(attached);
+              throw failure instanceof Error
+                ? failure
+                : new Error("The project folder could not be attached.");
+            }
+            // Require the acknowledged command in the live canonical shell
+            // before publishing a native working copy or copying any history.
+            const deadline = Date.now() + 5_000;
+            while (Date.now() < deadline) {
+              if (!isActive()) throw new Error("The active instance or computer changed.");
+              const current = shellStateRef.current;
+              if (
+                current.status === "live" &&
+                Option.isSome(current.snapshot) &&
+                current.snapshot.value.snapshotSequence >= attached.value.sequence
+              ) {
+                const bound = current.snapshot.value.projects.find(({ id }) => id === project.id);
+                if (!bound || bound.workspaceRoot === null)
+                  throw new Error("The saved project folder was not confirmed on this computer.");
+                return { id: bound.id, title: bound.title, workspaceRoot: bound.workspaceRoot };
+              }
+              await new Promise<void>((resolve) => setTimeout(resolve, 50));
+            }
+            throw new Error(
+              "The saved project folder is still synchronizing. Reconnect and retry.",
+            );
+          },
           createLocalProject: async (project) => {
+            const modelSelection = resolveProjectTeamModelSelection(
+              environments.find((entry) => entry.environmentId === environmentId)?.serverConfig
+                ?.providers ?? [],
+            );
+            if (modelSelection === null)
+              throw new Error(
+                "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+              );
+            const commandId = projectCommandId(project);
             const created = await createProject({
               environmentId,
               input: {
                 projectId: project.id,
+                commandId,
                 title: project.title,
                 workspaceRoot: project.workspaceRoot,
                 createWorkspaceRootIfMissing: true,
-                defaultModelSelection: resolveDefaultProviderModelSelection([], null),
+                ...(presentationInstanceId === null
+                  ? {}
+                  : {
+                      ctoxRegistration: {
+                        instanceId: presentationInstanceId,
+                        commandId,
+                        status: "pending" as const,
+                      },
+                    }),
+                defaultModelSelection: modelSelection,
               },
             });
             if (created._tag === "Failure") {
@@ -261,7 +348,7 @@ export function SessionImportSection({
               presentationInstanceId: presentationInstanceId!,
               request: {
                 action: "project.create",
-                commandId: newCommandId(),
+                commandId: projectCommandId(project),
                 projectId: project.id,
                 title: project.title,
                 createdAt: new Date().toISOString(),

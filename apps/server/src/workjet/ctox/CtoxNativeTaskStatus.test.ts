@@ -51,6 +51,12 @@ it.effect(
       );
       expect(observed.state).toBe("running");
       expect(observed.reference).toEqual(reference);
+      const noQueueOverlay = yield* decodeCtoxNativeTaskStatus(
+        reference,
+        response("accepted", { task_status: null, status_note: null }),
+      );
+      expect(noQueueOverlay.state).toBe("queued");
+      expect(noQueueOverlay.note).toBeNull();
       expect(
         (yield* decodeCtoxNativeTaskStatus(
           reference,
@@ -124,6 +130,12 @@ it.effect("accepts only the bound native project's CTOX chat command status", ()
     expect(
       (yield* decodeCtoxNativeTaskStatus(projectReference, response("running", data))).state,
     ).toBe("running");
+    expect(
+      (yield* decodeCtoxNativeTaskStatus(
+        projectReference,
+        response("queued", { ...data, record_id: "", status_note: null }),
+      )).state,
+    ).toBe("queued");
     for (const wrong of [
       { ...data, module: "inventory" },
       { ...data, command_type: "ctox.delegate_task" },
@@ -163,10 +175,17 @@ it.effect("accepts only the bound private Crew chat command status", () =>
     expect(
       (yield* decodeCtoxNativeTaskStatus(crewReference, response("running", data))).state,
     ).toBe("running");
+    expect(
+      (yield* decodeCtoxNativeTaskStatus(
+        crewReference,
+        response("running", { ...data, record_id: "" }),
+      )).state,
+    ).toBe("running");
     for (const wrong of [
       { ...data, module: "inventory" },
       { ...data, command_type: "ctox.delegate_task" },
       { ...data, payload: { thread_id: "workjet_private_chat-b" } },
+      { ...data, record_id: "unrelated-record" },
       { ...data, payload: null },
     ]) {
       expect(
@@ -184,11 +203,15 @@ it.effect("refuses status from another command, task, module or collection", () 
       { ...good, record: { ...good.record, id: "cmd-other" } },
       { ...good, record: { ...good.record, collection: "ctox_queue_tasks" } },
       { ...good, record: { ...good.record, status: "failed" } },
+      { ...good, record: { ...good.record, status: null } },
       response("completed", { command_id: "cmd-other" }),
       response("completed", { command_id: undefined }),
       response("completed", { task_id: "task-other" }),
       response("completed", { task_id: undefined }),
       response("completed", { module: "other-module" }),
+      response("completed", { task_status: 1 }),
+      response("completed", { task_status: "" }),
+      response("completed", { status_note: 1 }),
       { ok: true, status: "completed" },
     ];
     for (const value of invalid) {

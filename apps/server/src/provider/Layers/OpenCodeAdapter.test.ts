@@ -633,6 +633,29 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
+  it.effect("retains a claimed session when its saved OpenCode conversation is gone", () =>
+    Effect.gen(function* () {
+      const adapter = yield* OpenCodeAdapter;
+      const threadId = asThreadId("thread-opencode-claimed-stale");
+      runtimeMock.state.missingSessionIds.add("ses_claimed_stale");
+
+      const error = yield* Effect.flip(
+        adapter.startSession({
+          provider: ProviderDriverKind.make("opencode"),
+          threadId,
+          runtimeMode: "full-access",
+          resumeCursor: { schemaVersion: 1, sessionId: "ses_claimed_stale" },
+          resumePolicy: "require-existing",
+        }),
+      );
+
+      NodeAssert.equal(error._tag, "ProviderAdapterProcessError");
+      NodeAssert.deepEqual(runtimeMock.state.sessionGetIds, ["ses_claimed_stale"]);
+      NodeAssert.deepEqual(runtimeMock.state.sessionCreateUrls, []);
+      NodeAssert.deepEqual(runtimeMock.state.promptCalls, []);
+    }),
+  );
+
   it.effect("ignores a malformed or wrong-version resume cursor", () =>
     Effect.gen(function* () {
       const adapter = yield* OpenCodeAdapter;

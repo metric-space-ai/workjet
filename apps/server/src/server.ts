@@ -3,6 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+
 import * as Schedule from "effect/Schedule";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -64,6 +65,9 @@ import * as WorkjetMailboxTransport from "./workjet/mailbox/WorkjetMailboxTransp
 import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
+import * as WorkerCleanupReceiptStore from "./workjet/WorkerCleanupReceiptStore.ts";
+import * as NativeWorkerWorktreeRemover from "./workjet/NativeWorkerWorktreeRemover.ts";
+import * as WorkerDispatchRollback from "./workjet/WorkerDispatchRollback.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -130,6 +134,8 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
+import { acquireProfileOwnership } from "./profileOwnership.ts";
+import { OrchestrationCommandReceiptRepositoryLive } from "./persistence/Layers/OrchestrationCommandReceipts.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -288,13 +294,22 @@ const CtoxCrewTurnAdmissionLive = CtoxCrewTurnAdmission.layer.pipe(
 );
 const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(OrchestrationReactorLive),
-  Layer.provideMerge(ProviderRuntimeIngestionLive),
+  Layer.provideMerge(ProviderRuntimeIngestionLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
   Layer.provideMerge(ProviderCommandReactorLive.pipe(Layer.provide(CtoxCrewTurnAdmissionLive))),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(
     // Worker worktree release is a thread-deletion reaction, so its service is
     // provided directly to the reactor that consumes `thread.deleted`.
-    ThreadDeletionReactorLive.pipe(Layer.provide(WorkerWorktreeCleanup.layer)),
+    ThreadDeletionReactorLive.pipe(
+      Layer.provide(
+        WorkerWorktreeCleanup.layer.pipe(
+          Layer.provide(
+            NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer)),
+          ),
+        ),
+      ),
+      Layer.provide(WorkerCleanupReceiptStore.layer),
+    ),
   ),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -572,7 +587,23 @@ export const makeRoutesLayer = Layer.mergeAll(
     Layer.provide(DecisionHubConnectionRegistryLive),
     Layer.provide(DecisionHubEscalationServiceLive),
     Layer.provide(McpSessionRegistry.layer),
-    Layer.provide(WorkerDispatch.layer),
+    Layer.provide(
+      WorkerDispatch.layer.pipe(
+        Layer.provide(
+          WorkerDispatchRollback.layer.pipe(
+            Layer.provide(
+              NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer)),
+            ),
+          ),
+        ),
+        // Resolve a lost creation acknowledgement against the same durable
+        // command-receipt store used by the orchestration engine.
+        Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+        Layer.provide(WorkjetMailboxStoreLive),
+        Layer.provide(WorkjetMeshIdentity.layer),
+        Layer.provide(WorkjetSnapshotStoreLive),
+      ),
+    ),
     // The durable Workjet mailbox is provided exactly where worker dispatch is:
     // the store resolves the ambient `SqlClient` from `PersistenceLayerLive`,
     // and the delivery service resolves the orchestration engine and projection
@@ -636,6 +667,12 @@ export const makeRoutesLayer = Layer.mergeAll(
 export const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
+    // Acquire before constructing persistence/reactor layers and release after
+    // their finalizers, including runtime-state removal and provider shutdown.
+    yield* Effect.acquireRelease(
+      Effect.tryPromise(() => acquireProfileOwnership(config.baseDir, "runtime")),
+      (ownership) => Effect.sync(() => ownership.release()),
+    );
     const activation = yield* Deferred.make<void>();
     const awaitActivation = Deferred.await(activation);
     const activationLayer = Layer.succeed(ServerActivation, awaitActivation);
@@ -665,9 +702,12 @@ export const makeServerLayer = Layer.unwrap(
             return;
           }
 
+          const environment = yield* ServerEnvironment.ServerEnvironment;
+          const descriptor = yield* environment.getDescriptor;
           const state = yield* makePersistedServerRuntimeState({
             config,
             port: address.port,
+            runtimeInstanceId: descriptor.runtimeInstanceId,
           });
           yield* persistServerRuntimeState({
             path: config.serverRuntimeStatePath,

@@ -7,6 +7,22 @@ import {
 } from "./new-task-context-presentation";
 
 describe("resolveNewTaskLocalWorkspaceSelection", () => {
+  it("does not inherit repository branches or wait for Git in a folder-free project", () => {
+    expect(
+      resolveNewTaskLocalWorkspaceSelection({
+        branches: [{ name: "foreign", current: true, worktreePath: "/another-project" }],
+        projectCwd: null,
+      }),
+    ).toEqual({ branch: null, worktreePath: null, awaitsCurrentBranch: false });
+    expect(
+      resolveNewTaskBranchWorktreePath({
+        workspaceMode: "local",
+        projectCwd: null,
+        branchWorktreePath: "/another-project",
+      }),
+    ).toBeNull();
+  });
+
   it("waits for refs instead of carrying a worktree base into Current checkout", () => {
     expect(
       resolveNewTaskLocalWorkspaceSelection({

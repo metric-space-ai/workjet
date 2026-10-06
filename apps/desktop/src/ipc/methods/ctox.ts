@@ -104,7 +104,7 @@ export const refresh: DesktopIpc.DesktopIpcMethod<
 const invalidateAccountGuests = Effect.gen(function* () {
   const guests = yield* CtoxGuestManager.CtoxGuestManager;
   const decisionHub = yield* CtoxDecisionHubProvisioner.CtoxDecisionHubProvisioner;
-  const result = yield* guests.deactivate;
+  const result = yield* guests.deactivateAll;
   yield* decisionHub.revokeAll;
   if (result._tag !== "completed") {
     return yield* new CtoxAccountLifecycle.CtoxAccountInvalidationError();

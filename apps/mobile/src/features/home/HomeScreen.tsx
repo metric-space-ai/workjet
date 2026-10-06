@@ -409,7 +409,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const projectCwdByKey = useMemo(() => {
     const map = new Map<string, string>();
     for (const project of props.projects) {
-      map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
+      if (project.workspaceRoot !== null)
+        map.set(scopedProjectKey(project.environmentId, project.id), project.workspaceRoot);
     }
     return map;
   }, [props.projects]);

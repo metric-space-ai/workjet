@@ -77,6 +77,10 @@ pub struct ManagementRuntimeStatus {
 
 pub trait ManagementRuntimeStatusSource: Send + Sync {
     fn snapshot(&self) -> ManagementRuntimeStatus;
+    /// Optional host-owned account observations on the authenticated status route.
+    fn account_health(&self) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -690,7 +694,14 @@ impl ManagementHandler {
             let Some(source) = self.runtime_status.as_ref() else {
                 return ManagementHttpResponse::error(404, "route not found");
             };
-            return match serde_json::to_vec(&source.snapshot()) {
+            let mut snapshot = match serde_json::to_value(source.snapshot()) {
+                Ok(snapshot) => snapshot,
+                Err(_) => return ManagementHttpResponse::error(500, "runtime status unavailable"),
+            };
+            if let Some(health) = source.account_health() {
+                snapshot["account_health"] = health;
+            }
+            return match serde_json::to_vec(&snapshot) {
                 Ok(payload) => ManagementHttpResponse::json(200, payload),
                 Err(_) => ManagementHttpResponse::error(500, "runtime status unavailable"),
             };

@@ -33,5 +33,12 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       label: "environment-data:orchestration:archived-shell-snapshot",
       tag: ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot,
     }),
+    archivedTeamWorkerDetail: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:archived-team-worker-detail",
+      tag: ORCHESTRATION_WS_METHODS.getArchivedTeamWorkerDetail,
+      // Archived history is immutable after cleanup, including on reconnect.
+      staleTimeMs: 300_000,
+      idleTtlMs: 300_000,
+    }),
   };
 }

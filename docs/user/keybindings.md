@@ -1,10 +1,10 @@
-# Keybindings
+# Keyboard shortcuts
 
-Edit keybindings from **Settings** → **Keybindings**. That page lists every command, its current
-shortcut, whether it is a default or your own, and warns about conflicts.
+The Keybindings entry has been removed from Settings and settings search. Its former
+Settings link opens General.
 
-The same configuration lives in `~/.workjet/userdata/keybindings.json` on the machine running the
-server, if you prefer editing it directly. Workjet writes the built-in defaults into that file on
+Shortcut configuration lives in `~/.workjet/userdata/keybindings.json` on the machine running the
+server. Workjet writes the built-in defaults into that file on
 first run, and adds any new defaults on later startups unless a rule of yours already claims the
 command or the shortcut.
 
@@ -52,8 +52,7 @@ agent responses across connected environments. Message matches show one labeled 
 keeping the thread's project, branch, and machine context visible. Message search begins after two
 characters and uses SQLite's ASCII case-insensitive matching.
 
-The full command list and the current defaults are shown in **Settings** → **Keybindings**, which
-always matches the build you are running. Use that rather than a copied list.
+The configuration file contains the command rules and defaults for your running build.
 
 Note that `chat.new` and `chat.newLocal` both create a thread through the same path. A new thread
 inherits the project you were in, along with model and mode selections. Branch, worktree, and

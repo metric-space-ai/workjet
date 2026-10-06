@@ -255,14 +255,16 @@ function formatProjectMemberActionLabel(
 
   return member.environmentLabel
     ? `${member.environmentLabel} — ${member.workspaceRoot}`
-    : member.workspaceRoot;
+    : (member.workspaceRoot ?? member.title);
 }
 
 function projectExpansionPreferenceKeys(project: SidebarProjectSnapshot): string[] {
   return [
     project.projectKey,
     ...project.memberProjects.map((member) => member.physicalProjectKey),
-    ...project.memberProjects.map((member) => legacyProjectCwdPreferenceKey(member.workspaceRoot)),
+    ...project.memberProjects.flatMap((member) =>
+      member.workspaceRoot === null ? [] : [legacyProjectCwdPreferenceKey(member.workspaceRoot)],
+    ),
   ];
 }
 
@@ -906,7 +908,7 @@ interface SidebarProjectThreadListProps {
   showEmptyThreadState: boolean;
   shouldShowThreadPanel: boolean;
   isThreadListExpanded: boolean;
-  projectCwd: string;
+  projectCwd: string | null;
   activeRouteThreadKey: string | null;
   openPullRequestsInRightPanel: boolean;
   threadJumpLabelByKey: ReadonlyMap<string, string>;
@@ -1653,7 +1655,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 openProjectGroupingDialog(member);
                 return;
               case "copy-path":
-                copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
+                if (member.workspaceRoot !== null)
+                  copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
                 return;
               case "delete":
                 return handleRemoveProject(member);
@@ -3136,7 +3139,9 @@ export default function LegacySidebar() {
       getId: getProjectOrderKey,
       getPreferenceIds: (project) => [
         getProjectOrderKey(project),
-        legacyProjectCwdPreferenceKey(project.workspaceRoot),
+        ...(project.workspaceRoot === null
+          ? []
+          : [legacyProjectCwdPreferenceKey(project.workspaceRoot)]),
       ],
     });
   }, [projectOrder, projects]);

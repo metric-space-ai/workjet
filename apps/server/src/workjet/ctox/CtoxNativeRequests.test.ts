@@ -6,6 +6,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "../../persistence/NodeSqliteClient.ts";
 import migration60 from "../../persistence/Migrations/060_WorkjetCtoxNativeRequests.ts";
 import migration61 from "../../persistence/Migrations/061_WorkjetCtoxNativeTurns.ts";
+import migration62 from "../../persistence/Migrations/062_WorkjetCtoxCrewStarts.ts";
+import migration68 from "../../persistence/Migrations/068_WorkjetCtoxCrewTerminalOutbox.ts";
+import migration70 from "../../persistence/Migrations/070_WorkjetCtoxCrewAdmissionRedrive.ts";
 import { CtoxNativeRequests, type NativeTaskRequest } from "./CtoxNativeRequests.ts";
 
 const identity = {
@@ -36,6 +39,9 @@ describe("durable native CTOX request identity", () => {
       Effect.gen(function* () {
         yield* migration60;
         yield* migration61;
+        yield* migration62;
+        yield* migration68;
+        yield* migration70;
         const requests = yield* open;
         yield* requests.prepareTurn(identity, request, target, "event-non-crew");
         const crewIdentity = {
@@ -65,7 +71,102 @@ describe("durable native CTOX request identity", () => {
         expect(
           (yield* restarted.listCrewRecoveryCandidates(second.nextSequence!, 1)).candidates,
         ).toEqual([]);
+        expect((yield* restarted.listPendingCrewAdmissionCandidates()).candidates).toEqual([
+          { sequence: 2, requestId: "event-crew", identity: crewIdentity },
+        ]);
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          INSERT INTO workjet_ctox_crew_starts
+            (thread_id, request_key, attempt_id, command_id, task_id,
+             executor_id, member_id, reserved_at_ms)
+          VALUES (${crewIdentity.threadId}, ${crewIdentity.requestKey},
+                  'prior-attempt', 'command-crew', 'task-crew',
+                  'executor-crew', 'member-crew', 1)
+        `;
+        expect(yield* restarted.hasUnreportedCrewStart(crewIdentity)).toBe(true);
+        expect((yield* restarted.listPendingCrewAdmissionCandidates()).candidates).toEqual([]);
+        expect((yield* restarted.listUnresolvedStartedCrewCandidates()).candidates).toEqual([
+          { sequence: 2, requestId: "event-crew", identity: crewIdentity },
+        ]);
+        yield* sql`
+          UPDATE workjet_ctox_crew_starts SET provider_reported_at_ms = 2
+          WHERE thread_id = ${crewIdentity.threadId}
+            AND request_key = ${crewIdentity.requestKey}
+            AND attempt_id = 'prior-attempt'
+        `;
+        expect(yield* restarted.hasUnreportedCrewStart(crewIdentity)).toBe(false);
+        expect((yield* restarted.listPendingCrewAdmissionCandidates()).candidates).toEqual([
+          { sequence: 2, requestId: "event-crew", identity: crewIdentity },
+        ]);
+        expect((yield* restarted.listUnresolvedStartedCrewCandidates()).candidates).toEqual([]);
+        yield* restarted.markCrewAdmissionTerminal(crewIdentity, "event-crew");
+        expect((yield* (yield* open).listPendingCrewAdmissionCandidates()).candidates).toEqual([]);
       }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  );
+
+  it.effect("keeps a claimed Crew candidate reachable after sixteen full recovery pages", () =>
+    Effect.gen(function* () {
+      yield* migration60;
+      yield* migration61;
+      yield* migration62;
+      yield* migration68;
+      yield* migration70;
+      const requests = yield* open;
+      for (let index = 0; index < 1024; index += 1) {
+        const requestKey = `filler-${index}`;
+        yield* requests.prepareTurn(
+          {
+            ...identity,
+            threadId: ThreadId.make(`filler-thread-${index}`),
+            requestKey,
+          },
+          { ...request, idempotency_key: requestKey },
+          target,
+          `filler-event-${index}`,
+        );
+      }
+      const crewIdentity = {
+        ...identity,
+        threadId: ThreadId.make("claimed-crew-thread"),
+        requestKey: "claimed-crew-request",
+      };
+      yield* requests.prepareTurn(
+        crewIdentity,
+        {
+          operation: "start_crew_execution",
+          thread_id: "workjet_private_chat",
+          title: "Claimed Crew work",
+          instruction: "Continue the project",
+          harness: "codex",
+          timeout_seconds: 60,
+          idempotency_key: crewIdentity.requestKey,
+        },
+        target,
+        "claimed-crew-event",
+      );
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO workjet_ctox_crew_starts
+          (thread_id, request_key, attempt_id, command_id, task_id,
+           executor_id, member_id, reserved_at_ms)
+        VALUES (${crewIdentity.threadId}, ${crewIdentity.requestKey},
+                'claimed-attempt', 'claimed-command', 'claimed-task',
+                'claimed-executor', 'claimed-member', 1)
+      `;
+      const restarted = yield* open;
+      let cursor = 0;
+      for (let pageNumber = 0; pageNumber < 16; pageNumber += 1) {
+        const page = yield* restarted.listCrewRecoveryCandidates(cursor, 64);
+        expect(page.candidates).toEqual([]);
+        expect(page.nextSequence).not.toBeNull();
+        cursor = page.nextSequence!;
+      }
+      expect(cursor).toBe(1024);
+      expect((yield* restarted.listPendingCrewAdmissionCandidates()).candidates).toEqual([]);
+      expect((yield* restarted.listCrewRecoveryCandidates(cursor, 64)).candidates).toEqual([
+        { sequence: 1025, requestId: "claimed-crew-event", identity: crewIdentity },
+      ]);
+    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 
   it.effect("rolls back a newly prepared intent when its turn identity conflicts", () =>

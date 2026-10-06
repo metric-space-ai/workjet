@@ -8,6 +8,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
+import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -30,7 +31,7 @@ import * as CtoxNativeIdentityResolver from "./ctox/CtoxNativeIdentityResolver.t
 import * as CtoxDevAuth from "./ctox/CtoxDevAuth.ts";
 import * as CtoxDecisionHubProvisioner from "./ctox/CtoxDecisionHubProvisioner.ts";
 import * as CtoxElectronSessions from "./ctox/CtoxElectronSessions.ts";
-import * as CtoxGuestManager from "./ctox/CtoxGuestManager.ts";
+import * as CtoxGuestWindows from "./ctox/CtoxGuestWindows.ts";
 import * as CtoxInstanceRegistry from "./ctox/CtoxInstanceRegistry.ts";
 import * as CtoxLocalDaemonLaunch from "./ctox/CtoxLocalDaemonLaunch.ts";
 import * as CtoxSshManagedLaunch from "./ctox/CtoxSshManagedLaunch.ts";
@@ -57,6 +58,8 @@ import * as DesktopAssets from "./app/DesktopAssets.ts";
 import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopLocalServiceSession from "./backend/DesktopLocalServiceSession.ts";
+import * as DesktopLocalServiceAttachment from "./backend/DesktopLocalServiceAttachment.ts";
 import * as DesktopNetworkInterfaces from "./backend/DesktopNetworkInterfaces.ts";
 import * as DesktopEnvironment from "./app/DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./app/DesktopLifecycle.ts";
@@ -133,6 +136,11 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const settings = yield* DesktopAppSettings.DesktopAppSettings;
     return DesktopSshEnvironment.layer({
+      // A stable profile namespace prevents another Workjet installation using
+      // the same SSH account from replacing or stopping this profile's server.
+      remoteStateNamespace: NodeCrypto.createHash("sha256")
+        .update(`workjet-desktop-ssh-profile\u0000${environment.baseDir}`)
+        .digest("hex"),
       resolveCliRunner: settings.get.pipe(
         Effect.map((currentSettings) => resolveDesktopSshCliRunner(environment, currentSettings)),
       ),
@@ -184,12 +192,28 @@ const desktopWindowLayer = DesktopWindow.layer.pipe(
   Layer.provideMerge(desktopPreviewLayer),
 );
 
+const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
+  Layer.provide(Socket.layerWebSocketConstructorGlobal),
+);
+
+const desktopServiceAttachmentLayer = DesktopLocalServiceAttachment.layer.pipe(
+  Layer.provideMerge(
+    DesktopLocalServiceSession.layer.pipe(Layer.provideMerge(desktopRpcSessionLayer)),
+  ),
+);
+
 // Pool layer instantiates the backend factory once for the Windows
 // primary instance and exposes it via pool.primary. Consumers go through
 // the pool now; the legacy DesktopBackendManager service is gone. The
 // WSL second instance gets registered later in the migration. See
 // DesktopBackendPool.ts header for the full rollout plan.
-const desktopBackendLayer = DesktopBackendPool.layer.pipe(
+const desktopBackendLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const attachment = yield* DesktopLocalServiceAttachment.DesktopLocalServiceAttachment;
+    return DesktopBackendPool.layerWithPrimaryRunner(attachment.run);
+  }),
+).pipe(
+  Layer.provideMerge(desktopServiceAttachmentLayer),
   Layer.provideMerge(DesktopAppIdentity.layer),
   Layer.provideMerge(DesktopBackendConfiguration.layer),
   Layer.provideMerge(DesktopWslEnvironment.layer),
@@ -206,10 +230,6 @@ const desktopWslBackendLayer = DesktopWslBackend.layer.pipe(
 
 const desktopLocalEnvironmentAuthLayer = DesktopLocalEnvironmentAuth.layer.pipe(
   Layer.provideMerge(desktopBackendLayer),
-);
-
-const desktopRpcSessionLayer = RpcSessionFactoryLive.pipe(
-  Layer.provide(Socket.layerWebSocketConstructorGlobal),
 );
 
 // The local-daemon launch service resolves its target through the one
@@ -247,7 +267,7 @@ const desktopProvisioningLayer = DesktopComputerProvisioner.layer.pipe(
   Layer.provideMerge(desktopCtoxControlLayer),
 );
 
-const desktopCtoxLayer = CtoxGuestManager.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
+const desktopCtoxLayer = CtoxGuestWindows.layer().pipe(Layer.provideMerge(desktopCtoxControlLayer));
 const desktopCtoxFleetLayer = CtoxShellFleet.layer().pipe(
   Layer.provideMerge(desktopCtoxControlLayer),
 );

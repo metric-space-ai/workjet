@@ -637,6 +637,14 @@ export const WorkjetDelegationEdge = Schema.Struct({
   createdAt: WorkjetMailboxTimestamp,
   /** Graph depth of `from`, bounded by the budget's `maxDepth`. */
   depth: NonNegativeInt.check(Schema.isLessThanOrEqualTo(16)),
+  /** Source-owned review decision, persisted with its state transition. */
+  review: Schema.optional(
+    Schema.Struct({
+      decision: WorkjetReviewDecision,
+      round: NonNegativeInt.check(Schema.isLessThanOrEqualTo(16)),
+      reasons: Schema.Array(boundedText(1_024)).check(Schema.isMaxLength(32)),
+    }),
+  ),
 });
 export type WorkjetDelegationEdge = typeof WorkjetDelegationEdge.Type;
 

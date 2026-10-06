@@ -29,9 +29,16 @@ it("gives a direct repair command for a stale service", () => {
   );
 });
 
-it("explains service availability without systemd", () => {
+it("explains service availability", () => {
   assert.include(
     formatServiceStatus({ ...status, supported: false, installed: false }, "0.0.29"),
-    "Supported on: Linux with systemd",
+    "Supported on: Linux with systemd or macOS with a user login session",
+  );
+});
+
+it("does not promise that a macOS user agent survives logout", () => {
+  assert.include(
+    formatServiceStatus({ ...status, loginSessionOnly: true }, "0.0.29"),
+    "Lifetime: runs while you are logged in; stops at logout.",
   );
 });

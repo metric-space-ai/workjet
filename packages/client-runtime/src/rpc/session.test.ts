@@ -14,6 +14,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as Socket from "effect/unstable/socket/Socket";
 
 import {
+  ConnectionBlockedError,
   ConnectionTransientError,
   PrimaryConnectionTarget,
   type PreparedConnection,
@@ -266,6 +267,84 @@ describe("RpcSessionFactory", () => {
       yield* Effect.yieldNow;
       expect(sockets).toHaveLength(1);
     }),
+  );
+
+  it.effect("accepts the generation confirmed on the authenticated socket", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect({ ...PREPARED, runtimeInstanceId: "current-runtime" });
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket, {
+        ...ENCODED_SERVER_CONFIG,
+        environment: { ...ENCODED_SERVER_CONFIG.environment, runtimeInstanceId: "current-runtime" },
+      });
+      yield* Fiber.join(readyFiber);
+      expect((yield* session.initialConfig).environment.runtimeInstanceId).toBe("current-runtime");
+      expect(socket.sent).toHaveLength(1);
+    }),
+  );
+
+  it.effect("refuses wrong environments and replaced or missing generations before readiness", () =>
+    Effect.forEach(
+      [
+        {
+          environmentId: EnvironmentId.make("other-environment"),
+          runtimeInstanceId: "expected",
+          wrongEnvironment: true,
+        },
+        {
+          environmentId: TARGET.environmentId,
+          runtimeInstanceId: "replacement",
+          wrongEnvironment: false,
+        },
+        {
+          environmentId: TARGET.environmentId,
+          runtimeInstanceId: undefined,
+          wrongEnvironment: false,
+        },
+      ],
+      (actual) =>
+        Effect.gen(function* () {
+          const socket = yield* Effect.scoped(
+            Effect.gen(function* () {
+              const { factory, sockets } = yield* makeFactory();
+              const session = yield* factory.connect({
+                ...PREPARED,
+                runtimeInstanceId: "expected",
+              });
+              const readyFiber = yield* Effect.forkChild(Effect.flip(session.ready));
+              const socket = yield* awaitSocket(sockets);
+              socket.open();
+              yield* completeInitialConfig(socket, {
+                ...ENCODED_SERVER_CONFIG,
+                environment: {
+                  ...ENCODED_SERVER_CONFIG.environment,
+                  environmentId: actual.environmentId,
+                  ...(actual.runtimeInstanceId === undefined
+                    ? {}
+                    : { runtimeInstanceId: actual.runtimeInstanceId }),
+                },
+              });
+              const error = yield* Fiber.join(readyFiber);
+              expect(error).toBeInstanceOf(
+                actual.wrongEnvironment ? ConnectionBlockedError : ConnectionTransientError,
+              );
+              expect(error.reason).toBe(
+                actual.wrongEnvironment ? "configuration" : "remote-unavailable",
+              );
+              expect(yield* Effect.flip(session.initialConfig)).toBe(error);
+              // No application request/probe or retry on the rejected socket.
+              expect(socket.sent).toHaveLength(1);
+              expect(sockets).toHaveLength(1);
+              return socket;
+            }),
+          );
+          expect(socket.readyState).toBe(TestWebSocket.CLOSED);
+        }),
+      { discard: true },
+    ),
   );
 
   it.effect("closes the websocket when the session scope is released", () =>

@@ -8,8 +8,10 @@
  */
 import {
   IsoDateTime,
+  CtoxProjectRegistration,
   ModelSelection,
   ProjectId,
+  ProjectOverview,
   ProjectScript,
   ThreadEnvMode,
 } from "@workjet/contracts";
@@ -23,10 +25,12 @@ import type { ProjectionRepositoryError } from "../Errors.ts";
 export const ProjectionProject = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
-  workspaceRoot: Schema.String,
+  workspaceRoot: Schema.NullOr(Schema.String),
+  ctoxRegistration: Schema.optional(Schema.NullOr(CtoxProjectRegistration)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
   faviconPath: Schema.optional(Schema.NullOr(Schema.String)),
+  overview: Schema.optional(Schema.NullOr(ProjectOverview)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

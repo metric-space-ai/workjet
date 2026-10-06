@@ -9,6 +9,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/unstable/process";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 
 import {
   buildTailscaleHttpsBaseUrl,
@@ -184,6 +185,198 @@ describe("tailscale", () => {
       ),
     ),
   );
+  it.effect("uses the macOS app CLI when a GUI launch cannot find tailscale on PATH", () => {
+    const missing = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "ChildProcess",
+      method: "spawn",
+    });
+    const commands: string[] = [];
+    const spawner = Layer.succeed(
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make((command) => {
+        if (command._tag !== "StandardCommand") return Effect.die("Expected a standard command.");
+        commands.push(command.command);
+        if (command.command === "tailscale") return Effect.fail(missing);
+        assert.equal(command.command, "/Applications/Tailscale.app/Contents/MacOS/Tailscale");
+        assert.deepEqual(command.args, ["status", "--json"]);
+        assert.equal(command.options.extendEnv, true);
+        assert.deepEqual(command.options.env, { TAILSCALE_BE_CLI: "1" });
+        return Effect.succeed(mockHandle({ stdout: '{"BackendState":"Running","Peer":{}}' }));
+      }),
+    );
+    return Effect.gen(function* () {
+      const result = yield* readTailscalePeers;
+      assert.deepEqual(result, { status: "available", peers: [] });
+      assert.deepEqual(commands, [
+        "tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+      ]);
+    }).pipe(Effect.provide(spawner), Effect.provideService(HostProcessPlatform, "darwin"));
+  });
+  it.effect("does not try another macOS CLI after a permission error", () => {
+    const denied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "ChildProcess",
+      method: "spawn",
+    });
+    const commands: string[] = [];
+    const spawner = Layer.succeed(
+      ChildProcessSpawner.ChildProcessSpawner,
+      ChildProcessSpawner.make((command) => {
+        if (command._tag !== "StandardCommand") return Effect.die("Expected a standard command.");
+        commands.push(command.command);
+        return Effect.fail(denied);
+      }),
+    );
+    return Effect.gen(function* () {
+      const error = yield* readTailscalePeers.pipe(Effect.flip);
+      assert.instanceOf(error, TailscaleCommandSpawnError);
+      assert.strictEqual(error.cause, denied);
+      assert.deepEqual(commands, ["tailscale"]);
+    }).pipe(Effect.provide(spawner), Effect.provideService(HostProcessPlatform, "darwin"));
+  });
+  it.effect("discovers the running macOS daemon when the GUI backend is stopped", () => {
+    const commands: ReadonlyArray<string>[] = [];
+    const layer = mockSpawnerLayer((command, args) => {
+      assert.equal(command, "tailscale");
+      commands.push(args);
+      return {
+        stdout: encodeFixtureJson({
+          BackendState: commands.length === 1 ? "Stopped" : "Running",
+          Peer:
+            commands.length === 1
+              ? { cached: { HostName: "cached-gui", TailscaleIPs: ["100.64.1.1"], Online: true } }
+              : {
+                  gpu1: { HostName: "gpu1-A6000", TailscaleIPs: ["100.87.204.48"], Online: true },
+                  gpu3: { HostName: "gpu3-A4500", TailscaleIPs: ["100.71.114.101"], Online: true },
+                },
+        }),
+      };
+    });
+    return Effect.gen(function* () {
+      assert.deepEqual(yield* readTailscalePeers, {
+        status: "available",
+        peers: [
+          { id: "gpu1", name: "gpu1-A6000", hostname: "100.87.204.48", online: true },
+          { id: "gpu3", name: "gpu3-A4500", hostname: "100.71.114.101", online: true },
+        ],
+      });
+      assert.deepEqual(commands, [
+        ["status", "--json"],
+        ["--socket=/var/run/tailscaled.socket", "status", "--json"],
+      ]);
+    }).pipe(Effect.provide(layer), Effect.provideService(HostProcessPlatform, "darwin"));
+  });
+
+  it.effect("preserves the selected running backend and login or startup states", () =>
+    Effect.gen(function* () {
+      for (const BackendState of ["Running", "NeedsLogin", "Starting"]) {
+        let calls = 0;
+        const layer = mockSpawnerLayer((_command, args) => {
+          calls++;
+          assert.deepEqual(args, ["status", "--json"]);
+          return { stdout: encodeFixtureJson({ BackendState, Peer: {} }) };
+        });
+        const result = yield* readTailscalePeers.pipe(Effect.provide(layer));
+        assert.equal(result.status, BackendState === "Running" ? "available" : "unavailable");
+        assert.equal(calls, 1);
+      }
+    }).pipe(Effect.provideService(HostProcessPlatform, "darwin")),
+  );
+
+  it.effect("does not probe the macOS socket on other platforms", () =>
+    Effect.gen(function* () {
+      for (const platform of ["linux", "win32"] as const) {
+        let calls = 0;
+        const layer = mockSpawnerLayer((command, args) => {
+          calls++;
+          assert.equal(command, platform === "win32" ? "tailscale.exe" : "tailscale");
+          assert.deepEqual(args, ["status", "--json"]);
+          return { stdout: encodeFixtureJson({ BackendState: "Stopped", Peer: {} }) };
+        });
+        assert.deepEqual(
+          yield* readTailscalePeers.pipe(
+            Effect.provide(layer),
+            Effect.provideService(HostProcessPlatform, platform),
+          ),
+          { status: "unavailable", peers: [] },
+        );
+        assert.equal(calls, 1);
+      }
+    }),
+  );
+
+  it.effect(
+    "rejects stopped, malformed and denied socket results without exposing cached peers",
+    () =>
+      Effect.gen(function* () {
+        const stopped = encodeFixtureJson({
+          BackendState: "Stopped",
+          Peer: { cached: { HostName: "old", TailscaleIPs: ["100.64.1.1"], Online: true } },
+        });
+        for (const fallback of [
+          { stdout: stopped },
+          { stdout: "{malformed tskey-secret" },
+          { code: 1, stderr: "permission denied tskey-secret" },
+        ]) {
+          let calls = 0;
+          const layer = mockSpawnerLayer(() => (++calls === 1 ? { stdout: stopped } : fallback));
+          assert.deepEqual(yield* readTailscalePeers.pipe(Effect.provide(layer)), {
+            status: "unavailable",
+            peers: [],
+          });
+          assert.equal(calls, 2);
+        }
+      }).pipe(Effect.provideService(HostProcessPlatform, "darwin")),
+  );
+
+  it.effect("does not hide malformed primary status behind another daemon", () => {
+    let calls = 0;
+    const layer = mockSpawnerLayer(() => {
+      calls++;
+      return { stdout: "{malformed tskey-secret" };
+    });
+    return Effect.gen(function* () {
+      const error = yield* readTailscalePeers.pipe(Effect.flip);
+      assert.instanceOf(error, TailscaleStatusParseError);
+      assertCarriesNoSecret(error, "tskey-secret");
+      assert.equal(calls, 1);
+    }).pipe(Effect.provide(layer), Effect.provideService(HostProcessPlatform, "darwin"));
+  });
+
+  it.effect("bounds and releases a stalled socket probe", () => {
+    let calls = 0;
+    let released = 0;
+    const layer = Layer.merge(
+      TestClock.layer(),
+      Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              ++calls === 1
+                ? mockHandle({ stdout: encodeFixtureJson({ BackendState: "Stopped", Peer: {} }) })
+                : neverFinishingMockHandle(),
+            ),
+            () =>
+              Effect.sync(() => {
+                released++;
+              }),
+          ),
+        ),
+      ),
+    );
+    return Effect.gen(function* () {
+      const fiber = yield* readTailscalePeers.pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust(TAILSCALE_STATUS_TIMEOUT);
+      assert.deepEqual(yield* Fiber.join(fiber), { status: "unavailable", peers: [] });
+      assert.equal(calls, 2);
+      assert.equal(released, 2);
+    }).pipe(Effect.provide(layer), Effect.provideService(HostProcessPlatform, "darwin"));
+  });
+
   it.effect("detects Tailnet IPv4 addresses", () =>
     Effect.sync(() => {
       assert.equal(isTailscaleIpv4Address("100.64.0.1"), true);

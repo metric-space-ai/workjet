@@ -1317,6 +1317,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         runtimeMode: "full-access",
         modelSelection: { instanceId: ProviderInstanceId.make("grok"), model: "grok-build" },
         resumeCursor: { schemaVersion: 1, sessionId: "mock-session-1" },
+        resumePolicy: "require-existing",
       });
 
       yield* adapter.sendTurn({

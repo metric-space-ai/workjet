@@ -6,6 +6,7 @@ import { useCrossModeNavigator } from "../crossMode/useCrossModeNavigator";
 import { isElectron } from "../env";
 import type { WorkjetProductMode } from "../workjetProductMode";
 import { ActiveCtoxInstanceSelector } from "./ActiveCtoxInstanceSelector";
+import { BrowserBusinessOsNavigation } from "./BrowserBusinessOsNavigation";
 import { WorkjetProductModeSwitch } from "./sidebar/SidebarChrome";
 import { SidebarTrigger } from "./ui/sidebar";
 import { WorkjetHeaderSlotContext } from "./WorkjetHeaderSlots";
@@ -46,7 +47,7 @@ export function WorkjetHeaderFrame({
               }}
             />
           ) : (
-            <span className="text-sm font-medium">Workjet</span>
+            <BrowserBusinessOsNavigation />
           )}
         </div>
         <div

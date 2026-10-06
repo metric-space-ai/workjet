@@ -725,7 +725,13 @@ impl AntigravitySubscriptionAccountPool {
         while !remaining.is_empty() {
             let selected = self
                 .router
-                .select("antigravity", Some(model), self.clock.now_ms(), &remaining)
+                .select_for_request(
+                    "antigravity",
+                    Some(model),
+                    self.clock.now_ms(),
+                    &remaining,
+                    &original_request,
+                )
                 .map_err(AntigravityAccountPoolError::Routing)?;
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
@@ -795,7 +801,13 @@ impl AntigravitySubscriptionAccountPool {
         while !remaining.is_empty() {
             let selected = self
                 .router
-                .select("antigravity", Some(model), self.clock.now_ms(), &remaining)
+                .select_for_request(
+                    "antigravity",
+                    Some(model),
+                    self.clock.now_ms(),
+                    &remaining,
+                    &original_request,
+                )
                 .map_err(AntigravityAccountPoolError::Routing)?;
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
@@ -881,7 +893,13 @@ impl AntigravitySubscriptionAccountPool {
         while !remaining.is_empty() {
             let selected = self
                 .router
-                .select("antigravity", Some(model), self.clock.now_ms(), &remaining)
+                .select_for_request(
+                    "antigravity",
+                    Some(model),
+                    self.clock.now_ms(),
+                    &remaining,
+                    &original_request,
+                )
                 .map_err(AntigravityAccountPoolError::Routing)?;
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
@@ -960,7 +978,13 @@ impl AntigravitySubscriptionAccountPool {
         while !remaining.is_empty() {
             let selected = self
                 .router
-                .select("antigravity", Some(model), self.clock.now_ms(), &remaining)
+                .select_for_request(
+                    "antigravity",
+                    Some(model),
+                    self.clock.now_ms(),
+                    &remaining,
+                    &original_request,
+                )
                 .map_err(AntigravityAccountPoolError::Routing)?;
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());

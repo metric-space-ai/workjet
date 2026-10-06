@@ -28,7 +28,7 @@ export type AvailableProject =
       readonly id: ProjectId;
       readonly title: string;
       readonly environmentId: EnvironmentId;
-      readonly path: string;
+      readonly path: string | null;
     }
   | {
       readonly kind: "workjet";
@@ -61,6 +61,7 @@ export function findEnvironmentProjectByPath(input: {
   return input.projects.find(
     (project) =>
       project.environmentId === input.environmentId &&
+      project.workspaceRoot !== null &&
       normalizedProjectPath(project.workspaceRoot) === normalizedPath,
   );
 }
@@ -84,7 +85,9 @@ export function buildAvailableProjects(input: {
   const localKeys = new Set(
     localProjects.flatMap((project) => [
       `${project.environmentId}:${project.id}`,
-      `${project.environmentId}:${normalizedProjectPath(project.path)}`,
+      ...(project.path === null
+        ? []
+        : [`${project.environmentId}:${normalizedProjectPath(project.path)}`]),
     ]),
   );
   const orderedWorkjetProjects = [...input.workjetProjects].sort((left, right) => {

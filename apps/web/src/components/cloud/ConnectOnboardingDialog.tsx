@@ -203,7 +203,7 @@ function ConfiguredConnectOnboardingDialog() {
       title: "Workjet Connect enabled",
       description: exposeEnvironment
         ? "This environment is available to your other devices through Workjet Connect."
-        : "This environment publishes agent activity to your mobile clients.",
+        : "This environment publishes Luma activity to your mobile clients.",
     });
     setStep("devices");
   };
@@ -367,7 +367,7 @@ function PublishStep({
           onCheckedChange={onExposeEnvironmentChange}
         />
         <OnboardingToggleRow
-          title="Publish agent activity"
+          title="Publish Luma activity"
           description="Send activity from this environment to your mobile clients for push notifications and Live Activities."
           checked={publishAgentActivity}
           disabled={disabled}

@@ -399,7 +399,7 @@ function surfaceTitle(
     case "pull-request":
       return `#${surface.number}`;
     case "agents":
-      return "Agents";
+      return "Lumas";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";

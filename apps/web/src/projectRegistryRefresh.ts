@@ -15,7 +15,7 @@ export function createProjectRegistryRefresh(run: () => Promise<void>) {
       do {
         queued = false;
         await run();
-      } while (queued && !cancelled);
+      } while (queued);
     })().finally(() => {
       running = null;
     });

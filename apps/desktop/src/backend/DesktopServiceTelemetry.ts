@@ -97,11 +97,12 @@ export const attachDesktopServiceTelemetry = Effect.fn("desktop.serviceTelemetry
     );
     yield* Deferred.await(firstSnapshot).pipe(
       Effect.timeout("20 seconds"),
-      Effect.mapError(
-        () =>
-          new DesktopServiceTelemetryError({
-            reason: "No authenticated Desktop telemetry snapshot was acknowledged.",
-          }),
+      Effect.mapError((error) =>
+        error instanceof DesktopServiceTelemetryError
+          ? error
+          : new DesktopServiceTelemetryError({
+              reason: "No authenticated Desktop telemetry snapshot was acknowledged.",
+            }),
       ),
     );
     return { closed: Effect.raceFirst(session.closed, Deferred.await(closed)) };

@@ -1,11 +1,12 @@
 # Instance settings
 
-In the desktop app, open **Settings → Instanzen** to add, select or remove a CTOX instance connection.
+In the desktop app, open **Settings → Instances** to add, select or remove a CTOX instance connection.
 The page lists your instances and offers shortcuts to their settings.
 
-When several instances are available, the existing instance picker appears under
-**Instanzen** in the settings sidebar. The section below it names the selected
-instance. Models, Harnesses, Computers and Worker belong to that selection.
+Use the instance picker in the app header to choose the active instance, including
+while Settings is open. The settings sidebar names the selected instance when
+several instances are available. Models, Harnesses, Computers and Worker belong
+to that selection.
 Switching the instance updates this context in Code and Business OS.
 
 With one selected instance, the sidebar stays compact and omits the extra context
@@ -13,5 +14,5 @@ heading. Select an instance before opening its settings.
 
 In a browser, settings apply to the Workjet host you are connected to.
 
-Device connections are available under **Verbundene Geräte** on the instance page.
+Device connections are available under **Connected devices** on the instance page.
 Expand that section to connect a Workjet device or review its existing connections.

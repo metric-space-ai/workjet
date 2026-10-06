@@ -78,6 +78,13 @@ Primary advisories for the additional repairs:
 
 The original three requested patched versions (node-forge 1.4.1,
 http-cache-semantics 4.2.1 and braces 3.0.4) returned registry 404 on October 6.
+A later `/latest` registry read found http-cache-semantics 4.3.0. Its verified
+npm tarball matches Git commit b1d4bd682fbab0252985de45219f4e7497c0067c, but
+`evaluateRequest` still admits client `max-stale` without the existing
+non-storable, no-cache and shared-cookie guards. Publication alone is not a
+security repair, so the reviewed 4.2.0 source patch and all cache regressions
+remain in place. No 4.3.0 consumer test or installed repair is claimed.
+
 Their existing reviewed source patches remain in place. No unavailable package
 version, advisory suppression or protection bypass is accepted. Package and
 installed-product acceptance remain separate from dependency verification.

@@ -255,8 +255,9 @@ export const parseTailscaleStatus = (
     }),
   );
 
-const readTailscaleStatusJson = Effect.gen(function* () {
-  const args = ["status", "--json"];
+const readTailscaleStatusJson = Effect.fn("readTailscaleStatusJson")(function* (
+  args: ReadonlyArray<string> = ["status", "--json"],
+) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const hostPlatform = yield* HostProcessPlatform;
   const executable = tailscaleCommandForPlatform(hostPlatform);
@@ -307,7 +308,7 @@ const readTailscaleStatusJson = Effect.gen(function* () {
   );
 });
 
-export const readTailscaleStatus = readTailscaleStatusJson.pipe(
+export const readTailscaleStatus = readTailscaleStatusJson().pipe(
   Effect.flatMap(parseTailscaleStatus),
 );
 
@@ -356,7 +357,32 @@ export const parseTailscalePeers = (raw: string) =>
     })),
   );
 
-export const readTailscalePeers = readTailscaleStatusJson.pipe(Effect.flatMap(parseTailscalePeers));
+export const readTailscalePeers = Effect.gen(function* () {
+  const raw = yield* readTailscaleStatusJson();
+  const primary = yield* parseTailscalePeers(raw);
+  const platform = yield* HostProcessPlatform;
+  if (platform !== "darwin" || primary.status === "available") return primary;
+
+  const status = yield* decodeTailscalePeersJson(raw).pipe(
+    Effect.mapError(
+      () => new TailscaleStatusParseError({ cause: "Invalid Tailscale peer status." }),
+    ),
+  );
+  if (status.BackendState !== "Stopped") return primary;
+
+  // macOS CLI discovery prefers the GUI backend even when it is stopped and
+  // a separate tailscaled is running. Probe its documented Unix socket only
+  // for peer discovery; never change accounts or route serve mutations there.
+  const fallback = yield* readTailscaleStatusJson([
+    "--socket=/var/run/tailscaled.socket",
+    "status",
+    "--json",
+  ]).pipe(
+    Effect.flatMap(parseTailscalePeers),
+    Effect.orElseSucceed(() => primary),
+  );
+  return fallback.status === "available" ? fallback : primary;
+});
 
 export function buildTailscaleHttpsBaseUrl(input: {
   readonly magicDnsName: string;

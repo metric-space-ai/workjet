@@ -509,9 +509,7 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
               ),
             ),
           );
-          const historyKey = NodeCrypto.createHash("sha256")
-            .update(historyJson)
-            .digest("hex");
+          const historyKey = NodeCrypto.createHash("sha256").update(historyJson).digest("hex");
           if (historyKey !== ctx.importedHistoryKey) {
             const response = yield* ctx.acp
               .request("_workjet/import_history", {

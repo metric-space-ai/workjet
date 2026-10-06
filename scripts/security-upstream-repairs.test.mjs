@@ -44,6 +44,40 @@ test("router Seroval rejects a forged oversized typed-array node without allocat
   assert.throws(() => seroval.fromJSON(wire));
 });
 
+test(
+  "router Seroval blocks plugin thenables in fulfilled Promises before invocation",
+  { timeout: 1_000 },
+  async () => {
+    const ordinary = { ok: true };
+    assert.deepEqual(
+      await seroval.fromJSON(await seroval.toJSONAsync(Promise.resolve(ordinary))),
+      ordinary,
+    );
+    const marker = Object.freeze({ fixture: "plugin value without a then method" });
+    let invocations = 0;
+    const options = {
+      plugins: [
+        {
+          tag: "workjet-security-thenable-fixture",
+          test: (value) => value === marker,
+          parse: { sync: () => ({}), async: async () => ({}) },
+          serialize: () => "undefined",
+          deserialize: () => ({
+            then(resolve) {
+              invocations++;
+              resolve("unexpected assimilation");
+            },
+          }),
+        },
+      ],
+    };
+    const wire = await seroval.toJSONAsync(Promise.resolve(marker), options);
+    assert.throws(() => seroval.fromJSON(wire, options));
+    await Promise.resolve();
+    assert.equal(invocations, 0, "deserialization must not invoke the plugin's then callable");
+  },
+);
+
 const flatMap = { version: 3, sources: ["input.js"], names: [], mappings: "AAAA" };
 const sectionMap = (line, map = flatMap, column = 0) => ({
   version: 3,

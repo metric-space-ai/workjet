@@ -62,7 +62,8 @@ were verified directly in the registry:
 | compression   | 1.8.2         | Mobile Expo CLI                  |
 
 The added `scripts/security-upstream-repairs.test.mjs` exercises the actual
-consumer imports: malformed typed-array buffers, indexed source-map offsets,
+consumer imports: malformed typed-array buffers, plugin-produced thenables in
+fulfilled Promises, indexed source-map offsets,
 mapped IPv6 proxy trust and stream cleanup on premature response close.
 The fixtures stay bounded even before a fix is installed. Lock generation,
 frozen import and these new regressions must pass before packaging; an override

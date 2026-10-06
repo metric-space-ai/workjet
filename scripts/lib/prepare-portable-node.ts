@@ -32,9 +32,20 @@ export async function stageVerifiedNodeArchive(input: {
   );
   let ownsDestination = false;
   try {
-    NodeChildProcess.execFileSync("tar", ["-xzf", input.archivePath, "-C", staging], {
-      timeout: 60_000,
-    });
+    // Headers and manpages are not part of the installed runtime. Exclude them
+    // before extraction, avoiding thousands of disposable staging writes.
+    NodeChildProcess.execFileSync(
+      "tar",
+      [
+        "-xzf",
+        input.archivePath,
+        "-C",
+        staging,
+        `--exclude=${input.pin.directoryName}/include`,
+        `--exclude=${input.pin.directoryName}/share`,
+      ],
+      { timeout: 60_000 },
+    );
     const root = NodePath.join(staging, input.pin.directoryName);
     const nodePath = NodePath.join(root, "bin", "node");
     const reported = JSON.parse(

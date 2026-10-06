@@ -18,6 +18,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -257,6 +258,48 @@ describe("existing imported thread names", () => {
           expect((yield* service.inspect()).candidates[0]?.title).toBe("CTOX Crew");
         }),
       ),
+  );
+});
+
+describe("legacy provider session titles", () => {
+  it.effect("uses only the recorded provider resume identity and retains a local rename", () =>
+    withFixture(({ root, service, threads }) =>
+      Effect.gen(function* () {
+        const sourceId = "11111111-1111-1111-1111-111111111111";
+        const source = transcript("hi", ["READY"]).replace(
+          '"id":"source-session"',
+          '"id":"' + sourceId + '"',
+        );
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(NodePath.join(root, "sessions", sourceId + ".jsonl"), source),
+        );
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        const result = yield* service.importSessions({
+          projectId: ProjectId.make("project-a"),
+          candidateIds: [candidateId],
+        });
+        const id = result.items[0]!.threadId!;
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`DELETE FROM workjet_session_imports`;
+        yield* sql`CREATE TABLE provider_session_runtime (thread_id TEXT, provider_name TEXT, provider_instance_id TEXT, resume_cursor_json TEXT)`;
+        const cursor = JSON.stringify({ threadId: id, resume: sourceId });
+        yield* sql`INSERT INTO provider_session_runtime VALUES (${id}, 'codex', NULL, ${cursor})`;
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(root, "session_index.jsonl"),
+            JSON.stringify({ id: sourceId, thread_name: "CTOX Crew" }) + "\n",
+          ),
+        );
+        const thread = threads.get(id)!;
+        threads.set(id, { ...thread, title: "Hi" });
+        yield* service.refreshTitles;
+        expect(threads.get(id)?.title).toBe("CTOX Crew");
+        expect(threads.get(id)?.messages).toEqual(thread.messages);
+        threads.set(id, { ...threads.get(id)!, title: "My name" });
+        yield* service.refreshTitles;
+        expect(threads.get(id)?.title).toBe("My name");
+      }),
+    ),
   );
 });
 

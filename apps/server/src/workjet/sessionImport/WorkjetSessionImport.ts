@@ -956,14 +956,49 @@ export const make = Effect.gen(function* () {
   const refreshTitles = Effect.gen(function* () {
     const rows =
       yield* sql<ImportRow>`SELECT source_key, thread_id, imported_message_count, prefix_hash FROM workjet_session_imports`;
-    if (rows.length === 0) return;
+    const legacyRows = yield* sql<{
+      readonly thread_id: string;
+      readonly provider_name: string;
+      readonly provider_instance_id: string | null;
+      readonly resume_cursor_json: string | null;
+    }>`SELECT thread_id, provider_name, provider_instance_id, resume_cursor_json FROM provider_session_runtime`.pipe(
+      Effect.catch(() => Effect.succeed([])),
+    );
+    if (rows.length === 0 && legacyRows.length === 0) return;
     const settings = yield* settingsService.getSettings;
     const files = yield* Effect.promise(() => discoverFiles(resolveLocations(settings, path)));
     for (const file of files) {
-      const copies = rows.filter(
-        (row) =>
-          row.source_key === file.sourceKey || row.source_key.startsWith(`${file.sourceKey}:`),
-      );
+      const provider = file.source === "codex" ? "codex" : "claudeAgent";
+      const legacyCopies = legacyRows.filter((row) => {
+        if (
+          row.provider_name !== provider ||
+          (row.provider_instance_id ?? provider) !== file.providerInstanceId
+        )
+          return false;
+        try {
+          const cursor = asRecord(JSON.parse(row.resume_cursor_json ?? "null"));
+          const resume = asString(cursor?.resume);
+          return (
+            resume !== null &&
+            /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(resume) &&
+            file.path.endsWith(resume + ".jsonl")
+          );
+        } catch {
+          return false;
+        }
+      });
+      const copies = [
+        ...new Set([
+          ...rows
+            .filter(
+              (row) =>
+                row.source_key === file.sourceKey ||
+                row.source_key.startsWith(file.sourceKey + ":"),
+            )
+            .map((row) => row.thread_id),
+          ...legacyCopies.map((row) => row.thread_id),
+        ]),
+      ];
       if (copies.length === 0) continue;
       const parsed = yield* Effect.promise(() => readSessionPreview(file).catch(() => null));
       if (!parsed) continue;
@@ -973,10 +1008,20 @@ export const make = Effect.gen(function* () {
         .slice(0, 120)
         .trim();
       for (const copy of copies) {
-        const threadId = ThreadId.make(copy.thread_id);
+        const threadId = ThreadId.make(copy);
         const thread = Option.getOrUndefined(yield* query.getThreadShellById(threadId));
         // Respect a local rename; only correct the importer-generated first-prompt title.
-        if (!thread || thread.title !== originalTitle || thread.title === parsed.title) continue;
+        const initialHandshake =
+          hideSessionInitialization(parsed.messages).length < parsed.messages.length;
+        const automaticInitTitle =
+          initialHandshake &&
+          /^(?:hi|hallo|hello|bereit|ready|nur bereit antworten)[.!]?$/iu.test(thread?.title ?? "");
+        if (
+          !thread ||
+          (thread.title !== originalTitle && !automaticInitTitle) ||
+          thread.title === parsed.title
+        )
+          continue;
         yield* engine.dispatch({
           type: "thread.meta.update",
           commandId: CommandId.make(NodeCrypto.randomUUID()),

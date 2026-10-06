@@ -464,7 +464,6 @@ export const ComposerComputerControl = memo(ComposerComputerControlView);
 // the model menu groups by provider instead.
 // ---------------------------------------------------------------------------
 
-const CUSTOM_MODEL_VALUE = "__custom_model__";
 const NO_HARNESS_VALUE = "__no_harness__";
 
 /**
@@ -578,8 +577,8 @@ export interface ComposerManualTargetControlsProps {
   readonly unavailableHint?: string | undefined;
   readonly selectedHarness: WorkjetHarness | null;
   readonly onSelectHarness: (harness: WorkjetHarness) => void;
-  /** Configured profiles allow custom IDs; gateway catalogs group by provider. */
-  readonly modelSource?: "gateway" | "configured";
+  /** Native catalogs are authoritative; configured profiles and gateway catalogs allow custom IDs. */
+  readonly modelSource?: "gateway" | "configured" | "native";
   readonly models: ReadonlyArray<WorkjetGatewayModelSummary>;
   /** Why the model list may be empty; shown instead of a silent blank. */
   readonly modelsUnavailableReason: string | null;
@@ -595,8 +594,9 @@ export interface ComposerManualTargetControlsProps {
 /** Exported unwrapped so a test can call it; `memo` returns an object. */
 export function ComposerManualTargetControlsView(props: ComposerManualTargetControlsProps) {
   const configuredModels = props.modelSource === "configured";
-  // Configured IDs and gateway discovery both allow a custom model ID.
-  // The selected runtime verifies availability when the turn starts.
+  const nativeModels = props.modelSource === "native";
+  // The native profile validates its catalog; configured and gateway IDs
+  // are verified by the selected runtime when a turn starts.
   const [localCustomModelDraft, setLocalCustomModelDraft] = useState<string | null>(null);
   const customModelDraft = props.customModelEditor
     ? props.customModelEditor.draft
@@ -615,22 +615,30 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     harnessOptions.find((option) => option.id === props.selectedHarness) ?? null;
   const selectedModelSummary = props.models.find((model) => model.id === props.selectedModelId);
   const modelInCatalog = selectedModelSummary !== undefined;
-  const modelGroups = configuredModels ? [] : composerGatewayModelMenuGroups(props.models);
+  const allModelGroups = composerGatewayModelMenuGroups(props.models);
+  const modelGroups = configuredModels
+    ? []
+    : nativeModels
+      ? allModelGroups.filter(([, models]) => models.length > 0)
+      : allModelGroups;
   const selectedModelProvider = configuredModels
     ? null
     : (selectedModelSummary?.providers[0] ??
-      inferGatewayProviderFromModelId(props.selectedModelId));
+      (nativeModels ? undefined : inferGatewayProviderFromModelId(props.selectedModelId)));
   // The rail's active provider: the explicit pick, else the provider of the
   // current model, else the first group.
   const activeModelProvider =
-    modelProviderChoice ??
+    (modelGroups.some(([provider]) => provider === modelProviderChoice)
+      ? modelProviderChoice
+      : null) ??
     selectedModelProvider ??
     modelGroups.find(([, models]) => models.length > 0)?.[0] ??
-    COMPOSER_GATEWAY_PROVIDER_RAIL[0];
+    (nativeModels ? undefined : COMPOSER_GATEWAY_PROVIDER_RAIL[0]);
   const activeProviderModels = configuredModels
     ? props.models
     : (modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? []);
   const showCurrentCustomModel =
+    !nativeModels &&
     !modelInCatalog &&
     props.selectedModelId.length > 0 &&
     (configuredModels || (selectedModelProvider ?? activeModelProvider) === activeModelProvider);
@@ -692,7 +700,9 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           </SelectPopup>
         </Select>
         <TooltipPopup side="top">
-          Harness — the agent runtime that drives the turn. Any harness combines with any model.
+          {nativeModels
+            ? "This harness runs models advertised by its native profile on the selected computer."
+            : "Harness — the agent runtime that drives the turn. Any harness combines with any model."}
         </TooltipPopup>
       </Tooltip>
 
@@ -706,15 +716,21 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             aria-label="Model"
             type="button"
             title={
-              configuredModels
-                ? "Configured for this Greppy profile; choose a model or enter its ID."
-                : "Served by the Workjet gateway; choose a catalog model or enter its ID."
+              nativeModels
+                ? "Models reported by this harness on the selected computer."
+                : configuredModels
+                  ? "Configured for this Greppy profile; choose a model or enter its ID."
+                  : "Served by the Workjet gateway; choose a catalog model or enter its ID."
             }
           >
             <ComposerControlIcon icon={CpuIcon} />
             <span className="min-w-0 truncate">
               {selectedModelSummary?.displayName ??
-                (props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
+                (nativeModels
+                  ? "Choose an advertised model"
+                  : props.selectedModelId.length > 0
+                    ? props.selectedModelId
+                    : "Model")}
             </span>
             <ComposerControlChevron />
           </ComposerControl>
@@ -728,7 +744,7 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             : "Enter a model ID accepted by your gateway. Choose Use model to apply it to this chat."
         }
         detail={
-          customModelEditorOpen ? (
+          customModelEditorOpen && !nativeModels ? (
             <ComposerCustomModelEditor
               value={customModelDraft ?? props.selectedModelId}
               onChange={setCustomModelDraft}
@@ -835,18 +851,20 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                   {props.modelsUnavailableReason ?? "No models reported for this provider."}
                 </div>
               ) : null}
-              <button
-                ref={customModelTrigger}
-                type="button"
-                className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
-                onClick={() => {
-                  setCustomModelDraft(customModelDraft ?? props.selectedModelId);
-                  setCustomModelEditorOpen(true);
-                }}
-                aria-expanded={customModelEditorOpen}
-              >
-                {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
-              </button>
+              {nativeModels ? null : (
+                <button
+                  ref={customModelTrigger}
+                  type="button"
+                  className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  onClick={() => {
+                    setCustomModelDraft(customModelDraft ?? props.selectedModelId);
+                    setCustomModelEditorOpen(true);
+                  }}
+                  aria-expanded={customModelEditorOpen}
+                >
+                  {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
+                </button>
+              )}
             </div>
           </div>
         }

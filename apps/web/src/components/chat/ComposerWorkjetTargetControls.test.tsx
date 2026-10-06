@@ -348,6 +348,47 @@ describe("the manual target controls", () => {
     expect(markup).toContain("GPT 5.6 Sol");
   });
 
+  it("presents the native MiniMax catalog without claiming gateway service", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        configuredInstanceIds={new Set(["minimax"])}
+        selectedHarness="minimax-code"
+        onSelectHarness={() => undefined}
+        modelSource="native"
+        models={[
+          {
+            id: "MiniMax-M3.1-Flash-Preview",
+            displayName: "MiniMax-M3.1-Flash-Preview",
+            providers: ["minimax"],
+            accountIds: [],
+          },
+        ]}
+        modelsUnavailableReason={null}
+        selectedModelId="MiniMax-M3.1-Flash-Preview"
+        onSelectModel={() => undefined}
+      />,
+    );
+    expect(markup).toContain("MiniMax Code");
+    expect(markup).toContain("MiniMax-M3.1-Flash-Preview");
+    expect(markup).toContain("Models reported by this harness on the selected computer.");
+    expect(markup).not.toContain("Served by the Workjet gateway");
+  });
+  it("does not present an unadvertised native model as an available current choice", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerManualTargetControlsView
+        configuredInstanceIds={new Set(["minimax"])}
+        selectedHarness="minimax-code"
+        onSelectHarness={() => undefined}
+        modelSource="native"
+        models={[]}
+        modelsUnavailableReason="Run mcode login"
+        selectedModelId="foreign-model"
+        onSelectModel={() => undefined}
+      />,
+    );
+    expect(markup).toContain("Choose an advertised model");
+    expect(markup).not.toContain(">foreign-model<");
+  });
   it("shows the unavailable reason instead of a silent blank model menu", () => {
     const markup = renderToStaticMarkup(
       <ComposerManualTargetControlsView

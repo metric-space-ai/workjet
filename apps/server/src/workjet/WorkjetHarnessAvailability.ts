@@ -175,6 +175,7 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
   "grok-cli": "grok",
   "cursor-agent": "cursor-agent",
   greppy: "greppy",
+  "minimax-code": "mcode",
   "pi-code": "pi",
 };
 

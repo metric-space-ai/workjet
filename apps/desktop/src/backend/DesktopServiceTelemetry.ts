@@ -20,6 +20,8 @@ export class DesktopServiceTelemetryError extends Schema.TaggedErrorClass<Deskto
   }
 }
 
+const isDesktopServiceTelemetryError = Schema.is(DesktopServiceTelemetryError);
+
 export interface TelemetrySession {
   readonly initialConfig: Effect.Effect<
     { readonly environment: { readonly runtimeInstanceId?: string } },
@@ -98,7 +100,7 @@ export const attachDesktopServiceTelemetry = Effect.fn("desktop.serviceTelemetry
     yield* Deferred.await(firstSnapshot).pipe(
       Effect.timeout("20 seconds"),
       Effect.mapError((error) =>
-        error instanceof DesktopServiceTelemetryError
+        isDesktopServiceTelemetryError(error)
           ? error
           : new DesktopServiceTelemetryError({
               reason: "No authenticated Desktop telemetry snapshot was acknowledged.",

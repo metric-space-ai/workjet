@@ -4,6 +4,10 @@ Choose **All projects** to see the projects saved in the current instance.
 A project saved locally remains visible while its native registration is pending.
 Opening its card returns to its existing supervisor conversation.
 
+The list refreshes when the selected instance finishes loading. Choose **Refresh
+projects** to request the list again without switching instances. Previously
+loaded projects remain available when the connection is interrupted.
+
 Choose **Configure overview** on a card, or open **Project settings → Project
 overview**. Add an optional website address and configure each of the three
 fields separately:

@@ -304,20 +304,50 @@ describe("legacy provider session titles", () => {
 });
 
 describe("project-directed static session imports", () => {
-  it.effect("rejects a selected transcript that grows beyond the size limit after inspection", () =>
+  it.effect("copies more than 5000 visible messages in bounded batches and reimports unchanged", () =>
+    withFixture(({ root, service, threads, commands }) => Effect.gen(function* () {
+      const file = NodePath.join(root, "sessions", "long-parent.jsonl");
+      yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Parent history", Array.from({ length: 5101 }, (_, index) => `Reply ${index}`))));
+      const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+      const input = { candidateIds: [candidateId], projectId: ProjectId.make("project-a") };
+      const result = yield* service.importSessions(input);
+      expect(result.items[0]?.totalMessages).toBe(5102);
+      expect(result.items[0]?.status).toBe("imported");
+      expect([...threads.values()][0]?.messages).toHaveLength(5102);
+      const imports = commands.filter((command) => command.type === "thread.history.import");
+      expect(imports).toHaveLength(26);
+      expect(imports.every((command) => command.messages.length <= 200)).toBe(true);
+      expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
+      expect(commands.filter((command) => command.type === "thread.history.import")).toHaveLength(26);
+    })),
+  );
+  it.effect("does not create a chat for an initialization-only exchange", () =>
+    withFixture(({ root, service, threads }) => Effect.gen(function* () {
+      yield* Effect.promise(() => NodeFSP.writeFile(NodePath.join(root, "sessions", "init.jsonl"), transcript("Nur BEREIT antworten", ["BEREIT"])));
+      expect((yield* service.inspect()).candidates).toHaveLength(0);
+      expect(threads.size).toBe(0);
+    })),
+  );
+
+  it.effect("imports visible messages across a tool result larger than the former file limit", () =>
     withFixture(({ root, service, threads, commands }) =>
       Effect.gen(function* () {
         const file = NodePath.join(root, "sessions", "grown.jsonl");
         yield* Effect.promise(() => NodeFSP.writeFile(file, transcript("Small preview")));
         const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
-        yield* Effect.promise(() => NodeFSP.truncate(file, 21 * 1024 * 1024));
+        yield* Effect.promise(() => NodeFSP.appendFile(file,
+          encodeJson({ type: "response_item", payload: { type: "function_call_output", output: "x".repeat(21 * 1024 * 1024) } }) + "\n" +
+          encodeJson({ type: "response_item", timestamp: NOW, payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "Visible answer after a large tool" }] } }) + "\n"));
         const result = yield* service.importSessions({
           candidateIds: [candidateId],
           projectId: ProjectId.make("project-a"),
         });
-        expect(result.items[0]?.status).toBe("failed");
-        expect(commands).toHaveLength(0);
-        expect(threads.size).toBe(0);
+        expect(result.items[0]?.status).toBe("imported");
+        expect(result.items[0]?.totalMessages).toBe(2);
+        expect(commands.filter((command) => command.type === "thread.history.import")).toHaveLength(1);
+        expect([...threads.values()][0]?.messages.map((message) => message.text)).toEqual([
+          "Small preview", "Visible answer after a large tool",
+        ]);
       }),
     ),
   );

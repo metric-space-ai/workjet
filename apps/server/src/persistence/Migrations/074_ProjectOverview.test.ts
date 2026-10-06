@@ -19,7 +19,18 @@ it.effect(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-project-overview-" });
-      assert.ok(directory.startsWith("/Volumes/tmp/"));
+      const temporaryRoot = process.env.TMPDIR ?? "";
+      assert.notEqual(temporaryRoot, "");
+      if (process.platform === "darwin") {
+        assert.ok(path.resolve(temporaryRoot).startsWith("/Volumes/tmp/"));
+      }
+      const relative = path.relative(path.resolve(temporaryRoot), directory);
+      assert.ok(
+        relative !== "" &&
+          relative !== ".." &&
+          !relative.startsWith("../") &&
+          !path.isAbsolute(relative),
+      );
       const filename = path.join(directory, "state.sqlite");
       const runtime = () =>
         ProjectionProjectRepositoryLive.pipe(

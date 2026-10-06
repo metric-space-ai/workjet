@@ -47,6 +47,35 @@ const model = (slug: string, isCustom = false, isDefault = false) => ({
 });
 
 describe("resolveProjectTeamModelSelection", () => {
+  it("uses the configured gateway wildcard for the standard model without rewriting the account", () => {
+    const openAi = provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex_personal",
+      models: [model("gpt-*", true), model("codex-*", true)],
+    });
+    expect(resolveProjectTeamModelSelection([openAi])).toEqual({
+      instanceId: openAi.instanceId,
+      model: "gpt-6.1-sol",
+    });
+    expect(openAi.models.map((entry) => entry.slug)).toEqual(["gpt-*", "codex-*"]);
+  });
+
+  it("keeps model-pattern and provider-availability boundaries for wildcard accounts", () => {
+    const codex = {
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex_personal",
+      models: [model("gpt-*", true)],
+    };
+    for (const unavailable of [
+      provider({ ...codex, enabled: false }),
+      provider({ ...codex, availability: "unavailable" }),
+      provider({ ...codex, status: "error" }),
+      provider({ ...codex, models: [model("gpt-5.*", true), model("claude-*", true)] }),
+    ]) {
+      expect(resolveProjectTeamModelSelection([unavailable])).toBeNull();
+    }
+  });
+
   it("selects the advertised standard model without inheriting a historic Claude route", () => {
     const providers = [
       provider({

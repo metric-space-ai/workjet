@@ -13,6 +13,7 @@
  * @module providerInstances
  */
 import {
+  matchesWorkjetGatewayModelPattern,
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   PROVIDER_DISPLAY_NAMES,
@@ -334,7 +335,7 @@ export function resolveProjectTeamModelSelection(
 ): ModelSelection | null {
   const model = "gpt-6.1-sol";
   const candidates = deriveProviderInstanceEntries(providers).filter((entry) =>
-    entry.models.some((candidate) => candidate.slug === model),
+    entry.models.some((candidate) => matchesWorkjetGatewayModelPattern(candidate.slug, model)),
   );
   const entry = resolveSelectableProviderInstanceEntry(candidates, undefined);
   return entry ? { instanceId: entry.instanceId, model } : null;

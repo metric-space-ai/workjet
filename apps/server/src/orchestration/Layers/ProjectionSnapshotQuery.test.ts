@@ -2144,9 +2144,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
             cursor = result.value.page?.beforeCursor ?? undefined;
           }
           assert.equal(new Set(seen).size, 12);
-          assert.deepEqual(seen.toSorted(), Array.from({ length: 12 }, (_, index) =>
-            "static-" + String(index).padStart(3, "0"),
-          ));
+          assert.deepEqual(
+            seen.toSorted(),
+            Array.from({ length: 12 }, (_, index) => "static-" + String(index).padStart(3, "0")),
+          );
           const turns = yield* sql`SELECT COUNT(*) AS count FROM projection_turns`;
           assert.equal(turns[0]?.count, 0);
         }),

@@ -19,9 +19,14 @@ Choose **Save overview** to store the configuration with the project. Removing
 its website address or selecting Empty clears only that value. The website,
 labels and values remain available when you return to the same project.
 
-**Show preview** opens a sandboxed website preview. If the website blocks
-embedding or requires features unavailable in the preview, **Open website**
-opens it directly. Viewing a preview does not select or open another project.
+Each card shows its website preview automatically. Projects named after a domain
+use that domain until you save an overview. A saved website address takes
+precedence; clearing it keeps the preview off. **Hide preview** closes the preview,
+and **Show preview** restores it.
+
+Previews use an isolated sandbox. If a website blocks embedding or requires
+features unavailable in the preview, **Open website** opens it directly.
+Viewing a preview does not select or open another project.
 
 Editing requires a connected environment that supports project overviews.
 An older environment must be updated first. A failed save keeps your entered

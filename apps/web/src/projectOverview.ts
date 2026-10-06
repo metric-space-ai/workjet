@@ -85,6 +85,17 @@ export type GalleryProject = {
   readonly local: GalleryLocalProject | null;
   readonly native: boolean;
 };
+/** Saved metadata wins, including an explicitly cleared website. Domain-named native projects can preview their website before a local history exists. */
+export function resolveGalleryProjectOverview(project: GalleryProject): ProjectOverview {
+  const saved = project.local?.overview;
+  if (saved != null) return saved;
+  const title = project.title.trim().toLowerCase();
+  const isDomain = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(title);
+  return {
+    websiteUrl: isDomain ? `https://${title}` : null,
+    slots: [null, null, null],
+  };
+}
 /** Open the exact history already joined by the gallery's persisted identity proof. */
 export function resolveGalleryProjectHistory<Project extends GalleryLocalProject>(
   projects: readonly Project[],

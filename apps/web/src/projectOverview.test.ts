@@ -12,6 +12,7 @@ import {
   overviewDraft,
   projectUpdateAge,
   resolveGalleryProjectHistory,
+  resolveGalleryProjectOverview,
   type GalleryLocalProject,
 } from "./projectOverview";
 const local = (
@@ -33,6 +34,37 @@ const local = (
         },
 });
 describe("real project overview", () => {
+  it("uses only domain-shaped titles for an unsaved overview and preserves saved clearing", () => {
+    const card = {
+      key: "a:native",
+      id: "native",
+      title: " Greppy.XYZ ",
+      local: null,
+      native: true,
+    };
+    expect(resolveGalleryProjectOverview(card)).toEqual({
+      websiteUrl: "https://greppy.xyz",
+      slots: [null, null, null],
+    });
+    for (const title of [
+      "CTOX Crew",
+      "127.0.0.1",
+      "localhost",
+      "bad-.example.org",
+      "x.yz/path",
+      "user@example.org",
+    ]) {
+      expect(resolveGalleryProjectOverview({ ...card, title }).websiteUrl).toBeNull();
+    }
+    const saved: ProjectOverview = { websiteUrl: null, slots: [null, null, null] };
+    expect(
+      resolveGalleryProjectOverview({
+        ...card,
+        local: { ...local("native", "a"), overview: saved },
+      }),
+    ).toBe(saved);
+  });
+
   it("round trips independently configured fields and clearing", () => {
     const overview: ProjectOverview = {
       websiteUrl: "https://example.org",

@@ -98,7 +98,8 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
-    "frame-src 'self' https://challenges.cloudflare.com",
+    // Project website previews use isolated sandboxed frames at user-configured URLs.
+    "frame-src 'self' http: https:",
     "form-action 'self'",
   ].join("; ");
 }

@@ -1,6 +1,10 @@
 import { useState } from "react";
 import type { ProjectOverview } from "@workjet/contracts";
-import { type GalleryProject, projectUpdateAge } from "../projectOverview";
+import {
+  type GalleryProject,
+  projectUpdateAge,
+  resolveGalleryProjectOverview,
+} from "../projectOverview";
 import { ProjectOverviewEditor } from "./ProjectOverviewEditor";
 import { Button } from "./ui/button";
 
@@ -14,8 +18,8 @@ export function ProjectOverviewCard({
   readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
 }) {
   const [editing, setEditing] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const overview = project.local?.overview;
+  const [showPreview, setShowPreview] = useState(true);
+  const overview = resolveGalleryProjectOverview(project);
   const website = overview?.websiteUrl;
   const repository = overview?.repositoryUrl;
   const slots = overview?.slots ?? [null, null, null];
@@ -49,7 +53,7 @@ export function ProjectOverviewCard({
             <iframe
               src={website}
               title={`Website preview for ${project.title}`}
-              sandbox=""
+              sandbox="allow-scripts"
               referrerPolicy="no-referrer"
               loading="lazy"
               className="h-36 w-full rounded-md border border-border bg-background"

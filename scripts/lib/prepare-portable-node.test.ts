@@ -32,7 +32,7 @@ async function fixture(
     // This fixture models the metadata protocol, not a real Node runtime.
     await NodeFSP.writeFile(
       NodePath.join(source, "bin", "node"),
-      `#!/bin/sh\ncat <<'IDENTITY'\n${JSON.stringify(identity)}\nIDENTITY\n`,
+      `#!/bin/sh\ntest ! -e "$(dirname "$0")/../include" || exit 98\ntest ! -e "$(dirname "$0")/../share" || exit 98\ncat <<'IDENTITY'\n${JSON.stringify(identity)}\nIDENTITY\n`,
       { mode: 0o755 },
     );
     await NodeFSP.writeFile(NodePath.join(source, "LICENSE"), "Fixture notice\n");

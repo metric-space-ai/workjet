@@ -1988,6 +1988,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     const sql = yield* SqlClient.SqlClient;
 
     // Tests in this block share one in-memory database; reset before seeding.
+    yield* sql`DELETE FROM workjet_session_imports`;
     yield* sql`DELETE FROM projection_projects`;
     yield* sql`DELETE FROM projection_threads`;
     yield* sql`DELETE FROM projection_turns`;
@@ -2086,6 +2087,104 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     snapshot.thread.messages.map((message) => message.id).toSorted();
   const activityIds = (snapshot: { thread: { activities: ReadonlyArray<{ id: string }> } }) =>
     snapshot.thread.activities.map((activity) => activity.id).toSorted();
+
+  const markStaticImport = Effect.fnUntraced(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      INSERT INTO workjet_session_imports (
+        source_key, source, provider_instance_id, thread_id, imported_message_count,
+        prefix_hash, created_at, updated_at
+      ) VALUES ('static-import', 'codex', 'codex', 'thread-w', 400,
+        'hash', '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')
+    `;
+  });
+
+  const seedStaticMessages = Effect.fnUntraced(function* (sameTimestamp: boolean) {
+    yield* seedFanOutThread();
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`DELETE FROM projection_turns`;
+    yield* sql`DELETE FROM projection_thread_messages`;
+    yield* sql`DELETE FROM projection_thread_activities`;
+    yield* markStaticImport();
+    for (let index = 0; index < 12; index += 1) {
+      const id = "static-" + String(index).padStart(3, "0");
+      const role = index % 2 === 0 ? "user" : "assistant";
+      const at = sameTimestamp
+        ? "2026-03-01T00:00:00.000Z"
+        : new Date(Date.UTC(2026, 2, 1, 0, index)).toISOString();
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
+        ) VALUES (${id}, 'thread-w', NULL, ${role}, ${id}, 0, ${at}, ${at})
+      `;
+    }
+  });
+
+  for (const sameTimestamp of [false, true]) {
+    it.effect(
+      "pages imported messages without execution turns" +
+        (sameTimestamp ? " when timestamps are equal" : ""),
+      () =>
+        Effect.gen(function* () {
+          yield* seedStaticMessages(sameTimestamp);
+          const query = yield* ProjectionSnapshotQuery;
+          const sql = yield* SqlClient.SqlClient;
+          const seen: string[] = [];
+          let cursor: string | undefined;
+          for (let pageIndex = 0; pageIndex < 3; pageIndex += 1) {
+            const result = yield* query.getThreadDetailSnapshot(threadW, {
+              turnLimit: 2,
+              ...(cursor ? { beforeCursor: cursor } : {}),
+            });
+            assert.equal(result._tag, "Some");
+            if (result._tag !== "Some") return;
+            assert.equal(result.value.thread.messages.length, 4);
+            seen.push(...messageIds(result.value));
+            assert.equal(result.value.page?.hasMore, pageIndex < 2);
+            cursor = result.value.page?.beforeCursor ?? undefined;
+          }
+          assert.equal(new Set(seen).size, 12);
+          assert.deepEqual(seen.toSorted(), Array.from({ length: 12 }, (_, index) =>
+            "static-" + String(index).padStart(3, "0"),
+          ));
+          const turns = yield* sql`SELECT COUNT(*) AS count FROM projection_turns`;
+          assert.equal(turns[0]?.count, 0);
+        }),
+    );
+  }
+
+  it.effect("older imported history remains reachable after a real runtime turn", () =>
+    Effect.gen(function* () {
+      yield* seedStaticMessages(false);
+      const sql = yield* SqlClient.SqlClient;
+      const at = "2026-03-02T00:00:00.000Z";
+      yield* sql`
+        INSERT INTO projection_turns (
+          thread_id, turn_id, pending_message_id, state, requested_at, started_at,
+          completed_at, checkpoint_files_json
+        ) VALUES ('thread-w', 'live-turn', 'live-user', 'completed', ${at}, ${at}, ${at}, '[]')
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
+        ) VALUES ('live-user', 'thread-w', NULL, 'user', 'Continue', 0, ${at}, ${at}),
+          ('live-reply', 'thread-w', 'live-turn', 'assistant', 'Continued', 0, ${at}, ${at})
+      `;
+      const query = yield* ProjectionSnapshotQuery;
+      const first = yield* query.getThreadDetailSnapshot(threadW, { turnLimit: 1 });
+      assert.equal(first._tag, "Some");
+      if (first._tag !== "Some") return;
+      assert.deepEqual(messageIds(first.value), ["live-reply", "live-user"]);
+      assert.equal(first.value.page?.hasMore, true);
+      const older = yield* query.getThreadDetailSnapshot(threadW, {
+        turnLimit: 1,
+        beforeCursor: first.value.page!.beforeCursor!,
+      });
+      assert.equal(older._tag, "Some");
+      if (older._tag === "Some")
+        assert.deepEqual(messageIds(older.value), ["static-010", "static-011"]);
+    }),
+  );
 
   it.effect("returns the full thread with no page metadata when no window is requested", () =>
     Effect.gen(function* () {

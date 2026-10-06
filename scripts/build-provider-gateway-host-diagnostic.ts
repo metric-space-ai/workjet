@@ -3,6 +3,8 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+import * as Effect from "effect/Effect";
+import { HostProcessPlatform } from "@workjet/shared/hostProcess";
 import {
   captureDiagnosticNativeSource,
   parseDiagnosticHostBuildOptions,
@@ -10,7 +12,8 @@ import {
 } from "./lib/provider-gateway-host-diagnostic.ts";
 
 const { arch, outDir } = parseDiagnosticHostBuildOptions(process.argv.slice(2));
-if (process.platform !== "darwin") throw new Error("A diagnostic host requires a Mac.");
+if (Effect.runSync(HostProcessPlatform) !== "darwin")
+  throw new Error("A diagnostic host requires a Mac.");
 const targetDir = process.env.CARGO_TARGET_DIR;
 if (!targetDir || !NodePath.isAbsolute(targetDir))
   throw new Error(

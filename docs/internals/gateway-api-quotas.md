@@ -26,6 +26,7 @@ authentication. Positive readings expire for display; known exhausted windows
 remain exhausted until their actual reset. Unlimited windows never exhaust.
 
 Primary contracts:
+
 - https://platform.minimax.io/subscribe/token-plan
 - https://github.com/MiniMax-AI/cli/blob/main/src/types/api.ts
 - https://github.com/MiniMax-AI/cli/blob/main/src/utils/quota.ts

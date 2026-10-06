@@ -1147,8 +1147,7 @@ export const WorkjetGatewayRoutingStrategy = Schema.Literals([
 export type WorkjetGatewayRoutingStrategy = typeof WorkjetGatewayRoutingStrategy.Type;
 
 /** New gateways use the fixed setup; explicit legacy strategies still decode. */
-export const WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY: WorkjetGatewayRoutingStrategy =
-  "fill-first";
+export const WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY: WorkjetGatewayRoutingStrategy = "fill-first";
 
 /** Highest priority and weight the gateway configuration accepts per account. */
 export const WORKJET_GATEWAY_MAX_ACCOUNT_PRIORITY = 10_000;

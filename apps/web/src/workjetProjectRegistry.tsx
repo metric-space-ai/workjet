@@ -11,6 +11,10 @@ import { useActiveWorkjetScope, subscribeActiveWorkjetHostContext } from "./acti
 import { useHydratePrimaryWorkjetSettings } from "./hooks/useSettings";
 import { listWorkjetProjects } from "./workjetProjectControl";
 import { LocalProjectRegistrationSynchronizer } from "./localProjectRegistration";
+import {
+  createProjectRegistryRefresh,
+  subscribeProjectRegistryWarmGuest,
+} from "./projectRegistryRefresh";
 
 export interface WorkjetProjectRegistrySnapshot {
   readonly presentationInstanceId: string | null;
@@ -289,44 +293,45 @@ export function WorkjetProjectRegistrySynchronizer() {
 
   useEffect(() => {
     let cancelled = false;
-    let refreshing = false;
     const restored = loadingWorkjetProjectRegistry(presentationInstanceId);
     publish(presentationInstanceId === null ? restored : { ...restored, phase: "loading" });
     if (presentationInstanceId === null) return;
+    const refreshController = createProjectRegistryRefresh(() =>
+      listWorkjetProjects(presentationInstanceId).then(
+        (result) => {
+          if (cancelled) return;
+          if (result._tag !== "completed" || result.response.action !== "project.list") {
+            const current = readWorkjetProjectRegistry(presentationInstanceId);
+            publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
+            return;
+          }
+          const selectedProjectId = resolveSelectedWorkjetProjectId(
+            result.response.projects,
+            readWorkjetProjectRegistry(presentationInstanceId).selectedProjectId,
+          );
+          publish({
+            presentationInstanceId,
+            phase: "ready",
+            projects: result.response.projects,
+            selectedProjectId,
+          });
+        },
+        () => {
+          if (!cancelled) {
+            const current = readWorkjetProjectRegistry(presentationInstanceId);
+            publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
+          }
+        },
+      ),
+    );
     const refresh = () => {
-      if (cancelled || refreshing) return;
-      refreshing = true;
-      void listWorkjetProjects(presentationInstanceId)
-        .then(
-          (result) => {
-            if (cancelled) return;
-            if (result._tag !== "completed" || result.response.action !== "project.list") {
-              const current = readWorkjetProjectRegistry(presentationInstanceId);
-              publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
-              return;
-            }
-            const selectedProjectId = resolveSelectedWorkjetProjectId(
-              result.response.projects,
-              readWorkjetProjectRegistry(presentationInstanceId).selectedProjectId,
-            );
-            publish({
-              presentationInstanceId,
-              phase: "ready",
-              projects: result.response.projects,
-              selectedProjectId,
-            });
-          },
-          () => {
-            if (!cancelled) {
-              const current = readWorkjetProjectRegistry(presentationInstanceId);
-              publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
-            }
-          },
-        )
-        .finally(() => {
-          refreshing = false;
-        });
+      void refreshController.refresh();
     };
+    const unsubscribeGuest = subscribeProjectRegistryWarmGuest(
+      presentationInstanceId,
+      refresh,
+      window.desktopBridge?.ctox?.onGuestState,
+    );
     const onRequest = (event: Event) => {
       if (event instanceof CustomEvent && event.detail === presentationInstanceId) refresh();
     };
@@ -336,6 +341,8 @@ export function WorkjetProjectRegistrySynchronizer() {
     refresh();
     return () => {
       cancelled = true;
+      refreshController.cancel();
+      unsubscribeGuest();
       unsubscribeHostContext();
       window.removeEventListener("focus", refresh);
       window.removeEventListener(REFRESH_PROJECT_REGISTRY_EVENT, onRequest);

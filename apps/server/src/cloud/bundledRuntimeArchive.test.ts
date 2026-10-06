@@ -37,12 +37,15 @@ describe("bundled runtime archive diagnostics", () => {
     expect(error.message).not.toContain("untrusted");
   });
 
-  it.each([null, undefined, "secret", { code: "secret", signal: "secret", killed: "true" }, { code: Infinity, signal: "SIGTERM\nsecret" }])(
-    "does not expose malformed subprocess metadata: %j",
-    (failure) => {
-      const error = new BundledRuntimeArchiveError("extract", 180_000, failure);
-      expect(error).toMatchObject({ exitCode: null, signal: null, killed: false });
-      expect(JSON.stringify(error) + error.message).not.toContain("secret");
-    },
-  );
+  it.each([
+    null,
+    undefined,
+    "secret",
+    { code: "secret", signal: "secret", killed: "true" },
+    { code: Infinity, signal: "SIGTERM\nsecret" },
+  ])("does not expose malformed subprocess metadata: %j", (failure) => {
+    const error = new BundledRuntimeArchiveError("extract", 180_000, failure);
+    expect(error).toMatchObject({ exitCode: null, signal: null, killed: false });
+    expect(JSON.stringify(error) + error.message).not.toContain("secret");
+  });
 });

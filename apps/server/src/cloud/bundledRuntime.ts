@@ -81,7 +81,12 @@ export async function stageBundledRuntime(input: {
   if (hash.digest("hex") !== input.source.sha256) {
     throw new Error("Bundled runtime archive checksum mismatch.");
   }
-  const { stdout } = await runArchive("list", ["-tzf", archive], ARCHIVE_LIST_TIMEOUT_MS, 4 * 1024 * 1024);
+  const { stdout } = await runArchive(
+    "list",
+    ["-tzf", archive],
+    ARCHIVE_LIST_TIMEOUT_MS,
+    4 * 1024 * 1024,
+  );
   const members = stdout.trim().split("\n");
   if (
     members.length === 0 ||

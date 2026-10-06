@@ -1,4 +1,4 @@
-// Run through the shared heavy-job gate with Node24 and an explicitly built Greppy binary.
+// Run through the GPU build lane (Linux) or shared heavy-job gate (macOS) with Node24.
 // This exercises the real Workjet adapter and Greppy process against a local model fixture.
 import * as NodeAssert from "node:assert/strict";
 import * as NodeFSP from "node:fs/promises";
@@ -25,8 +25,10 @@ NodeAssert.ok(
   "Pass the absolute path to a built ACP Greppy binary.",
 );
 NodeAssert.ok(
-  process.env.TMPDIR?.startsWith("/Volumes/tmp/"),
-  "Use the shared admission gate and tmp volume.",
+  ["/Volumes/tmp/", "/mnt/nvme1/build-lane/tmp/", "/home/metricspace/build-lane/tmp/"].some(
+    (prefix) => process.env.TMPDIR?.startsWith(prefix),
+  ),
+  "Use the shared admission gate and its disposable temporary directory.",
 );
 const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "greppy-acp-acceptance-"));
 const deniedMarker = NodePath.join(root, "denied-tool.txt");

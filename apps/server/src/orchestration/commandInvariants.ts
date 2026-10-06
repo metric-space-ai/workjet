@@ -75,13 +75,15 @@ export function requireProjectAbsent(input: {
 export function requireActiveProjectWorkspaceRootAbsent(input: {
   readonly readModel: OrchestrationReadModel;
   readonly command: OrchestrationCommand;
-  readonly workspaceRoot: string;
+  readonly workspaceRoot: string | null;
   readonly exceptProjectId?: ProjectId;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
+  if (input.workspaceRoot === null) return Effect.void;
   const normalizedWorkspaceRoot = normalizeProjectPathForComparison(input.workspaceRoot);
   const existingProject = input.readModel.projects.find(
     (project) =>
       project.deletedAt === null &&
+      project.workspaceRoot !== null &&
       normalizeProjectPathForComparison(project.workspaceRoot) === normalizedWorkspaceRoot &&
       project.id !== input.exceptProjectId,
   );
@@ -120,12 +122,14 @@ export function requireThreadArchived(input: {
 }): Effect.Effect<OrchestrationThread, OrchestrationCommandInvariantError> {
   return requireThread(input).pipe(
     Effect.flatMap((thread) =>
-      thread.archivedAt !== null
+      thread.deletedAt === null && thread.archivedAt !== null
         ? Effect.succeed(thread)
         : Effect.fail(
             invariantError(
               input.command.type,
-              `Thread '${input.threadId}' is not archived for command '${input.command.type}'.`,
+              thread.deletedAt !== null
+                ? `Deleted thread '${input.threadId}' cannot handle command '${input.command.type}'.`
+                : `Thread '${input.threadId}' is not archived for command '${input.command.type}'.`,
             ),
           ),
     ),

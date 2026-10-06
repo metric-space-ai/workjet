@@ -24,7 +24,7 @@ export function WorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
       <p role="status" className="text-sm text-muted-foreground">
         {target.phase === "resolving"
           ? "Checking the active instance…"
-          : "Worker settings are unavailable for this instance and computer. Check the instance selection in Settings."}
+          : "Luma settings are unavailable for this instance and computer. Check the instance selection in Settings."}
       </p>
     );
   }
@@ -86,7 +86,7 @@ function ScopedWorkerProfilePopupEditor(props: WorkerProfilePopupEditorProps) {
             });
             if (result._tag !== "Success") {
               throw new Error(
-                "The worker could not be saved. Your draft is still here; check the connection and try again.",
+                "The Luma could not be saved. Your draft is still here; check the connection and try again.",
               );
             }
             props.onSaved(next);

@@ -23,12 +23,15 @@ import {
   MailboxToolkitRegistrationLive,
   ReplyMcpTool,
   RequestReviewMcpTool,
+  ResendReviewSignalMcpTool,
   UpdateDelegationMcpTool,
   WORKJET_REPLY_TOOL_NAME,
   WORKJET_REQUEST_REVIEW_TOOL_NAME,
+  WORKJET_RESEND_REVIEW_SIGNAL_TOOL_NAME,
   WORKJET_UPDATE_DELEGATION_TOOL_NAME,
   decodeReplyInput,
   decodeRequestReviewInput,
+  decodeResendReviewSignalInput,
   decodeUpdateDelegationInput,
 } from "./MailboxTool.ts";
 
@@ -81,6 +84,7 @@ const makeTestLayer = (
           delegateTask: () => Effect.die("delegateTask must not run"),
           reply: () => Effect.die("reply must not run"),
           requestReview: () => Effect.die("requestReview must not run"),
+          resendReviewSignal: () => Effect.die("resendReviewSignal must not run"),
           updateDelegation: () => Effect.die("updateDelegation must not run"),
           sendHandoff: () => Effect.die("sendHandoff must not run"),
           listReceivedHandoffs: () => Effect.die("listReceivedHandoffs must not run"),
@@ -124,14 +128,17 @@ const requestReviewArguments = {
   body: { _tag: "inline", text: "Ready for review." },
 } as const;
 
+const resendReviewArguments = { originalEnvelopeId: envelopeId } as const;
+
 const updateArguments = {
   delegationId,
   update: { _tag: "cancel" },
 } as const;
 
-it("declares the three tools as orchestrator-only open-world writes with bounded schemas", () => {
+it("declares the review tools as orchestrator-only open-world writes with bounded schemas", () => {
   expect(ReplyMcpTool.name).toBe(WORKJET_REPLY_TOOL_NAME);
   expect(RequestReviewMcpTool.name).toBe(WORKJET_REQUEST_REVIEW_TOOL_NAME);
+  expect(ResendReviewSignalMcpTool.name).toBe(WORKJET_RESEND_REVIEW_SIGNAL_TOOL_NAME);
   expect(UpdateDelegationMcpTool.name).toBe(WORKJET_UPDATE_DELEGATION_TOOL_NAME);
   for (const tool of [ReplyMcpTool, RequestReviewMcpTool, UpdateDelegationMcpTool]) {
     expect(Context.get(tool.annotations, Tool.Readonly)).toBe(false);
@@ -143,6 +150,13 @@ it("declares the three tools as orchestrator-only open-world writes with bounded
   // A reply changes no lifecycle; updating a delegation is destructive.
   expect(Context.get(ReplyMcpTool.annotations, Tool.Destructive)).toBe(false);
   expect(Context.get(UpdateDelegationMcpTool.annotations, Tool.Destructive)).toBe(true);
+  expect(Context.get(ResendReviewSignalMcpTool.annotations, Tool.Idempotent)).toBe(true);
+  expect(Context.get(ResendReviewSignalMcpTool.annotations, Tool.Readonly)).toBe(false);
+  expect(Context.get(ResendReviewSignalMcpTool.annotations, Tool.OpenWorld)).toBe(true);
+  expect(
+    (Tool.getJsonSchema(ResendReviewSignalMcpTool) as { additionalProperties?: boolean })
+      .additionalProperties,
+  ).toBe(false);
 });
 
 it.effect("rejects unknown keys, blank prose, and out-of-range bounds on every tool", () =>
@@ -168,6 +182,11 @@ it.effect("rejects unknown keys, blank prose, and out-of-range bounds on every t
         McpSchema.InvalidParams,
       );
     }
+    expect(
+      yield* decodeResendReviewSignalInput({ ...resendReviewArguments, unknown: true }).pipe(
+        Effect.flip,
+      ),
+    ).toBeInstanceOf(McpSchema.InvalidParams);
 
     const invalidUpdates = [
       { delegationId, update: { _tag: "unknown-op" } },
@@ -186,6 +205,7 @@ it.effect("rejects unknown keys, blank prose, and out-of-range bounds on every t
 it.effect("denies every tool for a non-orchestrator scope without touching delivery", () => {
   const reply = vi.fn(() => Effect.die("reply must not run"));
   const requestReview = vi.fn(() => Effect.die("requestReview must not run"));
+  const resendReviewSignal = vi.fn(() => Effect.die("resendReviewSignal must not run"));
   const updateDelegation = vi.fn(() => Effect.die("updateDelegation must not run"));
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -197,6 +217,7 @@ it.effect("denies every tool for a non-orchestrator scope without touching deliv
       for (const call of [
         { name: WORKJET_REPLY_TOOL_NAME, arguments: replyArguments },
         { name: WORKJET_REQUEST_REVIEW_TOOL_NAME, arguments: requestReviewArguments },
+        { name: WORKJET_RESEND_REVIEW_SIGNAL_TOOL_NAME, arguments: resendReviewArguments },
         { name: WORKJET_UPDATE_DELEGATION_TOOL_NAME, arguments: updateArguments },
       ]) {
         const result = yield* server
@@ -213,12 +234,14 @@ it.effect("denies every tool for a non-orchestrator scope without touching deliv
     }
     expect(reply).not.toHaveBeenCalled();
     expect(requestReview).not.toHaveBeenCalled();
+    expect(resendReviewSignal).not.toHaveBeenCalled();
     expect(updateDelegation).not.toHaveBeenCalled();
   }).pipe(
     Effect.provide(
       makeTestLayer({
         reply,
         requestReview,
+        resendReviewSignal,
         updateDelegation,
       } as unknown as Partial<WorkjetMailboxDelivery.WorkjetMailboxDeliveryShape>),
     ),
@@ -315,6 +338,42 @@ it.effect("returns the delegation state, reviews edge, and receipt for a review 
       } as unknown as Partial<WorkjetMailboxDelivery.WorkjetMailboxDeliveryShape>),
     ),
   );
+});
+
+it.effect("returns the stable fresh review signal identity without echoing its body", () => {
+  const freshId = WorkjetEnvelopeId.make("wjm-review-resend-00000000-0000-4000-8000-000000000001");
+  const resendReviewSignal = vi.fn(
+    (
+      _invocation: WorkjetMailboxDelivery.WorkjetMailboxSenderScope,
+      input: WorkjetMailboxDelivery.WorkjetMailboxResendReviewSignalInput,
+    ) => {
+      expect(input.originalEnvelopeId).toBe(envelopeId);
+      return Effect.succeed({
+        status: "queued" as const,
+        originalEnvelopeId: envelopeId,
+        envelopeId: freshId,
+        delegationId,
+      });
+    },
+  );
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({ name: WORKJET_RESEND_REVIEW_SIGNAL_TOOL_NAME, arguments: resendReviewArguments })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, orchestrator),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(result.isError).toBe(false);
+    expect(result.structuredContent).toEqual({
+      schemaVersion: 1,
+      status: "queued",
+      originalEnvelopeId: envelopeId,
+      envelopeId: freshId,
+      delegationId,
+    });
+    expect(resendReviewSignal).toHaveBeenCalledOnce();
+  }).pipe(Effect.provide(makeTestLayer({ resendReviewSignal })));
 });
 
 it.effect("returns the post-operation state and edge kind for a delegation update", () => {

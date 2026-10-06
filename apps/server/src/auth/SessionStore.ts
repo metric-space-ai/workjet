@@ -41,6 +41,8 @@ export interface IssuedSession {
 }
 
 export interface VerifiedSession {
+  /** Signed local Desktop enrollment authority; never inferred from a display label. */
+  readonly localDesktopEnvironmentId?: string;
   readonly sessionId: AuthSessionId;
   readonly token: string;
   readonly method: ServerAuthSessionMethod;
@@ -361,6 +363,7 @@ export class SessionStore extends Context.Service<
     readonly cookieName: string;
     readonly issue: (input?: {
       readonly ttl?: Duration.Duration;
+      readonly localDesktopEnvironmentId?: string;
       readonly subject?: string;
       readonly method?: ServerAuthSessionMethod;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
@@ -372,6 +375,7 @@ export class SessionStore extends Context.Service<
       sessionId: AuthSessionId,
       input?: {
         readonly ttl?: Duration.Duration;
+        readonly localDesktopEnvironmentId?: string;
       },
     ) => Effect.Effect<
       {
@@ -406,6 +410,7 @@ const DEFAULT_WEBSOCKET_TOKEN_TTL = Duration.minutes(5);
 const SessionClaims = Schema.Struct({
   v: Schema.Literal(1),
   kind: Schema.Literal("session"),
+  localDesktopEnvironmentId: Schema.optionalKey(Schema.String),
   sid: AuthSessionId,
   sub: Schema.String,
   scopes: AuthEnvironmentScopes,
@@ -419,6 +424,7 @@ type SessionClaims = typeof SessionClaims.Type;
 const WebSocketClaims = Schema.Struct({
   v: Schema.Literal(1),
   kind: Schema.Literal("websocket"),
+  localDesktopEnvironmentId: Schema.optionalKey(Schema.String),
   sid: AuthSessionId,
   iat: Schema.Number,
   exp: Schema.Number,
@@ -589,6 +595,9 @@ export const make = Effect.gen(function* () {
         sub: input?.subject ?? "browser",
         scopes: input?.scopes ?? AuthStandardClientScopes,
         method: input?.method ?? "browser-session-cookie",
+        ...(input?.localDesktopEnvironmentId === undefined
+          ? {}
+          : { localDesktopEnvironmentId: input.localDesktopEnvironmentId }),
         ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
         iat: issuedAt.epochMilliseconds,
         exp: expiresAt.epochMilliseconds,
@@ -712,6 +721,9 @@ export const make = Effect.gen(function* () {
         subject: claims.sub,
         scopes: claims.scopes,
         ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
+        ...(claims.localDesktopEnvironmentId === undefined
+          ? {}
+          : { localDesktopEnvironmentId: claims.localDesktopEnvironmentId }),
       } satisfies VerifiedSession;
     },
   );
@@ -728,6 +740,9 @@ export const make = Effect.gen(function* () {
       v: 1,
       kind: "websocket",
       sid: sessionId,
+      ...(input?.localDesktopEnvironmentId === undefined
+        ? {}
+        : { localDesktopEnvironmentId: input.localDesktopEnvironmentId }),
       iat: issuedAt.epochMilliseconds,
       exp: expiresAt.epochMilliseconds,
     };
@@ -817,6 +832,9 @@ export const make = Effect.gen(function* () {
       expiresAt: row.value.expiresAt,
       subject: row.value.subject,
       scopes: row.value.scopes,
+      ...(claims.localDesktopEnvironmentId === undefined
+        ? {}
+        : { localDesktopEnvironmentId: claims.localDesktopEnvironmentId }),
     } satisfies VerifiedSession;
   });
 

@@ -1,7 +1,10 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as NodeTimersPromises from "node:timers/promises";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -56,6 +59,8 @@ export interface DesktopProtocolRegistrationInput {
   readonly targetOrigin: URL;
   readonly backendOrigin: URL;
   readonly clerkFrontendApiHostname: string | undefined;
+  /** Trusted shipped UI assets, independent of local service installation. */
+  readonly bundledRendererRoot?: string;
 }
 
 export class ElectronProtocol extends Context.Service<
@@ -178,6 +183,101 @@ async function proxyRequest(
 
 const TRANSIENT_FETCH_RETRY_DELAYS_MS = [0, 50, 150] as const;
 
+const RENDERER_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".wasm": "application/wasm",
+};
+
+const serveBundledRenderer = Effect.fn("desktop.electron.protocol.serveBundledRenderer")(
+  function* (
+    request: Request,
+    root: string,
+    contentSecurityPolicy: string,
+    fs: FileSystem.FileSystem,
+    path: Path.Path,
+  ) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+    }
+    const decodedPath = yield* Effect.try(() =>
+      decodeURIComponent(new URL(request.url).pathname),
+    ).pipe(Effect.option);
+    if (Option.isNone(decodedPath)) {
+      return new Response(null, { status: 400 });
+    }
+    const pathname = decodedPath.value;
+    if (
+      pathname.includes("\\") ||
+      pathname.includes("\0") ||
+      pathname.split("/").some((segment) => segment === ".." || segment === ".")
+    ) {
+      return new Response(null, { status: 400 });
+    }
+    const relativePath = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+    const realRoot = yield* fs.realPath(root);
+    const filePath = yield* fs.realPath(path.resolve(realRoot, relativePath));
+    const relative = path.relative(realRoot, filePath);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      return new Response(null, { status: 403 });
+    }
+    if ((yield* fs.stat(filePath)).type !== "File") {
+      return new Response(null, { status: 404 });
+    }
+    const data = yield* fs.readFile(filePath);
+    return withContentSecurityPolicy(
+      new Response(request.method === "HEAD" ? null : new Uint8Array(data), {
+        headers: {
+          "Content-Type":
+            RENDERER_CONTENT_TYPES[path.extname(filePath)] ?? "application/octet-stream",
+          "Content-Length": String(data.byteLength),
+          "Cache-Control": "no-cache",
+          "X-Content-Type-Options": "nosniff",
+        },
+      }),
+      contentSecurityPolicy,
+    );
+  },
+  Effect.orElseSucceed(() => new Response(null, { status: 404 })),
+);
+
+function handleDesktopRequest(
+  request: Request,
+  input: DesktopProtocolRegistrationInput,
+  contentSecurityPolicy: string,
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.host !== DESKTOP_HOST) return Promise.resolve(new Response(null, { status: 404 }));
+  // Runtime APIs remain authenticated server requests. Only shipped static UI
+  // files are served from disk; data endpoints never receive a SPA fallback.
+  const isRuntimeRequest =
+    url.pathname === "/api" ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname === "/.well-known" ||
+    url.pathname.startsWith("/.well-known/");
+  if (input.bundledRendererRoot !== undefined && !isRuntimeRequest) {
+    // Missing UI assets never fall back to a remote response or index.html.
+    return Effect.runPromise(
+      serveBundledRenderer(request, input.bundledRendererRoot, contentSecurityPolicy, fs, path),
+    );
+  }
+  return proxyRequest(request, input.targetOrigin, contentSecurityPolicy);
+}
+
 async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<Response> {
   let lastError: unknown;
 
@@ -197,6 +297,8 @@ async function fetchWithTransientRetry(url: string, init: RequestInit): Promise<
 }
 
 export const make = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const registered = yield* Ref.make(false);
 
   const registerDesktopProtocol = Effect.fn("desktop.electron.protocol.registerDesktopProtocol")(
@@ -209,7 +311,7 @@ export const make = Effect.gen(function* () {
         Effect.try({
           try: () => {
             Electron.protocol.handle(input.scheme, (request) =>
-              proxyRequest(request, input.targetOrigin, contentSecurityPolicy),
+              handleDesktopRequest(request, input, contentSecurityPolicy, fs, path),
             );
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),

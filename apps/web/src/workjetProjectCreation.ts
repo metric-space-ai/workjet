@@ -41,9 +41,7 @@ export interface WorkjetProjectCreationOptions {
   readonly onPhase?: (phase: WorkjetProjectCreationPhase) => void;
 }
 
-export function workjetProjectCreationFailureMessage(
-  code: Extract<WorkjetProjectCreationOutcome, { readonly _tag: "failed" }>["code"],
-): string {
+export function workjetProjectCreationFailureMessage(code: string): string {
   switch (code) {
     case "authentication_required":
       return "Sign in to the selected instance to add this project.";
@@ -54,7 +52,9 @@ export function workjetProjectCreationFailureMessage(
     case "launch_failed":
       return "Workjet could not start the connection to the selected CTOX instance. Check its status in Settings, then retry.";
     case "timeout":
-      return "The selected instance did not respond within 30 seconds. Open Business OS to check its connection, then retry.";
+      return "The selected instance did not acknowledge synchronization. The project remains saved locally.";
+    case "local_computer_unregistered":
+      return "Register this computer before synchronizing its working copy.";
     default:
       return "CTOX did not confirm the project. You can retry without reopening this dialog.";
   }

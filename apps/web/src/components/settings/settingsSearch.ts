@@ -16,6 +16,7 @@ export interface SettingsSearchItem {
   readonly title: string;
   readonly to: SettingsPath;
   readonly targetId?: string;
+  readonly searchAliases?: ReadonlyArray<string>;
 }
 
 /**
@@ -23,7 +24,7 @@ export interface SettingsSearchItem {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/business-os": "Instanzen",
+  "/settings/business-os": "Instances",
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
@@ -32,7 +33,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/computers": "Computers",
   // Worker composition sits beside the pages it references (Models,
   // Computers, Harnesses); Source Control follows the workflow pages.
-  "/settings/workjet": "Worker",
+  "/settings/workjet": "Lumas",
   "/settings/source-control": "Source Control",
   "/settings/diagnostics": "Diagnostics",
   "/settings/archived": "Archive",
@@ -185,11 +186,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
-    id: "keybindings",
-    title: "Keybindings",
-    to: "/settings/keybindings",
-  },
-  {
     id: "harnesses",
     title: "Harnesses",
     to: "/settings/harnesses",
@@ -201,9 +197,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "workjet-workers",
-    // Singular on purpose: it must title-match the page entry so the search
-    // dedupe collapses both into one result (Befund K-A12).
-    title: "Worker",
+    // Match the page title to keep one result, while preserving old search vocabulary.
+    title: "Lumas",
+    searchAliases: ["worker", "workers", "agent", "agents"],
     to: "/settings/workjet",
   },
   {
@@ -305,7 +301,9 @@ function normalizeSearchText(value: string): string {
  */
 const SETTINGS_PAGE_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = (
   Object.entries(SETTINGS_SECTION_LABELS) as ReadonlyArray<[SettingsPath, string]>
-).map(([path, label]) => ({ id: path, title: label, to: path }));
+)
+  .filter(([path]) => path !== "/settings/keybindings")
+  .map(([path, label]) => ({ id: path, title: label, to: path }));
 
 export function searchSettings(
   query: string,
@@ -314,7 +312,13 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  const matches = items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  const matches = items.filter(
+    (item) =>
+      item.to !== "/settings/keybindings" &&
+      [item.title, ...(item.searchAliases ?? [])].some((label) =>
+        normalizeSearchText(label).includes(normalizedQuery),
+      ),
+  );
   // Page results lead, minus pages an equally titled item already represents
   // (e.g. the "Computers" catalog entry that lands on /settings/computers).
   const pageMatches = SETTINGS_PAGE_SEARCH_ITEMS.filter(

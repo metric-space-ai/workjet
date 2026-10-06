@@ -178,6 +178,10 @@ describe("CTOX renderer contracts", () => {
       managedFailureCode: "network_error",
     });
     expect(decodeDiscovery({ _tag: "signed_out" })).toEqual({ _tag: "signed_out" });
+    expect(decodeDiscovery({ _tag: "signed_out", pairedUnavailable: true })).toEqual({
+      _tag: "signed_out",
+      pairedUnavailable: true,
+    });
     expect(decodeDiscovery({ _tag: "failed", code: "http_error", httpStatus: 503 })).toEqual({
       _tag: "failed",
       code: "http_error",

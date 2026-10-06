@@ -1,6 +1,10 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as Layer from "effect/Layer";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { beforeEach, vi } from "vite-plus/test";
 
 const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
@@ -15,6 +19,24 @@ vi.mock("electron", () => ({
 }));
 
 import * as ElectronProtocol from "./ElectronProtocol.ts";
+
+const testLayer = Layer.merge(
+  ElectronProtocol.layer.pipe(Layer.provide(NodeServices.layer)),
+  NodeServices.layer,
+);
+
+const bundledRendererFixture = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const directory = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-renderer-" });
+  const root = path.join(directory, "client");
+  yield* fs.makeDirectory(path.join(root, "assets"), { recursive: true });
+  yield* fs.writeFileString(path.join(root, "index.html"), "<main>Local shell</main>");
+  yield* fs.writeFileString(path.join(root, "assets/app.js"), "window.localShell = true;");
+  yield* fs.writeFileString(path.join(directory, "outside.txt"), "private");
+  yield* fs.symlink(path.join(directory, "outside.txt"), path.join(root, "escape.txt"));
+  return { root };
+});
 
 describe("ElectronProtocol", () => {
   beforeEach(() => {
@@ -85,7 +107,89 @@ describe("ElectronProtocol", () => {
       assert.isNull(forwardedHeaders.get("referer"));
       assert.isNull(forwardedHeaders.get("sec-fetch-site"));
       assert.deepEqual(unhandleMock.mock.calls, [["workjet-dev"]]);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("loads shipped UI and assets while the local service is unavailable", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { root } = yield* bundledRendererFixture;
+        let handler: ((request: Request) => Promise<Response>) | undefined;
+        handleMock.mockImplementation((_scheme, nextHandler) => {
+          handler = nextHandler;
+        });
+        netFetchMock.mockRejectedValue(new Error("local service has not been installed"));
+        const protocol = yield* ElectronProtocol.ElectronProtocol;
+        yield* protocol.registerDesktopProtocol({
+          scheme: "workjet",
+          targetOrigin: new URL("http://127.0.0.1:3773/"),
+          backendOrigin: new URL("http://127.0.0.1:3773/"),
+          clerkFrontendApiHostname: undefined,
+          bundledRendererRoot: root,
+        });
+        const page = yield* Effect.promise(() => handler!(new Request("workjet://app/")));
+        assert.equal(yield* Effect.promise(() => page.text()), "<main>Local shell</main>");
+        assert.equal(page.headers.get("content-type"), "text/html; charset=utf-8");
+        assert.include(page.headers.get("content-security-policy") ?? "", "default-src 'self'");
+        const script = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/assets/app.js?v=1")),
+        );
+        assert.equal(yield* Effect.promise(() => script.text()), "window.localShell = true;");
+        assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
+        const head = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/assets/app.js", { method: "HEAD" })),
+        );
+        assert.equal(yield* Effect.promise(() => head.text()), "");
+        assert.equal(head.headers.get("content-length"), "25");
+        assert.equal(netFetchMock.mock.calls.length, 0);
+      }),
+    ).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect("confines static reads and keeps server APIs out of the UI fallback", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { root } = yield* bundledRendererFixture;
+        let handler: ((request: Request) => Promise<Response>) | undefined;
+        handleMock.mockImplementation((_scheme, nextHandler) => {
+          handler = nextHandler;
+        });
+        const protocol = yield* ElectronProtocol.ElectronProtocol;
+        yield* protocol.registerDesktopProtocol({
+          scheme: "workjet",
+          targetOrigin: new URL("http://127.0.0.1:3773/"),
+          backendOrigin: new URL("http://127.0.0.1:3773/"),
+          clerkFrontendApiHostname: undefined,
+          bundledRendererRoot: root,
+        });
+        for (const [url, status] of [
+          ["workjet://other/", 404],
+          ["workjet://app/%2e%2e%2foutside.txt", 400],
+          ["workjet://app/assets%5c..%5coutside.txt", 400],
+          ["workjet://app/%00", 400],
+          ["workjet://app/%ZZ", 400],
+          ["workjet://app/escape.txt", 403],
+          ["workjet://app/assets/missing.js", 404],
+          ["workjet://app/unknown-route", 404],
+        ] as const) {
+          const response = yield* Effect.promise(() => handler!(new Request(url)));
+          assert.equal(response.status, status, url);
+          assert.equal(yield* Effect.promise(() => response.text()), "");
+        }
+        const mutation = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/index.html", { method: "POST", body: "change" })),
+        );
+        assert.equal(mutation.status, 405);
+        assert.equal(netFetchMock.mock.calls.length, 0);
+        netFetchMock.mockResolvedValue(new Response("authentication required", { status: 401 }));
+        const api = yield* Effect.promise(() =>
+          handler!(new Request("workjet://app/api/auth/session")),
+        );
+        assert.equal(api.status, 401);
+        assert.equal(yield* Effect.promise(() => api.text()), "authentication required");
+        assert.equal(netFetchMock.mock.calls[0]?.[0], "http://127.0.0.1:3773/api/auth/session");
+      }),
+    ).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("rejects custom protocol requests for another host", () =>
@@ -110,7 +214,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(response.status, 404);
       assert.equal(netFetchMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("retries transient renderer target failures", () =>
@@ -138,7 +242,7 @@ describe("ElectronProtocol", () => {
 
       assert.equal(yield* Effect.promise(() => response.text()), "ready");
       assert.equal(netFetchMock.mock.calls.length, 2);
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("preserves protocol registration failures", () =>
@@ -162,7 +266,7 @@ describe("ElectronProtocol", () => {
       assert.equal(error.scheme, "workjet-dev");
       assert.strictEqual(error.cause, cause);
       assert.equal(error.message, 'Failed to register Electron protocol scheme "workjet-dev".');
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("preserves protocol unregistration failures", () =>
@@ -192,7 +296,7 @@ describe("ElectronProtocol", () => {
         assert.strictEqual(error.cause, cause);
         assert.equal(error.message, 'Failed to unregister Electron protocol scheme "workjet".');
       }
-    }).pipe(Effect.provide(ElectronProtocol.layer)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it("keeps executable sources host-restricted while allowing runtime network resources", () => {

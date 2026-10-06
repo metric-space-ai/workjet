@@ -436,6 +436,49 @@ describe("EnvironmentSupervisor", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("withholds HTTP and RPC connections until initial identity verification succeeds", () =>
+    Effect.forEach(
+      [true, false],
+      (accepted) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const ready = yield* Deferred.make<void, ConnectionBlockedError>();
+            const harness = yield* makeHarness({ ready: () => Deferred.await(ready) });
+            const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+              initiallyDesired: true,
+            }).pipe(Effect.provide(harness.dependencies));
+            yield* awaitState(
+              supervisor.state,
+              (state) => state.phase === "connecting" && state.stage === "synchronizing",
+            );
+            expect(Option.isNone(yield* SubscriptionRef.get(supervisor.prepared))).toBe(true);
+            expect(Option.isNone(yield* SubscriptionRef.get(supervisor.session))).toBe(true);
+            if (accepted) {
+              yield* Deferred.succeed(ready, undefined);
+              yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+              expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared))).toEqual(
+                PREPARED_CONNECTION,
+              );
+              expect(Option.isSome(yield* SubscriptionRef.get(supervisor.session))).toBe(true);
+            } else {
+              yield* Deferred.fail(
+                ready,
+                new ConnectionBlockedError({
+                  reason: "configuration",
+                  detail: "Authenticated environment differs from the saved target.",
+                }),
+              );
+              yield* awaitState(supervisor.state, (state) => state.phase === "blocked");
+              expect(Option.isNone(yield* SubscriptionRef.get(supervisor.prepared))).toBe(true);
+              expect(Option.isNone(yield* SubscriptionRef.get(supervisor.session))).toBe(true);
+              expect(yield* Ref.get(harness.releaseCount)).toBe(1);
+            }
+          }),
+        ),
+      { discard: true },
+    ),
+  );
+
   it.effect("interrupts and releases a connection attempt when setup times out", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

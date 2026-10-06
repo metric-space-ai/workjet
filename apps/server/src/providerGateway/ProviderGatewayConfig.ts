@@ -295,6 +295,24 @@ const parseCommonAccountFields = (
 
 const API_KEY_ACCOUNT_KEYS = ["apiKeySecret", "upstreamBaseUrl", "credentialSuffix"] as const;
 
+/** Plain HTTP is accepted only for an explicitly configured local API endpoint. */
+const isApiKeyUpstreamUrl = (value: string): boolean => {
+  if (value.startsWith("https://")) return true;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "http:" &&
+      ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
+    );
+  } catch {
+    return false;
+  }
+};
+
 /**
  * An API-key account decodes only when it carries a secret REFERENCE and no
  * OAuth token reference at all. A record with a literal key field, or with a
@@ -315,7 +333,7 @@ const parseApiKeyAccount = (
     common === undefined ||
     apiKeySecret === undefined ||
     (value.upstreamBaseUrl !== undefined &&
-      (upstreamBaseUrl === undefined || !upstreamBaseUrl.startsWith("https://"))) ||
+      (upstreamBaseUrl === undefined || !isApiKeyUpstreamUrl(upstreamBaseUrl))) ||
     (suffix !== undefined &&
       (typeof suffix !== "string" ||
         suffix.length === 0 ||
@@ -599,13 +617,9 @@ export const decodeProviderGatewayConfiguration = (
   const accounts = value.accounts.map(parseAccount);
   if (accounts.some((account) => account === undefined)) return undefined;
   const typedAccounts = accounts as ReadonlyArray<GatewayAccount>;
-  // An empty account list is a valid bootstrap state: the host starts with
-  // only the management/OAuth surface so the first login can happen at all.
-  if (
-    !unique(typedAccounts.map((account) => account.id)) ||
-    (typedAccounts.length > 0 &&
-      !typedAccounts.some((account) => account.enabled && account.provider === defaultProvider))
-  ) {
+  // Empty and all-disabled account lists keep the management/OAuth surface
+  // available. An enabled provider is selected as fallback when possible.
+  if (!unique(typedAccounts.map((account) => account.id))) {
     return undefined;
   }
   const pools = parsePools(value.pools ?? [], typedAccounts);
@@ -629,7 +643,13 @@ export const decodeProviderGatewayConfiguration = (
   }
   return {
     schemaVersion: 1,
-    defaultProvider,
+    defaultProvider: typedAccounts.some(
+      (account) => account.enabled && account.provider === defaultProvider,
+    )
+      ? defaultProvider
+      : ([...typedAccounts]
+          .filter((account) => account.enabled)
+          .sort((a, b) => a.id.localeCompare(b.id))[0]?.provider ?? defaultProvider),
     accounts: typedAccounts,
     pools,
     routes,
@@ -661,44 +681,37 @@ export const accountSecretReferences = (
  * accounts. Nothing here is a preference: every flag mirrors a decision the
  * host's own selection code makes.
  *
- * - OAuth pools (`claude`, `codex`, `antigravity`) run the configured strategy
- *   through `AccountRouter`, and their scheduler keeps only the highest-priority
- *   available candidates (`retain_highest_priority`), so a lower-priority
- *   account is never selected while a higher-priority one is usable.
- * - API-key pools (`zai`, `minimax`, `xai`, `kimi`) use `ApiKeyAccountPool`,
- *   which sorts by priority and then round-robins across the WHOLE eligible
- *   list. It reads neither `weight` nor the configured strategy, so both are
- *   reported as not honoured rather than displayed as if they mattered.
+ * The host attaches its fixed AccountState policy to OAuth and API-key pools.
+ * Session affinity and applicable quota resets decide the request's account;
+ * priority breaks ties. Legacy weights and strategies remain readable for
+ * configuration compatibility and do not exclude an enabled account.
+ * Runtime health owns model eligibility, authentication and limit evidence;
+ * this configuration projection cannot predict a request's winner.
  */
 export const providerPools = (
   configuration: ProviderGatewayConfiguration,
 ): ReadonlyArray<WorkjetGatewayProviderPool> => {
-  const strategy = configuration.routingStrategy;
+  const strategy = WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY;
   return PROVIDERS.flatMap((poolProvider) => {
     const accounts = configuration.accounts.filter((account) => account.provider === poolProvider);
     if (accounts.length === 0) return [];
-    const apiKeyPool = isApiKeyProvider(poolProvider);
-    const weightHonored = !apiKeyPool && strategy === "weighted-round-robin";
-    const priorityExclusive = !apiKeyPool;
-    const eligible = accounts.filter(
-      (account) => account.enabled && (!weightHonored || account.weight > 0),
-    );
-    const bestPriority = eligible.reduce<number | undefined>(
-      (best, account) => (best === undefined ? account.priority : Math.max(best, account.priority)),
-      undefined,
-    );
     const members: ReadonlyArray<WorkjetGatewayPoolMember> = accounts.map((account) => ({
       accountId: WorkjetGatewayAccountId.make(account.id),
       label: account.label,
       enabled: account.enabled,
       priority: account.priority,
       weight: account.weight,
-      selectable:
-        account.enabled &&
-        (!weightHonored || account.weight > 0) &&
-        (!priorityExclusive || account.priority === bestPriority),
+      selectable: account.enabled,
     }));
-    return [{ provider: poolProvider, strategy, weightHonored, priorityExclusive, members }];
+    return [
+      {
+        provider: poolProvider,
+        strategy,
+        weightHonored: false,
+        priorityExclusive: false,
+        members,
+      },
+    ];
   });
 };
 
@@ -715,6 +728,7 @@ export const gatewayCatalog = (
     modelIds: account.models,
     // The only credential-derived value any read route carries.
     credentialSuffix: isApiKeyAccount(account) ? (account.credentialSuffix ?? null) : null,
+    credentialKind: isApiKeyAccount(account) ? "api-key" : "oauth",
   }));
   const modelMap = new Map<
     string,
@@ -743,7 +757,7 @@ export const gatewayCatalog = (
     pools: configuration.pools,
     routes: configuration.routes,
     models,
-    routingStrategy: configuration.routingStrategy,
+    routingStrategy: WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
     providerPools: providerPools(configuration),
   };
 };
@@ -765,13 +779,15 @@ export const rustHostConfiguration = (
     : {}),
   // A bootstrap host with zero accounts must not name a default provider; the
   // host rejects that combination.
-  ...(configuration.accounts.length > 0 ? { defaultProvider: configuration.defaultProvider } : {}),
+  ...(configuration.accounts.some((account) => account.enabled)
+    ? { defaultProvider: configuration.defaultProvider }
+    : {}),
   runtime: {
     request_timeout_ms: 30_000,
-    // The host's own kebab-case `SchedulerStrategy` values; the configured
-    // value is passed through unchanged so a weighted pool is actually
-    // weighted rather than silently round-robined.
-    routing_strategy: configuration.routingStrategy,
+    // AccountState owns affinity and reset-aware selection for every provider.
+    // Keep fallback selection deterministic even for an old round-robin or
+    // weighted configuration; the Models menu has one fixed setup.
+    routing_strategy: WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
     claude_accounts: configuration.accounts
       .filter((account): account is ClaudeGatewayAccount => account.provider === "claude")
       .map((account) => ({

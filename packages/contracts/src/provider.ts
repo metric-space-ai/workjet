@@ -5,6 +5,7 @@ import {
   ApprovalRequestId,
   EventId,
   IsoDateTime,
+  MessageId,
   ProviderItemId,
   ThreadId,
   TurnId,
@@ -60,6 +61,8 @@ export const ProviderSessionStartInput = Schema.Struct({
   cwd: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   resumeCursor: Schema.optional(Schema.Unknown),
+  /** A claimed native attempt must fail rather than start a new conversation. */
+  resumePolicy: Schema.optional(Schema.Literal("require-existing")),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,
@@ -72,12 +75,22 @@ export type ProviderSessionStartInput = Omit<DecodedProviderSessionStartInput, "
   readonly workjetConfig?: WorkjetThreadConfig;
 };
 
+export const ProviderImportedMessage = Schema.Struct({
+  id: MessageId,
+  role: Schema.Literals(["user", "assistant"]),
+  text: Schema.String,
+});
+export type ProviderImportedMessage = typeof ProviderImportedMessage.Type;
+
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
   // Identity of the persisted turn-start intent, not an HTTP request or a new
   // random id on each retry. Native task adapters require this for durable
   // dispatch. Optional for existing direct callers and non-native harnesses.
   requestId: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(512))),
+  // Archived messages only; the provider acknowledges their stable ids before a turn.
+  importedHistory: Schema.optional(Schema.Array(ProviderImportedMessage)),
+
   input: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
   ),

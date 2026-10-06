@@ -9,7 +9,7 @@
  * process, so a routed session is just a session whose env carries the
  * gateway's loopback base URL.
  *
- * Four harnesses are routable, each through a mechanism verified against the
+ * Five harnesses are routable, each through a mechanism verified against the
  * installed CLI rather than assumed from its documentation:
  *   - claudeAgent  `ANTHROPIC_BASE_URL` (bare root; the CLI appends `/v1/...`)
  *   - codex        dotted `-c model_providers.*` launch args, because
@@ -17,6 +17,8 @@
  *   - grok         `GROK_MODELS_BASE_URL` (`/v1`-prefixed)
  *   - opencode     `ANTHROPIC_BASE_URL` + `OPENAI_BASE_URL` (`/v1`-prefixed),
  *                  read by the AI-SDK provider packages inside `opencode serve`
+ *   - greppy       `GREPPY_ENDPOINT` (bare root; Greppy appends `/v1/messages`
+ *                  and `/v1/models`). Plain HTTP only. No custom-header mechanism.
  *
  * Precedence (lowest to highest):
  *   1. `process.env` of the server
@@ -118,7 +120,13 @@ export const GATEWAY_CODEX_LAUNCH_ARGS_ENV = "WORKJET_CODEX_LAUNCH_ARGS";
  * CLI. Anything absent here is intentionally left unrouted rather than
  * routed with guessed variables.
  */
-export const GATEWAY_ROUTABLE_DRIVERS = ["claudeAgent", "codex", "grok", "opencode"] as const;
+export const GATEWAY_ROUTABLE_DRIVERS = [
+  "claudeAgent",
+  "codex",
+  "grok",
+  "opencode",
+  "greppy",
+] as const;
 export type GatewayRoutableDriver = (typeof GATEWAY_ROUTABLE_DRIVERS)[number];
 
 export function isGatewayRoutableDriver(driver: string): driver is GatewayRoutableDriver {
@@ -146,10 +154,11 @@ export const GATEWAY_CLAUDE_CUSTOM_HEADERS_ENV = "ANTHROPIC_CUSTOM_HEADERS";
  *                  0.144.1: the probe saw `x-ctox-provider` on
  *                  `GET /v1/models` and `POST /v1/responses`)
  *
- * Grok and OpenCode are deliberately absent. Grok does support per-header
+ * Grok, OpenCode, and Greppy are deliberately absent. Grok does support per-header
  * configuration, but only as `extra_headers`/`env_http_headers` inside
  * `config.toml`, which Workjet does not author; OpenCode's AI-SDK providers
- * expose no header environment variable at all. For those two the model is
+ * expose no header environment variable at all. Greppy likewise has no
+ * custom-header environment variable. For those three the model is
  * still resolved for reporting, but the session is NOT failed on a resolution
  * error and no header is written — inventing one the request never carries
  * would be a lie in the environment, and failing would regress routing that
@@ -178,11 +187,12 @@ export function normalizeGatewayBaseUrl(providerEndpoint: string): string {
  * The gateway's `/v1` prefix, as every client that joins bare route names
  * onto a base URL needs it.
  *
- * Claude Code is the exception: it appends `/v1/messages` itself, so it gets
- * {@link normalizeGatewayBaseUrl} instead. Codex, Grok, and OpenCode all join
- * `/responses`, `/models`, or `/messages` directly and therefore need the
- * prefix baked into the base URL. Kept as one function so the gateway's route
- * layout is stated in a single place rather than re-spelled per driver.
+ * Claude Code and Greppy are the exceptions: each appends `/v1/...` itself,
+ * so each gets {@link normalizeGatewayBaseUrl} instead. Codex, Grok, and
+ * OpenCode all join `/responses`, `/models`, or `/messages` directly and
+ * therefore need the prefix baked into the base URL. Kept as one function so
+ * the gateway's route layout is stated in a single place rather than
+ * re-spelled per driver.
  */
 export function gatewayVersionedBaseUrl(providerEndpoint: string): string {
   return `${normalizeGatewayBaseUrl(providerEndpoint)}/v1`;
@@ -265,6 +275,15 @@ export function gatewayRoutingEnvironmentOverlay(input: {
       return {
         [GATEWAY_GROK_BASE_URL_ENV]: versionedBaseUrl,
         [GATEWAY_GROK_API_KEY_ENV]: GATEWAY_PLACEHOLDER_API_KEY,
+      };
+
+    case "greppy":
+      // Greppy joins `/v1/messages` and `/v1/models` onto the bare root.
+      // It has no custom-header variable, so the gateway's default provider
+      // is the one a routed session can reach.
+      return {
+        GREPPY_ENDPOINT: baseUrl,
+        GREPPY_API_KEY: GATEWAY_PLACEHOLDER_API_KEY,
       };
 
     case "opencode":
@@ -454,6 +473,19 @@ export const resolveGatewayRoutedEnvironment = Effect.fn("resolveGatewayRoutedEn
         reason: "endpoint-unavailable",
         detail:
           "The Workjet provider gateway reported ready without a provider endpoint. Restart the gateway.",
+      });
+    }
+
+    if (
+      input.driver === "greppy" &&
+      !normalizeGatewayBaseUrl(providerEndpoint).startsWith("http://")
+    ) {
+      return yield* new ProviderGatewayRoutingError({
+        provider: input.driver,
+        instanceId: input.instanceId,
+        reason: "endpoint-unavailable",
+        detail:
+          "Greppy only reaches plain HTTP gateways. The Workjet gateway endpoint is not plain HTTP.",
       });
     }
 

@@ -6,6 +6,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationReadModel,
+  type OrchestrationCommand,
 } from "@workjet/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -18,7 +19,18 @@ const THREAD_ID = ThreadId.make("thread-1");
 const MESSAGE_ID = MessageId.make("message-1");
 const readModel: OrchestrationReadModel = {
   snapshotSequence: 0,
-  projects: [],
+  projects: [
+    {
+      id: ProjectId.make("project-1"),
+      title: "Destination",
+      workspaceRoot: "/destination",
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      deletedAt: null,
+    },
+  ],
   threads: [
     {
       id: THREAD_ID,
@@ -49,6 +61,45 @@ const readModel: OrchestrationReadModel = {
   updatedAt: NOW,
 };
 
+const bootstrapCommand: Extract<OrchestrationCommand, { type: "thread.history.import" }> = {
+  type: "thread.history.import",
+  commandId: CommandId.make("bootstrap-copy"),
+  threadId: THREAD_ID,
+  messages: [
+    { messageId: MESSAGE_ID, role: "user", text: "Copied", createdAt: NOW },
+    { messageId: MessageId.make("reply-1"), role: "assistant", text: "Preserved", createdAt: NOW },
+  ],
+  bootstrap: {
+    createThread: {
+      projectId: ProjectId.make("project-1"),
+      title: "Imported",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      runtimeMode: "approval-required",
+      interactionMode: "default",
+      workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+      branch: null,
+      worktreePath: null,
+      createdAt: NOW,
+    },
+  },
+  createdAt: NOW,
+};
+const freshReadModel: OrchestrationReadModel = {
+  ...readModel,
+  threads: [],
+  projects: [
+    {
+      id: ProjectId.make("project-1"),
+      title: "Destination",
+      workspaceRoot: "/destination",
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+      deletedAt: null,
+    },
+  ],
+};
 it.layer(NodeServices.layer)("static history import decider", (it) => {
   it.effect("emits messages without starting a provider turn or session", () =>
     Effect.gen(function* () {
@@ -101,6 +152,185 @@ it.layer(NodeServices.layer)("static history import decider", (it) => {
           createdAt: NOW,
         },
         readModel: duplicateReadModel,
+      }).pipe(Effect.flip);
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+    }),
+  );
+  it.effect("creates a new thread and its messages together without a provider turn", () =>
+    Effect.gen(function* () {
+      const result = yield* decideOrchestrationCommand({
+        command: bootstrapCommand,
+        readModel: freshReadModel,
+      });
+      expect(Array.isArray(result) ? result.map(({ type }) => type) : []).toEqual([
+        "thread.created",
+        "thread.message-sent",
+        "thread.message-sent",
+      ]);
+      expect(Array.isArray(result) ? result[0]?.payload : undefined).toMatchObject({
+        threadId: THREAD_ID,
+        projectId: "project-1",
+        title: "Imported",
+        runtimeMode: "approval-required",
+      });
+      expect(
+        Array.isArray(result) ? result.slice(1).map(({ payload }) => payload) : [],
+      ).toMatchObject([
+        { role: "user", text: "Copied", turnId: null, streaming: false },
+        { role: "assistant", text: "Preserved", turnId: null, streaming: false },
+      ]);
+    }),
+  );
+  it.effect("keeps tied and decreasing archive timestamps in source order", () =>
+    Effect.gen(function* () {
+      const command = {
+        ...bootstrapCommand,
+        messages: [
+          ...bootstrapCommand.messages,
+          {
+            messageId: MessageId.make("older-clock-message"),
+            role: "user" as const,
+            text: "Clock moved backwards",
+            createdAt: "2026-08-25T11:59:59.000Z",
+          },
+          {
+            messageId: MessageId.make("later-clock-message"),
+            role: "assistant" as const,
+            text: "Later reply",
+            createdAt: "2026-08-25T12:00:00.010Z",
+          },
+        ],
+      };
+      const result = yield* decideOrchestrationCommand({
+        command,
+        readModel: freshReadModel,
+      });
+      const messages = Array.isArray(result)
+        ? result.filter((event) => event.type === "thread.message-sent")
+        : [];
+      expect(messages.map(({ payload }) => payload.createdAt)).toEqual([
+        NOW,
+        "2026-08-25T12:00:00.001Z",
+        "2026-08-25T12:00:00.002Z",
+        "2026-08-25T12:00:00.010Z",
+      ]);
+      expect(messages.map(({ occurredAt }) => occurredAt)).toEqual(
+        messages.map(({ payload }) => payload.createdAt),
+      );
+      expect(
+        messages.map(({ payload: { messageId, role, text } }) => ({ messageId, role, text })),
+      ).toEqual(command.messages.map(({ messageId, role, text }) => ({ messageId, role, text })));
+      expect(command.messages[1]?.createdAt).toBe(NOW);
+    }),
+  );
+  it.effect("appends archive batches after saved messages and local continuations", () =>
+    Effect.gen(function* () {
+      const saved = {
+        ...readModel,
+        threads: [
+          {
+            ...readModel.threads[0]!,
+            messages: [
+              {
+                id: MessageId.make("native-continuation"),
+                role: "assistant" as const,
+                text: "Native reply",
+                attachments: [],
+                turnId: null,
+                streaming: false,
+                createdAt: "2026-08-25T12:00:00.010Z",
+                updatedAt: "2026-08-25T12:00:00.010Z",
+              },
+              {
+                id: MessageId.make("prior-archive-batch"),
+                role: "user" as const,
+                text: "Prior copied batch",
+                attachments: [],
+                turnId: null,
+                streaming: false,
+                createdAt: NOW,
+                updatedAt: NOW,
+              },
+            ],
+          },
+        ],
+      };
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.history.import",
+          commandId: CommandId.make("next-archive-batch"),
+          threadId: THREAD_ID,
+          messages: bootstrapCommand.messages,
+          createdAt: NOW,
+        },
+        readModel: saved,
+      });
+      const messages = Array.isArray(result)
+        ? result.filter((event) => event.type === "thread.message-sent")
+        : [];
+      expect(messages.map(({ payload }) => payload.createdAt)).toEqual([
+        "2026-08-25T12:00:00.011Z",
+        "2026-08-25T12:00:00.012Z",
+      ]);
+      expect(messages.map(({ payload }) => payload.messageId)).toEqual(
+        bootstrapCommand.messages.map(({ messageId }) => messageId),
+      );
+      expect(saved.threads[0]?.messages.map(({ text }) => text)).toEqual([
+        "Native reply",
+        "Prior copied batch",
+      ]);
+    }),
+  );
+  it.effect("rejects missing or deleted destinations before creating a copy", () =>
+    Effect.gen(function* () {
+      for (const projects of [[], [{ ...freshReadModel.projects[0]!, deletedAt: NOW }]]) {
+        const error = yield* decideOrchestrationCommand({
+          command: bootstrapCommand,
+          readModel: { ...freshReadModel, projects },
+        }).pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      }
+    }),
+  );
+  it.effect("rejects append chunks after the destination thread or project disappears", () =>
+    Effect.gen(function* () {
+      const appendCommand: Extract<OrchestrationCommand, { type: "thread.history.import" }> = {
+        type: "thread.history.import",
+        commandId: CommandId.make("append-after-delete"),
+        threadId: THREAD_ID,
+        messages: bootstrapCommand.messages,
+        createdAt: NOW,
+      };
+      for (const changed of [
+        { ...readModel, projects: [] },
+        { ...readModel, projects: [{ ...readModel.projects[0]!, deletedAt: NOW }] },
+        { ...readModel, threads: [{ ...readModel.threads[0]!, deletedAt: NOW }] },
+      ]) {
+        const error = yield* decideOrchestrationCommand({
+          command: appendCommand,
+          readModel: changed,
+        }).pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      }
+    }),
+  );
+  it.effect("does not bootstrap over an existing thread", () =>
+    Effect.gen(function* () {
+      const error = yield* decideOrchestrationCommand({
+        command: bootstrapCommand,
+        readModel: { ...freshReadModel, threads: readModel.threads },
+      }).pipe(Effect.flip);
+      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+    }),
+  );
+  it.effect("rejects duplicate ids within a fresh copy before emitting its thread", () =>
+    Effect.gen(function* () {
+      const error = yield* decideOrchestrationCommand({
+        command: {
+          ...bootstrapCommand,
+          messages: [bootstrapCommand.messages[0]!, bootstrapCommand.messages[0]!],
+        },
+        readModel: freshReadModel,
       }).pipe(Effect.flip);
       expect(error._tag).toBe("OrchestrationCommandInvariantError");
     }),

@@ -1,0 +1,59 @@
+diff --git a/lib/parse.js b/lib/parse.js
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -81,2 +81,8 @@
+     block = stack[stack.length - 1];
+     value = advance();
++
++    // Bound recursive consumers before constructing another nested AST block.
++    if ((value === CHAR_LEFT_PARENTHESES || value === CHAR_LEFT_CURLY_BRACE) &&
++        stack.length >= 256) {
++      throw new SyntaxError('Input nesting exceeds max depth (256)');
++    }
+diff --git a/lib/compile.js b/lib/compile.js
+--- a/lib/compile.js
++++ b/lib/compile.js
+@@ -6,3 +6,6 @@
+ const compile = (ast, options = {}) => {
+-  const walk = (node, parent = {}) => {
++  const walk = (node, parent = {}, depth = 0) => {
++    if (depth > 256) {
++      throw new SyntaxError('Input nesting exceeds max depth (256)');
++    }
+     const invalidBlock = utils.isInvalidBrace(parent);
+@@ -49,3 +52,3 @@
+       for (const child of node.nodes) {
+-        output += walk(child, node);
++        output += walk(child, node, depth + 1);
+       }
+diff --git a/lib/expand.js b/lib/expand.js
+--- a/lib/expand.js
++++ b/lib/expand.js
+@@ -39,2 +39,5 @@
+-  const walk = (node, parent = {}) => {
++  const walk = (node, parent = {}, depth = 0) => {
++    if (depth > 256) {
++      throw new SyntaxError('Input nesting exceeds max depth (256)');
++    }
+     node.queue = [];
+@@ -102,3 +105,3 @@
+       if (child.nodes) {
+-        walk(child, node);
++        walk(child, node, depth + 1);
+       }
+diff --git a/lib/stringify.js b/lib/stringify.js
+--- a/lib/stringify.js
++++ b/lib/stringify.js
+@@ -5,3 +5,6 @@
+ module.exports = (ast, options = {}) => {
+-  const stringify = (node, parent = {}) => {
++  const stringify = (node, parent = {}, depth = 0) => {
++    if (depth > 256) {
++      throw new SyntaxError('Input nesting exceeds max depth (256)');
++    }
+     const invalidBlock = options.escapeInvalid && utils.isInvalidBrace(parent);
+@@ -23,3 +26,3 @@
+       for (const child of node.nodes) {
+-        output += stringify(child);
++        output += stringify(child, undefined, depth + 1);
+       }

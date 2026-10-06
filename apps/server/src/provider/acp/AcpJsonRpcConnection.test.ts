@@ -605,6 +605,40 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
+  it.effect("requires an acknowledged load RPC for a claimed conversation", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      const error = yield* Effect.flip(runtime.start());
+      expect(error._tag).toBe("AcpTransportError");
+      if (error._tag === "AcpTransportError") {
+        expect(error.method).toBe("session/load");
+      }
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          authMethodId: "test",
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+            env: {
+              WORKJET_ACP_HANG_LOAD_SESSION_AFTER_REPLAY: "1",
+              WORKJET_ACP_LOAD_SESSION_DELAY_MS: "10000",
+            },
+          },
+          cwd: process.cwd(),
+          resumeSessionId: "mock-session-1",
+          requireLoadResponse: true,
+          sessionLoadReplayIdleGap: "50 millis",
+          sessionLoadTimeout: "200 millis",
+          clientInfo: { name: "workjet-test", version: "0.0.0" },
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+      TestClock.withLive,
+    ),
+  );
+
   it.effect("rejects invalid config option values before sending session/set_config_option", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "acp-runtime-"));
     const requestLogPath = NodePath.join(tempDir, "requests.ndjson");

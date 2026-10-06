@@ -289,6 +289,10 @@ function PullRequestsRouteView() {
       titleCounts.set(project.title, (titleCounts.get(project.title) ?? 0) + 1);
     }
     return projects
+      .filter(
+        (project): project is typeof project & { workspaceRoot: string } =>
+          project.workspaceRoot !== null,
+      )
       .map((project) => ({
         id: project.id,
         environmentId: project.environmentId,

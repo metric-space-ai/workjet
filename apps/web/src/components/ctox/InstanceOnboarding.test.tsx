@@ -1,9 +1,29 @@
 import type { CtoxManagedInstance } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { resolveInstanceOnboardingState, InstanceOnboardingView } from "./InstanceOnboarding";
+import {
+  canMountSelectedInstance,
+  resolveInstanceOnboardingState,
+  InstanceOnboardingView,
+  InstanceNavigationBoundary,
+  InstanceSidebarBoundary,
+  InstanceWorkspaceBoundary,
+} from "./InstanceOnboarding";
 import { instanceAppsLabel, instanceHostLabel } from "./InstanceNetworkOverview";
 import { closeInstanceSetup, instanceSetupStore, openInstanceSetup } from "../../instanceSetup";
+
+vi.mock("./CtoxModeShell", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./CtoxModeShell")>()),
+  useCtoxMode: () => ({
+    bridge: {},
+    discovery: {
+      _tag: "ready",
+      instances: [{ ...alpha, healthSummary: { ...alpha.healthSummary, dataPlaneReady: false } }],
+    },
+    selectedId: alpha.id,
+    connection: "connecting",
+  }),
+}));
 
 vi.mock("../ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -22,6 +42,58 @@ const alpha: CtoxManagedInstance = {
 };
 
 describe("instance-first network navigation", () => {
+  it("renders the selected Code workspace and project sidebar before an Ops guest exists", () => {
+    const html = renderToStaticMarkup(
+      <InstanceWorkspaceBoundary surface="code">
+        <main>Native project workspace</main>
+        <InstanceSidebarBoundary surface="code">
+          <InstanceNavigationBoundary>
+            <button>Native project action</button>
+          </InstanceNavigationBoundary>
+        </InstanceSidebarBoundary>
+      </InstanceWorkspaceBoundary>,
+    );
+    expect(html).toContain("Native project workspace");
+    expect(html).toContain("Native project action");
+    expect(html).not.toContain('data-workjet-onboarding="instance"');
+  });
+
+  it("mounts selected Code before Ops is opened without claiming native readiness", () => {
+    const pending = {
+      ...alpha,
+      healthSummary: {
+        ...alpha.healthSummary,
+        dataPlaneReady: false,
+        nativePeerObserved: false,
+      },
+    };
+    const state = resolveInstanceOnboardingState(
+      { _tag: "ready", instances: [pending] },
+      pending.id,
+      "connecting",
+    );
+    expect(state).toBe("connecting");
+    expect(canMountSelectedInstance(state)).toBe(true);
+    expect(pending.healthSummary.dataPlaneReady).toBe(false);
+    expect(pending.healthSummary.nativePeerObserved).toBe(false);
+  });
+  it("does not mount a missing, foreign, unavailable, failed or revoked selection", () => {
+    const discovery = { _tag: "ready" as const, instances: [alpha] };
+    const states = [
+      resolveInstanceOnboardingState("loading", alpha.id, "ready"),
+      resolveInstanceOnboardingState(discovery, null, "ready"),
+      resolveInstanceOnboardingState(discovery, "foreign-instance", "ready"),
+      resolveInstanceOnboardingState(discovery, alpha.id, "error"),
+      resolveInstanceOnboardingState(discovery, alpha.id, "revoked"),
+      resolveInstanceOnboardingState(
+        { _tag: "ready", instances: [{ ...alpha, status: "offline" }] },
+        alpha.id,
+        "ready",
+      ),
+      resolveInstanceOnboardingState({ _tag: "ready", instances: [] }, null, "ready"),
+    ];
+    for (const state of states) expect(canMountSelectedInstance(state)).toBe(false);
+  });
   it("keeps projects inaccessible with no selection, including when another connection was ready", () => {
     expect(
       resolveInstanceOnboardingState({ _tag: "ready", instances: [alpha] }, null, "ready"),

@@ -1241,22 +1241,46 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
   });
 
   const readPairedInstances = Effect.fn("CtoxInstanceRegistry.readPairedInstances")(function* () {
-    yield* assertSafeStorage();
     const [publicDocument, secretDocument] = yield* Effect.all([
       readPublicDocument(fileSystem, publicRegistryPath),
       readSecretDocument(fileSystem, secretRegistryPath),
     ]);
     yield* assertRegistryConsistency(publicDocument, secretDocument);
+    if (publicDocument.instances.length === 0) {
+      return { instances: [] as readonly CtoxManagedInstance[], pairedUnavailable: false };
+    }
     const secretsById = new Map(secretDocument.records.map((record) => [record.id, record]));
     const now = yield* currentTimeMillis;
     const instances: CtoxManagedInstance[] = [];
+    let pairedUnavailable = false;
+    let storageUnavailable = Result.isFailure(yield* assertSafeStorage().pipe(Effect.result));
     for (const instance of publicDocument.instances) {
       const record = secretsById.get(instance.id);
       if (record === undefined) return yield* registryError("persistence_failed");
-      const secret = yield* decryptSecret(record);
-      const expectedId = yield* stableId(secret.source, secret.instanceIdentity);
-      if (expectedId !== instance.id || secret.source !== instance.source) {
-        return yield* registryError("persistence_failed");
+      if (storageUnavailable) {
+        pairedUnavailable = true;
+        instances.push({ ...instance, status: "error" });
+        continue;
+      }
+      const decrypted = yield* decryptSecret(record).pipe(Effect.result);
+      if (Result.isFailure(decrypted)) {
+        pairedUnavailable = true;
+        storageUnavailable = decrypted.failure.code === "unsafe_secret_storage";
+        instances.push({ ...instance, status: "error" });
+        continue;
+      }
+      const secret = decrypted.success;
+      const expectedId = yield* stableId(secret.source, secret.instanceIdentity).pipe(
+        Effect.result,
+      );
+      if (
+        Result.isFailure(expectedId) ||
+        expectedId.success !== instance.id ||
+        secret.source !== instance.source
+      ) {
+        pairedUnavailable = true;
+        instances.push({ ...instance, status: "error" });
+        continue;
       }
       instances.push({
         ...instance,
@@ -1287,7 +1311,7 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             : "pairing_expired",
       });
     }
-    return instances.sort(compareInstances);
+    return { instances: instances.sort(compareInstances), pairedUnavailable };
   });
 
   const resolvePairedLaunch = Effect.fn("CtoxInstanceRegistry.resolvePairedLaunch")(function* (
@@ -1586,11 +1610,13 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
     merge: (managed) =>
       registryLock.withPermit(
         Effect.gen(function* () {
-          // A failed or missing pairing store must not hide local daemons, and
-          // local discovery cannot fail, so both degrade to an empty source.
-          const paired = yield* readPairedInstances().pipe(
-            Effect.orElseSucceed((): readonly CtoxManagedInstance[] => []),
-          );
+          // Preserve public descriptors when a pairing secret is unreadable.
+          // A damaged registry document cannot be trusted, so mark that source
+          // unavailable without hiding managed, local or SSH instances.
+          const pairedResult = yield* readPairedInstances().pipe(Effect.result);
+          const paired = Result.isSuccess(pairedResult) ? pairedResult.success.instances : [];
+          const pairedUnavailable =
+            Result.isFailure(pairedResult) || pairedResult.success.pairedUnavailable;
           const [local, ssh] = yield* Effect.all([discoverLocalInstances, discoverSshInstances], {
             concurrency: 2,
           });
@@ -1598,8 +1624,14 @@ export const make = Effect.fn("CtoxInstanceRegistry.make")(function* (
             ...local.map((entry) => entry.instance),
             ...ssh.map((entry) => entry.instance),
           ]);
-          if (merged._tag !== "ready") return merged;
-          return { ...merged, instances: yield* attachShellStatuses(merged.instances) };
+          if (merged._tag !== "ready") {
+            return pairedUnavailable ? { ...merged, pairedUnavailable: true as const } : merged;
+          }
+          return {
+            ...merged,
+            instances: yield* attachShellStatuses(merged.instances),
+            ...(pairedUnavailable ? { pairedUnavailable: true as const } : {}),
+          };
         }).pipe(Effect.withSpan("CtoxInstanceRegistry.merge")),
       ),
     importInvite: (invite) =>

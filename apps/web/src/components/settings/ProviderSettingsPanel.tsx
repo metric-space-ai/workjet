@@ -91,9 +91,8 @@ import {
   SettingsSection,
   useRelativeTimeTick,
 } from "./settingsLayout";
-import { WorkjetGatewayAccountsSectionView } from "./WorkjetGatewayAccounts";
-import { WorkjetGatewayPoolsSectionView } from "./WorkjetGatewayPools";
-import { WorkjetLlmRoutesSection } from "./WorkjetLlmRoutesSection";
+import { WorkjetModelsProviders } from "./WorkjetModelsProviders";
+import { WorkjetModelsUsage } from "./WorkjetModelsUsage";
 import { SessionImportSection } from "./SessionImportSection";
 import { useWorkjetGatewaySection } from "./useWorkjetGatewaySection";
 import {
@@ -363,25 +362,10 @@ function ScopedWorkjetGatewayAccountsSection({
   readonly environmentId: EnvironmentId;
 }) {
   const gateway = useWorkjetGatewaySection(environmentId);
-  const settings = useEnvironmentSettings(environmentId);
-  const updateSettings = useUpdateEnvironmentSettings(environmentId);
   return (
     <>
-      <WorkjetGatewayAccountsSectionView {...gateway} />
-      {/*
-        Pools, health, and model discovery sit beside the account list rather
-        than inside it: they describe how the gateway uses those accounts, and
-        the account list stays the place where accounts are added.
-      */}
-      <WorkjetGatewayPoolsSectionView {...gateway.pools} />
-      {/* Routes complete the Models page: accounts → pools → the routes
-          workers reference. They lived as tab four inside the Worker section,
-          away from the accounts they point at. */}
-      <WorkjetLlmRoutesSection
-        configuration={settings.workjet}
-        catalog={gateway.catalog ?? null}
-        onChange={(workjet) => updateSettings({ workjet })}
-      />
+      <WorkjetModelsProviders {...gateway} />
+      <WorkjetModelsUsage environmentId={environmentId} />
     </>
   );
 }
@@ -1061,7 +1045,7 @@ export function EnvironmentProviderSettings({
                 {piCodeProbe === null
                   ? "Checking…"
                   : piCodeProbe.availability === "available"
-                    ? "Installed · available to Workjet workers"
+                    ? "Installed · available to Workjet Lumas"
                     : "Not installed on this machine"}
               </p>
             </div>

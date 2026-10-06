@@ -292,7 +292,10 @@ export function useNewThreadHandler() {
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
-        const consultProjectFile = project !== undefined && project.defaultThreadEnvMode == null;
+        const consultProjectFile =
+          project !== undefined &&
+          project.workspaceRoot !== null &&
+          project.defaultThreadEnvMode == null;
         return resolveDefaultThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,
           projectFile: consultProjectFile
@@ -601,7 +604,9 @@ export function useHandleNewThread() {
       getId: getProjectOrderKey,
       getPreferenceIds: (project) => [
         getProjectOrderKey(project),
-        legacyProjectCwdPreferenceKey(project.workspaceRoot),
+        ...(project.workspaceRoot === null
+          ? []
+          : [legacyProjectCwdPreferenceKey(project.workspaceRoot)]),
       ],
     });
   }, [projectOrder, projects]);

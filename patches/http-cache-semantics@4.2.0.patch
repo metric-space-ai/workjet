@@ -1,0 +1,28 @@
+diff --git a/index.js b/index.js
+--- a/index.js
++++ b/index.js
+@@ -392,2 +392,17 @@
+     evaluateRequest(req) {
+         this._assertRequestHasHeaders(req);
++
++        // A client max-stale directive must not revive security-zeroed entries.
++        // Keep explicitly public/immutable cookie responses and private caches.
++        if (
++            !this.storable() ||
++            this._rescc['no-cache'] ||
++            this._resHeaders.vary === '*' ||
++            (this._isShared && this._rescc['proxy-revalidate']) ||
++            (this._isShared &&
++                this._resHeaders['set-cookie'] &&
++                !this._rescc.public &&
++                !this._rescc.immutable)
++        ) {
++            return this._evaluateRequestMissResult(req);
++        }
+@@ -425,2 +440,6 @@
+         if (this.stale()) {
++            // s-maxage requires shared-cache revalidation after expiration.
++            if (this._isShared && 's-maxage' in this._rescc) {
++                return this._evaluateRequestMissResult(req);
++            }
+             // If a value is present, then the client is willing to accept a response that has

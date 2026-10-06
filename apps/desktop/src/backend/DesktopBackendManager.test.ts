@@ -23,6 +23,8 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstab
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import * as DesktopBackendManager from "./DesktopBackendManager.ts";
+import { makeAttachment, LocalServiceAttachmentError } from "./DesktopLocalServiceAttachment.ts";
+import { waitForHttpReady } from "@workjet/shared/httpReadiness";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 
@@ -115,6 +117,8 @@ function decodeBootstrap(raw: string) {
 }
 
 interface MakeInstanceInput {
+  readonly run?: DesktopBackendManager.BackendInstanceSpec["run"];
+  readonly onAttachmentBlocked?: DesktopBackendManager.BackendInstanceSpec["onAttachmentBlocked"];
   readonly spawnerLayer: Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>;
   readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
   readonly backendOutputLog?: Partial<DesktopObservability.DesktopBackendOutputLogShape>;
@@ -171,6 +175,10 @@ function makeTestInstance(input: MakeInstanceInput) {
 
   const instance = DesktopBackendManager.makeBackendInstance({
     id: DesktopBackendManager.PRIMARY_INSTANCE_ID,
+    ...(input.run === undefined ? {} : { run: input.run }),
+    ...(input.onAttachmentBlocked === undefined
+      ? {}
+      : { onAttachmentBlocked: input.onAttachmentBlocked }),
     label: Effect.succeed("Windows"),
     configResolve: input.configResolve ?? Effect.succeed(input.config ?? baseConfig),
     ...(input.onReady ? { onReady: () => input.onReady! } : {}),
@@ -182,6 +190,155 @@ function makeTestInstance(input: MakeInstanceInput) {
 }
 
 describe("DesktopBackendManager", () => {
+  it.effect(
+    "automatically reattaches the installed service after a 30-second readiness outage",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const attempts = yield* Queue.unbounded<number>();
+          const reattached = yield* Deferred.make<void>();
+          let available = false;
+          let starts = 0;
+          let connects = 0;
+          const savedSession = { baseDir: "/profile", serverVersion: "1.2.3" };
+          const endpoint = {
+            port: 3888,
+            host: "127.0.0.1" as const,
+            tailscaleServeEnabled: false,
+            tailscaleServePort: 443,
+          };
+          const http = HttpClient.make((request) =>
+            Effect.succeed(responseForRequest(request, available ? 200 : 503)),
+          );
+          const attachment = yield* makeAttachment({
+            discover: Effect.succeed(Option.some(endpoint)),
+            install: () => Effect.die("A saved service must not be installed again."),
+            migrate: () => Effect.die("An outage must not trigger migration."),
+            confirmMigration: Effect.die("An outage must not trigger migration."),
+            assertCurrent: Effect.void,
+            start: Effect.sync(() => {
+              starts++;
+            }),
+            connect: (config) =>
+              Effect.gen(function* () {
+                assert.deepEqual(config.localSession, savedSession);
+                connects++;
+                yield* Queue.offer(attempts, connects);
+                yield* waitForHttpReady({
+                  baseUrl: config.httpBaseUrl.href,
+                  path: "/.well-known/workjet/environment",
+                  timeoutMs: 30_000,
+                  makeError: () =>
+                    new LocalServiceAttachmentError({
+                      reason: "The installed local service did not become reachable.",
+                      retryable: true,
+                    }),
+                }).pipe(Effect.provideService(HttpClient.HttpClient, http));
+                return { closed: Effect.never };
+              }),
+          });
+          yield* attachment.resolvePort;
+          const instance = yield* makeTestInstance({
+            run: attachment.run,
+            spawnerLayer: Layer.succeed(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.make(() => Effect.die("Must not spawn a foreground backend.")),
+            ),
+            config: {
+              ...baseConfig,
+              localSession: savedSession,
+              httpBaseUrl: new URL("http://127.0.0.1:3888"),
+              bootstrap: { ...baseConfig.bootstrap, port: 3888 },
+            },
+            onReady: Deferred.succeed(reattached, undefined).pipe(Effect.asVoid),
+          });
+          yield* instance.start;
+          assert.equal(yield* Queue.take(attempts), 1);
+          yield* TestClock.adjust(Duration.millis(30_250));
+          const waiting = yield* instance.snapshot;
+          assert.equal(waiting.desiredRunning, true);
+          assert.equal(waiting.restartScheduled, true);
+          available = true;
+          yield* TestClock.adjust(Duration.millis(500));
+          assert.equal(yield* Queue.take(attempts), 2);
+          yield* Deferred.await(reattached);
+          const restored = yield* instance.snapshot;
+          assert.equal(restored.ready, true);
+          assert.equal(starts, 1);
+          assert.equal(connects, 2);
+        }).pipe(Effect.provide(TestClock.layer())),
+      ),
+  );
+
+  it.effect("halts a blocked service attachment without scheduling a foreground restart", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const blocked = yield* Deferred.make<void>();
+        let attempts = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.die("A blocked service must not spawn a child.")),
+          ),
+          run: () =>
+            Effect.sync(() => {
+              attempts++;
+              return { code: Option.none(), reason: "credential needs recovery", restart: false };
+            }),
+          onAttachmentBlocked: () => Deferred.succeed(blocked, undefined).pipe(Effect.asVoid),
+        });
+        yield* instance.start;
+        yield* Deferred.await(blocked);
+        const state = yield* instance.snapshot;
+        assert.equal(state.desiredRunning, false);
+        assert.equal(state.ready, false);
+        assert.equal(state.restartScheduled, false);
+        assert.equal(attempts, 1);
+      }),
+    ),
+  );
+
+  it.effect("stops a pending service install without opening a blocking recovery dialog", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const installing = yield* Deferred.make<void>();
+        let blockedNotifications = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.die("The attachment owns installation.")),
+          ),
+          run: () =>
+            Effect.gen(function* () {
+              const released = yield* Deferred.make<void>();
+              yield* Effect.addFinalizer(() =>
+                Deferred.succeed(released, undefined).pipe(Effect.asVoid),
+              );
+              yield* Deferred.succeed(installing, undefined);
+              yield* Deferred.await(released);
+              return {
+                code: Option.none(),
+                reason: "first installation stopped while closing the attachment",
+                restart: false,
+              };
+            }),
+          onAttachmentBlocked: () =>
+            Effect.sync(() => {
+              blockedNotifications++;
+            }),
+        });
+        yield* instance.start;
+        yield* Deferred.await(installing);
+        yield* instance.stop();
+        assert.equal(blockedNotifications, 0);
+        const state = yield* instance.snapshot;
+        assert.equal(state.desiredRunning, false);
+        assert.equal(state.ready, false);
+        assert.equal(state.restartScheduled, false);
+      }),
+    ),
+  );
+
   it.effect("spawns the backend with fd3 bootstrap and fd4 telemetry", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -769,6 +926,73 @@ describe("DesktopBackendManager", () => {
         ),
     );
   }
+
+  it.effect("ignores readiness from a stopping run and an older attachment", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const callbacks = yield* Queue.unbounded<DesktopBackendManager.RunBackendProcessOptions>();
+        const teardownStarted = yield* Deferred.make<void>();
+        const finishTeardown = yield* Deferred.make<void>();
+        let readyCount = 0;
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.succeed(makeProcess())),
+          ),
+          run: (options) =>
+            Effect.gen(function* () {
+              const completion = yield* Deferred.make<DesktopBackendManager.BackendProcessExit>();
+              const scope = yield* Scope.Scope;
+              yield* Scope.addFinalizer(
+                scope,
+                Deferred.succeed(teardownStarted, undefined).pipe(
+                  Effect.andThen(Deferred.await(finishTeardown)),
+                  Effect.andThen(
+                    Deferred.succeed(completion, {
+                      code: Option.none(),
+                      reason: "attachment released",
+                      restart: false,
+                    }),
+                  ),
+                  Effect.asVoid,
+                ),
+              );
+              yield* Queue.offer(callbacks, options);
+              yield* options.onStarted?.(123) ?? Effect.void;
+              return yield* Deferred.await(completion);
+            }),
+          onReady: Effect.sync(() => {
+            readyCount += 1;
+          }),
+        });
+        // Unblock owned teardown even when a regression assertion fails.
+        yield* Effect.addFinalizer(() =>
+          Deferred.succeed(finishTeardown, undefined).pipe(Effect.asVoid),
+        );
+
+        yield* instance.start;
+        const first = yield* Queue.take(callbacks);
+        const stopping = yield* instance.stop().pipe(Effect.forkChild);
+        yield* Deferred.await(teardownStarted).pipe(Effect.timeout("1 second"));
+
+        yield* first.onReady?.() ?? Effect.void;
+        assert.equal(readyCount, 0, "a readiness response during stop must not reopen the UI");
+        assert.isFalse((yield* instance.snapshot).ready);
+        yield* Deferred.succeed(finishTeardown, undefined);
+        yield* Fiber.join(stopping).pipe(Effect.timeout("1 second"));
+
+        yield* instance.start;
+        const second = yield* Queue.take(callbacks);
+        yield* first.onReady?.() ?? Effect.void;
+        assert.equal(readyCount, 0, "the released attachment must not mark a new run ready");
+        yield* second.onReady?.() ?? Effect.void;
+        assert.equal(readyCount, 1);
+        assert.isTrue((yield* instance.snapshot).ready);
+        yield* instance.stop().pipe(Effect.timeout("1 second"));
+        assert.isFalse((yield* instance.snapshot).ready);
+      }),
+    ),
+  );
 
   it.effect("starts the configured backend and closes the scoped process on stop", () =>
     Effect.scoped(

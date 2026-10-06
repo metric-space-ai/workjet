@@ -95,6 +95,13 @@ export const isWorkerDispatchToolVisible = (
 
 const failureResult = (
   reason: WorkerDispatch.WorkerDispatchFailureReason,
+  recovery: {
+    readonly recoveryWorktreePath?: string;
+    readonly recoveryAdminPath?: string;
+    readonly originalWorktreePath?: string;
+    readonly originalAdminPath?: string;
+    readonly recoveryLocationStatus?: "candidate" | "verified";
+  } = {},
 ): McpSchema.CallToolResult =>
   new McpSchema.CallToolResult({
     isError: true,
@@ -102,9 +109,25 @@ const failureResult = (
       error: {
         _tag: "WorkjetWorkerDispatchError",
         reason,
+        ...(recovery.recoveryWorktreePath || recovery.recoveryAdminPath
+          ? {
+              recovery: {
+                requiresPreservation: true,
+                ...recovery,
+              },
+            }
+          : {}),
       },
     },
-    content: [{ type: "text", text: "Workjet worker dispatch failed." }],
+    content: [
+      {
+        type: "text",
+        text:
+          recovery.recoveryWorktreePath || recovery.recoveryAdminPath
+            ? "Workjet worker dispatch failed. Preserve recovery data before storage cleanup. For candidate locations, inspect originalAdminPath first; if absent, validate candidate receipts and paths against the recorded identities. Candidate directories may be absent or unrelated."
+            : "Workjet worker dispatch failed.",
+      },
+    ],
   });
 
 const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")(function* () {
@@ -167,7 +190,26 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
           Effect.catchTags({
             WorkjetOrchestratorUnavailableError: () =>
               Effect.succeed(failureResult("role-not-authorized")),
-            WorkerDispatchError: (error) => Effect.succeed(failureResult(error.reason)),
+            WorkerDispatchError: (error) =>
+              Effect.succeed(
+                failureResult(error.reason, {
+                  ...(error.originalWorktreePath
+                    ? { originalWorktreePath: error.originalWorktreePath }
+                    : {}),
+                  ...(error.originalAdminPath
+                    ? { originalAdminPath: error.originalAdminPath }
+                    : {}),
+                  ...(error.recoveryLocationStatus
+                    ? { recoveryLocationStatus: error.recoveryLocationStatus }
+                    : {}),
+                  ...(error.recoveryWorktreePath
+                    ? { recoveryWorktreePath: error.recoveryWorktreePath }
+                    : {}),
+                  ...(error.recoveryAdminPath
+                    ? { recoveryAdminPath: error.recoveryAdminPath }
+                    : {}),
+                }),
+              ),
           }),
         );
       }),

@@ -1,4 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off -- The shell integration fixture must own a real child HTTP process and temporary files to prove reattach never kills it.
 import { assert, describe, it } from "@effect/vitest";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@workjet/shared/Net";
 import * as Duration from "effect/Duration";
@@ -13,6 +18,7 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { SshPasswordPrompt } from "./auth.ts";
+import { remoteStateKey } from "./command.ts";
 import {
   buildRemoteLaunchScript,
   buildRemotePairingScript,
@@ -89,6 +95,129 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
 }
 
 describe("ssh tunnel scripts", () => {
+  it("keeps remote server state separate for Desktop profiles sharing one SSH target", () => {
+    const target = {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    } as const;
+    const first = remoteStateKey(target, "profile-a");
+    const second = remoteStateKey(target, "profile-b");
+
+    assert.notEqual(first, second);
+    assert.notEqual(first, remoteStateKey(target));
+    assert.include(buildRemotePairingScript(target, undefined, "profile-a"), first);
+    assert.include(buildRemoteStopScript(target, "profile-a"), first);
+    assert.notInclude(buildRemoteStopScript(target, "profile-b"), first);
+  });
+
+  it("reattaches without killing its healthy managed server or another profile's server", async () => {
+    const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-ssh-reuse-"));
+    const server = NodeChildProcess.spawn(
+      process.execPath,
+      [
+        "-e",
+        'require("node:http").createServer((_request, response) => response.end("ok")).listen(0, "127.0.0.1", function () { console.log(this.address().port); });',
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let otherDefault: ReturnType<typeof NodeChildProcess.spawn> | null = null;
+    try {
+      const port = await new Promise<number>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("Test HTTP server did not start")),
+          5_000,
+        );
+        server.once("error", reject);
+        server.stdout!.once("data", (chunk: Buffer) => {
+          clearTimeout(timeout);
+          resolve(Number(String(chunk).trim()));
+        });
+      });
+      assert.isNumber(server.pid);
+      assert.isAbove(port, 0);
+      const root = NodePath.join(home, ".workjet");
+      const owned = NodePath.join(root, "ssh-launch", "profile-a");
+      await NodeFSP.mkdir(owned, { recursive: true });
+      await NodeFSP.mkdir(NodePath.join(root, "userdata"), { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(owned, "pid"), `${server.pid}\n`);
+      await NodeFSP.writeFile(NodePath.join(owned, "port"), `${port}\n`);
+      await NodeFSP.writeFile(NodePath.join(owned, "managed"), "managed\n");
+      await NodeFSP.writeFile(
+        NodePath.join(root, "userdata", "server-runtime.json"),
+        JSON.stringify({ pid: server.pid, port, origin: `http://127.0.0.1:${port}/` }),
+      );
+
+      const attach = (stateKey: string) => {
+        const result = NodeChildProcess.spawnSync("sh", ["-s", "--", stateKey], {
+          input: buildRemoteLaunchScript(),
+          encoding: "utf8",
+          env: { ...process.env, HOME: home },
+          timeout: 10_000,
+        });
+        assert.equal(result.status, 0, result.stderr);
+        return JSON.parse(result.stdout.trim()) as {
+          remotePort: number;
+          serverKind: "managed" | "external";
+        };
+      };
+
+      assert.deepEqual(attach("profile-a"), { remotePort: port, serverKind: "managed" });
+      assert.equal(
+        (await NodeFSP.readFile(NodePath.join(owned, "pid"), "utf8")).trim(),
+        String(server.pid),
+      );
+      assert.doesNotThrow(() => process.kill(server.pid!, 0));
+
+      assert.deepEqual(attach("profile-b"), { remotePort: port, serverKind: "external" });
+      assert.doesNotThrow(() => process.kill(server.pid!, 0));
+      otherDefault = NodeChildProcess.spawn(
+        process.execPath,
+        [
+          "-e",
+          'require("node:http").createServer((_request, response) => response.end("ok")).listen(0, "127.0.0.1", function () { console.log(this.address().port); });',
+        ],
+        { stdio: ["ignore", "pipe", "pipe"] },
+      );
+      const otherPort = await new Promise<number>((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(new Error("Other HTTP server did not start")),
+          5_000,
+        );
+        otherDefault!.once("error", reject);
+        otherDefault!.stdout!.once("data", (chunk: Buffer) => {
+          clearTimeout(timeout);
+          resolve(Number(String(chunk).trim()));
+        });
+      });
+      assert.isNumber(otherDefault.pid);
+      await NodeFSP.writeFile(
+        NodePath.join(root, "userdata", "server-runtime.json"),
+        JSON.stringify({
+          pid: otherDefault.pid,
+          port: otherPort,
+          origin: `http://127.0.0.1:${otherPort}/`,
+        }),
+      );
+      assert.deepEqual(attach("profile-a"), { remotePort: port, serverKind: "managed" });
+      assert.doesNotThrow(() => process.kill(server.pid!, 0));
+      assert.doesNotThrow(() => process.kill(otherDefault!.pid!, 0));
+    } finally {
+      if (otherDefault) {
+        otherDefault.kill("SIGTERM");
+        if (otherDefault.exitCode === null) {
+          await new Promise<void>((resolve) => otherDefault!.once("exit", () => resolve()));
+        }
+      }
+      server.kill("SIGTERM");
+      if (server.exitCode === null) {
+        await new Promise<void>((resolve) => server.once("exit", () => resolve()));
+      }
+      await NodeFSP.rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("builds the remote workjet runner with npx and npm fallbacks", () => {
     const script = buildRemoteWorkjetRunnerScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
 
@@ -169,7 +298,7 @@ describe("ssh tunnel scripts", () => {
       buildRemoteLaunchScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE }),
       '[ -n "$REMOTE_PID" ] && [ -n "$REMOTE_PORT" ] && kill -0 "$REMOTE_PID" 2>/dev/null',
     );
-    assert.include(buildRemoteLaunchScript(), "RUNNER_CHANGED=1");
+    assert.notInclude(buildRemoteLaunchScript(), "RUNNER_CHANGED=1");
     assert.include(buildRemoteLaunchScript(), "ensure_remote_node_path()");
     assert.include(buildRemoteLaunchScript(), "install_workjet_node && use_workjet_node");
     assert.include(
@@ -217,7 +346,11 @@ describe("ssh tunnel scripts", () => {
       buildRemoteLaunchScript(),
       "if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(port))",
     );
-    assert.include(buildRemoteLaunchScript(), 'PID_TO_STOP="${REMOTE_PID:-$DEFAULT_RUNTIME_PID}"');
+    assert.include(buildRemoteLaunchScript(), '[ "$REMOTE_PID" = "$DEFAULT_RUNTIME_PID" ]');
+    assert.notInclude(
+      buildRemoteLaunchScript(),
+      'PID_TO_STOP="${REMOTE_PID:-$DEFAULT_RUNTIME_PID}"',
+    );
     assert.include(buildRemoteLaunchScript(), 'REMOTE_PORT="$DEFAULT_REMOTE_PORT"');
     assert.include(buildRemoteLaunchScript(), 'rm -f "$PID_FILE"');
     assert.include(buildRemoteLaunchScript(), "printf 'external\\n' >\"$MANAGED_FILE\"");
@@ -415,6 +548,53 @@ describe("ssh tunnel scripts", () => {
     }).pipe(Effect.provide(layer), Effect.scoped);
   });
 
+  it.effect("closes the local forward but keeps the remote server after Desktop scope ends", () => {
+    let tunnelKillCount = 0;
+    let stopCommandCount = 0;
+    const spawner = ChildProcessSpawner.make((command) =>
+      Effect.sync(() => {
+        const args = commandArgs(command);
+        if (args.includes("-N")) {
+          return makeRunningProcess(() => {
+            tunnelKillCount += 1;
+          });
+        }
+        if (args.includes("sh") && args.includes("--")) {
+          return makeSuccessfulProcess('{"remotePort":3773}\n');
+        }
+        if (args.includes("sh")) {
+          stopCommandCount += 1;
+          return makeSuccessfulProcess('{"stopped":true}\n');
+        }
+        return makeSuccessfulProcess("\n");
+      }),
+    );
+    const layer = Layer.mergeAll(
+      NodeServices.layer,
+      Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Layer.succeed(HttpClient.HttpClient, testHttpClient),
+      Layer.succeed(NetService.NetService, testNetService),
+      SshPasswordPrompt.disabledLayer,
+      SshEnvironmentManager.layer({ remoteStateNamespace: "profile-a" }),
+    );
+    const target = {
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 2222,
+    } as const;
+
+    return Effect.gen(function* () {
+      yield* Effect.gen(function* () {
+        const manager = yield* SshEnvironmentManager;
+        yield* manager.ensureEnvironment(target);
+      }).pipe(Effect.provide(layer), Effect.scoped);
+
+      assert.equal(tunnelKillCount, 1);
+      assert.equal(stopCommandCount, 0);
+    });
+  });
+
   it.effect("releases a replaced local tunnel without stopping the remote server", () => {
     let tunnelStartCount = 0;
     let tunnelKillCount = 0;
@@ -465,4 +645,73 @@ describe("ssh tunnel scripts", () => {
       assert.equal(stopCommandCount, 0);
     }).pipe(Effect.provide(layer), Effect.scoped);
   });
+
+  it.effect("replaces a stale local forward without stopping the remote server", () =>
+    Effect.gen(function* () {
+      let firstPortReady = false;
+      let nextPort = 41_773;
+      let tunnelKillCount = 0;
+      let remoteStopCount = 0;
+      const httpClient = HttpClient.make((request) => {
+        if (request.url.includes(":41773/") && firstPortReady) {
+          return Effect.never;
+        }
+        firstPortReady = true;
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(request, new Response("", { status: 200 })),
+        );
+      });
+      const netService = NetService.NetService.of({
+        canListenOnHost: () => Effect.succeed(true),
+        isPortAvailableOnLoopback: () => Effect.succeed(true),
+        reserveLoopbackPort: () => Effect.sync(() => nextPort++),
+        findAvailablePort: (preferred) => Effect.succeed(preferred),
+      });
+      const spawner = ChildProcessSpawner.make((command) =>
+        Effect.sync(() => {
+          const args = commandArgs(command);
+          if (args.includes("-N")) {
+            return makeRunningProcess(() => {
+              tunnelKillCount += 1;
+            });
+          }
+          if (args.includes("sh") && args.includes("--")) {
+            return makeSuccessfulProcess('{"remotePort":3773}\n');
+          }
+          if (args.includes("sh")) {
+            remoteStopCount += 1;
+            return makeSuccessfulProcess('{"stopped":true}\n');
+          }
+          return makeSuccessfulProcess("\n");
+        }),
+      );
+      const layer = Layer.mergeAll(
+        NodeServices.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Layer.succeed(HttpClient.HttpClient, httpClient),
+        Layer.succeed(NetService.NetService, netService),
+        SshPasswordPrompt.disabledLayer,
+        SshEnvironmentManager.layer(),
+      );
+      const target = {
+        alias: "devbox",
+        hostname: "devbox.example.com",
+        username: "julius",
+        port: 2222,
+      } as const;
+
+      yield* Effect.gen(function* () {
+        const manager = yield* SshEnvironmentManager;
+        const first = yield* manager.ensureEnvironment(target);
+        assert.equal(first.httpBaseUrl, "http://127.0.0.1:41773/");
+        const reconnect = yield* Effect.forkChild(manager.ensureEnvironment(target));
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust(Duration.millis(2_000));
+        const second = yield* Fiber.join(reconnect);
+        assert.equal(second.httpBaseUrl, "http://127.0.0.1:41774/");
+        assert.equal(tunnelKillCount, 1);
+        assert.equal(remoteStopCount, 0);
+      }).pipe(Effect.provide(Layer.merge(TestClock.layer(), layer)), Effect.scoped);
+    }),
+  );
 });

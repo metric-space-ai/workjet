@@ -48,6 +48,10 @@ import * as EnvironmentRegistry from "./registry.ts";
 import * as RpcSession from "../rpc/session.ts";
 import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
+import { connectionStartupLayer } from "./layer.ts";
+import { PlatformConnectionSource } from "../platform/source.ts";
+import { makeEnvironmentShellState } from "../state/shell.ts";
+import { ShellSnapshotLoader } from "../state/shellSnapshotHttp.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -392,6 +396,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
 
   return {
     layer,
+    cacheLayer,
     storedTargets,
     shellCache,
     cacheClears,
@@ -425,6 +430,83 @@ function awaitConnectionState(
 }
 
 describe("EnvironmentRegistry", () => {
+  it.effect(
+    "hydrates authority-scoped cached shells while primary discovery and connections wait",
+    () =>
+      Effect.gen(function* () {
+        const discoveryStarted = yield* Deferred.make<void>();
+        const releaseDiscovery = yield* Deferred.make<void>();
+        const hostTarget = new PrimaryConnectionTarget({
+          environmentId: EnvironmentId.make("environment-current-host"),
+          label: "Current host",
+          httpBaseUrl: "http://127.0.0.1:3773",
+          wsBaseUrl: "ws://127.0.0.1:3773",
+        });
+        const harness = yield* makeHarness(
+          [BEARER_TARGET, SECOND_TARGET],
+          [BEARER_PROFILE],
+          [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+          {
+            beforeSessionConnect: () => Effect.never,
+          },
+        );
+        yield* Ref.set(
+          harness.shellCache,
+          new Map([[BEARER_TARGET.environmentId, CACHED_SNAPSHOT]]),
+        );
+        const source = Layer.succeed(PlatformConnectionSource, {
+          registrations: Stream.fromEffect(
+            Deferred.succeed(discoveryStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseDiscovery)),
+              Effect.as([new PrimaryConnectionRegistration({ target: hostTarget })]),
+            ),
+          ),
+        });
+        const layer = connectionStartupLayer.pipe(
+          Layer.provideMerge(Layer.mergeAll(harness.layer, harness.cacheLayer, source)),
+        );
+        yield* Effect.gen(function* () {
+          const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+          yield* Deferred.await(discoveryStarted);
+          expect((yield* SubscriptionRef.get(registry.entries)).size).toBe(2);
+          const cached = yield* registry.run(
+            BEARER_TARGET.environmentId,
+            makeEnvironmentShellState(),
+          );
+          const unrelated = yield* registry.run(
+            SECOND_TARGET.environmentId,
+            makeEnvironmentShellState(),
+          );
+          expect(["cached", "synchronizing"]).toContain(
+            (yield* SubscriptionRef.get(cached)).status,
+          );
+          expect(Option.getOrThrow((yield* SubscriptionRef.get(cached)).snapshot)).toEqual(
+            CACHED_SNAPSHOT,
+          );
+          expect(Option.isNone((yield* SubscriptionRef.get(unrelated)).snapshot)).toBe(true);
+          expect(["empty", "synchronizing"]).toContain(
+            (yield* SubscriptionRef.get(unrelated)).status,
+          );
+          yield* Deferred.succeed(releaseDiscovery, undefined);
+          yield* SubscriptionRef.changes(registry.entries).pipe(
+            Stream.filter((entries) => entries.has(hostTarget.environmentId)),
+            Stream.runHead,
+          );
+          expect((yield* SubscriptionRef.get(registry.entries)).size).toBe(3);
+          expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              layer,
+              Layer.succeed(ShellSnapshotLoader, { load: () => Effect.succeed(Option.none()) }),
+            ),
+          ),
+          Effect.scoped,
+          Effect.timeout("2 seconds"),
+        );
+      }),
+  );
+
   it.effect("hydrates connection profiles into catalog entries", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE]);

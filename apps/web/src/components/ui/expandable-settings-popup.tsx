@@ -14,7 +14,7 @@ export function ExpandableSettingsPopup({
   detail,
   detailTitle,
   onBack,
-  backLabel = "Back to workers",
+  backLabel = "Back to Lumas",
   detailDescription = "Changes stay in this draft until you save or discard them.",
 }: {
   readonly open: boolean;

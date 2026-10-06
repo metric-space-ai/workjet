@@ -173,6 +173,9 @@ import {
 } from "./server.ts";
 import {
   ResourceTelemetryHistory,
+  DesktopHostTelemetryMessage,
+  DesktopTelemetryControlMessage,
+  DesktopTelemetryAttachmentError,
   ResourceTelemetryHistoryInput,
   ResourceTelemetryRetryResult,
   ResourceTelemetrySnapshot,
@@ -204,6 +207,8 @@ import {
   WorkjetGatewaySetGrantResult,
   WorkjetGatewayAccessError,
   WorkjetGatewayHealth,
+  WorkjetGatewayUsage,
+  WorkjetGatewayUsageInput,
   WorkjetGatewayModelDiscovery,
   WorkjetGatewayOauthPollInput,
   WorkjetGatewayOauthPollResult,
@@ -391,6 +396,7 @@ export const WS_METHODS = {
   workjetGatewayAddApiKeyAccount: "workjet.providerGateway.addApiKeyAccount",
   workjetGatewayRemoveAccount: "workjet.providerGateway.removeAccount",
   workjetGatewayHealth: "workjet.providerGateway.health",
+  workjetGatewayUsage: "workjet.providerGateway.usage",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
 
@@ -485,6 +491,8 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  subscribeDesktopTelemetryControl: "subscribeDesktopTelemetryControl",
+  serverPublishDesktopTelemetry: "server.publishDesktopTelemetry",
   subscribeWorkjetMailboxAudit: "subscribeWorkjetMailboxAudit",
 } as const;
 
@@ -760,6 +768,12 @@ export const WsWorkjetGatewayRemoveAccountRpc = Rpc.make(WS_METHODS.workjetGatew
 export const WsWorkjetGatewayHealthRpc = Rpc.make(WS_METHODS.workjetGatewayHealth, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayHealth,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayUsageRpc = Rpc.make(WS_METHODS.workjetGatewayUsage, {
+  payload: WorkjetGatewayUsageInput,
+  success: WorkjetGatewayUsage,
   error: WorkjetGatewayRpcError,
 });
 
@@ -1507,6 +1521,15 @@ export const WsOrchestrationGetArchivedShellSnapshotRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetArchivedTeamWorkerDetailRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getArchivedTeamWorkerDetail,
+  {
+    payload: OrchestrationRpcSchemas.getArchivedTeamWorkerDetail.input,
+    success: OrchestrationRpcSchemas.getArchivedTeamWorkerDetail.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -1573,6 +1596,31 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+const DesktopTelemetryAttachment = Schema.Struct({
+  attachmentId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  runtimeInstanceId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+});
+export const WsSubscribeDesktopTelemetryControlRpc = Rpc.make(
+  WS_METHODS.subscribeDesktopTelemetryControl,
+  {
+    payload: DesktopTelemetryAttachment,
+    success: DesktopTelemetryControlMessage,
+    error: Schema.Union([DesktopTelemetryAttachmentError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+export const WsServerPublishDesktopTelemetryRpc = Rpc.make(
+  WS_METHODS.serverPublishDesktopTelemetry,
+  {
+    payload: Schema.Struct({
+      ...DesktopTelemetryAttachment.fields,
+      message: DesktopHostTelemetryMessage,
+    }),
+    success: Schema.Void,
+    error: Schema.Union([DesktopTelemetryAttachmentError, EnvironmentAuthorizationError]),
+  },
+);
+
 /**
  * The bounded, redacted Workjet mailbox audit/observability event stream. Each
  * emitted value is a {@link WorkjetMailboxAuditEvent} carrying only ids,
@@ -1624,6 +1672,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayAddApiKeyAccountRpc,
   WsWorkjetGatewayRemoveAccountRpc,
   WsWorkjetGatewayHealthRpc,
+  WsWorkjetGatewayUsageRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetLegacyImportInspectRpc,
@@ -1720,6 +1769,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeDesktopTelemetryControlRpc,
+  WsServerPublishDesktopTelemetryRpc,
   WsSubscribeWorkjetMailboxAuditRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetWorkflowScriptRpc,
@@ -1727,6 +1778,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
+  WsOrchestrationGetArchivedTeamWorkerDetailRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );

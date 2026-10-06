@@ -341,7 +341,9 @@ describe("environment grouping", () => {
       getId: getProjectOrderKey,
       getPreferenceIds: (project) => [
         getProjectOrderKey(project),
-        legacyProjectCwdPreferenceKey(project.workspaceRoot),
+        ...(project.workspaceRoot === null
+          ? []
+          : [legacyProjectCwdPreferenceKey(project.workspaceRoot)]),
       ],
     });
 

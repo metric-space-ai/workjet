@@ -26,8 +26,13 @@ import {
 
 const ProbeCursor = Schema.Struct({ sessionId: Schema.String, profileKey: Schema.String });
 const decodeProbeCursor = Schema.decodeUnknownOption(Schema.fromJsonString(ProbeCursor));
+const encodeProbeCursor = Schema.encodeSync(Schema.fromJsonString(ProbeCursor));
+const encodeProfileKey = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 const isAcpRequestError = Schema.is(AcpRequestError);
-class MiniMaxProbeCompatibilityError extends Error {}
+class MiniMaxProbeCompatibilityError extends Schema.TaggedErrorClass<MiniMaxProbeCompatibilityError>()(
+  "MiniMaxProbeCompatibilityError",
+  { message: Schema.String },
+) {}
 
 const PRESENTATION = {
   displayName: "MiniMax Code",
@@ -163,7 +168,7 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
   const cwd = probeCwd ?? environment.PWD ?? process.cwd();
   const profileKey = NodeCrypto.createHash("sha256")
     .update(
-      JSON.stringify([
+      encodeProfileKey([
         settings.dataDirectory ||
           environment.MINIMAX_DATA_DIR ||
           environment.MAVIS_DATA_DIR ||
@@ -196,13 +201,13 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
         started.initializeResult.agentInfo?.name !== "minimax-code" ||
         started.initializeResult.agentInfo.version !== MINIMAX_CODE_RELEASE.version
       )
-        return yield* Effect.fail(
-          new MiniMaxProbeCompatibilityError("Unexpected MiniMax Code ACP executable identity."),
-        );
+        return yield* new MiniMaxProbeCompatibilityError({
+          message: "Unexpected MiniMax Code ACP executable identity.",
+        });
       if (probeSessionPath)
         yield* fs.writeFileString(
           probeSessionPath,
-          JSON.stringify({ sessionId: started.sessionId, profileKey }),
+          encodeProbeCursor({ sessionId: started.sessionId, profileKey }),
         );
       const configOptions = yield* acp.getConfigOptions;
       const initialModels = miniMaxModelsFromConfig(configOptions);

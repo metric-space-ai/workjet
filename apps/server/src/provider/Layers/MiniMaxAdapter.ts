@@ -72,6 +72,7 @@ const Resume = Schema.Struct({
   profileKey: Schema.String,
 });
 const decodeResume = Schema.decodeUnknownOption(Resume);
+const encodeProfileKey = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 const error = (method: string, detail: string) =>
   new ProviderAdapterRequestError({ provider: PROVIDER, method, detail });
 const checked = <A>(method: string, evaluate: () => A) =>
@@ -294,7 +295,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         const environment = yield* options.resolveSessionEnvironment();
         const profileKey = NodeCrypto.createHash("sha256")
           .update(
-            JSON.stringify([
+            encodeProfileKey([
               options.instanceId,
               config.dataDirectory ||
                 environment.MINIMAX_DATA_DIR ||
@@ -318,7 +319,7 @@ export const makeMiniMaxAdapter = Effect.fn("makeMiniMaxAdapter")(function* (
         const pending = new Map<ApprovalRequestId, Deferred.Deferred<ProviderApprovalDecision>>();
         const inputs = new Map<ApprovalRequestId, PendingQuestion>();
         const managed = readMcpProviderSession(input.threadId);
-        let childExit: Effect.Effect<unknown, unknown> | undefined;
+        let childExit: ChildProcessSpawner.ChildProcessHandle["exitCode"] | undefined;
         let transferred = false;
         const acp = yield* makeMiniMaxAcpRuntime({
           config,

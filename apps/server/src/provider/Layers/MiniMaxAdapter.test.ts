@@ -51,12 +51,12 @@ const turn = (text: string) => ({
   interactionMode: "default" as const,
 });
 
-function runTest(
+function runTest<E>(
   test: (
     cwd: string,
     binaryPath: string,
     log: string,
-  ) => Effect.Effect<void, unknown, NodeServices.NodeServices | Scope.Scope>,
+  ) => Effect.Effect<void, E, NodeServices.NodeServices | Scope.Scope>,
 ) {
   return Effect.gen(function* () {
     const cwd = yield* Effect.acquireRelease(
@@ -77,6 +77,25 @@ function runTest(
 }
 
 const decodeMiniMaxSettings = Schema.decodeSync(MiniMaxSettings);
+const HealthCursor = Schema.fromJsonString(
+  Schema.Struct({ sessionId: Schema.String, profileKey: Schema.String }),
+);
+const decodeHealthCursor = Schema.decodeUnknownSync(HealthCursor);
+const encodeHealthCursor = Schema.encodeSync(HealthCursor);
+const decodeWireMessage = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      method: Schema.optional(Schema.String),
+      params: Schema.optional(
+        Schema.Struct({
+          sessionId: Schema.optional(Schema.String),
+          configId: Schema.optional(Schema.String),
+          value: Schema.optional(Schema.String),
+        }),
+      ),
+    }),
+  ),
+);
 const settings = (binaryPath: string) => decodeMiniMaxSettings({ binaryPath });
 const environment = (log: string) => Effect.succeed({ ...process.env, MINIMAX_TEST_LOG: log });
 
@@ -230,7 +249,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
           const wire = NodeFS.readFileSync(log, "utf8")
             .trim()
             .split("\n")
-            .map((line) => JSON.parse(line));
+            .map((line) => decodeWireMessage(line));
           expect(wire.filter((entry) => entry.method === "session/new")).toHaveLength(1);
           expect(wire.filter((entry) => entry.method === "session/load")).toHaveLength(1);
           expect(wire.some((entry) => entry.method === "session/set_model")).toBe(false);
@@ -355,7 +374,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
         const methods = NodeFS.readFileSync(log, "utf8")
           .trim()
           .split("\n")
-          .map((line) => JSON.parse(line).method);
+          .map((line) => decodeWireMessage(line).method);
         expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
         expect(methods.filter((method) => method === "session/load")).toHaveLength(1);
         yield* Fiber.interrupt(consumer);
@@ -544,7 +563,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
         const methods = NodeFS.readFileSync(log, "utf8")
           .trim()
           .split("\n")
-          .map((line) => JSON.parse(line).method);
+          .map((line) => decodeWireMessage(line).method);
         expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
         expect(methods).not.toContain("session/load");
       }),
@@ -600,7 +619,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
         const methods = NodeFS.readFileSync(log, "utf8")
           .trim()
           .split("\n")
-          .map((line) => JSON.parse(line).method);
+          .map((line) => decodeWireMessage(line).method);
         expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
         expect(methods.filter((method) => method === "session/load")).toHaveLength(2);
       }),
@@ -656,7 +675,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
           const methods = NodeFS.readFileSync(log, "utf8")
             .trim()
             .split("\n")
-            .map((line) => JSON.parse(line).method);
+            .map((line) => decodeWireMessage(line).method);
           expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
           expect(methods.filter((method) => method === "session/load")).toHaveLength(1);
           expect(methods.filter((method) => method === "session/close")).toHaveLength(2);
@@ -670,10 +689,10 @@ describe("MiniMax Code adapter protocol fixture", () => {
         const cache = NodePath.join(cwd, "probe.json");
         const env = { ...process.env, MINIMAX_TEST_LOG: log };
         yield* checkMiniMaxProviderStatus(settings(binaryPath), env, cache, cwd);
-        const saved = JSON.parse(NodeFS.readFileSync(cache, "utf8"));
+        const saved = decodeHealthCursor(NodeFS.readFileSync(cache, "utf8"));
         NodeFS.writeFileSync(
           cache,
-          JSON.stringify({ ...saved, sessionId: "deleted-status-session" }),
+          encodeHealthCursor({ ...saved, sessionId: "deleted-status-session" }),
         );
         const recovered = yield* checkMiniMaxProviderStatus(
           settings(binaryPath),
@@ -682,7 +701,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
           cwd,
         );
         expect(recovered.status).toBe("ready");
-        const replacement = JSON.parse(NodeFS.readFileSync(cache, "utf8"));
+        const replacement = decodeHealthCursor(NodeFS.readFileSync(cache, "utf8"));
         expect(replacement.sessionId).not.toBe("deleted-status-session");
         expect(replacement.profileKey).toBe(saved.profileKey);
         const refreshed = yield* checkMiniMaxProviderStatus(settings(binaryPath), env, cache, cwd);
@@ -690,12 +709,12 @@ describe("MiniMax Code adapter protocol fixture", () => {
         const wire = NodeFS.readFileSync(log, "utf8")
           .trim()
           .split("\n")
-          .map((line) => JSON.parse(line));
+          .map((line) => decodeWireMessage(line));
         expect(wire.filter((entry) => entry.method === "session/new")).toHaveLength(2);
         expect(
           wire
             .filter((entry) => entry.method === "session/load")
-            .map((entry) => entry.params.sessionId),
+            .map((entry) => entry.params?.sessionId),
         ).toEqual(["deleted-status-session", replacement.sessionId]);
       }),
     );
@@ -727,7 +746,7 @@ describe("MiniMax Code adapter protocol fixture", () => {
         const methods = NodeFS.readFileSync(log, "utf8")
           .trim()
           .split("\n")
-          .map((line) => JSON.parse(line).method);
+          .map((line) => decodeWireMessage(line).method);
         expect(methods.filter((method) => method === "session/new")).toHaveLength(1);
         expect(methods.filter((method) => method === "session/load")).toHaveLength(1);
       }),

@@ -611,11 +611,21 @@ describe("project-directed static session imports", () => {
           const cleaned = Promise.withResolvers<void>();
           yield* Effect.sync(() => {
             sourceRace.path = file;
-            sourceRace.afterSourceClose = async () => { cleaned.resolve(); };
-            sourceRace.afterArchivedMessage = async () => { reading.resolve(); await continueReading.promise; };
+            sourceRace.afterSourceClose = async () => {
+              cleaned.resolve();
+            };
+            sourceRace.afterArchivedMessage = async () => {
+              reading.resolve();
+              await continueReading.promise;
+            };
           });
           yield* Effect.gen(function* () {
-            const importing = yield* service.importSessions({ candidateIds: [candidateId], projectId: ProjectId.make("project-a") }).pipe(Effect.forkChild);
+            const importing = yield* service
+              .importSessions({
+                candidateIds: [candidateId],
+                projectId: ProjectId.make("project-a"),
+              })
+              .pipe(Effect.forkChild);
             yield* Effect.promise(() => reading.promise);
             expect(sourceRace.sourceSignal?.aborted).toBe(false);
             yield* Fiber.interrupt(importing);
@@ -624,16 +634,27 @@ describe("project-directed static session imports", () => {
             yield* Effect.promise(() => cleaned.promise);
             expect(commands).toHaveLength(0);
             expect(threads.size).toBe(0);
-            expect(yield* Effect.promise(() => NodeFSP.access(sourceRace.archivePath!).then(() => true, () => false))).toBe(false);
+            expect(
+              yield* Effect.promise(() =>
+                NodeFSP.access(sourceRace.archivePath!).then(
+                  () => true,
+                  () => false,
+                ),
+              ),
+            ).toBe(false);
             expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(original);
-          }).pipe(Effect.ensuring(Effect.sync(() => {
-            continueReading.resolve();
-            sourceRace.path = null;
-            sourceRace.afterArchivedMessage = null;
-            sourceRace.afterSourceClose = null;
-            sourceRace.sourceSignal = null;
-            sourceRace.archivePath = null;
-          })));
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                continueReading.resolve();
+                sourceRace.path = null;
+                sourceRace.afterArchivedMessage = null;
+                sourceRace.afterSourceClose = null;
+                sourceRace.sourceSignal = null;
+                sourceRace.archivePath = null;
+              }),
+            ),
+          );
         }),
       ),
   );

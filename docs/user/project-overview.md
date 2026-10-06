@@ -9,7 +9,9 @@ projects** to request the list again without switching instances. Previously
 loaded projects remain available when the connection is interrupted. Saved
 projects are usable immediately on reopen while the list refreshes in the
 background. If that refresh fails, a notice appears and your saved selection
-remains available.
+remains available. An incomplete or unconfirmed backend list keeps the saved projects
+and shows the same retry notice; only a list matching the confirmed native count
+can replace them.
 
 Choose **Configure overview** on a card, or open **Project settings → Project
 overview**. Add an optional website address and configure each of the three

@@ -69,7 +69,12 @@ describe("runWorkjetProjectCreation", () => {
   it("returns an existing exact project without issuing a duplicate create", async () => {
     const port = vi.fn(async () => ({
       _tag: "completed" as const,
-      response: { action: "project.list" as const, projects: [project] },
+      response: {
+        action: "project.list" as const,
+        projects: [project],
+        count: 1,
+        truncated: false as const,
+      },
     }));
 
     await expect(
@@ -106,7 +111,12 @@ describe("runWorkjetProjectCreation", () => {
         .fn()
         .mockResolvedValueOnce({
           _tag: "completed",
-          response: { action: "project.list", projects: [{ ...project, workingCopies }] },
+          response: {
+            action: "project.list",
+            projects: [{ ...project, workingCopies }],
+            count: 1,
+            truncated: false,
+          },
         })
         .mockResolvedValueOnce({
           _tag: "completed",
@@ -132,7 +142,7 @@ describe("runWorkjetProjectCreation", () => {
         .fn()
         .mockResolvedValueOnce({
           _tag: "completed",
-          response: { action: "project.list", projects: [] },
+          response: { action: "project.list", projects: [], count: 0, truncated: false },
         })
         .mockResolvedValueOnce({
           _tag: "completed",
@@ -155,7 +165,7 @@ describe("runWorkjetProjectCreation", () => {
       .fn()
       .mockResolvedValueOnce({
         _tag: "completed",
-        response: { action: "project.list", projects: [] },
+        response: { action: "project.list", projects: [], count: 0, truncated: false },
       })
       .mockResolvedValueOnce({
         _tag: "completed",
@@ -209,7 +219,7 @@ describe("runWorkjetProjectCreation", () => {
       .fn()
       .mockResolvedValueOnce({
         _tag: "completed",
-        response: { action: "project.list", projects: [] },
+        response: { action: "project.list", projects: [], count: 0, truncated: false },
       })
       .mockResolvedValueOnce({
         _tag: "completed",
@@ -234,7 +244,7 @@ describe("runWorkjetProjectCreation", () => {
       .fn()
       .mockResolvedValueOnce({
         _tag: "completed",
-        response: { action: "project.list", projects: [] },
+        response: { action: "project.list", projects: [], count: 0, truncated: false },
       })
       .mockResolvedValueOnce({
         _tag: "completed",

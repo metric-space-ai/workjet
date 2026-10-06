@@ -82,7 +82,7 @@ describe("Workjet project registry", () => {
     });
     applyWorkjetProjectRegistryResult("managed:welsch", {
       _tag: "completed",
-      response: { action: "project.list", projects: [project] },
+      response: { action: "project.list", projects: [project], count: 1, truncated: false },
     });
     expect(readWorkjetProjectRegistry("managed:welsch")).toMatchObject({
       phase: "ready",
@@ -99,7 +99,7 @@ describe("Workjet project registry", () => {
     expect(readWorkjetProjectRegistry("managed:welsch").selectedProjectId).toBe(project.id);
     applyWorkjetProjectRegistryResult("managed:welsch", {
       _tag: "completed",
-      response: { action: "project.list", projects: [] },
+      response: { action: "project.list", projects: [], count: 0, truncated: false },
     });
     expect(readWorkjetProjectRegistry("managed:welsch")).toMatchObject({
       phase: "ready",

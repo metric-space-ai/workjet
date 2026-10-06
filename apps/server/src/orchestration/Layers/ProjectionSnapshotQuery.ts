@@ -1314,21 +1314,32 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     Result: ProjectionTurnWindowRowSchema,
     execute: ({ threadId, beforeAnchorAt, beforeTurnKey, userTurnLimit, maxRawTurns }) =>
       sql`
-        WITH candidates AS (
+        WITH anchors AS (
           SELECT
             turns.requested_at AS anchor_at,
             COALESCE(turns.turn_id, '') AS turn_key,
             turns.pending_message_id
           FROM projection_turns AS turns
           WHERE turns.thread_id = ${threadId}
-            AND (
-              turns.requested_at < ${beforeAnchorAt}
-              OR (
-                turns.requested_at = ${beforeAnchorAt}
-                AND COALESCE(turns.turn_id, '') < ${beforeTurnKey}
-              )
+          UNION ALL
+          SELECT messages.created_at, 'message:' || messages.message_id, messages.message_id
+          FROM projection_thread_messages AS messages
+          WHERE messages.thread_id = ${threadId}
+            AND messages.turn_id IS NULL
+            AND EXISTS (
+              SELECT 1 FROM workjet_session_imports WHERE thread_id = ${threadId}
             )
-          ORDER BY turns.requested_at DESC, turns.turn_id DESC
+            AND NOT EXISTS (
+              SELECT 1 FROM projection_turns AS turns
+              WHERE turns.thread_id = ${threadId}
+                AND turns.pending_message_id = messages.message_id
+            )
+        ),
+        candidates AS (
+          SELECT anchor_at, turn_key, pending_message_id FROM anchors
+          WHERE anchor_at < ${beforeAnchorAt}
+            OR (anchor_at = ${beforeAnchorAt} AND turn_key < ${beforeTurnKey})
+          ORDER BY anchor_at DESC, turn_key DESC
           LIMIT ${maxRawTurns}
         ),
         walked AS (
@@ -1399,8 +1410,36 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             )
             OR (
               turn_id IS NULL
-              AND created_at >= ${minAnchorAt}
-              AND created_at < ${beforeAnchorAt}
+              AND (
+                (
+                  EXISTS (SELECT 1 FROM workjet_session_imports WHERE thread_id = ${threadId})
+                  AND NOT EXISTS (
+                    SELECT 1 FROM projection_turns AS turns
+                    WHERE turns.thread_id = ${threadId}
+                      AND turns.pending_message_id = projection_thread_messages.message_id
+                  )
+                  AND (
+                    created_at > ${minAnchorAt}
+                    OR (created_at = ${minAnchorAt} AND 'message:' || message_id >= ${minTurnKey})
+                  )
+                  AND (
+                    created_at < ${beforeAnchorAt}
+                    OR (created_at = ${beforeAnchorAt} AND 'message:' || message_id < ${beforeTurnKey})
+                  )
+                )
+                OR (
+                  (
+                    NOT EXISTS (SELECT 1 FROM workjet_session_imports WHERE thread_id = ${threadId})
+                    OR EXISTS (
+                      SELECT 1 FROM projection_turns AS turns
+                      WHERE turns.thread_id = ${threadId}
+                        AND turns.pending_message_id = projection_thread_messages.message_id
+                    )
+                  )
+                  AND created_at >= ${minAnchorAt}
+                  AND created_at < ${beforeAnchorAt}
+                )
+              )
             )
           )
         ORDER BY created_at ASC, message_id ASC
@@ -2853,7 +2892,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           );
 
           const oldest = windowRows[0];
-          // An empty window (no turns before the cursor, or a thread with no
+          // Imported messages supply read-only anchors without creating execution turns.
+          // An empty window (no anchors before the cursor, or a thread with no
           // turns at all) still returns thread metadata with empty collections
           // for turn-linked rows; turnless rows are bounded to the same empty
           // range. The first page of a turnless thread stays unwindowed so

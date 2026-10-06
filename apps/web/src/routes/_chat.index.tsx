@@ -358,7 +358,8 @@ function IndexDraftLanding() {
           ...project,
           canArchive: environments.some(
             (environment) =>
-              environment.environmentId === (project.local?.environmentId ?? primaryEnvironmentId) &&
+              environment.environmentId ===
+                (project.local?.environmentId ?? primaryEnvironmentId) &&
               environment.connection.phase === "connected" &&
               environment.serverConfig?.projectArchive === true,
           ),
@@ -454,7 +455,9 @@ function ProjectGallery({
         <div className="mx-auto max-w-5xl">
           <div className="mb-8 flex items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold">{showArchived ? "Archived projects" : "All projects"}</h1>
+              <h1 className="text-2xl font-semibold">
+                {showArchived ? "Archived projects" : "All projects"}
+              </h1>
               <p className="mt-2 text-sm text-muted-foreground">Choose a project to continue.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

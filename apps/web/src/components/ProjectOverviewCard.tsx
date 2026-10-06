@@ -152,7 +152,11 @@ export function ProjectOverviewCard({
           </Button>
         )}
       </div>
-      {archiveError && <p role="alert" className="text-sm text-destructive">{archiveError}</p>}
+      {archiveError && (
+        <p role="alert" className="text-sm text-destructive">
+          {archiveError}
+        </p>
+      )}
       {!onSave && (
         <p className="text-xs text-muted-foreground">
           {project.local === null

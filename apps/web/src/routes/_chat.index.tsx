@@ -352,7 +352,7 @@ function IndexDraftLanding() {
             ? undefined
             : () => refreshWorkjetProjectRegistry(activeCtoxInstanceId)
         }
-        projectsUnavailable={registry.phase === "blocked"}
+        projectsUnavailable={registry.phase === "blocked" || registry.refreshFailed === true}
         projects={galleryProjects.map((project) => ({
           ...project,
           onOpen: () => {
@@ -461,7 +461,7 @@ function ProjectGallery({
           </div>
           {projectsUnavailable ? (
             <p role="status" className="mb-4 text-sm text-muted-foreground">
-              Couldn’t load projects from this instance. Refresh projects to try again.
+              Couldn’t refresh projects. Showing saved projects. Refresh projects to try again.
             </p>
           ) : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

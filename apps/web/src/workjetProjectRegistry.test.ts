@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   __resetWorkjetProjectRegistryForTests,
+  applyWorkjetProjectRegistryResult,
   findWorkjetProjectByWorkingCopy,
   loadingWorkjetProjectRegistry,
   mergeWorkjetProjectProjection,
@@ -48,6 +49,65 @@ const project = {
 };
 
 describe("Workjet project registry", () => {
+  it("keeps saved selected history usable on failure and restores it after reopen", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+    __resetWorkjetProjectRegistryForTests(loadingWorkjetProjectRegistry("managed:welsch"));
+    recordWorkjetProjectProjection("managed:welsch", project, { select: true });
+    applyWorkjetProjectRegistryResult("managed:welsch", { _tag: "failed", code: "timeout" });
+    expect(readWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      phase: "ready",
+      refreshFailed: true,
+      projects: [project],
+      selectedProjectId: project.id,
+    });
+    __resetWorkjetProjectRegistryForTests();
+    expect(loadingWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      phase: "ready",
+      projects: [project],
+      selectedProjectId: project.id,
+    });
+  });
+
+  it("blocks an uncached failure, then clears that notice after a successful list", () => {
+    __resetWorkjetProjectRegistryForTests(loadingWorkjetProjectRegistry("managed:welsch"));
+    applyWorkjetProjectRegistryResult("managed:welsch", { _tag: "failed", code: "not_active" });
+    expect(readWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      phase: "blocked",
+      refreshFailed: true,
+      projects: [],
+    });
+    applyWorkjetProjectRegistryResult("managed:welsch", {
+      _tag: "completed",
+      response: { action: "project.list", projects: [project] },
+    });
+    expect(readWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      phase: "ready",
+      projects: [project],
+    });
+    expect(readWorkjetProjectRegistry("managed:welsch").refreshFailed).toBeUndefined();
+  });
+
+  it("honors a confirmed empty list and ignores late results from another instance", () => {
+    __resetWorkjetProjectRegistryForTests(loadingWorkjetProjectRegistry("managed:welsch"));
+    recordWorkjetProjectProjection("managed:welsch", project, { select: true });
+    applyWorkjetProjectRegistryResult("managed:other", { _tag: "failed", code: "timeout" });
+    expect(readWorkjetProjectRegistry("managed:welsch").refreshFailed).toBeUndefined();
+    expect(readWorkjetProjectRegistry("managed:welsch").selectedProjectId).toBe(project.id);
+    applyWorkjetProjectRegistryResult("managed:welsch", {
+      _tag: "completed",
+      response: { action: "project.list", projects: [] },
+    });
+    expect(readWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      phase: "ready",
+      projects: [],
+      selectedProjectId: null,
+    });
+  });
+
   it("keeps the overview selected after clearing a project and reopening", () => {
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", {

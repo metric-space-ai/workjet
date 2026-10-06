@@ -1,8 +1,5 @@
-import {
-  CommandId,
-  type CtoxWorkjetProjectProjection,
-  type WorkjetComputer,
-} from "@workjet/contracts";
+import { type CtoxWorkjetProjectProjection, type WorkjetComputer } from "@workjet/contracts";
+import { newCommandId } from "./lib/utils";
 import { createWorkjetProject, type WorkjetProjectControlPort } from "./workjetProjectControl";
 import {
   resolveProjectHistoryBindings,
@@ -42,7 +39,7 @@ export async function syncWorkjetProjectTitle(input: {
       input.instanceId,
       {
         action: "project.create",
-        commandId: CommandId.make(globalThis.crypto.randomUUID()),
+        commandId: newCommandId(),
         projectId: project.id,
         title,
         createdAt: project.createdAt ?? new Date().toISOString(),

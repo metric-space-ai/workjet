@@ -9,8 +9,13 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import type { RunBackendProcessOptions } from "./DesktopBackendManager.ts";
-import { attachDesktopServiceTelemetry, type TelemetrySession } from "./DesktopServiceTelemetry.ts";
+import {
+  attachDesktopServiceTelemetry,
+  DesktopServiceTelemetryError,
+  type TelemetrySession,
+} from "./DesktopServiceTelemetry.ts";
 
+const encodeError = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const initialControl = {
   version: 1 as const,
   type: "setDiagnosticsDemand" as const,
@@ -167,7 +172,7 @@ for (const phase of [
       const privateDetail = "private bearer and profile detail must not leave the transport";
       const controls =
         phase === "control-failed"
-          ? Stream.fail(new Error(privateDetail))
+          ? Stream.fail(new DesktopServiceTelemetryError({ reason: privateDetail }))
           : phase === "control-closed"
             ? Stream.empty
             : Stream.concat(Stream.make(initialControl), Stream.never);
@@ -185,7 +190,7 @@ for (const phase of [
             ),
           [WS_METHODS.serverPublishDesktopTelemetry]: () => {
             published++;
-            return Effect.fail(new Error(privateDetail));
+            return Effect.fail(new DesktopServiceTelemetryError({ reason: privateDetail }));
           },
         },
       };
@@ -203,7 +208,7 @@ for (const phase of [
         "publisher-closed": "Desktop telemetry publisher closed.",
       }[phase];
       assert.equal(error.message, expected);
-      assert.notInclude(JSON.stringify(error), privateDetail);
+      assert.notInclude(encodeError(error), privateDetail);
       assert.equal(released, 1);
       assert.equal(published, phase === "publisher-failed" ? 1 : 0);
     }).pipe(Effect.provideService(Crypto.Crypto, crypto)),

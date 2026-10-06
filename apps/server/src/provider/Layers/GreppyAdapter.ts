@@ -54,6 +54,9 @@ import { readMcpProviderSession } from "../../mcp/McpProviderSession.ts";
 import { plainHttpEndpoint } from "../greppy/GreppyProtocol.ts";
 
 const PROVIDER = ProviderDriverKind.make("greppy");
+const encodeImportedHistory = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Array(Schema.Unknown)),
+);
 const Resume = Schema.Struct({ protocol: Schema.Literal("acp"), sessionId: Schema.String });
 const decodeResume = Schema.decodeUnknownOption(Resume);
 const decodeImportHistoryCapability = Schema.decodeUnknownOption(
@@ -498,8 +501,16 @@ export const makeGreppyAdapter = Effect.fn("makeGreppyAdapter")(function* (
               "_workjet/import_history",
               "This Greppy build cannot replay imported conversations. Update Greppy to a build with Workjet history synchronization.",
             );
+          const historyJson = yield* encodeImportedHistory(input.importedHistory).pipe(
+            Effect.mapError(() =>
+              requestError(
+                "_workjet/import_history",
+                "Imported conversation history could not be encoded.",
+              ),
+            ),
+          );
           const historyKey = NodeCrypto.createHash("sha256")
-            .update(JSON.stringify(input.importedHistory))
+            .update(historyJson)
             .digest("hex");
           if (historyKey !== ctx.importedHistoryKey) {
             const response = yield* ctx.acp

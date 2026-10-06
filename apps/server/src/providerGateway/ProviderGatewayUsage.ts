@@ -4,6 +4,7 @@ import {
   type WorkjetGatewayUsageCounters,
   type WorkjetGatewayUsageInput,
 } from "@workjet/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 
 const Receipt = Schema.Struct({
@@ -48,9 +49,9 @@ export const usageWindow = (input: WorkjetGatewayUsageInput, now: number) => {
     return `${part("year")}-${part("month")}-${part("day")}`;
   };
   const endDate = date(now);
-  const startDate = new Date(Date.parse(`${endDate}T00:00:00Z`) - (input.days - 1) * DAY_MS)
-    .toISOString()
-    .slice(0, 10);
+  const startDate = DateTime.formatIsoDate(
+    DateTime.makeUnsafe(Date.parse(`${endDate}T00:00:00Z`) - (input.days - 1) * DAY_MS),
+  );
   return { date, startDate, endDate, timeZone: formatter.resolvedOptions().timeZone };
 };
 const emptyCounters = (): WorkjetGatewayUsageCounters => ({

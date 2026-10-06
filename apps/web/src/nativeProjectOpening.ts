@@ -3,6 +3,7 @@ import type {
   EnvironmentId,
   OrchestrationProjectShell,
 } from "@workjet/contracts";
+import type { GalleryProject } from "./projectOverview";
 
 /** A native project keeps its identity when its local conversation is first opened. */
 export function resolveNativeProjectOpening(input: {
@@ -10,10 +11,29 @@ export function resolveNativeProjectOpening(input: {
   readonly project: Pick<CtoxWorkjetProjectProjection, "id" | "title">;
   readonly localEnvironmentId: EnvironmentId | null;
   readonly localConnected: boolean;
+  /** Gallery entries already carry the persisted instance/computer/working-copy join. */
+  readonly gallery?: readonly GalleryProject[];
   readonly projects: readonly (Pick<OrchestrationProjectShell, "id" | "ctoxRegistration"> & {
     readonly environmentId: EnvironmentId;
   })[];
 }) {
+  const history = input.gallery?.find(
+    (entry) =>
+      entry.native &&
+      entry.id === input.project.id &&
+      entry.key === `${input.instanceId}:${input.project.id}`,
+  )?.local;
+  const retained =
+    history == null
+      ? undefined
+      : input.projects.find(
+          (project) =>
+            project.id === history.id &&
+            project.environmentId === history.environmentId &&
+            (project.ctoxRegistration == null ||
+              project.ctoxRegistration.instanceId === input.instanceId),
+        );
+  if (retained) return { _tag: "existing", project: retained } as const;
   const existing = input.projects.find(
     (project) =>
       project.id === input.project.id && project.ctoxRegistration?.instanceId === input.instanceId,

@@ -168,8 +168,10 @@ function IndexDraftLanding() {
 
   useEffect(() => {
     if (landingProject === null || startingRef.current) return;
+    // Native selection always opens its Supervisor, including joined legacy histories.
     // A newly persisted project may arrive immediately before its supervisor event.
-    if (landingProject.ctoxRegistration != null && supervisor === null) return;
+    if ((selectedNative !== null || landingProject.ctoxRegistration != null) && supervisor === null)
+      return;
     startingRef.current = true;
     const opening =
       supervisor === null
@@ -185,7 +187,14 @@ function IndexDraftLanding() {
       startingRef.current = false;
       setStartState((state) => ({ ...state, failed: true }));
     });
-  }, [handleNewThread, landingProject, navigate, startState.retryRequest, supervisor]);
+  }, [
+    handleNewThread,
+    landingProject,
+    navigate,
+    selectedNative,
+    startState.retryRequest,
+    supervisor,
+  ]);
 
   const openNativeSupervisor = async (
     nativeProject = selectedNative,
@@ -196,13 +205,21 @@ function IndexDraftLanding() {
     const instanceId = activeCtoxInstanceId;
     const scope = readActiveWorkjetScope();
     if (scope.selectedInstanceId !== instanceId) return false;
+    const currentProjects = projectStore.get(environmentProjects.projectsAtom);
     const plan = resolveNativeProjectOpening({
       instanceId,
       project: nativeProject,
       localEnvironmentId: primaryEnvironmentId,
       localConnected:
         bootstrapped && canCreateProjectInEnvironment(primaryEnvironment?.connection.phase),
-      projects: projectStore.get(environmentProjects.projectsAtom),
+      projects: currentProjects,
+      gallery: buildProjectGallery({
+        projects: sortScopedProjectsForSidebar(currentProjects, threads, "updated_at"),
+        nativeProjects: registry.projects,
+        instanceId,
+        primaryEnvironmentId,
+        computers,
+      }),
     });
     if (plan._tag === "blocked") {
       setNativeOpenState({ pending: false, error: plan.message });
@@ -309,10 +326,7 @@ function IndexDraftLanding() {
     }
   };
 
-  if (
-    landingProject !== null &&
-    !(selectedNative !== null && landingProject.ctoxRegistration != null && supervisor === null)
-  )
+  if (landingProject !== null && !(selectedNative !== null && supervisor === null))
     return startState.failed ? (
       <DraftStartError
         onRetry={() =>

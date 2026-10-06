@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeReadline from "node:readline";
+import * as NodeStringDecoder from "node:string_decoder";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
 import { matchSessionProject } from "./sessionProjectMatch.ts";
@@ -469,7 +470,10 @@ interface SessionArchive {
   readonly dispose: () => Promise<void>;
 }
 
-const readSession = async (file: SourceFile): Promise<SessionArchive | null> => {
+const readSession = async (
+  file: SourceFile,
+  signal: AbortSignal,
+): Promise<SessionArchive | null> => {
   const expected = await NodeFSP.lstat(file.path);
   if (
     !expected.isFile() ||
@@ -503,15 +507,27 @@ const readSession = async (file: SourceFile): Promise<SessionArchive | null> => 
     let messageCount = 0;
     let bytesRead = 0;
     const hash = NodeCrypto.createHash("sha256").update("[");
+    const sourceHash = NodeCrypto.createHash("sha256");
     try {
       const chunks = handle.createReadStream({
-        encoding: "utf8",
+        encoding: null,
         highWaterMark: 64 * 1024,
         autoClose: false,
         start: 0,
         end: Math.max(0, stat.size - 1),
+        signal,
       });
-      for await (const line of projectTranscriptRecords(chunks)) {
+      const decoded = async function* () {
+        const decoder = new NodeStringDecoder.StringDecoder("utf8");
+        for await (const chunk of chunks as AsyncIterable<Buffer>) {
+          sourceHash.update(chunk);
+          yield decoder.write(chunk);
+        }
+        const tail = decoder.end();
+        if (tail) yield tail;
+      };
+      for await (const line of projectTranscriptRecords(decoded())) {
+        signal.throwIfAborted();
         const parsedMessage = parser.feed(line);
         if (!parsedMessage) continue;
         const message =
@@ -537,12 +553,36 @@ const readSession = async (file: SourceFile): Promise<SessionArchive | null> => 
     const pathname = await NodeFSP.lstat(file.path);
     if (
       bytesRead !== stat.size ||
-      after.size !== stat.size ||
-      after.mtimeMs !== stat.mtimeMs ||
+      after.size < stat.size ||
+      (after.size === stat.size && after.mtimeMs !== stat.mtimeMs) ||
       pathname.dev !== stat.dev ||
       pathname.ino !== stat.ino
     )
       throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    if (after.size > stat.size) {
+      // A live parent may append. Verify the exact fixed byte prefix before accepting its snapshot.
+      const verifyHash = NodeCrypto.createHash("sha256");
+      const prefix = handle.createReadStream({
+        encoding: null,
+        highWaterMark: 64 * 1024,
+        autoClose: false,
+        start: 0,
+        end: Math.max(0, stat.size - 1),
+        signal,
+      });
+      for await (const chunk of prefix as AsyncIterable<Buffer>) verifyHash.update(chunk);
+      const verified = await handle.stat();
+      const currentPath = await NodeFSP.lstat(file.path);
+      if (
+        prefix.bytesRead !== stat.size ||
+        verified.size < stat.size ||
+        currentPath.dev !== stat.dev ||
+        currentPath.ino !== stat.ino ||
+        verifyHash.digest("hex") !== sourceHash.digest("hex")
+      )
+        throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    }
+    signal.throwIfAborted();
     const parsed = parser.finish([]);
     if (!parsed || !parser.hasContent()) {
       await NodeFSP.rm(directory, { recursive: true, force: true });
@@ -798,7 +838,7 @@ export const make = Effect.gen(function* () {
         });
       const archive = yield* Effect.acquireRelease(
         Effect.tryPromise({
-          try: () => readSession(file),
+          try: (signal) => readSession(file, signal),
           catch: (error) =>
             isWorkjetSessionImportError(error)
               ? error

@@ -353,6 +353,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
               }
 
               const lastSavedEvent = committedEvents.at(-1) ?? null;
+
               if (lastSavedEvent === null) {
                 return yield* new OrchestrationCommandInvariantError({
                   commandType: envelope.command.type,

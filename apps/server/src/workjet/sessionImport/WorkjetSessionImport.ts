@@ -5,6 +5,9 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeReadline from "node:readline";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { matchSessionProject } from "./sessionProjectMatch.ts";
 import { projectTranscriptRecords } from "./transcriptRecords.ts";
 
 import {
@@ -70,6 +73,8 @@ interface ImportedMessage {
 }
 
 interface ParsedSession {
+  readonly sourceThreadId?: string;
+  readonly repositoryUrl?: string;
   readonly title: string;
   readonly model: string | null;
   readonly workspaceRoot: string | null;
@@ -176,6 +181,8 @@ const transcriptParser = (
   sourceTitles: ReadonlyMap<string, string> = new Map(),
 ) => {
   let workspaceRoot = "";
+  let sourceThreadId: string | undefined;
+  let repositoryUrl: string | undefined;
   let recordedTitle = "";
   let customTitle = "";
   let createdAt = fallbackIso;
@@ -199,6 +206,8 @@ const transcriptParser = (
       if (record.type === "session_meta" && payload) {
         if (payload.parent_thread_id || payload.agent_path) valid = false;
         workspaceRoot = asString(payload.cwd) ?? workspaceRoot;
+        sourceThreadId = asString(payload.id)?.trim().slice(0, 256) || sourceThreadId;
+        repositoryUrl = asString(asRecord(payload.git)?.repository_url) ?? repositoryUrl;
         recordedTitle = sourceTitles.get(asString(payload.id) ?? "") ?? asString(payload.title) ?? asString(payload.thread_name) ?? recordedTitle;
         createdAt = isoOr(payload.timestamp ?? record.timestamp, createdAt);
         model = recordedModel(payload.model) ?? model;
@@ -209,12 +218,14 @@ const transcriptParser = (
         return null;
       }
       if (record.type !== "response_item" || payload?.type !== "message") return null;
+      if (payload.channel === "analysis") return null;
       role = payload.role;
       const visible = stripCodexUiContext(visibleText(payload.content, role === "user" ? "input_text" : "output_text"));
       text = role === "user" ? stripInjectedCodexContext(visible) : visible;
     } else {
       if (record.isSidechain === true) valid = false;
       workspaceRoot = asString(record.cwd) ?? workspaceRoot;
+      sourceThreadId ||= asString(record.sessionId)?.trim().slice(0, 256) || undefined;
       if (record.type === "ai-title") recordedTitle = asString(record.aiTitle) ?? asString(record.title) ?? recordedTitle;
       if (record.type === "custom-title") customTitle = asString(record.customTitle) ?? customTitle;
       if (record.type !== "user" && record.type !== "assistant") return null;
@@ -243,7 +254,8 @@ const transcriptParser = (
       if (!valid || !userFound) return null;
       const title = customTitle || recordedTitle || firstContentUser || firstUser || (source === "codex" ? "Codex session" : "Claude Code session");
       return { title: title.replace(/\s+/gu, " ").slice(0, 120).trim(), model,
-        workspaceRoot: workspaceRoot || null, createdAt, updatedAt, messages };
+        workspaceRoot: workspaceRoot || null, createdAt, updatedAt, messages,
+        ...(sourceThreadId ? { sourceThreadId } : {}), ...(repositoryUrl ? { repositoryUrl } : {}) };
     },
   };
 };
@@ -586,6 +598,8 @@ export const make = Effect.gen(function* () {
           if (preview) {
             parsed = {
               title: preview.title,
+              ...(preview.sourceThreadId ? { sourceThreadId: preview.sourceThreadId } : {}),
+              ...(preview.repositoryUrl ? { repositoryUrl: preview.repositoryUrl } : {}),
               model: preview.model,
               workspaceRoot: preview.workspaceRoot,
               createdAt: preview.createdAt,
@@ -631,6 +645,7 @@ export const make = Effect.gen(function* () {
           source: file.source,
           providerInstanceId: file.providerInstanceId,
           title: parsed.title,
+          ...(parsed.sourceThreadId ? { sourceThreadId: parsed.sourceThreadId } : {}),
           workspaceRoot: parsed.workspaceRoot,
           createdAt: parsed.createdAt,
           updatedAt: parsed.updatedAt,
@@ -697,43 +712,21 @@ export const make = Effect.gen(function* () {
         });
 
       const parsed = archive.session;
-      let project = destinationProjectId
-        ? destinationProject
-        : parsed.workspaceRoot
-          ? Option.getOrUndefined(
-              yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot),
-            )
-          : undefined;
-      if (destinationProjectId && !project) {
-        return yield* new WorkjetSessionImportError({
-          reason: "project_unavailable",
-          subject: candidateId,
-        });
-      }
-      const now = new Date().toISOString();
-      if (!project) {
-        if (!parsed.workspaceRoot)
-          return yield* new WorkjetSessionImportError({
-            reason: "project_unavailable",
-            subject: candidateId,
+      let project = destinationProjectId ? destinationProject : undefined;
+      if (!destinationProjectId) {
+        const snapshot = yield* query.getShellSnapshot();
+        project = matchSessionProject(parsed, snapshot.projects);
+        if (!project && !parsed.repositoryUrl && parsed.workspaceRoot) {
+          const remote = yield* Effect.promise(async () => {
+            try { return (await promisify(execFile)("git", ["-C", parsed.workspaceRoot!, "remote", "get-url", "origin"], { timeout: 3000, maxBuffer: 8192 })).stdout.trim(); }
+            catch { return undefined; }
           });
-        const projectId = ProjectId.make(NodeCrypto.randomUUID());
-        yield* engine.dispatch({
-          type: "project.create",
-          commandId: CommandId.make(NodeCrypto.randomUUID()),
-          projectId,
-          title: NodePath.basename(parsed.workspaceRoot) || "Imported sessions",
-          workspaceRoot: parsed.workspaceRoot,
-          createWorkspaceRootIfMissing: false,
-          createdAt: now,
-        } as const satisfies OrchestrationCommand);
-        project = Option.getOrUndefined(yield* query.getProjectShellById(projectId));
+          if (remote) project = matchSessionProject({ ...parsed, repositoryUrl: remote }, snapshot.projects);
+        }
       }
       if (!project)
-        return yield* new WorkjetSessionImportError({
-          reason: "project_unavailable",
-          subject: candidateId,
-        });
+        return yield* new WorkjetSessionImportError({ reason: "project_unavailable", subject: candidateId });
+      const now = new Date().toISOString();
       // Separate copies in separate projects; legacy single-copy keys remain readable.
       const importKey = `${candidateId}:${project.id}`;
       const existingRows = yield* sql<ImportRow>`

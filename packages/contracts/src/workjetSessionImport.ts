@@ -17,6 +17,7 @@ export type WorkjetSessionImportSource = typeof WorkjetSessionImportSource.Type;
 export const WorkjetSessionImportCandidate = Schema.Struct({
   candidateId: CandidateId,
   source: WorkjetSessionImportSource,
+  sourceThreadId: Schema.optionalKey(TrimmedNonEmptyString.check(Schema.isMaxLength(256))),
   providerInstanceId: ProviderInstanceId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
   workspaceRoot: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(4_096))),

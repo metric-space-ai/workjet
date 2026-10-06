@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 /** Project JSONL before materializing strings: tool results can be gigabytes long. */
-const scalarPath = /^(?:type|timestamp|cwd|isSidechain|aiTitle|title|customTitle|sessionId|payload\.(?:type|role|cwd|id|model|timestamp|parent_thread_id|agent_path|title|thread_name|content)|message\.(?:role|model|content)|(?:payload|message)\.content\.\d+\.(?:type|text))$/u;
-const containerPath = /^(?:payload|message|(?:payload|message)\.content(?:\.\d+)?)$/u;
+const scalarPath = /^(?:type|timestamp|cwd|isSidechain|aiTitle|title|customTitle|sessionId|payload\.(?:type|role|cwd|id|model|timestamp|parent_thread_id|agent_path|title|thread_name|channel|content)|payload\.git\.repository_url|message\.(?:role|model|content)|(?:payload|message)\.content\.\d+\.(?:type|text))$/u;
+const containerPath = /^(?:payload|payload\.git|message|(?:payload|message)\.content(?:\.\d+)?)$/u;
 const TEXT_LIMIT = 200_000;
 const RAW_TEXT_LIMIT = TEXT_LIMIT * 6;
 

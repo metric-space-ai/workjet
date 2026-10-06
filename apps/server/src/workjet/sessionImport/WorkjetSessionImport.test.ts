@@ -8,6 +8,21 @@ import {
 const NOW = "2026-08-25T12:00:00.000Z";
 
 describe("static Workjet session transcript parsing", () => {
+  it("retains source identities and repository metadata while omitting hidden analysis", () => {
+    const message = (channel: string, text: string) => JSON.stringify({ type: "response_item", payload: {
+      type: "message", role: channel === "input" ? "user" : "assistant", channel,
+      content: [{ type: channel === "input" ? "input_text" : "output_text", text }],
+    } });
+    const parsed = parseCodexSessionTranscript([
+      JSON.stringify({ type: "session_meta", payload: { id: "actual-source-id", cwd: "/work/source", git: { repository_url: "git@github.com:example/repo.git" } } }),
+      message("input", "Work on the actual feature"), message("analysis", "Hidden reasoning"), message("final", "Visible answer"),
+    ], NOW);
+    expect(parsed?.sourceThreadId).toBe("actual-source-id");
+    expect(parsed?.repositoryUrl).toBe("git@github.com:example/repo.git");
+    expect(parsed?.messages.map((message) => message.text)).toEqual(["Work on the actual feature", "Visible answer"]);
+    expect(parseClaudeSessionTranscript([JSON.stringify({ type: "user", sessionId: "actual-claude-id", message: { role: "user", content: "Real request" } })], NOW)?.sourceThreadId).toBe("actual-claude-id");
+  });
+
   describe("source session names and initialization", () => {
     it("uses the real Codex thread name without changing the imported prefix", () => {
       const message = (role: string, text: string) =>

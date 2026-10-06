@@ -553,7 +553,7 @@ export const CtoxWorkjetProjectProjection = Schema.Struct({
 export type CtoxWorkjetProjectProjection = typeof CtoxWorkjetProjectProjection.Type;
 
 const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
-  Schema.isMaxLength(10_000),
+  Schema.isMaxLength(100),
   Schema.makeFilter((projects) => {
     const ids = new Set<string>();
     for (const project of projects) {
@@ -565,7 +565,18 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 );
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
-  Schema.Struct({ action: Schema.Literal("project.list"), projects: CtoxWorkjetProjectList }),
+  Schema.Struct({
+    action: Schema.Literal("project.list"),
+    projects: CtoxWorkjetProjectList,
+    count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
+    truncated: Schema.Literal(false),
+  }).check(
+    Schema.makeFilter((response) =>
+      response.projects.length === response.count
+        ? true
+        : "Project list must match the confirmed native count.",
+    ),
+  ),
   Schema.Struct({
     action: Schema.Literals(["project.worker.add", "project.chat.create"]),
     commandId: CommandId,

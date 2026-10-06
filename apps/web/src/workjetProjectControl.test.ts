@@ -13,7 +13,7 @@ describe("requestWorkjetProjectControl", () => {
       .mockResolvedValueOnce({ _tag: "failed", code: "not_active" })
       .mockResolvedValueOnce({
         _tag: "completed",
-        response: { action: "project.list", projects: [] },
+        response: { action: "project.list", projects: [], count: 0, truncated: false },
       });
     const ensurePooled = vi.fn<WorkjetProjectPoolPort>().mockResolvedValue({
       _tag: "ready",
@@ -29,7 +29,7 @@ describe("requestWorkjetProjectControl", () => {
       ),
     ).resolves.toEqual({
       _tag: "completed",
-      response: { action: "project.list", projects: [] },
+      response: { action: "project.list", projects: [], count: 0, truncated: false },
     });
     expect(ensurePooled).toHaveBeenCalledExactlyOnceWith("managed:welsch");
     expect(request).toHaveBeenCalledTimes(2);

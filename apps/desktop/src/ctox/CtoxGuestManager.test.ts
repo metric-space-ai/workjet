@@ -1031,13 +1031,13 @@ describe("CtoxGuestManager", () => {
       expect(harness.addChildView).not.toHaveBeenCalled();
       harness.views[0]?.executeJavaScript.mockResolvedValueOnce({
         status: "completed",
-        result: { action: "project.list", projects: [] },
+        result: { action: "project.list", projects: [], count: 0, truncated: false },
       });
       assert.deepEqual(
         yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
         {
           _tag: "completed",
-          response: { action: "project.list", projects: [] },
+          response: { action: "project.list", projects: [], count: 0, truncated: false },
         },
       );
 
@@ -2332,6 +2332,29 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer.pipe(Layer.provideMerge(TestClock.layer()))));
   });
 
+  it.effect("rejects unconfirmed native lists before they can replace saved projects", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      for (const result of [
+        { action: "project.list", projects: [] },
+        { action: "project.list", projects: [], count: 1, truncated: false },
+        { action: "project.list", projects: [], count: 0, truncated: true },
+        { action: "project.list", projects: [], count: "0", truncated: false },
+      ]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValueOnce({
+          status: "completed",
+          result,
+        });
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          { _tag: "failed", code: "guest_failed" },
+        );
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("uses only an existing warm guest for project control", () => {
     const harness = makeGuestHarness();
     const bounds = { x: 280, y: 44, width: 1_000, height: 700 };
@@ -2355,14 +2378,17 @@ describe("CtoxGuestManager", () => {
         if (!source.includes("workjetProjectControl")) return undefined;
         expect(source).toContain('"action":"project.list"');
         expect(source).not.toContain("fetch(");
-        return { status: "completed", result: { action: "project.list", projects: [] } };
+        return {
+          status: "completed",
+          result: { action: "project.list", projects: [], count: 0, truncated: false },
+        };
       });
 
       assert.deepEqual(
         yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
         {
           _tag: "completed",
-          response: { action: "project.list", projects: [] },
+          response: { action: "project.list", projects: [], count: 0, truncated: false },
         },
       );
       assert.deepEqual(

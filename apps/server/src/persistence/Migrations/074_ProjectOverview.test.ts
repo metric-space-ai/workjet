@@ -40,6 +40,7 @@ it.effect(
           Layer.provideMerge(NodeSqliteClient.layer({ filename })),
         );
       const overview: ProjectOverview = {
+        archived: true,
         repositoryUrl: "https://github.com/owner/repository",
         websiteUrl: "https://example.org",
         slots: [
@@ -76,7 +77,11 @@ it.effect(
         const renamed = yield* repo.getById({ projectId: ProjectId.make("legacy") });
         assert.ok(Option.isSome(renamed));
         assert.deepEqual(renamed.value.overview, overview);
-        yield* repo.upsert({ ...renamed.value, overview: null });
+        yield* repo.upsert({ ...renamed.value, overview: { ...overview, archived: false } });
+        const restored = yield* repo.getById({ projectId: ProjectId.make("legacy") });
+        assert.ok(Option.isSome(restored));
+        assert.deepEqual(restored.value.overview, { ...overview, archived: false });
+        yield* repo.upsert({ ...restored.value, overview: null });
         const cleared = yield* repo.getById({ projectId: ProjectId.make("legacy") });
         assert.ok(Option.isSome(cleared));
         assert.equal(cleared.value.overview, null);

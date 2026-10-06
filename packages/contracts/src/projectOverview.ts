@@ -41,6 +41,8 @@ export const ProjectOverviewSlot = Schema.Union([
 export type ProjectOverviewSlot = typeof ProjectOverviewSlot.Type;
 const OptionalSlot = Schema.NullOr(ProjectOverviewSlot);
 export const ProjectOverview = Schema.Struct({
+  // Archiving changes gallery visibility while retaining the project and all histories.
+  archived: Schema.optionalKey(Schema.Boolean),
   // Repository metadata is independent of a deployment website or local checkout.
   repositoryUrl: Schema.optionalKey(Schema.NullOr(ProjectWebsiteUrl)),
   websiteUrl: Schema.NullOr(ProjectWebsiteUrl),

@@ -26,6 +26,44 @@ describe("project gallery previews", () => {
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
 
+  it("offers restoration while retaining fields and suppressing archived website frames", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard
+        project={{
+          ...project,
+          local: {
+            id: ProjectId.make("retained"),
+            environmentId: EnvironmentId.make("environment"),
+            title: project.title,
+            updatedAt: "2026-10-06T18:00:00Z",
+            ctoxRegistration: null,
+            overview: {
+              archived: true,
+              websiteUrl: "https://greppy.xyz",
+              slots: [{ kind: "text", label: "Status", value: "Retained" }, null, null],
+            },
+          },
+        }}
+        onOpen={() => {}}
+        onSave={async () => true}
+        canArchive
+      />,
+    );
+    expect(markup).toContain("Restore project");
+    expect(markup).toContain('aria-label="Restore greppy.xyz"');
+    expect(markup).not.toContain("<iframe");
+    expect(markup).toContain("Retained");
+    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+  });
+  it("does not offer archive writes to an older overview-capable environment", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard project={project} onOpen={() => {}} onSave={async () => true} />,
+    );
+    expect(markup).toContain("Configure overview");
+    expect(markup).not.toContain("Archive project");
+    expect(markup).not.toContain("Restore project");
+  });
+
   it("keeps all three saved fields and an explicitly cleared website", () => {
     const overview: ProjectOverview = {
       websiteUrl: null,

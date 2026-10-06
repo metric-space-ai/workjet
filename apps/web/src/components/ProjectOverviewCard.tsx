@@ -12,17 +12,35 @@ export function ProjectOverviewCard({
   project,
   onOpen,
   onSave,
+  canArchive = false,
 }: {
   readonly project: GalleryProject;
   readonly onOpen: () => void;
   readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
+  readonly canArchive?: boolean | undefined;
 }) {
   const [editing, setEditing] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  const [archivePending, setArchivePending] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const overview = resolveGalleryProjectOverview(project);
   const website = overview?.websiteUrl;
   const repository = overview?.repositoryUrl;
   const slots = overview?.slots ?? [null, null, null];
+  const archived = overview.archived === true;
+  const changeArchive = async () => {
+    if (!onSave || archivePending) return;
+    setArchivePending(true);
+    setArchiveError(null);
+    try {
+      if (!(await onSave({ ...overview, archived: !archived })))
+        throw new Error("The project could not be saved. Try again.");
+    } catch {
+      setArchiveError("The project could not be saved. Try again.");
+    } finally {
+      setArchivePending(false);
+    }
+  };
   return (
     <article
       className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-5"
@@ -47,7 +65,7 @@ export function ProjectOverviewCard({
           Open repository
         </a>
       )}
-      {website && (
+      {website && !archived && (
         <div className="grid gap-2">
           {showPreview && (
             <iframe
@@ -117,12 +135,28 @@ export function ProjectOverviewCard({
         <Button size="sm" onClick={onOpen}>
           Open project
         </Button>
+        {onSave && canArchive && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={archivePending}
+            onClick={() => void changeArchive()}
+            aria-label={`${archived ? "Restore" : "Archive"} ${project.title}`}
+          >
+            {archivePending ? "Saving…" : archived ? "Restore project" : "Archive project"}
+          </Button>
+        )}
         {onSave && (
           <Button size="sm" variant="outline" onClick={() => setEditing((open) => !open)}>
             {editing ? "Close editor" : "Configure overview"}
           </Button>
         )}
       </div>
+      {archiveError && (
+        <p role="alert" className="text-sm text-destructive">
+          {archiveError}
+        </p>
+      )}
       {!onSave && (
         <p className="text-xs text-muted-foreground">
           {project.local === null

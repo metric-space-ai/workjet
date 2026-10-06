@@ -52,6 +52,19 @@ describe("project overview wire contract", () => {
     };
     expect(decodeCommand(command)).toEqual(command);
   });
+  it("accepts reversible archive metadata without changing project lifecycle or slots", () => {
+    const overview = { archived: true, websiteUrl: null, slots: [null, null, null] };
+    const command = {
+      type: "project.meta.update",
+      commandId: "archive-project",
+      projectId: "retained",
+      overview,
+    };
+    expect(decodeCommand(command)).toEqual(command);
+    expect(decode({ ...overview, archived: false }).archived).toBe(false);
+    for (const archived of [null, "true", 1])
+      expect(() => decode({ ...overview, archived })).toThrow();
+  });
   it("rejects fewer or more than three slots", () => {
     for (const slots of [[], [null, null], [null, null, null, null]])
       expect(() => decode({ websiteUrl: null, slots })).toThrow();

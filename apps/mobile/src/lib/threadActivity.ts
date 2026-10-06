@@ -1,4 +1,8 @@
-import { ApprovalRequestId, isToolLifecycleItemType } from "@workjet/contracts";
+import {
+  ApprovalRequestId,
+  isToolLifecycleItemType,
+  hideSessionInitialization,
+} from "@workjet/contracts";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,
@@ -1517,7 +1521,7 @@ export function buildThreadFeed(
     readonly loadedMessages?: ReadonlyArray<OrchestrationThread["messages"][number]>;
   },
 ): ThreadFeedEntry[] {
-  const loadedMessages = options?.loadedMessages ?? thread.messages;
+  const loadedMessages = hideSessionInitialization(options?.loadedMessages ?? thread.messages);
   const oldestLoadedMessageCreatedAt =
     options?.loadedMessages !== undefined ? (loadedMessages[0]?.createdAt ?? null) : null;
   const workLogEntries = deriveWorkLogEntries(thread.activities);

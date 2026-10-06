@@ -18,6 +18,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { OrchestrationEngineService } from "../../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -53,7 +54,11 @@ const transcript = (title: string, replies: string[] = [], model?: string) =>
   [
     encodeJson({
       type: "session_meta",
-      payload: { cwd: "/source/folder-no-longer-present", ...(model ? { model } : {}) },
+      payload: {
+        id: "source-session",
+        cwd: "/source/folder-no-longer-present",
+        ...(model ? { model } : {}),
+      },
       timestamp: NOW,
     }),
     encodeJson({
@@ -79,7 +84,7 @@ const withFixture = <A, E>(
     readonly commands: OrchestrationCommand[];
     readonly projectLookups: string[];
     readonly setCodexHome: (homePath: string) => void;
-  }) => Effect.Effect<A, E>,
+  }) => Effect.Effect<A, E, SqlClient.SqlClient>,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -124,6 +129,10 @@ const withFixture = <A, E>(
                 modelSelection: command.modelSelection,
                 messages: [],
               } as unknown as OrchestrationThread);
+            if (command.type === "thread.meta.update" && command.title) {
+              const thread = threads.get(command.threadId)!;
+              threads.set(thread.id, { ...thread, title: command.title });
+            }
             if (command.type === "thread.history.import") {
               if (command.bootstrap) {
                 const created = command.bootstrap.createThread;
@@ -202,12 +211,97 @@ const withFixture = <A, E>(
           getSettings: Effect.succeed(settings),
           updateSettings: () => Effect.die("fixture settings are read-only"),
           streamChanges: Stream.empty,
+
           subscribeChanges: Effect.succeed(Stream.empty),
         }),
         Effect.provide(Layer.merge(Sqlite.layerMemory(), NodeServices.layer)),
       );
     }),
   );
+describe("existing imported thread names", () => {
+  it.effect(
+    "repairs an automatic title, respects a local rename, and leaves history receipts intact",
+    () =>
+      withFixture(({ root, service, threads }) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(root, "sessions", "session.jsonl"),
+              transcript("Nur BEREIT antworten", ["BEREIT"]),
+            ),
+          );
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          const copied = yield* service.importSessions({
+            projectId: ProjectId.make("project-a"),
+            candidateIds: [candidateId],
+          });
+          const id = copied.items[0]!.threadId!;
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(root, "session_index.jsonl"),
+              JSON.stringify({ id: "source-session", thread_name: "CTOX Crew" }) + "\n",
+            ),
+          );
+          const thread = threads.get(id)!;
+          threads.set(id, { ...thread, title: "Nur BEREIT antworten" });
+          yield* service.refreshTitles;
+          expect(threads.get(id)?.title).toBe("CTOX Crew");
+          expect(threads.get(id)?.messages).toEqual(thread.messages);
+          const again = yield* service.importSessions({
+            projectId: ProjectId.make("project-a"),
+            candidateIds: [candidateId],
+          });
+          expect(again.items[0]?.status).toBe("unchanged");
+          threads.set(id, { ...threads.get(id)!, title: "My local name" });
+          yield* service.refreshTitles;
+          expect(threads.get(id)?.title).toBe("My local name");
+          expect((yield* service.inspect()).candidates[0]?.title).toBe("CTOX Crew");
+        }),
+      ),
+  );
+});
+
+describe("legacy provider session titles", () => {
+  it.effect("uses only the recorded provider resume identity and retains a local rename", () =>
+    withFixture(({ root, service, threads }) =>
+      Effect.gen(function* () {
+        const sourceId = "11111111-1111-1111-1111-111111111111";
+        const source = transcript("hi", ["READY"]).replace(
+          '"id":"source-session"',
+          '"id":"' + sourceId + '"',
+        );
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(NodePath.join(root, "sessions", sourceId + ".jsonl"), source),
+        );
+        const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+        const result = yield* service.importSessions({
+          projectId: ProjectId.make("project-a"),
+          candidateIds: [candidateId],
+        });
+        const id = result.items[0]!.threadId!;
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`DELETE FROM workjet_session_imports`;
+        yield* sql`CREATE TABLE provider_session_runtime (thread_id TEXT, provider_name TEXT, provider_instance_id TEXT, resume_cursor_json TEXT)`;
+        const cursor = JSON.stringify({ threadId: id, resume: sourceId });
+        yield* sql`INSERT INTO provider_session_runtime VALUES (${id}, 'codex', NULL, ${cursor})`;
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            NodePath.join(root, "session_index.jsonl"),
+            JSON.stringify({ id: sourceId, thread_name: "CTOX Crew" }) + "\n",
+          ),
+        );
+        const thread = threads.get(id)!;
+        threads.set(id, { ...thread, title: "Hi" });
+        yield* service.refreshTitles;
+        expect(threads.get(id)?.title).toBe("CTOX Crew");
+        expect(threads.get(id)?.messages).toEqual(thread.messages);
+        threads.set(id, { ...threads.get(id)!, title: "My name" });
+        yield* service.refreshTitles;
+        expect(threads.get(id)?.title).toBe("My name");
+      }),
+    ),
+  );
+});
 
 describe("project-directed static session imports", () => {
   it.effect("rejects a selected transcript that grows beyond the size limit after inspection", () =>

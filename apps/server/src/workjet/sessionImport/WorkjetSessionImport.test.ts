@@ -8,6 +8,45 @@ import {
 const NOW = "2026-08-25T12:00:00.000Z";
 
 describe("static Workjet session transcript parsing", () => {
+  describe("source session names and initialization", () => {
+    it("uses the real Codex thread name without changing the imported prefix", () => {
+      const message = (role: string, text: string) =>
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role,
+            content: [{ type: role === "user" ? "input_text" : "output_text", text }],
+          },
+        });
+      const lines = [
+        JSON.stringify({ type: "session_meta", payload: { id: "crew", cwd: "/workspace" } }),
+        message("user", "Nur BEREIT antworten"),
+        message("assistant", "BEREIT"),
+        message("user", "Repair synchronization"),
+      ];
+      const named = parseCodexSessionTranscript(lines, NOW, new Map([["crew", "CTOX Crew"]]));
+      expect(named?.title).toBe("CTOX Crew");
+      expect(named?.messages.map((message) => message.text)).toEqual([
+        "Nur BEREIT antworten",
+        "BEREIT",
+        "Repair synchronization",
+      ]);
+      expect(parseCodexSessionTranscript(lines, NOW)?.title).toBe("Repair synchronization");
+    });
+    it("recognizes an explicit Claude custom title", () => {
+      expect(
+        parseClaudeSessionTranscript(
+          [
+            JSON.stringify({ type: "custom-title", customTitle: "CTOX Supervisor" }),
+            JSON.stringify({ type: "ai-title", aiTitle: "Automatic later title" }),
+            JSON.stringify({ type: "user", message: { role: "user", content: "hi" } }),
+          ],
+          NOW,
+        )?.title,
+      ).toBe("CTOX Supervisor");
+    });
+  });
   it("retains ordinary requests that discuss Codex context markers", () => {
     for (const request of [
       "Explain how <recommended_plugins> is handled.",

@@ -9,6 +9,7 @@ import {
   CommandId,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
+  hideSessionInitialization,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -57,6 +58,8 @@ interface SourceFile {
   readonly path: string;
   readonly size: number;
   readonly mtimeMs: number;
+  readonly sourceTitles?: ReadonlyMap<string, string>;
+  readonly titleVersion?: string;
 }
 
 interface ImportedMessage {
@@ -82,6 +85,7 @@ interface ImportRow {
 }
 
 import { stableSessionImportId as stableUuid } from "./sessionImportIds.ts";
+import { readCodexSessionTitles } from "./sourceSessionTitles.ts";
 
 const sha256 = (value: string | Buffer): string =>
   NodeCrypto.createHash("sha256").update(value).digest("hex");
@@ -165,8 +169,10 @@ const isInternalHealthProbe = (text: string): boolean =>
 export const parseCodexSessionTranscript = (
   lines: ReadonlyArray<string>,
   fallbackIso: string,
+  sourceTitles: ReadonlyMap<string, string> = new Map(),
 ): ParsedSession | null => {
   let workspaceRoot = "";
+  let recordedTitle = "";
   let createdAt = fallbackIso;
   let model: string | null = null;
   const messages: ImportedMessage[] = [];
@@ -182,6 +188,11 @@ export const parseCodexSessionTranscript = (
     if (record?.type === "session_meta" && payload) {
       if (payload.parent_thread_id || payload.agent_path) return null;
       workspaceRoot = asString(payload.cwd) ?? workspaceRoot;
+      recordedTitle =
+        sourceTitles.get(asString(payload.id) ?? "") ??
+        asString(payload.title) ??
+        asString(payload.thread_name) ??
+        recordedTitle;
       createdAt = isoOr(payload.timestamp ?? record.timestamp, createdAt);
       model = recordedModel(payload.model) ?? model;
       continue;
@@ -204,7 +215,10 @@ export const parseCodexSessionTranscript = (
   if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
     return null;
   }
-  const title = messages.find((message) => message.role === "user")?.text ?? "Codex session";
+  const title =
+    recordedTitle ||
+    hideSessionInitialization(messages).find((message) => message.role === "user")?.text ||
+    "Codex session";
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Codex session",
     model,
@@ -221,6 +235,7 @@ export const parseClaudeSessionTranscript = (
 ): ParsedSession | null => {
   let workspaceRoot = "";
   let title = "";
+  let customTitle = "";
   let model: string | null = null;
   const messages: ImportedMessage[] = [];
   for (const line of lines) {
@@ -233,7 +248,9 @@ export const parseClaudeSessionTranscript = (
     const record = asRecord(value);
     if (!record || record.isSidechain === true) return null;
     workspaceRoot = asString(record.cwd) ?? workspaceRoot;
-    if (record.type === "ai-title") title = asString(record.title) ?? title;
+    if (record.type === "ai-title")
+      title = asString(record.aiTitle) ?? asString(record.title) ?? title;
+    if (record.type === "custom-title") customTitle = asString(record.customTitle) ?? customTitle;
     if (record.type !== "user" && record.type !== "assistant") continue;
     const message = asRecord(record.message);
     const role = message?.role;
@@ -247,7 +264,11 @@ export const parseClaudeSessionTranscript = (
   if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
     return null;
   }
-  title ||= messages.find((message) => message.role === "user")?.text ?? "Claude Code session";
+  title =
+    customTitle ||
+    title ||
+    hideSessionInitialization(messages).find((message) => message.role === "user")?.text ||
+    "Claude Code session";
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Claude Code session",
     model,
@@ -263,7 +284,7 @@ const parseSession = (file: SourceFile, text: string): ParsedSession | null => {
   const lines = text.split(/\r?\n/u).filter(Boolean);
   const parsed =
     file.source === "codex"
-      ? parseCodexSessionTranscript(lines, fallbackIso)
+      ? parseCodexSessionTranscript(lines, fallbackIso, file.sourceTitles)
       : parseClaudeSessionTranscript(lines, fallbackIso);
   if (!parsed) return null;
   if (
@@ -349,7 +370,15 @@ const resolveLocations = (settings: ServerSettings, path: Path.Path): SourceLoca
 
 const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<SourceFile[]> => {
   const files: SourceFile[] = [];
+  const titlesByHome = new Map<string, ReadonlyMap<string, string>>();
   for (const location of locations) {
+    const home = NodePath.dirname(location.root);
+    const sourceTitles =
+      location.source === "codex"
+        ? (titlesByHome.get(home) ?? (await readCodexSessionTitles(home)))
+        : undefined;
+    if (sourceTitles) titlesByHome.set(home, sourceTitles);
+    const titleVersion = sourceTitles ? sha256(JSON.stringify([...sourceTitles])) : "";
     const stack = [location.root];
     while (stack.length > 0) {
       const directory = stack.pop();
@@ -382,6 +411,7 @@ const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<
                 path: entryPath,
                 size: stat.size,
                 mtimeMs: stat.mtimeMs,
+                ...(sourceTitles ? { sourceTitles, titleVersion } : {}),
               });
             } catch {
               // Files can disappear while the source app rotates its sessions.
@@ -476,6 +506,7 @@ export interface WorkjetSessionImportShape {
   readonly inspect: (
     input?: WorkjetSessionImportInspectInput,
   ) => Effect.Effect<WorkjetSessionImportInspection, WorkjetSessionImportError>;
+  readonly refreshTitles: Effect.Effect<void>;
   readonly importSessions: (
     input: WorkjetSessionImportInput,
   ) => Effect.Effect<WorkjetSessionImportResult>;
@@ -546,6 +577,7 @@ export const make = Effect.gen(function* () {
           .update(String(file.size))
           .update("\0")
           .update(String(file.mtimeMs))
+          .update(file.titleVersion ?? "")
           .update("\n");
       }
       const discoveryVersion = discoveryHash.digest("hex");
@@ -559,7 +591,7 @@ export const make = Effect.gen(function* () {
       for (const file of files) {
         if (input.source && file.source !== input.source) continue;
         if (file.size > MAX_TRANSCRIPT_BYTES) continue;
-        const fingerprint = `${file.mtimeMs}:${file.size}`;
+        const fingerprint = `${file.mtimeMs}:${file.size}:${file.titleVersion ?? ""}`;
         let parsed =
           previewCache.get(file.sourceKey)?.fingerprint === fingerprint
             ? previewCache.get(file.sourceKey)?.session
@@ -925,7 +957,89 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  return { inspect, importSessions } satisfies WorkjetSessionImportShape;
+  const refreshTitles = Effect.gen(function* () {
+    const rows =
+      yield* sql<ImportRow>`SELECT source_key, thread_id, imported_message_count, prefix_hash FROM workjet_session_imports`;
+    const legacyRows = yield* sql<{
+      readonly thread_id: string;
+      readonly provider_name: string;
+      readonly provider_instance_id: string | null;
+      readonly resume_cursor_json: string | null;
+    }>`SELECT thread_id, provider_name, provider_instance_id, resume_cursor_json FROM provider_session_runtime`.pipe(
+      Effect.catch(() => Effect.succeed([])),
+    );
+    if (rows.length === 0 && legacyRows.length === 0) return;
+    const settings = yield* settingsService.getSettings;
+    const files = yield* Effect.promise(() => discoverFiles(resolveLocations(settings, path)));
+    for (const file of files) {
+      const provider = file.source === "codex" ? "codex" : "claudeAgent";
+      const legacyCopies = legacyRows.filter((row) => {
+        if (
+          row.provider_name !== provider ||
+          (row.provider_instance_id ?? provider) !== file.providerInstanceId
+        )
+          return false;
+        try {
+          const cursor = asRecord(JSON.parse(row.resume_cursor_json ?? "null"));
+          const resume = asString(cursor?.resume);
+          return (
+            resume !== null &&
+            /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u.test(resume) &&
+            file.path.endsWith(resume + ".jsonl")
+          );
+        } catch {
+          return false;
+        }
+      });
+      const copies = [
+        ...new Set([
+          ...rows
+            .filter(
+              (row) =>
+                row.source_key === file.sourceKey ||
+                row.source_key.startsWith(file.sourceKey + ":"),
+            )
+            .map((row) => row.thread_id),
+          ...legacyCopies.map((row) => row.thread_id),
+        ]),
+      ];
+      if (copies.length === 0) continue;
+      const parsed = yield* Effect.promise(() => readSessionPreview(file).catch(() => null));
+      if (!parsed) continue;
+      const originalTitle = parsed.messages
+        .find((message) => message.role === "user")
+        ?.text.replace(/\s+/gu, " ")
+        .slice(0, 120)
+        .trim();
+      for (const copy of copies) {
+        const threadId = ThreadId.make(copy);
+        const thread = Option.getOrUndefined(yield* query.getThreadShellById(threadId));
+        // Respect a local rename; only correct the importer-generated first-prompt title.
+        const initialHandshake =
+          hideSessionInitialization(parsed.messages).length < parsed.messages.length;
+        const automaticInitTitle =
+          initialHandshake &&
+          /^(?:hi|hallo|hello|bereit|ready|nur bereit antworten)[.!]?$/iu.test(thread?.title ?? "");
+        if (
+          !thread ||
+          (thread.title !== originalTitle && !automaticInitTitle) ||
+          thread.title === parsed.title
+        )
+          continue;
+        yield* engine.dispatch({
+          type: "thread.meta.update",
+          commandId: CommandId.make(NodeCrypto.randomUUID()),
+          threadId,
+          title: parsed.title,
+        });
+      }
+    }
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Imported session title refresh failed", { cause }),
+    ),
+  );
+  return { inspect, importSessions, refreshTitles } satisfies WorkjetSessionImportShape;
 });
 
 export const layer = Layer.effect(WorkjetSessionImport, make);

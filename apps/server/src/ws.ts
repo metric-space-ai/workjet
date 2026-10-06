@@ -3022,6 +3022,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     // inspect, so a server that nobody asks never reads the legacy document.
     const legacyWorkjetImport = yield* LegacyWorkjetImport.LegacyWorkjetImport;
     const workjetSessionImport = yield* WorkjetSessionImport.WorkjetSessionImport;
+    yield* workjetSessionImport.refreshTitles.pipe(Effect.forkScoped);
     const providerGateway = yield* ProviderGateway.ProviderGatewayService;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const pullRequests = yield* PullRequestService.PullRequestService;

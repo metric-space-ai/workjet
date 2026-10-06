@@ -3430,7 +3430,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
-  const miniMaxManualCatalog = useMemo(() => selectedProvider === "minimax" ? getMiniMaxManualModelCatalog(providerStatuses, selectedInstanceId) : null, [providerStatuses, selectedInstanceId, selectedProvider]);
+  const miniMaxManualCatalog = useMemo(
+    () =>
+      selectedProvider === "minimax"
+        ? getMiniMaxManualModelCatalog(providerStatuses, selectedInstanceId)
+        : null,
+    [providerStatuses, selectedInstanceId, selectedProvider],
+  );
   const manualModelDraftKey = JSON.stringify([environmentId, composerDraftTarget]);
   const composerManualTargetControls =
     workerModeActive || !workjetManualControlsAvailable ? null : (
@@ -3456,7 +3462,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         selectedHarness={harnessForProviderInstanceId(selectedInstanceId, selectedProvider)}
         onSelectHarness={handleSelectManualHarness}
-        modelSource={miniMaxManualCatalog !== null ? "native" : greppyManualModels === null ? "gateway" : "configured"}
+        modelSource={
+          miniMaxManualCatalog !== null
+            ? "native"
+            : greppyManualModels === null
+              ? "gateway"
+              : "configured"
+        }
         models={miniMaxManualCatalog?.models ?? manualModels}
         modelsUnavailableReason={
           miniMaxManualCatalog?.unavailableReason ??

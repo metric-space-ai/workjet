@@ -616,7 +616,11 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   const selectedModelSummary = props.models.find((model) => model.id === props.selectedModelId);
   const modelInCatalog = selectedModelSummary !== undefined;
   const allModelGroups = composerGatewayModelMenuGroups(props.models);
-  const modelGroups = configuredModels ? [] : nativeModels ? allModelGroups.filter(([, models]) => models.length > 0) : allModelGroups;
+  const modelGroups = configuredModels
+    ? []
+    : nativeModels
+      ? allModelGroups.filter(([, models]) => models.length > 0)
+      : allModelGroups;
   const selectedModelProvider = configuredModels
     ? null
     : (selectedModelSummary?.providers[0] ??
@@ -624,7 +628,9 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
   // The rail's active provider: the explicit pick, else the provider of the
   // current model, else the first group.
   const activeModelProvider =
-    (modelGroups.some(([provider]) => provider === modelProviderChoice) ? modelProviderChoice : null) ??
+    (modelGroups.some(([provider]) => provider === modelProviderChoice)
+      ? modelProviderChoice
+      : null) ??
     selectedModelProvider ??
     modelGroups.find(([, models]) => models.length > 0)?.[0] ??
     (nativeModels ? undefined : COMPOSER_GATEWAY_PROVIDER_RAIL[0]);
@@ -632,7 +638,8 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
     ? props.models
     : (modelGroups.find(([provider]) => provider === activeModelProvider)?.[1] ?? []);
   const showCurrentCustomModel =
-    !nativeModels && !modelInCatalog &&
+    !nativeModels &&
+    !modelInCatalog &&
     props.selectedModelId.length > 0 &&
     (configuredModels || (selectedModelProvider ?? activeModelProvider) === activeModelProvider);
 
@@ -693,7 +700,9 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
           </SelectPopup>
         </Select>
         <TooltipPopup side="top">
-          {nativeModels ? "This harness runs models advertised by its native profile on the selected computer." : "Harness — the agent runtime that drives the turn. Any harness combines with any model."}
+          {nativeModels
+            ? "This harness runs models advertised by its native profile on the selected computer."
+            : "Harness — the agent runtime that drives the turn. Any harness combines with any model."}
         </TooltipPopup>
       </Tooltip>
 
@@ -717,7 +726,11 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
             <ComposerControlIcon icon={CpuIcon} />
             <span className="min-w-0 truncate">
               {selectedModelSummary?.displayName ??
-                (nativeModels ? "Choose an advertised model" : props.selectedModelId.length > 0 ? props.selectedModelId : "Model")}
+                (nativeModels
+                  ? "Choose an advertised model"
+                  : props.selectedModelId.length > 0
+                    ? props.selectedModelId
+                    : "Model")}
             </span>
             <ComposerControlChevron />
           </ComposerControl>
@@ -839,18 +852,18 @@ export function ComposerManualTargetControlsView(props: ComposerManualTargetCont
                 </div>
               ) : null}
               {nativeModels ? null : (
-              <button
-                ref={customModelTrigger}
-                type="button"
-                className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
-                onClick={() => {
-                  setCustomModelDraft(customModelDraft ?? props.selectedModelId);
-                  setCustomModelEditorOpen(true);
-                }}
-                aria-expanded={customModelEditorOpen}
-              >
-                {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
-              </button>
+                <button
+                  ref={customModelTrigger}
+                  type="button"
+                  className="mt-1 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  onClick={() => {
+                    setCustomModelDraft(customModelDraft ?? props.selectedModelId);
+                    setCustomModelEditorOpen(true);
+                  }}
+                  aria-expanded={customModelEditorOpen}
+                >
+                  {customModelDraft === null ? "Custom model ID…" : "Continue model edit…"}
+                </button>
               )}
             </div>
           </div>

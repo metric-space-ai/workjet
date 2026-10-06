@@ -1,5 +1,6 @@
 import {
   CtoxWorkjetProjectProjection,
+  type CtoxWorkjetProjectControlResult,
   type EnvironmentId,
   ProjectId,
   type WorkjetComputer,
@@ -21,6 +22,7 @@ export interface WorkjetProjectRegistrySnapshot {
   readonly phase: "idle" | "loading" | "ready" | "blocked";
   readonly projects: readonly CtoxWorkjetProjectProjection[];
   readonly selectedProjectId: string | null;
+  readonly refreshFailed?: boolean;
 }
 
 const EMPTY_PROJECTS: readonly CtoxWorkjetProjectProjection[] = Object.freeze([]);
@@ -287,6 +289,32 @@ export function useWorkjetProjectRegistry(
   );
 }
 
+/** A failed refresh retains this instance's saved projects and selected history. */
+export function applyWorkjetProjectRegistryResult(
+  presentationInstanceId: string,
+  result: CtoxWorkjetProjectControlResult,
+): void {
+  if (snapshot.presentationInstanceId !== presentationInstanceId) return;
+  const current = readWorkjetProjectRegistry(presentationInstanceId);
+  if (result._tag !== "completed" || result.response.action !== "project.list") {
+    publish({
+      ...current,
+      phase: current.projects.length === 0 ? "blocked" : "ready",
+      refreshFailed: true,
+    });
+    return;
+  }
+  publish({
+    presentationInstanceId,
+    phase: "ready",
+    projects: result.response.projects,
+    selectedProjectId: resolveSelectedWorkjetProjectId(
+      result.response.projects,
+      current.selectedProjectId,
+    ),
+  });
+}
+
 export function WorkjetProjectRegistrySynchronizer() {
   useHydratePrimaryWorkjetSettings();
   const { selectedInstanceId: presentationInstanceId } = useActiveWorkjetScope();
@@ -294,32 +322,20 @@ export function WorkjetProjectRegistrySynchronizer() {
   useEffect(() => {
     let cancelled = false;
     const restored = loadingWorkjetProjectRegistry(presentationInstanceId);
-    publish(presentationInstanceId === null ? restored : { ...restored, phase: "loading" });
+    publish(restored);
     if (presentationInstanceId === null) return;
     const refreshController = createProjectRegistryRefresh(() =>
       listWorkjetProjects(presentationInstanceId).then(
         (result) => {
           if (cancelled) return;
-          if (result._tag !== "completed" || result.response.action !== "project.list") {
-            const current = readWorkjetProjectRegistry(presentationInstanceId);
-            publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
-            return;
-          }
-          const selectedProjectId = resolveSelectedWorkjetProjectId(
-            result.response.projects,
-            readWorkjetProjectRegistry(presentationInstanceId).selectedProjectId,
-          );
-          publish({
-            presentationInstanceId,
-            phase: "ready",
-            projects: result.response.projects,
-            selectedProjectId,
-          });
+          applyWorkjetProjectRegistryResult(presentationInstanceId, result);
         },
         () => {
           if (!cancelled) {
-            const current = readWorkjetProjectRegistry(presentationInstanceId);
-            publish({ ...current, phase: current.projects.length === 0 ? "blocked" : "ready" });
+            applyWorkjetProjectRegistryResult(presentationInstanceId, {
+              _tag: "failed",
+              code: "guest_failed",
+            });
           }
         },
       ),

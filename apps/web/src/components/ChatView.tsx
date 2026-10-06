@@ -1,6 +1,6 @@
-import { hideSessionInitialization } from "@workjet/contracts";
 import {
   type ApprovalRequestId,
+  hideSessionInitialization,
   type CtoxAppModuleId,
   type CtoxManagedInstanceId,
   DEFAULT_MODEL,

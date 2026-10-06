@@ -1,5 +1,8 @@
-import { hideSessionInitialization } from "@workjet/contracts";
-import { ApprovalRequestId, isToolLifecycleItemType } from "@workjet/contracts";
+import {
+  ApprovalRequestId,
+  isToolLifecycleItemType,
+  hideSessionInitialization,
+} from "@workjet/contracts";
 import type {
   OrchestrationLatestTurn,
   OrchestrationThread,

@@ -6,7 +6,8 @@ import test from "node:test";
 import zlib from "node:zlib";
 
 const web = createRequire(new URL("../apps/web/package.json", import.meta.url));
-const router = createRequire(web.resolve("@tanstack/router-core"));
+const reactRouter = createRequire(web.resolve("@tanstack/react-router"));
+const router = createRequire(reactRouter.resolve("@tanstack/router-core"));
 const seroval = router("seroval");
 const marketing = createRequire(new URL("../apps/marketing/package.json", import.meta.url));
 const astro = createRequire(marketing.resolve("astro/package.json"));

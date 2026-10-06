@@ -15,7 +15,7 @@ import {
   type TelemetrySession,
 } from "./DesktopServiceTelemetry.ts";
 
-const encodeError = Schema.encodeSync(Schema.UnknownFromJsonString);
+const encodeError = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const initialControl = {
   version: 1 as const,
   type: "setDiagnosticsDemand" as const,

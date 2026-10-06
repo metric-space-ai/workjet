@@ -1,4 +1,4 @@
-# Unreleased dependency source repairs
+# Dependency security repairs
 
 The current dependency graph includes three high severity advisories with no
 published patched version. These patches retain the real upstream package
@@ -43,15 +43,41 @@ The published devalue 5.9.3 repair from existing PR79 commit 9a88e8db146fceba5e3
 undici and brace-expansion repairs are retained.
 
 The independent source review found no blocking defect in the three patch
-implementations. A subsequent pnpm 11.10.0 run generated all three patch hashes
-and completed the frozen installation command successfully. However, the same
-21-case suite against the real Expo/Metro and Astro dependency paths passed only
-14 cases: all seven Braces protections failed. Its resolved package directory
-included the correct patch hash, but the loaded Braces source lacked the guards.
-Dependency patch application remains an open delivery finding.
+implementations. The first real-consumer run passed only 14 of 21 cases:
+the Braces package resolved with its patch hash but lacked the source guards.
+That failed receipt remains preserved. After a corrected frozen import, all
+21 tests passed against the actual Expo/Metro and Astro paths on October 4,
+and again on source 71b904c3d0 on October 6. The unchanged guard and raw audit
+still failed; passing consumer tests do not make the registry audit green.
 
-The actual consumer failure stopped that run before its production audit and
-composed host checks. Those checks remain unexecuted on this generated lock;
-the previous red production audit is retained and is not waived. No current
-package or installed-product acceptance is established. The earlier 4ea9
-diagnostic desktop package is not a package of these repairs.
+The October 6 audit also reported five additional high or critical advisories.
+The workspace now pins four published upstream repairs, whose package versions
+were verified directly in the registry:
+
+| Package       | Pinned repair | Actual consumer                  |
+| ------------- | ------------- | -------------------------------- |
+| seroval       | 1.6.3         | Web TanStack router              |
+| source-map-js | 1.2.2         | Astro/Magicast and Metro/PostCSS |
+| proxy-addr    | 2.0.8         | Server Claude SDK/MCP/Express    |
+| compression   | 1.8.2         | Mobile Expo CLI                  |
+
+The added `scripts/security-upstream-repairs.test.mjs` exercises the actual
+consumer imports: malformed typed-array buffers, indexed source-map offsets,
+mapped IPv6 proxy trust and stream cleanup on premature response close.
+The fixtures stay bounded even before a fix is installed. Lock generation,
+frozen import and these new regressions must pass before packaging; an override
+declaration alone does not establish an installed repair.
+
+Primary advisories for the additional repairs:
+
+- https://github.com/advisories/GHSA-p6vx-979v-rg4c
+- https://github.com/advisories/GHSA-jp82-f5mq-hwhp
+- https://github.com/advisories/GHSA-68fv-2mgg-jv7q
+- https://github.com/advisories/GHSA-jqcg-44mw-7w3h
+- https://github.com/advisories/GHSA-vc2v-76pw-4v95
+
+The original three requested patched versions (node-forge 1.4.1,
+http-cache-semantics 4.2.1 and braces 3.0.4) returned registry 404 on October 6.
+Their existing reviewed source patches remain in place. No unavailable package
+version, advisory suppression or protection bypass is accepted. Package and
+installed-product acceptance remain separate from dependency verification.

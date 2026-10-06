@@ -100,10 +100,13 @@ export class DesktopWindow extends Context.Service<
     readonly revealOrCreateMain: Effect.Effect<Electron.BrowserWindow, DesktopWindowError>;
     readonly activate: Effect.Effect<void, DesktopWindowError>;
     readonly createMainIfBackendReady: Effect.Effect<void, DesktopWindowError>;
-    // Show a lightweight "Connecting to WSL" splash window immediately (wsl-only
-    // mode), before the WSL backend that serves the renderer is ready. It is
-    // dismissed automatically once the real main window reveals.
+    // Show a lightweight startup window while a first local service install or
+    // WSL-only cold boot waits for the renderer's backend. It is dismissed
+    // automatically once the real main window reveals.
     readonly showConnectingSplash: Effect.Effect<void>;
+    // Replace the startup spinner with a visible failure when the local
+    // service cannot attach. Returns false if a real main window owns the UI.
+    readonly handleBackendBlocked: (reason: string) => Effect.Effect<boolean>;
     // Marks the primary backend as ready so `createMainIfBackendReady` and the
     // macOS "activate without windows" path may open the real main window. The
     // renderer now always loads the local client URL (getDesktopUrl) and connects
@@ -186,15 +189,27 @@ export function resolveInitialMainWindowBounds(
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
 }
 
-// A self-contained "Connecting to WSL" splash, shown immediately in wsl-only
-// mode while the WSL backend (which serves the renderer) cold-boots. Inlined as
-// a data URL so it needs no bundled asset and no backend — pure CSS, no JS.
-function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
+// A self-contained startup splash for first service installs and WSL-only cold
+// boots. Inlined as a data URL so it needs no bundled asset or backend.
+function buildConnectingSplashDataUrl(
+  shouldUseDarkColors: boolean,
+  blockedReason?: string,
+): string {
   const background = getInitialWindowBackgroundColor(shouldUseDarkColors);
   const label = shouldUseDarkColors ? "#9ca3af" : "#6b7280";
   const accent = shouldUseDarkColors ? "#f8fafc" : "#1f2937";
   const track = shouldUseDarkColors ? "rgba(248,250,252,0.18)" : "rgba(31,41,55,0.18)";
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;-webkit-user-select:none;user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><div class="spinner"></div><div class="label">Connecting to WSL…</div></body></html>`;
+  const escapedReason = blockedReason?.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ??
+      character,
+  );
+  const content =
+    escapedReason === undefined
+      ? '<div class="spinner"></div><div class="label">Preparing Workjet…</div>'
+      : `<h1>Workjet needs attention</h1><p>${escapedReason}</p><p>Resolve the service or keychain issue, then reopen Workjet.</p>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;height:100%}body{background:${background};color:${label};font-family:system-ui,-apple-system,'Segoe UI',sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px;box-sizing:border-box;text-align:center;-webkit-user-select:none;-webkit-app-region:drag}.spinner{width:26px;height:26px;border:3px solid ${track};border-top-color:${accent};border-radius:50%;animation:spin .8s linear infinite}.label{font-size:13px}h1{color:${accent};font-size:18px;margin:0}p{font-size:12px;line-height:1.35;margin:0;overflow-wrap:anywhere}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body>${content}</body></html>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -855,10 +870,39 @@ export const make = Effect.gen(function* () {
           return;
         }
       }
-      yield* createMainIfBackendReady;
+      if (!environment.isDevelopment) {
+        yield* revealOrCreateMain;
+      } else {
+        yield* createMainIfBackendReady;
+      }
     }).pipe(Effect.withSpan("desktop.window.activate")),
     createMainIfBackendReady,
     showConnectingSplash,
+    handleBackendBlocked: (reason) =>
+      Effect.gen(function* () {
+        yield* Ref.set(backendReadyRef, false);
+        yield* showConnectingSplash;
+        const splash = yield* Ref.get(splashWindowRef);
+        if (Option.isNone(splash) || splash.value.isDestroyed()) return false;
+        const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
+        yield* Effect.tryPromise({
+          try: () =>
+            splash.value.loadURL(buildConnectingSplashDataUrl(shouldUseDarkColors, reason)),
+          catch: (cause) => ({
+            _tag: "BlockedSplashLoadError" as const,
+            message: cause instanceof Error ? cause.message : String(cause),
+          }),
+        });
+        yield* electronWindow.reveal(splash.value);
+        return true;
+      }).pipe(
+        Effect.catch((error) =>
+          logWindowWarning("failed to show blocked startup", { message: error.message }).pipe(
+            Effect.as(false),
+          ),
+        ),
+        Effect.withSpan("desktop.window.handleBackendBlocked"),
+      ),
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       yield* Ref.set(backendReadyRef, true);
       yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });
@@ -873,7 +917,11 @@ export const make = Effect.gen(function* () {
     dispatchMenuAction: Effect.fn("desktop.window.dispatchMenuAction")(function* (action) {
       yield* Effect.annotateCurrentSpan({ action });
       const existingWindow = yield* focusedMainWindow;
-      if (Option.isNone(existingWindow) && !(yield* Ref.get(backendReadyRef))) {
+      if (
+        environment.isDevelopment &&
+        Option.isNone(existingWindow) &&
+        !(yield* Ref.get(backendReadyRef))
+      ) {
         return;
       }
       const targetWindow = Option.isSome(existingWindow) ? existingWindow.value : yield* ensureMain;

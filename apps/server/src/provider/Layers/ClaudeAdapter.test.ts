@@ -163,6 +163,9 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly onCreateQuery?: (
+    input: Parameters<NonNullable<ClaudeAdapterLiveOptions["createQuery"]>>[0],
+  ) => void;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -176,6 +179,7 @@ function makeHarness(config?: {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
     createQuery: (input) => {
       createInput = input;
+      config?.onCreateQuery?.(input);
       return query;
     },
     ...(config?.nativeEventLogger
@@ -273,6 +277,24 @@ async function readFirstPromptMessage(
 
 const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
+
+const CLAUDE_RECOVERY_SESSION_ID = "550e8400-e29b-41d4-a716-446655440000";
+const strictRecoveryInput = {
+  threadId: RESUME_THREAD_ID,
+  provider: ProviderDriverKind.make("claudeAgent"),
+  resumeCursor: { threadId: RESUME_THREAD_ID, resume: CLAUDE_RECOVERY_SESSION_ID },
+  resumePolicy: "require-existing" as const,
+  runtimeMode: "full-access" as const,
+};
+
+function makeRecoveryHarness() {
+  let created!: (options: ClaudeQueryOptions) => void;
+  const queryCreated = new Promise<ClaudeQueryOptions>((resolve) => {
+    created = resolve;
+  });
+  const harness = makeHarness({ onCreateQuery: (input) => created(input.options) });
+  return { ...harness, queryCreated };
+}
 
 function setManagedPrompt(threadId: ThreadId, compiledManagedPrompt: string): void {
   McpProviderSession.setMcpProviderSession({
@@ -3534,6 +3556,288 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(createInput?.options.resume, "550e8400-e29b-41d4-a716-446655440000");
       assert.equal(createInput?.options.sessionId, undefined);
       assert.equal(createInput?.options.resumeSessionAt, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect(
+    "retains a claimed Claude conversation when resume cannot be proved before sending",
+    () => {
+      const harness = makeRecoveryHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const starting = yield* adapter
+          .startSession(strictRecoveryInput)
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* Effect.promise(() => harness.queryCreated);
+        assert.deepEqual(yield* adapter.listSessions(), []);
+        yield* TestClock.adjust("10 seconds");
+        const error = yield* Fiber.join(starting);
+        assert.equal(error._tag, "ProviderAdapterValidationError");
+        assert.equal(harness.query.closeCalls, 1);
+        assert.deepEqual(yield* adapter.listSessions(), []);
+        assert.equal(
+          yield* Effect.promise(() => readFirstPromptMessage(harness.getLastCreateQueryInput())),
+          undefined,
+        );
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  for (const cursor of [
+    undefined,
+    { threadId: RESUME_THREAD_ID, resume: "not-a-session-id" },
+    { threadId: THREAD_ID, resume: CLAUDE_RECOVERY_SESSION_ID },
+  ]) {
+    it.effect(
+      "rejects missing or foreign Claude recovery identity before starting a query: " +
+        JSON.stringify(cursor),
+      () => {
+        const harness = makeHarness();
+        return Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          const error = yield* adapter
+            .startSession({ ...strictRecoveryInput, resumeCursor: cursor })
+            .pipe(Effect.flip);
+          assert.equal(error._tag, "ProviderAdapterValidationError");
+          assert.equal(harness.getLastCreateQueryInput(), undefined);
+        }).pipe(Effect.provide(harness.layer));
+      },
+    );
+  }
+
+  for (const proof of [
+    { session_id: CLAUDE_RECOVERY_SESSION_ID, source: "startup" as const },
+    { session_id: "550e8400-e29b-41d4-a716-446655440001", source: "resume" as const },
+  ]) {
+    it.effect(
+      "refuses a replacement Claude session without sending a continuation: " +
+        JSON.stringify(proof),
+      () => {
+        const harness = makeRecoveryHarness();
+        return Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          const starting = yield* adapter
+            .startSession(strictRecoveryInput)
+            .pipe(Effect.flip, Effect.forkChild);
+          const options = yield* Effect.promise(() => harness.queryCreated);
+          const callback = options.hooks?.SessionStart?.[0]?.hooks[0];
+          assert.ok(callback);
+          const result = yield* Effect.promise(() =>
+            callback(
+              {
+                hook_event_name: "SessionStart",
+                transcript_path: "/fixture/claude-history.jsonl",
+                cwd: "/fixture/project",
+                ...proof,
+              },
+              undefined,
+              { signal: new AbortController().signal },
+            ),
+          );
+          assert.equal("continue" in result && result.continue, false);
+          const error = yield* Fiber.join(starting);
+          assert.equal(error._tag, "ProviderAdapterValidationError");
+          assert.equal(harness.query.closeCalls, 1);
+          assert.deepEqual(yield* adapter.listSessions(), []);
+          assert.equal(
+            yield* Effect.promise(() => readFirstPromptMessage(harness.getLastCreateQueryInput())),
+            undefined,
+          );
+        }).pipe(
+          Effect.provideService(Random.Random, makeDeterministicRandomService()),
+          Effect.provide(harness.layer),
+        );
+      },
+    );
+  }
+
+  it.effect(
+    "resumes the exact main Claude session before exposing readiness or accepting a continuation",
+    () => {
+      const harness = makeRecoveryHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const starting = yield* adapter.startSession(strictRecoveryInput).pipe(Effect.forkChild);
+        const options = yield* Effect.promise(() => harness.queryCreated);
+        const callback = options.hooks?.SessionStart?.[0]?.hooks[0];
+        assert.ok(callback);
+        assert.equal(options.resume, CLAUDE_RECOVERY_SESSION_ID);
+        assert.equal(options.sessionId, undefined);
+        assert.deepEqual(yield* adapter.listSessions(), []);
+        const proof = {
+          hook_event_name: "SessionStart" as const,
+          source: "resume" as const,
+          session_id: CLAUDE_RECOVERY_SESSION_ID,
+          transcript_path: "/fixture/claude-history.jsonl",
+          cwd: "/fixture/project",
+        };
+        yield* Effect.promise(() =>
+          callback({ ...proof, agent_id: "leaf-worker" }, undefined, {
+            signal: new AbortController().signal,
+          }),
+        );
+        assert.equal(starting.pollUnsafe(), undefined);
+        assert.deepEqual(yield* adapter.listSessions(), []);
+        yield* Effect.promise(() =>
+          callback(proof, undefined, { signal: new AbortController().signal }),
+        );
+        const session = yield* Fiber.join(starting);
+        assert.equal(session.status, "ready");
+        assert.equal(
+          (session.resumeCursor as { resume: string }).resume,
+          CLAUDE_RECOVERY_SESSION_ID,
+        );
+        const sameQuery = harness.getLastCreateQueryInput();
+        const reused = yield* adapter.startSession(strictRecoveryInput);
+        assert.equal(
+          (reused.resumeCursor as { resume: string }).resume,
+          CLAUDE_RECOVERY_SESSION_ID,
+        );
+        assert.equal(harness.getLastCreateQueryInput(), sameQuery);
+        assert.equal(harness.query.closeCalls, 0);
+        yield* adapter.sendTurn({
+          threadId: RESUME_THREAD_ID,
+          input: "Continue the original task",
+          attachments: [],
+        });
+        assert.equal(
+          yield* Effect.promise(() => readFirstPromptText(harness.getLastCreateQueryInput())),
+          "Continue the original task",
+        );
+        const busy = yield* adapter.startSession(strictRecoveryInput).pipe(Effect.flip);
+        assert.equal(busy._tag, "ProviderAdapterValidationError");
+        assert.equal(harness.query.closeCalls, 0);
+        const restarted = yield* Effect.promise(() =>
+          callback({ ...proof, source: "startup" }, undefined, {
+            signal: new AbortController().signal,
+          }),
+        );
+        assert.equal("continue" in restarted && restarted.continue, false);
+        const submit = options.hooks?.UserPromptSubmit?.[0]?.hooks[0];
+        assert.ok(submit);
+        const refused = yield* Effect.promise(() =>
+          submit(
+            {
+              hook_event_name: "UserPromptSubmit",
+              session_id: "550e8400-e29b-41d4-a716-446655440001",
+              transcript_path: "/fixture/other-history.jsonl",
+              cwd: "/fixture/project",
+              prompt: "Continue the original task",
+            },
+            undefined,
+            { signal: new AbortController().signal },
+          ),
+        );
+        assert.equal("continue" in refused && refused.continue, false);
+        const reproof = yield* Effect.promise(() =>
+          callback(proof, undefined, {
+            signal: new AbortController().signal,
+          }),
+        );
+        assert.equal("continue" in reproof && reproof.continue, false);
+        const denied = yield* adapter
+          .sendTurn({ threadId: RESUME_THREAD_ID, input: "Must not dispatch", attachments: [] })
+          .pipe(Effect.flip);
+        assert.equal(denied._tag, "ProviderAdapterSessionClosedError");
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("rejects Claude resume proof revoked while the query is being created", () => {
+    let hookResults!: Promise<unknown>;
+    const harness = makeHarness({
+      onCreateQuery: ({ options }) => {
+        const callback = options.hooks?.SessionStart?.[0]?.hooks[0];
+        assert.ok(callback);
+        const proof = {
+          hook_event_name: "SessionStart" as const,
+          source: "resume" as const,
+          session_id: CLAUDE_RECOVERY_SESSION_ID,
+          transcript_path: "/fixture/claude-history.jsonl",
+          cwd: "/fixture/project",
+        };
+        const signal = new AbortController().signal;
+        // Both hooks begin before createQuery returns and context is installed.
+        hookResults = Promise.all([
+          callback(proof, undefined, { signal }),
+          callback({ ...proof, source: "startup" }, undefined, { signal }),
+        ]);
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const error = yield* adapter.startSession(strictRecoveryInput).pipe(Effect.flip);
+      yield* Effect.promise(() => hookResults);
+      assert.equal(error._tag, "ProviderAdapterValidationError");
+      assert.equal(harness.query.closeCalls, 1);
+      assert.deepEqual(yield* adapter.listSessions(), []);
+      assert.equal(
+        yield* Effect.promise(() => readFirstPromptMessage(harness.getLastCreateQueryInput())),
+        undefined,
+      );
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("closes a recovered Claude runtime if its stream changes the confirmed session", () => {
+    const harness = makeRecoveryHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const events = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const starting = yield* adapter.startSession(strictRecoveryInput).pipe(Effect.forkChild);
+      const options = yield* Effect.promise(() => harness.queryCreated);
+      const callback = options.hooks?.SessionStart?.[0]?.hooks[0];
+      assert.ok(callback);
+      yield* Effect.promise(() =>
+        callback(
+          {
+            hook_event_name: "SessionStart",
+            source: "resume",
+            session_id: CLAUDE_RECOVERY_SESSION_ID,
+            transcript_path: "/fixture/claude-history.jsonl",
+            cwd: "/fixture/project",
+          },
+          undefined,
+          { signal: new AbortController().signal },
+        ),
+      );
+      yield* Fiber.join(starting);
+      harness.query.emit({
+        type: "system",
+        subtype: "init",
+        apiKeySource: "none",
+        claude_code_version: "test",
+        cwd: "/fixture/project",
+        tools: [],
+        mcp_servers: [],
+        model: "claude-sonnet-4-5",
+        permissionMode: "bypassPermissions",
+        slash_commands: [],
+        output_style: "default",
+        skills: [],
+        plugins: [],
+        session_id: "550e8400-e29b-41d4-a716-446655440001",
+        uuid: "foreign-resume-init",
+      } as unknown as SDKMessage);
+      const runtimeEvents = Array.from(yield* Fiber.join(events));
+      assert.equal(runtimeEvents.filter((event) => event.type === "thread.started").length, 0);
+      assert.equal(harness.query.closeCalls, 1);
+      assert.deepEqual(yield* adapter.listSessions(), []);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

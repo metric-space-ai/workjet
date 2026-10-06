@@ -40,7 +40,7 @@ import {
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { configureClientTracing } from "../observability/clientTracing";
-import { resolveInitialServerAuthGateState } from "../environments/primary";
+import { resolveInitialAppShellGateState } from "../environments/primary";
 import { hasHostedPairingRequest, isHostedStaticApp } from "../hostedPairing";
 import { shellEnvironment } from "../state/shell";
 import { useAtomValue } from "@effect/atom-react";
@@ -75,7 +75,7 @@ export const Route = createRootRoute({
       };
     }
 
-    const authGateState = await resolveInitialServerAuthGateState();
+    const authGateState = await resolveInitialAppShellGateState();
     return {
       authGateState,
     };
@@ -91,6 +91,8 @@ function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
+  const primarySubscriptionsEnabled =
+    primaryEnvironmentAuthenticated || authGateState.status === "desktop-local";
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -110,7 +112,11 @@ function RootRouteView() {
     );
   }
 
-  if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
+  if (
+    authGateState.status !== "authenticated" &&
+    authGateState.status !== "hosted-static" &&
+    authGateState.status !== "desktop-local"
+  ) {
     return (
       <>
         <DocumentTitleSync />
@@ -142,8 +148,8 @@ function RootRouteView() {
         <ConfirmDialogHost />
         <SlowRpcRequestToastCoordinator />
         <HostedStaticEnvironmentBootstrap />
-        {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
-        {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
+        {primarySubscriptionsEnabled ? <EventRouter /> : null}
+        {primarySubscriptionsEnabled ? <ProviderUpdateLaunchNotification /> : null}
         {appShell}
         {/* Above the router: a theme draft is judged by walking the app, so the
             editor has to survive navigation away from settings. */}

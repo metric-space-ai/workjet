@@ -255,7 +255,7 @@ export function NewTaskBranchPickerRouteScreen() {
           branchWorktreePath: branch.worktreePath,
           workspaceMode: flow.workspaceMode,
         });
-        if (needsCheckout && flow.selectedProject) {
+        if (needsCheckout && flow.selectedProject && flow.selectedProject.workspaceRoot !== null) {
           setSwitchingBranchName(branch.name);
           const result = await switchRef({
             environmentId: flow.selectedProject.environmentId,

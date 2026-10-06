@@ -567,6 +567,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
+          ...(input.binding.provider === "codex"
+            ? { resumePolicy: "require-existing" as const }
+            : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
           workjetConfig: persistedWorkjetConfig,
         })
@@ -576,6 +579,18 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         return yield* toValidationError(
           input.operation,
           `Adapter/provider mismatch while recovering thread '${input.binding.threadId}'. Expected '${adapter.provider}', received '${resumed.provider}'.`,
+        );
+      }
+
+      if (
+        resumed.threadId !== input.binding.threadId ||
+        (resumed.providerInstanceId !== undefined &&
+          resumed.providerInstanceId !== bindingInstanceId)
+      ) {
+        yield* clearMcpSession(input.binding.threadId);
+        return yield* toValidationError(
+          input.operation,
+          "The recovered provider session does not match the stored conversation identity.",
         );
       }
 

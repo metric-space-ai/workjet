@@ -25,6 +25,19 @@ Logs are human-facing:
 
 If you want a log message to show up in the trace file, emit it inside an active span with `Effect.log...`. `Logger.tracerLogger` will attach it as a span event.
 
+### Desktop background-service startup failures
+
+The Desktop main process logs `local background-service command failed` when its local service
+CLI fails. The structured diagnostic contains only a fixed command family (`service-install`,
+`service-status`, `service-start`, or `service-other`), a failure kind (`spawn`, `read`,
+`output-limit`, `exit`, or `timeout`), and an exit code when available. A failed install can also
+identify a recognized bundle-staging, runtime-verification, or service-start step.
+
+Raw CLI output, command arguments, credentials, and profile paths are excluded. Unrecognized
+install output leaves the step unspecified; this diagnostic does not establish a root cause.
+Authorization commands do not emit this service log. Existing output limits and command deadlines
+still apply.
+
 ### Traces
 
 Completed spans are written as NDJSON records to `serverTracePath`. The default depends on how the

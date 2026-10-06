@@ -131,6 +131,13 @@ export const make = Effect.gen(function* () {
       } as const;
     }
 
+    if (project.workspaceRoot === null) {
+      return yield* new ProjectSetupScriptOperationError({
+        ...errorContext,
+        operation: "resolveProject",
+        cause: new Error("Attach a working copy before running setup scripts."),
+      });
+    }
     const terminalId = input.preferredTerminalId ?? `setup-${script.id}`;
     const cwd = input.worktreePath;
     const env = projectScriptRuntimeEnv({

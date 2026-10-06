@@ -121,7 +121,7 @@ export function resolveProjectPathForDispatch(value: string, cwd?: string | null
   );
 }
 
-export function findProjectByPath<T extends { workspaceRoot?: string; cwd?: string }>(
+export function findProjectByPath<T extends { workspaceRoot?: string | null; cwd?: string | null }>(
   projects: ReadonlyArray<T>,
   candidatePath: string,
 ): T | undefined {

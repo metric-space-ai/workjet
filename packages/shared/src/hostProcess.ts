@@ -16,6 +16,11 @@ export const HostProcessArchitecture = Context.Reference<NodeJS.Architecture>(
   },
 );
 
+export const HostProcessUserId = Context.Reference<number | undefined>(
+  "@workjet/shared/hostProcess/HostProcessUserId",
+  { defaultValue: () => process.getuid?.() },
+);
+
 export const HostProcessHostname = Context.Reference<string>(
   "@workjet/shared/hostProcess/HostProcessHostname",
   {

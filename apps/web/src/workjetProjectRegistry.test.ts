@@ -15,6 +15,8 @@ import {
   recordWorkjetProjectProjection,
   resolveLocalWorkjetComputer,
   resolveLocalWorkjetWorkingCopy,
+  resolveSelectedWorkjetProjectId,
+  selectWorkjetProject,
 } from "./workjetProjectRegistry";
 
 afterEach(() => {
@@ -46,6 +48,55 @@ const project = {
 };
 
 describe("Workjet project registry", () => {
+  it("keeps the overview selected after clearing a project and reopening", () => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+    __resetWorkjetProjectRegistryForTests(loadingWorkjetProjectRegistry("managed:welsch"));
+    recordWorkjetProjectProjection("managed:welsch", project, { select: true });
+    expect(selectWorkjetProject("managed:welsch", null)).toBe(true);
+    __resetWorkjetProjectRegistryForTests();
+    expect(loadingWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      phase: "ready",
+      projects: [project],
+      selectedProjectId: null,
+    });
+  });
+
+  it("cannot clear or select a project in another instance", () => {
+    __resetWorkjetProjectRegistryForTests(loadingWorkjetProjectRegistry("managed:welsch"));
+    recordWorkjetProjectProjection("managed:welsch", project, { select: true });
+    expect(selectWorkjetProject("managed:other", null)).toBe(false);
+    expect(selectWorkjetProject("managed:other", project.id)).toBe(false);
+    expect(readWorkjetProjectRegistry("managed:welsch").selectedProjectId).toBe(project.id);
+  });
+
+  it("does not replace the overview or a removed selection with the first refreshed project", () => {
+    expect(resolveSelectedWorkjetProjectId([project], null)).toBeNull();
+    expect(
+      resolveSelectedWorkjetProjectId([project], "22222222-2222-4222-8222-222222222222"),
+    ).toBeNull();
+    expect(resolveSelectedWorkjetProjectId([project], project.id)).toBe(project.id);
+  });
+
+  it("returns to the overview when a saved selected project no longer exists", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () =>
+        JSON.stringify({
+          version: 1,
+          projects: [project],
+          selectedProjectId: "22222222-2222-4222-8222-222222222222",
+        }),
+      setItem: () => undefined,
+    });
+    expect(loadingWorkjetProjectRegistry("managed:welsch")).toMatchObject({
+      projects: [project],
+      selectedProjectId: null,
+    });
+  });
+
   it("starts every new instance with an empty loading projection", () => {
     expect(loadingWorkjetProjectRegistry("managed:welsch")).toEqual({
       presentationInstanceId: "managed:welsch",

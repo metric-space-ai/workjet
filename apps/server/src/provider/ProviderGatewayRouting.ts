@@ -120,7 +120,13 @@ export const GATEWAY_CODEX_LAUNCH_ARGS_ENV = "WORKJET_CODEX_LAUNCH_ARGS";
  * CLI. Anything absent here is intentionally left unrouted rather than
  * routed with guessed variables.
  */
-export const GATEWAY_ROUTABLE_DRIVERS = ["claudeAgent", "codex", "grok", "opencode", "greppy"] as const;
+export const GATEWAY_ROUTABLE_DRIVERS = [
+  "claudeAgent",
+  "codex",
+  "grok",
+  "opencode",
+  "greppy",
+] as const;
 export type GatewayRoutableDriver = (typeof GATEWAY_ROUTABLE_DRIVERS)[number];
 
 export function isGatewayRoutableDriver(driver: string): driver is GatewayRoutableDriver {

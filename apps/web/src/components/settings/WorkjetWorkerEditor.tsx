@@ -150,7 +150,7 @@ export function workjetHarnessAvailabilityWarning(
   computers: ReadonlyArray<WorkjetComputer>,
 ): string | null {
   if (computers.length === 0) {
-    return "Add a computer in Workjet Settings before saving this worker.";
+    return "Add a computer in Workjet Settings before saving this Luma.";
   }
   const computer = computers.find((candidate) => candidate.id === draft.computerId);
   if (!computer) {
@@ -159,13 +159,13 @@ export function workjetHarnessAvailabilityWarning(
   const harness = computer.harnesses.find((candidate) => candidate.harness === draft.harness);
   if (harness?.available) return null;
   const label = WORKJET_HARNESS_OPTIONS.find((candidate) => candidate.id === draft.harness)?.label;
-  return `${label ?? draft.harness} is not marked available on ${computer.label}. Enable it in Computers or keep this worker saved for later.`;
+  return `${label ?? draft.harness} is not marked available on ${computer.label}. Enable it in Computers or keep this Luma saved for later.`;
 }
 
 export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorkerProfile {
   const name = draft.name.trim();
   const modelId = draft.modelId.trim();
-  if (!name) throw new Error("Enter a worker name or role.");
+  if (!name) throw new Error("Enter a Luma name or role.");
   if (!draft.computerId) throw new Error("Choose a computer target.");
   if (!draft.llmRouteId) throw new Error("Choose an LLM route.");
   if (!modelId) throw new Error("Enter a model ID.");
@@ -174,7 +174,7 @@ export function saveWorkjetWorkerDraft(draft: WorkjetWorkerDraft): WorkjetWorker
     (binding) => binding.capabilityId === "decision-hub",
   );
   if (draft.capabilityIds.includes("decision-hub") && decisionHubBindings.length !== 1) {
-    throw new Error("Choose exactly one Decision Hub connection for this worker.");
+    throw new Error("Choose exactly one Decision Hub connection for this Luma.");
   }
   return {
     id: WorkjetWorkerProfileId.make(draft.id),
@@ -388,7 +388,7 @@ export function WorkjetWorkerEditor({
         "space-y-4",
         !compact && "rounded-xl border border-border/60 bg-muted/15 p-3 sm:p-4",
       )}
-      aria-label={worker ? `Edit worker ${worker.name}` : "Add worker"}
+      aria-label={worker ? `Edit Luma ${worker.name}` : "Add Luma"}
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -400,7 +400,7 @@ export function WorkjetWorkerEditor({
             await onSave(saveWorkjetWorkerDraft(draft));
             clearDraftStash();
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "The worker could not be saved.");
+            setError(cause instanceof Error ? cause.message : "The Luma could not be saved.");
           } finally {
             setSaving(false);
           }
@@ -425,23 +425,21 @@ export function WorkjetWorkerEditor({
               id="workjet-worker-instructions"
               value={draft.instructions}
               onChange={(event) => patchDraft({ instructions: event.target.value })}
-              placeholder="What should this worker take on?"
+              placeholder="What should this Luma take on?"
               rows={5}
             />
           </div>
         </div>
 
-        <details>
-          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            Personality
-          </summary>
+        <section aria-label="Luma personality" className="space-y-2">
+          <SectionHeader title="Personality profile" />
           <div className="pt-3">
             <WorkjetWorkerPersonalizationEditor
               value={draft.personalization}
               onChange={(personalization) => patchDraft({ personalization })}
             />
           </div>
-        </details>
+        </section>
 
         <div className="space-y-1.5">
           <SectionHeader title="Harness" />
@@ -500,7 +498,7 @@ export function WorkjetWorkerEditor({
             // Amber, not grey, and it names the consequence: a worker without a
             // route cannot run at all.
             <p className="text-[11px] text-amber-500">
-              No LLM route chosen yet. Pick one to make this worker usable.
+              No LLM route chosen yet. Pick one to make this Luma usable.
             </p>
           )}
         </div>
@@ -545,7 +543,7 @@ export function WorkjetWorkerEditor({
             />
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Orchestrators coordinate child workers. Child workers never inherit Decision Hub.
+            Orchestrator Lumas coordinate child Lumas. Child Lumas never inherit Decision Hub.
           </p>
         </div>
 
@@ -846,7 +844,7 @@ export function WorkjetWorkerEditor({
         ) : null}
         {routes.length === 0 ? (
           <p role="status" className="text-xs text-muted-foreground">
-            Add an LLM route in Settings → Models before saving this worker.
+            Add an LLM route in Settings → Models before saving this Luma.
           </p>
         ) : null}
         {error ? (
@@ -871,7 +869,7 @@ export function WorkjetWorkerEditor({
             {compact ? "Discard changes" : "Cancel"}
           </Button>
           <Button type="submit" size="sm" disabled={computers.length === 0 || routes.length === 0}>
-            {saving ? "Saving…" : "Save worker"}
+            {saving ? "Saving…" : "Save Luma"}
           </Button>
         </div>
       </fieldset>

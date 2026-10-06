@@ -145,9 +145,13 @@ export function buildProjectActionItems(input: {
   return input.projects.map((project) => ({
     kind: "action",
     value: `${input.valuePrefix}:${project.environmentId}:${project.id}`,
-    searchTerms: [project.title, project.workspaceRoot, ...(input.searchTerms?.(project) ?? [])],
+    searchTerms: [
+      project.title,
+      ...(project.workspaceRoot ? [project.workspaceRoot] : []),
+      ...(input.searchTerms?.(project) ?? []),
+    ],
     title: project.title,
-    description: project.workspaceRoot,
+    description: project.workspaceRoot ?? "Logical project",
     icon: input.icon(project),
     ...(input.shortcutCommand !== undefined ? { shortcutCommand: input.shortcutCommand } : {}),
     run: async () => {

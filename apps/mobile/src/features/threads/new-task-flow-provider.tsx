@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert } from "react-native";
 
 import type {
   EnvironmentId,
@@ -322,7 +323,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const selectedRepositoryKey = selectedProject?.repositoryIdentity?.canonicalKey ?? null;
   // `|| null` (not `??`): a pending-task placeholder project can have an empty
   // workspaceRoot, and an "" basename would reject every real host below.
-  const selectedWorkspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
+  const selectedWorkspaceBasename = selectedProject?.workspaceRoot?.split("/").at(-1) || null;
   const selectedProjectTitle = selectedProject?.title ?? null;
   const environments = useMemo(() => {
     const seen = new Set<EnvironmentId>();
@@ -331,6 +332,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       readonly environmentLabel: string;
     }> = [];
     const hostsSelectedRepository = (project: EnvironmentProject) => {
+      if (selectedProject?.workspaceRoot === null) return project.id === selectedProject.id;
       if (selectedRepositoryKey === null && selectedWorkspaceBasename === null) {
         return true;
       }
@@ -339,7 +341,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         return projectKey === selectedRepositoryKey;
       }
       return (
-        project.workspaceRoot.split("/").at(-1) === selectedWorkspaceBasename ||
+        project.workspaceRoot?.split("/").at(-1) === selectedWorkspaceBasename ||
         (selectedProjectTitle !== null && project.title === selectedProjectTitle)
       );
     };
@@ -365,6 +367,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     scopedProjects,
     savedConnectionsById,
     selectedRepositoryKey,
+    selectedProject,
     selectedWorkspaceBasename,
     selectedProjectTitle,
   ]);
@@ -386,7 +389,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // uses for new draft threads: per-project setting, then the repo's
   // checked-in workjet.json, then the server's configured default.
   const workjetProjectFileQuery = useEnvironmentQuery(
-    selectedProject !== null && selectedProject.workspaceRoot !== ""
+    selectedProject !== null &&
+      selectedProject.workspaceRoot !== null &&
+      selectedProject.workspaceRoot !== ""
       ? projectEnvironment.readFile({
           environmentId: selectedProject.environmentId,
           input: { cwd: selectedProject.workspaceRoot, relativePath: WORKJET_PROJECT_FILE_NAME },
@@ -398,11 +403,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     if (workjetProjectFileData === null || workjetProjectFileData.truncated) return null;
     return parseWorkjetProjectFile(workjetProjectFileData.contents)?.defaultThreadEnvMode ?? null;
   }, [workjetProjectFileData]);
-  const defaultWorkspaceMode: WorkspaceMode = resolveDefaultThreadEnvMode({
-    projectSetting: selectedProject?.defaultThreadEnvMode,
-    projectFile: workjetProjectFileDefaultMode,
-    globalDefault: selectedEnvironmentServerConfig?.settings.defaultThreadEnvMode ?? "local",
-  });
+  const defaultWorkspaceMode: WorkspaceMode =
+    selectedProject?.workspaceRoot === null
+      ? "local"
+      : resolveDefaultThreadEnvMode({
+          projectSetting: selectedProject?.defaultThreadEnvMode,
+          projectFile: workjetProjectFileDefaultMode,
+          globalDefault: selectedEnvironmentServerConfig?.settings.defaultThreadEnvMode ?? "local",
+        });
   // While unsettled the resolved default is provisional. Nothing may write
   // it into the draft during that window (the auto-branch effect does), or
   // the frozen interim value beats the workjet.json default once it loads.
@@ -617,7 +625,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       // indexed) fall back to workspace basename, then title, so switching
       // computers still follows the same repo instead of resetting to
       // whatever project is first on the target machine.
-      const workspaceBasename = selectedProject?.workspaceRoot.split("/").at(-1) || null;
+      const workspaceBasename = selectedProject?.workspaceRoot?.split("/").at(-1) || null;
       const match =
         (repositoryKey !== null
           ? projectsOnTarget.find(
@@ -626,7 +634,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
           : undefined) ??
         (workspaceBasename !== null
           ? projectsOnTarget.find(
-              (project) => project.workspaceRoot.split("/").at(-1) === workspaceBasename,
+              (project) => project.workspaceRoot?.split("/").at(-1) === workspaceBasename,
             )
           : undefined) ??
         (selectedProject !== null
@@ -645,6 +653,10 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         return;
       }
       if (!selectedProject) {
+        return;
+      }
+      if (mode === "worktree" && selectedProject.workspaceRoot === null) {
+        Alert.alert("Working copy required", "Attach a working copy before creating a worktree.");
         return;
       }
       const localSelection = resolveNewTaskLocalWorkspaceSelection({
@@ -883,7 +895,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         creation: {
           projectId: selectedProject.id,
           ...(projectTitle !== undefined ? { projectTitle } : {}),
-          ...(projectCwd !== undefined ? { projectCwd } : {}),
+          ...(projectCwd != null ? { projectCwd } : {}),
           workspaceMode: mode,
           branch: workspaceSelection?.branch ?? null,
           worktreePath: mode === "worktree" ? null : (workspaceSelection?.worktreePath ?? null),

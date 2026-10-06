@@ -3,10 +3,20 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import type { WebContents, WebFrameMain } from "electron";
 
-export interface DesktopIpcInvokeEvent {}
+export interface DesktopIpcInvokeEvent {
+  readonly sender?: WebContents;
+  readonly senderFrame?: WebFrameMain | null;
+}
 
-export interface DesktopIpcSyncEvent {
+/** Native invocation identity, supplied by ipcMain rather than renderer payloads. */
+export const DesktopIpcInvocation = Context.Reference<DesktopIpcInvokeEvent | undefined>(
+  "@workjet/desktop/ipc/DesktopIpcInvocation",
+  { defaultValue: () => undefined },
+);
+
+export interface DesktopIpcSyncEvent extends DesktopIpcInvokeEvent {
   returnValue: unknown;
 }
 
@@ -93,12 +103,16 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
         Effect.try({
           try: () => {
             ipcMain.removeHandler(channel);
-            ipcMain.handle(channel, (_event, raw) =>
+            ipcMain.handle(channel, (event, raw) =>
               runPromise(
                 Effect.gen(function* () {
                   yield* Effect.annotateCurrentSpan({ channel });
                   return yield* handler(raw);
-                }).pipe(Effect.annotateLogs({ channel }), Effect.withSpan("desktop.ipc.invoke")),
+                }).pipe(
+                  Effect.provideService(DesktopIpcInvocation, event),
+                  Effect.annotateLogs({ channel }),
+                  Effect.withSpan("desktop.ipc.invoke"),
+                ),
               ),
             );
           },
@@ -132,6 +146,7 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
                   yield* Effect.annotateCurrentSpan({ channel });
                   return yield* handler();
                 }).pipe(
+                  Effect.provideService(DesktopIpcInvocation, event),
                   Effect.annotateLogs({ channel }),
                   Effect.withSpan("desktop.ipc.invokeSync"),
                 ),

@@ -1,12 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off globalDateInEffect:off
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import {
   CommandId,
-  DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_WORKJET_THREAD_CONFIG,
   MessageId,
   ProjectId,
@@ -16,9 +16,11 @@ import {
   WORKJET_SESSION_IMPORT_MAX_CANDIDATES,
   WorkjetSessionImportError,
   type OrchestrationCommand,
+  type OrchestrationProjectShell,
   type ServerSettings,
   type WorkjetSessionImportCandidate,
   type WorkjetSessionImportInput,
+  type WorkjetSessionImportInspectInput,
   type WorkjetSessionImportInspection,
   type WorkjetSessionImportResult,
   type WorkjetSessionImportSource,
@@ -35,9 +37,9 @@ import { OrchestrationEngineService } from "../../orchestration/Services/Orchest
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
-const MAX_DISCOVERED_FILES = 5_000;
 const MAX_TRANSCRIPT_BYTES = 20 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 1024 * 1024;
+const MAX_CACHED_PREVIEWS = 512;
 const MAX_MESSAGE_COUNT = 5_000;
 const MAX_MESSAGE_CHARS = 200_000;
 const IMPORT_CHUNK_SIZE = 200;
@@ -65,7 +67,8 @@ interface ImportedMessage {
 
 interface ParsedSession {
   readonly title: string;
-  readonly workspaceRoot: string;
+  readonly model: string | null;
+  readonly workspaceRoot: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly messages: ReadonlyArray<ImportedMessage>;
@@ -93,6 +96,11 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 
 const asString = (value: unknown): string | null => (typeof value === "string" ? value : null);
+const recordedModel = (value: unknown): string | null => {
+  const model = asString(value)?.trim();
+  return model && model !== "<synthetic>" ? model : null;
+};
+
 const isWorkjetSessionImportError = Schema.is(WorkjetSessionImportError);
 
 const isoOr = (value: unknown, fallback: string): string => {
@@ -118,11 +126,38 @@ const visibleText = (
     .join("\n");
 };
 
-const isInjectedCodexContext = (text: string): boolean =>
-  text.includes("<recommended_plugins>") ||
-  text.includes("# AGENTS.md instructions") ||
-  text.includes("<permissions instructions>") ||
-  text.includes("<environment_context>");
+const stripInjectedCodexContext = (text: string): string => {
+  let remaining = text.trimStart();
+  let stripped = false;
+  for (;;) {
+    const header = /^# AGENTS\.md instructions(?: for [^\r\n]+)?(?:\r?\n|$)/u.exec(remaining);
+    if (header) {
+      const body = remaining.slice(header[0].length).trimStart();
+      if (!body) return "";
+      const instructions = /^<INSTRUCTIONS>[\s\S]*?<\/INSTRUCTIONS>/u.exec(body);
+      if (!instructions) return stripped ? remaining : text;
+      remaining = body.slice(instructions[0].length).trimStart();
+      stripped = true;
+      continue;
+    }
+    const context =
+      /^<(recommended_plugins|permissions instructions|environment_context)>[\s\S]*?<\/\1>/u.exec(
+        remaining,
+      );
+    if (!context) break;
+    remaining = remaining.slice(context[0].length).trimStart();
+    stripped = true;
+  }
+  // A literal marker or unknown envelope remains user text.
+  return stripped ? remaining : text;
+};
+
+// These are UI context messages, not the user's conversation title or history.
+const stripCodexUiContext = (text: string): string =>
+  text
+    .replace(/<external_codex_apps_open_page>[\s\S]*?<\/external_codex_apps_open_page>/gu, "")
+    .replace(/<codex_apps_open_page>[\s\S]*?<\/codex_apps_open_page>/gu, "")
+    .trim();
 
 const isInternalHealthProbe = (text: string): boolean =>
   text.trimStart().startsWith("WORKJET HEALTH PROBE V1.");
@@ -133,6 +168,7 @@ export const parseCodexSessionTranscript = (
 ): ParsedSession | null => {
   let workspaceRoot = "";
   let createdAt = fallbackIso;
+  let model: string | null = null;
   const messages: ImportedMessage[] = [];
   for (const line of lines) {
     let value: unknown;
@@ -147,26 +183,32 @@ export const parseCodexSessionTranscript = (
       if (payload.parent_thread_id || payload.agent_path) return null;
       workspaceRoot = asString(payload.cwd) ?? workspaceRoot;
       createdAt = isoOr(payload.timestamp ?? record.timestamp, createdAt);
+      model = recordedModel(payload.model) ?? model;
+      continue;
+    }
+    if (record?.type === "turn_context" && payload) {
+      model = recordedModel(payload.model) ?? model;
       continue;
     }
     if (record?.type !== "response_item" || payload?.type !== "message") continue;
     const role = payload.role;
     if (role !== "user" && role !== "assistant") continue;
-    const text = visibleText(
-      payload.content,
-      role === "user" ? "input_text" : "output_text",
-    ).trim();
-    if (!text || (role === "user" && isInjectedCodexContext(text))) continue;
+    const sourceText = stripCodexUiContext(
+      visibleText(payload.content, role === "user" ? "input_text" : "output_text"),
+    );
+    const text = role === "user" ? stripInjectedCodexContext(sourceText) : sourceText;
+    if (!text) continue;
     messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
   }
-  if (!workspaceRoot || !messages.some((message) => message.role === "user")) return null;
+  if (!messages.some((message) => message.role === "user")) return null;
   if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
     return null;
   }
   const title = messages.find((message) => message.role === "user")?.text ?? "Codex session";
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Codex session",
-    workspaceRoot,
+    model,
+    workspaceRoot: workspaceRoot || null,
     createdAt,
     updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
     messages,
@@ -179,6 +221,7 @@ export const parseClaudeSessionTranscript = (
 ): ParsedSession | null => {
   let workspaceRoot = "";
   let title = "";
+  let model: string | null = null;
   const messages: ImportedMessage[] = [];
   for (const line of lines) {
     let value: unknown;
@@ -195,18 +238,20 @@ export const parseClaudeSessionTranscript = (
     const message = asRecord(record.message);
     const role = message?.role;
     if (role !== "user" && role !== "assistant") continue;
+    if (role === "assistant") model = recordedModel(message?.model) ?? model;
     const text = visibleText(message?.content, "text").trim();
     if (!text) continue;
     messages.push({ role, text, createdAt: isoOr(record.timestamp, fallbackIso) });
   }
-  if (!workspaceRoot || !messages.some((message) => message.role === "user")) return null;
+  if (!messages.some((message) => message.role === "user")) return null;
   if (messages.some((message) => message.role === "user" && isInternalHealthProbe(message.text))) {
     return null;
   }
   title ||= messages.find((message) => message.role === "user")?.text ?? "Claude Code session";
   return {
     title: title.replace(/\s+/gu, " ").slice(0, 120).trim() || "Claude Code session",
-    workspaceRoot,
+    model,
+    workspaceRoot: workspaceRoot || null,
     createdAt: messages[0]?.createdAt ?? fallbackIso,
     updatedAt: messages.at(-1)?.createdAt ?? fallbackIso,
     messages,
@@ -282,67 +327,124 @@ const resolveLocations = (settings: ServerSettings, path: Path.Path): SourceLoca
       root,
     });
   }
-  return locations.filter(
-    (location, index, all) =>
-      all.findIndex(
-        (candidate) =>
-          candidate.source === location.source &&
-          candidate.providerInstanceId === location.providerInstanceId &&
-          candidate.root === location.root,
-      ) === index,
-  );
+  return locations
+    .flatMap((location) =>
+      location.source === "codex"
+        ? [
+            location,
+            { ...location, root: path.join(path.dirname(location.root), "archived_sessions") },
+          ]
+        : [location],
+    )
+    .filter(
+      (location, index, all) =>
+        all.findIndex(
+          (candidate) =>
+            candidate.source === location.source &&
+            candidate.providerInstanceId === location.providerInstanceId &&
+            candidate.root === location.root,
+        ) === index,
+    );
 };
 
 const discoverFiles = async (locations: ReadonlyArray<SourceLocation>): Promise<SourceFile[]> => {
   const files: SourceFile[] = [];
   for (const location of locations) {
     const stack = [location.root];
-    while (stack.length > 0 && files.length < MAX_DISCOVERED_FILES) {
+    while (stack.length > 0) {
       const directory = stack.pop();
       if (!directory) break;
       try {
         const entries = await NodeFSP.readdir(directory, { withFileTypes: true });
-        for (const entry of entries) {
-          if (entry.isSymbolicLink()) continue;
-          const entryPath = NodePath.join(directory, entry.name);
-          if (entry.isDirectory()) {
-            stack.push(entryPath);
-            continue;
+        let entryIndex = 0;
+        // Refresh source metadata on every inspection with at most two filesystem workers.
+        const readEntries = async (): Promise<void> => {
+          while (entryIndex < entries.length) {
+            const entry = entries[entryIndex];
+            entryIndex += 1;
+            if (!entry || entry.isSymbolicLink()) continue;
+            const entryPath = NodePath.join(directory, entry.name);
+            if (entry.isDirectory()) {
+              stack.push(entryPath);
+              continue;
+            }
+            if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+            try {
+              const stat = await NodeFSP.stat(entryPath);
+              files.push({
+                sourceKey: sourceKeyFor(
+                  location.source,
+                  location.providerInstanceId,
+                  await NodeFSP.realpath(entryPath),
+                ),
+                source: location.source,
+                providerInstanceId: location.providerInstanceId,
+                path: entryPath,
+                size: stat.size,
+                mtimeMs: stat.mtimeMs,
+              });
+            } catch {
+              // Files can disappear while the source app rotates its sessions.
+            }
           }
-          if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-          try {
-            const stat = await NodeFSP.stat(entryPath);
-            files.push({
-              sourceKey: sourceKeyFor(
-                location.source,
-                location.providerInstanceId,
-                await NodeFSP.realpath(entryPath),
-              ),
-              source: location.source,
-              providerInstanceId: location.providerInstanceId,
-              path: entryPath,
-              size: stat.size,
-              mtimeMs: stat.mtimeMs,
-            });
-          } catch {
-            // Files can disappear while the source app rotates its sessions.
-          }
-          if (files.length >= MAX_DISCOVERED_FILES) break;
-        }
+        };
+        await Promise.all([readEntries(), readEntries()]);
       } catch {
         continue;
       }
     }
   }
-  return files.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  return files.sort(
+    (left, right) => right.mtimeMs - left.mtimeMs || left.sourceKey.localeCompare(right.sourceKey),
+  );
 };
 
 const readSession = async (file: SourceFile): Promise<ParsedSession | null> => {
-  if (file.size > MAX_TRANSCRIPT_BYTES) {
-    throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
+  const expected = await NodeFSP.lstat(file.path);
+  if (
+    !expected.isFile() ||
+    sourceKeyFor(file.source, file.providerInstanceId, await NodeFSP.realpath(file.path)) !==
+      file.sourceKey
+  ) {
+    throw new WorkjetSessionImportError({ reason: "candidate_expired", subject: file.sourceKey });
   }
-  const text = await NodeFSP.readFile(file.path, "utf8");
-  return parseSession(file, text);
+  const handle = await NodeFSP.open(
+    file.path,
+    NodeFS.constants.O_RDONLY | (NodeFS.constants.O_NOFOLLOW ?? 0),
+  );
+  try {
+    const stat = await handle.stat();
+    if (
+      !stat.isFile() ||
+      stat.dev !== expected.dev ||
+      stat.ino !== expected.ino ||
+      stat.size !== expected.size ||
+      stat.mtimeMs !== expected.mtimeMs
+    ) {
+      throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    }
+    if (stat.size > MAX_TRANSCRIPT_BYTES) {
+      throw new WorkjetSessionImportError({ reason: "session_too_large", subject: file.sourceKey });
+    }
+    // One extra byte detects growth; reads remain bounded even if the source app keeps appending.
+    const buffer = Buffer.alloc(stat.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = await handle.read(buffer, length, buffer.length - length, null);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    const after = await handle.stat();
+    if (length !== stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs) {
+      throw new WorkjetSessionImportError({ reason: "source_changed", subject: file.sourceKey });
+    }
+    return parseSession(
+      { ...file, size: stat.size, mtimeMs: stat.mtimeMs },
+      buffer.subarray(0, length).toString("utf8"),
+    );
+  } finally {
+    await handle.close();
+  }
 };
 
 const readSessionPreview = async (file: SourceFile): Promise<ParsedSession | null> => {
@@ -372,7 +474,7 @@ const toFailure = (candidateId: string, error: unknown) => ({
 
 export interface WorkjetSessionImportShape {
   readonly inspect: (
-    limit?: number,
+    input?: WorkjetSessionImportInspectInput,
   ) => Effect.Effect<WorkjetSessionImportInspection, WorkjetSessionImportError>;
   readonly importSessions: (
     input: WorkjetSessionImportInput,
@@ -391,9 +493,38 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const path = yield* Path.Path;
 
-  const inspect: WorkjetSessionImportShape["inspect"] = (requestedLimit) =>
+  // Reuse source paths across import batches, without retaining transcript content.
+  let indexedLocations: readonly SourceLocation[] = [];
+  let indexedFiles = new Map<string, SourceFile>();
+  const rememberFiles = (locations: readonly SourceLocation[], files: readonly SourceFile[]) => {
+    indexedLocations = locations;
+    indexedFiles = new Map(files.map((file) => [file.sourceKey, file]));
+  };
+  const sameLocations = (locations: readonly SourceLocation[]) =>
+    locations.length === indexedLocations.length &&
+    locations.every((location, index) => {
+      const previous = indexedLocations[index];
+      return (
+        previous?.source === location.source &&
+        previous.providerInstanceId === location.providerInstanceId &&
+        previous.root === location.root
+      );
+    });
+
+  const previewCache = new Map<
+    string,
+    {
+      readonly fingerprint: string;
+      readonly session: Omit<ParsedSession, "messages"> & {
+        readonly previewMessages: NonNullable<WorkjetSessionImportCandidate["previewMessages"]>;
+      };
+    }
+  >();
+  const inspect: WorkjetSessionImportShape["inspect"] = (input = {}) =>
     Effect.gen(function* () {
-      const limit = Math.min(requestedLimit ?? 50, WORKJET_SESSION_IMPORT_MAX_CANDIDATES);
+      const limit = Math.min(input.limit ?? 20, WORKJET_SESSION_IMPORT_MAX_CANDIDATES);
+      const offset = input.offset ?? 0;
+      const search = input.query?.trim().toLocaleLowerCase() ?? "";
       const settings = yield* settingsService.getSettings.pipe(
         Effect.mapError(
           () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
@@ -404,16 +535,80 @@ export const make = Effect.gen(function* () {
         try: () => discoverFiles(locations),
         catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
       });
+      rememberFiles(locations, files);
+      const discoveryHash = NodeCrypto.createHash("sha256");
+      for (const file of files) {
+        if (input.source && file.source !== input.source) continue;
+        if (file.size > MAX_TRANSCRIPT_BYTES) continue;
+        discoveryHash
+          .update(file.sourceKey)
+          .update("\0")
+          .update(String(file.size))
+          .update("\0")
+          .update(String(file.mtimeMs))
+          .update("\n");
+      }
+      const discoveryVersion = discoveryHash.digest("hex");
       const rows =
         yield* sql<ImportRow>`SELECT source_key, thread_id, imported_message_count, prefix_hash FROM workjet_session_imports`;
-      const importedByKey = new Map(rows.map((row) => [row.source_key, row]));
+      const fileKeys = new Set(files.map((file) => file.sourceKey));
+      for (const key of previewCache.keys()) if (!fileKeys.has(key)) previewCache.delete(key);
       const candidates: WorkjetSessionImportCandidate[] = [];
+      let matched = 0;
+      let hasMore = false;
       for (const file of files) {
-        if (candidates.length >= limit) break;
+        if (input.source && file.source !== input.source) continue;
         if (file.size > MAX_TRANSCRIPT_BYTES) continue;
-        const parsed = yield* Effect.promise(() => readSessionPreview(file).catch(() => null));
+        const fingerprint = `${file.mtimeMs}:${file.size}`;
+        let parsed =
+          previewCache.get(file.sourceKey)?.fingerprint === fingerprint
+            ? previewCache.get(file.sourceKey)?.session
+            : undefined;
+        if (!parsed) {
+          const preview = yield* Effect.promise(() => readSessionPreview(file).catch(() => null));
+          if (preview) {
+            parsed = {
+              title: preview.title,
+              model: preview.model,
+              workspaceRoot: preview.workspaceRoot,
+              createdAt: preview.createdAt,
+              updatedAt: preview.updatedAt,
+              previewMessages: preview.messages
+                .slice(0, 3)
+                .map(({ role, text }) => ({ role, text: text.slice(0, 1_000) })),
+            };
+            previewCache.set(file.sourceKey, { fingerprint, session: parsed });
+            if (previewCache.size > MAX_CACHED_PREVIEWS) {
+              const oldestKey = previewCache.keys().next().value;
+              if (oldestKey !== undefined) previewCache.delete(oldestKey);
+            }
+          }
+        }
         if (!parsed) continue;
-        const imported = importedByKey.get(file.sourceKey);
+        if (
+          search &&
+          !`${parsed.title}\n${parsed.workspaceRoot ?? ""}`.toLocaleLowerCase().includes(search)
+        )
+          continue;
+        if (matched++ < offset) continue;
+        if (candidates.length === limit) {
+          hasMore = true;
+          break;
+        }
+        const copies = rows.filter(
+          (row) =>
+            row.source_key === file.sourceKey || row.source_key.startsWith(`${file.sourceKey}:`),
+        );
+        const importedCopies: NonNullable<
+          WorkjetSessionImportCandidate["importedCopies"]
+        >[number][] = [];
+        for (const copy of copies) {
+          const thread = Option.getOrUndefined(
+            yield* query.getThreadShellById(ThreadId.make(copy.thread_id)),
+          );
+          if (thread && !importedCopies.some((entry) => entry.threadId === thread.id))
+            importedCopies.push({ projectId: thread.projectId, threadId: thread.id });
+        }
         candidates.push({
           candidateId: file.sourceKey,
           source: file.source,
@@ -423,12 +618,16 @@ export const make = Effect.gen(function* () {
           createdAt: parsed.createdAt,
           updatedAt: parsed.updatedAt,
           sourceSizeBytes: file.size,
-          importedThreadId: imported ? ThreadId.make(imported.thread_id) : null,
+          importedThreadId: importedCopies[0]?.threadId ?? null,
+          importedCopies,
+          previewMessages: parsed.previewMessages,
           workspaceAvailable: yield* Effect.promise(() =>
-            NodeFSP.access(parsed.workspaceRoot).then(
-              () => true,
-              () => false,
-            ),
+            parsed.workspaceRoot
+              ? NodeFSP.access(parsed.workspaceRoot).then(
+                  () => true,
+                  () => false,
+                )
+              : Promise.resolve(false),
           ),
         });
       }
@@ -438,7 +637,14 @@ export const make = Effect.gen(function* () {
         discoveredCount: files.filter((file) => file.source === source).length,
         shownCount: candidates.filter((candidate) => candidate.source === source).length,
       }));
-      return { sources: summaries, candidates, truncated: files.length > candidates.length };
+      return {
+        sources: summaries,
+        candidates,
+        truncated: hasMore,
+        discoveryVersion,
+        nextOffset: hasMore ? offset + candidates.length : null,
+        discoveryLimitReached: false,
+      };
     }).pipe(
       Effect.mapError((error) =>
         isWorkjetSessionImportError(error)
@@ -447,15 +653,13 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const importOne = (candidateId: string) =>
+  const importOne = (
+    candidateId: string,
+    file: SourceFile | undefined,
+    destinationProjectId?: ProjectId,
+    destinationProject?: OrchestrationProjectShell,
+  ) =>
     Effect.gen(function* () {
-      const settings = yield* settingsService.getSettings;
-      const locations = resolveLocations(settings, path);
-      const files = yield* Effect.tryPromise({
-        try: () => discoverFiles(locations),
-        catch: () => new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
-      });
-      const file = files.find((entry) => entry.sourceKey === candidateId);
       if (!file)
         return yield* new WorkjetSessionImportError({
           reason: "candidate_expired",
@@ -474,26 +678,26 @@ export const make = Effect.gen(function* () {
           subject: candidateId,
         });
 
-      const existingRows = yield* sql<ImportRow>`
-      SELECT source_key, thread_id, imported_message_count, prefix_hash
-      FROM workjet_session_imports WHERE source_key = ${candidateId}
-    `;
-      const existing = existingRows[0];
-      if (
-        existing &&
-        prefixHash(parsed.messages, existing.imported_message_count) !== existing.prefix_hash
-      ) {
+      let project = destinationProjectId
+        ? destinationProject
+        : parsed.workspaceRoot
+          ? Option.getOrUndefined(
+              yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot),
+            )
+          : undefined;
+      if (destinationProjectId && !project) {
         return yield* new WorkjetSessionImportError({
-          reason: "source_changed",
+          reason: "project_unavailable",
           subject: candidateId,
         });
       }
-
-      let project = Option.getOrUndefined(
-        yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot),
-      );
       const now = new Date().toISOString();
       if (!project) {
+        if (!parsed.workspaceRoot)
+          return yield* new WorkjetSessionImportError({
+            reason: "project_unavailable",
+            subject: candidateId,
+          });
         const projectId = ProjectId.make(NodeCrypto.randomUUID());
         yield* engine.dispatch({
           type: "project.create",
@@ -504,61 +708,92 @@ export const make = Effect.gen(function* () {
           createWorkspaceRootIfMissing: false,
           createdAt: now,
         } as const satisfies OrchestrationCommand);
-        project = Option.getOrUndefined(
-          yield* query.getActiveProjectByWorkspaceRoot(parsed.workspaceRoot),
+        project = Option.getOrUndefined(yield* query.getProjectShellById(projectId));
+      }
+      if (!project)
+        return yield* new WorkjetSessionImportError({
+          reason: "project_unavailable",
+          subject: candidateId,
+        });
+      // Separate copies in separate projects; legacy single-copy keys remain readable.
+      const importKey = `${candidateId}:${project.id}`;
+      const existingRows = yield* sql<ImportRow>`
+      SELECT source_key, thread_id, imported_message_count, prefix_hash
+      FROM workjet_session_imports WHERE source_key = ${importKey} OR source_key = ${candidateId}
+    `;
+      let existing = existingRows.find((row) => row.source_key === importKey);
+      if (existing) {
+        const copy = Option.getOrUndefined(
+          yield* query.getThreadShellById(ThreadId.make(existing.thread_id)),
         );
-        if (!project)
+        if (!copy) existing = undefined;
+        else if (copy.projectId !== project.id)
           return yield* new WorkjetSessionImportError({
-            reason: "import_failed",
+            reason: "source_changed",
             subject: candidateId,
           });
       }
-
-      let threadId = existing
-        ? ThreadId.make(existing.thread_id)
-        : ThreadId.make(stableUuid(`thread:${candidateId}`));
-      let thread = Option.getOrUndefined(yield* query.getThreadDetailById(threadId));
-      if (!thread) {
-        if (existing) threadId = ThreadId.make(NodeCrypto.randomUUID());
-        const driver = file.source === "codex" ? "codex" : "claudeAgent";
-        yield* engine.dispatch({
-          type: "thread.create",
-          commandId: CommandId.make(NodeCrypto.randomUUID()),
-          threadId,
-          projectId: project.id,
-          title: parsed.title,
-          modelSelection: {
-            instanceId: file.providerInstanceId,
-            model: DEFAULT_MODEL_BY_PROVIDER[ProviderDriverKind.make(driver)] ?? "default",
-          },
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
-          branch: null,
-          worktreePath: null,
-          createdAt: parsed.createdAt,
-        } as const satisfies OrchestrationCommand);
-        thread = Option.getOrUndefined(yield* query.getThreadDetailById(threadId));
+      const legacy = existingRows.find((row) => row.source_key === candidateId);
+      if (!existing && legacy) {
+        const legacyThread = Option.getOrUndefined(
+          yield* query.getThreadShellById(ThreadId.make(legacy.thread_id)),
+        );
+        if (legacyThread?.projectId === project.id) existing = legacy;
       }
-
-      if (!thread) {
+      if (
+        existing &&
+        prefixHash(parsed.messages, existing.imported_message_count) !== existing.prefix_hash
+      ) {
         return yield* new WorkjetSessionImportError({
-          reason: "import_failed",
+          reason: "source_changed",
           subject: candidateId,
         });
       }
+
+      const threadId = existing
+        ? ThreadId.make(existing.thread_id)
+        : existingRows.some((row) => row.source_key === importKey)
+          ? ThreadId.make(NodeCrypto.randomUUID())
+          : ThreadId.make(stableUuid(`thread:${importKey}`));
+      const messageSeed =
+        existing?.source_key === candidateId ? candidateId : `${importKey}:${threadId}`;
+      const thread = Option.getOrUndefined(yield* query.getThreadDetailById(threadId));
+      if ((!thread && existing) || thread?.deletedAt != null) {
+        return yield* new WorkjetSessionImportError({
+          reason: "source_changed",
+          subject: candidateId,
+        });
+      }
+      const createThread = thread
+        ? undefined
+        : {
+            projectId: project.id,
+            title: parsed.title,
+            modelSelection: {
+              instanceId: file.providerInstanceId,
+              model: parsed.model ?? "unknown",
+            },
+            runtimeMode: "approval-required" as const,
+            interactionMode: "default" as const,
+            workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+            branch: null,
+            worktreePath: null,
+            createdAt: parsed.createdAt,
+          };
       const sourceIndexByMessageId = new Map(
         parsed.messages.map((_, index) => [
-          MessageId.make(stableUuid(`message:${candidateId}:${index}`)),
+          MessageId.make(stableUuid(`message:${messageSeed}:${index}`)),
           index,
         ]),
       );
       const persistedSourceIndexes = new Set<number>();
-      for (const persisted of thread.messages) {
+      for (const persisted of thread?.messages ?? []) {
         const index = sourceIndexByMessageId.get(persisted.id);
-        const sourceMessage = index === undefined ? undefined : parsed.messages[index];
+        // Local continuations have their own ids; the prefix and receipt
+        // checks below still require every previously imported message.
+        if (index === undefined) continue;
+        const sourceMessage = parsed.messages[index];
         if (
-          index === undefined ||
           sourceMessage === undefined ||
           persisted.role !== sourceMessage.role ||
           persisted.text !== sourceMessage.text
@@ -585,15 +820,25 @@ export const make = Effect.gen(function* () {
         });
       }
       const missingMessages = parsed.messages.slice(alreadyImported);
+      if (
+        missingMessages.length === 0 &&
+        Option.isNone(yield* query.getProjectShellById(project.id))
+      ) {
+        return yield* new WorkjetSessionImportError({
+          reason: "project_unavailable",
+          subject: candidateId,
+        });
+      }
       for (let offset = 0; offset < missingMessages.length; offset += IMPORT_CHUNK_SIZE) {
         const chunk = missingMessages.slice(offset, offset + IMPORT_CHUNK_SIZE);
         yield* engine.dispatch({
           type: "thread.history.import",
           commandId: CommandId.make(NodeCrypto.randomUUID()),
           threadId,
+          ...(offset === 0 && createThread ? { bootstrap: { createThread } } : {}),
           messages: chunk.map((message, index) => ({
             messageId: MessageId.make(
-              stableUuid(`message:${candidateId}:${alreadyImported + offset + index}`),
+              stableUuid(`message:${messageSeed}:${alreadyImported + offset + index}`),
             ),
             ...message,
           })),
@@ -607,7 +852,7 @@ export const make = Effect.gen(function* () {
         source_key, source, provider_instance_id, thread_id,
         imported_message_count, prefix_hash, created_at, updated_at
       ) VALUES (
-        ${candidateId}, ${file.source}, ${file.providerInstanceId}, ${threadId},
+        ${existing?.source_key ?? importKey}, ${file.source}, ${file.providerInstanceId}, ${threadId},
         ${parsed.messages.length}, ${nextHash}, ${now}, ${now}
       ) ON CONFLICT(source_key) DO UPDATE SET
         thread_id = excluded.thread_id,
@@ -639,11 +884,46 @@ export const make = Effect.gen(function* () {
     );
 
   const importSessions: WorkjetSessionImportShape["importSessions"] = (input) =>
-    Effect.forEach(input.candidateIds, (candidateId) =>
-      importOne(candidateId).pipe(
-        Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),
+    Effect.gen(function* () {
+      const settings = yield* settingsService.getSettings;
+      const locations = resolveLocations(settings, path);
+      if (!sameLocations(locations) || input.candidateIds.some((id) => !indexedFiles.has(id))) {
+        const files = yield* Effect.tryPromise({
+          try: () => discoverFiles(locations),
+          catch: () =>
+            new WorkjetSessionImportError({ reason: "source_unavailable", subject: null }),
+        });
+        rememberFiles(locations, files);
+      }
+      const byId = indexedFiles;
+      // Resolve the explicitly chosen destination once per bounded request. The
+      // engine checks active thread/project state again before every saved chunk.
+      const destinationProject = input.projectId
+        ? Option.getOrUndefined(yield* query.getProjectShellById(input.projectId))
+        : undefined;
+      const items = yield* Effect.forEach([...new Set(input.candidateIds)], (candidateId) =>
+        importOne(candidateId, byId.get(candidateId), input.projectId, destinationProject).pipe(
+          Effect.catch((error) => Effect.succeed(toFailure(candidateId, error))),
+        ),
+      );
+      return { items };
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.succeed({
+          items: [...new Set(input.candidateIds)].map((candidateId) =>
+            toFailure(
+              candidateId,
+              isWorkjetSessionImportError(error)
+                ? error
+                : new WorkjetSessionImportError({
+                    reason: "source_unavailable",
+                    subject: candidateId,
+                  }),
+            ),
+          ),
+        }),
       ),
-    ).pipe(Effect.map((items) => ({ items })));
+    );
 
   return { inspect, importSessions } satisfies WorkjetSessionImportShape;
 });

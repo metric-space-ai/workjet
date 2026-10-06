@@ -777,6 +777,11 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetGatewayCatalog,
     staleTimeMs: WORKJET_GATEWAY_CATALOG_STALE_TIME_MS,
   });
+  const workjetGatewayUsage = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:usage",
+    tag: WS_METHODS.workjetGatewayUsage,
+    staleTimeMs: 30_000,
+  });
   const workjetGatewayHealth = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:workjet:gateway:health",
     tag: WS_METHODS.workjetGatewayHealth,
@@ -931,11 +936,19 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetSessionImportInspect,
     staleTimeMs: WORKJET_SESSION_IMPORT_STALE_TIME_MS,
   });
+  const inspectWorkjetSessions = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:session-import:select",
+    tag: WS_METHODS.workjetSessionImportInspect,
+    concurrency: {
+      mode: "serial",
+      key: ({ environmentId }) => environmentId,
+    },
+  });
   const importWorkjetSessions = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:session-import:import",
     tag: WS_METHODS.workjetSessionImport,
     concurrency: {
-      mode: "singleFlight",
+      mode: "serial",
       key: ({ environmentId }) => environmentId,
     },
   });
@@ -1083,6 +1096,11 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetCrossModeListLinks,
     staleTimeMs: WORKJET_CROSS_MODE_LINK_STALE_TIME_MS,
   });
+  const resolveWorkjetBrowserOps = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:crossmode:resolve-browser-ops",
+    tag: WS_METHODS.workjetCrossModeResolveBrowserOps,
+    concurrency: workjetGatewayConcurrency,
+  });
   // `Delegate to Code` / `Open in Code` is single-flighted per ENVIRONMENT
   // rather than per source thread: its input names a HOST thread, not a source,
   // and the race that matters is two clicks on the same Business OS OBJECT — a
@@ -1117,6 +1135,7 @@ export function createServerEnvironmentAtoms<R, E>(
     updateStateAtom,
     workjetCrossModeThreadLink,
     workjetCrossModeLinks,
+    resolveWorkjetBrowserOps,
     openWorkjetCrossModeInCode,
     submitWorkjetCrossMode,
     sendWorkjetMailboxMessage,
@@ -1134,6 +1153,7 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetGatewayStatus,
     workjetGatewayCatalog,
     workjetGatewayHealth,
+    workjetGatewayUsage,
     workjetGatewayModels,
     workjetHarnessInspect,
     workjetDecisionHubConnections,
@@ -1150,6 +1170,7 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetLegacyImport,
     decideWorkjetLegacyImport,
     workjetSessionImport,
+    inspectWorkjetSessions,
     importWorkjetSessions,
     settingsValueAtom,
     providersValueAtom,

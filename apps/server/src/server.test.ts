@@ -56,6 +56,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
+import { it as liveTest } from "@effect/vitest";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
@@ -221,6 +222,15 @@ const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
+class DesktopTelemetryRpcTestError extends Data.TaggedError("DesktopTelemetryRpcTestError")<{
+  readonly stage: string;
+  readonly cause: unknown;
+}> {
+  override get message() {
+    return this.stage;
+  }
+}
+
 const testEnvironmentDescriptor = {
   environmentId: EnvironmentId.make("environment-test"),
   label: "Test environment",
@@ -360,6 +370,7 @@ const providerGatewayTestLayer = Layer.succeed(
     removeAccount: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     health: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    usage: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     discoverModels: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     updateRouting: () =>
@@ -467,6 +478,7 @@ const makeBrowserOtlpPayload = (spanName: string) =>
   });
 
 const buildAppUnderTest = (options?: {
+  onAuthReady?: (auth: EnvironmentAuth.EnvironmentAuth["Service"]) => Effect.Effect<void>;
   config?: Partial<ServerConfig.ServerConfig["Service"]>;
   gatewayOptions?: ProviderGateway.ProviderGatewayServiceOptions;
   seedCtoxBindings?: ReadonlyArray<{
@@ -689,7 +701,7 @@ const buildAppUnderTest = (options?: {
         })
       : VcsStatusBroadcaster.layer.pipe(Layer.provide(gitWorkflowLayer));
     const resourceTelemetryLayer = ResourceTelemetry.layer.pipe(
-      Layer.provide(
+      Layer.provideMerge(
         Layer.mergeAll(
           NativeTelemetryClient.layerTest(options?.layers?.nativeTelemetryClient),
           DesktopTelemetryReceiver.layerTest(options?.layers?.desktopTelemetryReceiver),
@@ -888,6 +900,7 @@ const buildAppUnderTest = (options?: {
           getProjectShellById: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
+          getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
           getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
           getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
@@ -1056,6 +1069,8 @@ const buildAppUnderTest = (options?: {
     );
 
     const appContext = yield* Layer.build(appLayer);
+    if (options?.onAuthReady)
+      yield* options.onAuthReady(Context.get(appContext, EnvironmentAuth.EnvironmentAuth));
     if (options?.seedCtoxBindings) {
       const sql = Context.get(appContext, SqlClient.SqlClient);
       for (const binding of options.seedCtoxBindings) {
@@ -4983,6 +4998,180 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("refuses Desktop telemetry from an ordinary authenticated browser over RPC", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          desktopTelemetryReceiver: {
+            attach: () => Effect.die("Browser credentials must not claim the Desktop receiver."),
+            publish: () => Effect.die("Browser credentials must not publish Desktop telemetry."),
+          },
+        },
+      });
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const config = yield* client[WS_METHODS.serverGetConfig]({});
+            const binding = {
+              attachmentId: "browser-spoof",
+              runtimeInstanceId: config.environment.runtimeInstanceId ?? "fixture",
+            };
+            const subscribeError = yield* client[WS_METHODS.subscribeDesktopTelemetryControl](
+              binding,
+            ).pipe(Stream.runHead, Effect.flip);
+            assert.include(subscribeError.message, "locally enrolled session");
+            const publishError = yield* client[WS_METHODS.serverPublishDesktopTelemetry]({
+              ...binding,
+              message: { version: 1, type: "desktopTelemetryHello", electronPid: 42 },
+            }).pipe(Effect.flip);
+            assert.include(publishError.message, "locally enrolled session");
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  liveTest.live(
+    "binds enrolled Desktop RPC telemetry to the current generation and connection",
+    () =>
+      Effect.gen(function* () {
+        let auth: EnvironmentAuth.EnvironmentAuth["Service"] | undefined;
+        let receiver: DesktopTelemetryReceiver.DesktopTelemetryReceiver["Service"] | undefined;
+        const config = yield* buildAppUnderTest({
+          config: { mode: "desktop" },
+          onAuthReady: (service) =>
+            Effect.sync(() => {
+              auth = service;
+            }),
+          layers: {
+            serverEnvironment: {
+              getDescriptor: Effect.succeed({
+                ...testEnvironmentDescriptor,
+                runtimeInstanceId: "desktop-runtime-test",
+              }),
+            },
+            desktopTelemetryReceiver: {
+              attach: (id) =>
+                Effect.suspend(() =>
+                  receiver ? receiver.attach(id) : Effect.die("Receiver not initialized"),
+                ),
+              publish: (id, message) =>
+                Effect.suspend(() =>
+                  receiver ? receiver.publish(id, message) : Effect.die("Receiver not initialized"),
+                ),
+            },
+          },
+        });
+        receiver = yield* DesktopTelemetryReceiver.make().pipe(
+          Effect.provideService(ServerConfig.ServerConfig, config),
+          Effect.provide(ServerSettings.layerTest()),
+        );
+        if (auth === undefined) return yield* Effect.die("Auth fixture missing");
+        const ordinaryUrl = yield* getWsServerUrl("/ws");
+        const descriptor = yield* Effect.scoped(
+          withWsRpcClient(ordinaryUrl, (client) =>
+            client[WS_METHODS.serverGetConfig]({}).pipe(Effect.map((value) => value.environment)),
+          ),
+        );
+        const issued = yield* auth.issueSession({
+          localDesktopEnvironmentId: descriptor.environmentId,
+        });
+        const ticketResponse = yield* fetchEffect(
+          yield* getHttpServerUrl("/api/auth/websocket-ticket"),
+          {
+            method: "POST",
+            headers: { authorization: `Bearer ${issued.token}` },
+          },
+        );
+        assert.equal(ticketResponse.status, 200);
+        const ticket = yield* responseJsonEffect<{ readonly ticket: string }>(ticketResponse);
+        const wsUrl = new URL(ordinaryUrl);
+        wsUrl.hash = "";
+        wsUrl.searchParams.set("wsTicket", ticket.ticket);
+        const binding = {
+          attachmentId: "desktop-a",
+          runtimeInstanceId: descriptor.runtimeInstanceId ?? "missing",
+        };
+        yield* Effect.scoped(
+          withWsRpcClient(wsUrl.toString(), (oldClient) =>
+            Effect.gen(function* () {
+              const wrongGeneration = yield* oldClient[WS_METHODS.subscribeDesktopTelemetryControl](
+                {
+                  ...binding,
+                  runtimeInstanceId: "wrong-generation",
+                },
+              ).pipe(Stream.runHead, Effect.flip);
+              assert.include(wrongGeneration.message, "generation changed");
+              const healthSubscription = yield* receiver!.subscribeHealth;
+              // Wait for server-side release, while keeping the old socket alive.
+              yield* oldClient[WS_METHODS.subscribeDesktopTelemetryControl](binding).pipe(
+                Stream.runHead,
+                Effect.timeout("5 seconds"),
+                Effect.mapError(
+                  (cause) =>
+                    new DesktopTelemetryRpcTestError({
+                      stage: "Initial Desktop control did not arrive",
+                      cause,
+                    }),
+                ),
+              );
+              yield* healthSubscription.changes.pipe(
+                Stream.filter((health) => health.status === "stopped"),
+                Stream.runHead,
+                Effect.timeout("5 seconds"),
+                Effect.mapError(
+                  (cause) =>
+                    new DesktopTelemetryRpcTestError({
+                      stage: "Server did not release the old control subscription",
+                      cause,
+                    }),
+                ),
+              );
+              yield* Effect.scoped(
+                withWsRpcClient(wsUrl.toString(), (newClient) =>
+                  Effect.gen(function* () {
+                    const attached = yield* Deferred.make<void>();
+                    yield* newClient[WS_METHODS.subscribeDesktopTelemetryControl]({
+                      ...binding,
+                      attachmentId: "desktop-b",
+                    }).pipe(
+                      Stream.runForEach(() =>
+                        Deferred.succeed(attached, undefined).pipe(Effect.asVoid),
+                      ),
+                      Effect.forkScoped,
+                    );
+                    yield* Deferred.await(attached).pipe(
+                      Effect.timeout("5 seconds"),
+                      Effect.mapError(
+                        (cause) =>
+                          new DesktopTelemetryRpcTestError({
+                            stage: "Replacement Desktop control did not arrive",
+                            cause,
+                          }),
+                      ),
+                    );
+                    const stale = yield* oldClient[WS_METHODS.serverPublishDesktopTelemetry]({
+                      ...binding,
+                      message: { version: 1, type: "desktopTelemetryHello", electronPid: 41 },
+                    }).pipe(Effect.flip);
+                    assert.include(stale.message, "no longer current");
+                    yield* newClient[WS_METHODS.serverPublishDesktopTelemetry]({
+                      ...binding,
+                      attachmentId: "desktop-b",
+                      message: { version: 1, type: "desktopTelemetryHello", electronPid: 42 },
+                    });
+                  }),
+                ),
+              );
+            }),
+          ),
+        );
+      }).pipe(
+        Effect.provide(NodeHttpServer.layerTest.pipe(Layer.provideMerge(NodeServices.layer))),
+      ),
+  );
+
   it.effect("routes websocket rpc subscribeServerConfig emits provider status updates", () =>
     Effect.gen(function* () {
       const nextProviders = [
@@ -6401,6 +6590,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       yield* buildAppUnderTest({
         layers: {
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.succeed(Option.some({ snapshotSequence: 1, thread })),
           },
@@ -6510,6 +6700,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             streamDomainEvents: Stream.fromPubSub(liveEvents),
           },
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.gen(function* () {
                 yield* Effect.sleep("25 millis");
@@ -6552,6 +6743,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               }),
           },
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.succeed(Option.some({ snapshotSequence: 100_000, thread })),
           },
@@ -6597,6 +6789,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
               }),
           },
           projectionSnapshotQuery: {
+            getArchivedTeamWorkerDetailSnapshot: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () =>
               Effect.succeed(Option.some({ snapshotSequence: 5, thread })),
           },

@@ -13,6 +13,7 @@ export interface NormalizedGitHubPullRequestRecord {
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
+  readonly headCommitOid?: string | null;
   readonly state: "open" | "closed" | "merged";
   readonly updatedAt: Option.Option<DateTime.Utc>;
   readonly isCrossRepository?: boolean;
@@ -26,6 +27,7 @@ const GitHubPullRequestSchema = Schema.Struct({
   url: TrimmedNonEmptyString,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
+  headRefOid: Schema.optional(Schema.NullOr(Schema.String)),
   state: Schema.optional(Schema.NullOr(Schema.String)),
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
@@ -92,6 +94,13 @@ function normalizeGitHubPullRequestRecord(
     url: raw.url,
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,
+    ...(raw.headRefOid !== undefined
+      ? {
+          headCommitOid: /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(raw.headRefOid ?? "")
+            ? (raw.headRefOid?.toLowerCase() ?? null)
+            : null,
+        }
+      : {}),
     state: normalizeGitHubPullRequestState(raw),
     updatedAt: raw.updatedAt ?? Option.none(),
     ...(typeof raw.isCrossRepository === "boolean"

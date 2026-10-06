@@ -43,7 +43,7 @@ describe("ACP cooperative cancellation", () => {
         yield* runtime.cancel;
         yield* Deferred.await(cancelReceived);
         expect(yield* Deferred.isDone(settled)).toBe(false);
-        yield* Deferred.succeed(permissionResponse, { outcome: { outcome: "cancelled" as const } });
+        yield* Deferred.succeed(permissionResponse, { outcome: { outcome: "cancelled" } } as const);
         expect(yield* Fiber.join(prompt)).toMatchObject({ stopReason: "cancelled" });
         expect(
           yield* runtime.prompt({ prompt: [{ type: "text", text: "follow-up" }] }),

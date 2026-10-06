@@ -1,78 +1,48 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@workjet/client-runtime/state/runtime";
-import type { EnvironmentId, WorkjetSessionImportCandidate } from "@workjet/contracts";
-import { CheckIcon, ExternalLinkIcon, LoaderIcon, RefreshCwIcon } from "lucide-react";
+import {
+  WORKJET_SESSION_IMPORT_MAX_SELECTION,
+  type EnvironmentId,
+  type WorkjetSessionImportCandidate,
+  type WorkjetSessionImportItemResult,
+  type WorkjetSessionImportSource,
+} from "@workjet/contracts";
+import { ArrowRightIcon, FolderInputIcon } from "lucide-react";
+import * as Option from "effect/Option";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { readActiveWorkjetScope, useActiveWorkjetScope } from "../../activeWorkjetScope";
+import { isElectron } from "../../env";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
+import { ensureLocalApi } from "../../localApi";
+import { newCommandId } from "../../lib/utils";
+import { resolveProjectTeamModelSelection } from "../../providerInstances";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
+import { environmentProjects, projectEnvironment } from "../../state/projects";
 import { serverEnvironment } from "../../state/server";
+import { environmentShell } from "../../state/shell";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import {
+  workjetProjectCreationFailureMessage,
+  runWorkjetProjectCreation,
+} from "../../workjetProjectCreation";
+import { listWorkjetProjects } from "../../workjetProjectControl";
+import {
+  recordWorkjetProjectProjection,
+  useWorkjetProjectRegistry,
+} from "../../workjetProjectRegistry";
 import { Button } from "../ui/button";
-import { Checkbox } from "../ui/checkbox";
-import { stackedThreadToast, toastManager } from "../ui/toast";
+import { SessionImportBrowser, sessionImportFolderName } from "./SessionImportBrowser";
+import { prepareSessionImportProject, type SessionImportProject } from "./sessionImportProject";
+import { selectAllSessionImportCandidates } from "./sessionImportSelection";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
-const sourceLabel = (source: WorkjetSessionImportCandidate["source"]): string =>
-  source === "codex" ? "Codex" : "Claude Code";
-
-function SessionCandidateRow({
-  candidate,
-  checked,
-  disabled,
-  onCheckedChange,
-  onOpen,
-}: {
-  readonly candidate: WorkjetSessionImportCandidate;
-  readonly checked: boolean;
-  readonly disabled: boolean;
-  readonly onCheckedChange: (checked: boolean) => void;
-  readonly onOpen: () => void;
-}) {
-  return (
-    <div className="flex items-start gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-muted/20 sm:px-4">
-      <Checkbox
-        className="mt-0.5"
-        checked={checked}
-        disabled={disabled}
-        aria-label={`Select ${candidate.title}`}
-        onCheckedChange={(next) => onCheckedChange(next === true)}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="truncate text-sm font-medium text-foreground">{candidate.title}</span>
-          <span className="text-[11px] font-medium text-muted-foreground">
-            {sourceLabel(candidate.source)}
-          </span>
-          {candidate.importedThreadId ? (
-            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
-              <CheckIcon className="size-3" aria-hidden /> Copied
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground/80">
-          {candidate.workspaceRoot}
-          {!candidate.workspaceAvailable ? " · Workspace unavailable" : ""}
-        </p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground/60">
-          Updated {new Date(candidate.updatedAt).toLocaleString()}
-        </p>
-      </div>
-      {candidate.importedThreadId ? (
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label={`Open Workjet copy of ${candidate.title}`}
-          onClick={onOpen}
-        >
-          <ExternalLinkIcon className="size-3.5" />
-        </Button>
-      ) : null}
-    </div>
-  );
-}
+const PAGE_SIZE = 20;
 
 export function SessionImportSection({
   environmentId,
@@ -82,147 +52,480 @@ export function SessionImportSection({
   readonly readOnly: boolean;
 }) {
   const navigate = useNavigate();
-  const inspection = useEnvironmentQuery(
-    serverEnvironment.workjetSessionImport({ environmentId, input: { limit: 20 } }),
+  const {
+    selectedInstanceId: presentationInstanceId,
+    selectionRevision,
+    mode,
+  } = useActiveWorkjetScope();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { environments } = useEnvironments();
+  const settings = useEnvironmentSettings(environmentId);
+  const registry = useWorkjetProjectRegistry(presentationInstanceId);
+  const localProjects = useAtomValue(environmentProjects.environmentProjectsAtom(environmentId));
+  const shellState = useAtomValue(environmentShell.stateValueAtom(environmentId));
+  const shellStateRef = useRef(shellState);
+  shellStateRef.current = shellState;
+  const computer = settings.workjet.computers.find(
+    (entry) => entry.environmentId === environmentId,
   );
+  const projects = useMemo<readonly SessionImportProject[]>(
+    () =>
+      presentationInstanceId === null
+        ? localProjects.map(({ id, title, workspaceRoot }) => ({
+            id,
+            title,
+            workspaceRoot: workspaceRoot ?? "",
+          }))
+        : registry.projects.map((project) => ({
+            id: project.id,
+            title: project.title,
+            workspaceRoot:
+              localProjects.find(({ id }) => id === project.id)?.workspaceRoot ??
+              project.workingCopies.find(
+                (copy) => copy.computerId === computer?.id && copy.status === "active",
+              )?.path ??
+              "",
+          })),
+    [presentationInstanceId, registry.projects, localProjects, computer?.id],
+  );
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [source, setSource] = useState<WorkjetSessionImportSource | "all">("all");
+  const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<ReadonlyMap<string, WorkjetSessionImportCandidate>>(
+    () => new Map(),
+  );
+  const [preview, setPreview] = useState<WorkjetSessionImportCandidate | null>(null);
+  const [destination, setDestination] = useState("");
+  const [newProjectTitle, setNewProjectTitle] = useState("");
+  const [workspaceRoot, setWorkspaceRoot] = useState("");
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<readonly WorkjetSessionImportItemResult[]>([]);
+  const scopeKey = JSON.stringify([environmentId, presentationInstanceId, selectionRevision, mode]);
+  const scopeRef = useRef(scopeKey);
+  scopeRef.current = scopeKey;
+  const mountedRef = useRef(true);
+  const importingRef = useRef(false);
+  const projectCreationAttempts = useRef(new Map<string, ReturnType<typeof newCommandId>>());
+  const stoppedRef = useRef(false);
+  const isActive = () =>
+    mountedRef.current &&
+    scopeRef.current === scopeKey &&
+    readActiveWorkjetScope().selectedInstanceId === presentationInstanceId &&
+    readActiveWorkjetScope().selectionRevision === selectionRevision &&
+    readActiveWorkjetScope().mode === mode;
+  const inspection = useEnvironmentQuery(
+    open
+      ? serverEnvironment.workjetSessionImport({
+          environmentId,
+          input: {
+            limit: PAGE_SIZE,
+            offset: page * PAGE_SIZE,
+            query: debouncedQuery,
+            ...(source === "all" ? {} : { source }),
+          },
+        })
+      : null,
+  );
+  const inspectForSelection = useAtomCommand(serverEnvironment.inspectWorkjetSessions, {
+    reportFailure: false,
+  });
   const runImport = useAtomCommand(serverEnvironment.importWorkjetSessions, {
     reportFailure: false,
   });
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
-  const [isImporting, setIsImporting] = useState(false);
-  const activeScopeRef = useRef(true);
-  const candidates = inspection.data?.candidates ?? [];
-  const candidateIds = useMemo(
-    () => new Set(candidates.map(({ candidateId }) => candidateId)),
-    [candidates],
-  );
+  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
+  const attachProjectFolder = useAtomCommand(projectEnvironment.update, { reportFailure: false });
+  const destinationProject = projects.find(({ id }) => id === destination);
+  const canImport =
+    selected.size > 0 &&
+    !readOnly &&
+    (destination === "new"
+      ? !!newProjectTitle.trim() && !!workspaceRoot.trim()
+      : !!destinationProject && !!(destinationProject.workspaceRoot || workspaceRoot.trim()));
 
   useEffect(() => {
-    setSelected((current) => new Set([...current].filter((id) => candidateIds.has(id))));
-  }, [candidateIds]);
-
+    const timeout = setTimeout(() => {
+      setDebouncedQuery(query);
+      setPage(0);
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [query]);
   useEffect(() => {
-    activeScopeRef.current = true;
-    setSelected(new Set());
-    setIsImporting(false);
+    mountedRef.current = true;
     return () => {
-      // Parent panels key this component by environment. A late inspection or
-      // import result from the previous Business OS must not update the new
-      // instance, navigate to an old draft, or emit a misleading toast.
-      activeScopeRef.current = false;
+      mountedRef.current = false;
+      stoppedRef.current = true;
     };
-  }, [environmentId]);
+  }, []);
+  useEffect(() => {
+    setOpen(false);
+    setSelected(new Map());
+    setPreview(null);
+    setDestination("");
+    setResults([]);
+    setError(null);
+    setProgress(null);
+    setPage(0);
+    setQuery("");
+    setSource("all");
+    setNewProjectTitle("");
+    setWorkspaceRoot("");
+    projectCreationAttempts.current.clear();
+    importingRef.current = false;
+    stoppedRef.current = true;
+  }, [scopeKey]);
+
+  const selectAllMatches = async () => {
+    if (readOnly || importingRef.current || !isActive()) return;
+    importingRef.current = true;
+    stoppedRef.current = false;
+    setError(null);
+    setProgress("Selecting conversations…");
+    try {
+      await selectAllSessionImportCandidates({
+        query,
+        source,
+        isActive: () => isActive() && !stoppedRef.current,
+        inspect: async (input) => {
+          const result = await inspectForSelection({ environmentId, input });
+          if (result._tag === "Failure") {
+            const failure = squashAtomCommandFailure(result);
+            throw failure instanceof Error
+              ? failure
+              : new Error("The conversations could not be selected. You can retry.");
+          }
+          return result.value;
+        },
+        onCandidates: (candidates, count) => {
+          setSelected((current) => {
+            const next = new Map(current);
+            for (const candidate of candidates) next.set(candidate.candidateId, candidate);
+            return next;
+          });
+          setProgress(`Selecting conversations… ${count} found`);
+        },
+      });
+    } catch (cause) {
+      if (isActive() && !stoppedRef.current)
+        setError(cause instanceof Error ? cause.message : "The selection could not be completed.");
+    } finally {
+      if (isActive()) {
+        importingRef.current = false;
+        setProgress(null);
+      }
+    }
+  };
 
   const importSelected = async () => {
-    if (selected.size === 0 || isImporting || readOnly) return;
-    setIsImporting(true);
-    const result = await runImport({ environmentId, input: { candidateIds: [...selected] } });
-    if (!activeScopeRef.current) return;
-    setIsImporting(false);
-    if (result._tag === "Failure") {
-      if (isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Session import failed",
-          description:
-            error instanceof Error ? error.message : "The static copies could not be created.",
-        }),
-      );
-      return;
+    if (!canImport || importingRef.current || !isActive()) return;
+    importingRef.current = true;
+    stoppedRef.current = false;
+    setError(null);
+    setResults([]);
+    setProgress("Preparing project…");
+    const captured = [...selected.values()];
+    const projectCommandId = (
+      project: SessionImportProject,
+      operation: "create" | "attach-folder" = "create",
+    ) => {
+      const key = JSON.stringify([
+        environmentId,
+        presentationInstanceId,
+        project.id,
+        operation,
+        ...(operation === "attach-folder" ? [project.workspaceRoot] : []),
+      ]);
+      const retained = projectCreationAttempts.current.get(key);
+      if (retained !== undefined) return retained;
+      const commandId = newCommandId();
+      projectCreationAttempts.current.set(key, commandId);
+      return commandId;
+    };
+    try {
+      const project = await prepareSessionImportProject({
+        presentationInstanceId,
+        environmentId,
+        localProjects,
+        destination:
+          destination === "new"
+            ? { kind: "new", title: newProjectTitle, workspaceRoot }
+            : {
+                kind: "existing",
+                project: {
+                  ...destinationProject!,
+                  workspaceRoot: destinationProject!.workspaceRoot || workspaceRoot.trim(),
+                },
+              },
+        port: {
+          isActive,
+          listLogicalProjects: async () => {
+            const listed = await listWorkjetProjects(presentationInstanceId!);
+            if (listed._tag === "failed")
+              throw new Error(workjetProjectCreationFailureMessage(listed.code));
+            if (listed.response.action !== "project.list")
+              throw new Error("CTOX did not confirm the available projects.");
+            return listed.response.projects;
+          },
+          attachLocalProjectFolder: async (project) => {
+            if (!isActive()) throw new Error("The active instance or computer changed.");
+            const attached = await attachProjectFolder({
+              environmentId,
+              input: {
+                projectId: project.id,
+                commandId: projectCommandId(project, "attach-folder"),
+                workspaceRoot: project.workspaceRoot,
+              },
+            });
+            if (attached._tag === "Failure") {
+              const failure = squashAtomCommandFailure(attached);
+              throw failure instanceof Error
+                ? failure
+                : new Error("The project folder could not be attached.");
+            }
+            // Require the acknowledged command in the live canonical shell
+            // before publishing a native working copy or copying any history.
+            const deadline = Date.now() + 5_000;
+            while (Date.now() < deadline) {
+              if (!isActive()) throw new Error("The active instance or computer changed.");
+              const current = shellStateRef.current;
+              if (
+                current.status === "live" &&
+                Option.isSome(current.snapshot) &&
+                current.snapshot.value.snapshotSequence >= attached.value.sequence
+              ) {
+                const bound = current.snapshot.value.projects.find(({ id }) => id === project.id);
+                if (!bound || bound.workspaceRoot === null)
+                  throw new Error("The saved project folder was not confirmed on this computer.");
+                return { id: bound.id, title: bound.title, workspaceRoot: bound.workspaceRoot };
+              }
+              await new Promise<void>((resolve) => setTimeout(resolve, 50));
+            }
+            throw new Error(
+              "The saved project folder is still synchronizing. Reconnect and retry.",
+            );
+          },
+          createLocalProject: async (project) => {
+            const modelSelection = resolveProjectTeamModelSelection(
+              environments.find((entry) => entry.environmentId === environmentId)?.serverConfig
+                ?.providers ?? [],
+            );
+            if (modelSelection === null)
+              throw new Error(
+                "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+              );
+            const commandId = projectCommandId(project);
+            const created = await createProject({
+              environmentId,
+              input: {
+                projectId: project.id,
+                commandId,
+                title: project.title,
+                workspaceRoot: project.workspaceRoot,
+                createWorkspaceRootIfMissing: true,
+                ...(presentationInstanceId === null
+                  ? {}
+                  : {
+                      ctoxRegistration: {
+                        instanceId: presentationInstanceId,
+                        commandId,
+                        status: "pending" as const,
+                      },
+                    }),
+                defaultModelSelection: modelSelection,
+              },
+            });
+            if (created._tag === "Failure") {
+              const failure = squashAtomCommandFailure(created);
+              throw failure instanceof Error
+                ? failure
+                : new Error("The destination project could not be created.");
+            }
+          },
+          confirmLogicalProject: async (project) => {
+            const confirmed = await runWorkjetProjectCreation({
+              presentationInstanceId: presentationInstanceId!,
+              request: {
+                action: "project.create",
+                commandId: projectCommandId(project),
+                projectId: project.id,
+                title: project.title,
+                createdAt: new Date().toISOString(),
+                ...(computer
+                  ? { workingCopy: { computerId: computer.id, path: project.workspaceRoot } }
+                  : {}),
+              },
+            });
+            if (confirmed._tag === "failed")
+              throw new Error(workjetProjectCreationFailureMessage(confirmed.code));
+            if (!isActive())
+              throw new Error("The active instance changed while preparing the project.");
+            if (!recordWorkjetProjectProjection(presentationInstanceId!, confirmed.project))
+              throw new Error("The project is not visible in the active CTOX instance yet.");
+          },
+        },
+      });
+      if (!isActive()) return;
+      setDestination(project.id);
+      const collected: WorkjetSessionImportItemResult[] = [];
+      for (
+        let offset = 0;
+        offset < captured.length;
+        offset += WORKJET_SESSION_IMPORT_MAX_SELECTION
+      ) {
+        if (!isActive() || stoppedRef.current) break;
+        setProgress(
+          `Importing ${offset + 1}–${Math.min(offset + WORKJET_SESSION_IMPORT_MAX_SELECTION, captured.length)} of ${captured.length}…`,
+        );
+        const result = await runImport({
+          environmentId,
+          input: {
+            projectId: project.id,
+            candidateIds: captured
+              .slice(offset, offset + WORKJET_SESSION_IMPORT_MAX_SELECTION)
+              .map(({ candidateId }) => candidateId),
+          },
+        });
+        if (!isActive()) return;
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) break;
+          const failure = squashAtomCommandFailure(result);
+          throw failure instanceof Error
+            ? failure
+            : new Error("The conversations could not be imported.");
+        }
+        collected.push(...result.value.items);
+        setResults([...collected]);
+        const copied = new Set(
+          result.value.items
+            .filter(({ status }) => status !== "failed")
+            .map(({ candidateId }) => candidateId),
+        );
+        setSelected((current) => new Map([...current].filter(([id]) => !copied.has(id))));
+      }
+      if (isActive()) inspection.refresh();
+    } catch (cause) {
+      if (isActive())
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "The import could not be completed. You can retry.",
+        );
+    } finally {
+      if (isActive()) {
+        importingRef.current = false;
+        setProgress(null);
+      }
     }
-    const failures = result.value.items.filter(({ status }) => status === "failed");
-    const copied = result.value.items.filter(({ status }) => status !== "failed");
-    toastManager.add(
-      stackedThreadToast({
-        type: failures.length > 0 ? "error" : "success",
-        title: failures.length > 0 ? "Some sessions were not copied" : "Static copies updated",
-        description: `${copied.length} session${copied.length === 1 ? "" : "s"} processed${failures.length > 0 ? `, ${failures.length} failed` : ""}.`,
-      }),
-    );
-    setSelected(new Set());
-    inspection.refresh();
   };
 
   return (
-    <SettingsSection
-      title="Import sessions"
-      headerAction={
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          disabled={inspection.isPending}
-          aria-label="Refresh importable sessions"
-          onClick={inspection.refresh}
-        >
-          {inspection.isPending ? (
-            <LoaderIcon className="size-3.5 animate-spin" />
-          ) : (
-            <RefreshCwIcon className="size-3.5" />
-          )}
-        </Button>
-      }
-    >
+    <SettingsSection title="Import sessions">
       <SettingsRow
-        title="Static copies from harness apps"
-        description="Copy Codex and Claude Code conversations into independent Workjet threads. Source files are read only and never changed. Run the import again later to append new messages to the Workjet copy."
-        status="No live connection, shared session, or provider resume token is created between the applications."
+        title="Bring conversations into a project"
+        description="Browse Codex and Claude Code conversations, preview their content, and choose where they belong."
         control={
           <Button
             size="sm"
-            disabled={readOnly || selected.size === 0 || isImporting}
-            onClick={() => void importSelected()}
+            variant="outline"
+            onClick={() => setOpen(true)}
+            data-workjet-action="session-import.open"
           >
-            {isImporting ? <LoaderIcon className="size-3.5 animate-spin" /> : null}
-            Import selected{selected.size > 0 ? ` (${selected.size})` : ""}
+            <FolderInputIcon className="size-3.5" />
+            Browse conversations
+            <ArrowRightIcon className="size-3.5" />
           </Button>
         }
       />
-      {inspection.error ? (
-        <SettingsRow title="Sessions unavailable" description={inspection.error} />
-      ) : inspection.isPending && candidates.length === 0 ? (
-        <SettingsRow
-          title="Finding local sessions"
-          description="Reading session metadata without changing the source applications."
-        />
-      ) : candidates.length === 0 ? (
-        <SettingsRow
-          title="No sessions found"
-          description="No readable Codex or Claude Code conversations were found for this device's configured harness homes."
-        />
-      ) : (
-        <div className={readOnly ? "space-y-0 opacity-60" : "space-y-0"}>
-          {candidates.map((candidate) => (
-            <SessionCandidateRow
-              key={candidate.candidateId}
-              candidate={candidate}
-              checked={selected.has(candidate.candidateId)}
-              disabled={readOnly || isImporting}
-              onCheckedChange={(checked) =>
-                setSelected((current) => {
-                  const next = new Set(current);
-                  if (checked) next.add(candidate.candidateId);
-                  else next.delete(candidate.candidateId);
-                  return next;
-                })
-              }
-              onOpen={() => {
-                if (!candidate.importedThreadId) return;
-                void navigate({
-                  to: "/draft/$draftId",
-                  params: { draftId: candidate.importedThreadId },
-                });
-              }}
-            />
-          ))}
-        </div>
-      )}
-      {inspection.data?.truncated ? (
-        <p className="px-4 py-2 text-xs text-muted-foreground">
-          Showing the newest readable sessions. Import or refresh to review later updates.
-        </p>
-      ) : null}
+      <SessionImportBrowser
+        open={open}
+        onOpenChange={setOpen}
+        inspection={inspection.data}
+        pending={inspection.isPending}
+        error={error ?? inspection.error ?? null}
+        query={query}
+        onQueryChange={(value) => {
+          setQuery(value);
+          setPreview(null);
+        }}
+        source={source}
+        onSourceChange={(value) => {
+          setSource(value);
+          setPage(0);
+          setPreview(null);
+        }}
+        page={page}
+        onPageChange={(value) => {
+          setPage(value);
+          setPreview(null);
+        }}
+        onRefresh={inspection.refresh}
+        selected={selected}
+        onSelect={(candidate, checked) =>
+          setSelected((current) => {
+            const next = new Map(current);
+            if (checked) next.set(candidate.candidateId, candidate);
+            else next.delete(candidate.candidateId);
+            return next;
+          })
+        }
+        onClearSelection={() => setSelected(new Map())}
+        onSelectAll={() => void selectAllMatches()}
+        preview={preview}
+        onPreview={setPreview}
+        projects={projects}
+        destination={destination}
+        onDestinationChange={(value) => {
+          setDestination(value);
+          setError(null);
+          setWorkspaceRoot("");
+          if (value === "new") {
+            const folders = [
+              ...new Set([...selected.values()].map((candidate) => candidate.workspaceRoot)),
+            ];
+            if (folders.length === 1 && folders[0]) {
+              setWorkspaceRoot(folders[0]);
+              setNewProjectTitle(sessionImportFolderName(folders[0]));
+            }
+          }
+        }}
+        newProjectTitle={newProjectTitle}
+        onNewProjectTitleChange={setNewProjectTitle}
+        workspaceRoot={workspaceRoot}
+        onWorkspaceRootChange={setWorkspaceRoot}
+        {...(isElectron && environmentId === primaryEnvironmentId
+          ? {
+              onPickFolder: () => {
+                void ensureLocalApi()
+                  .dialogs.pickFolder()
+                  .then((folder) => {
+                    if (folder && isActive()) setWorkspaceRoot(folder);
+                  })
+                  .catch(() => {
+                    if (isActive())
+                      setError("Enter the folder path if the folder picker is unavailable.");
+                  });
+              },
+            }
+          : {})}
+        canImport={canImport}
+        readOnly={readOnly}
+        progress={progress}
+        results={results}
+        onStop={() => {
+          stoppedRef.current = true;
+        }}
+        onImport={() => void importSelected()}
+        onOpenThread={(item) => {
+          if (!item.threadId || !isActive()) return;
+          setOpen(false);
+          void navigate({
+            to: "/$environmentId/$threadId",
+            params: { environmentId, threadId: item.threadId },
+          });
+        }}
+      />
     </SettingsSection>
   );
 }

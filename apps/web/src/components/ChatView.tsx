@@ -176,6 +176,7 @@ import {
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
+import { ProjectNativeSyncStatus } from "../localProjectRegistration";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -189,7 +190,10 @@ import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import {
+  NO_PROVIDER_MODEL_SELECTION,
+  resolveProjectTeamModelSelection,
+} from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -322,6 +326,7 @@ import {
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
 import { WorkjetHandoffInbox, WorkjetWorkerOverview } from "./workjetSurfaces";
+import { ProjectTeamPanel } from "./chat/ProjectTeamPanel";
 import { publishCrossModeResultSubmitted } from "../crossMode/crossModeNotificationProducer";
 import { CrossModeNotificationCenter } from "../crossMode/CrossModeNotifications";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
@@ -3488,6 +3493,10 @@ function ChatViewContent(props: ChatViewProps) {
         });
       }
       const targetCwd = options?.cwd ?? gitCwd ?? activeProject.workspaceRoot;
+      if (targetCwd === null) {
+        setThreadError(activeThread.id, "Attach a working copy before running scripts.");
+        return;
+      }
       const baseTerminalId =
         terminalUiState.activeTerminalId || activeKnownTerminalIds[0] || DEFAULT_THREAD_TERMINAL_ID;
       const isBaseTerminalBusy = runningTerminalIds.includes(baseTerminalId);
@@ -3592,7 +3601,7 @@ function ChatViewContent(props: ChatViewProps) {
   const persistProjectScripts = useCallback(
     async (input: {
       projectId: ProjectId;
-      projectCwd: string;
+      projectCwd: string | null;
       previousScripts: ReadonlyArray<ProjectScript>;
       nextScripts: ReadonlyArray<ProjectScript>;
       keybinding?: string | null;
@@ -4058,6 +4067,7 @@ function ChatViewContent(props: ChatViewProps) {
   const addTerminalSurface = useCallback(() => {
     if (!activeThreadRef || !activeThreadId || !activeProject) return;
     const cwd = gitCwd ?? activeProject.workspaceRoot;
+    if (cwd === null) return;
     const terminalId = nextTerminalId(allocatableActiveTerminalIds);
     useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId);
     setTerminalFocusRequestId((value) => value + 1);
@@ -4096,6 +4106,7 @@ function ChatViewContent(props: ChatViewProps) {
       }
       const terminalId = nextTerminalId(allocatableActiveTerminalIds);
       const cwd = gitCwd ?? activeProject.workspaceRoot;
+      if (cwd === null) return;
       useRightPanelStore
         .getState()
         .splitTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId, direction);
@@ -5155,7 +5166,7 @@ function ChatViewContent(props: ChatViewProps) {
       ),
       title: working
         ? liveCount > 0
-          ? `${liveCount} ${liveCount === 1 ? "agent" : "agents"} working in the background`
+          ? `${liveCount} ${liveCount === 1 ? "Luma" : "Lumas"} working in the background`
           : "Background work running"
         : "Monitoring in the background",
       actions: (
@@ -5761,7 +5772,9 @@ function ChatViewContent(props: ChatViewProps) {
       useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.workjetConfig ??
       DEFAULT_WORKJET_THREAD_CONFIG;
     if (
-      workjetConfigForFirstTurn.enabledCapabilityIds.includes("decision-hub") &&
+      workjetConfigForFirstTurn.enabledCapabilityIds.some(
+        (capabilityId) => capabilityId === "decision-hub",
+      ) &&
       (!("capabilityBindings" in workjetConfigForFirstTurn) ||
         workjetConfigForFirstTurn.capabilityBindings.filter(
           (binding) => binding.capabilityId === "decision-hub",
@@ -5991,7 +6004,7 @@ function ChatViewContent(props: ChatViewProps) {
                       },
                     }
                   : {}),
-                ...(baseBranchForWorktree
+                ...(baseBranchForWorktree && activeProject.workspaceRoot !== null
                   ? {
                       prepareWorktree: {
                         projectCwd: activeProject.workspaceRoot,
@@ -7064,6 +7077,7 @@ function ChatViewContent(props: ChatViewProps) {
             onNewThreadInProject={handleNewThreadInActiveProject}
           />
         </WorkjetHeaderContent>
+        <ProjectNativeSyncStatus project={activeProject ?? null} />
 
         <ThreadErrorBanner
           error={visibleThreadError}
@@ -7080,6 +7094,114 @@ function ChatViewContent(props: ChatViewProps) {
           an ordinary thread in the sidebar. Hidden for non-orchestrator threads
           and when the orchestrator owns no workers (the component returns null).
         */}
+        {activeServerThread && activeThreadEnvironmentId ? (
+          <ProjectTeamPanel
+            key={`${activeThreadEnvironmentId}:${activeServerThread.id}`}
+            thread={activeServerThread}
+            threads={allThreadShells.filter(
+              (thread) => thread.environmentId === activeThreadEnvironmentId,
+            )}
+            onOpen={(threadId) =>
+              onOpenWorkjetPeerThread({ environmentId: activeThreadEnvironmentId, threadId })
+            }
+            onSaveGoal={async (goal) => {
+              const config = activeServerThread.workjetConfig;
+              if (config.schemaVersion !== 2 || !config.team) return false;
+              const result = await setThreadWorkjetConfig({
+                environmentId: activeThreadEnvironmentId,
+                input: {
+                  threadId: activeServerThread.id,
+                  workjetConfig: { ...config, team: { ...config.team, goal } },
+                },
+              });
+              return result._tag === "Success";
+            }}
+            onCreateSupervisor={async () => {
+              const modelSelection = resolveProjectTeamModelSelection(providerStatuses);
+              if (modelSelection === null) {
+                toastManager.add({
+                  type: "error",
+                  title: "Project Luma model unavailable",
+                  description: "Configure an available gpt-6.1-sol model in Models.",
+                });
+                return false;
+              }
+              const threadId = newThreadId();
+              const createdAt = new Date().toISOString();
+              const result = await createThread({
+                environmentId: activeThreadEnvironmentId,
+                input: {
+                  threadId,
+                  projectId: activeServerThread.projectId,
+                  title: "Project supervisor",
+                  modelSelection,
+                  runtimeMode: activeServerThread.runtimeMode,
+                  interactionMode: "default",
+                  workjetConfig: {
+                    ...DEFAULT_WORKJET_THREAD_CONFIG,
+                    role: "orchestrator",
+                    team: {
+                      role: "supervisor",
+                      projectId: activeServerThread.projectId,
+                      threadId,
+                      parentThreadId: null,
+                      goal: "Coordinate this project",
+                      createdAt,
+                    },
+                  },
+                  branch: null,
+                  worktreePath: null,
+                  createdAt,
+                },
+              });
+              return result._tag === "Success";
+            }}
+            onAddSpecialist={async (domain, goal) => {
+              const config = activeServerThread.workjetConfig;
+              if (config.schemaVersion !== 2 || config.team?.role !== "supervisor") return false;
+              const modelSelection = resolveProjectTeamModelSelection(providerStatuses);
+              if (modelSelection === null) {
+                toastManager.add({
+                  type: "error",
+                  title: "Project Luma model unavailable",
+                  description: "Configure an available gpt-6.1-sol model in Models.",
+                });
+                return false;
+              }
+              const threadId = newThreadId();
+              const createdAt = new Date().toISOString();
+              const result = await createThread({
+                environmentId: activeThreadEnvironmentId,
+                input: {
+                  threadId,
+                  projectId: activeServerThread.projectId,
+                  title: domain,
+                  modelSelection,
+                  runtimeMode: activeServerThread.runtimeMode,
+                  interactionMode: "default",
+                  workjetConfig: {
+                    ...config,
+                    role: "orchestrator",
+                    parent: null,
+                    team: {
+                      role: "specialist",
+                      projectId: activeServerThread.projectId,
+                      threadId,
+                      parentThreadId: activeServerThread.id,
+                      domain,
+                      goal,
+                      createdAt,
+                    },
+                  },
+                  branch: null,
+                  worktreePath: null,
+                  createdAt,
+                },
+              });
+              return result._tag === "Success";
+            }}
+          />
+        ) : null}
         {workjetIsOrchestratorThread && activeThreadEnvironmentId && activeThreadId ? (
           <WorkjetWorkerOverview
             environmentId={activeThreadEnvironmentId}

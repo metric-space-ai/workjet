@@ -301,6 +301,13 @@ const doubles = (
         edgeKind: "reviews",
       });
     },
+    resendReviewSignal: (_sender, input) =>
+      Effect.succeed({
+        status: "queued",
+        originalEnvelopeId: input.originalEnvelopeId,
+        envelopeId: ENVELOPE_ID,
+        delegationId: DELEGATION_ID,
+      }),
     updateDelegation: (sender, input) => {
       recorded.updates.push({ sender, input });
       const state =

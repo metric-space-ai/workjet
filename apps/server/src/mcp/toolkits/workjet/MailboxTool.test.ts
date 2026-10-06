@@ -88,6 +88,7 @@ const makeTestLayer = (
           delegateTask: () => Effect.die("delegateTask must not run"),
           reply: () => Effect.die("reply must not run"),
           requestReview: () => Effect.die("requestReview must not run"),
+          resendReviewSignal: () => Effect.die("resendReviewSignal must not run"),
           updateDelegation: () => Effect.die("updateDelegation must not run"),
           sendHandoff: () => Effect.die("sendHandoff must not run"),
           listReceivedHandoffs: () => Effect.die("listReceivedHandoffs must not run"),

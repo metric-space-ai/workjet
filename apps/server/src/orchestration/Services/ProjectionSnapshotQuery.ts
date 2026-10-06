@@ -22,6 +22,7 @@ import type {
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
+  TurnId,
   WorkjetThreadRole,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -60,6 +61,7 @@ export interface ProjectionThreadWorktreeCleanupContext {
   readonly workjetRole: WorkjetThreadRole;
   readonly branch: string | null;
   readonly worktreePath: string | null;
+  readonly archivedAt: string | null;
 }
 
 export interface ProjectionFullThreadDiffContext {
@@ -177,6 +179,12 @@ export interface ProjectionSnapshotQueryShape {
     ProjectionRepositoryError
   >;
 
+  /** Page deleted worker ids whose recorded checkout may still need cleanup. */
+  readonly listDeletedWorkerWorktreeCleanupThreadIds: (input: {
+    readonly afterThreadId: ThreadId | null;
+    readonly limit: number;
+  }) => Effect.Effect<ReadonlyArray<ThreadId>, ProjectionRepositoryError>;
+
   /**
    * Read only the narrow context needed to compute a full-thread diff from
    * checkpoint 0 to a specific turn count.
@@ -200,6 +208,12 @@ export interface ProjectionSnapshotQueryShape {
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<OrchestrationThread>, ProjectionRepositoryError>;
 
+  /** Whether this exact projected turn reached a terminal state. */
+  readonly isThreadTurnTerminal: (
+    threadId: ThreadId,
+    turnId: TurnId,
+  ) => Effect.Effect<boolean, ProjectionRepositoryError>;
+
   /** Stable ids acknowledged by completed static session imports. */
   readonly getThreadImportedMessageIds?: (
     threadId: ThreadId,
@@ -218,6 +232,12 @@ export interface ProjectionSnapshotQueryShape {
    * pagination is strictly opt-in.
    */
   readonly getThreadDetailSnapshot: (
+    threadId: ThreadId,
+    window?: OrchestrationThreadDetailWindow,
+  ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>, ProjectionRepositoryError>;
+
+  /** Read the retained history of a deleted, archived v2 project-team worker only. */
+  readonly getArchivedTeamWorkerDetailSnapshot: (
     threadId: ThreadId,
     window?: OrchestrationThreadDetailWindow,
   ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>, ProjectionRepositoryError>;

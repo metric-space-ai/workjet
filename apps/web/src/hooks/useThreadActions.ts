@@ -411,6 +411,15 @@ export function useThreadActions() {
         return deleteResult;
       }
 
+      if (threadProject.workspaceRoot === null) {
+        return AsyncResult.failure(
+          Cause.fail(
+            new Error(
+              "The thread was deleted, but removing its worktree requires an attached working copy.",
+            ),
+          ),
+        );
+      }
       const removeResult = await removeWorktree({
         environmentId: threadRef.environmentId,
         input: {

@@ -28,6 +28,7 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_WS_METHODS.searchThreads]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.subscribeShell]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot]: AuthOrchestrationReadScope,
+  [ORCHESTRATION_WS_METHODS.getArchivedTeamWorkerDetail]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.subscribeThread]: AuthOrchestrationReadScope,
   [WS_METHODS.serverProbe]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetConfig]: AuthOrchestrationReadScope,
@@ -70,6 +71,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetGatewayAddApiKeyAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayRemoveAccount]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayHealth]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayDiscoverModels]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayUpdateRouting]: AuthOrchestrationOperateScope,
   // Looking at the one-shot legacy import offer is a read; answering it writes
@@ -169,6 +171,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.assetsCreateUrl]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeVcsStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeResourceTelemetry]: AuthOrchestrationReadScope,
+  [WS_METHODS.subscribeDesktopTelemetryControl]: AuthOrchestrationOperateScope,
+  [WS_METHODS.serverPublishDesktopTelemetry]: AuthOrchestrationOperateScope,
   // A read-only, redacted audit stream: the same orchestration-read scope the
   // other observability subscriptions require.
   [WS_METHODS.subscribeWorkjetMailboxAudit]: AuthOrchestrationReadScope,

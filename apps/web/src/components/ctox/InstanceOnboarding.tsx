@@ -40,6 +40,18 @@ export function useInstanceOnboardingState() {
     : resolveInstanceOnboardingState(mode.discovery, mode.selectedId, mode.connection);
 }
 
+/**
+ * A valid selection mounts its workspace while connection is still pending.
+ * Code has its own native project/authority checks; waiting for the Ops guest
+ * to become ready would deadlock Code because that guest is not visible there.
+ * This does not promote connection or discovery health to ready.
+ */
+export function canMountSelectedInstance(
+  state: InstanceOnboardingState,
+): state is "ready" | "connecting" {
+  return state === "ready" || state === "connecting";
+}
+
 export function InstanceOnboardingView({
   state,
   instances,
@@ -157,7 +169,7 @@ export function InstanceOnboarding({
 
 export function InstanceNavigationBoundary({ children }: { readonly children: ReactNode }) {
   const state = useInstanceOnboardingState();
-  if (state === "ready") return children;
+  if (canMountSelectedInstance(state)) return children;
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
@@ -181,11 +193,7 @@ export function InstanceWorkspaceBoundary({
   readonly surface: "settings" | "code" | "business-os";
 }) {
   const state = useInstanceOnboardingState();
-  const mode = useCtoxMode();
-  if (surface === "settings" || state === "ready") return children;
-  // The Ops guest must remain mounted to report its initial connection.
-  if (surface === "business-os" && mode.selectedId !== null && state === "connecting")
-    return children;
+  if (surface === "settings" || canMountSelectedInstance(state)) return children;
   return <InstanceOnboarding state={state} />;
 }
 
@@ -198,10 +206,6 @@ export function InstanceSidebarBoundary({
   readonly surface: "settings" | "code" | "business-os";
 }) {
   const state = useInstanceOnboardingState();
-  const mode = useCtoxMode();
-  const show =
-    surface === "settings" ||
-    state === "ready" ||
-    (surface === "business-os" && mode.selectedId !== null && state === "connecting");
+  const show = surface === "settings" || canMountSelectedInstance(state);
   return show ? children : null;
 }

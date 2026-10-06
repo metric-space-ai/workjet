@@ -33,20 +33,22 @@ const isDesktopBackendObservabilitySettingsReadError = Schema.is(
   DesktopBackendConfiguration.DesktopBackendObservabilitySettingsReadError,
 );
 
-const serverExposureLayer = Layer.succeed(DesktopServerExposure.DesktopServerExposure, {
-  getState: Effect.die("unexpected getState"),
-  backendConfig: Effect.succeed({
-    port: 4888,
-    bindHost: "0.0.0.0",
-    httpBaseUrl: new URL("http://127.0.0.1:4888"),
-    tailscaleServeEnabled: true,
-    tailscaleServePort: 8443,
-  }),
-  configureFromSettings: () => Effect.die("unexpected configureFromSettings"),
-  setMode: () => Effect.die("unexpected setMode"),
-  setTailscaleServeEnabled: () => Effect.die("unexpected setTailscaleServeEnabled"),
-  getAdvertisedEndpoints: Effect.succeed([]),
-} satisfies DesktopServerExposure.DesktopServerExposure["Service"]);
+const makeServerExposureLayer = (bindHost: string) =>
+  Layer.succeed(DesktopServerExposure.DesktopServerExposure, {
+    getState: Effect.die("unexpected getState"),
+    backendConfig: Effect.succeed({
+      port: 4888,
+      bindHost,
+      httpBaseUrl: new URL("http://127.0.0.1:4888"),
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 8443,
+    }),
+    configureFromSettings: () => Effect.die("unexpected configureFromSettings"),
+    setMode: () => Effect.die("unexpected setMode"),
+    setTailscaleServeEnabled: () => Effect.die("unexpected setTailscaleServeEnabled"),
+    getAdvertisedEndpoints: Effect.succeed([]),
+  } satisfies DesktopServerExposure.DesktopServerExposure["Service"]);
+const serverExposureLayer = makeServerExposureLayer("0.0.0.0");
 
 function makeEnvironmentLayer(
   baseDir: string,
@@ -102,6 +104,7 @@ const withHarness = <A, E, R>(
     | FileSystem.FileSystem
     | DesktopBackendConfiguration.DesktopBackendConfiguration
   >,
+  exposureLayer = serverExposureLayer,
 ) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -112,7 +115,7 @@ const withHarness = <A, E, R>(
     return yield* effect.pipe(
       Effect.provide(
         DesktopBackendConfiguration.layer.pipe(
-          Layer.provideMerge(serverExposureLayer),
+          Layer.provideMerge(exposureLayer),
           Layer.provideMerge(DesktopAppSettings.layerTest()),
           Layer.provideMerge(DesktopWslEnvironment.layerTest()),
           Layer.provideMerge(makeEnvironmentLayer(baseDir)),
@@ -122,6 +125,22 @@ const withHarness = <A, E, R>(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("DesktopBackendConfiguration", () => {
+  it.effect(
+    "selects protected profile enrollment only for the packaged native loopback backend",
+    () =>
+      withHarness(
+        Effect.gen(function* () {
+          const environment = yield* DesktopEnvironment.DesktopEnvironment;
+          const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+          const primary = yield* configuration.resolvePrimary;
+          assert.equal(primary.localSession?.baseDir, environment.baseDir);
+          assert.isNotEmpty(primary.localSession?.serverVersion);
+          const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+          assert.isUndefined(wsl.localSession);
+        }),
+        makeServerExposureLayer("127.0.0.1"),
+      ),
+  );
   it.effect("resolvePrimary produces a stable scoped bootstrap token", () =>
     withHarness(
       Effect.gen(function* () {
@@ -135,6 +154,7 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.entryPath, environment.backendEntryPath);
         assert.equal(first.cwd, environment.backendCwd);
         assert.equal(first.captureOutput, true);
+        assert.isUndefined(first.localSession);
         assert.equal(first.env.ELECTRON_RUN_AS_NODE, "1");
         assert.isUndefined(first.env.WORKJET_PORT);
         assert.isUndefined(first.env.WORKJET_MODE);

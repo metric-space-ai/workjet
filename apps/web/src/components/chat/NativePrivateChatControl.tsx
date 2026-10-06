@@ -88,7 +88,7 @@ export function NativePrivateChatControl(props: {
       if (live.current)
         toastManager.add({
           type: "error",
-          title: "Could not open the worker chat",
+          title: "Could not open the Luma chat",
           description: error instanceof Error ? error.message : "CTOX did not confirm the chat.",
         });
     } finally {
@@ -119,7 +119,7 @@ export function NativePrivateChatControl(props: {
         disabled={busy || props.connectionId === null}
         onClick={() => void open(false)}
       >
-        {busy ? "Opening…" : "Open worker chat"}
+        {busy ? "Opening…" : "Open Luma chat"}
       </Button>
       <Button
         type="button"

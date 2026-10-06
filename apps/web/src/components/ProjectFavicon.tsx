@@ -13,7 +13,7 @@ const loadedProjectFaviconSrcs = new Map<string, string>();
 
 export function ProjectFavicon(input: {
   environmentId: EnvironmentId;
-  cwd: string;
+  cwd: string | null;
   faviconPath?: string | null | undefined;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
@@ -22,7 +22,7 @@ export function ProjectFavicon(input: {
   const src = state._tag === "Success" ? state.url : null;
   const FallbackIcon = input.fallbackIcon ?? FolderIcon;
 
-  if (!src || isProjectFaviconFallbackUrl(src)) {
+  if (!src || input.cwd === null || isProjectFaviconFallbackUrl(src)) {
     return <ProjectFaviconFallback className={input.className} icon={FallbackIcon} />;
   }
 
@@ -41,14 +41,19 @@ export function ProjectFavicon(input: {
 
 export function useProjectFaviconAsset(input: {
   readonly environmentId: EnvironmentId;
-  readonly cwd: string;
+  readonly cwd: string | null;
   readonly faviconPath?: string | null | undefined;
 }) {
-  return useAssetUrlState(input.environmentId, {
-    _tag: "project-favicon",
-    cwd: input.cwd,
-    ...(input.faviconPath ? { path: input.faviconPath } : {}),
-  });
+  return useAssetUrlState(
+    input.environmentId,
+    input.cwd === null
+      ? null
+      : {
+          _tag: "project-favicon",
+          cwd: input.cwd,
+          ...(input.faviconPath ? { path: input.faviconPath } : {}),
+        },
+  );
 }
 
 function ProjectFaviconFallback({

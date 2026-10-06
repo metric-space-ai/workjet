@@ -1,4 +1,6 @@
 import type { WorkjetGatewayProvider, WorkjetGatewayProviderPhase } from "@workjet/contracts";
+import { WorkjetGatewayAccountHealth } from "@workjet/contracts";
+import { Schema } from "effect";
 
 /**
  * Decoders for the Rust host's management payloads.
@@ -16,6 +18,26 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const MAX_TEXT = 160;
 const MAX_MODELS = 256;
 const MAX_PROVIDERS = 32;
+
+export const decodeAccountHealth = (
+  value: unknown,
+): ReadonlyArray<WorkjetGatewayAccountHealth> | undefined => {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.account_health) ||
+    value.account_health.schema !== "workjet.provider-gateway.account-health.v1" ||
+    !Array.isArray(value.account_health.accounts) ||
+    value.account_health.accounts.length > 1024
+  )
+    return undefined;
+  try {
+    return Schema.decodeUnknownSync(Schema.Array(WorkjetGatewayAccountHealth))(
+      value.account_health.accounts,
+    );
+  } catch {
+    return undefined;
+  }
+};
 
 const text = (value: unknown): string | undefined => {
   if (typeof value !== "string") return undefined;

@@ -140,6 +140,8 @@ export function WorkjetComputersSettingsView({
   onRemove,
   renderConnection,
   connectedEnvironmentIds,
+  connectingEnvironmentIds,
+  pendingConnectionEnvironmentId,
 }: {
   readonly configuration: WorkjetConfiguration;
   readonly environments: ReadonlyArray<WorkjetEnvironmentTargetOption>;
@@ -160,6 +162,8 @@ export function WorkjetComputersSettingsView({
   readonly onRemove?: (computer: WorkjetComputer) => void;
   readonly renderConnection?: (environmentId: EnvironmentId) => ReactNode;
   readonly connectedEnvironmentIds?: ReadonlyArray<EnvironmentId>;
+  readonly connectingEnvironmentIds?: ReadonlyArray<EnvironmentId>;
+  readonly pendingConnectionEnvironmentId?: EnvironmentId | null;
 }) {
   const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
   const editingComputer =
@@ -214,7 +218,12 @@ export function WorkjetComputersSettingsView({
     <SettingsSection
       id={searchableSetting("workjet-computers").id}
       title={searchableSetting("workjet-computers").title}
-      headerAction={
+    >
+      <SettingsRow
+        title={environmentsReady ? "Your computers" : "Loading computers…"}
+        description="Select the computer for your next session, or edit its name and coding tools."
+      />
+      <div className="px-3 py-2 sm:px-4">
         <Button
           type="button"
           size="sm"
@@ -225,12 +234,7 @@ export function WorkjetComputersSettingsView({
           <PlusIcon className="size-3.5" />
           Add computer
         </Button>
-      }
-    >
-      <SettingsRow
-        title={environmentsReady ? "Your computers" : "Loading computers…"}
-        description="Select the computer for your next session, or edit its name and coding tools."
-      />
+      </div>
       {configuration.computers.length === 0 ? (
         <SettingsRow
           title="No computers yet"
@@ -242,19 +246,23 @@ export function WorkjetComputersSettingsView({
           // Each probe belongs to its target environment. Never present this
           // Mac's tools as the capabilities of an SSH or Tailscale computer.
           const inspection = harnessInspections?.[computer.environmentId];
+          const connecting = connectingEnvironmentIds?.includes(computer.environmentId) ?? false;
           const disconnected =
             environmentsReady &&
             computer.environmentId !== environmentId &&
+            computer.environmentId !== pendingConnectionEnvironmentId &&
+            !connecting &&
             !(connectedEnvironmentIds ?? environments.map((entry) => entry.environmentId)).includes(
               computer.environmentId,
             );
-          const computerInspection = disconnected
-            ? null
-            : harnessInspections !== undefined
-              ? (inspection?.snapshot ?? null)
-              : environmentId === computer.environmentId
-                ? harnessInspection
-                : null;
+          const computerInspection =
+            disconnected || connecting
+              ? null
+              : harnessInspections !== undefined
+                ? (inspection?.snapshot ?? null)
+                : environmentId === computer.environmentId
+                  ? harnessInspection
+                  : null;
           // The environment's human label, never its raw id — an operator
           // recognises "gpu3-a4500", not a UUID. When the environment left the
           // catalog, the kind alone is the only truthful thing left to show.
@@ -354,14 +362,16 @@ export function WorkjetComputersSettingsView({
                       </Button>
                     </div>
                   ) : null}
-                  {(disconnected || harnessInspections !== undefined) &&
+                  {(disconnected || connecting || harnessInspections !== undefined) &&
                   computerInspection === null ? (
                     <p role="status" className="text-xs text-muted-foreground">
                       {disconnected
                         ? "Disconnected. Reconnect this computer to check its coding tools."
-                        : inspection?.error
-                          ? "Could not check coding tools. Check this computer’s connection."
-                          : "Checking coding tools…"}
+                        : connecting
+                          ? "Connecting. Coding tools will be checked once connected."
+                          : inspection?.error
+                            ? "Could not check coding tools. Check this computer’s connection."
+                            : "Checking coding tools…"}
                     </p>
                   ) : null}
                   <details>
@@ -658,6 +668,13 @@ export function WorkjetComputersSettings({
         connectedEnvironmentIds={environments
           .filter((entry) => entry.connection.phase === "connected")
           .map((entry) => entry.environmentId)}
+        connectingEnvironmentIds={environments
+          .filter(
+            (entry) =>
+              entry.connection.phase === "connecting" || entry.connection.phase === "reconnecting",
+          )
+          .map((entry) => entry.environmentId)}
+        pendingConnectionEnvironmentId={pendingComputerId}
         onRemove={(computer) => {
           void (async () => {
             if (

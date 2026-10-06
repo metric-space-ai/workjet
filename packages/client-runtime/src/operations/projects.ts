@@ -195,6 +195,29 @@ export function resolveAddProjectPath(input: {
   return path.length === 0 ? { ok: false, error: "Enter a project path." } : { ok: true, path };
 }
 
+export function resolveAddProjectInput(input: {
+  readonly title: string;
+  readonly rawPath: string | null;
+  readonly currentProjectCwd?: string | null;
+  readonly platform: string;
+}):
+  | { readonly ok: true; readonly title: string; readonly workspaceRoot: string | null }
+  | { readonly ok: false; readonly error: string } {
+  const title = input.title.trim();
+  if (input.rawPath === null) {
+    return title.length === 0
+      ? { ok: false, error: "Enter a project name." }
+      : { ok: true, title, workspaceRoot: null };
+  }
+  const resolved = resolveAddProjectPath({ ...input, rawPath: input.rawPath });
+  if (!resolved.ok) return resolved;
+  return {
+    ok: true,
+    title: title || inferProjectTitleFromPath(resolved.path),
+    workspaceRoot: resolved.path,
+  };
+}
+
 export function findExistingAddProject(input: {
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly environmentId: EnvironmentId;
@@ -211,16 +234,21 @@ export function findExistingAddProject(input: {
 export function buildProjectCreateCommand(input: {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
-  readonly workspaceRoot: string;
+  readonly workspaceRoot: string | null;
+  readonly title?: string;
   readonly createdAt: string;
 }): Extract<OrchestrationCommand, { type: "project.create" }> {
+  const title =
+    input.title?.trim() ||
+    (input.workspaceRoot === null ? "" : inferProjectTitleFromPath(input.workspaceRoot));
+  if (title.length === 0) throw new Error("Enter a project name.");
   return {
     type: "project.create",
     commandId: input.commandId,
     projectId: input.projectId,
-    title: inferProjectTitleFromPath(input.workspaceRoot),
+    title,
     workspaceRoot: input.workspaceRoot,
-    createWorkspaceRootIfMissing: true,
+    createWorkspaceRootIfMissing: input.workspaceRoot !== null,
     defaultModelSelection: null,
     createdAt: input.createdAt,
   };

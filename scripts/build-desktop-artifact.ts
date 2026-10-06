@@ -6,7 +6,7 @@ import * as NodeModule from "node:module";
 import * as NodeURL from "node:url";
 
 import { fromYaml } from "@workjet/shared/schemaYaml";
-import { HostProcessPlatform } from "@workjet/shared/hostProcess";
+import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@workjet/shared/relayAuth";
 import { resolveSpawnCommand } from "@workjet/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -19,6 +19,9 @@ import { BRAND_ASSET_PATHS, type WebAssetBrand } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
+import { verifyBundledServerSource } from "./lib/bundled-server-source.ts";
+import { preparePortableNode } from "./lib/prepare-portable-node.ts";
+import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
 import {
   CLI_EXTERNAL_PACKAGE_UNPACK_GLOBS,
   findInlinedExternalPackages,
@@ -160,6 +163,7 @@ interface BuildCliInput {
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
+  readonly diagnosticProviderGatewayHost?: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -281,6 +285,28 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
     ].filter((section): section is string => section !== undefined);
     const outputSuffix = outputSections.length > 0 ? `\n\n${outputSections.join("\n\n")}` : "";
     return `Command exited with non-zero exit code (${this.exitCode})${outputSuffix}`;
+  }
+}
+
+export class PortableNodePreparationError extends Schema.TaggedErrorClass<PortableNodePreparationError>()(
+  "PortableNodePreparationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    const detail =
+      this.cause instanceof Error
+        ? this.cause.message || this.cause.name
+        : "unknown download failure";
+    return `Could not prepare the pinned portable Node runtime: ${detail}`;
+  }
+}
+
+export class BundledServerSourceVerificationError extends Schema.TaggedErrorClass<BundledServerSourceVerificationError>()(
+  "BundledServerSourceVerificationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return `Could not verify bundled server source: ${this.cause instanceof Error ? this.cause.message : "unknown verification failure"}`;
   }
 }
 
@@ -741,6 +767,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
+  readonly diagnosticProviderGatewayHost?: string;
 }
 
 interface StagePackageJson {
@@ -760,7 +787,13 @@ interface StagePackageJson {
   };
 }
 
-export const STAGE_INSTALL_ARGS = ["install", "--prod", "--frozen-lockfile"] as const;
+export const STAGE_INSTALL_ARGS = [
+  "install",
+  "--prod",
+  "--frozen-lockfile",
+  "--",
+  "--child-concurrency=2",
+] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
   // Workjet always passes the user's installed Claude executable to the SDK,
@@ -813,7 +846,8 @@ export const PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY = "provider-gateway-host";
  *
  * The standalone builder always supplies the directory returned by
  * prepareProviderGatewayHost after verifying the pinned release manifest and
- * executable. An unreleased pin fails preparation before packaging begins.
+ * executable, or an explicitly requested source-matching Mac diagnostic receipt.
+ * An unreleased release pin still fails the normal packaging path.
  * The optional argument remains available to callers constructing only the
  * resource list; it is not a runtime fallback for a standalone build.
  */
@@ -1555,6 +1589,9 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
 
   const wslPrebuild =
     Option.getOrUndefined(input.wslPrebuild) ?? Option.getOrUndefined(env.wslPrebuild);
+  const diagnosticProviderGatewayHost = Option.getOrUndefined(
+    input.diagnosticProviderGatewayHost ?? Option.none(),
+  );
 
   return {
     platform,
@@ -1569,6 +1606,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdates,
     mockUpdateServerPort,
     wslPrebuild,
+    ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -1904,6 +1942,10 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const manifestPath = path.join(input.repoRoot, "native/resource-monitor/Cargo.toml");
+  const targetDirectory = path.resolve(
+    input.repoRoot,
+    process.env.CARGO_TARGET_DIR ?? "native/resource-monitor/target",
+  );
   const executableName = resourceMonitorExecutableName(input.platform);
   const rustTargets = resolveResourceMonitorRustTargets(input.platform, input.arch);
   const builtBinaries: string[] = [];
@@ -1917,6 +1959,10 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
       manifestPath,
       "--target",
       rustTarget,
+      "--target-dir",
+      targetDirectory,
+      "-j",
+      "2",
     ]);
     yield* runCommand(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
@@ -1929,13 +1975,7 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
       },
     );
 
-    const binaryPath = path.join(
-      input.repoRoot,
-      "native/resource-monitor/target",
-      rustTarget,
-      "release",
-      executableName,
-    );
+    const binaryPath = path.join(targetDirectory, rustTarget, "release", executableName);
     if (!(yield* fs.exists(binaryPath))) {
       return yield* new ResourceMonitorBuildOutputMissingError({
         binaryPath,
@@ -2453,7 +2493,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const workspaceAllowBuilds = workspaceConfig.allowBuilds ?? {};
   const providerGatewayHost = yield* Effect.tryPromise({
     try: () =>
-      prepareProviderGatewayHost({ repoRoot, platform: options.platform, arch: options.arch }),
+      options.diagnosticProviderGatewayHost === undefined
+        ? prepareProviderGatewayHost({ repoRoot, platform: options.platform, arch: options.arch })
+        : prepareDiagnosticProviderGatewayHost({
+            repoRoot,
+            platform: options.platform,
+            arch: options.arch,
+            manifestPath: options.diagnosticProviderGatewayHost,
+          }),
     catch: (cause) => new ProviderGatewayHostPreparationError({ cause }),
   });
   const businessOsShell = yield* Effect.tryPromise({
@@ -2634,6 +2681,50 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
+  // The managed local service installs this archive, not the server inside ASAR.
+  // Generate the host-native archive from the fresh build; cross-host inputs
+  // must already match that same build and are verified before packaging.
+  const localServerPlatform = options.platform === "mac" ? "darwin" : options.platform;
+  const hostArchitecture = yield* HostProcessArchitecture;
+  const buildsHostRuntime =
+    localServerPlatform !== "win" &&
+    localServerPlatform === hostPlatform &&
+    (options.arch === "universal" || options.arch === hostArchitecture);
+  if (buildsHostRuntime) {
+    const buildNode = yield* Effect.tryPromise({
+      try: () =>
+        preparePortableNode({
+          destination: path.join(stageRoot, "bundled-server-build-node"),
+          platform: hostPlatform,
+          arch: hostArchitecture,
+        }),
+      catch: (cause) => new PortableNodePreparationError({ cause }),
+    });
+    yield* runCommand(
+      ChildProcess.make(
+        buildNode,
+        [
+          path.join(repoRoot, "scripts/build-ssh-server.mjs"),
+          path.join(stageResourcesDir, "ssh-servers"),
+        ],
+        { cwd: repoRoot },
+      ),
+      { label: "build current bundled local server", verbose: options.verbose },
+    );
+  }
+  const verifiedServerArchives = yield* Effect.tryPromise({
+    try: () =>
+      verifyBundledServerSource({
+        serverDist: distDirs.serverDist,
+        archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+        platform: options.platform,
+        arch: options.arch,
+      }),
+    catch: (cause) => new BundledServerSourceVerificationError({ cause }),
+  });
+  yield* Effect.log(
+    `[desktop-artifact] Verified current server code in ${verifiedServerArchives.length} bundled server archives.`,
+  );
   yield* stageLegalNotices({ repoRoot, stageAppDir });
   // One capability, one version, both hosts. A desktop artifact whose Code and
   // CTOX hosts resolve different manifests, JSON schemas, implementation
@@ -3008,6 +3099,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   mockUpdateServerPort: Flag.integer("mock-update-server-port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
     Flag.withDescription("Mock update server port (env: WORKJET_DESKTOP_MOCK_UPDATE_SERVER_PORT)."),
+    Flag.optional,
+  ),
+  diagnosticProviderGatewayHost: Flag.string("diagnostic-provider-gateway-host").pipe(
+    Flag.withDescription(
+      "Explicit source-matching local Mac host receipt; does not publish or replace the six-platform release pin.",
+    ),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(

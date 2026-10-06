@@ -150,14 +150,17 @@ describe("WorkjetWorkerEditor", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Add worker"');
+    expect(markup).toContain('aria-label="Add Luma"');
+    expect(markup).toContain('aria-label="Luma personality"');
+    expect(markup).toContain('type="range"');
+    expect(markup).toContain('aria-label="Enable Luma personalization"');
 
-    // Name and task lead; personality is an optional disclosure.
+    // Name and task lead; the retained slider profile is directly discoverable.
     const sections = [
       ">Name</label>",
       ">Task</label>",
       "Personality",
-      "Profile",
+      "Personality sliders",
       "Harness",
       "LLM route",
       "Model",

@@ -85,6 +85,10 @@ export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabi
 
 export const ExecutionEnvironmentDescriptor = Schema.Struct({
   environmentId: EnvironmentId,
+  /** Identifies one server lifetime, unlike the durable environmentId. Public
+      metadata, not an authentication credential or native execution fence.
+      Absent on older servers. */
+  runtimeInstanceId: Schema.optionalKey(TrimmedNonEmptyString),
   label: TrimmedNonEmptyString,
   platform: ExecutionEnvironmentPlatform,
   serverVersion: TrimmedNonEmptyString,

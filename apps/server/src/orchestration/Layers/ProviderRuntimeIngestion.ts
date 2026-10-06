@@ -43,6 +43,7 @@ import {
 } from "../Services/ProviderRuntimeIngestion.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { CtoxCrewTurnAdmission } from "../../workjet/ctox/CtoxCrewTurnAdmission.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -875,6 +876,7 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const serverSettingsService = yield* ServerSettingsService;
+  const crewAdmission = yield* Effect.serviceOption(CtoxCrewTurnAdmission);
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
@@ -1855,6 +1857,53 @@ const make = Effect.gen(function* () {
             turnId,
             updatedAt: now,
           });
+
+          const admission = Option.getOrUndefined(crewAdmission);
+          const providerInstanceId = event.providerInstanceId;
+          if (
+            admission &&
+            providerInstanceId !== undefined &&
+            thread.workjetConfig.schemaVersion === 2 &&
+            thread.workjetConfig.ctoxCrewChat !== undefined
+          ) {
+            yield* Effect.gen(function* () {
+              const recorded = yield* admission.recordProviderTerminal({
+                threadId: thread.id,
+                providerInstanceId,
+                providerTurnId: turnId,
+                state: event.payload.state,
+              });
+              if (recorded.state === "recorded") {
+                yield* Effect.gen(function* () {
+                  const result = yield* admission.reconcileTerminalOutbox();
+                  if (result.deferred > 0 || result.pending > 0 || result.truncated) {
+                    yield* Effect.sleep(Duration.seconds(30));
+                    yield* admission.reconcileTerminalOutbox();
+                  }
+                }).pipe(
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.failCause(cause)
+                      : Effect.logWarning("native Crew terminal outbox retry stopped", {
+                          threadId: thread.id,
+                          cause: Cause.pretty(cause),
+                        }),
+                  ),
+                  Effect.forkScoped,
+                );
+              }
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.logWarning("native Crew terminal event could not be reconciled", {
+                      threadId: thread.id,
+                      providerTurnId: turnId,
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
+            );
+          }
         }
       }
 

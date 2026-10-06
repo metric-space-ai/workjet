@@ -6,6 +6,12 @@ import * as NodePath from "node:path";
 
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import {
+  decodeProviderGatewayHostDiagnostic,
+  PROVIDER_GATEWAY_DIAGNOSTIC_FILE,
+  PROVIDER_GATEWAY_DIAGNOSTIC_MAX_BYTES,
+  type ProviderGatewayHostDiagnostic,
+} from "@workjet/shared/providerGatewayHostDiagnostic";
 
 import hostReleasePin from "../../resources/provider-gateway/host-release.pin.json" with { type: "json" };
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -14,18 +20,20 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
  * Decides which `workjet-provider-gateway-host` executable a Workjet desktop
  * process should run.
  *
- * There are exactly three sources, and which one applies is decided here rather
- * than anywhere else:
+ * Source selection is explicit here:
  *
  *   - PINNED   — a `provider-gateway-host-v*` release artifact whose bytes
  *                reproduce the SHA-256 recorded in
  *                `resources/provider-gateway/host-release.pin.json`. This is
- *                the only source a PACKAGED build ever accepts.
+ *                the default published-release path for PACKAGED builds.
  *   - WORKSPACE — the current repository release build under
  *                 `native/provider-gateway-workjet-host/target/release`. A
  *                 development desktop prefers this over a state-directory
  *                 copy so a stale host cannot drift behind the server's
  *                 readiness protocol.
+ *   - DIAGNOSTIC PACKAGE — an explicitly staged local Mac host with a sealed
+ *                source-tree receipt and independently checked executable digest.
+ *                This is distinct from a published six-platform release pin.
  *   - LOCAL     — the final development fallback: whatever the server's existing
  *                default resolution finds (the
  *                `WORKJET_PROVIDER_GATEWAY_HOST_EXECUTABLE` override, else
@@ -35,7 +43,7 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
  * Rules:
  *   1. An explicit `WORKJET_PROVIDER_GATEWAY_HOST_EXECUTABLE` always wins; a
  *      developer pointing at a specific build is never second-guessed.
- *   2. Packaged + unmet pin (unreleased, unsupported platform, missing file, or
+ *   2. Packaged + no diagnostic receipt + unmet pin (unreleased, unsupported platform, missing file, or
  *      digest mismatch) is a hard, named failure. A packaged app has no
  *      toolchain, so silently falling back would only produce a confusing
  *      "gateway won't start" later.
@@ -113,7 +121,7 @@ export class ProviderGatewayHostArtifactError extends Schema.TaggedErrorClass<Pr
   { reason: Schema.String },
 ) {
   override get message(): string {
-    return `The pinned Workjet provider-gateway host is unavailable: ${this.reason}`;
+    return `The Workjet provider-gateway host is unavailable: ${this.reason}`;
   }
 }
 
@@ -252,6 +260,34 @@ export function verifyPinnedExecutable(input: {
   return undefined;
 }
 
+/** A malformed local-package receipt is a hard failure, never an old-host fallback. */
+export function loadDiagnosticProviderGatewayHost(
+  environment: ProviderGatewayHostEnvironment,
+): ProviderGatewayHostDiagnostic | undefined {
+  if (!environment.isPackaged) return undefined;
+  const path = NodePath.join(
+    environment.resourcesPath,
+    PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY,
+    PROVIDER_GATEWAY_DIAGNOSTIC_FILE,
+  );
+  let stat: NodeFS.Stats;
+  try {
+    stat = NodeFS.lstatSync(path);
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return undefined;
+    throw cause;
+  }
+  if (
+    !stat.isFile() ||
+    stat.isSymbolicLink() ||
+    stat.size < 1 ||
+    stat.size > PROVIDER_GATEWAY_DIAGNOSTIC_MAX_BYTES
+  ) {
+    throw new Error("Diagnostic host receipt must be a bounded regular file.");
+  }
+  return decodeProviderGatewayHostDiagnostic(JSON.parse(NodeFS.readFileSync(path, "utf8")));
+}
+
 export interface ResolvedProviderGatewayHost {
   /**
    * The executable the desktop should force via
@@ -260,7 +296,7 @@ export interface ResolvedProviderGatewayHost {
    * place.
    */
   readonly executablePath: string | undefined;
-  readonly source: "pinned" | "override" | "workspace-build" | "local-build";
+  readonly source: "pinned" | "override" | "workspace-build" | "local-build" | "diagnostic-package";
   /** Present for `local-build`: why the pinned artifact was not used. */
   readonly reason?: string;
   readonly version?: string;
@@ -304,6 +340,9 @@ export function resolveProviderGatewayHostExecutable(input: {
   readonly environment: ProviderGatewayHostEnvironment;
   readonly host: ProviderGatewayHostHost;
   readonly executableOverride?: string | undefined;
+  readonly loadDiagnosticPackage?: (
+    environment: ProviderGatewayHostEnvironment,
+  ) => ProviderGatewayHostDiagnostic | undefined;
   readonly verify?: (input: {
     readonly executablePath: string;
     readonly byteLength: number;
@@ -328,6 +367,47 @@ export function resolveProviderGatewayHostExecutable(input: {
       return Effect.succeed<ResolvedProviderGatewayHost>({
         executablePath: decided.executablePath,
         source: "override",
+      });
+    }
+
+    let diagnostic: ProviderGatewayHostDiagnostic | undefined;
+    try {
+      diagnostic = input.environment.isPackaged
+        ? (input.loadDiagnosticPackage ?? loadDiagnosticProviderGatewayHost)(input.environment)
+        : undefined;
+    } catch {
+      return Effect.fail(
+        new ProviderGatewayHostArtifactError({
+          reason: "The diagnostic host receipt is invalid or unreadable.",
+        }),
+      );
+    }
+    if (diagnostic !== undefined) {
+      const artifact = diagnostic.artifact;
+      if (input.host.platform !== artifact.os || input.host.arch !== artifact.arch) {
+        return Effect.fail(
+          new ProviderGatewayHostArtifactError({
+            reason: "The diagnostic host does not match this Mac architecture.",
+          }),
+        );
+      }
+      const executablePath = NodePath.join(
+        input.environment.resourcesPath,
+        PROVIDER_GATEWAY_HOST_RESOURCE_DIRECTORY,
+        artifact.fileName,
+      );
+      const mismatch = verify({
+        executablePath,
+        byteLength: artifact.byteLength,
+        sha256: artifact.sha256,
+      });
+      if (mismatch !== undefined)
+        return Effect.fail(new ProviderGatewayHostArtifactError({ reason: mismatch }));
+      return Effect.succeed<ResolvedProviderGatewayHost>({
+        executablePath,
+        source: "diagnostic-package",
+        version: `diagnostic-${diagnostic.sourceCommit.slice(0, 12)}`,
+        triple: artifact.triple,
       });
     }
 

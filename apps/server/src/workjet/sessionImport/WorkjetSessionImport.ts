@@ -848,6 +848,7 @@ export const make = Effect.gen(function* () {
                 }),
         }),
         (archive) => Effect.promise(() => archive?.dispose() ?? Promise.resolve()),
+        { interruptible: true },
       );
       if (!archive)
         return yield* new WorkjetSessionImportError({

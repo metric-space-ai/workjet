@@ -14,6 +14,7 @@ import {
   type OrchestrationThread,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -31,6 +32,9 @@ const sourceRace = vi.hoisted(() => ({
   path: null as string | null,
   beforeOpen: null as (() => Promise<void>) | null,
   afterArchivedMessage: null as (() => Promise<void>) | null,
+  afterSourceClose: null as (() => Promise<void>) | null,
+  sourceSignal: null as AbortSignal | null,
+  archivePath: null as string | null,
 }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -38,12 +42,27 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     ...actual,
     open: async (...args: Parameters<typeof actual.open>) => {
       const handle = await actual.open(...args);
+      if (args[0] === sourceRace.path && sourceRace.afterSourceClose) {
+        const createStream = handle.createReadStream.bind(handle);
+        const close = handle.close.bind(handle);
+        vi.spyOn(handle, "createReadStream").mockImplementation((options) => {
+          sourceRace.sourceSignal = options?.signal ?? null;
+          return createStream(options);
+        });
+        vi.spyOn(handle, "close").mockImplementation(async () => {
+          await close();
+          const callback = sourceRace.afterSourceClose;
+          sourceRace.afterSourceClose = null;
+          if (callback) await callback();
+        });
+      }
       if (
         args[1] === "wx" &&
         typeof args[0] === "string" &&
         args[0].endsWith("/messages.jsonl") &&
         sourceRace.afterArchivedMessage
       ) {
+        sourceRace.archivePath = args[0];
         const write = handle.writeFile.bind(handle);
         vi.spyOn(handle, "writeFile").mockImplementation(async (...writeArgs) => {
           await write(...writeArgs);
@@ -576,6 +595,47 @@ describe("project-directed static session imports", () => {
         expect((yield* Effect.promise(() => NodeFSP.stat(file))).size).toBe(10);
       }),
     ),
+  );
+
+  it.effect(
+    "cancels a snapshot read and removes its private archive before any history is imported",
+    () =>
+      withFixture(({ root, service, threads, commands }) =>
+        Effect.gen(function* () {
+          const file = NodePath.join(root, "sessions", "cancel-live.jsonl");
+          const original = transcript("Snapshot original", ["Already complete"]);
+          yield* Effect.promise(() => NodeFSP.writeFile(file, original));
+          const candidateId = (yield* service.inspect()).candidates[0]!.candidateId;
+          const reading = Promise.withResolvers<void>();
+          const continueReading = Promise.withResolvers<void>();
+          const cleaned = Promise.withResolvers<void>();
+          yield* Effect.sync(() => {
+            sourceRace.path = file;
+            sourceRace.afterSourceClose = async () => { cleaned.resolve(); };
+            sourceRace.afterArchivedMessage = async () => { reading.resolve(); await continueReading.promise; };
+          });
+          yield* Effect.gen(function* () {
+            const importing = yield* service.importSessions({ candidateIds: [candidateId], projectId: ProjectId.make("project-a") }).pipe(Effect.forkChild);
+            yield* Effect.promise(() => reading.promise);
+            expect(sourceRace.sourceSignal?.aborted).toBe(false);
+            yield* Fiber.interrupt(importing);
+            expect(sourceRace.sourceSignal?.aborted).toBe(true);
+            continueReading.resolve();
+            yield* Effect.promise(() => cleaned.promise);
+            expect(commands).toHaveLength(0);
+            expect(threads.size).toBe(0);
+            expect(yield* Effect.promise(() => NodeFSP.access(sourceRace.archivePath!).then(() => true, () => false))).toBe(false);
+            expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(original);
+          }).pipe(Effect.ensuring(Effect.sync(() => {
+            continueReading.resolve();
+            sourceRace.path = null;
+            sourceRace.afterArchivedMessage = null;
+            sourceRace.afterSourceClose = null;
+            sourceRace.sourceSignal = null;
+            sourceRace.archivePath = null;
+          })));
+        }),
+      ),
   );
 
   it.effect(

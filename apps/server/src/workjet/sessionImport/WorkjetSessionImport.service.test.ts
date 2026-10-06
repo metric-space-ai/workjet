@@ -239,7 +239,7 @@ describe("existing imported thread names", () => {
           yield* Effect.promise(() =>
             NodeFSP.writeFile(
               NodePath.join(root, "session_index.jsonl"),
-              JSON.stringify({ id: "source-session", thread_name: "CTOX Crew" }) + "\n",
+              encodeJson({ id: "source-session", thread_name: "CTOX Crew" }) + "\n",
             ),
           );
           const thread = threads.get(id)!;
@@ -282,12 +282,12 @@ describe("legacy provider session titles", () => {
         const sql = yield* SqlClient.SqlClient;
         yield* sql`DELETE FROM workjet_session_imports`;
         yield* sql`CREATE TABLE provider_session_runtime (thread_id TEXT, provider_name TEXT, provider_instance_id TEXT, resume_cursor_json TEXT)`;
-        const cursor = JSON.stringify({ threadId: id, resume: sourceId });
+        const cursor = encodeJson({ threadId: id, resume: sourceId });
         yield* sql`INSERT INTO provider_session_runtime VALUES (${id}, 'codex', NULL, ${cursor})`;
         yield* Effect.promise(() =>
           NodeFSP.writeFile(
             NodePath.join(root, "session_index.jsonl"),
-            JSON.stringify({ id: sourceId, thread_name: "CTOX Crew" }) + "\n",
+            encodeJson({ id: sourceId, thread_name: "CTOX Crew" }) + "\n",
           ),
         );
         const thread = threads.get(id)!;

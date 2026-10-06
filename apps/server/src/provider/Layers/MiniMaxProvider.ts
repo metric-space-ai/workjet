@@ -250,7 +250,7 @@ export const checkMiniMaxProviderStatus = Effect.fn("checkMiniMaxProviderStatus"
         message:
           "MiniMax Code requires authentication. Run mcode login on this computer, or configure its authorized provider, then refresh.",
       });
-    if (failure instanceof MiniMaxProbeCompatibilityError)
+    if (Schema.is(MiniMaxProbeCompatibilityError)(failure))
       return snapshot({
         installed: true,
         version,

@@ -5,8 +5,8 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeReadline from "node:readline";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeUtil from "node:util";
 import { matchSessionProject } from "./sessionProjectMatch.ts";
 import { projectTranscriptRecords } from "./transcriptRecords.ts";
 
@@ -824,7 +824,7 @@ export const make = Effect.gen(function* () {
           const remote = yield* Effect.promise(async () => {
             try {
               return (
-                await promisify(execFile)(
+                await NodeUtil.promisify(NodeChildProcess.execFile)(
                   "git",
                   ["-C", parsed.workspaceRoot!, "remote", "get-url", "origin"],
                   { timeout: 3000, maxBuffer: 8192 },

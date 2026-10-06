@@ -84,7 +84,7 @@ const withFixture = <A, E>(
     readonly commands: OrchestrationCommand[];
     readonly projectLookups: string[];
     readonly setCodexHome: (homePath: string) => void;
-  }) => Effect.Effect<A, E>,
+  }) => Effect.Effect<A, E, SqlClient.SqlClient>,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {

@@ -442,6 +442,8 @@ export const ServerConfig = Schema.Struct({
   threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
   /** Whether project metadata stores the website and three typed overview slots. */
   projectOverview: Schema.optionalKey(Schema.Boolean),
+  /** Whether overview metadata preserves reversible gallery archiving. */
+  projectArchive: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

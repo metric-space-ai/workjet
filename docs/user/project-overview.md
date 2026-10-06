@@ -4,6 +4,12 @@ Choose **All projects** to see the projects saved in the current instance.
 A project saved locally remains visible while its native registration is pending.
 Opening its card returns to its existing supervisor conversation.
 
+Choose **Archive project** to hide its card from All projects. This retains the
+project, its conversations and its three saved info fields. Open **Archived
+projects**, then choose **Restore project** to return the same project to the
+gallery. Archived cards do not load website previews. Archiving requires the
+same connected environment as saving an overview.
+
 The list refreshes when the selected instance finishes loading. Choose **Refresh
 projects** to request the list again without switching instances. Previously
 loaded projects remain available when the connection is interrupted. Saved

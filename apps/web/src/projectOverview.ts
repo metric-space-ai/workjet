@@ -15,6 +15,7 @@ export type OverviewSlotDraft = {
   unit: string;
 };
 export type OverviewDraft = {
+  archived?: boolean | undefined;
   repositoryUrl?: string | undefined;
   websiteUrl: string;
   slots: [OverviewSlotDraft, OverviewSlotDraft, OverviewSlotDraft];
@@ -39,6 +40,7 @@ export function overviewDraft(overview: ProjectOverview | null | undefined): Ove
     };
   };
   return {
+    archived: overview?.archived,
     repositoryUrl:
       overview?.repositoryUrl === undefined ? undefined : (overview.repositoryUrl ?? ""),
     websiteUrl: overview?.websiteUrl ?? "",
@@ -56,6 +58,7 @@ export function decodeOverviewDraft(draft: OverviewDraft): ProjectOverview {
     return { kind: item.kind, label: item.label, value: Number(item.value), unit: item.unit };
   };
   return decodeOverview({
+    ...(draft.archived === undefined ? {} : { archived: draft.archived }),
     ...(draft.repositoryUrl === undefined
       ? {}
       : { repositoryUrl: draft.repositoryUrl.trim() || null }),
@@ -95,6 +98,13 @@ export function resolveGalleryProjectOverview(project: GalleryProject): ProjectO
     websiteUrl: isDomain ? `https://${title}` : null,
     slots: [null, null, null],
   };
+}
+/** Archiving keeps identity joins and histories intact; only the chosen gallery view changes. */
+export function visibleGalleryProjects<Project extends GalleryProject>(
+  projects: readonly Project[],
+  archived: boolean = false,
+): readonly Project[] {
+  return projects.filter((project) => (project.local?.overview?.archived === true) === archived);
 }
 /** Open the exact history already joined by the gallery's persisted identity proof. */
 export function resolveGalleryProjectHistory<Project extends GalleryLocalProject>(

@@ -13,6 +13,7 @@ import {
   projectUpdateAge,
   resolveGalleryProjectHistory,
   resolveGalleryProjectOverview,
+  visibleGalleryProjects,
   type GalleryLocalProject,
 } from "./projectOverview";
 const local = (
@@ -98,6 +99,41 @@ describe("real project overview", () => {
     expect(decodeOverviewDraft(draft)).toEqual({ ...overview, repositoryUrl: null });
     const legacy = { websiteUrl: null, slots: [null, null, null] } as ProjectOverview;
     expect(decodeOverviewDraft(overviewDraft(legacy))).toEqual(legacy);
+  });
+  it("retains archived metadata through overview edits and restores the same joined history", () => {
+    const saved: ProjectOverview = {
+      archived: true,
+      websiteUrl: "https://example.org",
+      slots: [{ kind: "text", label: "Status", value: "Retained" }, null, null],
+    };
+    const archived = { ...local("retained", "a"), overview: saved };
+    const active = local("active", "a");
+    const cards = buildProjectGallery({
+      projects: [archived, active],
+      nativeProjects: [
+        { id: archived.id, title: "Retained", workingCopies: [] },
+        { id: active.id, title: "Active", workingCopies: [] },
+      ],
+      instanceId: "a",
+      primaryEnvironmentId: archived.environmentId,
+    });
+    expect(visibleGalleryProjects(cards).map((card) => card.id)).toEqual(["active"]);
+    expect(visibleGalleryProjects(cards, true).map((card) => card.id)).toEqual(["retained"]);
+    expect(resolveGalleryProjectHistory([archived, active], cards, archived.id)).toBe(archived);
+    const draft = overviewDraft(saved);
+    draft.slots[0].value = "Edited";
+    const edited = decodeOverviewDraft(draft);
+    expect(edited.archived).toBe(true);
+    expect(edited.slots[0]).toEqual({ kind: "text", label: "Status", value: "Edited" });
+    const restored = cards.map((card) =>
+      card.local?.id === archived.id
+        ? { ...card, local: { ...archived, overview: { ...edited, archived: false } } }
+        : card,
+    );
+    expect(visibleGalleryProjects(restored).map((card) => card.id)).toEqual(["retained", "active"]);
+    expect(visibleGalleryProjects(restored, true)).toEqual([]);
+    expect(cards).toHaveLength(2);
+    expect(cards[0]?.local).toBe(archived);
   });
   it("never turns an empty entered metric into zero", () => {
     const draft = overviewDraft(null);

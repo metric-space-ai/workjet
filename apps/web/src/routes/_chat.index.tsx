@@ -17,6 +17,7 @@ import {
 import {
   buildProjectGallery,
   resolveGalleryProjectHistory,
+  visibleGalleryProjects,
   type GalleryProject,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
@@ -355,6 +356,12 @@ function IndexDraftLanding() {
         projectsUnavailable={registry.phase === "blocked" || registry.refreshFailed === true}
         projects={galleryProjects.map((project) => ({
           ...project,
+          canArchive: environments.some(
+            (environment) =>
+              environment.environmentId === (project.local?.environmentId ?? primaryEnvironmentId) &&
+              environment.connection.phase === "connected" &&
+              environment.serverConfig?.projectArchive === true,
+          ),
           onOpen: () => {
             if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return;
             if (project.native && activeCtoxInstanceId !== null)
@@ -432,10 +439,14 @@ function ProjectGallery({
   readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
+    readonly canArchive: boolean;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
 }) {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const [showArchived, setShowArchived] = useState(false);
+  const visibleProjects = visibleGalleryProjects(projects, showArchived);
+  const archivedCount = visibleGalleryProjects(projects, true).length;
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
@@ -443,10 +454,13 @@ function ProjectGallery({
         <div className="mx-auto max-w-5xl">
           <div className="mb-8 flex items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold">All projects</h1>
+              <h1 className="text-2xl font-semibold">{showArchived ? "Archived projects" : "All projects"}</h1>
               <p className="mt-2 text-sm text-muted-foreground">Choose a project to continue.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShowArchived((show) => !show)}>
+                {showArchived ? "All projects" : `Archived projects (${archivedCount})`}
+              </Button>
               {onRefresh ? (
                 <Button size="sm" variant="outline" onClick={onRefresh}>
                   <RotateCcwIcon className="size-4" />
@@ -465,12 +479,13 @@ function ProjectGallery({
             </p>
           ) : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {projects.map((project) => (
+            {visibleProjects.map((project) => (
               <ProjectOverviewCard
                 key={project.key}
                 project={project}
                 onOpen={project.onOpen}
                 onSave={project.onSave}
+                canArchive={project.canArchive}
               />
             ))}
           </div>

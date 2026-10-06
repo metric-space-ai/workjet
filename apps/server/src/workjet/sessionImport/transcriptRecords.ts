@@ -12,6 +12,7 @@ type Frame = {
   state: "key" | "colon" | "value" | "comma";
   key: string;
   index: number;
+  allowEnd: boolean;
 };
 
 /** Bounded lexer; only transcript metadata and visible content fields survive. */
@@ -46,11 +47,12 @@ export class TranscriptRecordProjector {
     }
     parent.index += 1;
     parent.state = "comma";
+    parent.allowEnd = true;
   }
 
   private append(text: string): void {
     if (!this.retained) return;
-    const content = /(?:^|\.)content(?:\.|$)/u.test(this.path());
+    const content = /(?:\.text|\.content)$/u.test(this.path());
     const limit = this.keyToken ? 512 : content ? this.textBudget : 24_576;
     const remaining = Math.max(0, limit - this.raw.length);
     this.raw += text.slice(0, remaining);
@@ -71,7 +73,7 @@ export class TranscriptRecordProjector {
         }
       }
       if (value === undefined) this.invalid = true;
-      if (!this.keyToken && /(?:^|\.)content(?:\.|$)/u.test(this.path())) {
+      if (!this.keyToken && /(?:\.text|\.content)$/u.test(this.path())) {
         this.textBudget -= this.raw.length;
         if (value && (this.clipped || value.length > TEXT_LIMIT))
           value = value.slice(0, TEXT_LIMIT - 25) + "\n[message text truncated]";
@@ -80,7 +82,7 @@ export class TranscriptRecordProjector {
     if (this.keyToken) {
       const parent = this.frames.at(-1);
       if (!parent?.object || parent.state !== "key") this.invalid = true;
-      else { parent.key = value ?? ""; parent.state = "colon"; }
+      else { parent.key = value ?? ""; parent.state = "colon"; parent.allowEnd = false; }
     } else this.assign(value);
     this.token = undefined;
     this.raw = "";
@@ -146,18 +148,24 @@ export class TranscriptRecordProjector {
         const path = this.path();
         const object = char === "{";
         this.frames.push({ path, object, value: (!parent || containerPath.test(path)) ? (object ? Object.create(null) as Record<string, unknown> : []) : undefined,
-          state: object ? "key" : "value", key: "", index: 0 });
+          state: object ? "key" : "value", key: "", index: 0, allowEnd: true });
         if (this.frames.length > 128) this.invalid = true;
       } else if (char === "}" || char === "]") {
         const frame = this.frames.pop();
-        if (!frame || frame.object !== (char === "}") || !["key", "value", "comma"].includes(frame.state)) this.invalid = true;
-        else this.assign(frame.value);
+        if (!frame || frame.object !== (char === "}") || !frame.allowEnd) this.invalid = true;
+        else {
+          let value = frame.value;
+          if (value && !Array.isArray(value) && /^(?:payload|message)\.content\.\d+$/u.test(frame.path)) {
+            if (!["text", "input_text", "output_text"].includes(String(value.type)) || typeof value.text !== "string" || !value.text) value = undefined;
+          }
+          this.assign(value);
+        }
       } else if (char === ":") {
         if (!parent?.object || parent.state !== "colon") this.invalid = true;
-        else parent.state = "value";
+        else { parent.state = "value"; parent.allowEnd = false; }
       } else if (char === ",") {
         if (!parent || parent.state !== "comma") this.invalid = true;
-        else parent.state = parent.object ? "key" : "value";
+        else { parent.state = parent.object ? "key" : "value"; parent.allowEnd = false; }
       } else {
         this.token = "primitive"; this.raw = char; this.retained = scalarPath.test(this.path());
       }

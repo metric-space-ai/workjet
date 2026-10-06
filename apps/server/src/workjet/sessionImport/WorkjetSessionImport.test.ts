@@ -39,7 +39,7 @@ describe("static Workjet session transcript parsing", () => {
         parseClaudeSessionTranscript(
           [
             JSON.stringify({ type: "custom-title", customTitle: "CTOX Supervisor" }),
-            JSON.stringify({ type: "ai-title", title: "Automatic later title" }),
+            JSON.stringify({ type: "ai-title", aiTitle: "Automatic later title" }),
             JSON.stringify({ type: "user", message: { role: "user", content: "hi" } }),
           ],
           NOW,

@@ -16,7 +16,7 @@ export function hideSessionInitialization<
   T extends {
     readonly role: string;
     readonly text: string;
-    readonly attachments?: ReadonlyArray<unknown>;
+    readonly attachments?: ReadonlyArray<unknown> | undefined;
   },
 >(messages: ReadonlyArray<T>): ReadonlyArray<T> {
   let offset = 0;

@@ -248,7 +248,8 @@ export const parseClaudeSessionTranscript = (
     const record = asRecord(value);
     if (!record || record.isSidechain === true) return null;
     workspaceRoot = asString(record.cwd) ?? workspaceRoot;
-    if (record.type === "ai-title") title = asString(record.title) ?? title;
+    if (record.type === "ai-title")
+      title = asString(record.aiTitle) ?? asString(record.title) ?? title;
     if (record.type === "custom-title") customTitle = asString(record.customTitle) ?? customTitle;
     if (record.type !== "user" && record.type !== "assistant") continue;
     const message = asRecord(record.message);

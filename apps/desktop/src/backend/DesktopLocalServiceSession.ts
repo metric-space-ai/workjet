@@ -43,6 +43,7 @@ const LocalCliCommandFailure = Schema.Struct({
     "service-status",
     "service-start",
     "service-other",
+    "service-discovery",
     "authorization",
   ]),
   kind: Schema.Literals(["spawn", "read", "output-limit", "exit", "timeout"]),
@@ -63,7 +64,19 @@ export class LocalServiceSessionError extends Schema.TaggedErrorClass<LocalServi
   },
 ) {
   override get message(): string {
-    return `Could not ${this.operation} the saved local Desktop session. No replacement session was authorized.`;
+    const failure = this.commandFailure;
+    const discoveryDetail =
+      failure?.command !== "service-discovery"
+        ? ""
+        : failure.kind === "exit"
+          ? ` Local service discovery exited with code ${failure.exitCode ?? "unknown"}.`
+          : {
+              timeout: " Local service discovery timed out.",
+              spawn: " Local service discovery could not start.",
+              read: " Local service discovery output could not be read.",
+              "output-limit": " Local service discovery returned too much output.",
+            }[failure.kind];
+    return `Could not ${this.operation} the saved local Desktop session.${discoveryDetail} No replacement session was authorized.`;
   }
 }
 
@@ -119,6 +132,18 @@ export const classifySessionConnectionFailure = (
     : Cause.isTimeoutError(error)
       ? retry("reach")
       : fail("authenticate the current server generation for");
+
+/** Keep bounded CLI diagnostics; a discovery timeout does not invalidate a credential. */
+export const classifyLocalServiceDiscoveryFailure = (error: unknown): LocalServiceSessionError => {
+  const commandFailure = Schema.is(LocalServiceSessionError)(error)
+    ? error.commandFailure
+    : undefined;
+  return new LocalServiceSessionError({
+    operation: "discover",
+    ...(commandFailure === undefined ? {} : { commandFailure }),
+    ...(commandFailure?.kind === "timeout" ? { retryable: true } : {}),
+  });
+};
 
 export const requestLocalSessionRecoveryConsent = (
   dialog: Pick<typeof ElectronDialog.Service, "showMessageBox">,
@@ -363,7 +388,9 @@ export const runLocalCli = (
   timeout: "30 seconds" | "5 minutes" = "30 seconds",
 ) => {
   const command: LocalCliCommandFailure["command"] =
-    args[0] !== "service"
+    args[0] === "__desktop-target"
+      ? "service-discovery"
+      : args[0] !== "service"
       ? "authorization"
       : args[1] === "install"
         ? "service-install"
@@ -546,7 +573,7 @@ export const make = Effect.gen(function* () {
           .pipe(Effect.mapError(() => fail("resolve the profile for")));
         const target = yield* runCli(config, ["__desktop-target", "--base-dir", baseDir]).pipe(
           Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(LocalServiceTarget))),
-          Effect.mapError(() => fail("discover")),
+          Effect.mapError(classifyLocalServiceDiscoveryFailure),
         );
         if (
           target.baseDir !== baseDir ||

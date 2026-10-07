@@ -25,6 +25,17 @@ removes its temporary ciphertext. Set TMPDIR to the task's disposable volume
 when running locally. Existing user profiles and keychain entries must not be
 removed to make this check pass.
 
+Local background-service discovery runs before credential validation. If that
+bounded discovery command times out, Desktop retries with the saved session
+intact. A slow service discovery therefore does not request credential recovery.
+Authentication and protected-storage failures retain the explicit recovery
+dialog and its stopped-installations confirmation.
+
+Discovery failures retain the command category, failure kind and numeric exit
+code. Captured command output and arguments remain private. Invalid target
+documents and mismatched profile, endpoint or server-version bindings continue
+to stop startup.
+
 References:
 
 - https://www.electronjs.org/docs/latest/api/safe-storage

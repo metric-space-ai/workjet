@@ -51,13 +51,27 @@ describe("bounded model checks", () => {
     const targets = Array.from({ length: 100 }, (_, index) => target(`account-${index}`));
     fixture.setTargets(targets);
     let started!: () => void;
-    const began = new Promise<void>((resolve) => { started = resolve; });
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     let aborted = false;
-    const slow = makeModelChecks({ ...fixture.options, probe: async (_item, signal) => {
-      started();
-      await new Promise<void>((resolve) => signal.addEventListener("abort", () => { aborted = true; resolve(); }, { once: true }));
-      return { status: "ok", errorClass: null, httpStatus: 200 };
-    }});
+    const slow = makeModelChecks({
+      ...fixture.options,
+      probe: async (_item, signal) => {
+        started();
+        await new Promise<void>((resolve) =>
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
+    });
     const first = await slow.schedule({});
     expect(first.pending).toHaveLength(MODEL_CHECK_BATCH_LIMIT);
     expect(first.deferredCount).toBe(100 - MODEL_CHECK_BATCH_LIMIT);
@@ -84,11 +98,19 @@ describe("bounded model checks", () => {
     fixture.setTargets([target()]);
     let release!: () => void;
     let started!: () => void;
-    const began = new Promise<void>((resolve) => { started = resolve; });
-    const checks = makeModelChecks({ ...fixture.options, probe: async () => {
-      started(); await new Promise<void>((resolve) => { release = resolve; });
-      return { status: "ok", errorClass: null, httpStatus: 200 };
-    }});
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const checks = makeModelChecks({
+      ...fixture.options,
+      probe: async () => {
+        started();
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
+    });
     await checks.schedule({});
     await began;
     fixture.setTargets([target("one", "new-credential")]);
@@ -242,9 +264,13 @@ describe("real loopback model probe", () => {
         "account-selection-unavailable",
       );
       expect((await probe(endpoint, "kimi", "chosen", "empty")).status).toBe("error");
-      expect((await probe(endpoint, "kimi", "chosen", "native-unknown")).errorClass).toBe("unknown-model");
+      expect((await probe(endpoint, "kimi", "chosen", "native-unknown")).errorClass).toBe(
+        "unknown-model",
+      );
       expect((await probe(endpoint, "kimi", "chosen", "html-auth")).errorClass).toBe("auth");
-      expect((await probe(endpoint, "kimi", "chosen", "quota")).errorClass).toBe("quota-rate-limit");
+      expect((await probe(endpoint, "kimi", "chosen", "quota")).errorClass).toBe(
+        "quota-rate-limit",
+      );
       await expect(probe(endpoint, "kimi", "chosen", "oversized")).rejects.toThrow("oversized");
       expect(requests[0]?.headers["x-ctox-provider"]).toBe("kimi");
       expect(requests[0]?.headers["x-ctox-account"]).toBe("chosen");

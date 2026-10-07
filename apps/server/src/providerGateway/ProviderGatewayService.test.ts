@@ -145,7 +145,9 @@ describe("ProviderGatewayService", () => {
     const harness = readyHarness();
     let probes = 0;
     let persist!: () => void;
-    const persisted = new Promise<void>((resolve) => { persist = resolve; });
+    const persisted = new Promise<void>((resolve) => {
+      persist = resolve;
+    });
     const platform: ProviderGatewayPlatform = {
       ...harness.platform,
       fingerprint: nodeProviderGatewayPlatform.fingerprint,

@@ -66,7 +66,10 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
         "X-CTOX-Account": accountId,
       },
       body: JSON.stringify({ model: modelId, input: "Hi", max_output_tokens: 8, stream: false }),
-      signal: AbortSignal.any([AbortSignal.timeout(15_000), ...(signal === undefined ? [] : [signal])]),
+      signal: AbortSignal.any([
+        AbortSignal.timeout(15_000),
+        ...(signal === undefined ? [] : [signal]),
+      ]),
     });
     // Never accept an ignored selection header on an older host.
     if (response.ok && response.headers.get("X-CTOX-Account-Selected") !== accountId) {
@@ -78,8 +81,13 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       };
     }
     const safeErrorClass = response.headers.get("X-CTOX-Error-Class");
-    if (!response.ok && (safeErrorClass === "auth" || safeErrorClass === "quota-rate-limit" ||
-        safeErrorClass === "unknown-model" || safeErrorClass === "network-provider")) {
+    if (
+      !response.ok &&
+      (safeErrorClass === "auth" ||
+        safeErrorClass === "quota-rate-limit" ||
+        safeErrorClass === "unknown-model" ||
+        safeErrorClass === "network-provider")
+    ) {
       await response.body?.cancel();
       return { status: "error", errorClass: safeErrorClass, httpStatus: response.status };
     }
@@ -100,8 +108,11 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     }
     // Inspect only protocol fields in memory, then discard all provider text.
     let body: unknown;
-    try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); }
-    catch { body = null; }
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    } catch {
+      body = null;
+    }
     const record =
       typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
     const providerError =

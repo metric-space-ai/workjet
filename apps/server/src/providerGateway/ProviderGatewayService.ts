@@ -1813,7 +1813,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }),
       stop: () =>
         Effect.tryPromise({
-          try: async () => { await modelChecks.cancel(); return stopSingleFlight(); },
+          try: async () => {
+            await modelChecks.cancel();
+            return stopSingleFlight();
+          },
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("shutdown-timeout"),
         }),
@@ -1826,9 +1829,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       oauthPoll: (input) =>
         Effect.tryPromise({
           try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => new Map<string, string>());
+            const previous = await modelChecks.captureRevisions().catch(() => undefined);
             const result = await runOauthPoll(input);
-            if (result.completedAccountIds.length > 0) await modelChecks.scheduleChanged(previous).catch(() => undefined);
+            if (result.completedAccountIds.length > 0 && previous !== undefined)
+              await modelChecks.scheduleChanged(previous).catch(() => undefined);
             return result;
           },
           catch: (error) =>
@@ -1843,9 +1847,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       addApiKeyAccount: (input) =>
         Effect.tryPromise({
           try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => new Map<string, string>());
+            const previous = await modelChecks.captureRevisions().catch(() => undefined);
             const result = await runAddApiKeyAccount(input);
-            await modelChecks.scheduleChanged(previous).catch(() => undefined);
+            if (previous !== undefined)
+              await modelChecks.scheduleChanged(previous).catch(() => undefined);
             return result;
           },
           catch: (error) =>
@@ -1899,9 +1904,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       updateRouting: (input) =>
         Effect.tryPromise({
           try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => new Map<string, string>());
+            const previous = await modelChecks.captureRevisions().catch(() => undefined);
             const result = await runUpdateRouting(input);
-            await modelChecks.scheduleChanged(previous).catch(() => undefined);
+            if (previous !== undefined)
+              await modelChecks.scheduleChanged(previous).catch(() => undefined);
             return result;
           },
           catch: (error) =>

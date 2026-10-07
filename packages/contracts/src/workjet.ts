@@ -1712,11 +1712,13 @@ export type WorkjetGatewayModelCheck = typeof WorkjetGatewayModelCheck.Type;
 export const WorkjetGatewayModelChecks = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   checks: Schema.Array(WorkjetGatewayModelCheck),
-  pending: Schema.Array(Schema.Struct({
-    accountId: WorkjetGatewayAccountId,
-    modelId: TrimmedNonEmptyString,
-    status: Schema.Literals(["queued", "running"]),
-  })),
+  pending: Schema.Array(
+    Schema.Struct({
+      accountId: WorkjetGatewayAccountId,
+      modelId: TrimmedNonEmptyString,
+      status: Schema.Literals(["queued", "running"]),
+    }),
+  ),
   deferredCount: NonNegativeInt,
 });
 export type WorkjetGatewayModelChecks = typeof WorkjetGatewayModelChecks.Type;

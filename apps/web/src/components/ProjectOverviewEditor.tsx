@@ -26,7 +26,7 @@ export function ProjectOverviewEditor({
   readonly onSave: (next: ProjectOverview) => Promise<boolean>;
   readonly onArchive?: (() => Promise<boolean>) | undefined;
   readonly archived?: boolean;
-  readonly configuration?: CtoxWorkjetProjectMetadataProjection;
+  readonly configuration?: CtoxWorkjetProjectMetadataProjection | undefined;
   readonly onSaveConfiguration?:
     | ((next: ProjectConfigurationValues) => Promise<boolean>)
     | undefined;

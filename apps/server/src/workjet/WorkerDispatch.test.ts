@@ -700,7 +700,9 @@ it.effect("a team worker cannot redelegate through a stale orchestrator role", (
     } as OrchestrationThread;
     const harness = makeHarness({ currentParent: worker });
     const service = yield* harness.service;
-    const error = yield* service.dispatch(invocation, { task: "Do not redelegate." }).pipe(Effect.flip);
+    const error = yield* service
+      .dispatch(invocation, { task: "Do not redelegate." })
+      .pipe(Effect.flip);
     expect(error.reason).toBe("role-not-authorized");
     expect(harness.worktreeCreates).toEqual([]);
     expect(harness.commands).toEqual([]);

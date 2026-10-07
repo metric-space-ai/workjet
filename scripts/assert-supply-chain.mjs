@@ -109,6 +109,7 @@ const audit = NodeChildProcess.spawnSync("pnpm", ["audit", "--prod", "--json"], 
   encoding: "utf8",
   maxBuffer: 64 * 1024 * 1024,
 });
+if (audit.error) fail(`pnpm audit could not start: ${audit.error.message}`);
 const jsonStart = audit.stdout.indexOf("{");
 if (jsonStart < 0) fail(`pnpm audit returned no JSON: ${audit.stderr.trim()}`);
 let auditReport;

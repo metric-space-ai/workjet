@@ -990,6 +990,10 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
             onFailure: (error) => finalizeRun(error.message),
             onSuccess: (exit) => finalizeRun(exit.reason, exit.restart),
           }),
+          // Interruption also completes the durable manager lifecycle, after
+          // ensuring has released resources. A timed-out stop may have received
+          // a new start intent while cleanup was still pending.
+          Effect.onInterrupt(() => finalizeRun("backend attachment interrupted")),
         );
 
         const fiber = yield* Effect.forkIn(program, parentScope);

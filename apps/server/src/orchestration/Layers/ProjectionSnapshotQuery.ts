@@ -1098,7 +1098,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
-          AND deleted_at IS NOT NULL
           AND archived_at IS NOT NULL
           AND CASE WHEN json_valid(workjet_config_json) THEN
             json_extract(workjet_config_json, '$.schemaVersion') = 2

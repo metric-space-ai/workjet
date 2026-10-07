@@ -25,6 +25,7 @@ command. The engine checks the exact thread, checkout, branch and projected PR
 before accepting that archive. A forged renderer config has no native receipt.
 
 The archive retains conversation history and the checkout. In particular a
+retained worker remains readable through the archived-worker history API. A
 closed PR, dirty worktree or unpublished source is never deleted as an incidental
 archive step. Existing verified merge-cleanup receipts continue to authorize
 their existing delete/cleanup/archive path independently.

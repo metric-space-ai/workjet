@@ -118,7 +118,8 @@ export function useWorkjetGatewaySection(
     if (environmentId === null || checksQuery.error !== null || !checksQuery.data) return;
     const { pending, deferredCount } = checksQuery.data;
     if (pending.length === 0 && deferredCount === 0) return;
-    if (checksPollingDeadline.current === 0) checksPollingDeadline.current = Date.now() + 20 * 60_000;
+    if (checksPollingDeadline.current === 0)
+      checksPollingDeadline.current = Date.now() + 20 * 60_000;
     if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) return;
     // Only this mounted page owns the timer. Completed observations persist
     // server-side; each continuation admits another bounded, non-forced batch.

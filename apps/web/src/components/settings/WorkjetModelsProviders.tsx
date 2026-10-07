@@ -55,7 +55,11 @@ export interface ModelsModelCheck {
 
 export interface ModelsManagementState {
   readonly modelChecks?: ReadonlyArray<ModelsModelCheck>;
-  readonly pendingModelChecks?: ReadonlyArray<{ readonly accountId: string; readonly modelId: string; readonly status: "queued" | "running" }>;
+  readonly pendingModelChecks?: ReadonlyArray<{
+    readonly accountId: string;
+    readonly modelId: string;
+    readonly status: "queued" | "running";
+  }>;
   readonly deferredChecksCount?: number;
   readonly checksBusy?: boolean;
   readonly checksError?: string | null;

@@ -79,12 +79,20 @@ function ModelField({
       setSaving(false);
     }
   };
-  const pending = state.pendingModelChecks?.find((item) => item.accountId === account.id && item.modelId === model);
-  const description = pending?.status === "queued"
-    ? `${modelCheckDescription(check, false)} · queued`
-    : modelCheckDescription(check, pending?.status === "running");
-  const StatusIcon = pending ? CircleDashedIcon :
-    check?.status === "ok" ? CheckIcon : check?.status === "error" ? XIcon : CircleDashedIcon;
+  const pending = state.pendingModelChecks?.find(
+    (item) => item.accountId === account.id && item.modelId === model,
+  );
+  const description =
+    pending?.status === "queued"
+      ? `${modelCheckDescription(check, false)} · queued`
+      : modelCheckDescription(check, pending?.status === "running");
+  const StatusIcon = pending
+    ? CircleDashedIcon
+    : check?.status === "ok"
+      ? CheckIcon
+      : check?.status === "error"
+        ? XIcon
+        : CircleDashedIcon;
   return (
     <span className="max-w-full">
       <span
@@ -146,11 +154,13 @@ function ModelField({
             data-model-check={pending?.status ?? check?.status ?? "unchecked"}
             className={cn(
               "shrink-0",
-              pending ? "text-muted-foreground" : check?.status === "ok"
-                ? "text-emerald-500"
-                : check?.status === "error"
-                  ? "text-destructive"
-                  : "text-muted-foreground",
+              pending
+                ? "text-muted-foreground"
+                : check?.status === "ok"
+                  ? "text-emerald-500"
+                  : check?.status === "error"
+                    ? "text-destructive"
+                    : "text-muted-foreground",
             )}
           >
             <StatusIcon className="size-3.5" />

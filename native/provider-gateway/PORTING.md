@@ -25,6 +25,23 @@ ignored tests receive zero points.
 The reusable method, forensic lessons and dashboard contract are documented in
 [`RUST_PORTING_PLAYBOOK.md`](RUST_PORTING_PLAYBOOK.md).
 
+## Workjet xAI subscription compatibility — 2026-10-07
+
+The managed Workjet host still used the old public API URL for OAuth chat and
+reported client version 0.2.93. The xAI request and header updates already
+ported in CTOX at merge d5bdbc39f6ba3d27a60f0b3c1cd90c2d99970494 are now carried
+into this portable copy (upstream request anchors at e2bff010). Subscription
+chat uses the CLI chat proxy and client 1.0.44 with the upstream client headers.
+API-key and explicit custom endpoints keep their own routing.
+
+The host's exact-account acknowledgement, upstream status classification,
+secret storage and session/cache policy remain in place. These two adapted
+units do not promote the whole port beyond the historical accepted pin;
+full candidate promotion and central production binding remain CTOX issue 279.
+Installed OAuth acceptance requires a newly built native host, not merely an
+updated web/server bundle. Existing credentials can be used without re-login
+unless the corrected upstream request actually rejects them with HTTP 401.
+
 ## Track boundary adopted 2026-08-05
 
 The project now has two release lanes with separate owners and evidence:

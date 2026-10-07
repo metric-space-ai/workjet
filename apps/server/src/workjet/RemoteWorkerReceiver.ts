@@ -141,28 +141,46 @@ export const make = Effect.gen(function* () {
     }
     const commit = yield* git.resolveCommit({ cwd, revision: request.revision }).pipe(Effect.mapError(() => failure("project-unavailable")));
     if (commit.commitSha !== request.revision) return yield* failure("project-unavailable");
-    const branch = `workjet/worker/${request.requestId}`;
+    const branch = "workjet/worker/" + request.requestId;
+    const common = yield* runGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+    if (common.stdoutTruncated || common.stdout.trim() === "") return yield* failure("worktree-failed");
+    const expectedPath = yield* storage.resolveAutomaticPath({ cwd, gitCommonDir: common.stdout.trim(), ref: branch }).pipe(Effect.mapError(() => failure("worktree-failed")));
+    const trustedRoots = yield* storage.trustedRoots;
+    if (!trustedRoots.some((root) => { const relative = path.relative(root, expectedPath); return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative); })) return yield* failure("worktree-failed");
     const list = yield* runGit(cwd, ["worktree", "list", "--porcelain"]);
     if (list.stdoutTruncated) return yield* failure("worktree-failed");
-    const registered = list.stdout.split("\n\n").filter((entry) => entry.split("\n").includes(`branch refs/heads/${branch}`));
+    const registered = list.stdout.split("\n\n").filter((entry) => entry.split("\n").includes("branch refs/heads/" + branch));
     if (registered.length > 1) return yield* failure("worktree-failed");
-    let worktreePath = registered[0]?.split("\n").find((line) => line.startsWith("worktree "))?.slice(9);
-    if (saved.worktreePath !== null && saved.worktreePath !== worktreePath) return yield* failure("worktree-failed");
+    const registeredPath = registered[0]?.split("\n").find((line) => line.startsWith("worktree "))?.slice(9);
+    if (saved.worktreePath === null) {
+      // An existing UUID-shaped branch is not a receipt of ownership. Reserve
+      // the server-derived path only while neither branch nor checkout exists.
+      const ref = yield* git.execute({ operation: "RemoteWorkerReceiver.reserve", cwd, args: ["show-ref", "--verify", "--quiet", "refs/heads/" + branch], allowNonZeroExit: true }).pipe(Effect.mapError(() => failure("worktree-failed")));
+      if (registeredPath !== undefined || ref.exitCode !== 1 || (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed"))))) return yield* failure("worktree-failed");
+      yield* store.recordWorktree(request.requestId, expectedPath).pipe(Effect.mapError(() => failure("worktree-failed")));
+    } else if (saved.worktreePath !== expectedPath || (registeredPath !== undefined && registeredPath !== saved.worktreePath)) {
+      return yield* failure("worktree-failed");
+    }
+    let worktreePath = registeredPath;
     if (!worktreePath) {
-      const created = yield* workflow.createWorktree({ cwd, path: null, refName: request.revision, newRefName: branch }).pipe(Effect.mapError(() => failure("worktree-failed")));
+      if (yield* fs.exists(expectedPath).pipe(Effect.mapError(() => failure("worktree-failed")))) return yield* failure("worktree-failed");
+      const created = yield* workflow.createWorktree({ cwd, path: expectedPath, refName: request.revision, newRefName: branch }).pipe(Effect.mapError(() => failure("worktree-failed")));
       worktreePath = created.worktree.path;
-      if (created.worktree.refName !== branch) return yield* failure("worktree-failed");
+      if (created.worktree.refName !== branch || worktreePath !== expectedPath) return yield* failure("worktree-failed");
     }
     const workerRealPath = yield* fs.realPath(worktreePath).pipe(Effect.mapError(() => failure("worktree-failed")));
-    const trustedRoots = yield* storage.trustedRoots;
-    if (!trustedRoots.some((root) => { const relative = path.relative(root, workerRealPath); return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative); })) return yield* failure("worktree-failed");
-    const createdReceipt = yield* receipts.getByCommandId({ commandId: remoteWorkerCommandId(request.requestId, "create") }).pipe(Effect.mapError(() => failure("rollback-failed")), Effect.map(Option.getOrUndefined));
-    if (!createdReceipt) {
+    if (workerRealPath !== expectedPath) return yield* failure("worktree-failed");
+    const verifyUnstartedCheckout = Effect.fn("RemoteWorkerReceiver.verifyUnstartedCheckout")(function* () {
       const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" }).pipe(Effect.mapError(() => failure("worktree-failed")));
-      if (head.commitSha !== request.revision) return yield* failure("worktree-failed");
-    }
-    yield* store.recordWorktree(request.requestId, worktreePath).pipe(Effect.mapError(() => failure("worktree-failed")));
+      const ref = yield* runGit(worktreePath, ["symbolic-ref", "HEAD"]);
+      const status = yield* runGit(worktreePath, ["status", "--porcelain=v1", "--untracked-files=all", "--ignored"]);
+      if (head.commitSha !== request.revision || ref.stdoutTruncated || ref.stdout.trim() !== "refs/heads/" + branch || status.stdoutTruncated || status.stdout !== "") return yield* failure("worktree-failed");
+    });
+    // Never recapture changed committed work as the new rollback baseline on
+    // restart. Check both sides of the native rollback's inode/HEAD capture.
+    yield* verifyUnstartedCheckout();
     const prepared = yield* rollback.prepare({ cwd, worktreePath, branchRef: branch }).pipe(Effect.option);
+    yield* verifyUnstartedCheckout();
     const result: RemoteWorkerResult = { schemaVersion: 1, status: "dispatched", environmentId: targetEnvironmentId, workerThreadId: request.requestId,
       computerId: request.computerId, branch, worktreePath, parent: request.parent, modelSelection: request.modelSelection, enabledCapabilityIds: request.enabledCapabilityIds };
     const commandReceipt = Effect.fn("RemoteWorkerReceiver.commandReceipt")(function* (step: "create" | "turn" | "delete") {

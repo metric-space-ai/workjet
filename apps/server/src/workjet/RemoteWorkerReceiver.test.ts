@@ -35,9 +35,14 @@ const projectPath = "/target/project";
 const harness = (options: {
   missingProject?: boolean; missingAdmission?: boolean; wrongRepository?: boolean; outsideWorker?: boolean;
   failStep?: "create" | "turn" | "delete"; receiptOnFailure?: "accepted" | "rejected"; failCompleteOnce?: boolean;
+  preexistingWorktree?: string; preexistingBranch?: boolean; failWorktreeOnce?: boolean;
 } = {}) => {
   let saved: RemoteWorkerReceipt | undefined;
-  let registeredPath: string | undefined;
+  let registeredPath = options.preexistingWorktree;
+  let checkoutHead = request.revision;
+  let checkoutDirty = false;
+  let worktreeFailures = options.failWorktreeOnce ? 1 : 0;
+  const rollbackPrepares: string[] = [];
   let threadExists = false;
   let completeFailures = options.failCompleteOnce ? 1 : 0;
   const commandReceipts = new Map<string, OrchestrationCommandReceipt>();
@@ -70,10 +75,26 @@ const harness = (options: {
   }) } as unknown as OrchestrationEngineService["Service"];
   const query = { getProjectShellById: () => Effect.succeed(options.missingProject ? Option.none() : Option.some({ workspaceRoot: projectPath })),
     getThreadDetailById: () => Effect.succeed(threadExists ? Option.some({ worktreePath: registeredPath }) : Option.none()) } as unknown as ProjectionSnapshotQuery["Service"];
-  const git = { execute: (input: ExecuteGitInput) => Effect.sync(() => { gitCalls.push(input); return { exitCode: 0, stdout: input.args[0] === "worktree" && registeredPath ? `worktree ${registeredPath}\nHEAD ${request.revision}\nbranch refs/heads/workjet/worker/${request.requestId}\n\n` : "", stderr: "", stdoutTruncated: false, stderrTruncated: false }; }),
-    resolveCommit: () => Effect.succeed({ commitSha: request.revision }) } as unknown as GitVcsDriver["Service"];
-  const workflow = { createWorktree: (input: { cwd: string; path: string | null; newRefName: string }) => Effect.sync(() => { worktreeCalls.push(input); registeredPath = options.outsideWorker ? "/source/private-checkout" : workerPath; return { worktree: { path: registeredPath, refName: input.newRefName } }; }) } as unknown as GitWorkflowService["Service"];
-  const rollback = WorkerDispatchRollback.of({ prepare: () => Effect.succeed(Effect.sync(() => { rollbackCalls.push(registeredPath!); return { recoveryWorktreePath: "/quarantine/w", recoveryAdminPath: "/quarantine/a", originalWorktreePath: registeredPath!, originalAdminPath: "/admin", recoveryLocationStatus: "verified" as const }; })) });
+  const git = { execute: (input: ExecuteGitInput) => Effect.sync(() => {
+      gitCalls.push(input);
+      let stdout = "";
+      if (input.args[0] === "rev-parse") stdout = projectPath + "/.git";
+      if (input.args[0] === "symbolic-ref") stdout = "refs/heads/workjet/worker/" + request.requestId + "\n";
+      if (input.args[0] === "status" && checkoutDirty) stdout = "?? retained.txt\n";
+      if (input.args[0] === "worktree" && registeredPath) stdout = "worktree " + registeredPath + "\nHEAD " + checkoutHead + "\nbranch refs/heads/workjet/worker/" + request.requestId + "\n\n";
+      return { exitCode: input.args[0] === "show-ref" && !registeredPath && !options.preexistingBranch ? 1 : 0, stdout, stderr: "", stdoutTruncated: false, stderrTruncated: false };
+    }), resolveCommit: (input: { revision: string }) => Effect.succeed({ commitSha: input.revision === "HEAD" ? checkoutHead : request.revision }) } as unknown as GitVcsDriver["Service"];
+  const workflow = { createWorktree: (input: { cwd: string; path: string | null; newRefName: string }) => Effect.gen(function* () {
+    worktreeCalls.push(input);
+    expect(saved?.worktreePath).toBe(workerPath);
+    if (worktreeFailures > 0) { worktreeFailures--; return yield* Effect.fail({ _tag: "WorktreeCreationFailed" }); }
+    registeredPath = options.outsideWorker ? "/source/private-checkout" : workerPath;
+    return { worktree: { path: registeredPath, refName: input.newRefName } };
+  }) } as unknown as GitWorkflowService["Service"];
+  const rollback = WorkerDispatchRollback.of({ prepare: () => Effect.sync(() => {
+    rollbackPrepares.push(registeredPath!);
+    return Effect.sync(() => { rollbackCalls.push(registeredPath!); return { recoveryWorktreePath: "/quarantine/w", recoveryAdminPath: "/quarantine/a", originalWorktreePath: registeredPath!, originalAdminPath: "/admin", recoveryLocationStatus: "verified" as const }; });
+  }) });
   const services = Layer.mergeAll(
     Layer.succeed(ServerEnvironment, { getEnvironmentId: Effect.succeed(target), getDescriptor: Effect.die("unused") }),
     Layer.succeed(OrchestrationEngineService, engine), Layer.succeed(ProjectionSnapshotQuery, query), Layer.succeed(GitVcsDriver, git),
@@ -84,12 +105,55 @@ const harness = (options: {
     FileSystem.layerNoop({ exists: () => Effect.succeed(false), makeDirectory: () => Effect.void, realPath: (path) => Effect.succeed(path) }), Path.layer,
   );
   const admitted = options.missingAdmission ? services : Layer.merge(services, Layer.succeed(RemoteWorkerAdmission, { admit: () => Effect.void }));
-  return { receiver: make.pipe(Effect.provide(admitted)), commands, gitCalls, worktreeCalls, rollbackCalls, commandReceipts, receipt: () => saved };
+  return { receiver: make.pipe(Effect.provide(admitted)), commands, gitCalls, worktreeCalls, rollbackCalls, rollbackPrepares, commandReceipts, receipt: () => saved,
+    changeCheckout: (change: { head?: string; dirty?: boolean; path?: string }) => { checkoutHead = change.head ?? checkoutHead; checkoutDirty = change.dirty ?? checkoutDirty; registeredPath = change.path ?? registeredPath; } };
 };
 
+for (const [label, collision] of [
+  ["same managed path", { preexistingWorktree: workerPath }],
+  ["foreign path", { preexistingWorktree: "/foreign/checkout" }],
+  ["unattached branch", { preexistingBranch: true }],
+] as const) it.effect("rejects a pre-existing worker branch at " + label + " without claiming or deleting it", () => Effect.gen(function* () {
+  const h = harness(collision); const receiver = yield* h.receiver;
+  const result = yield* Effect.result(receiver.receive(request));
+  expect(result._tag === "Failure" && result.failure.reason).toBe("worktree-failed");
+  expect(h.receipt()?.worktreePath).toBeNull();
+  expect(h.worktreeCalls).toEqual([]); expect(h.commands).toEqual([]);
+  expect(h.rollbackPrepares).toEqual([]); expect(h.rollbackCalls).toEqual([]);
+}));
+it.effect("persists the exact managed path before creation and resumes that reservation after restart", () => Effect.gen(function* () {
+  const h = harness({ failWorktreeOnce: true }); const receiver = yield* h.receiver;
+  const first = yield* Effect.result(receiver.receive(request));
+  expect(first._tag === "Failure" && first.failure.reason).toBe("worktree-failed");
+  expect(h.receipt()?.worktreePath).toBe(workerPath); expect(h.commands).toEqual([]);
+  const restarted = yield* h.receiver; const result = yield* restarted.receive(request);
+  expect(result.worktreePath).toBe(workerPath); expect(h.commands).toHaveLength(2);
+  expect(h.worktreeCalls.every((input) => input.path === workerPath)).toBe(true);
+}));
+for (const [label, change] of [
+  ["advanced HEAD", { head: "b".repeat(40) }], ["dirty checkout", { dirty: true }],
+] as const) it.effect("preserves " + label + " after rejected create on restart", () => Effect.gen(function* () {
+  const h = harness({ failStep: "create" }); const receiver = yield* h.receiver;
+  yield* Effect.result(receiver.receive(request));
+  expect(h.rollbackPrepares).toHaveLength(1);
+  const commandId = remoteWorkerCommandId(request.requestId, "create");
+  h.commandReceipts.set(commandId, { commandId, aggregateKind: "thread", aggregateId: request.requestId, status: "rejected", acceptedAt: request.createdAt, resultSequence: 1, error: null });
+  h.changeCheckout(change);
+  const restarted = yield* h.receiver; const result = yield* Effect.result(restarted.receive(request));
+  expect(result._tag === "Failure" && result.failure.reason).toBe("worktree-failed");
+  expect(h.rollbackPrepares).toHaveLength(1); expect(h.rollbackCalls).toEqual([]);
+  expect(h.commands).toHaveLength(1); expect(h.receipt()?.worktreePath).toBe(workerPath);
+}));
+it.effect("refuses a replay whose registered branch moved to an unreserved path", () => Effect.gen(function* () {
+  const h = harness({ failStep: "create" }); const receiver = yield* h.receiver;
+  yield* Effect.result(receiver.receive(request)); h.changeCheckout({ path: "/foreign/checkout" });
+  const restarted = yield* h.receiver; const result = yield* Effect.result(restarted.receive(request));
+  expect(result._tag === "Failure" && result.failure.reason).toBe("worktree-failed");
+  expect(h.worktreeCalls).toHaveLength(1); expect(h.commands).toHaveLength(1); expect(h.rollbackCalls).toEqual([]);
+}));
 it.effect("creates an isolated target worker with exact source parent and team mapping", () => Effect.gen(function* () {
   const h = harness(); const receiver = yield* h.receiver; const result = yield* receiver.receive(request);
-  expect(result.worktreePath).toBe(workerPath); expect(h.worktreeCalls).toEqual([{ cwd: projectPath, path: null, refName: request.revision, newRefName: `workjet/worker/${request.requestId}` }]);
+  expect(result.worktreePath).toBe(workerPath); expect(h.worktreeCalls).toEqual([{ cwd: projectPath, path: workerPath, refName: request.revision, newRefName: `workjet/worker/${request.requestId}` }]);
   const create = h.commands[0]!; expect(create.command.type).toBe("thread.create");
   if (create.command.type === "thread.create") { expect(create.command.workjetConfig?.parent).toEqual(request.parent); expect(create.command.workjetConfig?.schemaVersion).toBe(2); }
   expect(create.options).toEqual({ remoteWorkerRequest: request }); expect(h.commands[1]?.command.type).toBe("thread.turn.start");

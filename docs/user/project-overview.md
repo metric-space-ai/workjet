@@ -15,7 +15,7 @@ Workers group. Opening that row opens the worker’s real conversation on that
 computer. Archived workers leave the overview and sidebar while their history
 remains retained.
 
-The overview also shows the project\x27s saved goal, phase, links and Jour fixe.
+The overview also shows the project's saved goal, phase, links and Jour fixe.
 Yellow status dots mean a session is running; rose dots mean an approval or
 answer is waiting for you. Failed sessions have a red error dot, and idle
 histories remain gray. The overview and sidebar use the same session state.

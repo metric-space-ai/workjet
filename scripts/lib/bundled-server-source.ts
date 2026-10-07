@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
+import { PROVIDER_GATEWAY_DIAGNOSTIC_EXECUTABLE_MAX_BYTES } from "@workjet/shared/providerGatewayHostDiagnostic";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const SERVER_ENTRIES = ["bin.mjs", "service-launcher.mjs"] as const;
@@ -21,6 +22,10 @@ export async function verifyBundledServerSource(input: {
   readonly archiveDirectory: string;
   readonly platform: "mac" | "linux" | "win";
   readonly arch: "arm64" | "x64" | "universal";
+  readonly providerGatewayHost?: {
+    readonly archiveFileName: string;
+    readonly executablePath: string;
+  };
 }) {
   const entries = await NodeFSP.readdir(input.archiveDirectory).catch((cause: unknown) => {
     if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return [];
@@ -46,6 +51,8 @@ export async function verifyBundledServerSource(input: {
       "Missing bundled server workjet-server-linux-x64.tgz. Mac packaging must build the Linux SSH server on gpu3.",
     );
   }
+  if (input.providerGatewayHost && !archives.includes(input.providerGatewayHost.archiveFileName))
+    throw new Error("Missing local server archive for the selected diagnostic provider host.");
   const expected = new Map<string, string>();
   for (const entry of SERVER_ENTRIES)
     expected.set(entry, await fileDigest(NodePath.join(input.serverDist, entry)));
@@ -58,14 +65,23 @@ export async function verifyBundledServerSource(input: {
         `Bundled server checksum mismatch: ${filename}. Regenerate the archive and its checksum together.`,
       );
     }
-    for (const entry of SERVER_ENTRIES) {
+    const expectedEntries = new Map(expected);
+    if (input.providerGatewayHost?.archiveFileName === filename)
+      expectedEntries.set(
+        "workjet-provider-gateway-host",
+        await fileDigest(input.providerGatewayHost.executablePath),
+      );
+    for (const [entry, expectedDigest] of expectedEntries) {
       const { stdout } = await execFile("tar", ["-xOf", archivePath, `package/dist/${entry}`], {
         encoding: "buffer",
         timeout: 30_000,
-        maxBuffer: 16 * 1024 * 1024,
+        maxBuffer:
+          entry === "workjet-provider-gateway-host"
+            ? PROVIDER_GATEWAY_DIAGNOSTIC_EXECUTABLE_MAX_BYTES
+            : 16 * 1024 * 1024,
       });
       const actual = NodeCrypto.createHash("sha256").update(stdout).digest("hex");
-      if (actual !== expected.get(entry)) {
+      if (actual !== expectedDigest) {
         throw new Error(
           `Stale bundled server ${filename}: dist/${entry} differs from the current server build. Run scripts/build-ssh-server.mjs on the matching host after building the server.`,
         );

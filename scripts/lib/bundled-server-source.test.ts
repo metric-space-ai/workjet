@@ -27,6 +27,8 @@ async function fixture() {
     await NodeFSP.mkdir(dir, { recursive: true });
   for (const entry of ["bin.mjs", "service-launcher.mjs"])
     await NodeFSP.writeFile(NodePath.join(serverDist, entry), `export const entry = '${entry}';\n`);
+  const gateway = NodePath.join(serverDist, "workjet-provider-gateway-host");
+  await NodeFSP.writeFile(gateway, "fresh diagnostic host");
   async function archive(target = "darwin-arm64", staleEntry?: string, omitEntry?: string) {
     for (const entry of ["bin.mjs", "service-launcher.mjs"]) {
       const destination = NodePath.join(packagedDist, entry);
@@ -34,6 +36,11 @@ async function fixture() {
       if (entry === staleEntry) await NodeFSP.appendFile(destination, "// obsolete source\n");
       if (entry === omitEntry) await NodeFSP.unlink(destination);
     }
+    await NodeFSP.copyFile(gateway, NodePath.join(packagedDist, "workjet-provider-gateway-host"));
+    if (staleEntry === "workjet-provider-gateway-host")
+      await NodeFSP.writeFile(NodePath.join(packagedDist, staleEntry), "old published host");
+    if (omitEntry === "workjet-provider-gateway-host")
+      await NodeFSP.unlink(NodePath.join(packagedDist, omitEntry));
     const filename = `workjet-server-${target}.tgz`;
     const path = NodePath.join(archiveDirectory, filename);
     NodeChildProcess.execFileSync("tar", ["-czf", path, "-C", stage, "package"], {
@@ -47,6 +54,7 @@ async function fixture() {
   }
   return {
     root,
+    gateway,
     archive,
     options: { serverDist, archiveDirectory, platform: "mac" as const, arch: "arm64" as const },
   };
@@ -118,3 +126,36 @@ it("uses the staged WSL server on Windows without requiring a local TGZ", () =>
     await NodeFSP.rm(options.archiveDirectory, { recursive: true });
     NodeAssert.deepEqual(await verifyBundledServerSource({ ...options, platform: "win" }), []);
   }));
+
+it("accepts the selected diagnostic host in the managed local server", () =>
+  withFixture(async ({ archive, options, gateway }) => {
+    await archive();
+    await archive("linux-x64");
+    await verifyBundledServerSource({
+      ...options,
+      providerGatewayHost: {
+        archiveFileName: "workjet-server-darwin-arm64.tgz",
+        executablePath: gateway,
+      },
+    });
+  }));
+for (const omit of [false, true]) {
+  it(`refuses a ${omit ? "missing" : "stale pinned"} runtime host despite valid JS and archive checksums`, () =>
+    withFixture(async ({ archive, options, gateway }) => {
+      await archive(
+        "darwin-arm64",
+        omit ? undefined : "workjet-provider-gateway-host",
+        omit ? "workjet-provider-gateway-host" : undefined,
+      );
+      await archive("linux-x64");
+      await NodeAssert.rejects(
+        verifyBundledServerSource({
+          ...options,
+          providerGatewayHost: {
+            archiveFileName: "workjet-server-darwin-arm64.tgz",
+            executablePath: gateway,
+          },
+        }),
+      );
+    }));
+}

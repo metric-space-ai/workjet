@@ -20,6 +20,7 @@ import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import { verifyBundledServerSource } from "./lib/bundled-server-source.ts";
+import { sshServerBuildArguments } from "./lib/ssh-server-build-arguments.ts";
 import { buildLinuxSshServer } from "./lib/build-linux-ssh-server.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
 import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
@@ -2712,7 +2713,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         buildNode,
         [
           path.join(repoRoot, "scripts/build-ssh-server.mjs"),
-          path.join(stageResourcesDir, "ssh-servers"),
+          ...sshServerBuildArguments(
+            path.join(stageResourcesDir, "ssh-servers"),
+            options.diagnosticProviderGatewayHost,
+          ),
         ],
         { cwd: repoRoot },
       ),
@@ -2738,6 +2742,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
         platform: options.platform,
         arch: options.arch,
+        ...(options.diagnosticProviderGatewayHost === undefined
+          ? {}
+          : {
+              providerGatewayHost: {
+                archiveFileName: `workjet-server-${localServerPlatform}-${hostArchitecture}.tgz`,
+                executablePath: path.join(
+                  providerGatewayHost.installPath,
+                  "workjet-provider-gateway-host",
+                ),
+              },
+            }),
       }),
     catch: (cause) => new BundledServerSourceVerificationError({ cause }),
   });

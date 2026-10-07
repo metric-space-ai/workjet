@@ -139,6 +139,7 @@ import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinar
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
+import * as RemoteWorkerTargetAdmission from "./workjet/RemoteWorkerTargetAdmission.ts";
 import { acquireProfileOwnership } from "./profileOwnership.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "./persistence/Layers/OrchestrationCommandReceipts.ts";
 import {
@@ -434,7 +435,7 @@ const CloudManagedEndpointRuntimeLive = Layer.mergeAll(
 
 const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(ProviderLayerLive),
-  Layer.provideMerge(OrchestrationLayerLive),
+  Layer.provideMerge(OrchestrationLayerLive.pipe(Layer.provide(RemoteWorkerTargetAdmission.layer))),
 );
 
 const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
@@ -444,6 +445,7 @@ const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
 );
 const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
+  Layer.provide(RemoteWorkerTargetAdmission.layer),
   Layer.provide(RemoteWorkerStore.layer),
   Layer.provide(WorktreeStorageLayerLive),
   Layer.provide(OrchestrationCommandReceiptRepositoryLive),

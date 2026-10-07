@@ -30,6 +30,8 @@ import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { RemoteWorkerStore } from "./RemoteWorkerStore.ts";
 import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
+import { ProviderInstanceRegistry } from "../provider/Services/ProviderInstanceRegistry.ts";
+import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
 
 import { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
 export { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
@@ -97,6 +99,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const rollback = yield* WorkerDispatchRollback;
   const admission = yield* Effect.serviceOption(RemoteWorkerAdmission);
+  const providerInstances = yield* Effect.serviceOption(ProviderInstanceRegistry);
   const mutex = yield* Semaphore.make(1);
   const targetEnvironmentId = yield* environment.getEnvironmentId;
 
@@ -192,6 +195,22 @@ export const make = Effect.gen(function* () {
       return yield* failure("invalid-request");
     if (Option.isNone(admission)) return yield* failure("computer-unavailable");
     yield* admission.value.admit(request);
+    // Source authority selects the model/account. The target selects an actual
+    // installed executable harness, rather than inheriting a source-only
+    // native provider instance ID whose empty target binding cannot execute.
+    let runtimeModelSelection = request.modelSelection;
+    const sourceHarness = readWorkerSourceHarness(request.requestId);
+    if (sourceHarness !== undefined) {
+      if (Option.isNone(providerInstances)) return yield* failure("computer-unavailable");
+      const candidates = (yield* providerInstances.value.listInstances).filter(
+        (instance) => instance.enabled && instance.driverKind === "codex",
+      );
+      const selected = candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId)
+        ?? (candidates.length === 1 ? candidates[0] : candidates.find((instance) => instance.instanceId === "codex"));
+      if (selected === undefined || sourceHarness.model !== request.modelSelection.model)
+        return yield* failure("computer-unavailable");
+      runtimeModelSelection = { instanceId: selected.instanceId, model: sourceHarness.model };
+    }
 
     const runGit = Effect.fn("RemoteWorkerReceiver.git")(function* (
       cwd: string,
@@ -460,7 +479,7 @@ export const make = Effect.gen(function* () {
         threadId: request.requestId,
         projectId: request.project.id,
         title: request.title,
-        modelSelection: request.modelSelection,
+        modelSelection: runtimeModelSelection,
         runtimeMode: request.runtimeMode,
         interactionMode: request.interactionMode,
         workjetConfig: {

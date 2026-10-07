@@ -137,8 +137,11 @@ export function makeSourceGatewayInference(dependencies: {
     });
     const receipt = yield* dependencies.revalidate(input).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit)),
-      Effect.mapError((error) => Schema.is(WorkjetGatewayInferenceError)(error)
-        ? error : failure("native-admission-rejected")),
+      Effect.mapError((error) =>
+        Schema.is(WorkjetGatewayInferenceError)(error)
+          ? error
+          : failure("native-admission-rejected"),
+      ),
     );
     if (
       JSON.stringify(receipt) !== JSON.stringify(input.permit) ||

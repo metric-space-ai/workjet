@@ -26,43 +26,69 @@ export function makeManagedSourceGatewayInference(dependencies: {
       Effect.map((settings) => settings.workjet),
       Effect.mapError(() => failure("binding-mismatch")),
     ),
-    requireSourceInstance: (instanceId) => dependencies.settings.getSettings.pipe(
-      Effect.mapError(() => failure("binding-mismatch")),
-      Effect.flatMap((settings) => {
-        const instance = settings.providerInstances[instanceId];
-        return instance && instance.enabled !== false && instance.routeViaGateway === true
-          ? Effect.void : Effect.fail(failure("binding-mismatch"));
-      }),
-    ),
+    requireSourceInstance: (instanceId) =>
+      dependencies.settings.getSettings.pipe(
+        Effect.mapError(() => failure("binding-mismatch")),
+        Effect.flatMap((settings) => {
+          const instance = settings.providerInstances[instanceId];
+          return instance && instance.enabled !== false && instance.routeViaGateway === true
+            ? Effect.void
+            : Effect.fail(failure("binding-mismatch"));
+        }),
+      ),
     // Preserve the exact native target tuple, which can differ from the UI row.
-    scopedCatalog: (target, environmentId) => dependencies.gateway.scopedCatalog(target, environmentId).pipe(
-      Effect.mapError(() => failure("grant-unavailable")),
-    ),
-    revalidate: (input) => Effect.gen(function* () {
-      if (dependencies.connections === undefined)
-        return yield* failure("native-admission-unavailable");
-      const admission = makeCtoxRemoteWorkerAdmissionClient({
-        connections: dependencies.connections,
-        gateway: dependencies.gateway,
-        transport: makeCtoxMcpTransport(yield* HttpClient.HttpClient),
-      });
-      return yield* admission.execute(
-        { connectionId: input.sourceConnectionId, instanceId: input.permit.binding.sourceInstanceId },
-        input.workerRequest, input.permit.binding, "revalidate", input.permit.permitId, input.permit.executionId,
-      ).pipe(Effect.mapError((error) => failure(error.reason === "source-unavailable"
-        ? "native-admission-unavailable" : "native-admission-rejected")));
-    }).pipe(
-      Effect.provide(FetchHttpClient.layer),
-    ),
-    forward: (selected, requestJson, deadlineMs) => Effect.gen(function* () {
-      const status = yield* dependencies.gateway.status();
-      if (status.phase !== "ready" || status.providerEndpoint === null)
-        return yield* failure("gateway-unavailable");
-      return yield* Effect.tryPromise({
-        try: (signal) => forwardSourceGatewayResponses(status.providerEndpoint!, selected, requestJson, deadlineMs, signal),
-        catch: () => failure("inference-failed"),
-      });
-    }),
+    scopedCatalog: (target, environmentId) =>
+      dependencies.gateway
+        .scopedCatalog(target, environmentId)
+        .pipe(Effect.mapError(() => failure("grant-unavailable"))),
+    revalidate: (input) =>
+      Effect.gen(function* () {
+        if (dependencies.connections === undefined)
+          return yield* failure("native-admission-unavailable");
+        const admission = makeCtoxRemoteWorkerAdmissionClient({
+          connections: dependencies.connections,
+          gateway: dependencies.gateway,
+          transport: makeCtoxMcpTransport(yield* HttpClient.HttpClient),
+        });
+        return yield* admission
+          .execute(
+            {
+              connectionId: input.sourceConnectionId,
+              instanceId: input.permit.binding.sourceInstanceId,
+            },
+            input.workerRequest,
+            input.permit.binding,
+            "revalidate",
+            input.permit.permitId,
+            input.permit.executionId,
+          )
+          .pipe(
+            Effect.mapError((error) =>
+              failure(
+                error.reason === "source-unavailable"
+                  ? "native-admission-unavailable"
+                  : "native-admission-rejected",
+              ),
+            ),
+          );
+      }).pipe(Effect.provide(FetchHttpClient.layer)),
+    forward: (selected, requestJson, deadlineMs) =>
+      Effect.gen(function* () {
+        const status = yield* dependencies.gateway.status();
+        if (status.phase !== "ready" || status.providerEndpoint === null)
+          return yield* failure("gateway-unavailable");
+        return yield* Effect.tryPromise({
+          try: (signal) =>
+            forwardSourceGatewayResponses(
+              status.providerEndpoint!,
+              selected,
+              requestJson,
+              deadlineMs,
+              signal,
+            ),
+          catch: () => failure("inference-failed"),
+        });
+      }),
     now: Clock.currentTimeMillis,
   });
 }

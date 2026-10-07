@@ -1595,6 +1595,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const diagnosticProviderGatewayHost = Option.getOrUndefined(
     input.diagnosticProviderGatewayHost ?? Option.none(),
   );
+  const gpuBuildOwner = Option.getOrUndefined(input.gpuBuildOwner ?? Option.none());
 
   return {
     platform,
@@ -1610,9 +1611,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdateServerPort,
     wslPrebuild,
     ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
-    ...(Option.isSome(input.gpuBuildOwner ?? Option.none())
-      ? { gpuBuildOwner: Option.getOrUndefined(input.gpuBuildOwner ?? Option.none()) }
-      : {}),
+    ...(gpuBuildOwner === undefined ? {} : { gpuBuildOwner }),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2688,8 +2687,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   // The managed local service installs this archive, not the server inside ASAR.
-  // Generate the host-native archive from the fresh build; cross-host inputs
-  // must already match that same build and are verified before packaging.
+  // Generate native archives around this fresh build. Linux native dependencies
+  // are built on gpu3, never in the shared Mac packaging slot.
   const localServerPlatform = options.platform === "mac" ? "darwin" : options.platform;
   const hostArchitecture = yield* HostProcessArchitecture;
   const buildsHostRuntime =

@@ -1,35 +1,69 @@
 import { useState } from "react";
 import type { ProjectOverview } from "@workjet/contracts";
+import { ArrowUpRightIcon, EllipsisIcon, PencilIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
   projectUpdateAge,
   resolveGalleryProjectOverview,
+  type GalleryProjectStatistics,
 } from "../projectOverview";
+import { suggestedProjectKpis } from "../projectKpiSuggestions";
+import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectOverviewEditor } from "./ProjectOverviewEditor";
 import { Button } from "./ui/button";
+import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
+import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
 
 export function ProjectOverviewCard({
   project,
   onOpen,
   onSave,
   canArchive = false,
+  statistics,
 }: {
   readonly project: GalleryProject;
   readonly onOpen: () => void;
   readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   readonly canArchive?: boolean | undefined;
+  readonly statistics?: GalleryProjectStatistics | undefined;
 }) {
   const [editing, setEditing] = useState(false);
-  const [showPreview, setShowPreview] = useState(true);
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const overview = resolveGalleryProjectOverview(project);
-  const website = overview?.websiteUrl;
+  const website = overview.websiteUrl;
   const cachedPreview = resolveCachedProjectPreview(website);
-  const repository = overview?.repositoryUrl;
-  const slots = overview?.slots ?? [null, null, null];
+  const repository = overview.repositoryUrl;
+  const defaultSlots: ProjectOverview["slots"] = suggestedProjectKpis(project.title) ?? [
+    {
+      kind: "text",
+      label: "Chats",
+      value: statistics?.chatCount == null ? "—" : String(statistics.chatCount),
+    },
+    {
+      kind: "text",
+      label: "Active",
+      value: statistics?.activeChatCount == null ? "—" : String(statistics.activeChatCount),
+    },
+    { kind: "updated", label: "Activity" },
+  ];
+  const activityAt = statistics?.lastActivityAt ?? project.local?.updatedAt ?? null;
+  const slots: ProjectOverview["slots"] = [
+    overview.slots[0] ?? defaultSlots[0],
+    overview.slots[1] ?? defaultSlots[1],
+    overview.slots[2] ?? defaultSlots[2],
+  ];
+  const editableOverview = { ...overview, slots };
+  const titleIsWebsite =
+    website != null &&
+    project.title.trim().toLowerCase() ===
+      website
+        .replace(/^https?:\/\//, "")
+        .replace(/^www\./, "")
+        .replace(/\/$/, "")
+        .toLowerCase();
   const archived = overview.archived === true;
   const changeArchive = async () => {
     if (!onSave || archivePending) return;
@@ -46,145 +80,203 @@ export function ProjectOverviewCard({
   };
   return (
     <article
-      className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-5"
+      className="min-w-0 overflow-hidden rounded-lg border border-border bg-card"
       data-workjet-project-card={project.key}
     >
-      <button
-        type="button"
-        data-workjet-action={`project.open.gallery:${project.key}`}
-        aria-label={`Open ${project.title}`}
-        onClick={onOpen}
-        className="text-left text-lg font-medium hover:underline focus-visible:outline focus-visible:outline-ring"
-      >
-        {project.title}
-      </button>
-      {repository && (
-        <a
-          href={repository}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="truncate text-sm text-primary underline"
-        >
-          Open repository
-        </a>
-      )}
-      {website && !archived && (
-        <div className="grid gap-2">
-          {showPreview && cachedPreview && failedCachedWebsite !== website && (
-            <img
-              src={cachedPreview.image}
-              alt={`Saved website preview for ${project.title}`}
-              loading="lazy"
-              decoding="async"
-              onError={() => setFailedCachedWebsite(website)}
-              className="h-36 w-full rounded-md border border-border bg-background object-cover object-top"
-            />
-          )}
-          {showPreview && cachedPreview && failedCachedWebsite === website && (
-            <p className="text-xs text-muted-foreground">
-              Preview unavailable. Open the website directly.
-            </p>
-          )}
-          {showPreview && !cachedPreview && (
-            <iframe
-              src={website}
-              title={`Website preview for ${project.title}`}
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              loading="lazy"
-              className="h-36 w-full rounded-md border border-border bg-background"
-            />
-          )}
-          <div className="flex flex-wrap items-center gap-3 text-sm">
+      <div className="flex min-w-0 items-center gap-2 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <h2
+            className="truncate text-sm font-medium"
+            title={project.title}
+            data-workjet-project-title=""
+          >
+            {titleIsWebsite ? (
+              <a
+                href={website ?? undefined}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="hover:underline focus-visible:outline focus-visible:outline-ring"
+              >
+                {project.title}
+              </a>
+            ) : (
+              project.title
+            )}
+          </h2>
+          {website && !titleIsWebsite && (
             <a
               href={website}
               target="_blank"
               rel="noreferrer noopener"
-              className="truncate text-primary underline"
+              title={website}
+              className="block truncate text-[11px] text-muted-foreground underline-offset-2 hover:text-primary hover:underline focus-visible:outline focus-visible:outline-ring"
             >
-              Open website
+              {website}
             </a>
-            <Button size="xs" variant="ghost" onClick={() => setShowPreview((show) => !show)}>
-              {showPreview ? "Hide preview" : "Show preview"}
-            </Button>
-          </div>
-          {showPreview && (
-            <p className="text-xs text-muted-foreground">
-              {cachedPreview
-                ? `Saved preview · ${cachedPreview.capturedOn}`
-                : "If the website blocks its preview, open it directly."}
-            </p>
           )}
         </div>
-      )}
-      <dl className="grid grid-cols-3 gap-3" data-workjet-project-card-slots="">
-        {(["first", "second", "third"] as const).map((position, index) => {
-          const slot = slots[index] ?? null;
-          return (
-            <div key={position} className="min-w-0" data-workjet-project-card-slot={index + 1}>
-              <dt className="truncate text-xs text-muted-foreground">
-                {slot?.label ?? `Field ${index + 1}`}
-              </dt>
-              <dd className="mt-1 break-words text-sm">
-                {slot === null ? (
-                  <span className="text-muted-foreground">Not configured</span>
-                ) : slot.kind === "link" ? (
-                  <a
-                    href={slot.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-primary underline"
-                  >
-                    Open link
-                  </a>
-                ) : slot.kind === "updated" ? (
-                  <time dateTime={project.local?.updatedAt} title={project.local?.updatedAt}>
-                    {projectUpdateAge(project.local?.updatedAt ?? null)}
-                  </time>
-                ) : slot.kind === "metric" ? (
-                  `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
-                ) : (
-                  slot.value
-                )}
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
-      <div className="mt-auto flex flex-wrap gap-2">
-        <Button size="sm" onClick={onOpen}>
-          Open project
-        </Button>
-        {onSave && canArchive && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={archivePending}
-            onClick={() => void changeArchive()}
-            aria-label={`${archived ? "Restore" : "Archive"} ${project.title}`}
-          >
-            {archivePending ? "Saving…" : archived ? "Restore project" : "Archive project"}
-          </Button>
-        )}
-        {onSave && (
-          <Button size="sm" variant="outline" onClick={() => setEditing((open) => !open)}>
-            {editing ? "Close editor" : "Configure overview"}
-          </Button>
+        {(repository || (onSave && canArchive)) && (
+          <Menu>
+            <MenuTrigger
+              aria-label={`Project actions for ${project.title}`}
+              render={<Button size="icon-xs" variant="ghost" />}
+            >
+              <EllipsisIcon className="size-4" aria-hidden="true" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              {repository && (
+                <MenuItem
+                  render={<a href={repository} target="_blank" rel="noreferrer noopener" />}
+                >
+                  Open repository
+                </MenuItem>
+              )}
+              {onSave && canArchive && (
+                <MenuItem
+                  disabled={archivePending}
+                  onClick={() => void changeArchive()}
+                  aria-label={`${archived ? "Restore" : "Archive"} ${project.title}`}
+                >
+                  {archivePending ? "Saving…" : archived ? "Restore project" : "Archive project"}
+                </MenuItem>
+              )}
+            </MenuPopup>
+          </Menu>
         )}
       </div>
+      <div
+        className="relative aspect-video overflow-hidden bg-muted/40"
+        data-workjet-project-preview=""
+      >
+        {!archived && cachedPreview && failedCachedWebsite !== website ? (
+          <img
+            src={cachedPreview.image}
+            alt={
+              cachedPreview.kind === "logo"
+                ? `Project logo for ${project.title}`
+                : `Saved website preview for ${project.title}`
+            }
+            title={`Saved preview · ${cachedPreview.capturedOn}`}
+            loading="lazy"
+            decoding="async"
+            onError={() => setFailedCachedWebsite(website ?? null)}
+            className={
+              cachedPreview.kind === "logo"
+                ? "size-full object-contain p-12"
+                : "size-full object-cover object-top"
+            }
+          />
+        ) : (
+          <div
+            role="img"
+            aria-label={`Project logo for ${project.title}`}
+            className="flex size-full items-center justify-center"
+            data-workjet-project-logo=""
+          >
+            {project.local?.workspaceRoot ? (
+              <ProjectFavicon
+                environmentId={project.local.environmentId}
+                cwd={project.local.workspaceRoot}
+                faviconPath={project.local.faviconPath}
+                className="size-16"
+              />
+            ) : (
+              <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-2xl font-semibold tracking-tight text-foreground/70">
+                {project.title.slice(0, 2).toUpperCase()}
+              </span>
+            )}
+          </div>
+        )}
+        <Button
+          size="icon-sm"
+          onClick={onOpen}
+          title="Open project"
+          aria-label={`Open ${project.title}`}
+          data-workjet-action={`project.open.gallery:${project.key}`}
+          className="absolute right-2 bottom-2 gap-1.5 shadow-sm"
+        >
+          <ArrowUpRightIcon className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
+      <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+        <dl className="grid min-w-0 flex-1 grid-cols-3 gap-3" data-workjet-project-card-slots="">
+          {(["first", "second", "third"] as const).map((position, index) => {
+            const slot = slots[index] ?? null;
+            return (
+              <div
+                key={position}
+                className="flex min-w-0 items-baseline gap-1"
+                data-workjet-project-card-slot={index + 1}
+              >
+                <dt
+                  title={slot?.label}
+                  className={
+                    slot
+                      ? "min-w-0 truncate text-[10px] leading-5 text-muted-foreground"
+                      : "sr-only"
+                  }
+                >
+                  {slot?.label ?? `KPI ${index + 1}`}
+                </dt>
+                <dd className="min-w-0 truncate text-xs leading-5 font-medium tabular-nums">
+                  {slot === null ? (
+                    <span
+                      className="text-muted-foreground"
+                      aria-label={`KPI ${index + 1} not configured`}
+                    >
+                      —
+                    </span>
+                  ) : slot.kind === "link" ? (
+                    <a
+                      href={slot.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="text-primary underline"
+                    >
+                      Open link
+                    </a>
+                  ) : slot.kind === "updated" ? (
+                    <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
+                      {activityAt === null ? "—" : projectUpdateAge(activityAt)}
+                    </time>
+                  ) : slot.kind === "metric" ? (
+                    `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+                  ) : (
+                    slot.value
+                  )}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          aria-label={`Configure ${project.title} KPIs`}
+          title="Configure KPIs"
+          disabled={!onSave}
+          onClick={() => setEditing(true)}
+        >
+          <PencilIcon className="size-3.5" aria-hidden="true" />
+        </Button>
+      </div>
       {archiveError && (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="px-3 py-2 text-xs text-destructive">
           {archiveError}
         </p>
       )}
-      {!onSave && (
-        <p className="text-xs text-muted-foreground">
-          {project.local === null
-            ? "Open this project’s supervisor to configure its overview."
-            : "Reconnect to an updated environment to configure this overview."}
-        </p>
-      )}
-      {editing && onSave && <ProjectOverviewEditor overview={overview} onSave={onSave} />}
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogPopup className="w-[min(36rem,calc(100vw-2rem))]">
+          <DialogHeader>
+            <DialogTitle>Configure {project.title}</DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            {editing && onSave && (
+              <ProjectOverviewEditor overview={editableOverview} onSave={onSave} />
+            )}
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
     </article>
   );
 }

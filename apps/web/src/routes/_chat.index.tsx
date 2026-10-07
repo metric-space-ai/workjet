@@ -17,8 +17,10 @@ import {
 import {
   buildProjectGallery,
   resolveGalleryProjectHistory,
+  resolveGalleryProjectStatistics,
   visibleGalleryProjects,
   type GalleryProject,
+  type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -356,6 +358,8 @@ function IndexDraftLanding() {
         projectsUnavailable={registry.phase === "blocked" || registry.refreshFailed === true}
         projects={galleryProjects.map((project) => ({
           ...project,
+          statistics: resolveGalleryProjectStatistics(project, threads, bootstrapped),
+
           canArchive: environments.some(
             (environment) =>
               environment.environmentId ===
@@ -441,6 +445,7 @@ function ProjectGallery({
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
     readonly canArchive: boolean;
+    readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
 }) {
@@ -451,9 +456,9 @@ function ProjectGallery({
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
-      <main className="flex-1 overflow-auto px-6 py-10 sm:px-10" data-workjet-project-gallery="">
+      <main className="flex-1 overflow-auto px-5 py-6 sm:px-6" data-workjet-project-gallery="">
         <div className="mx-auto max-w-5xl">
-          <div className="mb-8 flex items-center justify-between gap-4">
+          <div className="mb-5 flex items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-semibold">
                 {showArchived ? "Archived projects" : "All projects"}
@@ -481,7 +486,7 @@ function ProjectGallery({
               Couldn’t refresh projects. Showing saved projects. Refresh projects to try again.
             </p>
           ) : null}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {visibleProjects.map((project) => (
               <ProjectOverviewCard
                 key={project.key}
@@ -489,6 +494,7 @@ function ProjectGallery({
                 onOpen={project.onOpen}
                 onSave={project.onSave}
                 canArchive={project.canArchive}
+                statistics={project.statistics}
               />
             ))}
           </div>

@@ -11,37 +11,38 @@ const project: GalleryProject = {
   local: null,
   native: true,
 };
-
-describe("project gallery previews", () => {
-  it.each(["fzul.app", "i-hate-ai.community"])(
-    "shows %s from its bundled snapshot without a live iframe",
-    (title) => {
-      const markup = renderToStaticMarkup(
-        <ProjectOverviewCard project={{ ...project, title }} onOpen={() => {}} />,
-      );
-      expect(markup).toContain(`alt="Saved website preview for ${title}"`);
-      expect(markup).toContain("<img");
-      expect(markup).not.toContain("<iframe");
-      expect(markup).toContain("Saved preview");
-      expect(markup).toContain("2026-10-07");
-      expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
-    },
-  );
-
-  it("previews a domain-named native project immediately in an isolated lazy frame", () => {
+describe("compact project gallery", () => {
+  it.each(["fzul.app", "i-hate-ai.community"])("uses the saved static preview for %s", (title) => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard project={{ ...project, title }} onOpen={() => {}} />,
+    );
+    expect(markup).toContain(`alt="Saved website preview for ${title}"`);
+    expect(markup).toContain("<img");
+    expect(markup).not.toContain("<iframe");
+    expect(markup).toContain("2026-10-07");
+    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+  });
+  it("opens the domain title as a website and uses a project logo when there is no snapshot", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} />,
     );
-    expect(markup).toContain('src="https://greppy.xyz"');
-    expect(markup).toContain('sandbox="allow-scripts"');
-    expect(markup).not.toContain("allow-same-origin");
-    expect(markup).toContain('referrerPolicy="no-referrer"');
-    expect(markup).toContain('loading="lazy"');
-    expect(markup).toContain("Hide preview");
+    expect(markup).toContain('href="https://greppy.xyz"');
+    expect(markup).toMatch(
+      /<h2[^>]*><a[^>]*href="https:\/\/greppy.xyz"[^>]*>greppy.xyz<\/a><\/h2>/,
+    );
+    expect(markup).toContain('aria-label="Project logo for greppy.xyz"');
+    expect(markup).toContain('aria-label="Open greppy.xyz"');
+    expect(markup).not.toContain("<iframe");
+    expect(markup).not.toContain("Hide preview");
+    expect(markup).not.toContain("Open website");
+    expect(markup).not.toContain("If the website blocks");
+    expect(markup).not.toContain("Not configured");
+    expect(markup).toContain("Users");
+    expect(markup).toContain("Queries");
+    expect(markup).toContain("Latency");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
-
-  it("offers restoration while retaining fields and suppressing archived website frames", () => {
+  it("retains archived values and exposes its actions through the compact menu", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard
         project={{
@@ -64,23 +65,22 @@ describe("project gallery previews", () => {
         canArchive
       />,
     );
-    expect(markup).toContain("Restore project");
-    expect(markup).toContain('aria-label="Restore greppy.xyz"');
+    expect(markup).toContain('aria-label="Project actions for greppy.xyz"');
+    expect(markup).toContain('aria-label="Configure greppy.xyz KPIs"');
     expect(markup).not.toContain("<iframe");
     expect(markup).not.toContain("<img");
     expect(markup).toContain("Retained");
-    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
-  it("does not offer archive writes to an older overview-capable environment", () => {
+  it("does not expose an archive action menu on older overview-only environments", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} onSave={async () => true} />,
     );
-    expect(markup).toContain("Configure overview");
+    expect(markup).toContain('aria-label="Configure greppy.xyz KPIs"');
+    expect(markup).not.toContain('aria-label="Project actions for greppy.xyz"');
     expect(markup).not.toContain("Archive project");
     expect(markup).not.toContain("Restore project");
   });
-
-  it("keeps all three saved fields and an explicitly cleared website", () => {
+  it("preserves all three configured fields and an explicitly cleared website", () => {
     const overview: ProjectOverview = {
       websiteUrl: null,
       slots: [

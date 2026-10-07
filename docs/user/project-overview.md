@@ -4,7 +4,13 @@ Choose **All projects** to see the projects saved in the current instance.
 A project saved locally remains visible while its native registration is pending.
 An existing local history linked through this instance's working copy also keeps
 its saved overview and archive state while the instance reconnects.
-Opening its card returns to its existing supervisor conversation.
+Opening its card shows the project's overview. Choose a conversation from
+Supervisor, Parents or Workers to open its history and message composer.
+The overview itself has no message composer. Its sidebar shows the same groups,
+counts and status dots; empty groups are hidden. A Parent is a specialist with
+its own goal. Use **+ Parent** to add one to this project.
+
+The overview also shows the project's saved goal, phase, links and Jour fixe.
 
 Choose **Archive project** to hide its card from All projects. This retains the
 project, its conversations and its three saved info fields. Open **Archived

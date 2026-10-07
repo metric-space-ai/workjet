@@ -188,7 +188,11 @@ import {
   useAvailableProjectContext,
   type AvailableProject,
 } from "../availableProjects";
-import { groupThreadsByProjectTeam, PROJECT_TEAM_SECTIONS } from "../lib/projectTeamSections";
+import {
+  groupThreadsByProjectTeam,
+  PROJECT_TEAM_SECTIONS,
+  projectTeamSectionOf,
+} from "../lib/projectTeamSections";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -4056,9 +4060,16 @@ export default function Sidebar() {
                       />,
                     );
                   }
-                  if (selectedWorkjetProject !== null) {
-                    // An opened project reads as its team: supervisor first, then the
-                    // long-lived parents, then one-time PR workers (archived on merge).
+                  // A project opened through the gallery, or a sidebar scoped to one project
+                  // whose chats carry team roles, reads as its team: supervisor first, then
+                  // the long-lived parents, then one-time PR workers (archived on merge).
+                  const groupByTeam =
+                    selectedWorkjetProject !== null ||
+                    (scopedProjectGroup !== null &&
+                      [...pinnedThreads, ...activeThreads].some(
+                        (thread) => projectTeamSectionOf(thread) !== "other",
+                      ));
+                  if (groupByTeam) {
                     const team = groupThreadsByProjectTeam(activeThreads);
                     for (const { section, label, empty } of PROJECT_TEAM_SECTIONS) {
                       items.push(
@@ -4073,7 +4084,11 @@ export default function Sidebar() {
                           <span className="h-px flex-1 bg-sidebar-border/60" />
                         </li>,
                       );
-                      if (team[section].length === 0) {
+                      // A pinned supervisor or parent already shows above; no empty hint then.
+                      const pinnedHere = pinnedThreads.some(
+                        (thread) => projectTeamSectionOf(thread) === section,
+                      );
+                      if (team[section].length === 0 && !pinnedHere) {
                         items.push(
                           <li
                             key={`team-${section}-empty`}

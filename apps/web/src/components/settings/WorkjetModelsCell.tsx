@@ -114,8 +114,8 @@ function ModelField({
           value={draft}
           maxLength={16512}
           disabled={state.mutationBusy || saving}
-          style={{ width: `${Math.max(8, Math.min(24, draft.length || 12))}ch` }}
-          className="min-w-0 max-w-full rounded bg-transparent px-1.5 py-1 font-mono text-[11px] leading-4 outline-none disabled:opacity-60"
+          style={{ width: `${Math.max(8, draft.length || 12)}ch` }}
+          className="box-content min-w-0 max-w-full rounded bg-transparent px-1.5 py-1 font-mono text-[11px] leading-4 outline-none disabled:opacity-60"
           title="Edit directly. Enter saves; Escape cancels. Comma-separated IDs are supported."
           onChange={(event) => {
             setDraft(event.target.value);
@@ -186,9 +186,9 @@ export function WorkjetModelsCell({
 }) {
   const [adding, setAdding] = useState(false);
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    <div className="flex min-w-0 items-start gap-1">
       <div
-        className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:thin]"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-1"
         aria-label={`Models for ${account.label}`}
       >
         {account.modelIds.map((model) => (

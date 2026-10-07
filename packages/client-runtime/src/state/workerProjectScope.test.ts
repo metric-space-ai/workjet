@@ -1,6 +1,10 @@
 import { EnvironmentId, ProjectId, ThreadId, type WorkjetThreadConfig } from "@workjet/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { groupWorkerThreads, selectThreadsForProjectScope, selectWorkersForOrchestrator } from "./workerOverview.ts";
+import {
+  groupWorkerThreads,
+  selectThreadsForProjectScope,
+  selectWorkersForOrchestrator,
+} from "./workerOverview.ts";
 
 const source = EnvironmentId.make("source");
 const target = EnvironmentId.make("gpu3");
@@ -66,13 +70,23 @@ function worker(parentEnvironmentId = source) {
 }
 
 describe("remote worker project scope", () => {
-  it.each(["supervisor", "specialist"] as const)("includes the real remote worker of a %s", (role) => {
-    const sourceParent = parent(source, role);
-    const remote = worker();
-    expect(selectThreadsForProjectScope([sourceParent, remote], scope)).toEqual([sourceParent, remote]);
-    expect(selectWorkersForOrchestrator([sourceParent, remote], source, parentId)).toEqual([remote]);
-    expect(groupWorkerThreads([sourceParent, remote]).groups).toEqual([{ orchestrator: sourceParent, workers: [remote] }]);
-  });
+  it.each(["supervisor", "specialist"] as const)(
+    "includes the real remote worker of a %s",
+    (role) => {
+      const sourceParent = parent(source, role);
+      const remote = worker();
+      expect(selectThreadsForProjectScope([sourceParent, remote], scope)).toEqual([
+        sourceParent,
+        remote,
+      ]);
+      expect(selectWorkersForOrchestrator([sourceParent, remote], source, parentId)).toEqual([
+        remote,
+      ]);
+      expect(groupWorkerThreads([sourceParent, remote]).groups).toEqual([
+        { orchestrator: sourceParent, workers: [remote] },
+      ]);
+    },
+  );
 
   it("resolves colliding parent IDs by environment and preserves the remote identity", () => {
     const sourceParent = parent();
@@ -89,7 +103,9 @@ describe("remote worker project scope", () => {
   it("does not attach a foreign or missing parent with a colliding thread ID", () => {
     const sourceParent = parent();
     const remote = worker(foreign);
-    expect(selectThreadsForProjectScope([sourceParent, parent(foreign), remote], scope)).toEqual([sourceParent]);
+    expect(selectThreadsForProjectScope([sourceParent, parent(foreign), remote], scope)).toEqual([
+      sourceParent,
+    ]);
     expect(selectThreadsForProjectScope([sourceParent, remote], scope)).toEqual([sourceParent]);
     expect(groupWorkerThreads([sourceParent, remote]).unlinkedWorkers).toEqual([remote]);
   });
@@ -98,12 +114,31 @@ describe("remote worker project scope", () => {
     const sourceParent = parent();
     const remote = worker();
     const config = remote.workjetConfig;
-    if (config.schemaVersion !== 2 || config.role !== "worker" || config.team?.role !== "worker") throw new Error("invalid fixture");
+    if (config.schemaVersion !== 2 || config.role !== "worker" || config.team?.role !== "worker")
+      throw new Error("invalid fixture");
     const variants = [
       { ...remote, projectId: ProjectId.make("foreign-project") },
-      { ...remote, workjetConfig: { ...config, team: { ...config.team, projectId: ProjectId.make("foreign-project") } } },
-      { ...remote, workjetConfig: { ...config, team: { ...config.team, threadId: ThreadId.make("different-worker") } } },
-      { ...remote, workjetConfig: { ...config, team: { ...config.team, parentThreadId: ThreadId.make("different-parent") } } },
+      {
+        ...remote,
+        workjetConfig: {
+          ...config,
+          team: { ...config.team, projectId: ProjectId.make("foreign-project") },
+        },
+      },
+      {
+        ...remote,
+        workjetConfig: {
+          ...config,
+          team: { ...config.team, threadId: ThreadId.make("different-worker") },
+        },
+      },
+      {
+        ...remote,
+        workjetConfig: {
+          ...config,
+          team: { ...config.team, parentThreadId: ThreadId.make("different-parent") },
+        },
+      },
     ];
     for (const invalid of variants) {
       expect(selectThreadsForProjectScope([sourceParent, invalid], scope)).toEqual([sourceParent]);
@@ -114,9 +149,17 @@ describe("remote worker project scope", () => {
     const sourceParent = parent();
     const remote = worker();
     const config = sourceParent.workjetConfig;
-    if (config.schemaVersion !== 2 || config.role !== "orchestrator" || config.team?.role !== "specialist") throw new Error("invalid fixture");
+    if (
+      config.schemaVersion !== 2 ||
+      config.role !== "orchestrator" ||
+      config.team?.role !== "specialist"
+    )
+      throw new Error("invalid fixture");
     const standard = { ...sourceParent, workjetConfig: { ...config, role: "standard" as const } };
-    const mismatch = { ...sourceParent, workjetConfig: { ...config, team: { ...config.team, threadId: ThreadId.make("wrong") } } };
+    const mismatch = {
+      ...sourceParent,
+      workjetConfig: { ...config, team: { ...config.team, threadId: ThreadId.make("wrong") } },
+    };
     for (const invalid of [standard, mismatch]) {
       expect(selectThreadsForProjectScope([invalid, remote], scope)).toEqual([invalid]);
     }
@@ -130,16 +173,27 @@ describe("remote worker project scope", () => {
     for (const hidden of [archived, deleted]) {
       expect(selectThreadsForProjectScope([sourceParent, hidden], scope)).toEqual([sourceParent]);
       expect(selectWorkersForOrchestrator([sourceParent, hidden], source, parentId)).toEqual([]);
-      expect(groupWorkerThreads([sourceParent, hidden])).toEqual({ groups: [], unlinkedWorkers: [] });
+      expect(groupWorkerThreads([sourceParent, hidden])).toEqual({
+        groups: [],
+        unlinkedWorkers: [],
+      });
     }
-    expect(selectThreadsForProjectScope([sourceParent, remote], scope)).toEqual([sourceParent, remote]);
+    expect(selectThreadsForProjectScope([sourceParent, remote], scope)).toEqual([
+      sourceParent,
+      remote,
+    ]);
   });
 
   it("retains existing logical project membership and an empty scope reveals no workers", () => {
     const sourceParent = parent();
     const remote = worker();
-    expect(selectThreadsForProjectScope([remote], new Set([`${target}:${projectId}`]))).toEqual([remote]);
+    expect(selectThreadsForProjectScope([remote], new Set([`${target}:${projectId}`]))).toEqual([
+      remote,
+    ]);
     expect(selectThreadsForProjectScope([sourceParent, remote], new Set())).toEqual([]);
-    expect(selectThreadsForProjectScope([sourceParent, remote], null)).toEqual([sourceParent, remote]);
+    expect(selectThreadsForProjectScope([sourceParent, remote], null)).toEqual([
+      sourceParent,
+      remote,
+    ]);
   });
 });

@@ -60,7 +60,11 @@ export function groupWorkerThreads<T extends WorkerOverviewThreadLike>(
     }
     const existing = groupsByKey.get(parentKey);
     if (existing) existing.workers.push(thread);
-    else groupsByKey.set(parentKey, { orchestrator: orchestratorsByKey.get(parentKey)!, workers: [thread] });
+    else
+      groupsByKey.set(parentKey, {
+        orchestrator: orchestratorsByKey.get(parentKey)!,
+        workers: [thread],
+      });
   }
   return { groups: Array.from(groupsByKey.values()), unlinkedWorkers };
 }
@@ -73,7 +77,9 @@ export function selectWorkersForOrchestrator<T extends WorkerOverviewThreadLike>
 ): ReadonlyArray<T> {
   const key = orchestratorKey(environmentId, orchestratorThreadId);
   const orchestrator = threads.find(
-    (thread) => thread.workjetConfig.role === "orchestrator" && isVisible(thread) &&
+    (thread) =>
+      thread.workjetConfig.role === "orchestrator" &&
+      isVisible(thread) &&
       orchestratorKey(thread.environmentId, thread.id) === key,
   );
   if (!orchestrator) return [];
@@ -94,10 +100,15 @@ export function selectThreadsForProjectScope<
   const inScope = (thread: T) => projectKeys.has(`${thread.environmentId}:${thread.projectId}`);
   const parents = new Map<string, T>();
   for (const thread of threads) {
-    if (!isVisible(thread) || !inScope(thread) || thread.workjetConfig.role !== "orchestrator") continue;
+    if (!isVisible(thread) || !inScope(thread) || thread.workjetConfig.role !== "orchestrator")
+      continue;
     const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
-    if (team?.projectId !== thread.projectId || team.threadId !== thread.id ||
-      (team.role !== "supervisor" && team.role !== "specialist")) continue;
+    if (
+      team?.projectId !== thread.projectId ||
+      team.threadId !== thread.id ||
+      (team.role !== "supervisor" && team.role !== "specialist")
+    )
+      continue;
     parents.set(orchestratorKey(thread.environmentId, thread.id), thread);
   }
   return threads.filter((thread) => {
@@ -106,10 +117,17 @@ export function selectThreadsForProjectScope<
     const config = thread.workjetConfig;
     if (config.schemaVersion !== 2 || config.role !== "worker") return false;
     const team = config.team;
-    const parent = parents.get(orchestratorKey(config.parent.environmentId, config.parent.threadId));
-    return parent !== undefined && thread.environmentId !== parent.environmentId &&
-      thread.projectId === parent.projectId && team?.role === "worker" &&
-      team.projectId === thread.projectId && team.threadId === thread.id &&
-      team.parentThreadId === parent.id;
+    const parent = parents.get(
+      orchestratorKey(config.parent.environmentId, config.parent.threadId),
+    );
+    return (
+      parent !== undefined &&
+      thread.environmentId !== parent.environmentId &&
+      thread.projectId === parent.projectId &&
+      team?.role === "worker" &&
+      team.projectId === thread.projectId &&
+      team.threadId === thread.id &&
+      team.parentThreadId === parent.id
+    );
   });
 }

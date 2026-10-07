@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, MicIcon, SendIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -36,6 +36,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [todoDraft, setTodoDraft] = useState<{ revision: number; items: readonly JourFixeTodo[] } | null>(null);
   const todos = todoDraft?.revision === meeting.todos?.revision ? todoDraft.items : meeting.todos?.items ?? [];
@@ -45,11 +46,12 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
   const hasTodoEdits = todoDraft !== null && todoDraft.revision === meeting.todos?.revision;
   const narration = slide && audio?.slideId === slide.id && audio.deckRevision === meeting.deckRevision && audio.blobUrl.startsWith("blob:") ? audio.blobUrl : undefined;
   async function perform(action: () => Promise<void>, done?: () => void) {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true); setError(null);
     try { await action(); done?.(); }
     catch { setError("Could not confirm this change. Your draft is preserved; refresh the meeting before retrying."); }
-    finally { setBusy(false); }
+    finally { inFlight.current = false; setBusy(false); }
   }
   function updateTodo(id: string, key: "title" | "acceptance", value: string) {
     if (meeting.todos === undefined) return;

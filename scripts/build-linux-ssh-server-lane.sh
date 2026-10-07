@@ -9,6 +9,7 @@ export PATH="/mnt/nvme1/build-lane/cache/node-v24.13.1-linux-x64/bin:$PATH"
 WORKJET_BUILD_CACHE=/mnt/nvme1/build-lane/cache/workjet-linux-ssh
 export npm_config_cache="$WORKJET_BUILD_CACHE/npm"
 export XDG_CACHE_HOME="$WORKJET_BUILD_CACHE/xdg"
+export CI=true npm_config_store_dir="$WORKJET_BUILD_CACHE/store"
 export npm_config_jobs="${CARGO_BUILD_JOBS:-6}"
 export MAKEFLAGS="-j${CARGO_BUILD_JOBS:-6}"
 mkdir -p "$WORKJET_BUILD_CACHE/tools" "$WORKJET_REMOTE_STAGE/output"

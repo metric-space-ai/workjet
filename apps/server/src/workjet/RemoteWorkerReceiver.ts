@@ -45,10 +45,15 @@ export const remoteWorkerCommandId = (requestId: string, step: "project" | "crea
  * git credentials remain in the target's credential helper, never in requests. */
 export const remoteWorkerRepositoryUrl = (request: RemoteWorkerRequest): string | null => {
   try {
-    const url = new URL(request.project.repository.locator.remoteUrl);
-    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash || !url.hostname) return null;
-    if (normalizeGitRemoteUrl(url.href) !== request.project.repository.canonicalKey) return null;
-    return url.href;
+    const remote = request.project.repository.locator.remoteUrl;
+    const scp = /^git@([A-Za-z0-9.-]+):([^?#\s]+)$/.exec(remote);
+    const url = new URL(scp ? `https://${scp[1]}/${scp[2]}` : remote);
+    // Standard git SSH locators are converted to credential-free HTTPS; no
+    // request-supplied SSH command, user credential or local transport executes.
+    const fetchUrl = url.protocol === "ssh:" && url.username === "git" && !url.password && !url.port ? new URL(`https://${url.hostname}${url.pathname}`) : url;
+    if (fetchUrl.protocol !== "https:" || fetchUrl.username || fetchUrl.password || url.search || url.hash || !fetchUrl.hostname) return null;
+    if (normalizeGitRemoteUrl(remote) !== request.project.repository.canonicalKey || normalizeGitRemoteUrl(fetchUrl.href) !== request.project.repository.canonicalKey) return null;
+    return fetchUrl.href;
   } catch { return null; }
 };
 
@@ -86,6 +91,15 @@ export const make = Effect.gen(function* () {
     if (saved.response !== null) {
       if (saved.response.outcome.status === "failed") return yield* failure(saved.response.outcome.reason);
       return saved.response.outcome.result;
+    }
+    if (saved.worktreePath !== null) {
+      const accepted = yield* Effect.all((["create", "turn"] as const).map((step) => receipts.getByCommandId({ commandId: remoteWorkerCommandId(request.requestId, step) }).pipe(Effect.mapError(() => failure("source-unavailable")), Effect.map(Option.getOrUndefined))));
+      if (accepted.every((receipt) => receipt?.aggregateKind === "thread" && receipt.aggregateId === request.requestId && receipt.status === "accepted")) {
+        const result: RemoteWorkerResult = { schemaVersion: 1, status: "dispatched", environmentId: targetEnvironmentId, workerThreadId: request.requestId, computerId: request.computerId,
+          branch: `workjet/worker/${request.requestId}`, worktreePath: saved.worktreePath, parent: request.parent, modelSelection: request.modelSelection, enabledCapabilityIds: request.enabledCapabilityIds };
+        yield* store.complete("inbound", { requestId: request.requestId, outcome: { status: "dispatched", result } }).pipe(Effect.mapError(() => failure("source-unavailable")));
+        return result;
+      }
     }
     const now = yield* DateTime.now;
     if (DateTime.toEpochMillis(DateTime.makeUnsafe(request.expiresAt)) <= DateTime.toEpochMillis(now) ||

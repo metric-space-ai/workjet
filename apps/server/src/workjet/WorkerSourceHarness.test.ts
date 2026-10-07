@@ -45,7 +45,12 @@ it("pins worker identity and model and routes HTTP through source authority with
   expect(oversized.status).toBe(502);
   expect(operations).toEqual(["admit", "infer"]);
   expect(harness.identity.requestDigest).toBe(route.requestDigest);
+  expect(await installWorkerSourceRoute("http-worker", route, pin)).toBe(harness);
+  expect(operations.at(-1)).toBe("admit");
+  await expect(installWorkerSourceRoute("http-worker", { ...route, capability: "substituted" }, pin)).rejects.toThrow("substitution");
+  await expect(installWorkerSourceRoute("http-worker", { ...route, port: 1 }, pin)).rejects.toThrow("substitution");
   await harness.revoke();
+  await expect(installWorkerSourceRoute("http-worker", route, pin)).rejects.toThrow("revocation");
   await expect(harness.admit()).rejects.toThrow("revoked");
   await expect(invoke(pin.modelId)).rejects.toThrow();
 });

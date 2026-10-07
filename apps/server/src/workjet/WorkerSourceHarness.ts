@@ -16,6 +16,7 @@ const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Sc
 const Reply = Schema.Struct({ requestJson: Schema.String });
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
 export interface WorkerSourceHarness {
+  readonly isRevoked: () => boolean;
   readonly identity: Readonly<Pick<WorkerSourceHarnessRoute, "sourceEnvironmentId" | "targetEnvironmentId" | "requestId" | "requestDigest">>;
   readonly admit: () => Promise<void>;
   readonly baseUrl: string;
@@ -24,6 +25,7 @@ export interface WorkerSourceHarness {
   readonly revoke: () => Promise<void>;
 }
 const workers = new Map<string, WorkerSourceHarness>();
+const installedRoutes = new Map<string, WorkerSourceHarnessRoute>();
 export const readWorkerSourceHarness = (threadId: string) => workers.get(threadId);
 
 /** Install before starting the owned worker; revoke with its source connection. */
@@ -34,8 +36,15 @@ export async function installWorkerSourceRoute(
 ): Promise<WorkerSourceHarness> {
   const route = Object.freeze(Schema.decodeUnknownSync(Route)(input));
   const pin = Object.freeze({ ...installation });
-  if (threadId !== route.requestId || route.targetEnvironmentId !== pin.targetEnvironmentId || route.requestDigest !== pin.requestDigest || !pin.modelId.trim() || !Number.isInteger(route.port) || route.port < 1 || route.port > 65535 || workers.has(threadId)) {
+  if (threadId !== route.requestId || route.targetEnvironmentId !== pin.targetEnvironmentId || route.requestDigest !== pin.requestDigest || !pin.modelId.trim() || !Number.isInteger(route.port) || route.port < 1 || route.port > 65535) {
     throw new Error("Invalid or duplicate worker source route");
+  }
+  const existing = workers.get(threadId);
+  if (existing) {
+    const original = installedRoutes.get(threadId);
+    if (!original || existing.isRevoked() || original.sourceEnvironmentId !== route.sourceEnvironmentId || original.targetEnvironmentId !== route.targetEnvironmentId || original.requestId !== route.requestId || original.requestDigest !== route.requestDigest || original.capability !== route.capability || original.port !== route.port || existing.model !== pin.modelId) throw new Error("Worker source route substitution or revocation");
+    await existing.admit();
+    return existing;
   }
   const apiKey = randomBytes(32).toString("hex");
   const active = new Set<AbortController>();
@@ -113,6 +122,7 @@ export async function installWorkerSourceRoute(
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
   const harness: WorkerSourceHarness = {
+    isRevoked: () => revoked,
     identity: Object.freeze({ sourceEnvironmentId: route.sourceEnvironmentId, targetEnvironmentId: route.targetEnvironmentId, requestId: route.requestId, requestDigest: route.requestDigest }),
     admit: async () => {
       if (revoked) throw new Error("Worker route revoked");
@@ -133,5 +143,6 @@ export async function installWorkerSourceRoute(
     },
   };
   workers.set(threadId, harness);
+  installedRoutes.set(threadId, route);
   return harness;
 }

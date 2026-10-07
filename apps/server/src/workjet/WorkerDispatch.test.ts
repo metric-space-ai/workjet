@@ -660,7 +660,21 @@ it.effect("a project supervisor dispatches an isolated leaf with its durable par
       },
     } as OrchestrationThread;
     const harness = makeHarness({ currentParent: supervisor });
-    const service = yield* harness.service;
+    const service = yield* harness.service.pipe(
+      Effect.provideService(WorkjetSnapshotStore, {
+        put: (prompt: string) =>
+          Effect.succeed({
+            snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+            digest: WorkjetContentDigest.make("a".repeat(64)),
+            byteLength: prompt.length,
+          }),
+      } as unknown as WorkjetSnapshotStore["Service"]),
+      Effect.provideService(WorkjetMeshIdentity, {
+        workspaceId: WorkjetMeshWorkspaceId.make("workspace-test"),
+        signRoutingEnvelope: (envelope: object) =>
+          Effect.succeed({ ...envelope, signature: "c2lnbmF0dXJlLXN0dWI" }),
+      } as unknown as WorkjetMeshIdentity["Service"]),
+    );
     const result = yield* service.dispatch(invocation, { task: "Implement one bounded PR." });
     expect(result.parent).toEqual({ environmentId, threadId: parent.id });
     expect(harness.worktreeCreates).toHaveLength(1);

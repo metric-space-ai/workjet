@@ -103,9 +103,11 @@ export function requireProjectTeamOwnership(input: {
     config.parent.threadId !== team.parentThreadId ||
     !input.environmentId ||
     config.parent.environmentId !== input.environmentId ||
-    parentTeam?.role !== "specialist"
+    (parentTeam?.role !== "specialist" && parentTeam?.role !== "supervisor")
   ) {
-    return fail("A project worker must be owned by a specialist and cannot spawn children.");
+    return fail(
+      "A project worker must be owned by a supervisor or specialist and cannot spawn children.",
+    );
   }
   return Effect.void;
 }

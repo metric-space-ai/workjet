@@ -233,12 +233,13 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             parent.archivedAt !== null ||
             parent.projectId !== command.projectId ||
             parent.workjetConfig.schemaVersion !== 2 ||
-            parent.workjetConfig.team?.role !== "specialist"
+            (parent.workjetConfig.team?.role !== "specialist" &&
+              parent.workjetConfig.team?.role !== "supervisor")
           ) {
             return yield* new OrchestrationCommandInvariantError({
               commandType: command.type,
               detail:
-                "Worker creation and delegation must share an active local specialist parent.",
+                "Worker creation and delegation must share an active local supervisor or specialist parent.",
             });
           }
           if (
@@ -249,7 +250,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           ) {
             return yield* new OrchestrationCommandInvariantError({
               commandType: command.type,
-              detail: "Worker capabilities exceed the specialist's current grants.",
+              detail: "Worker capabilities exceed the parent's current grants.",
             });
           }
         }

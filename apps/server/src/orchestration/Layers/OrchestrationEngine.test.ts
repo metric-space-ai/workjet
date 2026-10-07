@@ -406,234 +406,239 @@ describe("OrchestrationEngine", () => {
     }
   });
 
-  it("commits worker creation and delegation together and retries a failed transaction", async () => {
-    const environmentId = EnvironmentId.make("atomic-worker-env");
-    const system = await createOrchestrationSystem(environmentId);
-    const projectId = asProjectId("atomic-worker-project");
-    const specialistId = ThreadId.make("atomic-specialist");
-    const workerId = ThreadId.make("atomic-worker");
-    try {
-      await system.run(
-        system.engine.dispatch({
-          type: "project.create",
-          commandId: CommandId.make("atomic-project-create"),
+  it.each(["specialist", "supervisor"] as const)(
+    "commits worker creation and delegation for a %s together and retries a failed transaction",
+    async (parentRole) => {
+      const environmentId = EnvironmentId.make("atomic-worker-env");
+      const system = await createOrchestrationSystem(environmentId);
+      const projectId = asProjectId("atomic-worker-project");
+      let specialistId = ThreadId.make("atomic-specialist");
+      const workerId = ThreadId.make("atomic-worker");
+      try {
+        await system.run(
+          system.engine.dispatch({
+            type: "project.create",
+            commandId: CommandId.make("atomic-project-create"),
+            projectId,
+            title: "Atomic worker",
+            workspaceRoot: "/fixture/atomic-worker",
+            createdAt: now(),
+          }),
+        );
+        const supervisor = (await system.readModel()).threads[0]!;
+        if (parentRole === "supervisor") specialistId = supervisor.id;
+        const common = {
           projectId,
-          title: "Atomic worker",
-          workspaceRoot: "/fixture/atomic-worker",
+          title: "Team member",
+          modelSelection: supervisor.modelSelection,
+          runtimeMode: supervisor.runtimeMode,
+          interactionMode: supervisor.interactionMode,
+          branch: "test",
+          worktreePath: "/fixture/atomic-worker/member",
           createdAt: now(),
-        }),
-      );
-      const supervisor = (await system.readModel()).threads[0]!;
-      const common = {
-        projectId,
-        title: "Team member",
-        modelSelection: supervisor.modelSelection,
-        runtimeMode: supervisor.runtimeMode,
-        interactionMode: supervisor.interactionMode,
-        branch: "test",
-        worktreePath: "/fixture/atomic-worker/member",
-        createdAt: now(),
-      };
-      await system.run(
-        system.engine.dispatch({
+        };
+        if (parentRole === "specialist")
+          await system.run(
+            system.engine.dispatch({
+              ...common,
+              type: "thread.create",
+              commandId: CommandId.make("atomic-specialist-create"),
+              threadId: specialistId,
+              workjetConfig: {
+                schemaVersion: 2,
+                role: "orchestrator",
+                parent: null,
+                managedInstructions: "",
+                enabledCapabilityIds: [],
+                capabilityBindings: [],
+                team: {
+                  role: "specialist",
+                  domain: "implementation",
+                  goal: "Implement the project",
+                  projectId,
+                  threadId: specialistId,
+                  parentThreadId: supervisor.id,
+                  createdAt: now(),
+                },
+              },
+            }),
+          );
+        const command = {
           ...common,
           type: "thread.create",
-          commandId: CommandId.make("atomic-specialist-create"),
-          threadId: specialistId,
+          commandId: CommandId.make("atomic-worker-create"),
+          threadId: workerId,
           workjetConfig: {
             schemaVersion: 2,
-            role: "orchestrator",
-            parent: null,
+            role: "worker",
+            parent: { environmentId, threadId: specialistId },
             managedInstructions: "",
             enabledCapabilityIds: [],
             capabilityBindings: [],
             team: {
-              role: "specialist",
-              domain: "implementation",
-              goal: "Implement the project",
+              role: "worker",
+              packageId: workerId,
+              goal: "Implement the package",
               projectId,
-              threadId: specialistId,
-              parentThreadId: supervisor.id,
+              threadId: workerId,
+              parentThreadId: specialistId,
               createdAt: now(),
             },
           },
-        }),
-      );
-      const command = {
-        ...common,
-        type: "thread.create",
-        commandId: CommandId.make("atomic-worker-create"),
-        threadId: workerId,
-        workjetConfig: {
-          schemaVersion: 2,
-          role: "worker",
-          parent: { environmentId, threadId: specialistId },
-          managedInstructions: "",
-          enabledCapabilityIds: [],
-          capabilityBindings: [],
-          team: {
-            role: "worker",
-            packageId: workerId,
-            goal: "Implement the package",
-            projectId,
-            threadId: workerId,
-            parentThreadId: specialistId,
-            createdAt: now(),
-          },
-        },
-      } as const satisfies OrchestrationCommand;
-      const workspaceId = WorkjetMeshWorkspaceId.make("atomic-workspace");
-      const envelopeId = WorkjetEnvelopeId.make("wjm-atomic-worker-envelope-000001");
-      const source = {
-        schemaVersion: 1 as const,
-        workspaceId,
-        environmentId,
-        threadId: specialistId,
-      };
-      const expiresAt = "2026-01-08T00:00:00.000Z";
-      const delegation = {
-        schemaVersion: 1,
-        delegationId: WorkjetDelegationId.make("wjd-atomic-worker-delegation-000001"),
-        envelopeId,
-        source,
-        target: { ...source, threadId: workerId },
-        createdAt: now(),
-        expiresAt,
-        prompt: {
+        } as const satisfies OrchestrationCommand;
+        const workspaceId = WorkjetMeshWorkspaceId.make("atomic-workspace");
+        const envelopeId = WorkjetEnvelopeId.make("wjm-atomic-worker-envelope-000001");
+        const source = {
+          schemaVersion: 1 as const,
+          workspaceId,
+          environmentId,
+          threadId: specialistId,
+        };
+        const expiresAt = "2026-01-08T00:00:00.000Z";
+        const delegation = {
           schemaVersion: 1,
-          snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
-          digest: WorkjetContentDigest.make("a".repeat(64)),
-          byteLength: 42,
-        },
-        scope: {
-          schemaVersion: 1,
-          files: [WorkjetRepositoryPath.make(".")],
-          nonGoals: "No unrelated changes.",
-        },
-        completion: { schemaVersion: 1, acceptance: "Complete the implementation." },
-        budget: { schemaVersion: 1, maxDepth: 1, maxReviewRounds: 2, expiresAt },
-        state: "queued",
-        stateChangedAt: now(),
-        depth: 0,
-      } as const satisfies WorkjetDelegation;
-      const options = {
-        workerDelegation: {
-          delegation,
-          envelope: {
-            schemaVersion: 1 as const,
-            envelopeId,
-            kind: "delegation" as const,
-            sourceWorkspaceId: workspaceId,
-            targetWorkspaceId: workspaceId,
-            sourceEnvironmentId: environmentId,
-            targetEnvironmentId: environmentId,
-            createdAt: now(),
-            expiresAt,
-            signature: "c2lnbmF0dXJlLXN0dWI",
+          delegationId: WorkjetDelegationId.make("wjd-atomic-worker-delegation-000001"),
+          envelopeId,
+          source,
+          target: { ...source, threadId: workerId },
+          createdAt: now(),
+          expiresAt,
+          prompt: {
+            schemaVersion: 1,
+            snapshotRef: WorkjetSealedPayloadRef.make("c25hcHNob3QtcmVmZXJlbmNlLTAwMQ"),
+            digest: WorkjetContentDigest.make("a".repeat(64)),
+            byteLength: 42,
           },
-        },
-      };
-      const before = await system.run(system.engine.latestSequence);
-      await expect(
-        system.run(
-          system.engine.dispatch(
-            {
-              ...command,
-              commandId: CommandId.make("atomic-worker-escalation"),
-              workjetConfig: { ...command.workjetConfig, enabledCapabilityIds: ["web-search"] },
-            },
-            options,
-          ),
-        ),
-      ).rejects.toMatchObject({
-        _tag: "OrchestrationCommandInvariantError",
-        detail: "Worker capabilities exceed the specialist's current grants.",
-      });
-      expect(await system.run(system.engine.latestSequence)).toBe(before);
-      await system.run(system.sql`CREATE TRIGGER fail_worker_delegation
-        BEFORE INSERT ON workjet_delegations
-        BEGIN SELECT RAISE(ABORT, 'injected worker delegation failure'); END`);
-      await expect(system.run(system.engine.dispatch(command, options))).rejects.toMatchObject({
-        _tag: "PersistenceSqlError",
-      });
-      expect((await system.readModel()).threads.some((thread) => thread.id === workerId)).toBe(
-        false,
-      );
-      expect(await system.run(system.engine.latestSequence)).toBe(before);
-      expect(
-        await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
-      ).toHaveLength(0);
-      await system.run(system.sql`DROP TRIGGER fail_worker_delegation`);
-      const accepted = await system.run(system.engine.dispatch(command, options));
-      expect(
-        (await system.readModel()).threads.filter((thread) => thread.id === workerId),
-      ).toHaveLength(1);
-      expect(
-        await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
-      ).toHaveLength(1);
-      expect(
-        await system.run(system.sql`SELECT delegation_id FROM workjet_delegations`),
-      ).toHaveLength(1);
-      expect(await system.run(system.engine.dispatch(command, options))).toEqual(accepted);
-      for (const collision of ["delegation", "envelope"] as const) {
-        const otherWorkerId = ThreadId.make(`atomic-worker-collision-${collision}`);
-        const otherCommand = {
-          ...command,
-          commandId: CommandId.make(`atomic-collision-${collision}`),
-          threadId: otherWorkerId,
-          workjetConfig: {
-            ...command.workjetConfig,
-            team: {
-              ...command.workjetConfig.team,
-              threadId: otherWorkerId,
-              packageId: otherWorkerId,
+          scope: {
+            schemaVersion: 1,
+            files: [WorkjetRepositoryPath.make(".")],
+            nonGoals: "No unrelated changes.",
+          },
+          completion: { schemaVersion: 1, acceptance: "Complete the implementation." },
+          budget: { schemaVersion: 1, maxDepth: 1, maxReviewRounds: 2, expiresAt },
+          state: "queued",
+          stateChangedAt: now(),
+          depth: 0,
+        } as const satisfies WorkjetDelegation;
+        const options = {
+          workerDelegation: {
+            delegation,
+            envelope: {
+              schemaVersion: 1 as const,
+              envelopeId,
+              kind: "delegation" as const,
+              sourceWorkspaceId: workspaceId,
+              targetWorkspaceId: workspaceId,
+              sourceEnvironmentId: environmentId,
+              targetEnvironmentId: environmentId,
+              createdAt: now(),
+              expiresAt,
+              signature: "c2lnbmF0dXJlLXN0dWI",
             },
           },
         };
-        const otherEnvelopeId =
-          collision === "envelope"
-            ? envelopeId
-            : WorkjetEnvelopeId.make("wjm-distinct-envelope-for-collision");
-        const otherDelegation = {
-          ...delegation,
-          envelopeId: otherEnvelopeId,
-          delegationId:
-            collision === "delegation"
-              ? delegation.delegationId
-              : WorkjetDelegationId.make("wjd-distinct-delegation-for-collision"),
-          target: { ...delegation.target, threadId: otherWorkerId },
-        };
-        const sequence = await system.run(system.engine.latestSequence);
+        const before = await system.run(system.engine.latestSequence);
         await expect(
           system.run(
-            system.engine.dispatch(otherCommand, {
-              workerDelegation: {
-                delegation: otherDelegation,
-                envelope: { ...options.workerDelegation.envelope, envelopeId: otherEnvelopeId },
+            system.engine.dispatch(
+              {
+                ...command,
+                commandId: CommandId.make("atomic-worker-escalation"),
+                workjetConfig: { ...command.workjetConfig, enabledCapabilityIds: ["web-search"] },
               },
-            }),
+              options,
+            ),
           ),
-        ).rejects.toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
-        expect(await system.run(system.engine.latestSequence)).toBe(sequence);
+        ).rejects.toMatchObject({
+          _tag: "OrchestrationCommandInvariantError",
+          detail: "Worker capabilities exceed the parent's current grants.",
+        });
+        expect(await system.run(system.engine.latestSequence)).toBe(before);
+        await system.run(system.sql`CREATE TRIGGER fail_worker_delegation
+        BEFORE INSERT ON workjet_delegations
+        BEGIN SELECT RAISE(ABORT, 'injected worker delegation failure'); END`);
+        await expect(system.run(system.engine.dispatch(command, options))).rejects.toMatchObject({
+          _tag: "PersistenceSqlError",
+        });
+        expect((await system.readModel()).threads.some((thread) => thread.id === workerId)).toBe(
+          false,
+        );
+        expect(await system.run(system.engine.latestSequence)).toBe(before);
         expect(
-          (await system.readModel()).threads.some((thread) => thread.id === otherWorkerId),
-        ).toBe(false);
+          await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
+        ).toHaveLength(0);
+        await system.run(system.sql`DROP TRIGGER fail_worker_delegation`);
+        const accepted = await system.run(system.engine.dispatch(command, options));
+        expect(
+          (await system.readModel()).threads.filter((thread) => thread.id === workerId),
+        ).toHaveLength(1);
         expect(
           await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
         ).toHaveLength(1);
         expect(
           await system.run(system.sql`SELECT delegation_id FROM workjet_delegations`),
         ).toHaveLength(1);
-      }
+        expect(await system.run(system.engine.dispatch(command, options))).toEqual(accepted);
+        for (const collision of ["delegation", "envelope"] as const) {
+          const otherWorkerId = ThreadId.make(`atomic-worker-collision-${collision}`);
+          const otherCommand = {
+            ...command,
+            commandId: CommandId.make(`atomic-collision-${collision}`),
+            threadId: otherWorkerId,
+            workjetConfig: {
+              ...command.workjetConfig,
+              team: {
+                ...command.workjetConfig.team,
+                threadId: otherWorkerId,
+                packageId: otherWorkerId,
+              },
+            },
+          };
+          const otherEnvelopeId =
+            collision === "envelope"
+              ? envelopeId
+              : WorkjetEnvelopeId.make("wjm-distinct-envelope-for-collision");
+          const otherDelegation = {
+            ...delegation,
+            envelopeId: otherEnvelopeId,
+            delegationId:
+              collision === "delegation"
+                ? delegation.delegationId
+                : WorkjetDelegationId.make("wjd-distinct-delegation-for-collision"),
+            target: { ...delegation.target, threadId: otherWorkerId },
+          };
+          const sequence = await system.run(system.engine.latestSequence);
+          await expect(
+            system.run(
+              system.engine.dispatch(otherCommand, {
+                workerDelegation: {
+                  delegation: otherDelegation,
+                  envelope: { ...options.workerDelegation.envelope, envelopeId: otherEnvelopeId },
+                },
+              }),
+            ),
+          ).rejects.toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
+          expect(await system.run(system.engine.latestSequence)).toBe(sequence);
+          expect(
+            (await system.readModel()).threads.some((thread) => thread.id === otherWorkerId),
+          ).toBe(false);
+          expect(
+            await system.run(system.sql`SELECT envelope_id FROM workjet_mailbox_outbox`),
+          ).toHaveLength(1);
+          expect(
+            await system.run(system.sql`SELECT delegation_id FROM workjet_delegations`),
+          ).toHaveLength(1);
+        }
 
-      const events = await system.run(Stream.runCollect(system.engine.readEvents(before)));
-      expect(
-        Array.from(events).filter((event) => event.type === "thread.turn-start-requested"),
-      ).toHaveLength(0);
-    } finally {
-      await system.dispose();
-    }
-  });
+        const events = await system.run(Stream.runCollect(system.engine.readEvents(before)));
+        expect(
+          Array.from(events).filter((event) => event.type === "thread.turn-start-requested"),
+        ).toHaveLength(0);
+      } finally {
+        await system.dispose();
+      }
+    },
+  );
 
   it("admits only one of two concurrent background starts", async () => {
     const system = await createOrchestrationSystem();

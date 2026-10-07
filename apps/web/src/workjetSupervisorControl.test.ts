@@ -141,10 +141,18 @@ describe("durable native supervisor submission", () => {
   });
   it("records a pre-submit refusal without treating a lost submit reply as a refusal", async () => {
     const observations: WorkjetSupervisorJournal[] = [];
-    const result = await submitWorkjetSupervisorTurn(intent, { save: async (value) => { observations.push(value); } }, async (_instance, request) => {
-      expect(request.action).toBe("project.supervisor.bind");
-      return { _tag: "failed", code: "unsupported" };
-    });
+    const result = await submitWorkjetSupervisorTurn(
+      intent,
+      {
+        save: async (value) => {
+          observations.push(value);
+        },
+      },
+      async (_instance, request) => {
+        expect(request.action).toBe("project.supervisor.bind");
+        return { _tag: "failed", code: "unsupported" };
+      },
+    );
     expect(result).toEqual({ _tag: "failed", code: "unsupported" });
     expect(observations.map((value) => value.submission)).toEqual(["prepared", "not-submitted"]);
     expect(observations.at(-1)?.submissionError).toBe("unsupported");

@@ -181,16 +181,71 @@ it.layer(NodeServices.layer)("Workjet thread configuration decider", (it) => {
   it.effect("retains an uncertain native submit and rejects a new command before its receipt", () =>
     Effect.gen(function* () {
       const nativeThreadId = ThreadId.make("e28290b0-7b0a-4d19-a242-f27041fadb84");
-      const intent = { instanceId: "managed:acceptance", projectId: PROJECT_ID, threadId: nativeThreadId, commandId: CommandId.make("native-submit-one"), goal: "Make the project change.", createdAt: NOW };
+      const intent = {
+        instanceId: "managed:acceptance",
+        projectId: PROJECT_ID,
+        threadId: nativeThreadId,
+        commandId: CommandId.make("native-submit-one"),
+        goal: "Make the project change.",
+        createdAt: NOW,
+      };
       const journal = { intent, turn: null, submission: "awaiting-receipt" as const };
-      const boundReadModel: OrchestrationReadModel = { ...readModel, threads: [{ ...readModel.threads[0]!, id: nativeThreadId, workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxSupervisorTurn: journal } }] };
-      const retained = yield* decideOrchestrationCommand({ command: { type: "thread.workjet-config.set", commandId: CommandId.make("unrelated-config-update"), threadId: nativeThreadId, workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG, createdAt: NOW }, readModel: boundReadModel });
+      const boundReadModel: OrchestrationReadModel = {
+        ...readModel,
+        threads: [
+          {
+            ...readModel.threads[0]!,
+            id: nativeThreadId,
+            workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxSupervisorTurn: journal },
+          },
+        ],
+      };
+      const retained = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("unrelated-config-update"),
+          threadId: nativeThreadId,
+          workjetConfig: DEFAULT_WORKJET_THREAD_CONFIG,
+          createdAt: NOW,
+        },
+        readModel: boundReadModel,
+      });
       const event = retained as Extract<OrchestrationEvent, { type: "thread.workjet-config-set" }>;
       expect(event.payload.workjetConfig).toMatchObject({ ctoxSupervisorTurn: journal });
-      const error = yield* decideOrchestrationCommand({ command: { type: "thread.workjet-config.set", commandId: CommandId.make("second-config-update"), threadId: nativeThreadId, workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxSupervisorTurn: { ...journal, intent: { ...intent, commandId: CommandId.make("native-submit-two") } } }, createdAt: NOW }, readModel: boundReadModel }).pipe(Effect.flip);
+      const error = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("second-config-update"),
+          threadId: nativeThreadId,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            ctoxSupervisorTurn: {
+              ...journal,
+              intent: { ...intent, commandId: CommandId.make("native-submit-two") },
+            },
+          },
+          createdAt: NOW,
+        },
+        readModel: boundReadModel,
+      }).pipe(Effect.flip);
       expect(error._tag).toBe("OrchestrationCommandInvariantError");
       expect(error.message).toContain("still unresolved");
-      const wrongThread = yield* decideOrchestrationCommand({ command: { type: "thread.workjet-config.set", commandId: CommandId.make("wrong-thread-journal"), threadId: nativeThreadId, workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, ctoxSupervisorTurn: { ...journal, intent: { ...intent, threadId: "6f688cca-f01b-4e08-ac6e-d91c9c512d5b" } } }, createdAt: NOW }, readModel: boundReadModel }).pipe(Effect.flip);
+      const wrongThread = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make("wrong-thread-journal"),
+          threadId: nativeThreadId,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            ctoxSupervisorTurn: {
+              ...journal,
+              intent: { ...intent, threadId: "6f688cca-f01b-4e08-ac6e-d91c9c512d5b" },
+            },
+          },
+          createdAt: NOW,
+        },
+        readModel: boundReadModel,
+      }).pipe(Effect.flip);
       expect(wrongThread.message).toContain("this Code thread");
     }),
   );

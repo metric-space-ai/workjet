@@ -55,23 +55,29 @@ async function dispatchSavedSupervisorTurn(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   const { intent } = saved;
-  if (saved.submission === "not-submitted") return { _tag: "failed", code: saved.submissionError ?? "unsupported" };
+  if (saved.submission === "not-submitted")
+    return { _tag: "failed", code: saved.submissionError ?? "unsupported" };
   await journal.save(saved);
   if (saved.submission === "prepared") {
-  const binding = await confirmedControl(
-    intent,
-    {
-      action: "project.supervisor.bind",
-      commandId: CommandId.make(`${intent.commandId}:bind`),
-      projectId: intent.projectId,
-      threadId: intent.threadId,
-    },
-    port,
-  );
-  if (binding._tag !== "completed") {
-    await journal.save({ intent, turn: null, submission: "not-submitted", submissionError: binding.code });
-    return binding;
-  }
+    const binding = await confirmedControl(
+      intent,
+      {
+        action: "project.supervisor.bind",
+        commandId: CommandId.make(`${intent.commandId}:bind`),
+        projectId: intent.projectId,
+        threadId: intent.threadId,
+      },
+      port,
+    );
+    if (binding._tag !== "completed") {
+      await journal.save({
+        intent,
+        turn: null,
+        submission: "not-submitted",
+        submissionError: binding.code,
+      });
+      return binding;
+    }
   }
   // Persist the uncertainty boundary before the first native submit can start.
   await journal.save({ intent, turn: null, submission: "awaiting-receipt" });
@@ -113,7 +119,11 @@ export async function resumeWorkjetSupervisorTurn(
     port,
   );
   if (result._tag === "completed" && result.response.action === "project.supervisor.turn.watch") {
-    await journal.save({ intent: saved.intent, turn: result.response.turn, submission: "confirmed" });
+    await journal.save({
+      intent: saved.intent,
+      turn: result.response.turn,
+      submission: "confirmed",
+    });
   }
   return result;
 }

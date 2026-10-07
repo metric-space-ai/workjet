@@ -70,11 +70,22 @@ export const WorkjetSupervisorJournal = Schema.Struct({
   intent: WorkjetSupervisorTurnIntent,
   turn: Schema.NullOr(WorkjetSupervisorTurn),
   submission: Schema.Literals(["prepared", "awaiting-receipt", "confirmed", "not-submitted"]),
-  submissionError: Schema.optionalKey(Schema.Literals(["invalid_input", "not_active", "launch_failed", "authentication_required", "unsupported", "timeout", "guest_failed", "response_too_large"])),
+  submissionError: Schema.optionalKey(
+    Schema.Literals([
+      "invalid_input",
+      "not_active",
+      "launch_failed",
+      "authentication_required",
+      "unsupported",
+      "timeout",
+      "guest_failed",
+      "response_too_large",
+    ]),
+  ),
 }).check(
   Schema.makeFilter((journal) =>
     (journal.turn === null || journal.turn.threadId === journal.intent.threadId) &&
-    ((journal.submission === "confirmed") === (journal.turn !== null)) &&
+    (journal.submission === "confirmed") === (journal.turn !== null) &&
     (journal.submission !== "not-submitted" || journal.submissionError !== undefined)
       ? true
       : "The observed native turn belongs to another submission intent.",

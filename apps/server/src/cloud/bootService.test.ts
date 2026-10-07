@@ -21,7 +21,11 @@ import * as BootService from "./bootService.ts";
 import { acquireProfileOwnership, acquireDatabaseAccess } from "../profileOwnership.ts";
 import { PersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
-import { BUNDLED_RUNTIME_RECEIPT, bundledRuntimeNodePath } from "./bundledRuntime.ts";
+import {
+  BUNDLED_RUNTIME_RECEIPT,
+  bundledRuntimeNodePath,
+  stableBundledRuntimeNodePath,
+} from "./bundledRuntime.ts";
 import {
   parseServiceState,
   SERVICE_LAUNCHER_PROTOCOL,
@@ -106,7 +110,11 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
   if (bundle !== undefined) {
     const nodePath = bundledRuntimeNodePath(runtime.entryPath);
     yield* fs.makeDirectory(path.dirname(nodePath), { recursive: true });
-    yield* fs.writeFileString(nodePath, "fixture");
+    yield* fs.writeFileString(nodePath, "fixture", { mode: 0o755 });
+    yield* fs.writeFileString(
+      path.join(path.dirname(nodePath), "../workjet-runtime.json"),
+      '{"version":"24.13.1","platform":"darwin","arch":"arm64"}',
+    );
     yield* fs.writeFileString(
       path.join(runtime.versionDir, BUNDLED_RUNTIME_RECEIPT),
       `${bundle.sha256}\n`,
@@ -158,31 +166,61 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         };
       }),
   });
-  const service = yield* BootService.make({
-    baseDir: aliasProfile ? profileAlias : baseDir,
-    logsDir: path.join(baseDir, "userdata", "logs"),
-    cliVersion: "1.2.3",
-    host: {
-      execPath: "/usr/bin/node",
-      requireFreshProfile,
-      migrateStoppedProfile,
-      ...(desktop === undefined ? {} : { desktop }),
-      ...(bundle === undefined ? {} : { bundle }),
-      ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
-    },
-  }).pipe(
-    Effect.provideService(ProcessRunner.ProcessRunner, runner),
-    Effect.provide(
-      Layer.mergeAll(
-        Layer.succeed(HostProcessPlatform, platform),
-        Layer.succeed(HostProcessUserId, 501),
-        Layer.succeed(HostProcessExecutablePath, "/usr/bin/node"),
-        Layer.succeed(HostProcessArguments, ["/usr/bin/node", path.join(home, "bin.mjs")]),
-        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { HOME: home } })),
+  const makeService = (version: string) =>
+    BootService.make({
+      baseDir: aliasProfile ? profileAlias : baseDir,
+      logsDir: path.join(baseDir, "userdata", "logs"),
+      cliVersion: version,
+      host: {
+        execPath: "/usr/bin/node",
+        requireFreshProfile,
+        migrateStoppedProfile,
+        ...(desktop === undefined ? {} : { desktop }),
+        ...(bundle === undefined ? {} : { bundle }),
+        ...(usePinnedLauncher ? {} : { launcherSourcePath: sourceLauncher }),
+      },
+    }).pipe(
+      Effect.provideService(ProcessRunner.ProcessRunner, runner),
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(HostProcessPlatform, platform),
+          Layer.succeed(HostProcessUserId, 501),
+          Layer.succeed(HostProcessExecutablePath, "/usr/bin/node"),
+          Layer.succeed(HostProcessArguments, ["/usr/bin/node", path.join(home, "bin.mjs")]),
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { HOME: home } })),
+        ),
       ),
-    ),
+    );
+  const service = yield* makeService("1.2.3");
+  return { service, makeService, fs, statePath, commands, control, baseDir, runtime, path };
+});
+
+it.layer(NodeServices.layer)("stable macOS Node updates", (it) => {
+  it.effect("retains the LaunchAgent executable through two subsequent bundled updates", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness("darwin", false, false, true);
+      const first = yield* h.service.install;
+      const original = yield* h.fs.readFileString(first.nodePath);
+      for (const version of ["1.2.4", "1.2.5"]) {
+        const next = pinnedRuntimePaths(h.path, h.baseDir, version);
+        yield* h.fs.copy(h.runtime.versionDir, next.versionDir);
+        yield* h.fs.writeFileString(next.sentinelPath, `${version}\n`);
+        yield* h.fs.writeFileString(bundledRuntimeNodePath(next.entryPath), "later packaged node");
+        h.control.verificationVersion = version;
+        const service = yield* h.makeService(version);
+        const plan = yield* service.install;
+        expect(plan.nodePath).toBe(first.nodePath);
+        expect(yield* h.fs.readFileString(plan.nodePath)).toBe(original);
+        expect(yield* h.fs.readFileString(plan.unitPath)).toContain(first.nodePath);
+        expect(parseServiceState(yield* h.fs.readFileString(h.statePath))?.activeVersion).toBe(
+          version,
+        );
+        expect((yield* service.status).current).toBe(true);
+        const reopenedService = yield* h.makeService(version);
+        expect((yield* reopenedService.status).current).toBe(true);
+      }
+    }),
   );
-  return { service, fs, statePath, commands, control, baseDir, runtime, path };
 });
 
 it.layer(NodeServices.layer)("bundled service executable", (it) => {
@@ -676,7 +714,11 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
             true,
           );
           const plan = yield* service.install;
-          expect(plan.nodePath).toBe(bundledRuntimeNodePath(runtime.entryPath));
+          expect(plan.nodePath).toBe(
+            platform === "darwin"
+              ? stableBundledRuntimeNodePath(plan.baseDir, "24.13.1")
+              : bundledRuntimeNodePath(runtime.entryPath),
+          );
           expect(commands).toContain(`${plan.nodePath} ${runtime.entryPath} --version`);
           expect(yield* fs.readFileString(plan.launcherPath)).toBe(
             "export const source = 'pinned runtime';\n",

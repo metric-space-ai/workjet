@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { WorkjetProjectTeamMember } from "./workjetProjectTeam.ts";
+import { WorkjetSupervisorJournal } from "./workjetSupervisor.ts";
 import {
   EnvironmentId,
   NonNegativeInt,
@@ -985,6 +986,7 @@ const WorkjetThreadConfigV2BaseFields = {
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
   capabilityBindings: Schema.Array(WorkjetCapabilityBinding),
   ctoxCrewChat: Schema.optionalKey(WorkjetThreadCtoxCrewChat),
+  ctoxSupervisorTurn: Schema.optionalKey(WorkjetSupervisorJournal),
   ctoxProject: Schema.optionalKey(WorkjetThreadCtoxProject),
   ctoxSession: Schema.optionalKey(Schema.NullOr(WorkjetThreadCtoxSession)).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),

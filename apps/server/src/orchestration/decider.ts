@@ -1059,6 +1059,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (
+        command.workjetConfig.schemaVersion === 2 &&
+        command.workjetConfig.ctoxSupervisorTurn &&
+        command.workjetConfig.ctoxSupervisorTurn.intent.threadId !== command.threadId
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Native supervisor submission must belong to this Code thread.",
+        });
+      }
       const retainedPr = retainWorkjetWorkerPullRequest(
         thread.workjetConfig,
         command.workjetConfig,

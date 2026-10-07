@@ -88,6 +88,7 @@ import Migration0073 from "./Migrations/073_LogicalProjects.ts";
 import Migration0074 from "./Migrations/074_ProjectOverview.ts";
 import Migration0075 from "./Migrations/075_WorkjetWorkerPullRequests.ts";
 import Migration0076 from "./Migrations/076_RemoteWorkerReceipts.ts";
+import Migration0078 from "./Migrations/078_RemoteWorkerAuthority.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -176,6 +177,8 @@ export const migrationEntries = [
   [74, "ProjectOverview", Migration0074],
   [75, "WorkjetWorkerPullRequests", Migration0075],
   [76, "RemoteWorkerReceipts", Migration0076],
+  // 77 is reserved for worker connection persistence.
+  [78, "RemoteWorkerAuthority", Migration0078],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

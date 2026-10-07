@@ -6,6 +6,7 @@ import {
   TrimmedNonEmptyString,
   WorkjetCapabilityId,
   WorkjetComputerId,
+  WorkjetWorkerProfileId,
   WorkjetParentThreadReference,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -41,6 +42,7 @@ export const CanonicalWorkerModelSelection = Schema.Struct({
 export const WorkerDispatchInputSchema = Schema.Struct({
   task: NonBlankTask,
   remoteRequestId: Schema.optional(ThreadId),
+  workerProfileId: Schema.optional(WorkjetWorkerProfileId),
   computerId: Schema.optional(WorkjetComputerId),
   title: Schema.optional(OptionalWorkerTitle),
   enabledCapabilityIds: Schema.optional(DelegatedCapabilityIds),
@@ -83,7 +85,7 @@ const enabledWhen = () => {
 
 export const WorkerDispatchMcpTool = Tool.make(WORKJET_DISPATCH_WORKER_TOOL_NAME, {
   description:
-    "Create one isolated Workjet worker on a registered computer and start its first turn. Remote worktrees and execution belong to that computer. Returns its actual computer, branch and worktree. If a remote acknowledgement is pending, preserve remoteRequestId and retry only that ID; never dispatch a second worker to recover the first.",
+    "Create one isolated Workjet worker on a registered computer and start its first turn. Remote worktrees and execution belong to that computer. Select workerProfileId when the computer has multiple worker profiles; the configured profile supplies its model and account route. Returns its actual computer, branch and worktree. If a remote acknowledgement is pending, preserve remoteRequestId and retry only that ID; never dispatch a second worker to recover the first.",
   parameters: WorkerDispatchInputSchema,
   success: WorkerDispatchResultSchema,
   dependencies: [McpInvocationContext.McpInvocationContext, WorkerDispatch.WorkerDispatch],

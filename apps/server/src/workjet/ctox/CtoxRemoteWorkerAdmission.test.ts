@@ -5,6 +5,8 @@ import {
   WorkjetDecisionHubConnectionError, type RemoteWorkerRequest,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 import { CtoxMcpTransportError, type makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import {
   makeCtoxRemoteWorkerAdmissionClient, remoteWorkerRequestDigest,
@@ -124,8 +126,8 @@ it.effect("intersects the current source credential grant at issue, claim and ev
       environmentId: "desktop",
     });
     assert.deepEqual(h.sourceTargets[0], { connection: "source-native", instance: "managed:source" });
-    assert.isFalse(JSON.stringify(issued).includes("SOURCE_BEARER_CANARY"));
-    assert.isFalse(JSON.stringify(h.calls).includes("SOURCE_BEARER_CANARY"));
+    assert.isFalse(encodeJson(issued).includes("SOURCE_BEARER_CANARY"));
+    assert.isFalse(encodeJson(h.calls).includes("SOURCE_BEARER_CANARY"));
     h.revokeAccount();
     assert.equal((yield* Effect.flip(h.client.execute(scope, request, binding, "revalidate", "permit", request.requestId))).reason, "computer-unavailable");
     assert.equal(h.calls.length, 3); // No native or gateway usage after current grant denial.

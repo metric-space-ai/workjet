@@ -4,6 +4,7 @@ import flylabsPreview from "./assets/project-previews/flylabs.dev.png";
 import kunstmenPreview from "./assets/project-previews/kunstmen.com.png";
 import miltonPreview from "./assets/project-previews/miltonticket.app.png";
 import ctoxPreview from "./assets/project-previews/ctox.dev.png";
+import greppyPreview from "./assets/project-previews/greppy.xyz.png";
 import pokedexPreview from "./assets/project-previews/mypokedex.app-logo.svg";
 
 const cachedPreviews = new Map([
@@ -14,6 +15,7 @@ const cachedPreviews = new Map([
   ["https://www.kunstmen.com", kunstmenPreview],
   ["https://miltonticket.app", miltonPreview],
   ["https://ctox.dev", ctoxPreview],
+  ["https://greppy.xyz", greppyPreview],
   ["https://mypokedex.app", pokedexPreview],
 ]);
 

@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
+import { RemoteWorkerComputerEnrollmentInput, RemoteWorkerComputerEnrollmentResult, RemoteWorkerSourcePrepareInput, RemoteWorkerSourceRoute, RemoteWorkerRouteReservation, RemoteWorkerTargetRouteInput, RemoteWorkerRouteProof } from "./workerSourceConnection.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   RemoteWorkerRequest,
@@ -200,6 +201,14 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import {
+  WorkjetGatewayBindModelInput,
+  WorkjetGatewayAdmissionInput,
+  WorkjetGatewayModelBinding,
+  WorkjetGatewayInferenceInput,
+  WorkjetGatewayInferenceResult,
+  WorkjetGatewayInferenceError,
+} from "./workjetSourceGateway.ts";
+import {
   GreppyRuntimeSnapshot,
   WorkjetHarnessAvailabilitySnapshot,
   WorkjetGatewayAddApiKeyAccountInput,
@@ -355,6 +364,11 @@ export const WS_METHODS = {
   workjetWorkerRequests: "workjet.worker.requests",
   workjetWorkerReceive: "workjet.worker.receive",
   workjetWorkerRespond: "workjet.worker.respond",
+  workjetWorkerRouteReserve: "workjet.worker.routeReserve",
+  workjetWorkerSourcePrepare: "workjet.worker.sourcePrepare",
+  workjetWorkerRouteVerify: "workjet.worker.routeVerify",
+  workjetWorkerSourceConfirm: "workjet.worker.sourceConfirm",
+  workjetWorkerEnrollComputer: "workjet.worker.enrollComputer",
 
   // Server meta
   serverProbe: "server.probe",
@@ -400,6 +414,9 @@ export const WS_METHODS = {
   workjetGatewayStatus: "workjet.providerGateway.status",
   workjetGatewayCatalog: "workjet.providerGateway.catalog",
   workjetGatewayScopedCatalog: "workjet.providerGateway.scopedCatalog",
+  workjetGatewayBindModel: "workjet.providerGateway.bindModel",
+  workjetGatewayInfer: "workjet.providerGateway.infer",
+  workjetGatewayAdmit: "workjet.providerGateway.admit",
   workjetGatewaySetGrant: "workjet.providerGateway.setGrant",
   workjetGatewayStart: "workjet.providerGateway.start",
   workjetGatewayStop: "workjet.providerGateway.stop",
@@ -716,6 +733,24 @@ export const WsWorkjetGatewayScopedCatalogRpc = Rpc.make(WS_METHODS.workjetGatew
   payload: Schema.Struct({ target: WorkjetGatewayGrantTarget }),
   success: WorkjetGatewayScopedCatalog,
   error: Schema.Union([WorkjetGatewayRpcError, WorkjetGatewayAccessError]),
+});
+
+export const WsWorkjetGatewayBindModelRpc = Rpc.make(WS_METHODS.workjetGatewayBindModel, {
+  payload: WorkjetGatewayBindModelInput,
+  success: WorkjetGatewayModelBinding,
+  error: Schema.Union([EnvironmentAuthorizationError, WorkjetGatewayInferenceError]),
+});
+
+export const WsWorkjetGatewayAdmitRpc = Rpc.make(WS_METHODS.workjetGatewayAdmit, {
+  payload: WorkjetGatewayAdmissionInput,
+  success: Schema.Struct({}),
+  error: Schema.Union([EnvironmentAuthorizationError, WorkjetGatewayInferenceError]),
+});
+
+export const WsWorkjetGatewayInferRpc = Rpc.make(WS_METHODS.workjetGatewayInfer, {
+  payload: WorkjetGatewayInferenceInput,
+  success: WorkjetGatewayInferenceResult,
+  error: Schema.Union([EnvironmentAuthorizationError, WorkjetGatewayInferenceError]),
 });
 
 export const WsWorkjetGatewaySetGrantRpc = Rpc.make(WS_METHODS.workjetGatewaySetGrant, {
@@ -1677,7 +1712,29 @@ export const WsWorkerRespondRpc = Rpc.make(WS_METHODS.workjetWorkerRespond, {
   error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
 });
 
+export const WsWorkerRouteReserveRpc = Rpc.make(WS_METHODS.workjetWorkerRouteReserve, {
+  payload: RemoteWorkerRequest, success: RemoteWorkerRouteReservation,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
+export const WsWorkerSourcePrepareRpc = Rpc.make(WS_METHODS.workjetWorkerSourcePrepare, {
+  payload: RemoteWorkerSourcePrepareInput, success: RemoteWorkerSourceRoute,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
+export const WsWorkerRouteVerifyRpc = Rpc.make(WS_METHODS.workjetWorkerRouteVerify, {
+  payload: RemoteWorkerTargetRouteInput, success: RemoteWorkerRouteProof,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
+export const WsWorkerSourceConfirmRpc = Rpc.make(WS_METHODS.workjetWorkerSourceConfirm, {
+  payload: RemoteWorkerRouteProof, success: Schema.Void,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
+export const WsWorkerEnrollComputerRpc = Rpc.make(WS_METHODS.workjetWorkerEnrollComputer, {
+  payload: RemoteWorkerComputerEnrollmentInput, success: RemoteWorkerComputerEnrollmentResult,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
 export const WsRpcGroup = RpcGroup.make(
+  WsWorkerEnrollComputerRpc,
+  WsWorkerRouteReserveRpc, WsWorkerSourcePrepareRpc, WsWorkerRouteVerifyRpc, WsWorkerSourceConfirmRpc,
   WsWorkerRequestsRpc,
   WsWorkerReceiveRpc,
   WsWorkerRespondRpc,
@@ -1709,6 +1766,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayStatusRpc,
   WsWorkjetGatewayCatalogRpc,
   WsWorkjetGatewayScopedCatalogRpc,
+  WsWorkjetGatewayBindModelRpc,
+  WsWorkjetGatewayInferRpc,
+  WsWorkjetGatewayAdmitRpc,
   WsWorkjetGatewaySetGrantRpc,
   WsWorkjetGatewayStartRpc,
   WsWorkjetGatewayStopRpc,

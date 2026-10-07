@@ -1,3 +1,4 @@
+// @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded MCP results.
 it.effect("returns and accepts the saved remote request ID after a lost acknowledgement", () => {
   const requestId = ThreadId.make("00000000-0000-4000-8000-000000000001");
   const target = EnvironmentId.make("gpu3");
@@ -16,7 +17,6 @@ it.effect("returns and accepts the saved remote request ID after a lost acknowle
     expect(JSON.stringify(result)).not.toContain("PROMPT_CANARY");
   }).pipe(Effect.provide(makeTestLayer({ dispatch })));
 });
-// @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded MCP results.
 import { expect, it, vi } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId, WorkjetComputerId } from "@workjet/contracts";
 import * as Context from "effect/Context";

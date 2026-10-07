@@ -1,5 +1,13 @@
 it("keeps worker prompts, starts and acknowledgements out of read-only RPC authority", () => {
-  for (const method of [WS_METHODS.workjetWorkerRequests, WS_METHODS.workjetWorkerReceive, WS_METHODS.workjetWorkerRespond]) {
+  for (const method of [
+    WS_METHODS.workjetWorkerRequests,
+    WS_METHODS.workjetWorkerReceive,
+    WS_METHODS.workjetWorkerRespond,
+    WS_METHODS.workjetWorkerRouteReserve,
+    WS_METHODS.workjetWorkerSourcePrepare,
+    WS_METHODS.workjetWorkerRouteVerify,
+    WS_METHODS.workjetWorkerSourceConfirm,
+  ]) {
     expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
   }
 });
@@ -65,6 +73,17 @@ describe("RPC authorization scopes", () => {
       AuthOrchestrationReadScope,
     );
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayCheckModels)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+  it("requires operate scope for remote inference and read scope for reference binding", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayBindModel)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayInfer)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayAdmit)).toBe(
       AuthOrchestrationOperateScope,
     );
   });

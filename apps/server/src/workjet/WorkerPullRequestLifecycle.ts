@@ -57,7 +57,7 @@ export const make = Effect.gen(function* () {
       threadId: thread.id,
     });
     const harness = readWorkerSourceHarness(thread.id);
-    if (harness) yield* Effect.promise(() => harness.revoke());
+    if (harness) yield* Effect.promise(() => harness.retire());
   });
 
   const reconcile = Effect.fn("WorkerPullRequestLifecycle.reconcile")(function* (

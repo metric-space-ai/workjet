@@ -8,7 +8,7 @@ import {
 } from "./baseSchemas.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import { ModelSelection, ProviderInteractionMode, RuntimeMode } from "./orchestration.ts";
-import { WorkjetCapabilityId, WorkjetComputerId, WorkjetParentThreadReference } from "./workjet.ts";
+import { WorkjetCapabilityId, WorkjetComputerId, WorkjetParentThreadReference, WorkjetWorkerProfileId, WorkjetLlmRouteId } from "./workjet.ts";
 
 /** Prepared by the source server from its live orchestrator, relayed by an
  * authenticated client connection. Never contains source paths or credentials. */
@@ -17,6 +17,8 @@ export const RemoteWorkerRequest = Schema.Struct({
   requestId: ThreadId,
   targetEnvironmentId: EnvironmentId,
   computerId: WorkjetComputerId,
+  workerProfileId: Schema.optional(WorkjetWorkerProfileId),
+  llmRouteId: Schema.optional(WorkjetLlmRouteId),
   parent: WorkjetParentThreadReference,
   parentTeamRole: Schema.optional(Schema.Literals(["supervisor", "specialist"])),
   parentCapabilityIds: Schema.Array(WorkjetCapabilityId),
@@ -26,7 +28,7 @@ export const RemoteWorkerRequest = Schema.Struct({
     title: TrimmedNonEmptyString,
     repository: RepositoryIdentity,
   }),
-  revision: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40,64}$/)),
+  revision: Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)),
   task: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32000)),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,

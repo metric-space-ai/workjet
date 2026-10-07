@@ -5,6 +5,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
+import type { WorkjetGatewayModelBinding } from "@workjet/contracts";
 
 import type {
   GatewayHostProcess,
@@ -19,17 +20,23 @@ const readBoundedResponse = async (response: Response, maximumBytes: number): Pr
   const reader = response.body.getReader();
   const chunks: Array<Uint8Array> = [];
   let size = 0;
-  for (;;) {
-    const next = await reader.read();
-    if (next.done) break;
-    size += next.value.byteLength;
-    if (size > maximumBytes) {
-      await reader.cancel();
-      throw new Error("oversized");
+  let complete = false;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) {
+        complete = true;
+        break;
+      }
+      size += next.value.byteLength;
+      if (size > maximumBytes) throw new Error("oversized");
+      chunks.push(next.value);
     }
-    chunks.push(next.value);
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    if (!complete) await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
-  return Buffer.concat(chunks).toString("utf8");
 };
 
 const withTimeout = async <A>(
@@ -53,6 +60,60 @@ const withTimeout = async <A>(
     if (timeout !== undefined) clearTimeout(timeout);
   }
 };
+
+/** The source alone sends inference to its own gateway. Never returns transport credentials/headers. */
+export async function forwardSourceGatewayResponses(
+  endpoint: string,
+  selected: WorkjetGatewayModelBinding,
+  requestJson: string,
+  deadlineMs: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  const url = new URL(endpoint);
+  if (
+    url.protocol !== "http:" ||
+    !["127.0.0.1", "[::1]"].includes(url.hostname) ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== ""
+  )
+    throw new Error("invalid gateway endpoint");
+  const remaining = deadlineMs - Date.now();
+  if (remaining <= 0) throw new Error("expired");
+  const response = await fetch(new URL("/v1/responses", url), {
+    method: "POST",
+    redirect: "error",
+    headers: {
+      authorization: "Bearer workjet-gateway",
+      "content-type": "application/json",
+      "X-CTOX-Provider": selected.providerRef.provider,
+      "X-CTOX-Account": selected.credentialRef.accountId,
+      "X-CTOX-Purpose": "remote-worker",
+    },
+    body: requestJson,
+    signal: AbortSignal.any([
+      AbortSignal.timeout(Math.min(120_000, remaining)),
+      ...(signal === undefined ? [] : [signal]),
+    ]),
+  });
+  if (response.headers.get("X-CTOX-Account-Selected") !== selected.credentialRef.accountId) {
+    await response.body?.cancel();
+    throw new Error("exact account unavailable");
+  }
+  try {
+    const body = await readBoundedResponse(response, 1024 * 1024);
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error();
+    const result = parsed as Record<string, unknown>;
+    if (result.error != null || result.status === "failed" || !Array.isArray(result.output))
+      throw new Error("invalid response");
+    return body;
+  } finally {
+    await response.body?.cancel().catch(() => undefined);
+  }
+}
 
 export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
   fingerprint: (value) => NodeCrypto.createHash("sha256").update(value).digest("hex"),

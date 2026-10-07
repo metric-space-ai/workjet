@@ -28,9 +28,10 @@ import {
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
-import { localProjectIsVisible } from "../localProjectVisibility";
+import { visibleLocalProjects } from "../localProjectVisibility";
+import { readWorkjetProjectRegistry, useWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
-import { environmentServerConfigsAtom } from "./server";
+import { environmentServerConfigsAtom, primaryServerSettingsAtom } from "./server";
 import { allEnvironmentShellsBootstrappedAtom } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
@@ -130,12 +131,17 @@ export function useProjects(): ReadonlyArray<EnvironmentProject> {
   const scope = useBusinessOsCodeScope();
   const { selectedInstanceId } = useActiveWorkjetScope();
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
+  const registry = useWorkjetProjectRegistry(selectedInstanceId);
+  const computers = useAtomValue(primaryServerSettingsAtom).workjet.computers;
   return useMemo(
     () =>
-      projects.filter((project) =>
-        localProjectIsVisible(project, { scope, selectedInstanceId, primaryEnvironmentId }),
+      visibleLocalProjects(
+        projects,
+        { scope, selectedInstanceId, primaryEnvironmentId },
+        registry.projects,
+        computers,
       ),
-    [projects, scope, selectedInstanceId, primaryEnvironmentId],
+    [projects, scope, selectedInstanceId, primaryEnvironmentId, registry.projects, computers],
   );
 }
 
@@ -175,9 +181,14 @@ export function useAllEnvironmentShellsBootstrapped(): boolean {
   const allBootstrapped = useAtomValue(allEnvironmentShellsBootstrappedAtom);
   const scope = useBusinessOsCodeScope();
   const projects = useProjects();
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   return (
     (scope.phase === "ready" && (scope.environmentIds.size === 0 || allBootstrapped)) ||
-    (allBootstrapped && projects.some((project) => project.ctoxRegistration != null))
+    (allBootstrapped &&
+      projects.some(
+        (project) =>
+          project.ctoxRegistration != null || project.environmentId === primaryEnvironmentId,
+      ))
   );
 }
 
@@ -320,14 +331,20 @@ export function useThreadSession(ref: ScopedThreadRef | null): OrchestrationSess
 
 export function readProject(ref: ScopedProjectRef): EnvironmentProject | null {
   const project = appAtomRegistry.get(environmentProjects.projectAtom(ref));
-  return project !== null &&
-    localProjectIsVisible(project, {
-      scope: readBusinessOsCodeScope(),
-      selectedInstanceId: readActiveWorkjetScope().selectedInstanceId,
-      primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
-    })
-    ? project
-    : null;
+  if (project === null) return null;
+  const selectedInstanceId = readActiveWorkjetScope().selectedInstanceId;
+  return (
+    visibleLocalProjects(
+      [project],
+      {
+        scope: readBusinessOsCodeScope(),
+        selectedInstanceId,
+        primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
+      },
+      readWorkjetProjectRegistry(selectedInstanceId).projects,
+      appAtomRegistry.get(primaryServerSettingsAtom).workjet.computers,
+    )[0] ?? null
+  );
 }
 
 export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | null {

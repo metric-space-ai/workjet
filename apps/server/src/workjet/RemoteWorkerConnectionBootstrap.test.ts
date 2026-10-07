@@ -24,7 +24,7 @@ const secrets = ServerSecretStore.of({
   getOrCreateRandom: () => Effect.die("No secret generation should be needed"),
 });
 const broker = RemoteWorkerBroker.of({ enqueue: () => Effect.void, read: () => Effect.succeed(Option.none()),
-  respond: () => Effect.void, awaitResponse: () => Effect.never, requests: Stream.empty });
+  respond: () => Effect.succeed(undefined), awaitResponse: () => Effect.never, requests: Stream.empty });
 
 it("rejects GatewayPorts wildcard and IPv6 listeners even when a loopback listener also exists", () => {
   const header = "sl local_address rem_address st\n";

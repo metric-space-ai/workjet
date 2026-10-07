@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { WorkjetGatewayModelBinding, type RemoteWorkerRequest } from "@workjet/contracts";
+import { EnvironmentId, WorkjetGatewayModelBinding, type RemoteWorkerRequest } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { targetWorkerBindingMatches } from "./RemoteWorkerTargetHarnessSetupLive.ts";
 
@@ -16,8 +16,8 @@ const request = {
 } as Pick<RemoteWorkerRequest, "computerId" | "parent" | "modelSelection">;
 it("accepts only source-owned binding for the exact target computer and selected model", () => {
   expect(targetWorkerBindingMatches(binding, request)).toBe(true);
-  expect(targetWorkerBindingMatches({ ...binding, credentialRef: { ...binding.credentialRef, environmentId: binding.target.connectionId as typeof binding.credentialRef.environmentId } }, request)).toBe(false);
+  expect(targetWorkerBindingMatches({ ...binding, credentialRef: { ...binding.credentialRef, environmentId: EnvironmentId.make("foreign") } }, request)).toBe(false);
   expect(targetWorkerBindingMatches({ ...binding, modelRef: { ...binding.modelRef, modelId: "another-model" } }, request)).toBe(false);
   expect(targetWorkerBindingMatches({ ...binding, target: { ...binding.target, computerId: "another-computer" as typeof binding.target.computerId } }, request)).toBe(false);
-  expect(targetWorkerBindingMatches({ ...binding, providerRef: { ...binding.providerRef, environmentId: binding.target.connectionId as typeof binding.providerRef.environmentId } }, request)).toBe(false);
+  expect(targetWorkerBindingMatches({ ...binding, providerRef: { ...binding.providerRef, environmentId: EnvironmentId.make("foreign") } }, request)).toBe(false);
 });

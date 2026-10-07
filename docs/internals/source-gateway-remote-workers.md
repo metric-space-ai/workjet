@@ -13,12 +13,19 @@ worker receives only logical references and the claimed native permit locator.
 ```ts
 {
   target: { connectionId, instanceId, computerId },
-  modelSelection: { instanceId: sourceHarnessInstanceId, model: exactModelId },
-  routeId?: configuredLlmRouteId,
+  modelSelection: { instanceId: configuredSourceInstanceId, model: workerProfile.modelId },
+  routeId: workerProfile.llmRouteId,
 }
 ```
 
-The source harness instance must be enabled and opted into gateway routing.
+The configured source instance must be enabled; it may use the native CTOX
+provider. `routeViaGateway` only opts source CLI harness sessions into gateway
+routing and is not required for remote inference. The caller must pass the
+explicit worker profile’s `modelId` as `modelSelection.model` and its
+`llmRouteId` as `routeId`; Supervisor model selection is not a worker profile.
+Instances selects and binds the immutable target harness/profile in
+`workerRequest`. Resolving these source references does not start or configure
+a source Code harness.
 The resolver intersects configured `llmRoutes[].gatewayAccountId` with the
 fresh scoped catalog for the exact target and exact model ID. One enabled,
 granted account must match. Multiple accounts fail closed unless an explicit

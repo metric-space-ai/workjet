@@ -20,6 +20,9 @@ import * as Schema from "effect/Schema";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   bundledRuntimeNodePath,
+  bundledNodeIdentity,
+  stableBundledRuntimeNodePath,
+  ensureStableBundledRuntimeNode,
   BUNDLED_RUNTIME_RECEIPT,
   type BundledRuntimeSource,
 } from "./bundledRuntime.ts";
@@ -330,9 +333,20 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         yield* (yield* fs.open(directory, { flag: "r" })).sync;
       }),
     ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
-  const plan: BootServicePlan = {
+  const retainedNodeIdentity =
+    host.bundle !== undefined && platform === "darwin"
+      ? yield* Effect.tryPromise({
+          try: () => bundledNodeIdentity(runtimePaths.entryPath),
+          catch: (cause) => new BootServiceInstallError({ cause }),
+        }).pipe(Effect.option)
+      : Option.none();
+  let plan: BootServicePlan = {
     nodePath:
-      host.bundle === undefined ? host.execPath : bundledRuntimeNodePath(runtimePaths.entryPath),
+      host.bundle === undefined
+        ? host.execPath
+        : Option.isSome(retainedNodeIdentity)
+          ? stableBundledRuntimeNodePath(baseDir, retainedNodeIdentity.value.version)
+          : bundledRuntimeNodePath(runtimePaths.entryPath),
     launcherPath,
     baseDir,
     logPath,
@@ -661,6 +675,23 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           : new BootServiceInstallError({ cause: error }),
       ),
     );
+    if (host.bundle !== undefined && platform === "darwin") {
+      const stableNode = yield* Effect.tryPromise({
+        try: () => ensureStableBundledRuntimeNode(baseDir, runtimePaths.entryPath),
+        catch: (cause) => new BootServiceInstallError({ cause }),
+      });
+      const verification = yield* runStep(
+        "verifying the stable Node runtime",
+        stableNode,
+        [runtimePaths.entryPath, "--version"],
+        { timeout: Duration.seconds(90) },
+      );
+      if (/\bv(\S+)\s*$/.exec(verification.stdout)?.[1] !== input.cliVersion)
+        return yield* new BootServiceInstallError({
+          cause: "Stable Node cannot run the new server version.",
+        });
+      plan = { ...plan, nodePath: stableNode };
+    }
     const launcherSource = yield* fs
       .readFileString(launcherSourcePath)
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));

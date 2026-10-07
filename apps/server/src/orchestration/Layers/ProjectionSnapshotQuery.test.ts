@@ -2099,19 +2099,23 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     `;
   });
 
-  const seedStaticMessages = Effect.fnUntraced(function* (sameTimestamp: boolean) {
+  const seedStaticMessages = Effect.fnUntraced(function* (
+    sameTimestamp: boolean,
+    count = 12,
+    assistantOnly = false,
+  ) {
     yield* seedFanOutThread();
     const sql = yield* SqlClient.SqlClient;
     yield* sql`DELETE FROM projection_turns`;
     yield* sql`DELETE FROM projection_thread_messages`;
     yield* sql`DELETE FROM projection_thread_activities`;
     yield* markStaticImport();
-    for (let index = 0; index < 12; index += 1) {
+    for (let index = 0; index < count; index += 1) {
       const id = "static-" + String(index).padStart(3, "0");
-      const role = index % 2 === 0 ? "user" : "assistant";
+      const role = assistantOnly || index % 2 !== 0 ? "assistant" : "user";
       const at = sameTimestamp
         ? "2026-03-01T00:00:00.000Z"
-        : `2026-03-01T00:${String(index).padStart(2, "0")}:00.000Z`;
+        : new Date(Date.UTC(2026, 2, 1, 0, index)).toISOString();
       yield* sql`
         INSERT INTO projection_thread_messages (
           message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
@@ -2147,6 +2151,41 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
           assert.deepEqual(
             seen.toSorted(),
             Array.from({ length: 12 }, (_, index) => "static-" + String(index).padStart(3, "0")),
+          );
+          const turns = yield* sql`SELECT COUNT(*) AS count FROM projection_turns`;
+          assert.equal(turns[0]?.count, 0);
+        }),
+    );
+  }
+
+  for (const sameTimestamp of [false, true]) {
+    it.effect(
+      "pages a named assistant history beyond the raw message limit" +
+        (sameTimestamp ? " when timestamps are equal" : ""),
+      () =>
+        Effect.gen(function* () {
+          yield* seedStaticMessages(sameTimestamp, 184, true);
+          const query = yield* ProjectionSnapshotQuery;
+          const sql = yield* SqlClient.SqlClient;
+          const seen: string[] = [];
+          let cursor: string | undefined;
+          for (const [pageIndex, size] of [150, 34].entries()) {
+            const result = yield* query.getThreadDetailSnapshot(threadW, {
+              turnLimit: 2,
+              ...(cursor ? { beforeCursor: cursor } : {}),
+            });
+            assert.equal(result._tag, "Some");
+            if (result._tag !== "Some") return;
+            assert.equal(result.value.thread.messages.length, size);
+            assert.ok(result.value.thread.messages.every((message) => message.role === "assistant"));
+            seen.push(...messageIds(result.value));
+            assert.equal(result.value.page?.hasMore, pageIndex === 0);
+            cursor = result.value.page?.beforeCursor ?? undefined;
+          }
+          assert.equal(new Set(seen).size, 184);
+          assert.deepEqual(
+            seen.toSorted(),
+            Array.from({ length: 184 }, (_, index) => "static-" + String(index).padStart(3, "0")),
           );
           const turns = yield* sql`SELECT COUNT(*) AS count FROM projection_turns`;
           assert.equal(turns[0]?.count, 0);

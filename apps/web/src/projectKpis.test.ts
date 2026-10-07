@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import { projectKpiPresentation, projectKpiPromptInputs, type ProjectKpiRecord } from "./projectKpis";
+import {
+  projectKpiPresentation,
+  projectKpiPromptInputs,
+  type ProjectKpiRecord,
+} from "./projectKpis";
 
 const record: ProjectKpiRecord = {
   prompt: { kpi_id: "open-prs", prompt: "Count open project PRs", revision: 2 },
@@ -98,10 +102,15 @@ describe("native project KPI presentation", () => {
 });
 
 describe("native KPI prompt changes", () => {
-  const kpis = { project_id: "project", revision: 4, items: [{ ...record, prompt: { ...record.prompt, kpi_id: "kpi-2" } }] };
+  const kpis = {
+    project_id: "project",
+    revision: 4,
+    items: [{ ...record, prompt: { ...record.prompt, kpi_id: "kpi-2" } }],
+  };
   it("retains IDs, avoids collisions and drops empty sentences", () => {
     expect(projectKpiPromptInputs(["  First  ", "Second", " "], kpis)).toEqual([
-      { kpi_id: "kpi-2", prompt: "First" }, { kpi_id: "kpi-2-2", prompt: "Second" },
+      { kpi_id: "kpi-2", prompt: "First" },
+      { kpi_id: "kpi-2-2", prompt: "Second" },
     ]);
     expect(projectKpiPromptInputs(["", "", ""], kpis)).toEqual([]);
   });

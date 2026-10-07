@@ -6,7 +6,11 @@ import {
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
 import { decodeOverviewDraft, overviewDraft } from "../projectOverview";
-import { projectKpiPromptInputs, type PromptedProjectKpis, type SaveProjectKpiPrompts } from "../projectKpis";
+import {
+  projectKpiPromptInputs,
+  type PromptedProjectKpis,
+  type SaveProjectKpiPrompts,
+} from "../projectKpis";
 import { ProjectKpiResult } from "./ProjectKpiResult";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -60,14 +64,10 @@ export function ProjectOverviewEditor({
   }));
   const scopedKpis = configuration?.id === kpis?.project_id ? kpis : undefined;
   const [initialKpis] = useState(scopedKpis);
-  const initialPrompts = () => [0, 1, 2].map((index) => initialKpis?.items[index]?.prompt.prompt ?? "");
+  const initialPrompts = () =>
+    [0, 1, 2].map((index) => initialKpis?.items[index]?.prompt.prompt ?? "");
   const [prompts, setPrompts] = useState(initialPrompts);
-  const canConfigureKpis = !!(
-    configuration &&
-    initialKpis &&
-    scopedKpis &&
-    onSaveKpis
-  );
+  const canConfigureKpis = !!(configuration && initialKpis && scopedKpis && onSaveKpis);
   const promptsChanged = prompts.some((prompt, index) => prompt !== initialPrompts()[index]);
   const cancel = () => {
     if (onCancel) return onCancel();
@@ -147,8 +147,7 @@ export function ProjectOverviewEditor({
             if (!savedKpis) {
               setState({
                 pending: false,
-                message:
-                  "Couldn’t save KPI prompts. Reopen project settings and try again.",
+                message: "Couldn’t save KPI prompts. Reopen project settings and try again.",
               });
               return;
             }

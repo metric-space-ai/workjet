@@ -92,8 +92,11 @@ export function projectKpiPresentation(
 }
 
 /** Preserve stable native IDs while clearing empty sentences; new IDs cannot collide. */
-export function projectKpiPromptInputs(prompts: readonly string[], kpis: PromptedProjectKpis): readonly ProjectKpiPromptInput[] {
-  const used = new Set(kpis.items.map(item => item.prompt.kpi_id));
+export function projectKpiPromptInputs(
+  prompts: readonly string[],
+  kpis: PromptedProjectKpis,
+): readonly ProjectKpiPromptInput[] {
+  const used = new Set(kpis.items.map((item) => item.prompt.kpi_id));
   return prompts.slice(0, 3).flatMap((sentence, index) => {
     const prompt = sentence.trim();
     if (!prompt) return [];

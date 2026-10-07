@@ -15,6 +15,8 @@ const Request = Schema.Struct({ model: Schema.String, stream: Schema.optional(Sc
 const Reply = Schema.Struct({ requestJson: Schema.String });
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
 export interface WorkerSourceHarness {
+  readonly identity: Readonly<Pick<WorkerSourceHarnessRoute, "sourceEnvironmentId" | "targetEnvironmentId" | "requestId" | "requestDigest">>;
+  readonly admit: () => Promise<void>;
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly model: string;
@@ -69,7 +71,7 @@ export async function installWorkerSourceRoute(
       let size = 0;
       for await (const chunk of req) {
         size += Buffer.byteLength(chunk);
-        if (size > 4 * 1024 * 1024) throw new Error("Worker request too large");
+        if (size > 256 * 1024) throw new Error("Worker request too large");
         chunks.push(Buffer.from(chunk));
       }
       const json: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
@@ -110,6 +112,15 @@ export async function installWorkerSourceRoute(
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
   const harness: WorkerSourceHarness = {
+    identity: Object.freeze({ sourceEnvironmentId: route.sourceEnvironmentId, targetEnvironmentId: route.targetEnvironmentId, requestId: route.requestId, requestDigest: route.requestDigest }),
+    admit: async () => {
+      if (revoked) throw new Error("Worker route revoked");
+      const controller = new AbortController();
+      active.add(controller);
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try { await source("admit", {}, controller.signal); }
+      finally { clearTimeout(timeout); active.delete(controller); }
+    },
     baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey, model: pin.modelId,
     revoke: async () => {
       revoked = true;

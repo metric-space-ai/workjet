@@ -13,7 +13,10 @@ it("pins worker identity and model and routes HTTP through source authority with
     expect(body.requestDigest).toBe("immutable-digest");
     operations.push(body.operation);
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify(body.operation === "infer" ? { requestJson: JSON.stringify({ id: "r1", output: [], status: "completed" }) } : {}));
+    res.end(JSON.stringify(body.operation === "infer" ? { requestJson: JSON.stringify({ id: "r1", output: [
+      { type: "message", id: "m1", role: "assistant", content: [{ type: "output_text", text: "hello" }] },
+      { type: "function_call", id: "f1", call_id: "c1", name: "shell", arguments: '{"command":"pwd"}' },
+    ], status: "completed" }) } : {}));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   cleanups.push(async () => { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); });
@@ -30,9 +33,19 @@ it("pins worker identity and model and routes HTTP through source authority with
   expect((await invoke(pin.modelId, "owner-token")).status).toBe(403);
   expect((await invoke("foreign-model")).status).toBe(502);
   const response = await invoke(pin.modelId);
-  expect(await response.text()).toContain("response.completed");
+  const events = (await response.text()).split("\n\n").filter(Boolean).map((event) => JSON.parse(event.split("\ndata: ")[1]!));
+  expect(events.filter((event) => event.type === "response.output_item.done").map((event) => event.item)).toEqual([
+    { type: "message", id: "m1", role: "assistant", content: [{ type: "output_text", text: "hello" }] },
+    { type: "function_call", id: "f1", call_id: "c1", name: "shell", arguments: '{"command":"pwd"}' },
+  ]);
+  expect(events.at(-1).type).toBe("response.completed");
   expect(operations).toEqual(["admit", "infer"]);
+  const oversized = await fetch(`${harness.baseUrl}/responses`, { method: "POST", headers: { authorization: `Bearer ${harness.apiKey}` }, body: JSON.stringify({ model: pin.modelId, input: "a".repeat(256 * 1024) }) });
+  expect(oversized.status).toBe(502);
+  expect(operations).toEqual(["admit", "infer"]);
+  expect(harness.identity.requestDigest).toBe(route.requestDigest);
   await harness.revoke();
+  await expect(harness.admit()).rejects.toThrow("revoked");
   await expect(invoke(pin.modelId)).rejects.toThrow();
 });
 it("fails closed when source connection disappears", async () => {

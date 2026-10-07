@@ -1792,6 +1792,7 @@ mod tests {
                 "{response}"
             );
             assert!(!response.contains("secret-fixture"));
+            assert!(response.contains(&format!("X-CTOX-Upstream-Status: {status}\r\n")), "{response}");
             assert_eq!(count, 1);
         }
     }

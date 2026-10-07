@@ -7,6 +7,7 @@ pub(crate) struct AccountSelection {
     requested: Option<String>,
     selected: Option<String>,
     error_class: Option<&'static str>,
+    upstream_status: Option<u16>,
     model_check: bool,
 }
 tokio::task_local! { pub(crate) static ACCOUNT_SELECTION: Mutex<AccountSelection>; }
@@ -53,6 +54,9 @@ pub(crate) fn acknowledgement() -> String {
                 .unwrap_or_default();
             if let Some(class) = state.error_class {
                 headers.push_str(&format!("X-CTOX-Error-Class: {class}\r\n"));
+            }
+            if let Some(status) = state.upstream_status {
+                headers.push_str(&format!("X-CTOX-Upstream-Status: {status}\r\n"));
             }
             headers
         })
@@ -103,7 +107,8 @@ mod tests {
     }
 }
 
-/// Retain only a closed error class for pinned probes; raw upstream data stays native.
+/// Retain the observed HTTP status and a closed error class for pinned probes;
+/// raw upstream data stays native. Gateway wrapper statuses are not observations.
 pub fn record_upstream_status(status: u16, body: &[u8]) {
     if requested_account().is_none() {
         return;
@@ -146,7 +151,11 @@ pub fn record_upstream_status(status: u16, body: &[u8]) {
             "network-provider"
         })
     };
-    let _ = ACCOUNT_SELECTION.try_with(|state| state.lock().unwrap().error_class = class);
+    let _ = ACCOUNT_SELECTION.try_with(|state| {
+        let mut state = state.lock().unwrap();
+        state.error_class = class;
+        state.upstream_status = Some(status);
+    });
 }
 
 #[cfg(test)]
@@ -189,6 +198,7 @@ mod isolation_tests {
             record_selected("broken");
             record_upstream_status(429, b"secret");
             assert!(acknowledgement().contains("quota-rate-limit"));
+            assert!(acknowledgement().contains("X-CTOX-Upstream-Status: 429\r\n"));
             assert_eq!(
                 tokio::spawn(async { requested_account() }).await.unwrap(),
                 None
@@ -202,5 +212,18 @@ mod isolation_tests {
             assert_eq!(acknowledgement(), "X-CTOX-Account-Selected: healthy\r\n");
         });
         tokio::join!(pinned, unpinned);
+    }
+    #[tokio::test]
+    async fn refreshed_success_replaces_the_first_rejection_without_leaking_provider_text() {
+        ACCOUNT_SELECTION.scope(Mutex::new(Default::default()), async {
+            request_account(Some("account".into()));
+            record_selected("account");
+            assert!(!acknowledgement().contains("Upstream-Status"));
+            record_upstream_status(401, b"private rejection");
+            assert!(acknowledgement().contains("X-CTOX-Upstream-Status: 401\r\n"));
+            record_upstream_status(200, b"private success");
+            assert_eq!(acknowledgement(), "X-CTOX-Account-Selected: account\r\nX-CTOX-Upstream-Status: 200\r\n");
+        }).await;
+        assert!(acknowledgement().is_empty());
     }
 }

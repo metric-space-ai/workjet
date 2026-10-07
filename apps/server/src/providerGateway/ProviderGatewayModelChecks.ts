@@ -10,7 +10,7 @@ export const MODEL_CHECK_COOLDOWN_MS = 5 * 60_000;
 export const MODEL_CHECK_BATCH_LIMIT = 32;
 export const MODEL_CHECK_QUEUE_LIMIT = 64;
 const Persisted = Schema.Struct({
-  schemaVersion: Schema.Literal(2),
+  schemaVersion: Schema.Literal(3),
   entries: Schema.Array(
     Schema.Struct({ revision: Schema.String, check: WorkjetGatewayModelCheck }),
   ),
@@ -144,7 +144,7 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
         };
         entries.set(id, { revision: item.target.revision, check });
         try {
-          await options.write(JSON.stringify({ schemaVersion: 2, entries: [...entries.values()] }));
+          await options.write(JSON.stringify({ schemaVersion: 3, entries: [...entries.values()] }));
         } catch {
           entries.delete(id);
         }

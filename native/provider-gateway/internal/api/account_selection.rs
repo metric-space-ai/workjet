@@ -162,10 +162,8 @@ impl crate::sdk::cliproxy::auth::conductor_execution::AccountPolicy for Schedule
         _cooldowns: &[crate::sdk::cliproxy::auth::CooldownStateRecord],
         _body: &[u8],
     ) -> Result<AccountCandidate, crate::sdk::cliproxy::auth::AccountSelectionError> {
-        crate::sdk::cliproxy::auth::AccountRouter::new(std::sync::Arc::new(
-            crate::sdk::cliproxy::auth::MemoryCooldownStore::default(),
-        ))
-        .select(provider, model, now_ms, candidates)
+        crate::sdk::cliproxy::auth::selector::FillFirstSelector::default()
+            .pick(provider, model, now_ms, candidates, _cooldowns)
     }
 }
 

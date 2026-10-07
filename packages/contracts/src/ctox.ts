@@ -612,7 +612,6 @@ const CtoxComputerId = CtoxProjectText(160);
 const CtoxComputerCapabilities = Schema.Array(CtoxProjectText(80)).check(Schema.isMaxLength(32));
 const CtoxComputerHostingMode = Schema.Literals(["workstation", "self_hosted"]);
 
-
 const CtoxCapabilityInteger = (maximum: number) =>
   Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
 const CtoxComputerSecretReference = Schema.Struct({
@@ -653,8 +652,10 @@ export const CtoxComputerOperationalCapability = Schema.Union([
 export type CtoxComputerOperationalCapability = typeof CtoxComputerOperationalCapability.Type;
 const CtoxComputerOperationalCapabilities = Schema.Array(CtoxComputerOperationalCapability).check(
   Schema.isMaxLength(3),
-  Schema.makeFilter((capabilities) =>
-    new Set(capabilities.map((capability) => capability.kind)).size === capabilities.length),
+  Schema.makeFilter(
+    (capabilities) =>
+      new Set(capabilities.map((capability) => capability.kind)).size === capabilities.length,
+  ),
 );
 
 export const CtoxComputerEndpoint = Schema.Union([
@@ -665,10 +666,18 @@ export const CtoxComputerEndpoint = Schema.Union([
     username: CtoxProjectText(256),
     root: CtoxProjectText(4096),
     host_key_sha256: CtoxProjectText(80),
-    host_key_algorithm: Schema.optionalKey(Schema.NullOr(Schema.Literals([
-      "ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384",
-      "ecdsa-sha2-nistp521", "rsa-sha2-256", "rsa-sha2-512",
-    ]))),
+    host_key_algorithm: Schema.optionalKey(
+      Schema.NullOr(
+        Schema.Literals([
+          "ssh-ed25519",
+          "ecdsa-sha2-nistp256",
+          "ecdsa-sha2-nistp384",
+          "ecdsa-sha2-nistp521",
+          "rsa-sha2-256",
+          "rsa-sha2-512",
+        ]),
+      ),
+    ),
     private_key: CtoxComputerSecretReference,
     passphrase: Schema.NullOr(CtoxComputerSecretReference),
   }),

@@ -44,31 +44,59 @@ const bridge = (requestComputerControl: NonNullable<DesktopCtoxBridge["requestCo
 
 describe("instance computer membership", () => {
   const nas: OperationalComputerEnrollment = {
-    computerId: "nas-native", displayName: "NAS", hostingMode: "self_hosted", agentless: true,
-    agentCapabilities: [], capabilityConfig: [{
-      kind: "storage", endpoint_ref: "nas-access", protocol: "ssh", root: "/volume1/artifacts",
-      quota_gib: null, purposes: ["artifacts"],
-    }],
-    endpoint: { ref: "nas-access", connection: {
-      protocol: "ssh", host: "nas.example.test", port: 22, username: "admin",
-      root: "/volume1/artifacts", host_key_sha256: "SHA256:pin",
-      private_key: { scope: "access", name: "nas" }, passphrase: null,
-    } },
+    computerId: "nas-native",
+    displayName: "NAS",
+    hostingMode: "self_hosted",
+    agentless: true,
+    agentCapabilities: [],
+    capabilityConfig: [
+      {
+        kind: "storage",
+        endpoint_ref: "nas-access",
+        protocol: "ssh",
+        root: "/volume1/artifacts",
+        quota_gib: null,
+        purposes: ["artifacts"],
+      },
+    ],
+    endpoint: {
+      ref: "nas-access",
+      connection: {
+        protocol: "ssh",
+        host: "nas.example.test",
+        port: 22,
+        username: "admin",
+        root: "/volume1/artifacts",
+        host_key_sha256: "SHA256:pin",
+        private_key: { scope: "access", name: "nas" },
+        passphrase: null,
+      },
+    },
   };
-  const nasProjection = { ...projection, id: nas.computerId, displayName: "NAS",
-    hostingMode: "self_hosted" as const, capabilities: ["storage"] };
+  const nasProjection = {
+    ...projection,
+    id: nas.computerId,
+    displayName: "NAS",
+    hostingMode: "self_hosted" as const,
+    capabilities: ["storage"],
+  };
 
   it("removes a native-only NAS without creating a coding connection", async () => {
     const store = createComputerMembershipStore();
     const request = port().mockResolvedValueOnce(listed([nasProjection]));
     await store.refresh("selected", bridge(request));
-    request.mockResolvedValueOnce({ _tag: "completed", response: {
-      action: "computer.unassign", computer: { ...nasProjection, status: "unassigned" },
-    } });
+    request.mockResolvedValueOnce({
+      _tag: "completed",
+      response: {
+        action: "computer.unassign",
+        computer: { ...nasProjection, status: "unassigned" },
+      },
+    });
     expect(await store.unassign("selected", nas.computerId, bridge(request))).toBe(true);
     expect(store.getSnapshot().computers).toEqual([]);
     expect(request.mock.calls[1]?.[1]).toMatchObject({
-      action: "computer.unassign", computerId: nas.computerId,
+      action: "computer.unassign",
+      computerId: nas.computerId,
     });
     expect(request.mock.calls[1]?.[1]).not.toHaveProperty("environmentId");
   });
@@ -78,18 +106,29 @@ describe("instance computer membership", () => {
     const request = port().mockResolvedValueOnce(listed());
     await store.refresh("selected", bridge(request));
     const pending = deferredResult();
-    request.mockResolvedValueOnce({ _tag: "completed", response: {
-      action: "computer.assign", computer: nasProjection,
-    } }).mockReturnValueOnce(pending.promise);
+    request
+      .mockResolvedValueOnce({
+        _tag: "completed",
+        response: {
+          action: "computer.assign",
+          computer: nasProjection,
+        },
+      })
+      .mockReturnValueOnce(pending.promise);
     const enrollment = store.enroll("selected", nas, bridge(request));
     await Promise.resolve();
     expect(store.getSnapshot().pendingComputerId).toBe(nas.computerId);
     expect(store.getSnapshot().computers).toEqual([]);
     await expect(store.enroll("selected", nas, bridge(request))).rejects.toThrow("Wait");
-    pending.resolve({ _tag: "completed", response: {
-      action: "computer.endpoint.upsert", computerId: nas.computerId,
-      endpointRef: "nas-access", enabled: true,
-    } });
+    pending.resolve({
+      _tag: "completed",
+      response: {
+        action: "computer.endpoint.upsert",
+        computerId: nas.computerId,
+        endpointRef: "nas-access",
+        enabled: true,
+      },
+    });
     await enrollment;
     expect(store.getSnapshot().computers).toEqual([nasProjection]);
     expect(store.getSnapshot().pendingComputerId).toBeNull();
@@ -103,9 +142,13 @@ describe("instance computer membership", () => {
     request.mockReturnValueOnce(pending.promise);
     const enrollment = store.enroll("selected", nas, bridge(request));
     store.select("other");
-    pending.resolve({ _tag: "completed", response: {
-      action: "computer.assign", computer: nasProjection,
-    } });
+    pending.resolve({
+      _tag: "completed",
+      response: {
+        action: "computer.assign",
+        computer: nasProjection,
+      },
+    });
     await expect(enrollment).rejects.toThrow("selected Business OS changed");
     expect(request).toHaveBeenCalledTimes(2);
     expect(store.getSnapshot()).toMatchObject({ instanceId: "other", computers: [] });

@@ -21,33 +21,46 @@ export interface OperationalComputerEnrollment {
 /** Each step uses the selected instance's native policy and correlated command receipt. */
 export async function enrollOperationalComputer(
   enrollment: OperationalComputerEnrollment,
-  control: (request: CtoxWorkjetComputerControlRequest) => Promise<CtoxWorkjetComputerControlResult>,
+  control: (
+    request: CtoxWorkjetComputerControlRequest,
+  ) => Promise<CtoxWorkjetComputerControlResult>,
   newCommandId: () => CommandId,
   isCurrent: () => boolean,
 ): Promise<CtoxWorkjetComputerProjection> {
   if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
   const { capabilityConfig, endpoint } = enrollment;
-  if (enrollment.preserveOperationalCapabilities &&
-    (enrollment.agentless || capabilityConfig.length > 0 || endpoint !== null)) {
+  if (
+    enrollment.preserveOperationalCapabilities &&
+    (enrollment.agentless || capabilityConfig.length > 0 || endpoint !== null)
+  ) {
     throw new Error("Keep saved capabilities or replace them, without combining both.");
   }
   const requiresEndpoint = capabilityConfig.some((capability) => capability.kind !== "gpu");
-  if (enrollment.agentless && (enrollment.hostingMode !== "self_hosted" ||
-    enrollment.agentCapabilities.length > 0 || capabilityConfig.length !== 1 ||
-    capabilityConfig[0]?.kind !== "storage")) {
+  if (
+    enrollment.agentless &&
+    (enrollment.hostingMode !== "self_hosted" ||
+      enrollment.agentCapabilities.length > 0 ||
+      capabilityConfig.length !== 1 ||
+      capabilityConfig[0]?.kind !== "storage")
+  ) {
     throw new Error("A storage-only computer needs one storage capability.");
   }
   if (requiresEndpoint !== (endpoint !== null)) {
     throw new Error("Choose an endpoint for the build or storage capability.");
   }
   for (const capability of capabilityConfig) {
-    if (capability.kind === "build" && (endpoint?.connection.protocol !== "ssh" ||
-      capability.ssh_endpoint_ref !== endpoint.ref)) {
+    if (
+      capability.kind === "build" &&
+      (endpoint?.connection.protocol !== "ssh" || capability.ssh_endpoint_ref !== endpoint.ref)
+    ) {
       throw new Error("Build computers require their assigned SSH endpoint.");
     }
-    if (capability.kind === "storage" && (endpoint === null ||
-      capability.endpoint_ref !== endpoint.ref ||
-      capability.protocol !== endpoint.connection.protocol)) {
+    if (
+      capability.kind === "storage" &&
+      (endpoint === null ||
+        capability.endpoint_ref !== endpoint.ref ||
+        capability.protocol !== endpoint.connection.protocol)
+    ) {
       throw new Error("Storage needs its assigned endpoint and protocol.");
     }
   }
@@ -63,13 +76,18 @@ export async function enrollOperationalComputer(
     selfHostedColocation: false,
   });
   if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
-  if (assignment._tag !== "completed" || assignment.response.action !== "computer.assign" ||
+  if (
+    assignment._tag !== "completed" ||
+    assignment.response.action !== "computer.assign" ||
     assignment.response.computer.id !== enrollment.computerId ||
     assignment.response.computer.status !== "assigned" ||
     assignment.response.computer.hostingMode !== enrollment.hostingMode ||
-    !capabilityConfig.every((capability) =>
-      assignment.response.action === "computer.assign" &&
-      assignment.response.computer.capabilities.includes(capability.kind))) {
+    !capabilityConfig.every(
+      (capability) =>
+        assignment.response.action === "computer.assign" &&
+        assignment.response.computer.capabilities.includes(capability.kind),
+    )
+  ) {
     throw new Error("The Business OS did not confirm this computer.");
   }
   if (endpoint !== null) {
@@ -81,9 +99,13 @@ export async function enrollOperationalComputer(
       connection: endpoint.connection,
     });
     if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
-    if (result._tag !== "completed" || result.response.action !== "computer.endpoint.upsert" ||
+    if (
+      result._tag !== "completed" ||
+      result.response.action !== "computer.endpoint.upsert" ||
       result.response.computerId !== enrollment.computerId ||
-      result.response.endpointRef !== endpoint.ref || !result.response.enabled) {
+      result.response.endpointRef !== endpoint.ref ||
+      !result.response.enabled
+    ) {
       throw new Error("Computer registered; its access endpoint still needs confirmation. Retry.");
     }
   }

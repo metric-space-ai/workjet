@@ -107,6 +107,9 @@ const STATIC_ASSET_EXTENSIONS = new Set([
 ]);
 const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const decodeWorkjetDeviceWebRtcResponse = Schema.decodeUnknownEffect(WorkjetDeviceWebRtcResponseV1);
+const decodeWorkjetProjectControlResponse = Schema.decodeUnknownEffect(CtoxWorkjetProjectControlResponse);
+const decodeWorkjetSessionControlResponse = Schema.decodeUnknownEffect(CtoxWorkjetSessionControlResponse);
 export const REFRESH_MANAGED_LAUNCH_CHANNEL = "instance:refresh-managed-launch";
 
 interface ActiveGuest {
@@ -1740,7 +1743,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (encodedLength > MAX_DEVICE_CONTROL_RESPONSE_BYTES) {
           return { _tag: "failed", code: "guest_failed" };
         }
-        const decoded = yield* Schema.decodeUnknownEffect(WorkjetDeviceWebRtcResponseV1)(response, {
+        const decoded = yield* decodeWorkjetDeviceWebRtcResponse(response, {
           onExcessProperty: "error",
         }).pipe(Effect.option);
         if (Option.isNone(decoded)) {
@@ -1819,7 +1822,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             confirmed.computer.id !== request.computerId ||
             confirmed.computer.status !==
               (request.action === "computer.assign" ? "assigned" : "unassigned")
-          ) return { _tag: "failed", code: "response_invalid" };
+          )
+            return { _tag: "failed", code: "response_invalid" };
         }
         if (
           request.action === "computer.endpoint.upsert" ||
@@ -1832,7 +1836,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             confirmed.enabled !== (request.action === "computer.endpoint.upsert") ||
             (request.action === "computer.endpoint.upsert" &&
               confirmed.computerId !== request.computerId)
-          ) return { _tag: "failed", code: "response_invalid" };
+          )
+            return { _tag: "failed", code: "response_invalid" };
         }
         return { _tag: "completed", response: decoded.value };
       });
@@ -1888,7 +1893,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (encodedLength > MAX_PROJECT_CONTROL_RESPONSE_BYTES) {
           return { _tag: "failed", code: "response_too_large" };
         }
-        const decoded = yield* Schema.decodeUnknownEffect(CtoxWorkjetProjectControlResponse)(
+        const decoded = yield* decodeWorkjetProjectControlResponse(
           response,
           { onExcessProperty: "error" },
         ).pipe(Effect.option);
@@ -1956,7 +1961,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (encodedLength > MAX_SESSION_CONTROL_RESPONSE_BYTES) {
           return { _tag: "failed", code: "response_too_large" };
         }
-        const decoded = yield* Schema.decodeUnknownEffect(CtoxWorkjetSessionControlResponse)(
+        const decoded = yield* decodeWorkjetSessionControlResponse(
           response,
           { onExcessProperty: "error" },
         ).pipe(Effect.option);

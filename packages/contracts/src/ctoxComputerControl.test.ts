@@ -82,43 +82,96 @@ describe("CTOX computer control boundary", () => {
 });
 
 describe("operational computer grants", () => {
-  const storage = { kind: "storage", endpoint_ref: "endpoint-nas", protocol: "ssh",
-    root: "/volume1/artifacts", quota_gib: null, purposes: ["artifacts"] };
-  const endpoint = { action: "computer.endpoint.upsert", commandId: "endpoint-command",
-    computerId: "nas-1", endpointRef: "endpoint-nas", connection: {
-      protocol: "ssh", host: "nas.example.test", port: 22, username: "admin",
-      root: "/volume1/artifacts", host_key_sha256: "SHA256:example-pin",
-      private_key: { scope: "computer-access", name: "nas-key" }, passphrase: null,
-    } };
+  const storage = {
+    kind: "storage",
+    endpoint_ref: "endpoint-nas",
+    protocol: "ssh",
+    root: "/volume1/artifacts",
+    quota_gib: null,
+    purposes: ["artifacts"],
+  };
+  const endpoint = {
+    action: "computer.endpoint.upsert",
+    commandId: "endpoint-command",
+    computerId: "nas-1",
+    endpointRef: "endpoint-nas",
+    connection: {
+      protocol: "ssh",
+      host: "nas.example.test",
+      port: 22,
+      username: "admin",
+      root: "/volume1/artifacts",
+      host_key_sha256: "SHA256:example-pin",
+      private_key: { scope: "computer-access", name: "nas-key" },
+      passphrase: null,
+    },
+  };
   it("accepts a typed agentless NAS and bounded build/GPU grants", () => {
-    expect(decodeInput({ ...assign, request: { ...assign.request,
-      agentless: true, capabilityConfig: [storage] } }).request.action).toBe("computer.assign");
-    expect(decodeInput({ ...assign, request: { ...assign.request, capabilityConfig: [
-      { kind: "build", ssh_endpoint_ref: "endpoint-build", slots: 3, jobs: 6,
-        lane_root: "/srv/build-lane", disk_floor_gib: 60, toolchains: ["rust-stable"] },
-      { kind: "gpu", model: "Test GPU", vram_gib: 20 },
-    ] } }).request.action).toBe("computer.assign");
+    expect(
+      decodeInput({
+        ...assign,
+        request: { ...assign.request, agentless: true, capabilityConfig: [storage] },
+      }).request.action,
+    ).toBe("computer.assign");
+    expect(
+      decodeInput({
+        ...assign,
+        request: {
+          ...assign.request,
+          capabilityConfig: [
+            {
+              kind: "build",
+              ssh_endpoint_ref: "endpoint-build",
+              slots: 3,
+              jobs: 6,
+              lane_root: "/srv/build-lane",
+              disk_floor_gib: 60,
+              toolchains: ["rust-stable"],
+            },
+            { kind: "gpu", model: "Test GPU", vram_gib: 20 },
+          ],
+        },
+      }).request.action,
+    ).toBe("computer.assign");
     for (const capabilityConfig of [
       [storage, storage],
       [{ ...storage, quota_gib: 0 }],
       [{ ...storage, purposes: [] }],
       [{ kind: "gpu", model: "Test GPU", vram_gib: -1 }],
     ]) {
-      expect(() => decodeInput({ ...assign,
-        request: { ...assign.request, capabilityConfig } })).toThrow();
+      expect(() =>
+        decodeInput({ ...assign, request: { ...assign.request, capabilityConfig } }),
+      ).toThrow();
     }
   });
   it("accepts endpoint references and rejects inline credential values or ownership injection", () => {
-    expect(decodeInput({ instanceId: assign.instanceId, request: endpoint }).request.action)
-      .toBe("computer.endpoint.upsert");
+    expect(decodeInput({ instanceId: assign.instanceId, request: endpoint }).request.action).toBe(
+      "computer.endpoint.upsert",
+    );
     for (const request of [
       { ...endpoint, ownerUserId: "foreign" },
       { ...endpoint, connection: { ...endpoint.connection, private_key: "private-key-bytes" } },
-      { ...endpoint, connection: { ...endpoint.connection, private_key: {
-        scope: "computer-access", name: "nas-key", value: "secret" } } },
+      {
+        ...endpoint,
+        connection: {
+          ...endpoint.connection,
+          private_key: {
+            scope: "computer-access",
+            name: "nas-key",
+            value: "secret",
+          },
+        },
+      },
       { ...endpoint, connection: { ...endpoint.connection, password: "secret" } },
-    ]) expect(() => decodeInput({ instanceId: assign.instanceId, request })).toThrow();
-    expect(decodeResponse({ action: "computer.endpoint.disable", endpointRef: "endpoint-nas",
-      computerId: "nas-1", enabled: false })).toMatchObject({ enabled: false });
+    ])
+      expect(() => decodeInput({ instanceId: assign.instanceId, request })).toThrow();
+    expect(
+      decodeResponse({
+        action: "computer.endpoint.disable",
+        endpointRef: "endpoint-nas",
+        computerId: "nas-1",
+        enabled: false,
+      }),
+    ).toMatchObject({ enabled: false });
   });
 });

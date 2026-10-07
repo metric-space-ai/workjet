@@ -84,9 +84,14 @@ describe("native computer capabilities", () => {
   it("offers removal for native-only storage and capability editing for a coding computer", () => {
     const markup = renderToStaticMarkup(
       <WorkjetComputersSettingsView
-        configuration={configurationWith(localComputer)} environments={[]} environmentsReady
-        membership={membership} onChange={() => undefined}
-        onUnassignNative={() => undefined} onCapabilities={() => undefined} />,
+        configuration={configurationWith(localComputer)}
+        environments={[]}
+        environmentsReady
+        membership={membership}
+        onChange={() => undefined}
+        onUnassignNative={() => undefined}
+        onCapabilities={() => undefined}
+      />,
     );
     expect(markup).toContain("Remove flashstore24-nas from selected Business OS");
     expect(markup).toContain("Edit capabilities for computer-local");

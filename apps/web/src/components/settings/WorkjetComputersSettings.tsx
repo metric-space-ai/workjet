@@ -26,7 +26,14 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { Button } from "../ui/button";
-import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle, DialogDescription } from "../ui/dialog";
+import {
+  Dialog,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+  DialogDescription,
+} from "../ui/dialog";
 import { ComputerCapabilitiesEditor } from "./ComputerCapabilitiesEditor";
 import type { OperationalComputerEnrollment } from "../../computerCapabilityEnrollment";
 import { toastManager } from "../ui/toast";
@@ -366,10 +373,15 @@ export function WorkjetComputersSettingsView({
               >
                 <ComputerCapabilityChips capabilities={nativeComputer?.capabilities ?? []} />
                 {onCapabilities ? (
-                  <Button size="sm" variant="outline"
-                    disabled={membership?.phase !== "ready" || membership.pendingComputerId !== null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      membership?.phase !== "ready" || membership.pendingComputerId !== null
+                    }
                     onClick={() => onCapabilities(computer)}
-                    aria-label={`Edit capabilities for ${computer.label}`}>
+                    aria-label={`Edit capabilities for ${computer.label}`}
+                  >
                     Capabilities
                   </Button>
                 ) : null}
@@ -489,14 +501,21 @@ export function WorkjetComputersSettingsView({
           key={computer.id}
           title={computer.displayName}
           description="Assigned to the selected Business OS"
-          control={onUnassignNative ? (
-            <Button size="sm" variant="outline"
-              disabled={membership?.phase !== "ready" || membership.pendingComputerId !== null}
-              onClick={() => onUnassignNative(computer.id)}
-              aria-label={`Remove ${computer.displayName} from selected Business OS`}>
-              {membership?.pendingComputerId === computer.id ? "Waiting for confirmation…" : "Remove from Business OS"}
-            </Button>
-          ) : undefined}
+          control={
+            onUnassignNative ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={membership?.phase !== "ready" || membership.pendingComputerId !== null}
+                onClick={() => onUnassignNative(computer.id)}
+                aria-label={`Remove ${computer.displayName} from selected Business OS`}
+              >
+                {membership?.pendingComputerId === computer.id
+                  ? "Waiting for confirmation…"
+                  : "Remove from Business OS"}
+              </Button>
+            ) : undefined
+          }
         >
           <div data-workjet-native-computer={computer.id}>
             <ComputerCapabilityChips capabilities={computer.capabilities} />
@@ -611,7 +630,14 @@ export function WorkjetComputersSettings({
       setAddMode("capabilities");
     }
     setPendingComputerId(null);
-  }, [pendingTarget, pendingKind, pendingInspection.data, settings.workjet, setupOnly, updateSettings]);
+  }, [
+    pendingTarget,
+    pendingKind,
+    pendingInspection.data,
+    settings.workjet,
+    setupOnly,
+    updateSettings,
+  ]);
   const setupBusy = connections.busy || membership.pendingComputerId !== null;
   useEffect(() => {
     onBusyChange?.(setupBusy);
@@ -632,7 +658,9 @@ export function WorkjetComputersSettings({
     setCapabilityComputer(null);
     if (setupOnly) onCompleted?.();
   };
-  const enrollmentAvailable = !!selectedInstanceId && activeMembership?.phase === "ready" &&
+  const enrollmentAvailable =
+    !!selectedInstanceId &&
+    activeMembership?.phase === "ready" &&
     activeMembership.pendingComputerId === null;
   const addChoices = (
     <div className="space-y-3">
@@ -640,14 +668,25 @@ export function WorkjetComputersSettings({
         Connect a computer for coding, or register a build, GPU, or storage computer such as a NAS.
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={() => {
-          setAddMode(null);
-          connections.openAddComputer();
-        }}>Coding computer</Button>
-        <Button variant="outline" disabled={!enrollmentAvailable} onClick={() => {
-          setCapabilityComputer(null);
-          setAddMode("capabilities");
-        }}>Build, GPU, or storage computer</Button>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setAddMode(null);
+            connections.openAddComputer();
+          }}
+        >
+          Coding computer
+        </Button>
+        <Button
+          variant="outline"
+          disabled={!enrollmentAvailable}
+          onClick={() => {
+            setCapabilityComputer(null);
+            setAddMode("capabilities");
+          }}
+        >
+          Build, GPU, or storage computer
+        </Button>
       </div>
       {!enrollmentAvailable ? (
         <p role="status" className="text-sm text-muted-foreground">
@@ -662,9 +701,15 @@ export function WorkjetComputersSettings({
       <div className="space-y-4">
         {setupComputer === null && pendingComputerId === null ? (
           addMode === "capabilities" ? (
-            <ComputerCapabilitiesEditor onSave={saveCapabilities} onCancel={() => setAddMode(null)} />
+            <ComputerCapabilitiesEditor
+              onSave={saveCapabilities}
+              onCancel={() => setAddMode(null)}
+            />
           ) : (
-            <>{addChoices}{connections.form}</>
+            <>
+              {addChoices}
+              {connections.form}
+            </>
           )
         ) : null}
         {pendingComputerId !== null ? (
@@ -702,16 +747,31 @@ export function WorkjetComputersSettings({
                 {activeMembership.error}
               </p>
             ) : null}
-            <ComputerCapabilitiesEditor key={setupComputer.id} computer={setupComputer}
-              preserveExistingCapabilities={activeMembership?.computers.some((entry) =>
-                entry.id === setupComputer.id && entry.capabilities.some((kind) =>
-                  OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind))) ?? false}
-              onSave={saveCapabilities} onCancel={() => setSetupComputer(null)} />
+            <ComputerCapabilitiesEditor
+              key={setupComputer.id}
+              computer={setupComputer}
+              preserveExistingCapabilities={
+                activeMembership?.computers.some(
+                  (entry) =>
+                    entry.id === setupComputer.id &&
+                    entry.capabilities.some((kind) =>
+                      OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind),
+                    ),
+                ) ?? false
+              }
+              onSave={saveCapabilities}
+              onCancel={() => setSetupComputer(null)}
+            />
             {activeMembership?.phase === "failed" ? (
-              <Button variant="outline" onClick={() => {
-                if (selectedInstanceId)
-                  void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
-              }}>Zuordnung erneut prüfen</Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (selectedInstanceId)
+                    void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
+                }}
+              >
+                Zuordnung erneut prüfen
+              </Button>
             ) : null}
           </>
         ) : null}
@@ -734,24 +794,41 @@ export function WorkjetComputersSettings({
           />
         ))}
       {connections.dialog}
-      <Dialog open={addMode !== null} onOpenChange={(open) => {
-        if (!open && !setupBusy) setAddMode(null);
-      }}>
+      <Dialog
+        open={addMode !== null}
+        onOpenChange={(open) => {
+          if (!open && !setupBusy) setAddMode(null);
+        }}
+      >
         <DialogPopup showCloseButton={!setupBusy}>
           <DialogHeader>
-            <DialogTitle>{addMode === "choose" ? "Add computer" : "Computer capabilities"}</DialogTitle>
+            <DialogTitle>
+              {addMode === "choose" ? "Add computer" : "Computer capabilities"}
+            </DialogTitle>
             <DialogDescription>
-              Save capabilities in the selected Business OS after it confirms the computer and access.
+              Save capabilities in the selected Business OS after it confirms the computer and
+              access.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            {addMode === "choose" ? addChoices : addMode === "capabilities" ? (
-              <ComputerCapabilitiesEditor key={capabilityComputer?.id ?? "operational-new"}
+            {addMode === "choose" ? (
+              addChoices
+            ) : addMode === "capabilities" ? (
+              <ComputerCapabilitiesEditor
+                key={capabilityComputer?.id ?? "operational-new"}
                 {...(capabilityComputer ? { computer: capabilityComputer } : {})}
-                preserveExistingCapabilities={activeMembership?.computers.some((entry) =>
-                  entry.id === capabilityComputer?.id && entry.capabilities.some((kind) =>
-                    OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind))) ?? false}
-                onSave={saveCapabilities} onCancel={() => setAddMode(null)} />
+                preserveExistingCapabilities={
+                  activeMembership?.computers.some(
+                    (entry) =>
+                      entry.id === capabilityComputer?.id &&
+                      entry.capabilities.some((kind) =>
+                        OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind),
+                      ),
+                  ) ?? false
+                }
+                onSave={saveCapabilities}
+                onCancel={() => setAddMode(null)}
+              />
             ) : null}
           </DialogPanel>
         </DialogPopup>
@@ -780,13 +857,25 @@ export function WorkjetComputersSettings({
         environmentId={environmentId}
         onChange={(workjet) => updateSettings({ workjet })}
         onAdd={() => setAddMode("choose")}
-        onCapabilities={selectedInstanceId ? (computer) => {
-          setCapabilityComputer(computer);
-          setAddMode("capabilities");
-        } : undefined}
-        onUnassignNative={selectedInstanceId ? (computerId) => {
-          void membershipStore.unassign(selectedInstanceId, computerId, window.desktopBridge?.ctox);
-        } : undefined}
+        onCapabilities={
+          selectedInstanceId
+            ? (computer) => {
+                setCapabilityComputer(computer);
+                setAddMode("capabilities");
+              }
+            : undefined
+        }
+        onUnassignNative={
+          selectedInstanceId
+            ? (computerId) => {
+                void membershipStore.unassign(
+                  selectedInstanceId,
+                  computerId,
+                  window.desktopBridge?.ctox,
+                );
+              }
+            : undefined
+        }
         renderConnection={connections.renderConnection}
         connectedEnvironmentIds={environments
           .filter((entry) => entry.connection.phase === "connected")

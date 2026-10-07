@@ -104,6 +104,7 @@ export function ProjectOverviewEditor({
               Type
               <select
                 id={`${prefix}-type`}
+                  aria-label={`KPI ${index + 1} type`}
                 className="h-8 rounded-md border border-input bg-background px-2"
                 value={slot.kind}
                 onChange={(event) =>
@@ -122,6 +123,7 @@ export function ProjectOverviewEditor({
                 Label
                 <Input
                   id={`${prefix}-label`}
+                  aria-label={`KPI ${index + 1} label`}
                   maxLength={96}
                   value={slot.label}
                   required
@@ -134,6 +136,7 @@ export function ProjectOverviewEditor({
                 {slot.kind === "link" ? "URL" : "Value"}
                 <Input
                   id={`${prefix}-value`}
+                  aria-label={`KPI ${index + 1} value`}
                   type={slot.kind === "link" ? "url" : slot.kind === "metric" ? "number" : "text"}
                   step={slot.kind === "metric" ? "any" : undefined}
                   maxLength={slot.kind === "link" ? 2048 : 512}
@@ -148,6 +151,7 @@ export function ProjectOverviewEditor({
                 Unit (optional)
                 <Input
                   id={`${prefix}-unit`}
+                  aria-label={`KPI ${index + 1} unit`}
                   maxLength={32}
                   value={slot.unit}
                   onChange={(event) => editSlot(index, { unit: event.target.value })}

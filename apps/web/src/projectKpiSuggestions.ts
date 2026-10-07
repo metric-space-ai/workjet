@@ -25,5 +25,6 @@ export function suggestedProjectKpis(title: string): ProjectOverview["slots"] | 
     .replace(/\/$/, "");
   const labels = projectKpiSuggestions[key as keyof typeof projectKpiSuggestions];
   if (!labels) return null;
-  return labels.map((label) => ({ kind: "text" as const, label, value: "—" }));
+  const slot = (label: string) => ({ kind: "text" as const, label, value: "—" });
+  return [slot(labels[0]), slot(labels[1]), slot(labels[2])];
 }

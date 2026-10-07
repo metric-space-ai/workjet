@@ -50,7 +50,11 @@ export function ProjectOverviewCard({
     { kind: "updated", label: "Activity" },
   ];
   const activityAt = statistics?.lastActivityAt ?? project.local?.updatedAt ?? null;
-  const slots = defaultSlots.map((fallback, index) => overview.slots[index] ?? fallback);
+  const slots: ProjectOverview["slots"] = [
+    overview.slots[0] ?? defaultSlots[0],
+    overview.slots[1] ?? defaultSlots[1],
+    overview.slots[2] ?? defaultSlots[2],
+  ];
   const editableOverview = { ...overview, slots };
   const titleIsWebsite =
     website != null &&
@@ -147,12 +151,20 @@ export function ProjectOverviewCard({
         {!archived && cachedPreview && failedCachedWebsite !== website ? (
           <img
             src={cachedPreview.image}
-            alt={cachedPreview.kind === "logo" ? `Project logo for ${project.title}` : `Saved website preview for ${project.title}`}
+            alt={
+              cachedPreview.kind === "logo"
+                ? `Project logo for ${project.title}`
+                : `Saved website preview for ${project.title}`
+            }
             title={`Saved preview · ${cachedPreview.capturedOn}`}
             loading="lazy"
             decoding="async"
             onError={() => setFailedCachedWebsite(website ?? null)}
-            className={cachedPreview.kind === "logo" ? "size-full object-contain p-12" : "size-full object-cover object-top"}
+            className={
+              cachedPreview.kind === "logo"
+                ? "size-full object-contain p-12"
+                : "size-full object-cover object-top"
+            }
           />
         ) : (
           <div

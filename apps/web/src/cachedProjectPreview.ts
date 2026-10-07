@@ -26,7 +26,13 @@ export function resolveCachedProjectPreview(website: string | null | undefined) 
       return null;
     }
     const image = cachedPreviews.get(url.origin);
-    return image ? { image, capturedOn: "2026-10-07", kind: url.origin === "https://mypokedex.app" ? "logo" : "preview" } : null;
+    return image
+      ? {
+          image,
+          capturedOn: "2026-10-07",
+          kind: url.origin === "https://mypokedex.app" ? "logo" : "preview",
+        }
+      : null;
   } catch {
     return null;
   }

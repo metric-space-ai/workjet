@@ -188,6 +188,7 @@ import {
   useAvailableProjectContext,
   type AvailableProject,
 } from "../availableProjects";
+import { groupThreadsByProjectTeam, PROJECT_TEAM_SECTIONS } from "../lib/projectTeamSections";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
 // stays behind an explicit Show more.
@@ -4055,8 +4056,58 @@ export default function Sidebar() {
                       />,
                     );
                   }
-                  for (const thread of activeThreads) {
-                    items.push(renderThreadRow(thread, "active"));
+                  if (selectedWorkjetProject !== null) {
+                    // An opened project reads as its team: supervisor first, then the
+                    // long-lived parents, then one-time PR workers (archived on merge).
+                    const team = groupThreadsByProjectTeam(activeThreads);
+                    for (const { section, label, empty } of PROJECT_TEAM_SECTIONS) {
+                      items.push(
+                        <li
+                          key={`team-${section}-header`}
+                          data-workjet-team-section={section}
+                          className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5 first:mt-1"
+                        >
+                          <span className="text-xs font-medium text-muted-foreground/70">
+                            {label}
+                          </span>
+                          <span className="h-px flex-1 bg-sidebar-border/60" />
+                        </li>,
+                      );
+                      if (team[section].length === 0) {
+                        items.push(
+                          <li
+                            key={`team-${section}-empty`}
+                            className="list-none px-2.5 pb-1 text-[11px] text-muted-foreground/50"
+                          >
+                            {empty}
+                          </li>,
+                        );
+                      }
+                      for (const thread of team[section]) {
+                        items.push(renderThreadRow(thread, "active"));
+                      }
+                    }
+                    if (team.other.length > 0) {
+                      items.push(
+                        <li
+                          key="team-other-header"
+                          data-workjet-team-section="other"
+                          className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5"
+                        >
+                          <span className="text-xs font-medium text-muted-foreground/70">
+                            Other chats
+                          </span>
+                          <span className="h-px flex-1 bg-sidebar-border/60" />
+                        </li>,
+                      );
+                    }
+                    for (const thread of team.other) {
+                      items.push(renderThreadRow(thread, "active"));
+                    }
+                  } else {
+                    for (const thread of activeThreads) {
+                      items.push(renderThreadRow(thread, "active"));
+                    }
                   }
                   // Snoozed shelf: between the inbox and Settled — out of the
                   // way, never gone. The header always renders while anything

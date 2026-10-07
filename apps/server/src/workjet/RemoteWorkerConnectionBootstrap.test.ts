@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off -- Fixture expiry tracks the wall clock used by the real Node port-reservation boundary.
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId, WorkjetComputerId, type RemoteWorkerRequest } from "@workjet/contracts";

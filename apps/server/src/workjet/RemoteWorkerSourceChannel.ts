@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-// @effect-diagnostics nodeBuiltinImport:off -- This listener belongs to the Node service, never Electron.
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off -- Node HTTP listener boundary owns socket deadlines and worker capability expiry outside Effect fibers.
 import * as Crypto from "node:crypto";
 import * as Http from "node:http";
 
@@ -106,7 +106,12 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
         ]);
         if (controller.signal.aborted || sessions.get(session.requestId) !== session ||
           session.expiresAtMs <= Date.now()) return reject(401);
-        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+        res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store",
+          "x-workjet-source-environment": session.sourceEnvironmentId,
+          "x-workjet-target-environment": session.targetEnvironmentId,
+          "x-workjet-worker-request": session.requestId,
+          "x-workjet-worker-digest": session.requestDigest,
+        });
         res.end(JSON.stringify(response));
       } catch { if (!res.headersSent) reject(controller.signal.aborted ? 503 : 400); }
       finally {

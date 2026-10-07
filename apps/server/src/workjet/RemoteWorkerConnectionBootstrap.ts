@@ -9,6 +9,7 @@ import {
   RemoteWorkerSourcePrepareInput, RemoteWorkerTargetRouteInput,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -28,15 +29,16 @@ import type { WorkerSourceOperation } from "./RemoteWorkerSourceChannel.ts";
 export class RemoteWorkerSourceOperations extends Context.Service<RemoteWorkerSourceOperations, {
   readonly authorize: (request: RemoteWorkerRequest, profile: RemoteWorkerSourceProfile) => Effect.Effect<void, RemoteWorkerDispatchError>;
   readonly invoke: (request: RemoteWorkerRequest, operation: WorkerSourceOperation, payload: unknown, signal: AbortSignal) => Promise<unknown>;
-}>()("workjet/RemoteWorkerSourceOperations") {}
+}>()("workjet/workjet/RemoteWorkerSourceOperations") {}
 
 export class RemoteWorkerTargetHarnessSetup extends Context.Service<RemoteWorkerTargetHarnessSetup, {
   readonly install: (request: RemoteWorkerRequest, route: RemoteWorkerSourceRoute) => Effect.Effect<void, RemoteWorkerDispatchError>;
-}>()("workjet/RemoteWorkerTargetHarnessSetup") {}
+}>()("workjet/workjet/RemoteWorkerTargetHarnessSetup") {}
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const secretName = (kind: "profile" | "route", requestId: string) =>
   `worker-source-${kind}-${Crypto.createHash("sha256").update(requestId).digest("hex")}`;
+const StoredWorkerRoute = Schema.Struct({ requestDigest: Schema.String, expiresAt: Schema.String, route: RemoteWorkerSourceRoute });
 const tokenDigest = (token: string) => Crypto.createHash("sha256").update(token).digest("hex");
 
 /** A reverse tunnel is accepted only when the target kernel reports exactly an
@@ -81,17 +83,18 @@ export const make = Effect.gen(function* () {
   const sources = new Map<string, SourceSession>();
   const reservations = new Map<string, { reservation: RemoteWorkerRouteReservation; expiresAtMs: number }>();
   const digest = (request: RemoteWorkerRequest) => remoteWorkerRequestDigest(request);
-  const current = (request: RemoteWorkerRequest) => Date.parse(request.expiresAt) > Date.now();
+  const current = (request: RemoteWorkerRequest) => Clock.currentTimeMillis.pipe(Effect.map((now) => Date.parse(request.expiresAt) > now));
 
   const reserve = Effect.fn("WorkerConnection.reserve")(function* (request: RemoteWorkerRequest) {
-    if (request.targetEnvironmentId !== environmentId || !current(request)) return yield* failure();
+    if (request.targetEnvironmentId !== environmentId || !(yield* current(request))) return yield* failure();
     const requestDigest = yield* digest(request);
     const old = reservations.get(request.requestId);
     if (old) {
       if (old.reservation.requestDigest !== requestDigest) return yield* failure();
       return old.reservation;
     }
-    for (const [id, entry] of reservations) if (entry.expiresAtMs <= Date.now()) reservations.delete(id);
+    const now = yield* Clock.currentTimeMillis;
+    for (const [id, entry] of reservations) if (entry.expiresAtMs <= now) reservations.delete(id);
     if (reservations.size >= 128) return yield* failure();
     const remotePort = yield* Effect.tryPromise({ try: reservePort, catch: failure });
     const reservation: RemoteWorkerRouteReservation = {
@@ -104,7 +107,7 @@ export const make = Effect.gen(function* () {
 
   const prepare = Effect.fn("WorkerConnection.prepare")(function* (input: typeof RemoteWorkerSourcePrepareInput.Type) {
     const request = input.workerRequest;
-    if (Option.isNone(operations) || request.parent.environmentId !== environmentId || !current(request) ||
+    if (Option.isNone(operations) || request.parent.environmentId !== environmentId || !(yield* current(request)) ||
       input.profile.environmentId !== request.targetEnvironmentId ||
       input.reservation.targetEnvironmentId !== request.targetEnvironmentId || input.reservation.requestId !== request.requestId)
       return yield* failure();
@@ -113,14 +116,15 @@ export const make = Effect.gen(function* () {
     const outbound = yield* broker.read(request.requestId);
     if (Option.isNone(outbound) || (yield* digest(outbound.value.request)) !== requestDigest) return yield* failure();
     yield* operations.value.authorize(request, input.profile);
-    const profileDigest = tokenDigest(JSON.stringify(input.profile));
+    const profileJson = yield* Schema.encodeEffect(Schema.fromJsonString(RemoteWorkerSourceProfile))(input.profile).pipe(Effect.mapError(failure));
+    const profileDigest = tokenDigest(profileJson);
     const old = sources.get(request.requestId);
     if (old) {
       if (old.digest !== requestDigest || old.profileDigest !== profileDigest || old.reservation.bootstrapId !== input.reservation.bootstrapId) return yield* failure();
       return old.route;
     }
     if (sources.size >= 128) return yield* failure();
-    const profileBytes = new TextEncoder().encode(JSON.stringify(input.profile));
+    const profileBytes = new TextEncoder().encode(profileJson);
     const existing = yield* secrets.get(secretName("profile", request.requestId)).pipe(Effect.mapError(failure));
     if (Option.isSome(existing) && new TextDecoder().decode(existing.value) !== new TextDecoder().decode(profileBytes))
       return yield* new RemoteWorkerDispatchError({ reason: "request-conflict" });
@@ -146,9 +150,7 @@ export const make = Effect.gen(function* () {
         // bind and infer still run live admission in the listener; inference
         // additionally waits for confirmed target kernel/source identity proof.
         if (operation === "infer" && !sources.get(request.requestId)?.confirmed) throw new Error("unconfirmed");
-        const result = await operations.value.invoke(request, operation, payload, signal);
-        return operation === "admit" ? { sourceEnvironmentId: environmentId, targetEnvironmentId: request.targetEnvironmentId,
-          requestId: request.requestId, requestDigest } : result;
+        return operations.value.invoke(request, operation, payload, signal);
       },
       onRoute: (route) => Effect.gen(function* () {
         const typed = yield* Schema.decodeUnknownEffect(RemoteWorkerSourceRoute)(route).pipe(Effect.orDie);
@@ -166,7 +168,8 @@ export const make = Effect.gen(function* () {
       Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.fail(failure()) }),
       Effect.onError(() => Scope.close(scope, Exit.void)),
     );
-    yield* Effect.sleep(Math.max(1, Date.parse(request.expiresAt) - Date.now())).pipe(
+    const remainingMs = Date.parse(request.expiresAt) - (yield* Clock.currentTimeMillis);
+    yield* Effect.sleep(Math.max(1, remainingMs)).pipe(
       Effect.andThen(Scope.close(scope, Exit.void)), Effect.forkIn(serviceScope),
     );
     return route;
@@ -176,7 +179,7 @@ export const make = Effect.gen(function* () {
     const { workerRequest: request, reservation, route } = input;
     const saved = reservations.get(request.requestId);
     if (request.targetEnvironmentId !== environmentId || reservation.targetEnvironmentId !== environmentId ||
-      reservation.requestId !== request.requestId || !current(request) || !saved ||
+      reservation.requestId !== request.requestId || !(yield* current(request)) || !saved ||
       saved.reservation.bootstrapId !== reservation.bootstrapId || reservation.requestDigest !== (yield* digest(request)) ||
       route.requestDigest !== reservation.requestDigest || route.requestId !== request.requestId ||
       route.sourceEnvironmentId !== request.parent.environmentId || route.targetEnvironmentId !== environmentId ||
@@ -184,24 +187,26 @@ export const make = Effect.gen(function* () {
     const verifyOnce = Effect.tryPromise({ try: async () => {
       const [tcp, tcp6] = await Promise.all([Fs.readFile("/proc/net/tcp", "utf8"), Fs.readFile("/proc/net/tcp6", "utf8")]);
       if (!verifyLinuxWorkerLoopback(route.port, tcp, tcp6)) throw new Error("not-loopback-only");
+      // @effect-diagnostics-next-line globalFetch:off -- Probe the real SSH-forwarded loopback socket rather than an Effect mock transport.
       const response = await fetch(`http://127.0.0.1:${route.port}/worker-source`, {
         method: "POST", headers: { authorization: `Bearer ${route.capability}`, "content-type": "application/json" },
+        // @effect-diagnostics-next-line preferSchemaOverJson:off -- Bounded worker-only wire probe repeats the already decoded route identity.
         body: JSON.stringify({ ...route, capability: undefined, port: undefined, operation: "admit" }),
         signal: AbortSignal.timeout(2000),
       });
       if (!response.ok) throw new Error("source-not-ready");
-      const value: unknown = await response.json();
-      if (value === null || typeof value !== "object" ||
-        (value as Record<string, unknown>).sourceEnvironmentId !== route.sourceEnvironmentId ||
-        (value as Record<string, unknown>).targetEnvironmentId !== environmentId ||
-        (value as Record<string, unknown>).requestId !== route.requestId ||
-        (value as Record<string, unknown>).requestDigest !== route.requestDigest) throw new Error("source-identity-mismatch");
+      await response.body?.cancel();
+      if (response.headers.get("x-workjet-source-environment") !== route.sourceEnvironmentId ||
+        response.headers.get("x-workjet-target-environment") !== environmentId ||
+        response.headers.get("x-workjet-worker-request") !== route.requestId ||
+        response.headers.get("x-workjet-worker-digest") !== route.requestDigest) throw new Error("source-identity-mismatch");
     }, catch: failure }).pipe(Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ times: 20 }))));
     yield* verifyOnce;
     if (Option.isNone(targetHarness)) return yield* failure();
     yield* targetHarness.value.install(request, route);
-    yield* secrets.set(secretName("route", request.requestId), new TextEncoder().encode(JSON.stringify({ requestDigest: reservation.requestDigest,
-      expiresAt: request.expiresAt, route }))).pipe(Effect.mapError(failure));
+    const stored = yield* Schema.encodeEffect(Schema.fromJsonString(StoredWorkerRoute))({ requestDigest: reservation.requestDigest,
+      expiresAt: request.expiresAt, route }).pipe(Effect.mapError(failure));
+    yield* secrets.set(secretName("route", request.requestId), new TextEncoder().encode(stored)).pipe(Effect.mapError(failure));
     return { reservation, sourceEnvironmentId: route.sourceEnvironmentId,
       capabilityDigest: tokenDigest(route.capability), loopbackOnly: true as const };
   });
@@ -218,13 +223,16 @@ export const make = Effect.gen(function* () {
     yield* Deferred.await(saved.ready);
   });
   const resolveTargetRoute = Effect.fn("WorkerConnection.resolveTargetRoute")(function* (request: RemoteWorkerRequest) {
-    if (request.targetEnvironmentId !== environmentId || !current(request)) return yield* failure();
+    if (request.targetEnvironmentId !== environmentId || !(yield* current(request))) return yield* failure();
     const saved = yield* secrets.get(secretName("route", request.requestId)).pipe(Effect.mapError(failure));
     if (Option.isNone(saved)) return yield* failure();
-    const value = yield* Effect.try({ try: () => JSON.parse(new TextDecoder().decode(saved.value)) as { requestDigest?: string; route?: unknown }, catch: failure });
-    if (value.requestDigest !== (yield* digest(request))) return yield* failure();
+    const value = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(StoredWorkerRoute))(
+      new TextDecoder().decode(saved.value),
+    ).pipe(Effect.mapError(failure));
+    if (value.requestDigest !== (yield* digest(request)) || value.expiresAt !== request.expiresAt) return yield* failure();
     const route = yield* Schema.decodeUnknownEffect(RemoteWorkerSourceRoute)(value.route).pipe(Effect.mapError(failure));
-    if (route.targetEnvironmentId !== environmentId || route.sourceEnvironmentId !== request.parent.environmentId || route.requestId !== request.requestId)
+    if (route.targetEnvironmentId !== environmentId || route.sourceEnvironmentId !== request.parent.environmentId ||
+      route.requestId !== request.requestId || route.requestDigest !== value.requestDigest)
       return yield* failure();
     return route;
   });
@@ -241,6 +249,6 @@ export const make = Effect.gen(function* () {
   };
 });
 export class RemoteWorkerConnectionBootstrap extends Context.Service<RemoteWorkerConnectionBootstrap, Effect.Success<typeof make>>()(
-  "workjet/RemoteWorkerConnectionBootstrap",
+  "workjet/workjet/RemoteWorkerConnectionBootstrap",
 ) {}
 export const layer = Layer.effect(RemoteWorkerConnectionBootstrap, make);

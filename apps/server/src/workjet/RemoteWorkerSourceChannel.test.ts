@@ -1,4 +1,5 @@
-import { assert, describe, it } from "vitest";
+// @effect-diagnostics globalFetch:off globalDate:off -- Real loopback socket lifecycle tests exercise the Node listener and wall-clock capability expiry.
+import { assert, describe, it } from "@effect/vitest";
 import { openWorkerSourceChannel, type WorkerSourceRoute } from "./RemoteWorkerSourceChannel.ts";
 
 const identity = {
@@ -28,7 +29,11 @@ describe("Node-owned worker source channel", () => {
       assert.equal((await post(route, { targetEnvironmentId: "foreign" })).status, 403);
       assert.equal((await post(route, { operation: "server.updateSettings" })).status, 403);
       assert.deepEqual(calls, []);
-      assert.equal((await post(route)).status, 200);
+      const success = await post(route);
+      assert.equal(success.status, 200);
+      assert.equal(success.headers.get("x-workjet-source-environment"), identity.sourceEnvironmentId);
+      assert.equal(success.headers.get("x-workjet-worker-digest"), identity.requestDigest);
+      assert.deepEqual(await success.json(), { status: "ok" });
       assert.deepEqual(calls, ["admit", "infer"]);
       authorized = false;
       assert.equal((await post(route)).status, 400);

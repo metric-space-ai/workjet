@@ -13,6 +13,7 @@ type TeamThread = {
 
 export function ProjectTeamPanel(props: {
   readonly thread: TeamThread;
+  readonly compact?: boolean;
   readonly threads: ReadonlyArray<TeamThread>;
   readonly onOpen: (threadId: ThreadId) => void;
   readonly onAddSpecialist: (domain: string, goal: string) => Promise<boolean>;
@@ -132,7 +133,7 @@ export function ProjectTeamPanel(props: {
           </button>
         )}
         {error ? <p role="alert">{error}</p> : null}
-        {directory}
+        {props.compact ? null : directory}
       </section>
     );
   }
@@ -150,22 +151,22 @@ export function ProjectTeamPanel(props: {
     }
   };
   return (
-    <section aria-label="Project team" className="border-b px-4 py-3 text-sm">
+    <section aria-label="Project team" className={props.compact ? "flex flex-wrap items-start gap-x-4 gap-y-1 border-b px-4 py-2 text-xs" : "border-b px-4 py-2 text-sm"} data-workjet-team-toolbar={props.compact ? "compact" : undefined}>
       <div className="flex flex-wrap items-center gap-2">
         <strong className="capitalize">{team.role}</strong>
         {team.role === "specialist" ? <span>{team.domain}</span> : null}
-        <span>
+        {props.compact ? null : <span>
           {props.thread.modelSelection.instanceId} · {props.thread.modelSelection.model}
-        </span>
+        </span>}
         {team.parentThreadId ? (
           <button type="button" onClick={() => props.onOpen(team.parentThreadId!)}>
             Parent: {parent?.title ?? team.parentThreadId}
           </button>
         ) : null}
       </div>
-      <p className="mt-1">Goal: {team.goal}</p>
-      <details className="mt-2">
-        <summary>Adjust goal</summary>
+      {props.compact ? null : <p className="mt-1">Goal: {team.goal}</p>}
+      <details className="mt-1">
+        <summary className="text-xs text-muted-foreground">Project goal</summary>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -189,7 +190,7 @@ export function ProjectTeamPanel(props: {
           </button>
         </form>
       </details>
-      {directory}
+      {props.compact ? null : directory}
       {team.role === "supervisor" ? (
         <details className="mt-2">
           <summary>Add domain specialist</summary>

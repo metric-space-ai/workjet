@@ -226,6 +226,7 @@ export function CrossModeNotificationCenter() {
     target: firstApproval?.target ?? null,
   });
 
+  if (snapshot.settled && snapshot.notifications.length === 0) return null;
   return (
     <section aria-label="Cross-mode activity" className="flex flex-col gap-2">
       <CrossModePendingApprovalIndicator onOpen={onOpen} view={view} />

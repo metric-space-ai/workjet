@@ -66,6 +66,15 @@ function render(thread: TeamThread, threads: readonly TeamThread[]) {
   );
 }
 describe("ProjectTeamPanel directory", () => {
+  it("leaves the team directory in the sidebar when the chat uses its compact toolbar", () => {
+    const markup = renderToStaticMarkup(<ProjectTeamPanel compact thread={supervisor} threads={[supervisor, specialist, worker]} onOpen={() => {}} onAddSpecialist={async () => true} onSaveGoal={async () => true} onCreateSupervisor={async () => true} />);
+    expect(markup).toContain('data-workjet-team-toolbar="compact"');
+    expect(markup).not.toContain("data-workjet-team-group");
+    expect(markup).not.toContain("One-time PR threads");
+    expect(markup).not.toContain("gpt-6.1-sol");
+    expect(markup).toContain("Team goal");
+    expect(markup).toContain("Add domain specialist");
+  });
   it("shows all three persisted team roles from the supervisor, including its grandchild worker", () => {
     const markup = render(supervisor, [worker, specialist, supervisor]);
     expect(markup).toContain('data-workjet-team-group="supervisor"');

@@ -7100,6 +7100,7 @@ function ChatViewContent(props: ChatViewProps) {
         */}
         {activeServerThread && activeThreadEnvironmentId ? (
           <ProjectTeamPanel
+            compact
             key={`${activeThreadEnvironmentId}:${activeServerThread.id}`}
             thread={activeServerThread}
             threads={allThreadShells.filter(

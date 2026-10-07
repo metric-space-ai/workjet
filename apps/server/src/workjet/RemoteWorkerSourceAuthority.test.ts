@@ -120,7 +120,7 @@ it.effect("lost native ACK retries the same saved request, execution and renewal
       "workjet:gpu3:00000000-0000-4000-8000-000000000007",
       "workjet:gpu3:00000000-0000-4000-8000-000000000007",
     ]);
-    now = 250_000;
+    now = 150_000; // Renew before the bounded 120-second inference window becomes unavailable.
     yield* Effect.flip(authority.admit(request));
     const renewed = yield* authority.admit(request);
     assert.equal(renewed.permit.renewalSequence, 1);

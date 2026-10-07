@@ -252,8 +252,7 @@ it.effect("coalesces concurrent ref pages into one repository snapshot", () =>
             return yield* Effect.die("expected a standard Git command");
           }
           yield* Ref.update(spawnedArgs, (current) => [...current, command.args]);
-          const isWorktreeScan =
-            command.args.includes("worktree") && command.args.includes("--porcelain");
+          const isWorktreeScan = command.args.includes("for-each-ref");
           const shouldDelay =
             isWorktreeScan && (yield* Ref.getAndSet(delayFirstWorktreeScan, false));
           if (shouldDelay) {
@@ -324,9 +323,7 @@ it.effect("coalesces concurrent ref pages into one repository snapshot", () =>
           args.includes("refs/heads") &&
           args.includes("refs/remotes"),
       );
-      const worktreeScans = firstSnapshotCommands.filter(
-        (args) => args.includes("worktree") && args.includes("--porcelain"),
-      );
+      const worktreeScans = firstSnapshotCommands.filter((args) => args.includes("for-each-ref"));
       assert.equal(snapshotRefScans.length, 1);
       assert.equal(worktreeScans.length, 1);
 
@@ -357,18 +354,11 @@ it.effect("retries an in-flight ref snapshot invalidated by a mutation", () =>
       const firstWorktreeScanStarted = yield* Deferred.make<void>();
       const firstRefScanCompleted = yield* Deferred.make<void>();
       const releaseFirstWorktreeScan = yield* Deferred.make<void>();
-      const delayFirstWorktreeScan = yield* Ref.make(true);
       const refScans = yield* Ref.make(0);
       const coordinatingSpawner = ChildProcessSpawner.make((command) =>
         Effect.gen(function* () {
           if (!ChildProcess.isStandardCommand(command)) {
             return yield* Effect.die("expected a standard Git command");
-          }
-          const isWorktreeScan =
-            command.args.includes("worktree") && command.args.includes("--porcelain");
-          if (isWorktreeScan && (yield* Ref.getAndSet(delayFirstWorktreeScan, false))) {
-            yield* Deferred.succeed(firstWorktreeScanStarted, undefined);
-            yield* Deferred.await(releaseFirstWorktreeScan);
           }
           const handle = yield* delegate.spawn(command);
           const isRefScan =
@@ -377,11 +367,13 @@ it.effect("retries an in-flight ref snapshot invalidated by a mutation", () =>
             command.args.includes("refs/remotes");
           if (!isRefScan) return handle;
           const scan = yield* Ref.updateAndGet(refScans, (count) => count + 1);
+          if (scan === 1) yield* Deferred.succeed(firstWorktreeScanStarted, undefined);
           return scan === 1
             ? ChildProcessSpawner.makeHandle({
                 ...handle,
                 exitCode: handle.exitCode.pipe(
                   Effect.tap(() => Deferred.succeed(firstRefScanCompleted, undefined)),
+                  Effect.tap(() => Deferred.await(releaseFirstWorktreeScan)),
                 ),
               })
             : handle;
@@ -477,7 +469,7 @@ it.effect("fails a ref snapshot when for-each-ref exits unsuccessfully", () =>
   ).pipe(Effect.provide(CoreTestLayer)),
 );
 
-it.effect("marks the current branch when worktree metadata is unavailable", () =>
+it.effect("marks the current branch when the worktree root is unavailable", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -488,9 +480,7 @@ it.effect("marks the current branch when worktree metadata is unavailable", () =
           }
           const isWorktreeRoot =
             command.args.includes("rev-parse") && command.args.includes("--show-toplevel");
-          const isWorktreeList =
-            command.args.includes("worktree") && command.args.includes("--porcelain");
-          if (isWorktreeRoot || isWorktreeList) {
+          if (isWorktreeRoot) {
             return makeNonRepositoryHandle();
           }
           return yield* delegate.spawn(command);
@@ -522,11 +512,9 @@ it.effect("ignores worktree metadata for directories that no longer exist", () =
           if (!ChildProcess.isStandardCommand(command)) {
             return yield* Effect.die("expected a standard Git command");
           }
-          const isWorktreeList =
-            command.args.includes("worktree") && command.args.includes("--porcelain");
-          if (isWorktreeList) {
+          if (command.args.includes("for-each-ref")) {
             return makeSuccessfulHandle(
-              `worktree ${missingWorktreePath}\0HEAD deadbeef\0branch refs/heads/stale-worktree\0\0`,
+              `refs/heads/stale-worktree\0\0\0${missingWorktreePath}\0\n`,
             );
           }
           return yield* delegate.spawn(command);
@@ -1482,7 +1470,10 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         const worktreesRoot = yield* makeTmpDir("git-vcs-driver-worktrees-");
         const fileSystem = yield* FileSystem.FileSystem;
         const pathService = yield* Path.Path;
-        const worktreePath = pathService.join(worktreesRoot, "linked\nworktree");
+        const worktreePath = pathService.join(
+          worktreesRoot,
+          'linked\nworktree\tGrüße"\\a\u0007\u000b',
+        );
         const driver = yield* GitVcsDriver.GitVcsDriver;
 
         yield* git(cwd, ["worktree", "add", "-b", "feature/newline-path", worktreePath]);
@@ -1499,6 +1490,35 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           yield* fileSystem.realPath(listedPath),
           yield* fileSystem.realPath(worktreePath),
         );
+      }),
+    );
+
+    it.effect("refuses branch deletion when worktree enumeration fails", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const refName = "feature/registry-unavailable";
+        yield* git(cwd, ["branch", refName]);
+        const commitSha = yield* git(cwd, ["rev-parse", refName]);
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const failingSpawner = ChildProcessSpawner.make((command) => {
+          if (ChildProcess.isStandardCommand(command) && command.args.includes("for-each-ref")) {
+            return Effect.succeed(makeNonRepositoryHandle());
+          }
+          return delegate.spawn(command);
+        });
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, failingSpawner),
+        );
+        const error = yield* driver
+          .deleteBranchAtCommit({
+            cwd,
+            refName,
+            expectedCommitSha: commitSha,
+          })
+          .pipe(Effect.flip);
+        assert.equal(error.operation, "GitVcsDriver.listRefs.snapshotRefs");
+        assert.equal(yield* git(cwd, ["rev-parse", refName]), commitSha);
       }),
     );
 

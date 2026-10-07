@@ -237,37 +237,6 @@ function paginateBranches(input: {
   };
 }
 
-function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
-  const worktreePaths = new Map<string, string>();
-  let currentPath: string | null = null;
-  let currentBranch: string | null = null;
-  let currentPrunable = false;
-
-  const flush = () => {
-    if (currentPath !== null && currentBranch !== null && !currentPrunable) {
-      worktreePaths.set(currentBranch, currentPath);
-    }
-    currentPath = null;
-    currentBranch = null;
-    currentPrunable = false;
-  };
-
-  for (const field of stdout.split("\0")) {
-    if (field === "") {
-      flush();
-    } else if (field.startsWith("worktree ")) {
-      currentPath = field.slice("worktree ".length);
-    } else if (field.startsWith("branch refs/heads/")) {
-      currentBranch = field.slice("branch refs/heads/".length);
-    } else if (field === "prunable" || field.startsWith("prunable ")) {
-      currentPrunable = true;
-    }
-  }
-  flush();
-
-  return worktreePaths;
-}
-
 function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
   const parts = input.split("\0");
   if (parts.length === 0) return [];
@@ -2452,7 +2421,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const fetchCwd =
       path.basename(gitCommonDir) === ".git" ? path.dirname(gitCommonDir) : gitCommonDir;
     const gitDirArgs = ["--git-dir", gitCommonDir] as const;
-    const [refsResult, defaultRefResult, worktreeListResult, remoteNamesResult] = yield* Effect.all(
+    const [refsResult, defaultRefResult, remoteNamesResult] = yield* Effect.all(
       [
         executeGitWithStableDiagnostics(
           "GitVcsDriver.listRefs.snapshotRefs",
@@ -2460,7 +2429,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           [
             ...gitDirArgs,
             "for-each-ref",
-            "--format=%(refname)%09%(committerdate:unix)%09%(symref)",
+            "--format=%(refname)%00%(committerdate:unix)%00%(symref)%00%(worktreepath)%00",
             "refs/heads",
             "refs/remotes",
           ],
@@ -2477,16 +2446,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           {
             timeoutMs: 5_000,
             allowNonZeroExit: true,
-          },
-        ),
-        executeGit(
-          "GitVcsDriver.listRefs.worktreeList",
-          fetchCwd,
-          [...gitDirArgs, "worktree", "list", "--porcelain", "-z"],
-          {
-            timeoutMs: 30_000,
-            allowNonZeroExit: true,
-            maxOutputBytes: 16 * 1024 * 1024,
           },
         ),
         executeGit("GitVcsDriver.listRefs.remoteNames", fetchCwd, [...gitDirArgs, "remote"], {
@@ -2508,13 +2467,29 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       defaultRefResult.exitCode === 0
         ? defaultRefResult.stdout.trim().replace(/^refs\/remotes\/origin\//, "")
         : null;
-    const parsedWorktreeEntries =
-      worktreeListResult.exitCode === 0
-        ? [...parseWorktreeBranchPaths(worktreeListResult.stdout)].map(
-            ([branchName, worktreePath]) =>
-              [branchName, path.normalize(path.resolve(worktreePath))] as const,
-          )
+    if (refsResult.stdoutTruncated) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.listRefs.snapshotRefs",
+        command: "git",
+        cwd: fetchCwd,
+        detail: "Git ref enumeration was truncated.",
+      });
+    }
+    // %(worktreepath) is available on Git 2.23+, before worktree list -z.
+    // The NUL record terminator keeps even newline-containing paths intact;
+    // old worktree porcelain emits such paths literally and cannot be split.
+    const refRecords = refsResult.stdout.split("\0\n").filter((record) => record.length > 0);
+    const parsedWorktreeEntries = refRecords.flatMap((record) => {
+      const [fullRefName, , , worktreePath] = record.split("\0");
+      return fullRefName?.startsWith("refs/heads/") && worktreePath
+        ? [
+            [
+              fullRefName.slice("refs/heads/".length),
+              path.normalize(path.resolve(worktreePath)),
+            ] as const,
+          ]
         : [];
+    });
     const existingWorktreeEntries = yield* Effect.filter(
       parsedWorktreeEntries,
       ([, worktreePath]) =>
@@ -2528,9 +2503,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const localBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
     const remoteBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
 
-    for (const line of refsResult.stdout.split("\n")) {
+    for (const line of refRecords) {
       if (line.length === 0) continue;
-      const [fullRefName, lastCommitRaw, symbolicTarget] = line.split("\t");
+      const [fullRefName, lastCommitRaw, symbolicTarget] = line.split("\0");
       if (!fullRefName || symbolicTarget) continue;
       const parsedLastCommit = Number.parseInt(lastCommitRaw ?? "0", 10);
       const lastCommit = Number.isFinite(parsedLastCommit) ? parsedLastCommit : 0;

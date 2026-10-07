@@ -144,7 +144,7 @@ export const spawnSshLocalForwardProcess = Effect.fn(
     input.direction === "reverse" ? "-R" : "-L",
     input.direction === "reverse"
       ? `${LOOPBACK_HOST}:${input.remotePort}:${LOOPBACK_HOST}:${input.localPort}`
-      : `${input.localPort}:${LOOPBACK_HOST}:${input.remotePort}`, 
+      : `${input.localPort}:${LOOPBACK_HOST}:${input.remotePort}`,
     ...(input.preHostArgs ?? []),
     hostSpec,
   ];

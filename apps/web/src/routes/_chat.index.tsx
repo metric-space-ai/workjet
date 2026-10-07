@@ -25,6 +25,7 @@ import {
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { ProjectCalendar } from "../components/ProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
+import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverviewSelection";
 import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
 import { configureWorkjetProject } from "../workjetProjectControl";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -117,9 +118,7 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const navigate = useNavigate();
-  const [selectedLegacyProject, setSelectedLegacyProject] = useState<ReturnType<
-    typeof scopeProjectRef
-  > | null>(null);
+  const selectedLegacyProject = useProjectOverviewRef(activeCtoxInstanceId);
   const selectedNative =
     registry.projects.find((project) => project.id === registry.selectedProjectId) ?? null;
   const galleryProjects = useMemo(
@@ -457,10 +456,12 @@ function IndexDraftLanding() {
               : undefined,
           onOpen: () => {
             if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return;
-            if (project.native && activeCtoxInstanceId !== null)
-              selectWorkjetProject(activeCtoxInstanceId, project.id);
-            else if (project.local !== null)
-              setSelectedLegacyProject(
+            if (project.native && activeCtoxInstanceId !== null) {
+              if (selectWorkjetProject(activeCtoxInstanceId, project.id))
+                selectProjectOverviewRef(activeCtoxInstanceId, null);
+            } else if (project.local !== null)
+              selectProjectOverviewRef(
+                activeCtoxInstanceId,
                 scopeProjectRef(project.local.environmentId, project.local.id),
               );
           },

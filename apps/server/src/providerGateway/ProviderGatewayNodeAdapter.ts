@@ -64,9 +64,16 @@ export async function forwardSourceGatewayResponses(
   signal?: AbortSignal,
 ): Promise<string> {
   const url = new URL(endpoint);
-  if (url.protocol !== "http:" || !["127.0.0.1", "[::1]"].includes(url.hostname) ||
-      url.username !== "" || url.password !== "" || url.pathname !== "/" ||
-      url.search !== "" || url.hash !== "") throw new Error("invalid gateway endpoint");
+  if (
+    url.protocol !== "http:" ||
+    !["127.0.0.1", "[::1]"].includes(url.hostname) ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== ""
+  )
+    throw new Error("invalid gateway endpoint");
   const remaining = deadlineMs - Date.now();
   if (remaining <= 0) throw new Error("expired");
   const response = await fetch(new URL("/v1/responses", url), {
@@ -80,8 +87,10 @@ export async function forwardSourceGatewayResponses(
       "X-CTOX-Purpose": "remote-worker",
     },
     body: requestJson,
-    signal: AbortSignal.any([AbortSignal.timeout(Math.min(15_000, remaining)),
-      ...(signal === undefined ? [] : [signal])]),
+    signal: AbortSignal.any([
+      AbortSignal.timeout(Math.min(15_000, remaining)),
+      ...(signal === undefined ? [] : [signal]),
+    ]),
   });
   if (response.headers.get("X-CTOX-Account-Selected") !== selected.credentialRef.accountId) {
     await response.body?.cancel();

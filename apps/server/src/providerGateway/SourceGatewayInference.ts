@@ -29,7 +29,8 @@ export function requireScopedGatewayModel(
   sourceEnvironmentId: EnvironmentId,
 ): void {
   const sameTarget = (left: WorkjetGatewayGrantTarget, right: WorkjetGatewayGrantTarget) =>
-    left.connectionId === right.connectionId && left.instanceId === right.instanceId &&
+    left.connectionId === right.connectionId &&
+    left.instanceId === right.instanceId &&
     left.computerId === right.computerId;
   if (
     !sameTarget(catalog.target, selected.target) ||
@@ -37,28 +38,42 @@ export function requireScopedGatewayModel(
     selected.providerRef.environmentId !== sourceEnvironmentId ||
     selected.modelRef.environmentId !== sourceEnvironmentId ||
     selected.providerRef.provider !== selected.modelRef.provider
-  ) throw failure("binding-mismatch");
-  const matches = catalog.accounts.filter((account) =>
-    account.credentialRef.environmentId === sourceEnvironmentId &&
-    account.credentialRef.accountId === selected.credentialRef.accountId &&
-    account.providerRef.environmentId === sourceEnvironmentId &&
-    account.providerRef.provider === selected.providerRef.provider &&
-    account.modelRefs.some((model) => model.environmentId === sourceEnvironmentId &&
-      model.provider === selected.modelRef.provider && model.modelId === selected.modelRef.modelId));
+  )
+    throw failure("binding-mismatch");
+  const matches = catalog.accounts.filter(
+    (account) =>
+      account.credentialRef.environmentId === sourceEnvironmentId &&
+      account.credentialRef.accountId === selected.credentialRef.accountId &&
+      account.providerRef.environmentId === sourceEnvironmentId &&
+      account.providerRef.provider === selected.providerRef.provider &&
+      account.modelRefs.some(
+        (model) =>
+          model.environmentId === sourceEnvironmentId &&
+          model.provider === selected.modelRef.provider &&
+          model.modelId === selected.modelRef.modelId,
+      ),
+  );
   if (matches.length !== 1) throw failure("grant-unavailable");
 }
 
 export function makeSourceGatewayInference(dependencies: {
   readonly environmentId: Effect.Effect<EnvironmentId>;
   readonly configuration: Effect.Effect<WorkjetConfiguration, WorkjetGatewayInferenceError>;
-  readonly requireSourceInstance: (instanceId: WorkjetGatewayBindModelInput["modelSelection"]["instanceId"]) =>
-    Effect.Effect<void, WorkjetGatewayInferenceError>;
-  readonly scopedCatalog: (target: WorkjetGatewayGrantTarget, environmentId: EnvironmentId) =>
-    Effect.Effect<WorkjetGatewayScopedCatalog, WorkjetGatewayInferenceError>;
-  readonly revalidate: (input: WorkjetGatewayAdmissionInput) =>
-    Effect.Effect<unknown, WorkjetGatewayInferenceError>;
-  readonly forward: (selected: WorkjetGatewayModelBinding, requestJson: string, deadlineMs: number) =>
-    Effect.Effect<string, WorkjetGatewayInferenceError>;
+  readonly requireSourceInstance: (
+    instanceId: WorkjetGatewayBindModelInput["modelSelection"]["instanceId"],
+  ) => Effect.Effect<void, WorkjetGatewayInferenceError>;
+  readonly scopedCatalog: (
+    target: WorkjetGatewayGrantTarget,
+    environmentId: EnvironmentId,
+  ) => Effect.Effect<WorkjetGatewayScopedCatalog, WorkjetGatewayInferenceError>;
+  readonly revalidate: (
+    input: WorkjetGatewayAdmissionInput,
+  ) => Effect.Effect<unknown, WorkjetGatewayInferenceError>;
+  readonly forward: (
+    selected: WorkjetGatewayModelBinding,
+    requestJson: string,
+    deadlineMs: number,
+  ) => Effect.Effect<string, WorkjetGatewayInferenceError>;
   readonly now: Effect.Effect<number>;
 }) {
   const bindModel = Effect.fn("SourceGatewayInference.bindModel")(function* (
@@ -67,22 +82,33 @@ export function makeSourceGatewayInference(dependencies: {
     const environmentId = yield* dependencies.environmentId;
     const configuration = yield* dependencies.configuration;
     yield* dependencies.requireSourceInstance(input.modelSelection.instanceId);
-    const routes = configuration.llmRoutes.filter((route) =>
-      input.routeId === undefined || route.id === input.routeId);
+    const routes = configuration.llmRoutes.filter(
+      (route) => input.routeId === undefined || route.id === input.routeId,
+    );
     if (routes.length === 0 || (input.routeId !== undefined && routes.length !== 1))
       return yield* failure("binding-mismatch");
     const accountsInRoutes = new Set(routes.map((route) => route.gatewayAccountId));
     const catalog = yield* dependencies.scopedCatalog(input.target, environmentId);
-    const accounts = catalog.accounts.filter((account) =>
-      accountsInRoutes.has(account.credentialRef.accountId) &&
-      account.modelRefs.some((model) => model.modelId === input.modelSelection.model));
+    const accounts = catalog.accounts.filter(
+      (account) =>
+        accountsInRoutes.has(account.credentialRef.accountId) &&
+        account.modelRefs.some((model) => model.modelId === input.modelSelection.model),
+    );
     const account = accounts.length === 1 ? accounts[0] : undefined;
-    const modelRef = account?.modelRefs.find((model) => model.modelId === input.modelSelection.model);
+    const modelRef = account?.modelRefs.find(
+      (model) => model.modelId === input.modelSelection.model,
+    );
     if (account === undefined || modelRef === undefined) return yield* failure("grant-unavailable");
-    const selected = { target: input.target, credentialRef: account.credentialRef,
-      providerRef: account.providerRef, modelRef };
-    yield* Effect.try({ try: () => requireScopedGatewayModel(catalog, selected, environmentId),
-      catch: () => failure("grant-unavailable") });
+    const selected = {
+      target: input.target,
+      credentialRef: account.credentialRef,
+      providerRef: account.providerRef,
+      modelRef,
+    };
+    yield* Effect.try({
+      try: () => requireScopedGatewayModel(catalog, selected, environmentId),
+      catch: () => failure("grant-unavailable"),
+    });
     return selected;
   });
 
@@ -91,48 +117,79 @@ export function makeSourceGatewayInference(dependencies: {
   ) {
     const environmentId = yield* dependencies.environmentId;
     const binding = input.permit.binding;
-    if (binding.sourceEnvironmentId !== environmentId ||
-        binding.targetEnvironmentId === environmentId || binding.workspaceKey !== binding.requestId)
+    if (
+      binding.sourceEnvironmentId !== environmentId ||
+      binding.targetEnvironmentId === environmentId ||
+      binding.workspaceKey !== binding.requestId
+    )
       return yield* failure("binding-mismatch");
-    const selected = { target: gatewayTargetForWorker(binding), credentialRef: binding.credentialRef,
-      providerRef: binding.providerRef, modelRef: binding.modelRef };
+    const selected = {
+      target: gatewayTargetForWorker(binding),
+      credentialRef: binding.credentialRef,
+      providerRef: binding.providerRef,
+      modelRef: binding.modelRef,
+    };
     const catalog = yield* dependencies.scopedCatalog(selected.target, environmentId);
-    yield* Effect.try({ try: () => requireScopedGatewayModel(catalog, selected, environmentId),
-      catch: (error) => Schema.is(WorkjetGatewayInferenceError)(error) ? error : failure("grant-unavailable") });
+    yield* Effect.try({
+      try: () => requireScopedGatewayModel(catalog, selected, environmentId),
+      catch: (error) =>
+        Schema.is(WorkjetGatewayInferenceError)(error) ? error : failure("grant-unavailable"),
+    });
     const receipt = yield* dependencies.revalidate(input).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit)),
-      Effect.mapError(() => failure("native-admission-rejected")));
-    if (JSON.stringify(receipt) !== JSON.stringify(input.permit) ||
-        receipt.expiresAtMs <= (yield* dependencies.now))
+      Effect.mapError(() => failure("native-admission-rejected")),
+    );
+    if (
+      JSON.stringify(receipt) !== JSON.stringify(input.permit) ||
+      receipt.expiresAtMs <= (yield* dependencies.now)
+    )
       return yield* failure("native-admission-rejected");
     return selected;
   });
 
-  const admit = Effect.fn("SourceGatewayInference.admit")(function* (raw: WorkjetGatewayAdmissionInput) {
+  const admit = Effect.fn("SourceGatewayInference.admit")(function* (
+    raw: WorkjetGatewayAdmissionInput,
+  ) {
     const input = yield* Schema.decodeUnknownEffect(WorkjetGatewayAdmissionInput)(raw).pipe(
-      Effect.mapError(() => failure("invalid-request")));
+      Effect.mapError(() => failure("invalid-request")),
+    );
     yield* requireAuthority(input);
     return {};
   });
 
-  const infer = Effect.fn("SourceGatewayInference.infer")(function* (raw: WorkjetGatewayInferenceInput) {
+  const infer = Effect.fn("SourceGatewayInference.infer")(function* (
+    raw: WorkjetGatewayInferenceInput,
+  ) {
     // Snapshot all nested input before asynchronous authority calls.
     const input = yield* Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput)(raw).pipe(
-      Effect.mapError(() => failure("invalid-request")));
+      Effect.mapError(() => failure("invalid-request")),
+    );
     const binding = input.permit.binding;
     // Restrict the protocol at the source boundary; arbitrary URLs/headers never pass through.
-    yield* Effect.try({ try: () => {
-      if (new TextEncoder().encode(input.requestJson).byteLength > 256 * 1024) throw new Error();
-      const body: unknown = JSON.parse(input.requestJson);
-      if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error();
-      const request = body as Record<string, unknown>;
-      if (request.model !== binding.modelRef.modelId ||
+    yield* Effect.try({
+      try: () => {
+        if (new TextEncoder().encode(input.requestJson).byteLength > 256 * 1024) throw new Error();
+        const body: unknown = JSON.parse(input.requestJson);
+        if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error();
+        const request = body as Record<string, unknown>;
+        if (
+          request.model !== binding.modelRef.modelId ||
           (request.stream !== undefined && request.stream !== false) ||
-          (request.background !== undefined && request.background !== false) || request.previous_response_id !== undefined ||
-          request.conversation !== undefined || request.input === undefined) throw new Error();
-    }, catch: () => failure("invalid-request") });
+          (request.background !== undefined && request.background !== false) ||
+          request.previous_response_id !== undefined ||
+          request.conversation !== undefined ||
+          request.input === undefined
+        )
+          throw new Error();
+      },
+      catch: () => failure("invalid-request"),
+    });
     const selected = yield* requireAuthority(input);
-    const result = yield* dependencies.forward(selected, input.requestJson, input.permit.expiresAtMs);
+    const result = yield* dependencies.forward(
+      selected,
+      input.requestJson,
+      input.permit.expiresAtMs,
+    );
     // A revoked/expired grant or native permit also prevents publication after the await.
     yield* requireAuthority(input);
     return { requestJson: result };

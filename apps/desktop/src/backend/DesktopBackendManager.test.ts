@@ -191,6 +191,49 @@ function makeTestInstance(input: MakeInstanceInput) {
 
 describe("DesktopBackendManager", () => {
   it.effect(
+    "stops a ready service attachment even when closing its scope does not signal disconnection",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const ready = yield* Deferred.make<void>();
+          let released = 0;
+          let shutdowns = 0;
+          const instance = yield* makeTestInstance({
+            spawnerLayer: Layer.succeed(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.make(() =>
+                Effect.die("A service attachment must not spawn a child."),
+              ),
+            ),
+            run: (options) =>
+              Effect.gen(function* () {
+                yield* Effect.addFinalizer(() =>
+                  Effect.sync(() => {
+                    released++;
+                  }),
+                );
+                yield* options.onReady?.() ?? Effect.void;
+                return yield* Effect.never;
+              }),
+            onReady: Deferred.succeed(ready, undefined).pipe(Effect.asVoid),
+            onShutdown: Effect.sync(() => {
+              shutdowns++;
+            }),
+          });
+          yield* instance.start;
+          yield* Deferred.await(ready);
+          yield* instance.stop();
+          const state = yield* instance.snapshot;
+          assert.equal(released, 1);
+          assert.equal(shutdowns, 1);
+          assert.equal(state.desiredRunning, false);
+          assert.equal(state.ready, false);
+          assert.equal(state.restartScheduled, false);
+          assert.equal(Option.isNone(state.activePid), true);
+        }),
+      ),
+  );
+  it.effect(
     "automatically reattaches the installed service after a 30-second readiness outage",
     () =>
       Effect.scoped(

@@ -29,6 +29,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetWorkerSourcePrepare]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetWorkerRouteVerify]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetWorkerSourceConfirm]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerEnrollComputer]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getTurnDiff]: AuthOrchestrationReadScope,

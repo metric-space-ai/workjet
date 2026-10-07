@@ -1,5 +1,8 @@
+import { enrollRegisteredWorkerComputer } from "../connection/remoteWorkers.ts";
 import {
   type EnvironmentId,
+  type RemoteWorkerComputerEnrollmentInput,
+  type RemoteWorkerComputerEnrollmentResult,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
@@ -580,6 +583,17 @@ export function createServerEnvironmentAtoms<R, E>(
   );
   const updateStateAtom = (environmentId: EnvironmentId | null) =>
     environmentId === null ? EMPTY_SERVER_UPDATE_STATE_ATOM : updateStateValueAtom(environmentId);
+  const enrollWorkjetRemoteComputer = createRuntimeCommand<
+    EnvironmentRegistry | EnvironmentCacheStore | R, E,
+    { readonly environmentId: EnvironmentId; readonly targetEnvironmentId: EnvironmentId;
+      readonly input: Omit<RemoteWorkerComputerEnrollmentInput, "profile"> },
+    RemoteWorkerComputerEnrollmentResult, unknown
+  >(runtime, {
+    label: "environment-data:workjet:enroll-remote-computer",
+    scheduler: configScheduler,
+    concurrency: configConcurrency,
+    execute: (target) => enrollRegisteredWorkerComputer(target.environmentId, target.targetEnvironmentId, target.input),
+  });
   const updateServer = createRuntimeCommand<
     EnvironmentRegistry | EnvironmentCacheStore | R,
     E,
@@ -1150,6 +1164,7 @@ export function createServerEnvironmentAtoms<R, E>(
   });
 
   return {
+    enrollWorkjetRemoteComputer,
     configValueAtom,
     updateStateAtom,
     workjetCrossModeThreadLink,

@@ -101,6 +101,7 @@ function IndexDraftLanding() {
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const openingNative = useRef(false);
+  const automaticNativeAttempt = useRef<string | null>(null);
   const nativeAttempt = useRef<{
     key: string;
     commandId: CommandId;
@@ -200,7 +201,7 @@ function IndexDraftLanding() {
     supervisor,
   ]);
 
-  const openNativeSupervisor = async (
+  const openNativeSupervisor = useCallback(async (
     nativeProject = selectedNative,
     overview?: ProjectOverview,
   ): Promise<boolean> => {
@@ -328,7 +329,22 @@ function IndexDraftLanding() {
       openingNative.current = false;
       setNativeOpenState((state) => ({ ...state, pending: false }));
     }
-  };
+  }, [activeCtoxInstanceId, bootstrapped, computers, createProject, createThread, environments,
+    primaryEnvironment?.connection.phase, primaryEnvironmentId, projectStore, registry.projects,
+    selectedNative, threads, updateProject]);
+
+  useEffect(() => {
+    if (selectedNative === null) {
+      automaticNativeAttempt.current = null;
+      return;
+    }
+    if (!bootstrapped || supervisor !== null || openingNative.current) return;
+    const key = JSON.stringify([activeCtoxInstanceId, selectedNative.id]);
+    if (automaticNativeAttempt.current === key) return;
+    automaticNativeAttempt.current = key;
+    void openNativeSupervisor(selectedNative);
+  }, [activeCtoxInstanceId, bootstrapped, nativeOpenState.pending, openNativeSupervisor,
+    primaryEnvironment?.connection.phase, selectedNative, supervisor]);
 
   if (landingProject !== null && !(selectedNative !== null && supervisor === null))
     return startState.failed ? (
@@ -340,7 +356,7 @@ function IndexDraftLanding() {
     ) : null;
   if (selectedNative !== null)
     return (
-      <WorkjetProjectReady
+      <WorkjetProjectOpening
         projectTitle={selectedNative.title}
         onOpenSupervisor={() => void openNativeSupervisor()}
         pending={nativeOpenState.pending}
@@ -504,7 +520,7 @@ function ProjectGallery({
   );
 }
 
-function WorkjetProjectReady({
+function WorkjetProjectOpening({
   projectTitle,
   onOpenSupervisor,
   pending,
@@ -517,32 +533,31 @@ function WorkjetProjectReady({
 }) {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <Empty className="flex-1" data-workjet-project-state="ready">
+      <Empty className="flex-1" data-workjet-project-state={error ? "opening-error" : "opening"}>
         <EmptyHeader className="max-w-md">
           <EmptyTitle className="text-foreground text-xl">{projectTitle}</EmptyTitle>
-          <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-            Project synced with this CTOX instance. Open its supervisor to continue. You can attach
-            a folder or choose a computer later.
-          </EmptyDescription>
+          {!error && <p role="status" className="mt-2 text-sm text-muted-foreground/78">
+            Opening supervisor…
+          </p>}
           {error ? (
             <p role="alert" className="mt-3 text-sm text-destructive">
               {error}
             </p>
           ) : null}
-          <div className="mt-5 flex flex-wrap justify-center gap-2">
+          {error && <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Button
               size="sm"
               onClick={onOpenSupervisor}
               disabled={pending}
               data-workjet-action="project.open.supervisor"
             >
-              {pending ? "Opening supervisor…" : "Open supervisor"}
+              {pending ? "Opening supervisor…" : "Retry opening supervisor"}
             </Button>
             <Button render={<Link to="/settings/computers" />} size="sm">
               <ServerIcon className="size-4" />
               Choose computer
             </Button>
-          </div>
+          </div>}
         </EmptyHeader>
       </Empty>
     </SidebarInset>

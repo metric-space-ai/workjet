@@ -485,6 +485,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         const configuration = await loadConfiguration();
         const targets = [];
         for (const account of configuration.accounts) {
+          if (!account.enabled) continue;
           const credentials = [];
           for (const reference of accountSecretReferences(account)) {
             const secret = await runPromise(secrets.get(secretStoreName(reference)));

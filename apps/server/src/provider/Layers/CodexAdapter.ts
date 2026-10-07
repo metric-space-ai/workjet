@@ -72,6 +72,8 @@ import {
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import { readWorkerSourceHarness } from "../../workjet/WorkerSourceHarness.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import * as Option from "effect/Option";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1712,8 +1714,27 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? input.modelSelection.model
             : undefined;
         const workerSource = readWorkerSourceHarness(input.threadId);
+        if (input.workjetConfig?.role === "worker") {
+          const environment = yield* Effect.serviceOption(ServerEnvironment);
+          const localEnvironmentId = Option.isSome(environment)
+            ? yield* environment.value.getEnvironmentId
+            : undefined;
+          const foreign = input.workjetConfig.parent.environmentId !== localEnvironmentId;
+          if (foreign && (!workerSource || workerSource.identity.sourceEnvironmentId !== input.workjetConfig.parent.environmentId || workerSource.identity.targetEnvironmentId !== localEnvironmentId)) {
+            return yield* new ProviderAdapterValidationError({ provider: PROVIDER, operation: "startSession", issue: "Foreign worker source route is unavailable or mismatched; reconnect its source before restart." });
+          }
+        }
+        if (workerSource) {
+          yield* Effect.tryPromise({ try: () => workerSource.admit(), catch: () => new ProviderAdapterValidationError({ provider: PROVIDER, operation: "startSession", issue: "Foreign worker source admission failed or expired." }) });
+        }
         const sessionEnvironment = workerSource
-          ? { ...process.env, WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey }
+          ? {
+              PATH: process.env.PATH,
+              HOME: process.env.HOME,
+              TMPDIR: process.env.TMPDIR,
+              LANG: process.env.LANG,
+              WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
+            }
           : options?.resolveSessionEnvironment
           ? yield* options.resolveSessionEnvironment({ model: selectedModel })
           : options?.environment;

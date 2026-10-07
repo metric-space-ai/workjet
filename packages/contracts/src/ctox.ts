@@ -721,8 +721,9 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
       response.projectId === response.binding.projectId &&
       response.binding.threadId === response.turn.threadId &&
       (response.executionContract === undefined) === (response.executionPage === undefined) &&
-      (!response.executionPage || (response.executionPage.command_id === response.turn.commandId &&
-        response.executionPage.task_id === response.turn.taskId))
+      (!response.executionPage ||
+        (response.executionPage.command_id === response.turn.commandId &&
+          response.executionPage.task_id === response.turn.taskId))
         ? true
         : "Supervisor turn belongs to another binding.",
     ),
@@ -804,8 +805,14 @@ export function isWorkjetSupervisorReceiptForRequest(
       if (response.action !== request.action) return false;
       if (request.executionPage === undefined) {
         if (response.executionPage !== undefined) return false;
-      } else if (!response.executionPage ||
-        !isWorkjetSupervisorExecutionPageForRequest(request.executionPage, response.turn, response.executionPage)) {
+      } else if (
+        !response.executionPage ||
+        !isWorkjetSupervisorExecutionPageForRequest(
+          request.executionPage,
+          response.turn,
+          response.executionPage,
+        )
+      ) {
         return false;
       }
     }

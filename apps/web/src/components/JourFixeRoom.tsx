@@ -7,7 +7,7 @@ import { Input } from "./ui/input";
 import { JourFixePlayer } from "./JourFixePlayer";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSeparator } from "./WorkspaceBreadcrumb";
-import { jourFixeCommentAnchor, jourFixeCommentIsCurrent, jourFixeCommentsForSlide, jourFixeEvidenceLabel, type JourFixeCommentDraft, type JourFixeRoomSnapshot, type JourFixeTodo } from "../lib/jourFixeRoom";
+import { jourFixeCommentAnchor, jourFixeCommentIsCurrent, jourFixeCommentsForSlide, jourFixeEvidenceLabel, jourFixeVisiblePartial, type JourFixePartialTranscript, type JourFixeCommentDraft, type JourFixeRoomSnapshot, type JourFixeTodo } from "../lib/jourFixeRoom";
 
 export interface JourFixeRoomProps {
   readonly projectTitle: string;
@@ -24,9 +24,9 @@ export interface JourFixeRoomProps {
   readonly onSlideChange?: (slideId: string) => void;
   readonly onToggleMicrophone?: () => void;
   readonly microphoneActive?: boolean;
-  readonly partialTranscript?: string;
+  readonly partialTranscript?: JourFixePartialTranscript;
   /** Blob obtained through the selected instance's authorized file channel. */
-  readonly audio?: { readonly slideId: string; readonly deckRevision: number; readonly blobUrl: string };
+  readonly audio?: { readonly meetingId: string; readonly projectId: string; readonly slideId: string; readonly deckRevision: number; readonly blobUrl: string };
 }
 
 export function JourFixeRoom(props: JourFixeRoomProps) {
@@ -55,7 +55,8 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
   const editable = ["ready", "live", "review"].includes(meeting.state);
   const currentDraft = draft && jourFixeCommentIsCurrent(meeting, draft) ? draft : null;
   const canRevise = onReviseTodos !== undefined && meeting.state === "review" && meeting.todos?.status === "proposed";
-  const narration = slide && audio?.slideId === slide.id && audio.deckRevision === meeting.deckRevision && audio.blobUrl.startsWith("blob:") ? audio.blobUrl : undefined;
+  const partial = jourFixeVisiblePartial(meeting, partialTranscript);
+  const narration = slide && audio?.meetingId === meeting.id && audio.projectId === meeting.projectId && audio.slideId === slide.id && audio.deckRevision === meeting.deckRevision && audio.blobUrl.startsWith("blob:") ? audio.blobUrl : undefined;
   async function perform(action: () => Promise<void>, done?: () => void) {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -145,7 +146,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 lg:max-h-[calc(100dvh-220px)]">
             {panel === "conversation" && <>
               {[...meeting.transcript].sort((a, b) => a.sequence - b.sequence).map((turn) => <div key={turn.id}><p className="text-xs text-muted-foreground">{turn.speaker === "owner" ? "You" : "Supervisor"}</p><p className="mt-1 whitespace-pre-wrap text-sm">{turn.text}</p></div>)}
-              {partialTranscript && <p role="status" className="text-sm italic text-muted-foreground">{partialTranscript}</p>}
+              {partial && <p role="status" className="text-sm italic text-muted-foreground">{partial}</p>}
             </>}
             {panel === "comments" && meeting.comments.map((item) => <div key={item.id} className="border-l-2 border-primary pl-3 text-sm"><p className="text-xs text-muted-foreground">{jourFixeEvidenceLabel(meeting, item.id)}{item.deckRevision !== meeting.deckRevision ? ` · Earlier deck ${item.deckRevision}` : ""}</p><p className="mt-1 whitespace-pre-wrap">{item.text}</p></div>)}
             {panel === "agenda" && slides.map((item, number) => <button type="button" key={item.id} className="block w-full text-left text-sm hover:underline" onClick={() => { selectSlide(item.id); setView("slides"); }}>{number + 1}. {item.title}</button>)}

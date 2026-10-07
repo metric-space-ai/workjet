@@ -62,8 +62,8 @@ function Fixture() {
     {view === "calendar" && <div className="p-5"><ProjectCalendar projects={[{ ...project, onOpen: () => setView("overview"), onOpenJourFixe: () => setView("meeting") }]} /></div>}
     {view === "meeting" && <JourFixeRoom
       projectTitle="Fixture project" meeting={meeting} onBack={() => setView("overview")}
-      audio={{ slideId: audioSlideId, deckRevision: meeting.deckRevision, blobUrl: narration }} onSlideChange={setAudioSlideId}
-      partialTranscript={partial} microphoneActive={microphone}
+      audio={{ meetingId: meeting.id, projectId: meeting.projectId, slideId: audioSlideId, deckRevision: meeting.deckRevision, blobUrl: narration }} onSlideChange={setAudioSlideId}
+      partialTranscript={partial ? { streamId: "fixture-stream", sequence: 2, text: partial } : undefined} microphoneActive={microphone}
       onToggleMicrophone={() => { setMicrophone(!microphone); setPartial(microphone ? "" : "Fixture partial transcript…"); }}
       onRefresh={async () => { setMeeting({ ...meeting }); }}
       onStartMeeting={(_id, revision) => apply(revision, (current) => ({ ...current, state: "live", revision: current.revision + 1 }))}

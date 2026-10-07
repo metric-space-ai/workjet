@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { jourFixeCommentAnchor, jourFixeCommentIsCurrent, jourFixeCommentsForSlide, jourFixeEvidenceLabel, type JourFixeRoomSnapshot } from "./jourFixeRoom";
+import { jourFixeCommentAnchor, jourFixeCommentIsCurrent, jourFixeCommentsForSlide, jourFixeEvidenceLabel, jourFixeVisiblePartial, type JourFixeRoomSnapshot } from "./jourFixeRoom";
 
 const meeting: JourFixeRoomSnapshot = {
   id: "meeting-1", projectId: "project-1", revision: 4, deckRevision: 2, state: "live",
@@ -53,5 +53,15 @@ describe("Jour fixe evidence labels", () => {
     expect(jourFixeEvidenceLabel(current, "comment-1")).toBe("Comment 1 · Slide 1");
     expect(jourFixeEvidenceLabel(current, "turn-1")).toBe("Transcript 7");
     expect(jourFixeEvidenceLabel(current, "unknown")).toBe("Source unavailable");
+  });
+});
+
+describe("Jour fixe partial transcript ordering", () => {
+  it("never lets a delayed partial replace the same stream’s final text", () => {
+    const current = { ...meeting, transcript: [{ id: "turn-final", streamId: "stream-1", sequence: 9, speaker: "owner" as const, text: "Final decision" }] };
+    expect(jourFixeVisiblePartial(current, { streamId: "stream-1", sequence: 8, text: "Old partial" })).toBeUndefined();
+    expect(jourFixeVisiblePartial(current, { streamId: "stream-1", sequence: 9, text: "Duplicate" })).toBeUndefined();
+    expect(jourFixeVisiblePartial(current, { streamId: "stream-1", sequence: 10, text: "Next sentence…" })).toBe("Next sentence…");
+    expect(jourFixeVisiblePartial(current, { streamId: "stream-2", sequence: 1, text: "Other stream…" })).toBe("Other stream…");
   });
 });

@@ -27,6 +27,7 @@ export interface JourFixeRoomSnapshot {
     readonly id: string;
     readonly sequence: number;
     readonly speaker: "owner" | "supervisor";
+    readonly streamId?: string;
     readonly text: string;
   }[];
   readonly todos?: {
@@ -108,4 +109,15 @@ export function jourFixeEvidenceLabel(meeting: JourFixeRoomSnapshot, evidenceId:
   const turn = meeting.transcript.find((item) => item.id === evidenceId);
   if (turn) return `Transcript ${turn.sequence}`;
   return "Source unavailable";
+}
+
+export interface JourFixePartialTranscript {
+  readonly streamId: string;
+  readonly sequence: number;
+  readonly text: string;
+}
+
+export function jourFixeVisiblePartial(meeting: JourFixeRoomSnapshot, partial: JourFixePartialTranscript | undefined): string | undefined {
+  if (!partial || meeting.transcript.some((turn) => turn.streamId === partial.streamId && turn.sequence >= partial.sequence)) return undefined;
+  return partial.text;
 }

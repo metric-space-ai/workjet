@@ -149,7 +149,7 @@ async function readStdinJson() {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-// oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone browser runner has no Effect runtime; capture the host boundary once.
+// oxlint-disable-next-line workjet/no-global-process-runtime -- Standalone browser runner has no Effect runtime; capture the host boundary once.
 const hostPlatform = process.platform;
 
 function defaultUserAgent() {

@@ -216,7 +216,9 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
                   ...(error.remoteRequestId
                     ? {
                         remoteRequestId: error.remoteRequestId,
-                        ...(error.targetEnvironmentId ? { targetEnvironmentId: error.targetEnvironmentId } : {}),
+                        ...(error.targetEnvironmentId
+                          ? { targetEnvironmentId: error.targetEnvironmentId }
+                          : {}),
                       }
                     : {}),
                   ...(error.originalWorktreePath

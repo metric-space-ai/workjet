@@ -890,18 +890,32 @@ export function WorkjetComputersSettings({
       : serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
 
-  const enrollRemoteComputer = useAtomCommand(serverEnvironment.enrollWorkjetRemoteComputer, { reportFailure: false });
+  const enrollRemoteComputer = useAtomCommand(serverEnvironment.enrollWorkjetRemoteComputer, {
+    reportFailure: false,
+  });
   const saveCapabilities = async (enrollment: OperationalComputerEnrollment) => {
     if (!selectedInstanceId) throw new Error("Select a Business OS before adding this computer.");
     const computer = setupOnly ? setupComputer : capabilityComputer;
     const build = enrollment.capabilityConfig.find((capability) => capability.kind === "build");
     let assigned = enrollment;
     if (build && computer?.environmentId !== environmentId) {
-      if (!computer || !environmentId) throw new Error("Connect this build computer over SSH before saving its capabilities.");
-      const result = await enrollRemoteComputer({ environmentId, targetEnvironmentId: computer.environmentId,
-        input: { selectedInstanceId, computerId: computer.id, displayName: enrollment.displayName,
-          hostingMode: enrollment.hostingMode, buildCapability: build } });
-      if (result._tag !== "Success") throw new Error("Build computer enrollment failed. Check its SSH connection and the selected Business OS grant, then retry.");
+      if (!computer || !environmentId)
+        throw new Error("Connect this build computer over SSH before saving its capabilities.");
+      const result = await enrollRemoteComputer({
+        environmentId,
+        targetEnvironmentId: computer.environmentId,
+        input: {
+          selectedInstanceId,
+          computerId: computer.id,
+          displayName: enrollment.displayName,
+          hostingMode: enrollment.hostingMode,
+          buildCapability: build,
+        },
+      });
+      if (result._tag !== "Success")
+        throw new Error(
+          "Build computer enrollment failed. Check its SSH connection and the selected Business OS grant, then retry.",
+        );
       assigned = { ...enrollment, computerId: result.value.computerId };
     }
     await membershipStore.enroll(selectedInstanceId, assigned, window.desktopBridge?.ctox);

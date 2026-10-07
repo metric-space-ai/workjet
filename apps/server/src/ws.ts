@@ -1312,16 +1312,26 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
-        [WS_METHODS.workjetWorkerEnrollComputer]: (input) => Option.isSome(computerEnrollment)
-          ? computerEnrollment.value.enroll(input) : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
-        [WS_METHODS.workjetWorkerRouteReserve]: (input) => Option.isSome(workerConnection)
-          ? workerConnection.value.reserve(input) : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
-        [WS_METHODS.workjetWorkerSourcePrepare]: (input) => Option.isSome(workerConnection)
-          ? workerConnection.value.prepare(input) : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
-        [WS_METHODS.workjetWorkerRouteVerify]: (input) => Option.isSome(workerConnection)
-          ? workerConnection.value.verify(input) : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
-        [WS_METHODS.workjetWorkerSourceConfirm]: (input) => Option.isSome(workerConnection)
-          ? workerConnection.value.confirm(input) : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerEnrollComputer]: (input) =>
+          Option.isSome(computerEnrollment)
+            ? computerEnrollment.value.enroll(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerRouteReserve]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.reserve(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerSourcePrepare]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.prepare(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerRouteVerify]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.verify(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerSourceConfirm]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.confirm(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
         [WS_METHODS.workjetWorkerRequests]: () =>
           observeRpcStream(
             WS_METHODS.workjetWorkerRequests,
@@ -1334,7 +1344,9 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.workjetWorkerReceive,
             Option.isSome(workerReceiver) && Option.isSome(workerConnection)
-              ? workerConnection.value.resolveTargetRoute(input).pipe(Effect.andThen(workerReceiver.value.receive(input)))
+              ? workerConnection.value
+                  .resolveTargetRoute(input)
+                  .pipe(Effect.andThen(workerReceiver.value.receive(input)))
               : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
             { "rpc.aggregate": "worker-dispatch" },
           ),

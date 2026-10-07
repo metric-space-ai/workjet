@@ -351,7 +351,17 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           }
           const request = bound.value.request;
           if (envelope.remoteWorkerRequest) {
-            const encode = (input: RemoteWorkerRequest) => Schema.encodeEffect(Schema.fromJsonString(RemoteWorkerRequest))(input).pipe(Effect.mapError((cause) => new OrchestrationCommandInvariantError({ commandType: command.type, detail: "Remote request encoding failed.", cause })));
+            const encode = (input: RemoteWorkerRequest) =>
+              Schema.encodeEffect(Schema.fromJsonString(RemoteWorkerRequest))(input).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationCommandInvariantError({
+                      commandType: command.type,
+                      detail: "Remote request encoding failed.",
+                      cause,
+                    }),
+                ),
+              );
             if (
               command.type !== "thread.create" ||
               (yield* encode(request)) !== (yield* encode(envelope.remoteWorkerRequest)) ||
@@ -378,10 +388,13 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             // Recheck after clone and at every subsequent start. Rejected
             // command receipts let Receiver apply its owned rollback safely.
             yield* remoteAdmission.value.admit(request).pipe(
-              Effect.mapError(() => new OrchestrationCommandInvariantError({
-                commandType: command.type,
-                detail: "Current source-native remote worker admission denied.",
-              })),
+              Effect.mapError(
+                () =>
+                  new OrchestrationCommandInvariantError({
+                    commandType: command.type,
+                    detail: "Current source-native remote worker admission denied.",
+                  }),
+              ),
             );
           }
           remoteWorkerRequest = request;

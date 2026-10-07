@@ -1,4 +1,8 @@
-import { RemoteWorkerRequest, RemoteWorkerDispatchError, WorkjetComputerId } from "@workjet/contracts";
+import {
+  RemoteWorkerRequest,
+  RemoteWorkerDispatchError,
+  WorkjetComputerId,
+} from "@workjet/contracts";
 import { RemoteWorkerAdmission } from "../../workjet/RemoteWorkerAdmission.ts";
 import { make as makeRemoteWorkerStore } from "../../workjet/RemoteWorkerStore.ts";
 import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
@@ -63,7 +67,10 @@ const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
-async function createOrchestrationSystem(environmentId?: EnvironmentId, admission?: RemoteWorkerAdmission["Service"]) {
+async function createOrchestrationSystem(
+  environmentId?: EnvironmentId,
+  admission?: RemoteWorkerAdmission["Service"],
+) {
   const environmentEngineLayer = environmentId
     ? OrchestrationEngineLive.pipe(
         Layer.provide(
@@ -2102,7 +2109,12 @@ describe("remote worker native ownership", () => {
   it("creates no surrogate supervisor and rejects a renderer-forged remote worker", async () => {
     const target = EnvironmentId.make("target-gpu3");
     let currentGrant = true;
-    const admission = { admit: () => currentGrant ? Effect.void : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })) };
+    const admission = {
+      admit: () =>
+        currentGrant
+          ? Effect.void
+          : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+    };
     const system = await createOrchestrationSystem(target, admission);
     const projectId = ProjectId.make("source-project");
     const workerId = ThreadId.make("00000000-0000-4000-8000-000000000001");
@@ -2229,11 +2241,24 @@ describe("remote worker native ownership", () => {
       expect(threads[0]?.id).toBe(workerId);
       expect(threads[0]?.workjetConfig.parent).toEqual(request.parent);
       currentGrant = false;
-      await expect(system.run(system.engine.dispatch({
-        type: "thread.turn.start", commandId: CommandId.make("remote-revoked-start"), threadId: workerId,
-        message: { messageId: MessageId.make("remote-revoked-message"), role: "user", text: request.task, attachments: [] },
-        runtimeMode: request.runtimeMode, interactionMode: request.interactionMode, createdAt: now(),
-      }))).rejects.toThrow("Current source-native remote worker admission denied.");
+      await expect(
+        system.run(
+          system.engine.dispatch({
+            type: "thread.turn.start",
+            commandId: CommandId.make("remote-revoked-start"),
+            threadId: workerId,
+            message: {
+              messageId: MessageId.make("remote-revoked-message"),
+              role: "user",
+              text: request.task,
+              attachments: [],
+            },
+            runtimeMode: request.runtimeMode,
+            interactionMode: request.interactionMode,
+            createdAt: now(),
+          }),
+        ),
+      ).rejects.toThrow("Current source-native remote worker admission denied.");
       expect((await system.readModel()).threads[0]?.messages).toEqual([]);
       await system.run(
         store.complete("inbound", {

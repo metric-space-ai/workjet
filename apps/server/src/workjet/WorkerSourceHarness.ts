@@ -17,7 +17,12 @@ const Reply = Schema.Struct({ requestJson: Schema.String });
 const Response = Schema.Struct({ id: Schema.String, output: Schema.Array(Schema.Unknown) });
 export interface WorkerSourceHarness {
   readonly isRevoked: () => boolean;
-  readonly identity: Readonly<Pick<WorkerSourceHarnessRoute, "sourceEnvironmentId" | "targetEnvironmentId" | "requestId" | "requestDigest">>;
+  readonly identity: Readonly<
+    Pick<
+      WorkerSourceHarnessRoute,
+      "sourceEnvironmentId" | "targetEnvironmentId" | "requestId" | "requestDigest"
+    >
+  >;
   readonly admit: () => Promise<void>;
   readonly baseUrl: string;
   readonly apiKey: string;
@@ -33,17 +38,40 @@ export const readWorkerSourceHarness = (threadId: string) => workers.get(threadI
 export async function installWorkerSourceRoute(
   threadId: string,
   input: WorkerSourceHarnessRoute,
-  installation: { readonly targetEnvironmentId: string; readonly requestDigest: string; readonly modelId: string },
+  installation: {
+    readonly targetEnvironmentId: string;
+    readonly requestDigest: string;
+    readonly modelId: string;
+  },
 ): Promise<WorkerSourceHarness> {
   const route = Object.freeze(Schema.decodeUnknownSync(Route)(input));
   const pin = Object.freeze({ ...installation });
-  if (threadId !== route.requestId || route.targetEnvironmentId !== pin.targetEnvironmentId || route.requestDigest !== pin.requestDigest || !pin.modelId.trim() || !Number.isInteger(route.port) || route.port < 1 || route.port > 65535) {
+  if (
+    threadId !== route.requestId ||
+    route.targetEnvironmentId !== pin.targetEnvironmentId ||
+    route.requestDigest !== pin.requestDigest ||
+    !pin.modelId.trim() ||
+    !Number.isInteger(route.port) ||
+    route.port < 1 ||
+    route.port > 65535
+  ) {
     throw new Error("Invalid or duplicate worker source route");
   }
   const existing = workers.get(threadId);
   if (existing) {
     const original = installedRoutes.get(threadId);
-    if (!original || existing.isRevoked() || original.sourceEnvironmentId !== route.sourceEnvironmentId || original.targetEnvironmentId !== route.targetEnvironmentId || original.requestId !== route.requestId || original.requestDigest !== route.requestDigest || original.capability !== route.capability || original.port !== route.port || existing.model !== pin.modelId) throw new Error("Worker source route substitution or revocation");
+    if (
+      !original ||
+      existing.isRevoked() ||
+      original.sourceEnvironmentId !== route.sourceEnvironmentId ||
+      original.targetEnvironmentId !== route.targetEnvironmentId ||
+      original.requestId !== route.requestId ||
+      original.requestDigest !== route.requestDigest ||
+      original.capability !== route.capability ||
+      original.port !== route.port ||
+      existing.model !== pin.modelId
+    )
+      throw new Error("Worker source route substitution or revocation");
     await existing.admit();
     return existing;
   }
@@ -51,13 +79,22 @@ export async function installWorkerSourceRoute(
   const active = new Set<AbortController>();
   let revoked = false;
   let busy = false;
-  const source = async (operation: "admit" | "infer" | "retire", payload: unknown, signal: AbortSignal) => {
+  const source = async (
+    operation: "admit" | "infer" | "retire",
+    payload: unknown,
+    signal: AbortSignal,
+  ) => {
     const response = await fetch(`http://127.0.0.1:${route.port}/worker-source`, {
-      method: "POST", signal,
+      method: "POST",
+      signal,
       headers: { authorization: `Bearer ${route.capability}`, "content-type": "application/json" },
       body: JSON.stringify({
-        sourceEnvironmentId: route.sourceEnvironmentId, targetEnvironmentId: route.targetEnvironmentId,
-        requestId: route.requestId, requestDigest: route.requestDigest, operation, payload,
+        sourceEnvironmentId: route.sourceEnvironmentId,
+        targetEnvironmentId: route.targetEnvironmentId,
+        requestId: route.requestId,
+        requestDigest: route.requestDigest,
+        operation,
+        payload,
       }),
     });
     if (!response.ok) throw new Error("Source worker authority rejected request");
@@ -65,17 +102,27 @@ export async function installWorkerSourceRoute(
   };
   const server: Server = createServer(async (req, res) => {
     if (revoked || req.headers.authorization !== `Bearer ${apiKey}`) {
-      res.writeHead(403).end(); return;
+      res.writeHead(403).end();
+      return;
     }
     if (req.method !== "POST" || req.url !== "/v1/responses") {
-      res.writeHead(404).end(); return;
+      res.writeHead(404).end();
+      return;
     }
-    if (busy) { res.writeHead(429).end(); return; }
+    if (busy) {
+      res.writeHead(429).end();
+      return;
+    }
     busy = true;
     const controller = new AbortController();
     active.add(controller);
-    const timeout = setTimeout(() => { controller.abort(); req.destroy(); }, 120_000);
-    const disconnect = () => { if (!res.writableEnded) controller.abort(); };
+    const timeout = setTimeout(() => {
+      controller.abort();
+      req.destroy();
+    }, 120_000);
+    const disconnect = () => {
+      if (!res.writableEnded) controller.abort();
+    };
     res.on("close", disconnect);
     try {
       const chunks: Buffer[] = [];
@@ -89,9 +136,15 @@ export async function installWorkerSourceRoute(
       const request = Schema.decodeUnknownSync(Request)(json);
       if (request.model !== pin.modelId) throw new Error("Worker model differs from source permit");
       await source("admit", {}, controller.signal);
-      const reply = Schema.decodeUnknownSync(Reply)(await source("infer", {
-        requestJson: JSON.stringify({ ...(json as Record<string, unknown>), stream: false }),
-      }, controller.signal));
+      const reply = Schema.decodeUnknownSync(Reply)(
+        await source(
+          "infer",
+          {
+            requestJson: JSON.stringify({ ...(json as Record<string, unknown>), stream: false }),
+          },
+          controller.signal,
+        ),
+      );
       const result = Schema.decodeUnknownSync(Response)(JSON.parse(reply.requestJson));
       if (revoked || controller.signal.aborted) throw new Error("Worker route revoked");
       if (request.stream) {
@@ -112,28 +165,44 @@ export async function installWorkerSourceRoute(
       if (!res.headersSent) res.writeHead(502, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: { message: "Worker source authority unavailable" } }));
     } finally {
-      clearTimeout(timeout); active.delete(controller); busy = false;
+      clearTimeout(timeout);
+      active.delete(controller);
+      busy = false;
       res.off("close", disconnect);
     }
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Worker loopback did not bind");
   const harness: WorkerSourceHarness = {
     isRevoked: () => revoked,
-    identity: Object.freeze({ sourceEnvironmentId: route.sourceEnvironmentId, targetEnvironmentId: route.targetEnvironmentId, requestId: route.requestId, requestDigest: route.requestDigest }),
+    identity: Object.freeze({
+      sourceEnvironmentId: route.sourceEnvironmentId,
+      targetEnvironmentId: route.targetEnvironmentId,
+      requestId: route.requestId,
+      requestDigest: route.requestDigest,
+    }),
     admit: async () => {
       if (revoked) throw new Error("Worker route revoked");
       const controller = new AbortController();
       active.add(controller);
       const timeout = setTimeout(() => controller.abort(), 15_000);
-      try { await source("admit", {}, controller.signal); }
-      finally { clearTimeout(timeout); active.delete(controller); }
+      try {
+        await source("admit", {}, controller.signal);
+      } finally {
+        clearTimeout(timeout);
+        active.delete(controller);
+      }
     },
-    baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey, model: pin.modelId,
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    apiKey,
+    model: pin.modelId,
     retire: async () => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000);

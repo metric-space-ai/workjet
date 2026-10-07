@@ -247,8 +247,13 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           Effect.mapError(() => failure("computer-unavailable")),
         );
         if (input.workerProfileId !== undefined) {
-          const profiles = configuration.workerProfiles.filter((profile) => profile.id === input.workerProfileId);
-          if (profiles.length !== 1 || (computerId !== undefined && profiles[0]!.computerId !== computerId))
+          const profiles = configuration.workerProfiles.filter(
+            (profile) => profile.id === input.workerProfileId,
+          );
+          if (
+            profiles.length !== 1 ||
+            (computerId !== undefined && profiles[0]!.computerId !== computerId)
+          )
             return yield* failure("worker-profile-unavailable");
           computerId = profiles[0]!.computerId;
         }
@@ -270,26 +275,44 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
 
       let modelSelection = input.modelSelection ?? parent.modelSelection;
       if (targetEnvironmentId !== invocation.environmentId) {
-        const profiles = configuration?.workerProfiles.filter((profile) =>
-          profile.computerId === computerId && profile.harness === "codex-cli" &&
-          (input.workerProfileId === undefined || profile.id === input.workerProfileId),
-        ) ?? [];
+        const profiles =
+          configuration?.workerProfiles.filter(
+            (profile) =>
+              profile.computerId === computerId &&
+              profile.harness === "codex-cli" &&
+              (input.workerProfileId === undefined || profile.id === input.workerProfileId),
+          ) ?? [];
         const profile = profiles.length === 1 ? profiles[0] : undefined;
-        if (!profile || !configuration?.llmRoutes.some((route) => route.id === profile.llmRouteId) ||
-          (input.modelSelection !== undefined && input.modelSelection.model !== profile.modelId))
+        if (
+          !profile ||
+          !configuration?.llmRoutes.some((route) => route.id === profile.llmRouteId) ||
+          (input.modelSelection !== undefined && input.modelSelection.model !== profile.modelId)
+        )
           return yield* failure("worker-profile-unavailable");
         if (input.enabledCapabilityIds === undefined) {
           const selected = resolveDelegatedCapabilities({
             parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
-            requestedCapabilityIds: profile.capabilityIds, targetRole: "worker",
+            requestedCapabilityIds: profile.capabilityIds,
+            targetRole: "worker",
           });
-          if (selected.issues.length > 0 || profile.capabilityIds.some((id) => !parent.workjetConfig.enabledCapabilityIds.includes(id)))
+          if (
+            selected.issues.length > 0 ||
+            profile.capabilityIds.some(
+              (id) => !parent.workjetConfig.enabledCapabilityIds.includes(id),
+            )
+          )
             return yield* failure("capability-escalation");
           enabledCapabilityIds = [...selected.capabilityIds] as WorkjetCapabilityId[];
         } else if (enabledCapabilityIds.some((id) => !profile.capabilityIds.includes(id))) {
           return yield* failure("capability-escalation");
         }
-        modelSelection = { instanceId: input.modelSelection?.instanceId ?? parent.modelSelection.instanceId, model: profile.modelId, ...(input.modelSelection?.options === undefined ? {} : { options: input.modelSelection.options }) };
+        modelSelection = {
+          instanceId: input.modelSelection?.instanceId ?? parent.modelSelection.instanceId,
+          model: profile.modelId,
+          ...(input.modelSelection?.options === undefined
+            ? {}
+            : { options: input.modelSelection.options }),
+        };
         if (Option.isNone(remoteBroker) || Option.isNone(sourceGit) || computerId === undefined) {
           return yield* failure("remote-dispatch-unavailable");
         }
@@ -307,7 +330,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             saved.value.request.workerProfileId !== profile.id ||
             saved.value.request.llmRouteId !== profile.llmRouteId ||
             saved.value.request.modelSelection.model !== profile.modelId ||
-            saved.value.request.enabledCapabilityIds.some((id) => !profile.capabilityIds.includes(id)) ||
+            saved.value.request.enabledCapabilityIds.some(
+              (id) => !profile.capabilityIds.includes(id),
+            ) ||
             saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
             saved.value.request.task !== input.task ||
             (input.title !== undefined &&
@@ -315,8 +340,12 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                 (input.title.trim() || deriveWorkerTitle(input.task))) ||
             (input.modelSelection !== undefined &&
               !NodeUtil.isDeepStrictEqual(
-                (yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(Effect.mapError(() => failure("remote-dispatch-failed")))),
-                (yield* Schema.encodeEffect(ModelSelection)(input.modelSelection).pipe(Effect.mapError(() => failure("remote-dispatch-failed")))),
+                yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(
+                  Effect.mapError(() => failure("remote-dispatch-failed")),
+                ),
+                yield* Schema.encodeEffect(ModelSelection)(input.modelSelection).pipe(
+                  Effect.mapError(() => failure("remote-dispatch-failed")),
+                ),
               )) ||
             (input.enabledCapabilityIds !== undefined &&
               (saved.value.request.enabledCapabilityIds.length !== enabledCapabilityIds.length ||
@@ -366,7 +395,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             parent: { environmentId: invocation.environmentId, threadId: parent.id },
             ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
             parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
-            managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions].filter(Boolean).join("\n\n"),
+            managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
+              .filter(Boolean)
+              .join("\n\n"),
             project: {
               id: project.id,
               title: project.title,

@@ -5,15 +5,37 @@ it.effect("returns and accepts the saved remote request ID after a lost acknowle
   const seen: WorkerDispatch.WorkerDispatchInput[] = [];
   const dispatch: WorkerDispatch.WorkerDispatchShape["dispatch"] = (_invocation, input) => {
     seen.push(input);
-    return Effect.fail(new WorkerDispatch.WorkerDispatchError({ reason: "remote-dispatch-pending", remoteRequestId: requestId, targetEnvironmentId: target }));
+    return Effect.fail(
+      new WorkerDispatch.WorkerDispatchError({
+        reason: "remote-dispatch-pending",
+        remoteRequestId: requestId,
+        targetEnvironmentId: target,
+      }),
+    );
   };
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
-    const result = yield* server.callTool({ name: WORKJET_DISPATCH_WORKER_TOOL_NAME, arguments: { task: "PROMPT_CANARY", remoteRequestId: requestId } }).pipe(
-      Effect.provideService(McpInvocationContext.McpInvocationContext, { ...baseInvocation, workjetRole: "orchestrator" }), Effect.provideService(McpSchema.McpServerClient, client),
-    );
+    const result = yield* server
+      .callTool({
+        name: WORKJET_DISPATCH_WORKER_TOOL_NAME,
+        arguments: { task: "PROMPT_CANARY", remoteRequestId: requestId },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...baseInvocation,
+          workjetRole: "orchestrator",
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
     expect(seen[0]?.remoteRequestId).toBe(requestId);
-    expect(result.structuredContent).toEqual({ error: { _tag: "WorkjetWorkerDispatchError", reason: "remote-dispatch-pending", remoteRequestId: requestId, targetEnvironmentId: target } });
+    expect(result.structuredContent).toEqual({
+      error: {
+        _tag: "WorkjetWorkerDispatchError",
+        reason: "remote-dispatch-pending",
+        remoteRequestId: requestId,
+        targetEnvironmentId: target,
+      },
+    });
     expect(JSON.stringify(result)).not.toContain("PROMPT_CANARY");
   }).pipe(Effect.provide(makeTestLayer({ dispatch })));
 });

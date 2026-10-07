@@ -1,7 +1,21 @@
-import { CommandId, isWorkjetSupervisorReceiptForRequest, type WorkjetSupervisorJournal, type WorkjetSupervisorTurnIntent } from "@workjet/contracts";
+import {
+  CommandId,
+  isWorkjetSupervisorReceiptForRequest,
+  type WorkjetSupervisorJournal,
+  type WorkjetSupervisorTurnIntent,
+} from "@workjet/contracts";
 import { useEffect, useRef, useState } from "react";
-import { persistSupervisorJournal, nativeSupervisorResultText, supervisorJournalMatchesScope, type NativeSupervisorScope } from "../../nativeSupervisorComposer";
-import { resumeWorkjetSupervisorTurn, submitWorkjetSupervisorTurn } from "../../workjetSupervisorControl";
+import { newCommandId } from "~/lib/utils";
+import {
+  persistSupervisorJournal,
+  nativeSupervisorResultText,
+  supervisorJournalMatchesScope,
+  type NativeSupervisorScope,
+} from "../../nativeSupervisorComposer";
+import {
+  resumeWorkjetSupervisorTurn,
+  submitWorkjetSupervisorTurn,
+} from "../../workjetSupervisorControl";
 import { requestWorkjetProjectControl } from "../../workjetProjectControl";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
@@ -12,7 +26,8 @@ export function NativeSupervisorComposer(props: {
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
 }) {
   const [journal, setJournal] = useState<WorkjetSupervisorJournal | null>(() =>
-    props.config.schemaVersion === 2 ? props.config.ctoxSupervisorTurn ?? null : null);
+    props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
+  );
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +37,8 @@ export function NativeSupervisorComposer(props: {
   const journalRef = useRef(journal);
   journalRef.current = journal;
   const scope = props.scope;
-  const scopeMatches = scope !== null && (journal === null || supervisorJournalMatchesScope(journal, scope));
+  const scopeMatches =
+    scope !== null && (journal === null || supervisorJournalMatchesScope(journal, scope));
   const disabled = props.unavailable || !scopeMatches;
   const pending = journal !== null && journal.turn?.terminal !== true;
   const latestProps = useRef(props);
@@ -32,44 +48,91 @@ export function NativeSupervisorComposer(props: {
     const current = latestProps.current;
     const target = current.scope;
     const saved = journalRef.current;
-    if (inFlight.current || current.unavailable || target === null ||
-      (saved !== null && !supervisorJournalMatchesScope(saved, target))) return;
-    if (operation === "send" && (prompt.trim() === "" || (saved !== null && saved.turn?.terminal !== true))) return;
+    if (
+      inFlight.current ||
+      current.unavailable ||
+      target === null ||
+      (saved !== null && !supervisorJournalMatchesScope(saved, target))
+    )
+      return;
+    if (
+      operation === "send" &&
+      (prompt.trim() === "" || (saved !== null && saved.turn?.terminal !== true))
+    )
+      return;
     if (operation !== "send" && saved === null) return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
-    inFlight.current = true; setBusy(true); setError(null);
-    const port = { save: async (next: WorkjetSupervisorJournal) => {
-      await persistSupervisorJournal({ config: current.config, journal: next, dispatch: current.saveConfig });
-      journalRef.current = next; setJournal(next);
-    } };
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    const port = {
+      save: async (next: WorkjetSupervisorJournal) => {
+        await persistSupervisorJournal({
+          config: current.config,
+          journal: next,
+          dispatch: current.saveConfig,
+        });
+        journalRef.current = next;
+        setJournal(next);
+      },
+    };
     try {
       let result;
       if (operation === "send") {
-        const intent: WorkjetSupervisorTurnIntent = { ...target,
-          commandId: CommandId.make(`supervisor-${crypto.randomUUID()}`), goal: prompt.trim(), createdAt: new Date().toISOString() };
+        const intent: WorkjetSupervisorTurnIntent = {
+          ...target,
+          commandId: CommandId.make(`supervisor-${newCommandId()}`),
+          goal: prompt.trim(),
+          createdAt: new Date().toISOString(),
+        };
         result = await submitWorkjetSupervisorTurn(intent, port);
       } else if (operation === "resume" && saved !== null) {
-        result = await resumeWorkjetSupervisorTurn(saved, CommandId.make(`observe-${crypto.randomUUID()}`), port);
+        result = await resumeWorkjetSupervisorTurn(
+          saved,
+          CommandId.make(`observe-${newCommandId()}`),
+          port,
+        );
       } else if (saved?.turn) {
-        const request = { action: "project.supervisor.turn.cancel" as const,
-          commandId: CommandId.make(`cancel-${crypto.randomUUID()}`), projectId: target.projectId,
-          threadId: target.threadId, targetCommandId: saved.turn.commandId };
+        const request = {
+          action: "project.supervisor.turn.cancel" as const,
+          commandId: CommandId.make(`cancel-${newCommandId()}`),
+          projectId: target.projectId,
+          threadId: target.threadId,
+          targetCommandId: saved.turn.commandId,
+        };
         result = await requestWorkjetProjectControl(target.instanceId, request);
-        if (result._tag === "completed" && isWorkjetSupervisorReceiptForRequest(request, result.response) &&
-          result.response.action === "project.supervisor.turn.cancel") {
+        if (
+          result._tag === "completed" &&
+          isWorkjetSupervisorReceiptForRequest(request, result.response) &&
+          result.response.action === "project.supervisor.turn.cancel"
+        ) {
           await port.save({ intent: saved.intent, turn: result.response.turn });
           // This receipt requests cancellation; it never confirms a worker interrupt.
           setNotice("Abbruch angefordert; Bestätigung wird aus dem Auftrag gelesen.");
-        } else if (result._tag === "completed") throw new Error("Antwort gehört zu einem anderen Auftrag.");
+        } else if (result._tag === "completed")
+          throw new Error("Antwort gehört zu einem anderen Auftrag.");
       }
       if (journalRef.current?.turn?.terminal) setNotice(null);
-      if (result?._tag === "failed") setError(`CTOX: ${result.code}. Auftrag prüfen und erneut verbinden.`);
-      if (result?._tag === "completed" && (operation === "send" || prompt.trim() === saved?.intent.goal)) setPrompt("");
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "CTOX-Auftrag konnte nicht bestätigt werden."); }
-    finally { inFlight.current = false; setBusy(false); }
+      if (result?._tag === "failed")
+        setError(`CTOX: ${result.code}. Auftrag prüfen und erneut verbinden.`);
+      if (
+        result?._tag === "completed" &&
+        (operation === "send" || prompt.trim() === saved?.intent.goal)
+      )
+        setPrompt("");
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "CTOX-Auftrag konnte nicht bestätigt werden.",
+      );
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
   };
-  const runRef = useRef(run); runRef.current = run;
-  const persistedJournal = props.config.schemaVersion === 2 ? props.config.ctoxSupervisorTurn ?? null : null;
+  const runRef = useRef(run);
+  runRef.current = run;
+  const persistedJournal =
+    props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null;
   useEffect(() => {
     if (!inFlight.current && persistedJournal !== null && persistedJournal !== journalRef.current) {
       journalRef.current = persistedJournal;
@@ -86,39 +149,129 @@ export function NativeSupervisorComposer(props: {
     }
   }, [disabled, journal]);
   useEffect(() => {
-    if (disabled || busy || error !== null || journal?.turn == null || journal.turn.terminal) return;
-    const timer = setTimeout(() => { void runRef.current("resume"); }, 3000);
+    if (disabled || busy || error !== null || journal?.turn == null || journal.turn.terminal)
+      return;
+    const timer = setTimeout(() => {
+      void runRef.current("resume");
+    }, 3000);
     return () => clearTimeout(timer);
   }, [disabled, busy, error, journal]);
 
-  return <section className="mx-auto w-full max-w-5xl rounded-2xl border border-border bg-background p-3" aria-label="Supervisor-Auftrag">
-    {journal && scopeMatches && <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
-      <p className="whitespace-pre-wrap break-words">{journal.intent.goal}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{journal.turn ? `${journal.turn.status} · Versuch ${journal.turn.attempt}` : "Bestätigung ausstehend"}</p>
-      {journal.turn?.taskId && <details className="mt-1 text-xs text-muted-foreground"><summary>Auftragsdetails</summary><p>Task {journal.turn.taskId}</p><p>Befehl {journal.turn.commandId}</p></details>}
-      {journal.turn?.result != null && <pre className="mt-2 whitespace-pre-wrap break-words font-sans">{nativeSupervisorResultText(journal.turn.result)}</pre>}
-      {journal.turn?.resultTruncated && <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>}
-      {journal.turn?.errorMessage && <p role="alert" className="text-destructive">{journal.turn.errorCode}: {journal.turn.errorMessage}</p>}
-    </div>}
-    {disabled && <p role="status" className="mb-2 text-xs text-muted-foreground">Projekt und CTOX-Verbindung müssen bestätigt sein.</p>}
-    {notice && <p role="status" className="mb-2 text-xs text-muted-foreground">{notice}</p>}
-    {error && <p role="alert" className="mb-2 text-xs text-destructive">{error}</p>}
-    <form onSubmit={(event) => { event.preventDefault(); void run("send"); }} className="flex items-end gap-2">
-      <textarea aria-label="Nachricht an Supervisor" placeholder="Auftrag an den Supervisor …" rows={2}
-        value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={disabled || busy || pending}
-        onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !event.nativeEvent.isComposing) {
-            event.preventDefault(); void run("send");
-          }
+  return (
+    <section
+      className="mx-auto w-full max-w-5xl rounded-2xl border border-border bg-background p-3"
+      aria-label="Supervisor-Auftrag"
+    >
+      {journal && scopeMatches && (
+        <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
+          <p className="whitespace-pre-wrap break-words">{journal.intent.goal}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {journal.turn
+              ? `${journal.turn.status} · Versuch ${journal.turn.attempt}`
+              : "Bestätigung ausstehend"}
+          </p>
+          {journal.turn?.taskId && (
+            <details className="mt-1 text-xs text-muted-foreground">
+              <summary>Auftragsdetails</summary>
+              <p>Task {journal.turn.taskId}</p>
+              <p>Befehl {journal.turn.commandId}</p>
+            </details>
+          )}
+          {journal.turn?.result != null && (
+            <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
+              {nativeSupervisorResultText(journal.turn.result)}
+            </pre>
+          )}
+          {journal.turn?.resultTruncated && (
+            <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>
+          )}
+          {journal.turn?.errorMessage && (
+            <p role="alert" className="text-destructive">
+              {journal.turn.errorCode}: {journal.turn.errorMessage}
+            </p>
+          )}
+        </div>
+      )}
+      {disabled && (
+        <p role="status" className="mb-2 text-xs text-muted-foreground">
+          Projekt und CTOX-Verbindung müssen bestätigt sein.
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="mb-2 text-xs text-muted-foreground">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mb-2 text-xs text-destructive">
+          {error}
+        </p>
+      )}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run("send");
         }}
-        className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none" />
-      <span className="pb-2 text-xs text-muted-foreground" title="Ausführung und Modell werden von CTOX verwaltet">CTOX</span>
-      <button type="submit" aria-label="An Supervisor senden" disabled={disabled || busy || pending || prompt.trim() === ""}
-        className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40">Senden</button>
-    </form>
-    {journal && <div className="mt-2 flex gap-3 text-xs">
-      <button type="button" disabled={disabled || busy} onClick={() => { void run("resume"); }}>Auftrag aktualisieren</button>
-      {pending && journal.turn && <button type="button" disabled={disabled || busy} onClick={() => { void run("cancel"); }}>Abbrechen</button>}
-    </div>}
-  </section>;
+        className="flex items-end gap-2"
+      >
+        <textarea
+          aria-label="Nachricht an Supervisor"
+          placeholder="Auftrag an den Supervisor …"
+          rows={2}
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          disabled={disabled || busy || pending}
+          onKeyDown={(event) => {
+            if (
+              (event.metaKey || event.ctrlKey) &&
+              event.key === "Enter" &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              void run("send");
+            }
+          }}
+          className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none"
+        />
+        <span
+          className="pb-2 text-xs text-muted-foreground"
+          title="Ausführung und Modell werden von CTOX verwaltet"
+        >
+          CTOX
+        </span>
+        <button
+          type="submit"
+          aria-label="An Supervisor senden"
+          disabled={disabled || busy || pending || prompt.trim() === ""}
+          className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
+        >
+          Senden
+        </button>
+      </form>
+      {journal && (
+        <div className="mt-2 flex gap-3 text-xs">
+          <button
+            type="button"
+            disabled={disabled || busy}
+            onClick={() => {
+              void run("resume");
+            }}
+          >
+            Auftrag aktualisieren
+          </button>
+          {pending && journal.turn && (
+            <button
+              type="button"
+              disabled={disabled || busy}
+              onClick={() => {
+                void run("cancel");
+              }}
+            >
+              Abbrechen
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }

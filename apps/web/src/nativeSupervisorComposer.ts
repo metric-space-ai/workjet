@@ -6,7 +6,10 @@ import {
   type ThreadId,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
-import { resolveProjectHistoryBindings, type ProjectHistoryIdentity } from "./workjetProjectIdentity";
+import {
+  resolveProjectHistoryBindings,
+  type ProjectHistoryIdentity,
+} from "./workjetProjectIdentity";
 import type { WorkjetProjectRegistrySnapshot } from "./workjetProjectRegistry";
 
 export interface NativeSupervisorScope {
@@ -30,27 +33,50 @@ export function resolveNativeSupervisorScope(input: {
 }): NativeSupervisorScope | null {
   const { config, project, threadId, instanceId, registry } = input;
   if (
-    config?.schemaVersion !== 2 || config.team?.role !== "supervisor" ||
-    project === null || threadId === null || instanceId === null ||
+    config?.schemaVersion !== 2 ||
+    config.team?.role !== "supervisor" ||
+    project === null ||
+    threadId === null ||
+    instanceId === null ||
     (project.ctoxRegistration != null && project.ctoxRegistration.status !== "confirmed") ||
-    config.team.projectId !== project.id || config.team.threadId !== threadId ||
-    registry.presentationInstanceId !== instanceId || registry.phase !== "ready" || registry.refreshFailed
-  ) return null;
-  const [binding] = resolveProjectHistoryBindings({ instanceId, nativeProjects: registry.projects,
-    projects: [project], computers: input.computers });
+    config.team.projectId !== project.id ||
+    config.team.threadId !== threadId ||
+    registry.presentationInstanceId !== instanceId ||
+    registry.phase !== "ready" ||
+    registry.refreshFailed
+  )
+    return null;
+  const [binding] = resolveProjectHistoryBindings({
+    instanceId,
+    nativeProjects: registry.projects,
+    projects: [project],
+    computers: input.computers,
+  });
   if (!binding) return null;
   const scope = { instanceId, projectId: binding.nativeProjectId, threadId };
   // Imported titles and Code provider session IDs are never native thread IDs.
   try {
-    Schema.decodeUnknownSync(WorkjetSupervisorTurnIntent)({ ...scope,
-      commandId: "validate-scope", goal: "Validate scope", createdAt: "2026-10-07T00:00:00.000Z" });
+    Schema.decodeUnknownSync(WorkjetSupervisorTurnIntent)({
+      ...scope,
+      commandId: "validate-scope",
+      goal: "Validate scope",
+      createdAt: "2026-10-07T00:00:00.000Z",
+    });
     return scope;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-export function supervisorJournalMatchesScope(journal: WorkjetSupervisorJournal, scope: NativeSupervisorScope): boolean {
-  return journal.intent.instanceId === scope.instanceId && journal.intent.projectId === scope.projectId &&
-    journal.intent.threadId === scope.threadId;
+export function supervisorJournalMatchesScope(
+  journal: WorkjetSupervisorJournal,
+  scope: NativeSupervisorScope,
+): boolean {
+  return (
+    journal.intent.instanceId === scope.instanceId &&
+    journal.intent.projectId === scope.projectId &&
+    journal.intent.threadId === scope.threadId
+  );
 }
 
 /** Preserve every unrelated config field; the server mutation must acknowledge the write. */
@@ -60,11 +86,16 @@ export async function persistSupervisorJournal(input: {
   readonly dispatch: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
 }): Promise<WorkjetThreadConfig> {
   const { config, journal } = input;
-  if (config.schemaVersion !== 2 || config.team?.role !== "supervisor" || config.team.threadId !== journal.intent.threadId)
+  if (
+    config.schemaVersion !== 2 ||
+    config.team?.role !== "supervisor" ||
+    config.team.threadId !== journal.intent.threadId
+  )
     throw new Error("Supervisor identity changed; message not sent.");
   const next = { ...config, ctoxSupervisorTurn: journal };
   const result = await input.dispatch(next);
-  if (result._tag !== "Success") throw new Error("Could not save the supervisor request; message not sent.");
+  if (result._tag !== "Success")
+    throw new Error("Could not save the supervisor request; message not sent.");
   return next;
 }
 

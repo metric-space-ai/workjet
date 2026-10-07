@@ -1,16 +1,61 @@
 import { describe, expect, it } from "vite-plus/test";
-import { DEFAULT_WORKJET_THREAD_CONFIG, EnvironmentId, ProjectId, ThreadId, CommandId, type WorkjetThreadConfig, type WorkjetSupervisorJournal } from "@workjet/contracts";
-import { isNativeSupervisorThread, resolveNativeSupervisorScope, supervisorJournalMatchesScope, persistSupervisorJournal, nativeSupervisorResultText } from "./nativeSupervisorComposer";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  CommandId,
+  type WorkjetThreadConfig,
+  type WorkjetSupervisorJournal,
+} from "@workjet/contracts";
+import {
+  isNativeSupervisorThread,
+  resolveNativeSupervisorScope,
+  supervisorJournalMatchesScope,
+  persistSupervisorJournal,
+  nativeSupervisorResultText,
+} from "./nativeSupervisorComposer";
 
 const threadId = ThreadId.make("e28290b0-7b0a-4d19-a242-f27041fadb84");
 const projectId = ProjectId.make("71462c13-b395-402f-b6c8-788b405783e7");
 const instanceId = "managed:acceptance";
-const config: WorkjetThreadConfig = { ...DEFAULT_WORKJET_THREAD_CONFIG, role: "orchestrator",
-  team: { role: "supervisor", projectId, threadId, parentThreadId: null, goal: "Coordinate", createdAt: "2026-10-07T00:00:00.000Z" } };
-const project = { id: projectId, environmentId: EnvironmentId.make("local"), ctoxRegistration: { instanceId, commandId: CommandId.make("registered-project"), status: "confirmed" as const } };
+const config: WorkjetThreadConfig = {
+  ...DEFAULT_WORKJET_THREAD_CONFIG,
+  role: "orchestrator",
+  team: {
+    role: "supervisor",
+    projectId,
+    threadId,
+    parentThreadId: null,
+    goal: "Coordinate",
+    createdAt: "2026-10-07T00:00:00.000Z",
+  },
+};
+const project = {
+  id: projectId,
+  environmentId: EnvironmentId.make("local"),
+  ctoxRegistration: {
+    instanceId,
+    commandId: CommandId.make("registered-project"),
+    status: "confirmed" as const,
+  },
+};
 const scope = { instanceId, projectId, threadId };
-const journal: WorkjetSupervisorJournal = { intent: { ...scope, commandId: CommandId.make("durable-send"), goal: "Build the requested change", createdAt: "2026-10-07T00:00:00.000Z" }, turn: null };
-const registry = { presentationInstanceId: instanceId, phase: "ready" as const, projects: [{ id: projectId, title: "greppy.xyz", workingCopies: [] }], selectedProjectId: null };
+const journal: WorkjetSupervisorJournal = {
+  intent: {
+    ...scope,
+    commandId: CommandId.make("durable-send"),
+    goal: "Build the requested change",
+    createdAt: "2026-10-07T00:00:00.000Z",
+  },
+  turn: null,
+};
+const registry = {
+  presentationInstanceId: instanceId,
+  phase: "ready" as const,
+  projects: [{ id: projectId, title: "greppy.xyz", workingCopies: [] }],
+  selectedProjectId: null,
+};
 const input = { config, project, instanceId, threadId, registry, computers: [] };
 
 describe("native supervisor composer authority", () => {
@@ -21,24 +66,56 @@ describe("native supervisor composer authority", () => {
   });
   it("refuses foreign instances, incomplete registry and missing identity", () => {
     expect(resolveNativeSupervisorScope({ ...input, instanceId: "managed:foreign" })).toBeNull();
-    expect(resolveNativeSupervisorScope({ ...input, registry: { ...registry, refreshFailed: true } })).toBeNull();
-    expect(resolveNativeSupervisorScope({ ...input, registry: { ...registry, phase: "loading" } })).toBeNull();
-    expect(resolveNativeSupervisorScope({ ...input, project: { ...project, ctoxRegistration: null } })).toBeNull();
-    expect(resolveNativeSupervisorScope({ ...input, threadId: ThreadId.make("imported-title") })).toBeNull();
+    expect(
+      resolveNativeSupervisorScope({ ...input, registry: { ...registry, refreshFailed: true } }),
+    ).toBeNull();
+    expect(
+      resolveNativeSupervisorScope({ ...input, registry: { ...registry, phase: "loading" } }),
+    ).toBeNull();
+    expect(
+      resolveNativeSupervisorScope({ ...input, project: { ...project, ctoxRegistration: null } }),
+    ).toBeNull();
+    expect(
+      resolveNativeSupervisorScope({ ...input, threadId: ThreadId.make("imported-title") }),
+    ).toBeNull();
   });
   it("keeps a stored retry attached to its original instance/project/thread", () => {
     expect(supervisorJournalMatchesScope(journal, scope)).toBe(true);
-    expect(supervisorJournalMatchesScope(journal, { ...scope, instanceId: "managed:foreign" })).toBe(false);
-    expect(supervisorJournalMatchesScope(journal, { ...scope, threadId: "another-thread" })).toBe(false);
-    expect(supervisorJournalMatchesScope(journal, { ...scope, projectId: ProjectId.make("another-project") })).toBe(false);
+    expect(
+      supervisorJournalMatchesScope(journal, { ...scope, instanceId: "managed:foreign" }),
+    ).toBe(false);
+    expect(supervisorJournalMatchesScope(journal, { ...scope, threadId: "another-thread" })).toBe(
+      false,
+    );
+    expect(
+      supervisorJournalMatchesScope(journal, {
+        ...scope,
+        projectId: ProjectId.make("another-project"),
+      }),
+    ).toBe(false);
   });
   it("requires acknowledged durable storage and preserves unrelated configuration", async () => {
     let saved: WorkjetThreadConfig | null = null;
-    const next = await persistSupervisorJournal({ config, journal, dispatch: async (value) => { saved = value; return { _tag: "Success" }; } });
+    const next = await persistSupervisorJournal({
+      config,
+      journal,
+      dispatch: async (value) => {
+        saved = value;
+        return { _tag: "Success" };
+      },
+    });
     expect(saved).toEqual({ ...config, ctoxSupervisorTurn: journal });
     expect(next.managedInstructions).toBe(config.managedInstructions);
-    await expect(persistSupervisorJournal({ config, journal, dispatch: async () => ({ _tag: "Failure" }) })).rejects.toThrow("Could not save");
-    await expect(persistSupervisorJournal({ config: DEFAULT_WORKJET_THREAD_CONFIG, journal, dispatch: async () => ({ _tag: "Success" }) })).rejects.toThrow("identity changed");
+    await expect(
+      persistSupervisorJournal({ config, journal, dispatch: async () => ({ _tag: "Failure" }) }),
+    ).rejects.toThrow("Could not save");
+    await expect(
+      persistSupervisorJournal({
+        config: DEFAULT_WORKJET_THREAD_CONFIG,
+        journal,
+        dispatch: async () => ({ _tag: "Success" }),
+      }),
+    ).rejects.toThrow("identity changed");
   });
   it("shows only the received result, without constructing a provider event", () => {
     expect(nativeSupervisorResultText(null)).toBe("");

@@ -13,6 +13,21 @@ const project: GalleryProject = {
 };
 
 describe("project gallery previews", () => {
+  it.each(["fzul.app", "i-hate-ai.community"])(
+    "shows %s from its bundled snapshot without a live iframe",
+    (title) => {
+      const markup = renderToStaticMarkup(
+        <ProjectOverviewCard project={{ ...project, title }} onOpen={() => {}} />,
+      );
+      expect(markup).toContain(`alt="Saved website preview for ${title}"`);
+      expect(markup).toContain("<img");
+      expect(markup).not.toContain("<iframe");
+      expect(markup).toContain("Saved preview");
+      expect(markup).toContain("2026-10-07");
+      expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+    },
+  );
+
   it("previews a domain-named native project immediately in an isolated lazy frame", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} />,

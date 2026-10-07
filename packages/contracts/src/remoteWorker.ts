@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { EnvironmentId, IsoDateTime, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  EnvironmentId,
+  IsoDateTime,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import { ModelSelection, ProviderInteractionMode, RuntimeMode } from "./orchestration.ts";
 import { WorkjetCapabilityId, WorkjetComputerId, WorkjetParentThreadReference } from "./workjet.ts";
@@ -15,7 +21,11 @@ export const RemoteWorkerRequest = Schema.Struct({
   parentTeamRole: Schema.optional(Schema.Literals(["supervisor", "specialist"])),
   parentCapabilityIds: Schema.Array(WorkjetCapabilityId),
   managedInstructions: Schema.String,
-  project: Schema.Struct({ id: ProjectId, title: TrimmedNonEmptyString, repository: RepositoryIdentity }),
+  project: Schema.Struct({
+    id: ProjectId,
+    title: TrimmedNonEmptyString,
+    repository: RepositoryIdentity,
+  }),
   revision: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40,64}$/)),
   task: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32000)),
   title: TrimmedNonEmptyString,
@@ -43,13 +53,23 @@ export const RemoteWorkerResult = Schema.Struct({
 export type RemoteWorkerResult = typeof RemoteWorkerResult.Type;
 
 export const RemoteWorkerFailureReason = Schema.Literals([
-  "invalid-request", "request-conflict", "source-unavailable", "computer-unavailable",
-  "project-unavailable", "worktree-failed", "create-failed", "turn-start-failed", "rollback-failed",
+  "invalid-request",
+  "request-conflict",
+  "source-unavailable",
+  "computer-unavailable",
+  "project-unavailable",
+  "worktree-failed",
+  "create-failed",
+  "turn-start-failed",
+  "rollback-failed",
 ]);
 export class RemoteWorkerDispatchError extends Schema.TaggedErrorClass<RemoteWorkerDispatchError>()(
-  "RemoteWorkerDispatchError", { reason: RemoteWorkerFailureReason },
+  "RemoteWorkerDispatchError",
+  { reason: RemoteWorkerFailureReason },
 ) {
-  override get message(): string { return `Remote worker dispatch failed: ${this.reason}.`; }
+  override get message(): string {
+    return `Remote worker dispatch failed: ${this.reason}.`;
+  }
 }
 export const RemoteWorkerResponse = Schema.Struct({
   requestId: ThreadId,

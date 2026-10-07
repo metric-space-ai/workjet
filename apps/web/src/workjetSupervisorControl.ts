@@ -17,8 +17,12 @@ export interface WorkjetSupervisorJournalPort {
   readonly save: (journal: WorkjetSupervisorJournal) => Promise<void>;
 }
 
-const decodeIntent = Schema.decodeUnknownSync(WorkjetSupervisorTurnIntent, { onExcessProperty: "error" });
-const decodeJournal = Schema.decodeUnknownSync(WorkjetSupervisorJournal, { onExcessProperty: "error" });
+const decodeIntent = Schema.decodeUnknownSync(WorkjetSupervisorTurnIntent, {
+  onExcessProperty: "error",
+});
+const decodeJournal = Schema.decodeUnknownSync(WorkjetSupervisorJournal, {
+  onExcessProperty: "error",
+});
 
 async function confirmedControl(
   intent: WorkjetSupervisorTurnIntent,

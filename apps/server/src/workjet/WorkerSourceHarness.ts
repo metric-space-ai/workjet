@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Bounded Node loopback adapter for the external Codex process; source identity is schema validated and scoped by its owning Effect service.
 import { createServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { Schema } from "effect";

@@ -25,9 +25,9 @@ describe("compact project gallery", () => {
     expect(markup).not.toContain("Open website");
     expect(markup).not.toContain("If the website blocks");
     expect(markup).not.toContain("Not configured");
-    expect(markup).toContain("Chats");
-    expect(markup).toContain("Active");
-    expect(markup).toContain("Activity");
+    expect(markup).toContain("Users");
+    expect(markup).toContain("Queries");
+    expect(markup).toContain("Latency");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
   it("retains archived values and exposes its actions through the compact menu", () => {

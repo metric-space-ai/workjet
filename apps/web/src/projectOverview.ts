@@ -76,7 +76,7 @@ export function projectUpdateAge(updatedAt: string | null, now: number = Date.no
 }
 export type GalleryLocalProject = Pick<
   OrchestrationProjectShell,
-  "id" | "title" | "updatedAt" | "overview" | "ctoxRegistration"
+  "id" | "title" | "updatedAt" | "overview" | "ctoxRegistration" | "faviconPath"
 > & {
   readonly environmentId: EnvironmentId;
   readonly workspaceRoot?: string | null | undefined;

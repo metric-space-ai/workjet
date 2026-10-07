@@ -8,6 +8,8 @@ import {
   resolveGalleryProjectOverview,
   type GalleryProjectStatistics,
 } from "../projectOverview";
+import { suggestedProjectKpis } from "../projectKpiSuggestions";
+import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectOverviewEditor } from "./ProjectOverviewEditor";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
@@ -34,11 +36,12 @@ export function ProjectOverviewCard({
   const website = overview.websiteUrl;
   const cachedPreview = resolveCachedProjectPreview(website);
   const repository = overview.repositoryUrl;
-  const defaultSlots: ProjectOverview["slots"] = [
+  const defaultSlots: ProjectOverview["slots"] = suggestedProjectKpis(project.title) ?? [
     { kind: "text", label: "Chats", value: statistics?.chatCount == null ? "—" : String(statistics.chatCount) },
     { kind: "text", label: "Active", value: statistics?.activeChatCount == null ? "—" : String(statistics.activeChatCount) },
     { kind: "updated", label: "Activity" },
   ];
+  const activityAt = statistics?.lastActivityAt ?? project.local?.updatedAt ?? null;
   const slots = defaultSlots.map((fallback, index) => overview.slots[index] ?? fallback);
   const editableOverview = { ...overview, slots };
   const titleIsWebsite = website != null && project.title.trim().toLowerCase() === website.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/$/, "").toLowerCase();
@@ -127,9 +130,13 @@ export function ProjectOverviewCard({
             className="flex size-full items-center justify-center"
             data-workjet-project-logo=""
           >
-            <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-2xl font-semibold tracking-tight text-foreground/70">
-              {project.title.slice(0, 2).toUpperCase()}
-            </span>
+            {project.local?.workspaceRoot ? (
+              <ProjectFavicon environmentId={project.local.environmentId} cwd={project.local.workspaceRoot} faviconPath={project.local.faviconPath} className="size-16" />
+            ) : (
+              <span className="flex size-16 items-center justify-center rounded-2xl bg-background/80 text-2xl font-semibold tracking-tight text-foreground/70">
+                {project.title.slice(0, 2).toUpperCase()}
+              </span>
+            )}
           </div>
         )}
         <Button
@@ -149,7 +156,7 @@ export function ProjectOverviewCard({
           const slot = slots[index] ?? null;
           return (
             <div key={position} className="flex min-w-0 items-baseline gap-1" data-workjet-project-card-slot={index + 1}>
-              <dt className={slot ? "shrink-0 text-[10px] leading-5 text-muted-foreground" : "sr-only"}>
+              <dt title={slot?.label} className={slot ? "min-w-0 truncate text-[10px] leading-5 text-muted-foreground" : "sr-only"}>
                 {slot?.label ?? `KPI ${index + 1}`}
               </dt>
               <dd className="min-w-0 truncate text-xs leading-5 font-medium tabular-nums">
@@ -160,8 +167,8 @@ export function ProjectOverviewCard({
                     Open link
                   </a>
                 ) : slot.kind === "updated" ? (
-                  <time dateTime={project.local?.updatedAt} title={project.local?.updatedAt}>
-                    {projectUpdateAge(statistics?.lastActivityAt ?? project.local?.updatedAt ?? null)}
+                  <time dateTime={activityAt ?? undefined} title={activityAt ?? undefined}>
+                    {activityAt === null ? "—" : projectUpdateAge(activityAt)}
                   </time>
                 ) : slot.kind === "metric" ? (
                   `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`

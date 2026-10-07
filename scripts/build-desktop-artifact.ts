@@ -442,6 +442,8 @@ export class StageLockfileResolutionError extends Schema.TaggedErrorClass<StageL
   }
 }
 
+const isStageLockfileResolutionError = Schema.is(StageLockfileResolutionError);
+
 export class StageLockfileReadError extends Schema.TaggedErrorClass<StageLockfileReadError>()(
   "StageLockfileReadError",
   {
@@ -2891,7 +2893,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         patchedDependencies: stagePatchedDependencies,
       }),
     catch: (cause) =>
-      Schema.is(StageLockfileResolutionError)(cause)
+      isStageLockfileResolutionError(cause)
         ? cause
         : new StageLockfileSerializationError({ lockfilePath: stageLockfilePath, cause }),
   });

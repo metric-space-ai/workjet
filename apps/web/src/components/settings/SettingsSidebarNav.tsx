@@ -283,9 +283,9 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                             className="px-2 text-[11px] font-medium text-sidebar-muted-foreground"
                             data-settings-instance-context=""
                           >
-                            Einstellungen für
+                            Settings for
                             <span className="mt-0.5 block truncate text-sm text-sidebar-foreground">
-                              {instanceContext.activeInstanceName ?? "Instanz auswählen"}
+                              {instanceContext.activeInstanceName ?? "Select an instance"}
                             </span>
                           </p>
                         </SidebarMenuItem>

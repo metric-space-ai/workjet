@@ -173,6 +173,12 @@ for (const [name, args, body, expected] of [
     { command: "authorization", kind: "exit", exitCode: 4 },
   ],
   [
+    "local service discovery failure",
+    ["__desktop-target", "--base-dir", "synthetic-private-argument"],
+    'console.error("token=synthetic-secret"); process.exit(23);',
+    { command: "service-discovery", kind: "exit", exitCode: 23 },
+  ],
+  [
     "oversized install diagnostics",
     ["service", "install"],
     'process.stderr.write(Buffer.alloc(70 * 1024, "x"));',

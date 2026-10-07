@@ -14,6 +14,7 @@ import {
 import {
   LocalServiceSessionError,
   classifySessionConnectionFailure,
+  classifyLocalServiceDiscoveryFailure,
   makeSessionAccess,
   decodeEnrollmentSessions,
   requestLocalSessionRecoveryConsent,
@@ -194,6 +195,62 @@ const fixture = () => {
   };
   return { dependencies, events, state };
 };
+
+it.effect("retries discovery timeouts without recovering or replacing the saved session", () =>
+  Effect.gen(function* () {
+    const { dependencies, events, state } = fixture();
+    state.saved = Option.some(credential);
+    const discover = dependencies.discover;
+    let unavailable = true;
+    const access = yield* makeSessionAccess({
+      ...dependencies,
+      discover: (input) =>
+        Effect.suspend(() => {
+          if (!unavailable) return discover(input);
+          unavailable = false;
+          return Effect.fail(
+            classifyLocalServiceDiscoveryFailure(
+              new LocalServiceSessionError({
+                operation: "run the local authorization command for",
+                commandFailure: { command: "service-discovery", kind: "timeout" },
+              }),
+            ),
+          );
+        }),
+    });
+    const error = yield* access.prepareWithRecovery(config).pipe(Effect.flip);
+    assert.equal(error.retryable, true);
+    assert.deepEqual(error.commandFailure, { command: "service-discovery", kind: "timeout" });
+    assert.include(error.message, "discovery timed out");
+    assert.deepEqual(events, []);
+    assert.strictEqual(Option.getOrThrow(state.saved), credential);
+    const prepared = yield* access.prepareWithRecovery(config);
+    assert.strictEqual(prepared.credential, credential);
+    assert.deepEqual(events, ["validate:runtime-a"]);
+  }),
+);
+
+it("preserves safe discovery exit metadata while masking unknown failure details", () => {
+  const error = classifyLocalServiceDiscoveryFailure(
+    new LocalServiceSessionError({
+      operation: "run the local authorization command for",
+      commandFailure: { command: "service-discovery", kind: "exit", exitCode: 23 },
+    }),
+  );
+  assert.notEqual(error.retryable, true);
+  assert.deepEqual(error.commandFailure, {
+    command: "service-discovery",
+    kind: "exit",
+    exitCode: 23,
+  });
+  assert.include(error.message, "discovery exited with code 23");
+  const unknown = classifyLocalServiceDiscoveryFailure(
+    new Error("synthetic-token at /private/synthetic-path"),
+  );
+  assert.notEqual(unknown.retryable, true);
+  assert.notInclude(JSON.stringify(unknown), "synthetic-token");
+  assert.notInclude(JSON.stringify(unknown), "synthetic-path");
+});
 
 it.effect(
   "explicit recovery reconciles unknown enrollment before retiring files or re-enrolling",

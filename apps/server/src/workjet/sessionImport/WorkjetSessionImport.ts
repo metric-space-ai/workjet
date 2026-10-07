@@ -46,6 +46,7 @@ import { ProjectionSnapshotQuery } from "../../orchestration/Services/Projection
 import { ServerSettingsService } from "../../serverSettings.ts";
 
 const MAX_PREVIEW_BYTES = 1024 * 1024;
+const MAX_EXTENDED_PREVIEW_BYTES = 4 * MAX_PREVIEW_BYTES;
 const MAX_CACHED_PREVIEWS = 512;
 const MAX_MESSAGE_CHARS = 200_000;
 const IMPORT_CHUNK_SIZE = 200;
@@ -326,7 +327,7 @@ export const parseClaudeSessionTranscript = (
   );
 };
 
-const parseSession = (file: SourceFile, text: string): ParsedSession | null => {
+const parseSession = (file: SourceFile, text: string, complete: boolean): ParsedSession | null => {
   const fallbackIso = new Date(file.mtimeMs).toISOString();
   const lines = text.split(/\r?\n/u).filter(Boolean);
   const parsed =
@@ -335,7 +336,7 @@ const parseSession = (file: SourceFile, text: string): ParsedSession | null => {
       : parseClaudeSessionTranscript(lines, fallbackIso);
   if (
     !parsed ||
-    (file.size <= MAX_PREVIEW_BYTES &&
+    (complete &&
       parsed.messages.every((message) => initializationText(message.text)))
   )
     return null;
@@ -633,9 +634,15 @@ const readSession = async (
 const readSessionPreview = async (file: SourceFile): Promise<ParsedSession | null> => {
   const handle = await NodeFSP.open(file.path, "r");
   try {
-    const buffer = Buffer.alloc(Math.min(file.size, MAX_PREVIEW_BYTES));
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    return parseSession(file, buffer.subarray(0, bytesRead).toString("utf8"));
+    // An attached image can make the first visible JSONL record exceed the usual preview.
+    for (const limit of [MAX_PREVIEW_BYTES, MAX_EXTENDED_PREVIEW_BYTES]) {
+      const buffer = Buffer.alloc(Math.min(file.size, limit));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      const complete = bytesRead >= file.size;
+      const parsed = parseSession(file, buffer.subarray(0, bytesRead).toString("utf8"), complete);
+      if (parsed || complete) return parsed;
+    }
+    return null;
   } finally {
     await handle.close();
   }

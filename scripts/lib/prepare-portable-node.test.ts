@@ -10,6 +10,11 @@ import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/ho
 import * as RemoteNode from "@workjet/ssh/remoteNode";
 import { preparePortableNode, stageVerifiedNodeArchive } from "./prepare-portable-node.ts";
 
+vi.mock("node:child_process", async (original) => {
+  const actual = await original<typeof NodeChildProcess>();
+  return { ...actual, execFile: vi.fn(actual.execFile) };
+});
+
 const hostContext = Context.empty();
 const hostPlatform = Context.get(hostContext, HostProcessPlatform);
 const hostArchitecture = Context.get(hostContext, HostProcessArchitecture);
@@ -115,8 +120,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
 
   it("bounds a stalled identity probe, redacts child diagnostics and cleans its stage", async () => {
     await fixture(async (input, root) => {
-      const execute = vi.spyOn(NodeChildProcess, "execFile").mockImplementationOnce(
-        (_file, _arguments, _options, callback) => {
+      const execute = vi.mocked(NodeChildProcess.execFile).mockImplementationOnce((_file, _arguments, _options, callback) => {
           callback!(
             Object.assign(new Error("PRIVATE child command"), {
               code: "ETIMEDOUT",
@@ -127,8 +131,7 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
             "PRIVATE stderr",
           );
           return new NodeChildProcess.ChildProcess();
-        },
-      );
+        });
       try {
         const failure = await stageVerifiedNodeArchive(input).then(
           () => null,
@@ -146,11 +149,14 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
           env: expect.objectContaining({ NODE_OPTIONS: "", NODE_PATH: "" }),
         });
         await expect(NodeFSP.access(input.destination)).rejects.toMatchObject({ code: "ENOENT" });
-        expect((await NodeFSP.readdir(root)).some((entry) => entry.startsWith(".node-stage-"))).toBe(
-          false,
-        );
+        expect(
+          (await NodeFSP.readdir(root)).some((entry) => entry.startsWith(".node-stage-")),
+        ).toBe(false);
       } finally {
-        execute.mockRestore();
+        execute.mockImplementation(
+          (await vi.importActual<typeof NodeChildProcess>("node:child_process")).execFile,
+        );
+        execute.mockClear();
       }
     });
   });

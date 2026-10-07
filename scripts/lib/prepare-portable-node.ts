@@ -6,6 +6,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Stream from "effect/Stream";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
@@ -50,7 +51,7 @@ export async function stageVerifiedNodeArchive(input: {
     const nodePath = NodePath.join(root, "bin", "node");
     // The first execution of a verified binary can include macOS security
     // assessment and cold disk reads. Bound that work without skipping identity.
-    const identityStartedAt = Date.now();
+    const identityStartedAt = Effect.runSync(Clock.currentTimeMillis);
     const identity = await new Promise<string>((resolve, reject) => {
       NodeChildProcess.execFile(
         nodePath,
@@ -67,20 +68,28 @@ export async function stageVerifiedNodeArchive(input: {
         (error, stdout) => {
           if (error) {
             // Never copy child output or its command into release diagnostics.
-            const code = typeof error.code === "string" && /^[A-Z0-9_]+$/.test(error.code)
-              ? error.code
-              : typeof error.code === "number" ? String(error.code) : "unknown";
-            const signal = error.signal === null || error.signal === undefined
-              ? "none" : error.signal;
-            reject(new Error(
-              `Portable Node identity verification failed (180000ms deadline; elapsed ${Date.now() - identityStartedAt}ms; code ${code}; signal ${signal}).`,
-            ));
+            const code =
+              typeof error.code === "string" && /^[A-Z0-9_]+$/.test(error.code)
+                ? error.code
+                : typeof error.code === "number"
+                  ? String(error.code)
+                  : "unknown";
+            const signal =
+              error.signal === null || error.signal === undefined ? "none" : error.signal;
+            reject(
+              new Error(
+                `Portable Node identity verification failed (180000ms deadline; elapsed ${Effect.runSync(Clock.currentTimeMillis) - identityStartedAt}ms; code ${code}; signal ${signal}).`,
+              ),
+            );
           } else resolve(stdout);
         },
       );
     });
     const reported = JSON.parse(identity) as {
-      version?: unknown; platform?: unknown; arch?: unknown; electron?: unknown;
+      version?: unknown;
+      platform?: unknown;
+      arch?: unknown;
+      electron?: unknown;
     };
     if (
       reported.version !== input.pin.version ||

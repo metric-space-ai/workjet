@@ -201,137 +201,149 @@ function IndexDraftLanding() {
     supervisor,
   ]);
 
-  const openNativeSupervisor = useCallback(async (
-    nativeProject = selectedNative,
-    overview?: ProjectOverview,
-  ): Promise<boolean> => {
-    if (openingNative.current || nativeProject === null || activeCtoxInstanceId === null)
-      return false;
-    const instanceId = activeCtoxInstanceId;
-    const scope = readActiveWorkjetScope();
-    if (scope.selectedInstanceId !== instanceId) return false;
-    const currentProjects = projectStore.get(environmentProjects.projectsAtom);
-    const plan = resolveNativeProjectOpening({
-      instanceId,
-      project: nativeProject,
-      localEnvironmentId: primaryEnvironmentId,
-      localConnected:
-        bootstrapped && canCreateProjectInEnvironment(primaryEnvironment?.connection.phase),
-      projects: currentProjects,
-      gallery: buildProjectGallery({
-        projects: sortScopedProjectsForSidebar(currentProjects, threads, "updated_at"),
-        nativeProjects: registry.projects,
+  const openNativeSupervisor = useCallback(
+    async (nativeProject = selectedNative, overview?: ProjectOverview): Promise<boolean> => {
+      if (openingNative.current || nativeProject === null || activeCtoxInstanceId === null)
+        return false;
+      const instanceId = activeCtoxInstanceId;
+      const scope = readActiveWorkjetScope();
+      if (scope.selectedInstanceId !== instanceId) return false;
+      const currentProjects = projectStore.get(environmentProjects.projectsAtom);
+      const plan = resolveNativeProjectOpening({
         instanceId,
-        primaryEnvironmentId,
-        computers,
-      }),
-    });
-    if (plan._tag === "blocked") {
-      setNativeOpenState({ pending: false, error: plan.message });
-      return false;
-    }
-    const needsSupervisor =
-      plan._tag === "existing" &&
-      overview === undefined &&
-      findProjectSupervisor(
-        threads,
-        scopeProjectRef(plan.project.environmentId, plan.project.id),
-      ) === null;
-    if (plan._tag === "existing" && overview === undefined && !needsSupervisor) return true;
-    const target =
-      plan._tag === "existing"
-        ? {
-            environmentId: plan.project.environmentId,
-            projectId: plan.project.id,
-            title: nativeProject.title,
-          }
-        : plan;
-    const key = JSON.stringify([instanceId, target.environmentId, target.projectId]);
-    if (nativeAttempt.current?.key !== key)
-      nativeAttempt.current = { key, commandId: newCommandId(), threadId: newThreadId() };
-    const commandId = nativeAttempt.current.commandId;
-    openingNative.current = true;
-    setNativeOpenState({ pending: true, error: null });
-    try {
-      const modelSelection = resolveProjectTeamModelSelection(
-        environments.find((environment) => environment.environmentId === target.environmentId)
-          ?.serverConfig?.providers ?? [],
-      );
-      if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)
-        throw new Error(
-          "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+        project: nativeProject,
+        localEnvironmentId: primaryEnvironmentId,
+        localConnected:
+          bootstrapped && canCreateProjectInEnvironment(primaryEnvironment?.connection.phase),
+        projects: currentProjects,
+        gallery: buildProjectGallery({
+          projects: sortScopedProjectsForSidebar(currentProjects, threads, "updated_at"),
+          nativeProjects: registry.projects,
+          instanceId,
+          primaryEnvironmentId,
+          computers,
+        }),
+      });
+      if (plan._tag === "blocked") {
+        setNativeOpenState({ pending: false, error: plan.message });
+        return false;
+      }
+      const needsSupervisor =
+        plan._tag === "existing" &&
+        overview === undefined &&
+        findProjectSupervisor(
+          threads,
+          scopeProjectRef(plan.project.environmentId, plan.project.id),
+        ) === null;
+      if (plan._tag === "existing" && overview === undefined && !needsSupervisor) return true;
+      const target =
+        plan._tag === "existing"
+          ? {
+              environmentId: plan.project.environmentId,
+              projectId: plan.project.id,
+              title: nativeProject.title,
+            }
+          : plan;
+      const key = JSON.stringify([instanceId, target.environmentId, target.projectId]);
+      if (nativeAttempt.current?.key !== key)
+        nativeAttempt.current = { key, commandId: newCommandId(), threadId: newThreadId() };
+      const commandId = nativeAttempt.current.commandId;
+      openingNative.current = true;
+      setNativeOpenState({ pending: true, error: null });
+      try {
+        const modelSelection = resolveProjectTeamModelSelection(
+          environments.find((environment) => environment.environmentId === target.environmentId)
+            ?.serverConfig?.providers ?? [],
         );
-      if (plan._tag === "create") {
-        const result = await createProject({
-          environmentId: target.environmentId,
-          input: {
-            projectId: target.projectId,
-            commandId,
-            title: target.title,
-            workspaceRoot: null,
-            ctoxRegistration: { instanceId, commandId, status: "pending" },
-            defaultModelSelection: modelSelection,
-          },
-        });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-      }
-      if (needsSupervisor && modelSelection !== null) {
-        const threadId = nativeAttempt.current.threadId;
-        const createdAt = new Date().toISOString();
-        const result = await createThread({
-          environmentId: target.environmentId,
-          input: {
-            threadId,
-            projectId: target.projectId,
-            title: "Project supervisor",
-            modelSelection,
-            runtimeMode: DEFAULT_RUNTIME_MODE,
-            interactionMode: "default",
-            workjetConfig: {
-              ...DEFAULT_WORKJET_THREAD_CONFIG,
-              role: "orchestrator",
-              team: {
-                role: "supervisor",
-                projectId: target.projectId,
-                threadId,
-                parentThreadId: null,
-                goal: `Coordinate the goals of ${target.title}`,
-                createdAt,
-              },
+        if ((plan._tag === "create" || needsSupervisor) && modelSelection === null)
+          throw new Error(
+            "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+          );
+        if (plan._tag === "create") {
+          const result = await createProject({
+            environmentId: target.environmentId,
+            input: {
+              projectId: target.projectId,
+              commandId,
+              title: target.title,
+              workspaceRoot: null,
+              ctoxRegistration: { instanceId, commandId, status: "pending" },
+              defaultModelSelection: modelSelection,
             },
-            branch: null,
-            worktreePath: null,
-            createdAt,
-          },
-        });
-        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        }
+        if (needsSupervisor && modelSelection !== null) {
+          const threadId = nativeAttempt.current.threadId;
+          const createdAt = new Date().toISOString();
+          const result = await createThread({
+            environmentId: target.environmentId,
+            input: {
+              threadId,
+              projectId: target.projectId,
+              title: "Project supervisor",
+              modelSelection,
+              runtimeMode: DEFAULT_RUNTIME_MODE,
+              interactionMode: "default",
+              workjetConfig: {
+                ...DEFAULT_WORKJET_THREAD_CONFIG,
+                role: "orchestrator",
+                team: {
+                  role: "supervisor",
+                  projectId: target.projectId,
+                  threadId,
+                  parentThreadId: null,
+                  goal: `Coordinate the goals of ${target.title}`,
+                  createdAt,
+                },
+              },
+              branch: null,
+              worktreePath: null,
+              createdAt,
+            },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        }
+        if (overview !== undefined) {
+          const saved = await updateProject({
+            environmentId: target.environmentId,
+            input: { projectId: target.projectId, overview },
+          });
+          if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
+        }
+        return true;
+      } catch (error) {
+        if (
+          readActiveWorkjetScope().selectionRevision === scope.selectionRevision &&
+          readWorkjetProjectRegistry(instanceId).selectedProjectId === nativeProject.id
+        )
+          setNativeOpenState({
+            pending: false,
+            error:
+              error instanceof Error ? error.message : "Couldn’t open this supervisor. Try again.",
+          });
+        return false;
+      } finally {
+        openingNative.current = false;
+        setNativeOpenState((state) => ({ ...state, pending: false }));
       }
-      if (overview !== undefined) {
-        const saved = await updateProject({
-          environmentId: target.environmentId,
-          input: { projectId: target.projectId, overview },
-        });
-        if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
-      }
-      return true;
-    } catch (error) {
-      if (
-        readActiveWorkjetScope().selectionRevision === scope.selectionRevision &&
-        readWorkjetProjectRegistry(instanceId).selectedProjectId === nativeProject.id
-      )
-        setNativeOpenState({
-          pending: false,
-          error:
-            error instanceof Error ? error.message : "Couldn’t open this supervisor. Try again.",
-        });
-      return false;
-    } finally {
-      openingNative.current = false;
-      setNativeOpenState((state) => ({ ...state, pending: false }));
-    }
-  }, [activeCtoxInstanceId, bootstrapped, computers, createProject, createThread, environments,
-    primaryEnvironment?.connection.phase, primaryEnvironmentId, projectStore, registry.projects,
-    selectedNative, threads, updateProject]);
+    },
+    [
+      activeCtoxInstanceId,
+      bootstrapped,
+      computers,
+      createProject,
+      createThread,
+      environments,
+      primaryEnvironment?.connection.phase,
+      primaryEnvironmentId,
+      projectStore,
+      registry.projects,
+      selectedNative,
+      threads,
+      updateProject,
+    ],
+  );
 
   useEffect(() => {
     if (selectedNative === null) {
@@ -343,8 +355,15 @@ function IndexDraftLanding() {
     if (automaticNativeAttempt.current === key) return;
     automaticNativeAttempt.current = key;
     void openNativeSupervisor(selectedNative);
-  }, [activeCtoxInstanceId, bootstrapped, nativeOpenState.pending, openNativeSupervisor,
-    primaryEnvironment?.connection.phase, selectedNative, supervisor]);
+  }, [
+    activeCtoxInstanceId,
+    bootstrapped,
+    nativeOpenState.pending,
+    openNativeSupervisor,
+    primaryEnvironment?.connection.phase,
+    selectedNative,
+    supervisor,
+  ]);
 
   if (landingProject !== null && !(selectedNative !== null && supervisor === null))
     return startState.failed ? (
@@ -536,28 +555,32 @@ function WorkjetProjectOpening({
       <Empty className="flex-1" data-workjet-project-state={error ? "opening-error" : "opening"}>
         <EmptyHeader className="max-w-md">
           <EmptyTitle className="text-foreground text-xl">{projectTitle}</EmptyTitle>
-          {!error && <p role="status" className="mt-2 text-sm text-muted-foreground/78">
-            Opening supervisor…
-          </p>}
+          {!error && (
+            <p role="status" className="mt-2 text-sm text-muted-foreground/78">
+              Opening supervisor…
+            </p>
+          )}
           {error ? (
             <p role="alert" className="mt-3 text-sm text-destructive">
               {error}
             </p>
           ) : null}
-          {error && <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Button
-              size="sm"
-              onClick={onOpenSupervisor}
-              disabled={pending}
-              data-workjet-action="project.open.supervisor"
-            >
-              {pending ? "Opening supervisor…" : "Retry opening supervisor"}
-            </Button>
-            <Button render={<Link to="/settings/computers" />} size="sm">
-              <ServerIcon className="size-4" />
-              Choose computer
-            </Button>
-          </div>}
+          {error && (
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button
+                size="sm"
+                onClick={onOpenSupervisor}
+                disabled={pending}
+                data-workjet-action="project.open.supervisor"
+              >
+                {pending ? "Opening supervisor…" : "Retry opening supervisor"}
+              </Button>
+              <Button render={<Link to="/settings/computers" />} size="sm">
+                <ServerIcon className="size-4" />
+                Choose computer
+              </Button>
+            </div>
+          )}
         </EmptyHeader>
       </Empty>
     </SidebarInset>

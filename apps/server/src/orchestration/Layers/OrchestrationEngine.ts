@@ -32,6 +32,10 @@ import {
 } from "../../observability/Metrics.ts";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
 import {
+  receiptMatchesThread,
+  type WorkerPullRequestReceipt,
+} from "../../workjet/WorkerPullRequestStore.ts";
+import {
   WorkjetMailboxStore,
   WorkjetMailboxStoreLive,
 } from "../../workjet/mailbox/WorkjetMailboxStore.ts";
@@ -285,11 +289,39 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           }
         }
 
+        // Native-only receipt fences another turn as soon as the PR becomes terminal.
+        // Renderers cannot supply this evidence through OrchestrationCommand.
+        let workerPullRequestTerminal = false;
+        let workerExecutionStopped = false;
+        if (
+          envelope.command.type === "thread.archive" ||
+          envelope.command.type === "thread.unarchive" ||
+          envelope.command.type === "thread.turn.start"
+        ) {
+          const { threadId } = envelope.command;
+          const thread = commandReadModel.threads.find((item) => item.id === threadId);
+          if (thread?.workjetConfig.role === "worker") {
+            const receipts = yield* sql<WorkerPullRequestReceipt>`
+              SELECT thread_id AS "threadId", worktree_path AS "worktreePath",
+                branch_ref AS "branchRef", provider, pr_number AS "prNumber", pr_url AS "prUrl",
+                head_oid AS "headOid", state, execution_stopped AS "executionStopped"
+              FROM workjet_worker_pull_requests WHERE thread_id = ${thread.id}
+                AND state IN ('merged', 'closed') LIMIT 1
+            `;
+            workerPullRequestTerminal = receipts.length === 1;
+            workerExecutionStopped = receipts.some(
+              (receipt) => receipt.executionStopped === 1 && receiptMatchesThread(receipt, thread),
+            );
+          }
+        }
+
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
           environmentId,
           workerCleanupComplete,
+          workerPullRequestTerminal,
+          workerExecutionStopped,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>

@@ -969,6 +969,15 @@ export const WorkjetThreadCtoxCrewChat = Schema.Struct({
 });
 export type WorkjetThreadCtoxCrewChat = typeof WorkjetThreadCtoxCrewChat.Type;
 
+/** Observed by the native worker reconciler; this identity alone grants no archive permission. */
+export const WorkjetWorkerPullRequest = Schema.Struct({
+  provider: Schema.Literals(["github", "gitlab", "azure-devops", "bitbucket", "unknown"]),
+  number: PositiveInt,
+  url: TrimmedNonEmptyString.check(Schema.isMaxLength(2048)),
+  branch: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
+});
+export type WorkjetWorkerPullRequest = typeof WorkjetWorkerPullRequest.Type;
+
 const WorkjetThreadConfigV2BaseFields = {
   schemaVersion: Schema.Literal(2),
   team: Schema.optionalKey(WorkjetProjectTeamMember),
@@ -1002,6 +1011,7 @@ export const WorkjetThreadConfig = Schema.Union([
     ...WorkjetThreadConfigV2BaseFields,
     role: Schema.Literal("worker"),
     parent: WorkjetParentThreadReference,
+    pullRequest: Schema.optionalKey(WorkjetWorkerPullRequest),
   }),
 ]);
 export type WorkjetThreadConfig = typeof WorkjetThreadConfig.Type;
@@ -1029,6 +1039,34 @@ export function normalizeWorkjetThreadConfig(config: WorkjetThreadConfig): Workj
     enabledCapabilityIds: config.enabledCapabilityIds,
     capabilityBindings: [],
     ctoxSession: null,
+  };
+}
+
+/** Replace-all settings updates retain the one PR of this worker run. */
+export function retainWorkjetWorkerPullRequest(
+  previous: WorkjetThreadConfig,
+  next: WorkjetThreadConfig,
+): { readonly config: WorkjetThreadConfig; readonly error: string | null } {
+  const before = normalizeWorkjetThreadConfig(previous);
+  const original = before.role === "worker" ? before.pullRequest : undefined;
+  if (!original) return { config: next, error: null };
+  const after = normalizeWorkjetThreadConfig(next);
+  if (after.role !== "worker") {
+    return { config: next, error: "A worker keeps its original pull request." };
+  }
+  const requested = after.pullRequest;
+  if (
+    requested &&
+    (requested.provider !== original.provider ||
+      requested.number !== original.number ||
+      requested.url !== original.url ||
+      requested.branch !== original.branch)
+  ) {
+    return { config: next, error: "A worker run may bind exactly one pull request." };
+  }
+  return {
+    config: requested ? next : { ...after, pullRequest: original },
+    error: null,
   };
 }
 

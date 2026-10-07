@@ -7,6 +7,7 @@ import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
   retainWorkjetCtoxBinding,
+  retainWorkjetWorkerPullRequest,
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
@@ -237,10 +238,14 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   environmentId,
   allowTeamTermination = false,
   workerCleanupComplete = false,
+  workerPullRequestTerminal = false,
+  workerExecutionStopped = false,
 }: {
   readonly command: OrchestrationCommand;
   readonly allowTeamTermination?: boolean;
   readonly workerCleanupComplete?: boolean;
+  readonly workerPullRequestTerminal?: boolean;
+  readonly workerExecutionStopped?: boolean;
   readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
@@ -525,6 +530,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         thread,
         readModel,
         workerCleanupComplete,
+        workerExecutionStopped,
       });
       const occurredAt = yield* nowIso;
       return {
@@ -544,6 +550,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.unarchive": {
+      if (workerPullRequestTerminal) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "This worker's pull request is complete. Start a new worker for new work.",
+        });
+      }
       const thread = yield* requireThreadArchived({
         readModel,
         command,
@@ -1040,7 +1052,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
-      const retained = retainWorkjetCtoxBinding(thread.workjetConfig, command.workjetConfig);
+      const retainedPr = retainWorkjetWorkerPullRequest(
+        thread.workjetConfig,
+        command.workjetConfig,
+      );
+      if (retainedPr.error !== null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: retainedPr.error,
+        });
+      }
+      const retained = retainWorkjetCtoxBinding(thread.workjetConfig, retainedPr.config);
       if (retained.error !== null) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
@@ -1073,6 +1095,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.turn.start": {
+      if (workerPullRequestTerminal) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "This worker's pull request is complete. Start a new worker for new work.",
+        });
+      }
       const targetThread = yield* requireThread({
         readModel,
         command,

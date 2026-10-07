@@ -60,6 +60,8 @@ export async function buildLinuxSshServer(input: {
         task,
         "--host",
         "gpu3",
+        "--jobs",
+        "2",
         "--src",
         input.repoRoot,
         "--",

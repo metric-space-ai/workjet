@@ -8,7 +8,8 @@ The worker dispatcher creates a distinct thread and isolated
 project workers in bounded batches after runtime activation. It resolves the
 repository through the existing native source-control registry and asks for all
 PR states on that branch. Exactly one same-repository PR with the current native
-Git HEAD is eligible. Missing, ambiguous, forked, foreign or unpublished heads
+Git HEAD establishes the first binding. Closing that bound PR also retires the
+worker when later unpublished commits remain. Missing, ambiguous, forked, foreign or unpublished unbound heads
 remain active.
 
 The first observed PR identity is retained in the native SQLite store and in
@@ -30,9 +31,10 @@ closed PR, dirty worktree or unpublished source is never deleted as an incidenta
 archive step. Existing verified merge-cleanup receipts continue to authorize
 their existing delete/cleanup/archive path independently.
 
-Receipts survive server restart. Reconciliation is scoped to the server runtime,
-parks before startup activation, uses one cycle mutex and bounded native calls,
-and stops with that runtime. A failed provider lookup or unconfirmed process
+Receipts survive server restart. A persisted terminal or stopped receipt resumes
+without another source-control lookup or repeating a confirmed process stop.
+Reconciliation is scoped to the server runtime, parks before startup activation,
+uses one cycle mutex and bounded native calls, and stops with that runtime. A failed provider lookup or unconfirmed process
 termination retains the active worker for retry.
 
 This slice supplies native PR binding, terminal execution fencing and archive.

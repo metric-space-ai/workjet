@@ -7,6 +7,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as Duration from "effect/Duration";
 import * as Schedule from "effect/Schedule";
@@ -18,7 +19,11 @@ import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import { forkParked } from "../serverActivation.ts";
-import { WorkerPullRequestStore, sameWorkerPullRequest } from "./WorkerPullRequestStore.ts";
+import {
+  WorkerPullRequestStore,
+  sameWorkerPullRequest,
+  receiptMatchesThread,
+} from "./WorkerPullRequestStore.ts";
 
 export const WORKER_PR_CYCLE_INTERVAL = Duration.minutes(1);
 const BATCH_SIZE = 16;
@@ -34,6 +39,24 @@ export const make = Effect.gen(function* () {
   const mutex = yield* Semaphore.make(1);
   let cursor = 0;
 
+  const retire = Effect.fn("WorkerPullRequestLifecycle.retire")(function* (
+    thread: OrchestrationThread,
+    executionStopped: boolean,
+  ) {
+    if (!executionStopped) {
+      const stopped = yield* provider.stopSession({ threadId: thread.id });
+      if (stopped === undefined || !stopped.terminated) return;
+      if (!(yield* terminals.closeForCleanup({ threadId: thread.id }))) return;
+      yield* store.markExecutionStopped(thread.id);
+    }
+    // Preserve checkout/history for closed or dirty/unpublished work. Merge cleanup remains separate.
+    yield* engine.dispatch({
+      type: "thread.archive",
+      commandId: CommandId.make(`worker-pr-archive-${thread.id}`),
+      threadId: thread.id,
+    });
+  });
+
   const reconcile = Effect.fn("WorkerPullRequestLifecycle.reconcile")(function* (
     thread: OrchestrationThread,
   ) {
@@ -48,6 +71,34 @@ export const make = Effect.gen(function* () {
       branch !== `workjet/worker/${thread.id}`
     )
       return;
+    const previous = Option.getOrUndefined(yield* store.get(thread.id));
+    if (previous && previous.state !== "open") {
+      const retainedIdentity: WorkjetWorkerPullRequest = {
+        provider: previous.provider,
+        number: previous.prNumber,
+        url: previous.prUrl,
+        branch: previous.branchRef,
+      };
+      const retainedThread = {
+        ...thread,
+        workjetConfig: { ...config, pullRequest: config.pullRequest ?? retainedIdentity },
+      };
+      if (!receiptMatchesThread(previous, retainedThread)) return;
+      // A native terminal receipt is monotonic. Resume after lost acknowledgement
+      // or restart even when the source-control provider is temporarily unavailable.
+      if (!config.pullRequest) {
+        yield* engine.dispatch({
+          type: "thread.workjet-config.set",
+          commandId: CommandId.make(`worker-pr-bind-${thread.id}`),
+          threadId: thread.id,
+          workjetConfig: retainedThread.workjetConfig,
+          createdAt: thread.createdAt,
+        });
+        return;
+      }
+      yield* retire(thread, previous.executionStopped === 1);
+      return;
+    }
     const local = yield* git.statusDetailsLocal(cwd);
     if (!local.isRepo || local.branch !== branch) return;
     const head = yield* git.resolveCommit({ cwd, revision: "HEAD" });
@@ -67,7 +118,8 @@ export const make = Effect.gen(function* () {
       pr.headRefName !== branch ||
       pr.isCrossRepository !== false ||
       !pr.headCommitOid ||
-      pr.headCommitOid !== head.commitSha
+      (pr.headCommitOid !== head.commitSha &&
+        !(previous && pr.state !== "open" && receiptMatchesThread(previous, thread)))
     )
       return;
     const identity: WorkjetWorkerPullRequest = {
@@ -102,16 +154,7 @@ export const make = Effect.gen(function* () {
       return;
     }
     if (pr.state === "open") return;
-    const stopped = yield* provider.stopSession({ threadId: thread.id });
-    if (stopped === undefined || !stopped.terminated) return;
-    if (!(yield* terminals.closeForCleanup({ threadId: thread.id }))) return;
-    yield* store.markExecutionStopped(thread.id);
-    // Preserve checkout/history for closed or dirty/unpublished work. Merge cleanup remains separate.
-    yield* engine.dispatch({
-      type: "thread.archive",
-      commandId: CommandId.make(`worker-pr-archive-${thread.id}`),
-      threadId: thread.id,
-    });
+    yield* retire(thread, false);
   });
 
   const runCycle = mutex

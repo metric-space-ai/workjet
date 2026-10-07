@@ -78,6 +78,9 @@ function harness() {
   let terminated = true;
   let terminalClosed = true;
   let stops = 0;
+  let nativeHead = "a".repeat(40);
+  let archiveUnavailable = false;
+  let bindingUnavailable = false;
   const service = make.pipe(
     Effect.provideService(ProjectionSnapshotQuery, {
       getCommandReadModel: () =>
@@ -91,6 +94,10 @@ function harness() {
     Effect.provideService(OrchestrationEngineService, {
       dispatch: (command: OrchestrationCommand) =>
         Effect.sync(() => {
+          if (command.type === "thread.workjet-config.set" && bindingUnavailable)
+            throw new Error("Native PR projection unavailable");
+          if (command.type === "thread.archive" && archiveUnavailable)
+            throw new Error("Native archive acknowledgement unavailable");
           commands.push(command);
           if (command.type === "thread.workjet-config.set")
             thread = { ...thread, workjetConfig: command.workjetConfig };
@@ -105,7 +112,7 @@ function harness() {
     } as unknown as SourceControlProviderRegistry["Service"]),
     Effect.provideService(GitVcsDriver, {
       statusDetailsLocal: () => Effect.succeed({ isRepo: true, branch }),
-      resolveCommit: () => Effect.succeed({ commitSha: "a".repeat(40) }),
+      resolveCommit: () => Effect.succeed({ commitSha: nativeHead }),
     } as unknown as GitVcsDriver["Service"]),
     Effect.provideService(ProviderService, {
       stopSession: () =>
@@ -123,6 +130,15 @@ function harness() {
     commands,
     thread: () => thread,
     stops: () => stops,
+    setHead: (value: string) => {
+      nativeHead = value;
+    },
+    setArchiveUnavailable: (value: boolean) => {
+      archiveUnavailable = value;
+    },
+    setBindingUnavailable: (value: boolean) => {
+      bindingUnavailable = value;
+    },
     setCandidates: (value: ReadonlyArray<ChangeRequest>) => {
       candidates = value;
     },
@@ -157,6 +173,80 @@ describe("native worker PR reconciler", () => {
       ),
     );
   }
+  it.effect("recovers the first terminal PR binding from its native receipt", () =>
+    database(
+      Effect.gen(function* () {
+        yield* runMigrations();
+        const h = harness();
+        h.setCandidates([{ ...request, state: "closed" }]);
+        h.setBindingUnavailable(true);
+        const service = yield* h.service;
+        yield* service.runCycle;
+        const store = yield* WorkerPullRequestStore;
+        assert.equal(Option.getOrThrow(yield* store.get(id)).state, "closed");
+        assert.equal(h.commands.length, 0);
+        h.setBindingUnavailable(false);
+        h.setCandidates([]);
+        const restarted = yield* h.service;
+        yield* restarted.runCycle;
+        assert.equal(h.commands[0]?.type, "thread.workjet-config.set");
+        yield* restarted.runCycle;
+        assert.equal(h.commands[1]?.type, "thread.archive");
+        assert.equal(h.thread().deletedAt, null);
+      }),
+    ),
+  );
+
+  it.effect("archives the bound closed PR while retaining later unpublished commits", () =>
+    database(
+      Effect.gen(function* () {
+        yield* runMigrations();
+        const h = harness();
+        const service = yield* h.service;
+        yield* service.runCycle;
+        h.setHead("b".repeat(40));
+        h.setCandidates([{ ...request, state: "closed" }]);
+        yield* service.runCycle;
+        assert.equal(h.commands[1]?.type, "thread.archive");
+        assert.equal(h.thread().deletedAt, null);
+        assert.equal(h.thread().worktreePath, "/safe/worktrees/leaf-a");
+      }),
+    ),
+  );
+  it.effect(
+    "resumes persisted terminal and stopped receipts after native runtime reconstruction",
+    () =>
+      database(
+        Effect.gen(function* () {
+          yield* runMigrations();
+          const h = harness();
+          const service = yield* h.service;
+          yield* service.runCycle;
+          h.setCandidates([{ ...request, state: "closed" }]);
+          h.setStopped(false);
+          yield* service.runCycle;
+          const store = yield* WorkerPullRequestStore;
+          assert.equal(Option.getOrThrow(yield* store.get(id)).state, "closed");
+          h.setCandidates([]);
+          h.setStopped(true);
+          h.setArchiveUnavailable(true);
+          const afterTerminal = yield* h.service;
+          yield* afterTerminal.runCycle;
+          assert.equal(Option.getOrThrow(yield* store.get(id)).executionStopped, 1);
+          assert.equal(h.thread().archivedAt, null);
+          const stops = h.stops();
+          h.setStopped(false);
+          h.setHead("c".repeat(40));
+          h.setArchiveUnavailable(false);
+          const afterStop = yield* h.service;
+          yield* afterStop.runCycle;
+          assert.equal(h.stops(), stops);
+          assert.equal(h.commands[1]?.type, "thread.archive");
+          assert.equal(h.thread().deletedAt, null);
+        }),
+      ),
+  );
+
   it.effect(
     "rejects ambiguous PRs, forked branches, wrong native head and another PR after binding",
     () =>

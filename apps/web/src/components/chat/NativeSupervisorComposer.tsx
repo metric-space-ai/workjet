@@ -92,7 +92,7 @@ export function NativeSupervisorComposer(props: {
   }, [disabled, busy, error, journal]);
 
   return <section className="mx-auto w-full max-w-5xl rounded-2xl border border-border bg-background p-3" aria-label="Supervisor-Auftrag">
-    {journal && <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
+    {journal && scopeMatches && <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
       <p className="whitespace-pre-wrap break-words">{journal.intent.goal}</p>
       <p className="mt-1 text-xs text-muted-foreground">{journal.turn ? `${journal.turn.status} · Versuch ${journal.turn.attempt}` : "Bestätigung ausstehend"}</p>
       {journal.turn?.taskId && <details className="mt-1 text-xs text-muted-foreground"><summary>Auftragsdetails</summary><p>Task {journal.turn.taskId}</p><p>Befehl {journal.turn.commandId}</p></details>}
@@ -106,6 +106,11 @@ export function NativeSupervisorComposer(props: {
     <form onSubmit={(event) => { event.preventDefault(); void run("send"); }} className="flex items-end gap-2">
       <textarea aria-label="Nachricht an Supervisor" placeholder="Auftrag an den Supervisor …" rows={2}
         value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={disabled || busy || pending}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault(); void run("send");
+          }
+        }}
         className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none" />
       <span className="pb-2 text-xs text-muted-foreground" title="Ausführung und Modell werden von CTOX verwaltet">CTOX</span>
       <button type="submit" aria-label="An Supervisor senden" disabled={disabled || busy || pending || prompt.trim() === ""}

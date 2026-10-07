@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "@workjet/contracts";
 import {
   CheckpointRef,
   EventId,
@@ -12,6 +12,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -28,6 +29,7 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
+const encodeWorkerConfig = Schema.encodeUnknownEffect(Schema.fromJsonString(WorkjetThreadConfig));
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
@@ -40,6 +42,90 @@ const projectionSnapshotLayer = it.layer(
 );
 
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
+  it.effect("reads retained archived worker history without exposing it as an active worker", () =>
+    Effect.gen(function* () {
+      const query = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("retained-pr-worker");
+      const projectId = ProjectId.make("retained-pr-project");
+      const at = "2026-10-07T13:00:00.000Z";
+      const config = {
+        schemaVersion: 2,
+        role: "worker",
+        parent: { environmentId: "local", threadId: "retained-parent" },
+        managedInstructions: "",
+        enabledCapabilityIds: [],
+        capabilityBindings: [],
+        ctoxSession: null,
+        team: {
+          role: "worker",
+          projectId,
+          threadId,
+          parentThreadId: "retained-parent",
+          packageId: "retained-run",
+          goal: "One PR",
+          createdAt: at,
+        },
+      };
+      yield* sql`
+        INSERT INTO projection_projects
+          (project_id, title, workspace_root, default_model_selection_json, scripts_json,
+           created_at, updated_at, deleted_at)
+        VALUES (${projectId}, 'Retained project', '/safe/project',
+                '{"provider":"codex","model":"gpt-5-codex"}', '[]', ${at}, ${at}, NULL)
+      `;
+      yield* sql`
+        INSERT INTO projection_threads
+          (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode,
+           workjet_config_json, branch, worktree_path, created_at, updated_at, archived_at, deleted_at)
+        VALUES (${threadId}, ${projectId}, 'Retained worker',
+                '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
+                ${yield* encodeWorkerConfig(config)}, 'workjet/worker/retained-pr-worker',
+                '/safe/worktrees/retained-pr-worker', ${at}, ${at}, ${at}, NULL)
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages
+          (message_id, thread_id, turn_id, role, text, attachments_json, is_streaming, created_at, updated_at)
+        VALUES ('retained-worker-message', ${threadId}, NULL, 'user',
+                'Keep the closed PR history.', '[]', 0, ${at}, ${at})
+      `;
+      const detail = yield* query.getArchivedTeamWorkerDetailSnapshot(threadId);
+      assert.equal(detail._tag, "Some");
+      if (detail._tag === "Some") {
+        assert.equal(detail.value.thread.deletedAt, null);
+        assert.equal(detail.value.thread.archivedAt, at);
+        assert.equal(detail.value.thread.worktreePath, "/safe/worktrees/retained-pr-worker");
+        assert.equal(detail.value.thread.messages[0]?.text, "Keep the closed PR history.");
+      }
+      assert.equal((yield* query.getThreadDetailSnapshot(threadId))._tag, "None");
+      const active = yield* query.getShellSnapshot();
+      assert.isFalse(active.threads.some((thread) => thread.id === threadId));
+
+      // The previous delete/cleanup/archive path keeps the same history API.
+      yield* sql`UPDATE projection_threads SET deleted_at = ${at} WHERE thread_id = ${threadId}`;
+      assert.equal((yield* query.getArchivedTeamWorkerDetailSnapshot(threadId))._tag, "Some");
+      yield* sql`UPDATE projection_threads SET deleted_at = NULL, archived_at = NULL WHERE thread_id = ${threadId}`;
+      assert.equal((yield* query.getArchivedTeamWorkerDetailSnapshot(threadId))._tag, "None");
+      yield* sql`UPDATE projection_threads SET archived_at = ${at},
+        workjet_config_json = ${yield* encodeWorkerConfig({ ...config, team: { ...config.team, threadId: "other-worker" } })}
+        WHERE thread_id = ${threadId}`;
+      assert.equal((yield* query.getArchivedTeamWorkerDetailSnapshot(threadId))._tag, "None");
+      yield* sql`UPDATE projection_threads
+        SET workjet_config_json = ${yield* encodeWorkerConfig({ ...config, role: "orchestrator", parent: null, team: { ...config.team, role: "specialist", domain: "History" } })}
+        WHERE thread_id = ${threadId}`;
+      assert.equal((yield* query.getArchivedTeamWorkerDetailSnapshot(threadId))._tag, "None");
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = 'retained-pr-worker'`;
+          yield* sql`DELETE FROM projection_threads WHERE thread_id = 'retained-pr-worker'`;
+          yield* sql`DELETE FROM projection_projects WHERE project_id = 'retained-pr-project'`;
+        }).pipe(Effect.orDie),
+      ),
+    ),
+  );
+
   it.effect("reads completion of the requested turn even after another turn becomes latest", () =>
     Effect.gen(function* () {
       const query = yield* ProjectionSnapshotQuery;

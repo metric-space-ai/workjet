@@ -119,6 +119,124 @@ const hasMetricSnapshot = (
   );
 
 describe("OrchestrationEngine", () => {
+  it("archives a closed worker from a native receipt while retaining its source and fences later starts", async () => {
+    const environmentId = EnvironmentId.make("worker-pr-environment");
+    const system = await createOrchestrationSystem(environmentId);
+    const projectId = ProjectId.make("worker-pr-project");
+    const workerId = ThreadId.make("worker-pr-leaf");
+    const branch = `workjet/worker/${workerId}`;
+    const worktreePath = "/safe/worktrees/worker-pr-leaf";
+    const pullRequest = {
+      provider: "github" as const,
+      number: 7,
+      url: "https://github.com/owner/repo/pull/7",
+      branch,
+    };
+    try {
+      await system.run(
+        system.engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make("worker-pr-project-create"),
+          projectId,
+          title: "Worker PR",
+          workspaceRoot: "/fixture/worker-pr",
+          createdAt: now(),
+        }),
+      );
+      const supervisor = (await system.readModel()).threads[0]!;
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("worker-pr-create"),
+          threadId: workerId,
+          projectId,
+          title: "Worker",
+          modelSelection: supervisor.modelSelection,
+          runtimeMode: supervisor.runtimeMode,
+          interactionMode: supervisor.interactionMode,
+          workjetConfig: {
+            ...DEFAULT_WORKJET_THREAD_CONFIG,
+            role: "worker",
+            parent: { environmentId, threadId: supervisor.id },
+            pullRequest,
+            team: {
+              projectId,
+              threadId: workerId,
+              role: "worker",
+              parentThreadId: supervisor.id,
+              packageId: "worker-pr-package",
+              goal: "One PR",
+              createdAt: now(),
+            },
+          },
+          branch,
+          worktreePath,
+          createdAt: now(),
+        }),
+      );
+      const archive = (id: string) =>
+        system.run(
+          system.engine.dispatch({
+            type: "thread.archive",
+            commandId: CommandId.make(id),
+            threadId: workerId,
+          }),
+        );
+      // A renderer-supplied PR in config is not native evidence.
+      await expect(archive("worker-pr-no-native-proof")).rejects.toThrow();
+      await system.run(system.sql`
+        INSERT INTO workjet_worker_pull_requests
+          (thread_id, worktree_path, branch_ref, provider, pr_number, pr_url, head_oid, state)
+        VALUES (${workerId}, ${worktreePath}, ${branch}, 'github', 7, ${pullRequest.url},
+          ${"a".repeat(40)}, 'closed')
+      `);
+      await expect(archive("worker-pr-execution-not-stopped")).rejects.toThrow();
+      const start = () =>
+        system.run(
+          system.engine.dispatch({
+            type: "thread.turn.start",
+            commandId: CommandId.make("worker-pr-new-turn"),
+            threadId: workerId,
+            message: {
+              messageId: MessageId.make("worker-pr-message"),
+              role: "user",
+              text: "More work",
+              attachments: [],
+            },
+            runtimeMode: supervisor.runtimeMode,
+            interactionMode: supervisor.interactionMode,
+            createdAt: now(),
+          }),
+        );
+      await expect(start()).rejects.toThrow("pull request is complete");
+      await system.run(system.sql`
+        UPDATE workjet_worker_pull_requests SET execution_stopped = 1, branch_ref = 'foreign'
+        WHERE thread_id = ${workerId}
+      `);
+      await expect(archive("worker-pr-wrong-native-ref")).rejects.toThrow();
+      await system.run(system.sql`
+        UPDATE workjet_worker_pull_requests SET branch_ref = ${branch} WHERE thread_id = ${workerId}
+      `);
+      await archive("worker-pr-exact-proof");
+      const worker = (await system.readModel()).threads.find((thread) => thread.id === workerId)!;
+      expect(worker.archivedAt).not.toBeNull();
+      expect(worker.deletedAt).toBeNull();
+      expect(worker.worktreePath).toBe(worktreePath);
+      expect(worker.branch).toBe(branch);
+      await expect(
+        system.run(
+          system.engine.dispatch({
+            type: "thread.unarchive",
+            commandId: CommandId.make("worker-pr-reopen"),
+            threadId: workerId,
+          }),
+        ),
+      ).rejects.toThrow("pull request is complete");
+    } finally {
+      await system.dispose();
+    }
+  });
+
   it("archives a deleted team worker only after exact completed cleanup evidence", async () => {
     const environmentId = EnvironmentId.make("worker-cleanup-environment");
     const system = await createOrchestrationSystem(environmentId);

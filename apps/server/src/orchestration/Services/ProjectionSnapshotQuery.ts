@@ -236,7 +236,7 @@ export interface ProjectionSnapshotQueryShape {
     window?: OrchestrationThreadDetailWindow,
   ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>, ProjectionRepositoryError>;
 
-  /** Read the retained history of a deleted, archived v2 project-team worker only. */
+  /** Read retained history of an archived v2 project-team worker, with or without checkout deletion. */
   readonly getArchivedTeamWorkerDetailSnapshot: (
     threadId: ThreadId,
     window?: OrchestrationThreadDetailWindow,

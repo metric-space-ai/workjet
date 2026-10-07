@@ -119,6 +119,8 @@ export function requireProjectTeamLifecycle(input: {
   readonly readModel: OrchestrationReadModel;
   readonly allowTeamTermination?: boolean;
   readonly workerCleanupComplete?: boolean;
+  /** Supplied only after the engine reads the exact native terminal-PR receipt. */
+  readonly workerExecutionStopped?: boolean;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
   const { commandType, thread, readModel } = input;
   if (commandType === "thread.delete" && input.allowTeamTermination) return Effect.void;
@@ -135,10 +137,11 @@ export function requireProjectTeamLifecycle(input: {
   if (
     commandType === "thread.archive" &&
     team?.role === "worker" &&
+    !input.workerExecutionStopped &&
     (thread.deletedAt === null || !input.workerCleanupComplete)
   ) {
     return fail(
-      "A project worker can be archived only after its merged source was safely cleaned.",
+      "A project worker requires completed merge cleanup or a native terminal-PR receipt with stopped execution.",
     );
   }
   if (

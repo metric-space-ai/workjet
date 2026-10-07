@@ -66,6 +66,8 @@ import * as WorkjetMeshIdentity from "./workjet/mailbox/WorkjetMeshIdentity.ts";
 import { WorkjetSnapshotStoreLive } from "./workjet/mailbox/WorkjetSnapshotStore.ts";
 import * as WorkerWorktreeCleanup from "./workjet/WorkerWorktreeCleanup.ts";
 import * as WorkerCleanupReceiptStore from "./workjet/WorkerCleanupReceiptStore.ts";
+import * as WorkerPullRequestStore from "./workjet/WorkerPullRequestStore.ts";
+import * as WorkerPullRequestLifecycle from "./workjet/WorkerPullRequestLifecycle.ts";
 import * as NativeWorkerWorktreeRemover from "./workjet/NativeWorkerWorktreeRemover.ts";
 import * as WorkerDispatchRollback from "./workjet/WorkerDispatchRollback.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -432,7 +434,10 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
-const RuntimeCoreFoundationLive = ReactorLayerLive.pipe(
+const RuntimeCoreFoundationLive = Layer.mergeAll(
+  ReactorLayerLive,
+  WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
+).pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(WorktreeStorageLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),

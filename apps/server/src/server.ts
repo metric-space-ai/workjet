@@ -57,6 +57,9 @@ import * as RemoteWorkerBroker from "./workjet/RemoteWorkerBroker.ts";
 import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
 import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnectionBootstrap.ts";
 import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
+import * as RemoteWorkerAuthorityStore from "./workjet/RemoteWorkerAuthorityStore.ts";
+import * as RemoteWorkerSourceOperationsLive from "./workjet/RemoteWorkerSourceOperationsLive.ts";
+import * as RemoteWorkerTargetHarnessSetupLive from "./workjet/RemoteWorkerTargetHarnessSetupLive.ts";
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
 import * as DecisionHubMcpClient from "./workjet/decisionHub/DecisionHubMcpClient.ts";
@@ -446,6 +449,11 @@ const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
 );
 const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
+  Layer.provide(RemoteWorkerSourceOperationsLive.layer.pipe(
+    Layer.provide(RemoteWorkerAuthorityStore.layer),
+    Layer.provide(DecisionHubConnectionRegistryLive),
+  )),
+  Layer.provide(RemoteWorkerTargetHarnessSetupLive.layer),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(ServerSecretStore.layer),
 );

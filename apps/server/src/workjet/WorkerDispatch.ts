@@ -13,6 +13,8 @@ import {
   type OrchestrationCommand,
   type WorkjetCapabilityId,
   type WorkjetComputerId,
+  type WorkjetWorkerProfileId,
+  type WorkjetConfiguration,
   type WorkjetParentThreadReference,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -40,6 +42,7 @@ import type { OrchestrationDispatchOptions } from "../orchestration/Services/Orc
 
 export interface WorkerDispatchInput {
   readonly task: string;
+  readonly workerProfileId?: WorkjetWorkerProfileId;
   /** Retry only this saved remote request after a lost acknowledgement. */
   readonly remoteRequestId?: ThreadId;
   readonly computerId?: WorkjetComputerId;
@@ -68,6 +71,7 @@ export type WorkerDispatchFailureReason =
   | "duplicate-capabilities"
   | "capability-escalation"
   | "computer-unavailable"
+  | "worker-profile-unavailable"
   | "remote-dispatch-unavailable"
   | "remote-dispatch-pending"
   | "remote-dispatch-failed"
@@ -86,6 +90,7 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       "duplicate-capabilities",
       "capability-escalation",
       "computer-unavailable",
+      "worker-profile-unavailable",
       "remote-dispatch-unavailable",
       "remote-dispatch-pending",
       "remote-dispatch-failed",
@@ -117,6 +122,8 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
         return "The requested worker capabilities exceed the parent grants.";
       case "computer-unavailable":
         return "The selected worker computer is unavailable in native settings.";
+      case "worker-profile-unavailable":
+        return "Select one configured Codex worker profile for the target computer with an explicit model and account route.";
       case "remote-dispatch-unavailable":
         return "The registered remote environment connection is unavailable.";
       case "remote-dispatch-pending":
@@ -214,7 +221,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         ...(requestedCapabilityIds ? { requestedCapabilityIds } : {}),
         targetRole: "worker",
       });
-      const enabledCapabilityIds = [...delegated.capabilityIds] as WorkjetCapabilityId[];
+      let enabledCapabilityIds = [...delegated.capabilityIds] as WorkjetCapabilityId[];
       if (requestedCapabilityIds !== undefined) {
         if (new Set(requestedCapabilityIds).size !== requestedCapabilityIds.length) {
           return yield* failure("duplicate-capabilities");
@@ -232,12 +239,19 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       // inferred transport. A foreign selection is relayed to that registered
       // environment; it never creates a worker on the source computer.
       let computerId = input.computerId;
+      let configuration: WorkjetConfiguration | undefined;
       let targetEnvironmentId = invocation.environmentId;
       if (Option.isSome(settings)) {
-        const configuration = yield* settings.value.getSettings.pipe(
+        configuration = yield* settings.value.getSettings.pipe(
           Effect.map((current) => current.workjet),
           Effect.mapError(() => failure("computer-unavailable")),
         );
+        if (input.workerProfileId !== undefined) {
+          const profiles = configuration.workerProfiles.filter((profile) => profile.id === input.workerProfileId);
+          if (profiles.length !== 1 || (computerId !== undefined && profiles[0]!.computerId !== computerId))
+            return yield* failure("worker-profile-unavailable");
+          computerId = profiles[0]!.computerId;
+        }
         computerId ??= configuration.selectedComputerId ?? undefined;
         if (computerId === undefined) {
           const localComputers = configuration.computers.filter(
@@ -254,8 +268,28 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         return yield* failure("computer-unavailable");
       }
 
-      const modelSelection = input.modelSelection ?? parent.modelSelection;
+      let modelSelection = input.modelSelection ?? parent.modelSelection;
       if (targetEnvironmentId !== invocation.environmentId) {
+        const profiles = configuration?.workerProfiles.filter((profile) =>
+          profile.computerId === computerId && profile.harness === "codex-cli" &&
+          (input.workerProfileId === undefined || profile.id === input.workerProfileId),
+        ) ?? [];
+        const profile = profiles.length === 1 ? profiles[0] : undefined;
+        if (!profile || !configuration?.llmRoutes.some((route) => route.id === profile.llmRouteId) ||
+          (input.modelSelection !== undefined && input.modelSelection.model !== profile.modelId))
+          return yield* failure("worker-profile-unavailable");
+        if (input.enabledCapabilityIds === undefined) {
+          const selected = resolveDelegatedCapabilities({
+            parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
+            requestedCapabilityIds: profile.capabilityIds, targetRole: "worker",
+          });
+          if (selected.issues.length > 0 || profile.capabilityIds.some((id) => !parent.workjetConfig.enabledCapabilityIds.includes(id)))
+            return yield* failure("capability-escalation");
+          enabledCapabilityIds = [...selected.capabilityIds] as WorkjetCapabilityId[];
+        } else if (enabledCapabilityIds.some((id) => !profile.capabilityIds.includes(id))) {
+          return yield* failure("capability-escalation");
+        }
+        modelSelection = { instanceId: input.modelSelection?.instanceId ?? parent.modelSelection.instanceId, model: profile.modelId, ...(input.modelSelection?.options === undefined ? {} : { options: input.modelSelection.options }) };
         if (Option.isNone(remoteBroker) || Option.isNone(sourceGit) || computerId === undefined) {
           return yield* failure("remote-dispatch-unavailable");
         }
@@ -270,6 +304,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             saved.value.request.parent.environmentId !== invocation.environmentId ||
             saved.value.request.parent.threadId !== parent.id ||
             saved.value.request.computerId !== computerId ||
+            saved.value.request.workerProfileId !== profile.id ||
+            saved.value.request.llmRouteId !== profile.llmRouteId ||
             saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
             saved.value.request.task !== input.task ||
             (input.title !== undefined &&
@@ -323,10 +359,12 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             requestId: ThreadId.make(yield* sources.randomUUID),
             targetEnvironmentId,
             computerId,
+            workerProfileId: profile.id,
+            llmRouteId: profile.llmRouteId,
             parent: { environmentId: invocation.environmentId, threadId: parent.id },
             ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
             parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
-            managedInstructions: parent.workjetConfig.managedInstructions,
+            managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions].filter(Boolean).join("\n\n"),
             project: {
               id: project.id,
               title: project.title,

@@ -11,6 +11,8 @@ it("keeps worker prompts, starts and acknowledgements out of read-only RPC autho
     expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
   }
 });
+import {
+  AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,

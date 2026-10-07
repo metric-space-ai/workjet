@@ -94,7 +94,7 @@ it.effect("lost native ACK retries the same saved request, execution and renewal
       execute: (_scope, actual, binding, action, permitId, execution, sequence) => Effect.gen(function* () {
         assert.deepEqual(actual, intent.request);
         assert.deepEqual(binding, intent.binding);
-        assert.ok(Option.isSome(yield* store.get(request.requestId)), "intent must precede native side effects");
+        assert.ok(Option.isSome(yield* store.get(request.requestId).pipe(Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "source-unavailable" })))), "intent must precede native side effects");
         calls.push({ action, ...(execution === undefined ? {} : { execution }), ...(sequence === undefined ? {} : { sequence }) });
         if (!granted && action !== "revoke") return yield* new RemoteWorkerDispatchError({ reason: "computer-unavailable" });
         if (permitId !== undefined) assert.equal(permitId, "permit");
@@ -104,6 +104,7 @@ it.effect("lost native ACK retries the same saved request, execution and renewal
         }
         if (action === "renew") {
           assert.equal(sequence, 1);
+          if (sequence === undefined) return yield* new RemoteWorkerDispatchError({ reason: "invalid-request" });
           receipt = { ...receipt, renewalSequence: sequence, expiresAtMs: 550_000 };
           if (loseRenewAck) { loseRenewAck = false; return yield* new RemoteWorkerDispatchError({ reason: "source-unavailable" }); }
         }

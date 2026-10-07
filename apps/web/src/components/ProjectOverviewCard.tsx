@@ -25,7 +25,9 @@ export function ProjectOverviewCard({
 }: {
   readonly project: GalleryProject;
   readonly onOpen: () => void;
-  readonly onSaveConfiguration?: ((next: ProjectConfigurationValues) => Promise<boolean>) | undefined;
+  readonly onSaveConfiguration?:
+    | ((next: ProjectConfigurationValues) => Promise<boolean>)
+    | undefined;
   readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   readonly canArchive?: boolean | undefined;
   readonly statistics?: GalleryProjectStatistics | undefined;

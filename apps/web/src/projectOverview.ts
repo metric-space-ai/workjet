@@ -139,11 +139,19 @@ export function resolveGalleryProjectOverview(project: GalleryProject): ProjectO
     websiteUrl: isDomain ? `https://${title}` : null,
     slots: [null, null, null] as ProjectOverview["slots"],
   };
-  if (project.configuration?.repoUrl === undefined && project.configuration?.publicUrl === undefined) return saved;
+  if (
+    project.configuration?.repoUrl === undefined &&
+    project.configuration?.publicUrl === undefined
+  )
+    return saved;
   return {
     ...saved,
-    ...(project.configuration?.repoUrl === undefined ? {} : { repositoryUrl: project.configuration.repoUrl }),
-    ...(project.configuration?.publicUrl === undefined ? {} : { websiteUrl: project.configuration.publicUrl }),
+    ...(project.configuration?.repoUrl === undefined
+      ? {}
+      : { repositoryUrl: project.configuration.repoUrl }),
+    ...(project.configuration?.publicUrl === undefined
+      ? {}
+      : { websiteUrl: project.configuration.publicUrl }),
   };
 }
 /** Archiving keeps identity joins and histories intact; only the chosen gallery view changes. */

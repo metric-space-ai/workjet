@@ -497,28 +497,44 @@ const CtoxProjectUrl = CtoxProjectText(2_048).check(
   Schema.makeFilter((value) => {
     try {
       const url = new URL(value);
-      return (["http:", "https:"].includes(url.protocol) && !!url.hostname &&
-        !url.username && !url.password) || "Use an HTTP(S) URL without credentials.";
-    } catch { return "Use an absolute HTTP(S) URL."; }
+      return (
+        (["http:", "https:"].includes(url.protocol) &&
+          !!url.hostname &&
+          !url.username &&
+          !url.password) ||
+        "Use an HTTP(S) URL without credentials."
+      );
+    } catch {
+      return "Use an absolute HTTP(S) URL.";
+    }
   }),
 );
-const projectInfoText = (maximum: number) => Schema.String.check(
-  Schema.isMaxLength(maximum),
-  Schema.isPattern(/^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/u),
-);
+const projectInfoText = (maximum: number) =>
+  Schema.String.check(
+    Schema.isMaxLength(maximum),
+    Schema.isPattern(/^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/u),
+  );
 export const CtoxWorkjetProjectInfo = Schema.Struct({
   description: Schema.optionalKey(projectInfoText(4_096)),
   goal: Schema.optionalKey(projectInfoText(4_096)),
   phase: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128), NoAsciiControlCharacters)),
-  status: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128), NoAsciiControlCharacters)),
+  status: Schema.optionalKey(
+    Schema.String.check(Schema.isMaxLength(128), NoAsciiControlCharacters),
+  ),
 });
 export const CtoxWorkjetJourFixe = Schema.Struct({
   weekday: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 })),
   time: Schema.String.check(Schema.isPattern(/^([01][0-9]|2[0-3]):[0-5][0-9]$/)),
-  timezone: CtoxProjectText(128).check(Schema.makeFilter((value) => {
-    try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; }
-    catch { return "Use a valid IANA timezone."; }
-  })),
+  timezone: CtoxProjectText(128).check(
+    Schema.makeFilter((value) => {
+      try {
+        new Intl.DateTimeFormat("en", { timeZone: value });
+        return true;
+      } catch {
+        return "Use a valid IANA timezone.";
+      }
+    }),
+  ),
 });
 export const CtoxWorkjetProjectConfiguration = Schema.Struct({
   description: Schema.optionalKey(Schema.NullOr(projectInfoText(4_096))),
@@ -534,7 +550,10 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
-  Schema.Struct({ action: Schema.Literal("project.list"), includeConfiguration: Schema.optionalKey(Schema.Boolean) }),
+  Schema.Struct({
+    action: Schema.Literal("project.list"),
+    includeConfiguration: Schema.optionalKey(Schema.Boolean),
+  }),
   Schema.Struct({
     action: Schema.Literal("project.configure"),
     commandId: CommandId,
@@ -593,6 +612,8 @@ export const CtoxWorkjetProjectMetadataProjection = Schema.Struct({
   createdAt: Schema.optionalKey(IsoDateTime),
   ...CtoxWorkjetProjectConfiguration.fields,
 });
+export type CtoxWorkjetProjectMetadataProjection = typeof CtoxWorkjetProjectMetadataProjection.Type;
+
 export const CtoxWorkjetProjectProjection = Schema.Struct({
   ...CtoxWorkjetProjectMetadataProjection.fields,
   workingCopies: Schema.Array(CtoxWorkjetWorkingCopyProjection).check(Schema.isMaxLength(500)),

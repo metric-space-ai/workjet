@@ -67,12 +67,38 @@ describe("real project overview", () => {
   });
 
   it("uses confirmed CTOX URLs and explicit clearing while preserving local KPI values", () => {
-    const source = { ...local("native-config", "a"), overview: { websiteUrl: "https://old.example", slots: [{ kind: "text", label: "Status", value: "Live" }, null, null] } as ProjectOverview };
-    const configuration = { id: source.id, title: "ctox.dev", publicUrl: "https://ctox.dev", repoUrl: "https://github.com/metric-space-ai/ctox", workingCopies: [] };
-    const [card] = buildProjectGallery({ projects: [source], nativeProjects: [configuration], instanceId: "a", primaryEnvironmentId: source.environmentId });
+    const source = {
+      ...local("native-config", "a"),
+      overview: {
+        websiteUrl: "https://old.example",
+        slots: [{ kind: "text", label: "Status", value: "Live" }, null, null],
+      } as ProjectOverview,
+    };
+    const configuration = {
+      id: source.id,
+      title: "ctox.dev",
+      publicUrl: "https://ctox.dev",
+      repoUrl: "https://github.com/metric-space-ai/ctox",
+      workingCopies: [],
+    };
+    const [card] = buildProjectGallery({
+      projects: [source],
+      nativeProjects: [configuration],
+      instanceId: "a",
+      primaryEnvironmentId: source.environmentId,
+    });
     expect(card?.configuration).toEqual(configuration);
-    expect(resolveGalleryProjectOverview(card!)).toEqual({ ...source.overview, websiteUrl: configuration.publicUrl, repositoryUrl: configuration.repoUrl });
-    expect(resolveGalleryProjectOverview({ ...card!, configuration: { ...configuration, publicUrl: null } }).websiteUrl).toBeNull();
+    expect(resolveGalleryProjectOverview(card!)).toEqual({
+      ...source.overview,
+      websiteUrl: configuration.publicUrl,
+      repositoryUrl: configuration.repoUrl,
+    });
+    expect(
+      resolveGalleryProjectOverview({
+        ...card!,
+        configuration: { ...configuration, publicUrl: null },
+      }).websiteUrl,
+    ).toBeNull();
   });
 
   it("round trips independently configured fields and clearing", () => {

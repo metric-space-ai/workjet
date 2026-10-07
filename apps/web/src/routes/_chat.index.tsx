@@ -404,17 +404,31 @@ function IndexDraftLanding() {
               environment.connection.phase === "connected" &&
               environment.serverConfig?.projectArchive === true,
           ),
-          onSaveConfiguration: project.configuration && activeCtoxInstanceId !== null
-            ? async (values: ProjectConfigurationValues) => {
-                if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId || !project.configuration) return false;
-                const result = await configureWorkjetProject(activeCtoxInstanceId, {
-                  action: "project.configure", commandId: newCommandId(), projectId: project.configuration.id, title: project.title, ...values,
-                });
-                if (result._tag !== "completed" || result.response.action !== "project.configure" || readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return false;
-                refreshWorkjetProjectRegistry(activeCtoxInstanceId);
-                return true;
-              }
-            : undefined,
+          onSaveConfiguration:
+            project.configuration && activeCtoxInstanceId !== null
+              ? async (values: ProjectConfigurationValues) => {
+                  if (
+                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId ||
+                    !project.configuration
+                  )
+                    return false;
+                  const result = await configureWorkjetProject(activeCtoxInstanceId, {
+                    action: "project.configure",
+                    commandId: newCommandId(),
+                    projectId: project.configuration.id,
+                    title: project.title,
+                    ...values,
+                  });
+                  if (
+                    result._tag !== "completed" ||
+                    result.response.action !== "project.configure" ||
+                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+                  )
+                    return false;
+                  refreshWorkjetProjectRegistry(activeCtoxInstanceId);
+                  return true;
+                }
+              : undefined,
           onOpen: () => {
             if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return;
             if (project.native && activeCtoxInstanceId !== null)
@@ -492,7 +506,9 @@ function ProjectGallery({
   readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
-    readonly onSaveConfiguration?: ((next: ProjectConfigurationValues) => Promise<boolean>) | undefined;
+    readonly onSaveConfiguration?:
+      | ((next: ProjectConfigurationValues) => Promise<boolean>)
+      | undefined;
     readonly canArchive: boolean;
     readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;

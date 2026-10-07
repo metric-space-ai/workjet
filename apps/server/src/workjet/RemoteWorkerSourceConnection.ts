@@ -39,8 +39,11 @@ export const openManagedWorkerSourceConnection = Effect.fn("workjet.openManagedW
     Effect.tryPromise({ try: openWorkerSourceChannel, catch: () => new WorkerSourceReconnectRequired({ requestId: input.requestId }) }),
     (channel) => Effect.promise(channel.close),
   );
+  const retired = yield* Deferred.make<void>();
   const local = yield* Effect.try({
-    try: () => listener.issue({ ...input, invoke: dependencies.invoke }),
+    try: () => listener.issue({ ...input, invoke: dependencies.invoke,
+      onRetired: () => { Effect.runSync(Deferred.succeed(retired, undefined)); },
+    }),
     catch: () => new WorkerSourceReconnectRequired({ requestId: input.requestId }),
   });
   const route: WorkerSourceRoute = { ...local, port: registered.remotePort };
@@ -54,12 +57,13 @@ export const openManagedWorkerSourceConnection = Effect.fn("workjet.openManagedW
     Effect.mapError(() => new WorkerSourceReconnectRequired({ requestId: input.requestId })),
     Effect.onError(() => Effect.promise(listener.close)),
   );
-  const ended = yield* Deferred.make<never, WorkerSourceReconnectRequired>();
-  const disconnected = forward.disconnected.pipe(
-    Effect.onExit(() => Effect.promise(async () => { listener.revoke(input.requestId); await listener.close(); })),
+  const ended = yield* Deferred.make<void, WorkerSourceReconnectRequired>();
+  const disconnected = Effect.raceFirst(forward.disconnected, Deferred.await(retired)).pipe(
+    Effect.onExit(() => Effect.promise(async () => { listener.revoke(input.requestId); await listener.close(); }).pipe(Effect.andThen(forward.close))),
     Effect.mapError(() => new WorkerSourceReconnectRequired({ requestId: input.requestId })),
   );
   yield* disconnected.pipe(
+    Effect.andThen(Deferred.succeed(ended, undefined)),
     Effect.catch((error) => Deferred.fail(ended, error)),
     Effect.forkScoped,
   );

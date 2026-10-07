@@ -42,6 +42,7 @@ export * from "./workjetCtoxCrewOffers.ts";
 export * from "./workjetCtoxBinding.ts";
 export * from "./capability.ts";
 export * from "./ctox.ts";
+export * from "./workjetSupervisor.ts";
 export * from "./businessOsShell.ts";
 export * from "./computerProvisioning.ts";
 export * from "./mobileShell.ts";

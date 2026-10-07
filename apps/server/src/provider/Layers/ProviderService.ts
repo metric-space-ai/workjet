@@ -39,6 +39,7 @@ import * as SchemaIssue from "effect/SchemaIssue";
 import * as Stream from "effect/Stream";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
+import { withImportedHistoryContext } from "../importedHistoryContext.ts";
 import * as ServerConfig from "../../config.ts";
 import {
   increment,
@@ -908,7 +909,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // rather than issuing a new one: sessions that go a long time between
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
-      const turn = yield* routed.adapter.sendTurn(input);
+      const continuationInput = yield* withImportedHistoryContext(input, routed.adapter.provider);
+      const turn = yield* routed.adapter.sendTurn(continuationInput);
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,

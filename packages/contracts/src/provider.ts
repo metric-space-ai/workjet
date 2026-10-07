@@ -88,7 +88,8 @@ export const ProviderSendTurnInput = Schema.Struct({
   // random id on each retry. Native task adapters require this for durable
   // dispatch. Optional for existing direct callers and non-native harnesses.
   requestId: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(512))),
-  // Archived messages only; the provider acknowledges their stable ids before a turn.
+  // Archived messages with stable ids. Supported harnesses import them natively
+  // or include them as conversation context; source permission grants are not resumed.
   importedHistory: Schema.optional(Schema.Array(ProviderImportedMessage)),
 
   input: Schema.optional(

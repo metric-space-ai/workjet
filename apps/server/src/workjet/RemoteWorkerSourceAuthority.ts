@@ -41,7 +41,9 @@ export const makeRemoteWorkerSourceAuthority = Effect.fn("RemoteWorkerSourceAuth
     }
     if (receipt === null || receipt.state !== "claimed" || receipt.executionId !== executionId(request))
       return yield* conflict();
-    if (receipt.expiresAtMs - nowMs() <= 60_000) {
+    // Preserve a full 120-second inference window plus native revalidation
+    // overhead; delayed heartbeats must renew before requesting inference.
+    if (receipt.expiresAtMs - nowMs() <= 180_000) {
       yield* save(yield* native.execute(scope, request, binding, "renew", receipt.permitId, receipt.executionId, receipt.renewalSequence + 1));
     }
     // Current native ownership/epoch and gateway grants are checked even after

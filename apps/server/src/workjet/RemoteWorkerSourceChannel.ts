@@ -3,7 +3,7 @@
 import * as Crypto from "node:crypto";
 import * as Http from "node:http";
 
-export type WorkerSourceOperation = "admit" | "bindModel" | "infer";
+export type WorkerSourceOperation = "admit" | "bindModel" | "infer" | "retire";
 export interface WorkerSourceIdentity {
   readonly sourceEnvironmentId: string;
   readonly targetEnvironmentId: string;
@@ -19,6 +19,7 @@ export interface WorkerSourceChannel {
   readonly port: number;
   readonly issue: (input: WorkerSourceIdentity & {
     readonly expiresAtMs: number;
+    readonly onRetired?: () => void;
     /** Must consult live source authority on every operation. */
     readonly invoke: (operation: WorkerSourceOperation, payload: unknown, signal: AbortSignal) => Promise<unknown>;
   }) => WorkerSourceRoute;
@@ -28,8 +29,8 @@ export interface WorkerSourceChannel {
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_ACTIVE_OPERATIONS = 8;
-const OPERATION_TIMEOUT_MS = 30_000;
-const operations = new Set<string>(["admit", "bindModel", "infer"]);
+const OPERATION_TIMEOUT_MS = 120_000;
+const operations = new Set<string>(["admit", "bindModel", "infer", "retire"]);
 
 /** Bind only to source loopback. A service-owned registered SSH reverse forward
  * makes this listener reachable on target loopback; never expose the source's
@@ -96,7 +97,7 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
           session.expiresAtMs <= Date.now()) return reject(401);
         const response = await Promise.race([
           (async () => {
-            if (value.operation !== "admit") await session.invoke("admit", undefined, controller.signal);
+            if (value.operation !== "admit" && value.operation !== "retire") await session.invoke("admit", undefined, controller.signal);
             if (controller.signal.aborted || sessions.get(session.requestId) !== session) throw new Error("closed");
             return session.invoke(value.operation as WorkerSourceOperation, value.payload, controller.signal);
           })(),
@@ -111,6 +112,10 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
           "x-workjet-target-environment": session.targetEnvironmentId,
           "x-workjet-worker-request": session.requestId,
           "x-workjet-worker-digest": session.requestDigest,
+        });
+        if (value.operation === "retire") res.once("finish", () => {
+          revoke(session.requestId);
+          session.onRetired?.();
         });
         res.end(JSON.stringify(response));
       } catch { if (!res.headersSent) reject(controller.signal.aborted ? 503 : 400); }

@@ -1,3 +1,4 @@
+import { RemoteWorkerComputerEnrollment } from "./workjet/RemoteWorkerComputerEnrollment.ts";
 import { RemoteWorkerDispatchError } from "@workjet/contracts";
 import { RemoteWorkerBroker } from "./workjet/RemoteWorkerBroker.ts";
 import { RemoteWorkerReceiver } from "./workjet/RemoteWorkerReceiver.ts";
@@ -408,6 +409,7 @@ const makeWsRpcLayer = (
       const currentSessionId = currentSession.sessionId;
       const workerBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
       const workerReceiver = yield* Effect.serviceOption(RemoteWorkerReceiver);
+      const computerEnrollment = yield* Effect.serviceOption(RemoteWorkerComputerEnrollment);
       const workerConnection = yield* Effect.serviceOption(RemoteWorkerConnectionBootstrap);
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
@@ -1310,6 +1312,8 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.workjetWorkerEnrollComputer]: (input) => Option.isSome(computerEnrollment)
+          ? computerEnrollment.value.enroll(input) : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
         [WS_METHODS.workjetWorkerRouteReserve]: (input) => Option.isSome(workerConnection)
           ? workerConnection.value.reserve(input) : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
         [WS_METHODS.workjetWorkerSourcePrepare]: (input) => Option.isSome(workerConnection)

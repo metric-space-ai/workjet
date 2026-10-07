@@ -11,6 +11,7 @@ import {
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -29,11 +30,11 @@ import type { WorkerSourceOperation } from "./RemoteWorkerSourceChannel.ts";
 export class RemoteWorkerSourceOperations extends Context.Service<RemoteWorkerSourceOperations, {
   readonly authorize: (request: RemoteWorkerRequest, profile: RemoteWorkerSourceProfile) => Effect.Effect<void, RemoteWorkerDispatchError>;
   readonly invoke: (request: RemoteWorkerRequest, operation: WorkerSourceOperation, payload: unknown, signal: AbortSignal) => Promise<unknown>;
-}>()("workjet/workjet/RemoteWorkerSourceOperations") {}
+}>()("workjet/workjet/RemoteWorkerConnectionBootstrap/RemoteWorkerSourceOperations") {}
 
 export class RemoteWorkerTargetHarnessSetup extends Context.Service<RemoteWorkerTargetHarnessSetup, {
   readonly install: (request: RemoteWorkerRequest, route: RemoteWorkerSourceRoute) => Effect.Effect<void, RemoteWorkerDispatchError>;
-}>()("workjet/workjet/RemoteWorkerTargetHarnessSetup") {}
+}>()("workjet/workjet/RemoteWorkerConnectionBootstrap/RemoteWorkerTargetHarnessSetup") {}
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const secretName = (kind: "profile" | "route", requestId: string) =>
@@ -158,7 +159,21 @@ export const make = Effect.gen(function* () {
         yield* Deferred.succeed(published, typed);
       }),
     }).pipe(
-      Effect.flatMap((connection) => Deferred.succeed(ready, undefined).pipe(Effect.andThen(connection.disconnected))),
+      Effect.flatMap((connection) => Effect.gen(function* () {
+        yield* Deferred.succeed(ready, undefined);
+        // A live worker can spend more than the native five-minute lease in a
+        // tool/build step. The owning source service renews current authority
+        // while the confirmed route exists, including during desktop Quit.
+        const heartbeat = yield* Effect.tryPromise({
+          try: (signal) => operations.value.invoke(request, "admit", undefined, signal), catch: failure,
+        }).pipe(
+          Effect.timeout("20 seconds"),
+          Effect.repeat(Schedule.spaced("60 seconds")),
+          Effect.catch(() => connection.close),
+          Effect.forkIn(scope),
+        );
+        yield* connection.disconnected.pipe(Effect.ensuring(Fiber.interrupt(heartbeat)));
+      })),
       Effect.catch(() => Effect.all([Deferred.fail(published, failure()), Deferred.fail(ready, failure())])),
       Effect.ensuring(Effect.sync(() => sources.delete(request.requestId))),
       Effect.provideService(Scope.Scope, scope), Effect.provide(runtime),
@@ -187,7 +202,7 @@ export const make = Effect.gen(function* () {
     const verifyOnce = Effect.tryPromise({ try: async () => {
       const [tcp, tcp6] = await Promise.all([Fs.readFile("/proc/net/tcp", "utf8"), Fs.readFile("/proc/net/tcp6", "utf8")]);
       if (!verifyLinuxWorkerLoopback(route.port, tcp, tcp6)) throw new Error("not-loopback-only");
-      // @effect-diagnostics-next-line globalFetch:off -- Probe the real SSH-forwarded loopback socket rather than an Effect mock transport.
+      // @effect-diagnostics-next-line globalFetch:off globalFetchInEffect:off -- Probe the real SSH-forwarded loopback socket rather than an Effect mock transport.
       const response = await fetch(`http://127.0.0.1:${route.port}/worker-source`, {
         method: "POST", headers: { authorization: `Bearer ${route.capability}`, "content-type": "application/json" },
         // @effect-diagnostics-next-line preferSchemaOverJson:off -- Bounded worker-only wire probe repeats the already decoded route identity.

@@ -23,6 +23,7 @@ export interface WorkerSourceHarness {
   readonly apiKey: string;
   readonly model: string;
   readonly revoke: () => Promise<void>;
+  readonly retire: () => Promise<void>;
 }
 const workers = new Map<string, WorkerSourceHarness>();
 const installedRoutes = new Map<string, WorkerSourceHarnessRoute>();
@@ -50,7 +51,7 @@ export async function installWorkerSourceRoute(
   const active = new Set<AbortController>();
   let revoked = false;
   let busy = false;
-  const source = async (operation: "admit" | "infer", payload: unknown, signal: AbortSignal) => {
+  const source = async (operation: "admit" | "infer" | "retire", payload: unknown, signal: AbortSignal) => {
     const response = await fetch(`http://127.0.0.1:${route.port}/worker-source`, {
       method: "POST", signal,
       headers: { authorization: `Bearer ${route.capability}`, "content-type": "application/json" },
@@ -133,6 +134,17 @@ export async function installWorkerSourceRoute(
       finally { clearTimeout(timeout); active.delete(controller); }
     },
     baseUrl: `http://127.0.0.1:${address.port}/v1`, apiKey, model: pin.modelId,
+    retire: async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const response = await source("retire", {}, controller.signal);
+        Schema.decodeUnknownSync(Schema.Struct({ retired: Schema.Literal(true) }))(response);
+      } finally {
+        clearTimeout(timeout);
+        await harness.revoke();
+      }
+    },
     revoke: async () => {
       revoked = true;
       for (const controller of active) controller.abort();

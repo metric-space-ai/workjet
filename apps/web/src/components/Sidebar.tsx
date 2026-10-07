@@ -3894,7 +3894,7 @@ export default function Sidebar() {
                     }
                   >
                     <FolderIcon aria-hidden className="size-4 shrink-0" />
-                    <span>Übersicht</span>
+                    <span>Overview</span>
                   </SidebarMenuButton>
                 ) : null}
               </div>

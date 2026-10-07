@@ -1,6 +1,31 @@
 // @effect-diagnostics globalFetch:off globalDate:off -- Real loopback socket lifecycle tests exercise the Node listener and wall-clock capability expiry.
 import { assert, describe, it } from "@effect/vitest";
 import { openWorkerSourceChannel, type WorkerSourceRoute } from "./RemoteWorkerSourceChannel.ts";
+import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
+it("terminal retirement revokes the source capability after its acknowledgement", async () => {
+  const channel = await openWorkerSourceChannel();
+  let finished!: () => void;
+  const retired = new Promise<void>((resolve) => { finished = resolve; });
+  const calls: string[] = [];
+  const route = channel.issue({ ...identity, requestId: "worker-terminal", expiresAtMs: Date.now() + 60_000,
+    onRetired: finished,
+    invoke: async (operation) => {
+      calls.push(operation);
+      if (operation !== "retire") throw new Error("model grant already revoked");
+      return { retired: true };
+    },
+  });
+  const harness = await installWorkerSourceRoute(route.requestId, route, {
+    targetEnvironmentId: route.targetEnvironmentId, requestDigest: route.requestDigest, modelId: "worker-model",
+  });
+  try {
+    await harness.retire();
+    await retired;
+    assert.deepEqual(calls, ["retire"]);
+    assert.equal((await post(route, { requestId: route.requestId, operation: "admit" })).status, 401);
+    await assert.rejects(harness.admit);
+  } finally { await harness.revoke(); await channel.close(); }
+});
 
 const identity = {
   sourceEnvironmentId: "source", targetEnvironmentId: "gpu3", requestId: "worker-one", requestDigest: "a".repeat(64),

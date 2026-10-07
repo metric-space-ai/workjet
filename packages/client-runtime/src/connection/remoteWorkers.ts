@@ -5,6 +5,7 @@ import {
   type RemoteWorkerRequest,
   type RemoteWorkerResponse,
   type RemoteWorkerSourceProfile,
+  type RemoteWorkerComputerEnrollmentInput,
   type RemoteWorkerRouteReservation,
   type RemoteWorkerRouteProof,
   type RemoteWorkerSourceRoute,
@@ -74,6 +75,21 @@ export const bootstrapWorkerSource = Effect.fn("RemoteWorkers.bootstrapWorkerSou
   const route = yield* port.prepare(reservation);
   const proof = yield* port.verify(reservation, route);
   yield* port.confirm(proof);
+});
+
+/** Resolve the authenticated registered connection, never a task-supplied host. */
+export const enrollRegisteredWorkerComputer = Effect.fn("RemoteWorkers.enrollRegisteredComputer")(function* (
+  sourceEnvironmentId: EnvironmentId,
+  targetEnvironmentId: EnvironmentId,
+  input: Omit<RemoteWorkerComputerEnrollmentInput, "profile">,
+) {
+  const registry = yield* EnvironmentRegistry;
+  const entries = yield* SubscriptionRef.get(registry.entries);
+  const profile = yield* registeredWorkerSshProfile(entries.get(targetEnvironmentId), targetEnvironmentId);
+  const config = yield* registry.run(targetEnvironmentId, request(WS_METHODS.serverGetConfig, {}));
+  if (sourceEnvironmentId === targetEnvironmentId || config.environment.environmentId !== targetEnvironmentId ||
+    !config.environment.capabilities.remoteWorkerDispatch) return yield* new RemoteWorkerRelayUnavailable({});
+  return yield* registry.run(sourceEnvironmentId, request(WS_METHODS.workjetWorkerEnrollComputer, { ...input, profile }));
 });
 
 export const startup = Effect.gen(function* () {

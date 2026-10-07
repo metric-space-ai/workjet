@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeUtil from "node:util";
-import { RemoteWorkerDispatchError, type EnvironmentId } from "@workjet/contracts";
+import { RemoteWorkerDispatchError, type EnvironmentId, type RemoteWorkerComputerEnrollmentInput } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { DecisionHubConnectionRegistry } from "../decisionHub/DecisionHubConnectionRegistry.ts";
@@ -53,6 +53,23 @@ export function makeCtoxRemoteWorkerTargets(dependencies: {
     return receipt;
   });
   return {
+    enroll: Effect.fn("CtoxRemoteWorkerTargets.enroll")(function* (
+      scope: RemoteWorkerNativeScope, source: EnvironmentId, target: EnvironmentId,
+      assignment: Pick<RemoteWorkerNativeTarget, "targetConnectionId" | "targetInstanceId">,
+      computer: Pick<RemoteWorkerComputerEnrollmentInput, "displayName" | "hostingMode" | "buildCapability">,
+    ) {
+      const { kind: _kind, ...buildCapability } = computer.buildCapability;
+      const receipt = yield* execute(scope, source, target, {
+        action: "enroll_target",
+        target: { sourceEnvironmentId: source, targetEnvironmentId: target, ...assignment },
+        computer: { displayName: computer.displayName, hostingMode: computer.hostingMode, buildCapability },
+      });
+      if (receipt.target.targetConnectionId !== assignment.targetConnectionId ||
+        receipt.target.targetInstanceId !== assignment.targetInstanceId ||
+        !NodeUtil.isDeepStrictEqual(receipt.buildCapability, { kind: "build", ...buildCapability }))
+        return yield* failure("invalid-request");
+      return receipt;
+    }),
     resolve: (scope: RemoteWorkerNativeScope, source: EnvironmentId, target: EnvironmentId) =>
       execute(scope, source, target, { action: "resolve_target", target_environment_id: target }),
     register: Effect.fn("CtoxRemoteWorkerTargets.register")(function* (
@@ -68,9 +85,27 @@ export function makeCtoxRemoteWorkerTargets(dependencies: {
       if (!NodeUtil.isDeepStrictEqual(receipt.target, assignment)) return yield* failure("invalid-request");
       return receipt;
     }),
-    revoke: (scope: RemoteWorkerNativeScope, source: EnvironmentId, target: EnvironmentId, expectedRevision: number) =>
-      execute(scope, source, target, {
+    revoke: Effect.fn("CtoxRemoteWorkerTargets.revoke")(function* (
+      scope: RemoteWorkerNativeScope, source: EnvironmentId, target: EnvironmentId, expectedRevision: number,
+    ) {
+      if (source === target) return yield* failure("invalid-request");
+      const upstream = yield* dependencies.connections.resolveReadyTarget(scope.connectionId, scope.instanceId)
+        .pipe(Effect.mapError(() => failure("source-unavailable")));
+      const tool = "business_os.remote_worker_admission";
+      yield* dependencies.transport.probe(upstream, [tool]).pipe(Effect.mapError(() => failure("source-unavailable")));
+      const response = yield* dependencies.transport.callTool(upstream, tool, {
         action: "revoke_target", target_environment_id: target, expected_revision: expectedRevision,
-      }),
+      }).pipe(Effect.mapError(() => failure("source-unavailable")));
+      if (response.isError || response.structuredContent === undefined) return yield* failure("computer-unavailable");
+      // Native revocation deliberately returns no positive build/admission data.
+      const receipt = yield* Schema.decodeUnknownEffect(Schema.Struct({
+        contract: Schema.Literal("ctox.workjet.remote-worker-target.v1"), bindingId: Id,
+        revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)), ownerUserId: Id,
+        sourceInstanceId: Id, target: RemoteWorkerNativeTarget, state: Schema.Literal("revoked"),
+      }))(response.structuredContent).pipe(Effect.mapError(() => failure("invalid-request")));
+      if (receipt.sourceInstanceId !== scope.instanceId || receipt.target.sourceEnvironmentId !== source ||
+        receipt.target.targetEnvironmentId !== target) return yield* failure("invalid-request");
+      return receipt;
+    }),
   };
 }

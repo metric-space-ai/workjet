@@ -28,7 +28,7 @@ export const RemoteWorkerRequest = Schema.Struct({
     title: TrimmedNonEmptyString,
     repository: RepositoryIdentity,
   }),
-  revision: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40,64}$/)),
+  revision: Schema.String.check(Schema.isPattern(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/)),
   task: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32000)),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,

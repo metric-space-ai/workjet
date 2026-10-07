@@ -1610,7 +1610,9 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdateServerPort,
     wslPrebuild,
     ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
-    gpuBuildOwner: Option.getOrUndefined(input.gpuBuildOwner ?? Option.none()),
+    ...(Option.isSome(input.gpuBuildOwner ?? Option.none())
+      ? { gpuBuildOwner: Option.getOrUndefined(input.gpuBuildOwner ?? Option.none()) }
+      : {}),
   } satisfies ResolvedBuildOptions;
 });
 

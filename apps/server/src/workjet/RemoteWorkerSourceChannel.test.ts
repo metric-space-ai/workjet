@@ -1,5 +1,5 @@
 // @effect-diagnostics globalFetch:off globalDate:off -- Real loopback socket lifecycle tests exercise the Node listener and wall-clock capability expiry.
-import { assert, describe, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import { openWorkerSourceChannel, type WorkerSourceRoute } from "./RemoteWorkerSourceChannel.ts";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 it("terminal retirement revokes the source capability after its acknowledgement", async () => {
@@ -23,7 +23,7 @@ it("terminal retirement revokes the source capability after its acknowledgement"
     await retired;
     assert.deepEqual(calls, ["retire"]);
     assert.equal((await post(route, { requestId: route.requestId, operation: "admit" })).status, 401);
-    await assert.rejects(harness.admit);
+    await expect(harness.admit()).rejects.toThrow("Worker route revoked");
   } finally { await harness.revoke(); await channel.close(); }
 });
 

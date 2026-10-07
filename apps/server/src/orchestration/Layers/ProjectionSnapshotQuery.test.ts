@@ -2111,7 +2111,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       const role = index % 2 === 0 ? "user" : "assistant";
       const at = sameTimestamp
         ? "2026-03-01T00:00:00.000Z"
-        : new Date(Date.UTC(2026, 2, 1, 0, index)).toISOString();
+        : `2026-03-01T00:${String(index).padStart(2, "0")}:00.000Z`;
       yield* sql`
         INSERT INTO projection_thread_messages (
           message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at

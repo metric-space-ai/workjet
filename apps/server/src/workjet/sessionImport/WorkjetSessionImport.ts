@@ -958,7 +958,9 @@ export const make = Effect.gen(function* () {
         if (next.done) break;
         const message = next.value;
         if (sourceIndex) prefix.update(",");
-        prefix.update(JSON.stringify(message));
+        prefix.update(
+          yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(message).pipe(Effect.orDie),
+        );
         const persisted = persistedById.get(
           MessageId.make(stableUuid(`message:${messageSeed}:${sourceIndex}`)),
         );

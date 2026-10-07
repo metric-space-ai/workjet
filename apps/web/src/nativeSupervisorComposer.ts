@@ -1,5 +1,6 @@
 import {
-  WorkjetSupervisorTurnIntent,
+  WorkjetSupervisorThreadId,
+  type WorkjetSupervisorTurnIntent,
   type WorkjetSupervisorJournal,
   type WorkjetThreadConfig,
   type WorkjetComputer,
@@ -11,6 +12,8 @@ import {
   type ProjectHistoryIdentity,
 } from "./workjetProjectIdentity";
 import type { WorkjetProjectRegistrySnapshot } from "./workjetProjectRegistry";
+
+const decodeSupervisorThreadId = Schema.decodeUnknownSync(WorkjetSupervisorThreadId);
 
 export interface NativeSupervisorScope {
   readonly instanceId: string;
@@ -56,12 +59,7 @@ export function resolveNativeSupervisorScope(input: {
   const scope = { instanceId, projectId: binding.nativeProjectId, threadId };
   // Imported titles and Code provider session IDs are never native thread IDs.
   try {
-    Schema.decodeUnknownSync(WorkjetSupervisorTurnIntent)({
-      ...scope,
-      commandId: "validate-scope",
-      goal: "Validate scope",
-      createdAt: "2026-10-07T00:00:00.000Z",
-    });
+    decodeSupervisorThreadId(threadId);
     return scope;
   } catch {
     return null;

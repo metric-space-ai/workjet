@@ -1,0 +1,204 @@
+import { describe, expect, it } from "vite-plus/test";
+import {
+  CommandId,
+  ProjectId,
+  type WorkjetSupervisorJournal,
+  type WorkjetSupervisorTurnIntent,
+} from "@workjet/contracts";
+import {
+  resumeWorkjetSupervisorTurn,
+  submitWorkjetSupervisorTurn,
+} from "./workjetSupervisorControl";
+import type { WorkjetProjectControlPort } from "./workjetProjectControl";
+
+const intent: WorkjetSupervisorTurnIntent = {
+  instanceId: "managed:acceptance",
+  projectId: ProjectId.make("71462c13-b395-402f-b6c8-788b405783e7"),
+  threadId: "e28290b0-7b0a-4d19-a242-f27041fadb84",
+  commandId: CommandId.make("durable-submit-1"),
+  goal: "Make the requested project change.",
+  createdAt: "2026-10-07T21:00:00.000Z",
+};
+const binding = {
+  contract: "ctox.workjet.supervisor_binding.v1",
+  projectId: intent.projectId,
+  threadId: intent.threadId,
+  threadKey: `business-os/threads/${intent.threadId}`,
+} as const;
+const turn = {
+  commandId: "canonical-native-turn-1",
+  taskId: "native-task-1",
+  threadId: intent.threadId,
+  threadKey: binding.threadKey,
+  executionPhase: "running",
+  status: "running",
+  queueStatus: "running",
+  attempt: 1,
+  terminal: false,
+  result: null,
+  resultTruncated: false,
+  errorCode: null,
+  errorMessage: null,
+} as const;
+
+describe("durable native supervisor submission", () => {
+  it("recovers a lost submit reply with the same saved command, then watches the native execution", async () => {
+    const state: { saved: WorkjetSupervisorJournal | null } = { saved: null };
+    const journal = {
+      save: async (value: WorkjetSupervisorJournal) => {
+        state.saved = structuredClone(value);
+      },
+    };
+    const runs = new Map<string, typeof turn>();
+    let loseFirstReply = true;
+    const submitted: unknown[] = [];
+    const observed: string[] = [];
+    const port: WorkjetProjectControlPort = async (instanceId, request) => {
+      expect(instanceId).toBe(intent.instanceId);
+      expect(state.saved?.intent.commandId).toBe(intent.commandId);
+      if (request.action === "project.supervisor.bind")
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            commandId: request.commandId,
+            projectId: request.projectId,
+            binding,
+          },
+        };
+      if (request.action === "project.supervisor.turn.submit") {
+        submitted.push(request);
+        if (!runs.has(request.commandId)) runs.set(request.commandId, turn);
+        if (loseFirstReply) {
+          loseFirstReply = false;
+          return { _tag: "failed", code: "timeout" };
+        }
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            commandId: request.commandId,
+            projectId: request.projectId,
+            binding,
+            contract: "ctox.workjet.supervisor_turn.v1",
+            messageId: "native-message-1",
+            turn,
+          },
+        };
+      }
+      if (request.action === "project.supervisor.turn.watch") {
+        observed.push(request.targetCommandId);
+        return {
+          _tag: "completed",
+          response: {
+            action: request.action,
+            commandId: request.commandId,
+            projectId: request.projectId,
+            binding,
+            contract: "ctox.workjet.supervisor_turn.v1",
+            turn: {
+              ...turn,
+              executionPhase: "terminal",
+              status: "completed",
+              queueStatus: "completed",
+              terminal: true,
+              result: "Change completed.",
+            },
+          },
+        };
+      }
+      return { _tag: "failed", code: "unsupported" };
+    };
+    expect(await submitWorkjetSupervisorTurn(intent, journal, port)).toEqual({
+      _tag: "failed",
+      code: "timeout",
+    });
+    expect(state.saved).toEqual({ intent, turn: null, submission: "awaiting-receipt" });
+    // A fresh UI/runtime uses only persisted intent; it has no in-memory send token.
+    await resumeWorkjetSupervisorTurn(
+      structuredClone(state.saved!),
+      CommandId.make("watch-after-reopen"),
+      journal,
+      port,
+    );
+    expect(runs.size).toBe(1);
+    expect(submitted).toHaveLength(2);
+    expect(submitted[1]).toEqual(submitted[0]);
+    await resumeWorkjetSupervisorTurn(
+      structuredClone(state.saved!),
+      CommandId.make("watch-after-submit"),
+      journal,
+      port,
+    );
+    expect(observed).toEqual([turn.commandId]);
+    expect(state.saved?.turn).toMatchObject({
+      taskId: turn.taskId,
+      commandId: turn.commandId,
+      attempt: 1,
+      terminal: true,
+      result: "Change completed.",
+    });
+  });
+  it("records a pre-submit refusal without treating a lost submit reply as a refusal", async () => {
+    const observations: WorkjetSupervisorJournal[] = [];
+    const result = await submitWorkjetSupervisorTurn(
+      intent,
+      {
+        save: async (value) => {
+          observations.push(value);
+        },
+      },
+      async (_instance, request) => {
+        expect(request.action).toBe("project.supervisor.bind");
+        return { _tag: "failed", code: "unsupported" };
+      },
+    );
+    expect(result).toEqual({ _tag: "failed", code: "unsupported" });
+    expect(observations.map((value) => value.submission)).toEqual(["prepared", "not-submitted"]);
+    expect(observations.at(-1)?.submissionError).toBe("unsupported");
+  });
+
+  it("does not dispatch if saving the intent fails", async () => {
+    let calls = 0;
+    await expect(
+      submitWorkjetSupervisorTurn(
+        intent,
+        {
+          save: async () => {
+            throw new Error("disk unavailable");
+          },
+        },
+        async () => {
+          calls += 1;
+          return { _tag: "failed", code: "unsupported" };
+        },
+      ),
+    ).rejects.toThrow("disk unavailable");
+    expect(calls).toBe(0);
+  });
+  it("rejects a receipt for another native execution and keeps the original intent", async () => {
+    let saved: WorkjetSupervisorJournal | null = null;
+    const result = await resumeWorkjetSupervisorTurn(
+      { intent, turn, submission: "confirmed" },
+      CommandId.make("watch-1"),
+      {
+        save: async (value) => {
+          saved = value;
+        },
+      },
+      async (_instance, request) => ({
+        _tag: "completed",
+        response: {
+          action: "project.supervisor.turn.watch",
+          commandId: "commandId" in request ? request.commandId : CommandId.make("invalid"),
+          projectId: intent.projectId,
+          binding,
+          contract: "ctox.workjet.supervisor_turn.v1",
+          turn: { ...turn, commandId: "foreign-execution" },
+        },
+      }),
+    );
+    expect(result).toEqual({ _tag: "failed", code: "guest_failed" });
+    expect(saved).toBeNull();
+  });
+});

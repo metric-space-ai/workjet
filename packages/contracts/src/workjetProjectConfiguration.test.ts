@@ -24,6 +24,10 @@ const decode = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
   onExcessProperty: "error",
 });
 
+const decodeResponse = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse, {
+  onExcessProperty: "error",
+});
+
 describe("CTOX project configuration contract", () => {
   it("negotiates optional configuration with a boolean flag", () => {
     expect(decode({ action: "project.list", includeConfiguration: true })).toEqual({
@@ -74,10 +78,6 @@ describe("CTOX project configuration contract", () => {
         jourFixe: request.jourFixe,
       },
     };
-    expect(
-      Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse, { onExcessProperty: "error" })(
-        response,
-      ),
-    ).toEqual(response);
+    expect(decodeResponse(response)).toEqual(response);
   });
 });

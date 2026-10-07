@@ -512,7 +512,12 @@ const CtoxProjectUrl = CtoxProjectText(2_048).check(
 const projectInfoText = (maximum: number) =>
   Schema.String.check(
     Schema.isMaxLength(maximum),
-    Schema.isPattern(/^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/u),
+    Schema.makeFilter((value) =>
+      Array.from(value).every((character) => {
+        const code = character.charCodeAt(0);
+        return code === 9 || code === 10 || code === 13 || (code >= 32 && code !== 127);
+      }),
+    ),
   );
 export const CtoxWorkjetProjectInfo = Schema.Struct({
   description: Schema.optionalKey(projectInfoText(4_096)),
@@ -528,7 +533,8 @@ export const CtoxWorkjetJourFixe = Schema.Struct({
   timezone: CtoxProjectText(128).check(
     Schema.makeFilter((value) => {
       try {
-        new Intl.DateTimeFormat("en", { timeZone: value });
+        const formatter = new Intl.DateTimeFormat("en", { timeZone: value });
+        formatter.resolvedOptions();
         return true;
       } catch {
         return "Use a valid IANA timezone.";

@@ -9,6 +9,10 @@ import { decodeOverviewDraft, overviewDraft, type OverviewSlotDraft } from "../p
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
+const decodeProjectConfiguration = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
+  onExcessProperty: "error",
+});
+
 export type ProjectConfigurationValues = Pick<
   Extract<CtoxWorkjetProjectControlRequest, { readonly action: "project.configure" }>,
   "repoUrl" | "publicUrl" | "info" | "jourFixe"
@@ -66,9 +70,7 @@ export function ProjectOverviewEditor({
         try {
           next = decodeOverviewDraft(draft);
           if (configuration && onSaveConfiguration) {
-            const validated = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
-              onExcessProperty: "error",
-            })({
+            const validated = decodeProjectConfiguration({
               action: "project.configure",
               commandId: "validate-project-configuration",
               projectId: configuration.id,

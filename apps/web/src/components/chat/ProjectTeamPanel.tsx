@@ -42,8 +42,8 @@ export function ProjectTeamPanel(props: {
       {(
         [
           ["supervisor", "Supervisor", "border-primary/50", "No supervisor yet."],
-          ["specialist", "Fach-Lumas", "border-emerald-500/50", "No Fach-Lumas yet."],
-          ["worker", "One-time PR threads", "border-amber-500/50", "No one-time PR threads yet."],
+          ["specialist", "Parents", "border-emerald-500/50", "No parents yet."],
+          ["worker", "Workers", "border-amber-500/50", "No workers yet."],
         ] as const
       ).map(([role, label, accent, empty]) => {
         const group = members.filter(
@@ -151,7 +151,7 @@ export function ProjectTeamPanel(props: {
     }
   };
   return (
-    <section aria-label="Project team" className={props.compact ? "flex flex-wrap items-start gap-x-4 gap-y-1 border-b px-4 py-2 text-xs" : "border-b px-4 py-2 text-sm"} data-workjet-team-toolbar={props.compact ? "compact" : undefined}>
+    <section aria-label="Project team" className={props.compact ? "flex max-h-52 shrink-0 flex-wrap items-start gap-x-4 gap-y-1 overflow-auto border-b px-4 py-2 text-xs" : "border-b px-4 py-2 text-sm"} data-workjet-team-toolbar={props.compact ? "compact" : undefined}>
       <div className="flex flex-wrap items-center gap-2">
         <strong className="capitalize">{team.role}</strong>
         {team.role === "specialist" ? <span>{team.domain}</span> : null}

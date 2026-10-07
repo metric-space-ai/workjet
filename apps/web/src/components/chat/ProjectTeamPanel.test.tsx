@@ -80,8 +80,8 @@ describe("ProjectTeamPanel directory", () => {
     expect(markup).toContain('data-workjet-team-group="supervisor"');
     expect(markup).toContain('data-workjet-team-group="specialist"');
     expect(markup).toContain('data-workjet-team-group="worker"');
-    expect(markup).toContain("Fach-Lumas");
-    expect(markup).toContain("One-time PR threads");
+    expect(markup).toContain("Parents");
+    expect(markup).toContain("Workers");
     expect(markup).toContain("Interface specialist");
     expect(markup).toContain("Fix gallery navigation");
     expect(markup).toContain("Parent: Interface specialist");
@@ -111,8 +111,8 @@ describe("ProjectTeamPanel directory", () => {
       "Fach-Lumas title is not a role",
     ])
       expect(markup).not.toContain(title);
-    expect(markup).toContain("No Fach-Lumas yet.");
-    expect(markup).toContain("No one-time PR threads yet.");
+    expect(markup).toContain("No parents yet.");
+    expect(markup).toContain("No workers yet.");
   });
 
   it("retains team navigation from an unclassified legacy conversation without inventing membership", () => {

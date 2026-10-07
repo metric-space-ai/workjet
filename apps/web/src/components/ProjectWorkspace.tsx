@@ -60,7 +60,10 @@ export function ProjectWorkspace({
   const info = project.configuration?.info;
   const meeting = project.configuration?.jourFixe;
   const defaults = suggestedProjectKpis(project.title);
-  const kpis = overview.slots.map((slot, index) => slot ?? defaults?.[index] ?? null);
+  const kpis = ["primary", "secondary", "tertiary"].map((id, index) => ({
+    id,
+    slot: overview.slots[index] ?? defaults?.[index] ?? null,
+  }));
   const decisions = members.filter(
     (thread) => thread.hasPendingApprovals || thread.hasPendingUserInput,
   );
@@ -94,9 +97,9 @@ export function ProjectWorkspace({
           </Button>
         </header>
         <dl className="mb-6 flex flex-wrap gap-x-8 gap-y-3" data-workjet-overview-kpis="">
-          {kpis.map((slot, index) =>
+          {kpis.map(({ slot, id }) =>
             slot ? (
-              <div key={index} className="min-w-0">
+              <div key={id} className="min-w-0">
                 <dd className="text-[22px] font-semibold tracking-tight tabular-nums">
                   {slot.kind === "metric" ? (
                     `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`

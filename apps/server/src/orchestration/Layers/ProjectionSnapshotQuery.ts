@@ -303,7 +303,9 @@ function mapLatestTurn(
     startedAt: row.startedAt,
     completedAt: row.completedAt,
     assistantMessageId: row.assistantMessageId,
-    ...(row.assistantMessagePreview ? { assistantMessagePreview: row.assistantMessagePreview } : {}),
+    ...(row.assistantMessagePreview
+      ? { assistantMessagePreview: row.assistantMessagePreview }
+      : {}),
     ...(row.sourceProposedPlanThreadId !== null && row.sourceProposedPlanId !== null
       ? {
           sourceProposedPlan: {
@@ -1751,7 +1753,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   startedAt: row.startedAt,
                   completedAt: row.completedAt,
                   assistantMessageId: row.assistantMessageId,
-                  ...(row.assistantMessagePreview ? { assistantMessagePreview: row.assistantMessagePreview } : {}),
+                  ...(row.assistantMessagePreview
+                    ? { assistantMessagePreview: row.assistantMessagePreview }
+                    : {}),
                   ...(row.sourceProposedPlanThreadId !== null && row.sourceProposedPlanId !== null
                     ? {
                         sourceProposedPlan: {

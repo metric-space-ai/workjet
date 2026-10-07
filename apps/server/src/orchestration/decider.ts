@@ -240,12 +240,16 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   workerCleanupComplete = false,
   workerPullRequestTerminal = false,
   workerExecutionStopped = false,
+  remoteWorkerRequest,
+  remoteProjectMirror = false,
 }: {
   readonly command: OrchestrationCommand;
   readonly allowTeamTermination?: boolean;
   readonly workerCleanupComplete?: boolean;
   readonly workerPullRequestTerminal?: boolean;
   readonly workerExecutionStopped?: boolean;
+  readonly remoteWorkerRequest?: import("@workjet/contracts").RemoteWorkerRequest | undefined;
+  readonly remoteProjectMirror?: boolean | undefined;
   readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<
@@ -294,6 +298,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         },
       };
       const crypto = yield* Crypto.Crypto;
+      if (remoteProjectMirror) return projectEvent;
       const supervisorId = ThreadId.make(yield* crypto.randomUUIDv4);
       const supervisorEvent: PlannedOrchestrationEvent = {
         ...(yield* withEventBase({
@@ -456,6 +461,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         config: command.workjetConfig,
         readModel,
         environmentId,
+        remoteWorkerRequest,
       });
       yield* requireProject({
         readModel,
@@ -568,6 +574,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         config: thread.workjetConfig,
         readModel,
         environmentId,
+        remoteWorkerRequest,
       });
       const occurredAt = yield* nowIso;
       return {
@@ -1076,6 +1083,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         config: retained.config,
         readModel,
         environmentId,
+        remoteWorkerRequest,
       });
       const occurredAt = yield* nowIso;
       return {
@@ -1246,6 +1254,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           config: createThread.workjetConfig,
           readModel,
           environmentId,
+          remoteWorkerRequest,
         });
         yield* requireThreadAbsent({ readModel, command, threadId: command.threadId });
       }

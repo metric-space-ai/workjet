@@ -4,6 +4,7 @@ import type {
   ProjectId,
   ThreadId,
   WorkjetThreadConfig,
+  RemoteWorkerRequest,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
@@ -16,6 +17,7 @@ export function requireProjectTeamOwnership(input: {
   readonly config: WorkjetThreadConfig;
   readonly readModel: OrchestrationReadModel;
   readonly environmentId?: EnvironmentId | undefined;
+  readonly remoteWorkerRequest?: RemoteWorkerRequest | undefined;
 }): Effect.Effect<void, OrchestrationCommandInvariantError> {
   const { config, readModel, threadId, projectId } = input;
   const team = config.schemaVersion === 2 ? config.team : undefined;
@@ -38,7 +40,38 @@ export function requireProjectTeamOwnership(input: {
   if (current?.workjetConfig.role === "worker" && config.role !== "worker") {
     return fail("A dispatched worker cannot promote itself to a parent role.");
   }
+  if (
+    config.role === "worker" &&
+    input.environmentId !== undefined &&
+    config.parent.environmentId !== input.environmentId
+  ) {
+    const request = input.remoteWorkerRequest;
+    if (
+      !request ||
+      request.requestId !== threadId ||
+      request.project.id !== projectId ||
+      request.targetEnvironmentId !== input.environmentId ||
+      request.parent.environmentId !== config.parent.environmentId ||
+      request.parent.threadId !== config.parent.threadId ||
+      request.parent.threadId === threadId ||
+      new Set(config.enabledCapabilityIds).size !== config.enabledCapabilityIds.length ||
+      config.enabledCapabilityIds.some((id) => !request.enabledCapabilityIds.includes(id)) ||
+      request.enabledCapabilityIds.some((id) => !request.parentCapabilityIds.includes(id)) ||
+      (request.parentTeamRole !== undefined &&
+        (team?.role !== "worker" ||
+          team.threadId !== threadId ||
+          team.projectId !== projectId ||
+          team.parentThreadId !== request.parent.threadId ||
+          team.packageId !== threadId)) ||
+      (request.parentTeamRole === undefined && team !== undefined)
+    )
+      return fail(
+        "A remote worker requires its immutable native dispatch receipt and exact source parent.",
+      );
+    return Effect.void;
+  }
   if (!team) return Effect.void;
+
   if (
     previous?.role === "worker" &&
     team.role === "worker" &&

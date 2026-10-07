@@ -31,16 +31,8 @@ import { WorktreeStorage } from "../worktree/WorktreeStorage.ts";
 import { RemoteWorkerStore } from "./RemoteWorkerStore.ts";
 import { WorkerDispatchRollback } from "./WorkerDispatchRollback.ts";
 
-/** Native computer/provider grant admission. Catalog rows are never execution
- * grants. The platform adapter must verify the selected target and model. */
-export class RemoteWorkerAdmission extends Context.Service<
-  RemoteWorkerAdmission,
-  {
-    readonly admit: (
-      request: RemoteWorkerRequest,
-    ) => Effect.Effect<void, RemoteWorkerDispatchError>;
-  }
->()("workjet/workjet/RemoteWorkerReceiver/RemoteWorkerAdmission") {}
+import { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
+export { RemoteWorkerAdmission } from "./RemoteWorkerAdmission.ts";
 
 export class RemoteWorkerReceiver extends Context.Service<
   RemoteWorkerReceiver,

@@ -6,6 +6,7 @@ import type {
 } from "@workjet/contracts";
 import { OrchestrationCommand, RemoteWorkerRequest } from "@workjet/contracts";
 import { make as makeRemoteWorkerStore } from "../../workjet/RemoteWorkerStore.ts";
+import { RemoteWorkerAdmission } from "../../workjet/RemoteWorkerAdmission.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -96,6 +97,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
 const makeOrchestrationEngine = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const remoteWorkerStore = yield* makeRemoteWorkerStore;
+  const remoteAdmission = yield* Effect.serviceOption(RemoteWorkerAdmission);
   const mailbox = yield* WorkjetMailboxStore.pipe(Effect.provide(WorkjetMailboxStoreLive));
   const eventStore = yield* OrchestrationEventStore;
   const commandReceiptRepository = yield* OrchestrationCommandReceiptRepository;
@@ -365,6 +367,22 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 commandType: command.type,
                 detail: "Remote worker creation does not match its native receipt.",
               });
+          }
+          if (command.type === "thread.create" || command.type === "thread.turn.start") {
+            if (Option.isNone(remoteAdmission)) {
+              return yield* new OrchestrationCommandInvariantError({
+                commandType: command.type,
+                detail: "Current source-native remote worker admission is unavailable.",
+              });
+            }
+            // Recheck after clone and at every subsequent start. Rejected
+            // command receipts let Receiver apply its owned rollback safely.
+            yield* remoteAdmission.value.admit(request).pipe(
+              Effect.mapError(() => new OrchestrationCommandInvariantError({
+                commandType: command.type,
+                detail: "Current source-native remote worker admission denied.",
+              })),
+            );
           }
           remoteWorkerRequest = request;
         }

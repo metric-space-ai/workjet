@@ -1,6 +1,9 @@
 import {
   CommandId,
   isWorkjetSupervisorReceiptForRequest,
+  nextWorkjetSupervisorExecutionPageRequest,
+  type WorkjetSupervisorExecutionPage,
+  type WorkjetSupervisorExecutionPageRequest,
   type WorkjetSupervisorJournal,
   type WorkjetSupervisorTurnIntent,
 } from "@workjet/contracts";
@@ -17,6 +20,8 @@ import {
   submitWorkjetSupervisorTurn,
 } from "../../workjetSupervisorControl";
 import { requestWorkjetProjectControl } from "../../workjetProjectControl";
+import { readWorkjetSupervisorExecutionPage } from "../../workjetSupervisorExecution";
+import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
 export function NativeSupervisorComposer(props: {
@@ -32,6 +37,14 @@ export function NativeSupervisorComposer(props: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [execution, setExecution] = useState<{
+    commandId: string;
+    request: WorkjetSupervisorExecutionPageRequest;
+    page: WorkjetSupervisorExecutionPage;
+  } | null>(null);
+  const [executionError, setExecutionError] = useState<string | null>(null);
+  const executionRef = useRef(execution);
+  executionRef.current = execution;
   const inFlight = useRef(false);
   const restored = useRef(false);
   const journalRef = useRef(journal);
@@ -45,7 +58,10 @@ export function NativeSupervisorComposer(props: {
   const latestProps = useRef(props);
   latestProps.current = props;
 
-  const run = async (operation: "send" | "resume" | "cancel") => {
+  const run = async (
+    operation: "send" | "resume" | "cancel" | "events",
+    pageRequest?: WorkjetSupervisorExecutionPageRequest,
+  ) => {
     const current = latestProps.current;
     const target = current.scope;
     const saved = journalRef.current;
@@ -64,6 +80,7 @@ export function NativeSupervisorComposer(props: {
       return;
     if (operation !== "send" && saved === null) return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
+    if (operation === "events" && saved?.turn == null) return;
     inFlight.current = true;
     setBusy(true);
     setError(null);
@@ -81,6 +98,9 @@ export function NativeSupervisorComposer(props: {
     try {
       let result;
       if (operation === "send") {
+        setExecution(null);
+        executionRef.current = null;
+        setExecutionError(null);
         const intent: WorkjetSupervisorTurnIntent = {
           ...target,
           commandId: CommandId.make(`supervisor-${newCommandId()}`),
@@ -94,7 +114,7 @@ export function NativeSupervisorComposer(props: {
           CommandId.make(`observe-${newCommandId()}`),
           port,
         );
-      } else if (saved?.turn) {
+      } else if (operation === "cancel" && saved?.turn) {
         const request = {
           action: "project.supervisor.turn.cancel" as const,
           commandId: CommandId.make(`cancel-${newCommandId()}`),
@@ -126,6 +146,46 @@ export function NativeSupervisorComposer(props: {
         (operation === "send" || prompt.trim() === saved?.intent.goal)
       )
         setPrompt("");
+      const confirmed = journalRef.current;
+      if (
+        (operation === "events" || result?._tag === "completed") &&
+        confirmed?.submission === "confirmed" &&
+        confirmed.turn
+      ) {
+        const previous = executionRef.current;
+        const request = pageRequest ?? (
+          previous?.commandId === confirmed.turn.commandId ? previous.request : {}
+        );
+        // One bounded watch per refresh. Page failures must not stop task observation.
+        try {
+          const observed = await readWorkjetSupervisorExecutionPage(
+            confirmed,
+            CommandId.make(`events-${newCommandId()}`),
+            port,
+            request,
+          );
+          if (
+            observed._tag === "completed" &&
+            observed.response.action === "project.supervisor.turn.watch" &&
+            observed.response.executionPage
+          ) {
+            const next = {
+              commandId: confirmed.turn.commandId,
+              request,
+              page: observed.response.executionPage,
+            };
+            executionRef.current = next;
+            setExecution(next);
+            setExecutionError(null);
+          } else if (observed._tag === "failed") {
+            setExecutionError(observed.code === "unsupported"
+              ? "Diese CTOX-Version stellt keinen Ausführungsverlauf bereit."
+              : `Ausführungsverlauf nicht verfügbar: ${observed.code}. Erneut aktualisieren oder von Anfang laden.`);
+          }
+        } catch {
+          setExecutionError("Ausführungsverlauf konnte nicht gespeichert werden. Erneut aktualisieren.");
+        }
+      }
     } catch (failure) {
       setError(
         failure instanceof Error ? failure.message : "CTOX-Auftrag konnte nicht bestätigt werden.",
@@ -148,10 +208,10 @@ export function NativeSupervisorComposer(props: {
   }, [persistedJournal]);
 
   useEffect(() => {
-    // A restored pending intent keeps exactly its saved identity. Confirmed turns only watch.
+    // Restore pending and terminal turns alike; events are backfilled from the saved identity.
     if (!restored.current && !disabled && journal !== null) {
       restored.current = true;
-      if (journal.submission !== "not-submitted" && journal.turn?.terminal !== true)
+      if (journal.submission !== "not-submitted")
         void runRef.current("resume");
     }
   }, [disabled, journal]);
@@ -182,6 +242,18 @@ export function NativeSupervisorComposer(props: {
               <p>Task {journal.turn.taskId}</p>
               <p>Befehl {journal.turn.commandId}</p>
             </details>
+          )}
+          {journal.turn && (
+            <NativeSupervisorExecutionDetails
+              page={execution?.commandId === journal.turn.commandId ? execution.page : null}
+              error={executionError}
+              disabled={disabled || busy}
+              onReset={() => { void run("events", {}); }}
+              onNext={() => {
+                if (execution?.commandId === journal.turn?.commandId && execution.page.has_more)
+                  void run("events", nextWorkjetSupervisorExecutionPageRequest(execution.page));
+              }}
+            />
           )}
           {journal.turn?.result != null && (
             <pre className="mt-2 whitespace-pre-wrap break-words font-sans">

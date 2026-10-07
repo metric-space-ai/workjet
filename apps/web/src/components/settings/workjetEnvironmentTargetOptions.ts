@@ -29,7 +29,7 @@ export function workjetEnvironmentTargetOptions(
           : presentationKind === "workjet-connect"
             ? "Relay connection"
             : presentationKind === "ssh"
-              ? "SSH environment"
+              ? (environment.displayUrl ?? "SSH environment")
               : (environment.displayUrl ?? "Remote environment");
       return {
         environmentId: environment.environmentId,

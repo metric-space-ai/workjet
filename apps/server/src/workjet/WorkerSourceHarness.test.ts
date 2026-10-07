@@ -1,5 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off globalFetch:off -- Real loopback HTTP fixture exercises the external Codex transport boundary.
 import { createServer } from "node:http";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it } from "vite-plus/test";
 import { installWorkerSourceRoute } from "./WorkerSourceHarness.ts";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup(); });

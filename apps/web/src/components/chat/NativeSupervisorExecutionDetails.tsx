@@ -17,8 +17,8 @@ export function NativeSupervisorExecutionDetails(props: {
           {props.page.attempt.run_id && <p>Run-ID {props.page.attempt.run_id}</p>}
         </div>
       )}
-      {props.page && (
-        props.page.events.length === 0 ? (
+      {props.page &&
+        (props.page.events.length === 0 ? (
           <p className="mt-1">Noch keine gespeicherten Ereignisse.</p>
         ) : (
           <ol className="mt-2 space-y-1" aria-label="Gespeicherte Ereignisse">
@@ -28,9 +28,12 @@ export function NativeSupervisorExecutionDetails(props: {
               </li>
             ))}
           </ol>
-        )
+        ))}
+      {props.error && (
+        <p role="status" className="mt-1">
+          {props.error}
+        </p>
       )}
-      {props.error && <p role="status" className="mt-1">{props.error}</p>}
       <div className="mt-2 flex gap-3">
         <button type="button" disabled={props.disabled} onClick={props.onReset}>
           Von Anfang laden

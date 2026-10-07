@@ -143,12 +143,12 @@ describe("native supervisor execution pages", () => {
       isWorkjetSupervisorReceiptForRequest(nextRequest, {
         ...response,
         executionPage: {
-            command_id: page.command_id,
-            task_id: page.task_id,
-            attempt: page.attempt,
-            events: [],
-            has_more: false,
-          },
+          command_id: page.command_id,
+          task_id: page.task_id,
+          attempt: page.attempt,
+          events: [],
+          has_more: false,
+        },
       }),
     ).toBe(false);
   });

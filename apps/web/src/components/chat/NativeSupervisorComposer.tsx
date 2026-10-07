@@ -153,9 +153,8 @@ export function NativeSupervisorComposer(props: {
         confirmed.turn
       ) {
         const previous = executionRef.current;
-        const request = pageRequest ?? (
-          previous?.commandId === confirmed.turn.commandId ? previous.request : {}
-        );
+        const request =
+          pageRequest ?? (previous?.commandId === confirmed.turn.commandId ? previous.request : {});
         // One bounded watch per refresh. Page failures must not stop task observation.
         try {
           const observed = await readWorkjetSupervisorExecutionPage(
@@ -178,12 +177,16 @@ export function NativeSupervisorComposer(props: {
             setExecution(next);
             setExecutionError(null);
           } else if (observed._tag === "failed") {
-            setExecutionError(observed.code === "unsupported"
-              ? "Diese CTOX-Version stellt keinen Ausführungsverlauf bereit."
-              : `Ausführungsverlauf nicht verfügbar: ${observed.code}. Erneut aktualisieren oder von Anfang laden.`);
+            setExecutionError(
+              observed.code === "unsupported"
+                ? "Diese CTOX-Version stellt keinen Ausführungsverlauf bereit."
+                : `Ausführungsverlauf nicht verfügbar: ${observed.code}. Erneut aktualisieren oder von Anfang laden.`,
+            );
           }
         } catch {
-          setExecutionError("Ausführungsverlauf konnte nicht gespeichert werden. Erneut aktualisieren.");
+          setExecutionError(
+            "Ausführungsverlauf konnte nicht gespeichert werden. Erneut aktualisieren.",
+          );
         }
       }
     } catch (failure) {
@@ -211,8 +214,7 @@ export function NativeSupervisorComposer(props: {
     // Restore pending and terminal turns alike; events are backfilled from the saved identity.
     if (!restored.current && !disabled && journal !== null) {
       restored.current = true;
-      if (journal.submission !== "not-submitted")
-        void runRef.current("resume");
+      if (journal.submission !== "not-submitted") void runRef.current("resume");
     }
   }, [disabled, journal]);
   useEffect(() => {
@@ -248,9 +250,11 @@ export function NativeSupervisorComposer(props: {
               page={execution?.commandId === journal.turn.commandId ? execution.page : null}
               error={executionError}
               disabled={disabled || busy}
-              onReset={() => { void run("events", {}); }}
+              onReset={() => {
+                void run("events", {});
+              }}
               onNext={() => {
-                if (execution?.commandId === journal.turn?.commandId && execution.page.has_more)
+                if (execution !== null && execution.commandId === journal.turn?.commandId && execution.page.has_more)
                   void run("events", nextWorkjetSupervisorExecutionPageRequest(execution.page));
               }}
             />

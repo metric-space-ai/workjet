@@ -55,3 +55,5 @@ export * from "./resourceTelemetry.ts";
 export * from "./supportBundle.ts";
 export * from "./usage.ts";
 export * from "./rpc.ts";
+
+export * from "./remoteWorker.ts";

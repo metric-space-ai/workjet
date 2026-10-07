@@ -603,7 +603,7 @@ function ProjectGallery({
               className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm"
               data-workjet-project-registry-stale=""
             >
-              <span>Projektliste veraltet</span>
+              <span>Project list is out of date</span>
               {onRefresh && (
                 <Button size="sm" variant="ghost" onClick={onRefresh}>
                   Refresh

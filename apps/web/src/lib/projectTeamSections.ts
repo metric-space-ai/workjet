@@ -1,4 +1,4 @@
-import type { WorkjetThreadConfig } from "@workjet/contracts";
+import { PROVIDER_DISPLAY_NAMES, type WorkjetThreadConfig } from "@workjet/contracts";
 
 type TeamThread = { readonly workjetConfig: WorkjetThreadConfig };
 
@@ -50,15 +50,41 @@ export function projectTeamStatus(thread: {
   readonly backgroundLiveness?: string | null | undefined;
 }) {
   if (thread.hasPendingApprovals || thread.hasPendingUserInput)
-    return { label: "Needs attention", dot: "bg-amber-400" };
+    return { label: "Needs attention", dot: "bg-rose-400" };
   if (thread.session?.status === "error") return { label: "Error", dot: "bg-red-400" };
   if (
     thread.session?.status === "running" ||
     thread.session?.status === "starting" ||
     thread.backgroundLiveness === "working"
   )
-    return { label: "Working", dot: "bg-emerald-400" };
+    return { label: "Working", dot: "bg-amber-400" };
   if (thread.backgroundLiveness === "monitoring")
     return { label: "Monitoring", dot: "bg-blue-400" };
   return { label: "Idle", dot: "bg-muted-foreground/50" };
+}
+
+export function projectTeamProgressPreview(thread: {
+  readonly latestTurn?: { readonly assistantMessagePreview?: string | undefined } | null;
+  readonly planProgress?: { readonly step: string } | null;
+}) {
+  const assistant = thread.latestTurn?.assistantMessagePreview?.replace(/\s+/gu, " ").trim();
+  return assistant || thread.planProgress?.step.trim() || "";
+}
+
+export function projectTeamHarnessLabel(thread: {
+  readonly session?: { readonly providerName?: string | null } | null;
+  readonly modelSelection: { readonly instanceId: string };
+}) {
+  const name = thread.session?.providerName ?? thread.modelSelection.instanceId;
+  return Object.entries(PROVIDER_DISPLAY_NAMES).find(([provider]) => provider === name)?.[1] ?? name;
+}
+
+export function duplicateProjectTeamTitles(threads: readonly { readonly title: string }[]) {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const thread of threads) {
+    if (seen.has(thread.title)) duplicates.add(thread.title);
+    seen.add(thread.title);
+  }
+  return duplicates;
 }

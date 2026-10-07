@@ -8,6 +8,9 @@ import {
   groupThreadsByProjectTeam,
   PROJECT_TEAM_SECTIONS,
   projectTeamStatus,
+  projectTeamProgressPreview,
+  projectTeamHarnessLabel,
+  duplicateProjectTeamTitles,
 } from "../lib/projectTeamSections";
 import {
   type GalleryProject,
@@ -57,6 +60,7 @@ export function ProjectWorkspace({
     ...sortThreadsForSidebar(members.filter((thread) => thread.pinnedAt == null)),
   ]);
   const overview = resolveGalleryProjectOverview(project);
+  const duplicateTitles = duplicateProjectTeamTitles(members);
   const info = project.configuration?.info;
   const meeting = project.configuration?.jourFixe;
   const defaults = suggestedProjectKpis(project.title);
@@ -79,9 +83,10 @@ export function ProjectWorkspace({
   ];
   return (
     <SidebarInset className="min-h-0 overflow-auto">
-      <WorkjetHeaderContent>
-        <span className="text-sm text-muted-foreground">{project.title} /</span>
-        <span className="text-sm font-medium">Overview</span>
+      <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-sm">
+        <span className="min-w-0 truncate text-muted-foreground">{project.title}</span>
+        <span className="shrink-0 text-muted-foreground" aria-hidden="true">/</span>
+        <span className="shrink-0 font-medium">Übersicht</span>
       </WorkjetHeaderContent>
       <main className="mx-auto w-full max-w-6xl p-6" data-workjet-project-overview={project.id}>
         <header className="mb-5 flex items-start justify-between gap-4">
@@ -141,6 +146,8 @@ export function ProjectWorkspace({
                   <ul className="overflow-hidden rounded-lg border border-border bg-card">
                     {group.map((thread) => {
                       const status = projectTeamStatus(thread);
+                      const harness = projectTeamHarnessLabel(thread);
+                      const progress = projectTeamProgressPreview(thread);
                       const team =
                         thread.workjetConfig.schemaVersion === 2
                           ? thread.workjetConfig.team
@@ -155,7 +162,7 @@ export function ProjectWorkspace({
                             className={
                               section === "supervisor"
                                 ? "flex w-full items-start gap-3 bg-muted/20 p-4 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
-                                : "grid w-full grid-cols-[8px_minmax(0,1fr)_44px] items-center gap-3 md:grid-cols-[8px_minmax(0,1.1fr)_minmax(0,1.4fr)_64px_44px] px-3 py-2.5 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
+                                : "grid w-full grid-cols-[8px_minmax(0,1fr)_44px] items-center gap-3 md:grid-cols-[8px_minmax(0,1.1fr)_minmax(0,1.4fr)_120px_44px] px-3 py-2.5 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
                             }
                           >
                             {section === "supervisor" ? (
@@ -194,15 +201,18 @@ export function ProjectWorkspace({
                             ) : (
                               <>
                                 <span
-                                  className="min-w-0 truncate text-sm font-medium"
+                                  className="flex min-w-0 items-baseline gap-2 text-sm font-medium"
                                   title={thread.title}
                                 >
-                                  {thread.title}
+                                  <span className="min-w-0 truncate">{thread.title}</span>
+                                  {duplicateTitles.has(thread.title) ? (
+                                    <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
+                                      {harness}
+                                    </span>
+                                  ) : null}
                                 </span>
-                                <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:block">
-                                  {thread.planProgress?.step ??
-                                    thread.latestTurn?.assistantMessagePreview ??
-                                    (status.label === "Idle" ? "" : status.label)}
+                                <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:block" title={progress || status.label}>
+                                  {progress || (status.label === "Idle" ? "" : status.label)}
                                   {section === "workers" && thread.branch ? (
                                     <span className="inline-flex items-center gap-1">
                                       <GitBranchIcon className="size-3" />
@@ -212,9 +222,9 @@ export function ProjectWorkspace({
                                 </span>
                                 <span
                                   className="hidden truncate text-[11px] text-muted-foreground md:block"
-                                  title={`${thread.modelSelection.instanceId} · ${thread.modelSelection.model}`}
+                                  title={`${harness} · ${thread.modelSelection.model}`}
                                 >
-                                  {thread.session?.providerName ?? thread.modelSelection.instanceId}
+                                  {harness} · {thread.modelSelection.model}
                                 </span>
                                 <span className="text-right text-[11px] text-muted-foreground">
                                   {projectUpdateAge(thread.updatedAt)}

@@ -193,6 +193,8 @@ import {
   PROJECT_TEAM_SECTIONS,
   projectTeamSectionOf,
   projectTeamStatus,
+  projectTeamHarnessLabel,
+  duplicateProjectTeamTitles,
 } from "../lib/projectTeamSections";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
@@ -671,6 +673,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
   projectTeam?: boolean | undefined;
+  teamHarnessLabel?: string | undefined;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
   variantAction: "settle" | "unsettle" | "unsnooze";
@@ -1190,6 +1193,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               )}
             </span>
             {title}
+            {props.teamHarnessLabel ? (
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                {props.teamHarnessLabel}
+              </span>
+            ) : null}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
               <span role="status" className="sr-only">
@@ -3890,7 +3898,7 @@ export default function Sidebar() {
                     }
                   >
                     <FolderIcon aria-hidden className="size-4 shrink-0" />
-                    <span>Overview</span>
+                    <span>Übersicht</span>
                   </SidebarMenuButton>
                 ) : null}
               </div>
@@ -3970,6 +3978,7 @@ export default function Sidebar() {
                       [...pinnedThreads, ...activeThreads].some(
                         (thread) => projectTeamSectionOf(thread) !== "other",
                       ));
+                  const duplicateTitles = duplicateProjectTeamTitles([...pinnedThreads, ...activeThreads]);
                   const renderThreadRow = (
                     thread: EnvironmentThreadShell,
                     section: "pinned" | "active" | "snoozed" | "settled",
@@ -3996,6 +4005,7 @@ export default function Sidebar() {
                         thread={thread}
                         variant={rowVariant}
                         projectTeam={groupByTeam}
+                        teamHarnessLabel={groupByTeam && duplicateTitles.has(thread.title) ? projectTeamHarnessLabel(thread) : undefined}
                         // Snoozed rows wake; settled rows un-settle (explicit
                         // settles clear the override, auto-settled rows get
                         // pinned active); cards settle.

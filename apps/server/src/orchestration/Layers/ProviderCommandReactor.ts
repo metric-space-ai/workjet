@@ -35,6 +35,7 @@ import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { ServerConfig } from "../../config.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import { IMPORTED_HISTORY_CONTEXT_NOTICE } from "../../provider/importedHistoryContext.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -889,7 +890,7 @@ const make = Effect.gen(function* () {
         : input.modelSelection;
 
     const importedMessageIds =
-      activeSession?.provider === "greppy" && projectionSnapshotQuery.getThreadImportedMessageIds
+      projectionSnapshotQuery.getThreadImportedMessageIds
         ? yield* projectionSnapshotQuery.getThreadImportedMessageIds(input.threadId)
         : [];
     const messagesById = new Map(thread.messages.map((message) => [message.id, message]));
@@ -902,7 +903,7 @@ const make = Effect.gen(function* () {
           (message.role !== "user" && message.role !== "assistant")
         )
           return yield* new ProviderAdapterRequestError({
-            provider: "greppy",
+            provider: activeSession?.provider ?? "unknown",
             method: "thread.turn.start",
             detail:
               "Imported conversation history is incomplete. Refresh the import before continuing.",
@@ -910,6 +911,27 @@ const make = Effect.gen(function* () {
         return { id, role: message.role, text: message.text };
       }),
     );
+
+    if (
+      importedHistory.length > 0 &&
+      (activeSession?.provider === "codex" || activeSession?.provider === "claudeAgent")
+    ) {
+      yield* orchestrationEngine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("imported-context:" + input.requestId),
+        threadId: input.threadId,
+        activity: {
+          id: EventId.make("imported-context:" + input.requestId),
+          tone: "info",
+          kind: "provider.history.context",
+          summary: "Imported-history continuation",
+          payload: { detail: IMPORTED_HISTORY_CONTEXT_NOTICE },
+          turnId: null,
+          createdAt: input.createdAt,
+        },
+        createdAt: input.createdAt,
+      });
+    }
 
     return {
       threadId: input.threadId,

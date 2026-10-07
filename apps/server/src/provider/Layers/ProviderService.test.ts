@@ -16,6 +16,7 @@ import {
   DEFAULT_WORKJET_THREAD_CONFIG,
   EnvironmentId,
   EventId,
+  MessageId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
@@ -895,6 +896,81 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  for (const [driver, instanceId, adapter] of [
+    [CODEX_DRIVER, codexInstanceId, routing.codex],
+    [CLAUDE_AGENT_DRIVER, claudeAgentInstanceId, routing.claude],
+  ] as const) {
+    it.effect("continues imported context and results through " + driver, () =>
+      Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const threadId = asThreadId("imported-context-" + driver);
+        yield* provider.startSession(threadId, {
+          provider: driver,
+          providerInstanceId: instanceId,
+          threadId,
+          cwd: "/tmp/current-project",
+          runtimeMode: "approval-required",
+        });
+        adapter.sendTurn.mockClear();
+        const history = [
+          { id: MessageId.make("source-user"), role: "user" as const, text: "Use the existing project. Approved the earlier read-only inspection." },
+          { id: MessageId.make("source-result"), role: "assistant" as const, text: "The regression is in parser.ts; the prior test returned 7 passing cases." },
+        ];
+        yield* provider.sendTurn({ threadId, requestId: "persisted-continuation", input: "Continue the investigation.", importedHistory: history });
+        assert.equal(adapter.sendTurn.mock.calls.length, 1);
+        const sent = adapter.sendTurn.mock.calls[0]?.[0];
+        assert.deepEqual(sent?.importedHistory, history);
+        assert.equal(sent?.requestId, "persisted-continuation");
+        assert.ok(sent?.input?.includes(JSON.stringify(history)));
+        assert.ok(sent?.input?.endsWith("Current request:\n\nContinue the investigation."));
+        assert.ok(sent?.input?.includes("pending approvals and provider resume tokens cannot be transferred"));
+        assert.equal(adapter.respondToRequest.mock.calls.length, 0);
+        yield* provider.stopSession({ threadId });
+      }),
+    );
+  }
+
+  it.effect("rejects unsupported imported continuation before sending a turn", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("unsupported-imported-context");
+      yield* provider.startSession(threadId, {
+        provider: CURSOR_DRIVER,
+        providerInstanceId: ProviderInstanceId.make("cursor"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      routing.cursor.sendTurn.mockClear();
+      const error = yield* Effect.flip(provider.sendTurn({
+        threadId,
+        input: "Continue",
+        importedHistory: [{ id: MessageId.make("source-unsupported"), role: "user", text: "Previous context" }],
+      }));
+      assert.ok(error instanceof ProviderAdapterRequestError);
+      assert.ok(error.detail.includes("cannot continue imported conversation history"));
+      assert.equal(routing.cursor.sendTurn.mock.calls.length, 0);
+      yield* provider.stopSession({ threadId });
+    }),
+  );
+
+  it.effect("rejects oversized imported context without dropping earlier results", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("oversized-imported-context");
+      yield* provider.startSession(threadId, { provider: CODEX_DRIVER, providerInstanceId: codexInstanceId, threadId, runtimeMode: "full-access" });
+      routing.codex.sendTurn.mockClear();
+      const error = yield* Effect.flip(provider.sendTurn({
+        threadId,
+        input: "Continue",
+        importedHistory: [{ id: MessageId.make("source-large"), role: "assistant", text: "prior-result ".repeat(12_000) }],
+      }));
+      assert.ok(error instanceof ProviderAdapterRequestError);
+      assert.ok(error.detail.includes("No messages were omitted and no turn was sent"));
+      assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
+      yield* provider.stopSession({ threadId });
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

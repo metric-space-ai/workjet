@@ -655,13 +655,15 @@ describe("ProviderCommandReactor", () => {
     };
   }
 
-  it("sends only durable archive roles to Greppy alongside one current prompt", async () => {
+  it.each(["greppy", "codex", "claudeAgent"])(
+    "sends only durable archive roles to %s alongside one current prompt",
+    async (provider) => {
     const archiveIds = ["archive-user", "archive-assistant", "later-user", "later-assistant"].map(
       asMessageId,
     );
     const harness = await createHarness({
       threadModelSelection: {
-        instanceId: ProviderInstanceId.make("greppy"),
+        instanceId: ProviderInstanceId.make(provider),
         model: "fixture-model",
       },
       importedMessageIds: archiveIds,
@@ -739,7 +741,8 @@ describe("ProviderCommandReactor", () => {
         .filter((message) => archiveIds.includes(message.messageId))
         .map(({ messageId: id, role, text }) => ({ id, role, text })),
     });
-  });
+    },
+  );
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();

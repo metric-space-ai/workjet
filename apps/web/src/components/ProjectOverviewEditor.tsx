@@ -99,7 +99,7 @@ export function ProjectOverviewEditor({
             className="grid gap-2 rounded-lg border border-border p-3"
             disabled={state.pending}
           >
-            <legend className="px-1 text-xs font-medium">Field {index + 1}</legend>
+            <legend className="px-1 text-xs font-medium">KPI {index + 1}</legend>
             <label htmlFor={`${prefix}-type`} className="grid gap-1 text-sm">
               Type
               <select

@@ -17,8 +17,11 @@ import {
 import {
   buildProjectGallery,
   resolveGalleryProjectHistory,
+  resolveGalleryProjectStatistics,
+
   visibleGalleryProjects,
   type GalleryProject,
+  type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -356,6 +359,8 @@ function IndexDraftLanding() {
         projectsUnavailable={registry.phase === "blocked" || registry.refreshFailed === true}
         projects={galleryProjects.map((project) => ({
           ...project,
+          statistics: resolveGalleryProjectStatistics(project, threads, bootstrapped),
+
           canArchive: environments.some(
             (environment) =>
               environment.environmentId ===
@@ -441,6 +446,7 @@ function ProjectGallery({
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
     readonly canArchive: boolean;
+    readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   })[];
 }) {
@@ -489,6 +495,7 @@ function ProjectGallery({
                 onOpen={project.onOpen}
                 onSave={project.onSave}
                 canArchive={project.canArchive}
+                statistics={project.statistics}
               />
             ))}
           </div>

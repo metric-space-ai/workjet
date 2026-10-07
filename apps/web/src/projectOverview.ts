@@ -88,7 +88,42 @@ export type GalleryProject = {
   readonly local: GalleryLocalProject | null;
   readonly native: boolean;
 };
+export type GalleryProjectStatistics = {
+  readonly chatCount: number | null;
+  readonly activeChatCount: number | null;
+  readonly lastActivityAt: string | null;
+};
+/** Count only the identity-bound local project; missing histories are unknown. */
+export function resolveGalleryProjectStatistics(
+  project: GalleryProject,
+  threads: readonly {
+    readonly environmentId: string;
+    readonly projectId: string;
+    readonly updatedAt: string;
+    readonly archivedAt: string | null;
+    readonly deletedAt?: string | null | undefined;
+    readonly session: { readonly status: string } | null;
+  }[],
+  ready: boolean,
+): GalleryProjectStatistics {
+  const local = project.local;
+  if (local === null || !ready)
+    return { chatCount: null, activeChatCount: null, lastActivityAt: local?.updatedAt ?? null };
+  const own = threads.filter(
+    (thread) => thread.environmentId === local.environmentId &&
+      thread.projectId === local.id && thread.deletedAt == null,
+  );
+  const times = [local.updatedAt, ...own.map((thread) => thread.updatedAt)]
+    .filter((value) => Number.isFinite(Date.parse(value)));
+  return {
+    chatCount: own.length,
+    activeChatCount: own.filter((thread) => thread.archivedAt === null &&
+      (thread.session?.status === "running" || thread.session?.status === "starting")).length,
+    lastActivityAt: times.sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null,
+  };
+}
 /** Saved metadata wins, including an explicitly cleared website. Domain-named native projects can preview their website before a local history exists. */
+
 export function resolveGalleryProjectOverview(project: GalleryProject): ProjectOverview {
   const saved = project.local?.overview;
   if (saved != null) return saved;

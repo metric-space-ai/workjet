@@ -66,17 +66,19 @@ describe("compact project gallery", () => {
       />,
     );
     expect(markup).toContain('aria-label="Project actions for greppy.xyz"');
-    expect(markup).toContain('aria-label="Configure greppy.xyz KPIs"');
+    expect(markup).not.toContain("Configure greppy.xyz KPIs");
+    expect(markup).not.toContain("lucide-pencil");
     expect(markup).not.toContain("<iframe");
     expect(markup).not.toContain("<img");
     expect(markup).toContain("Retained");
   });
-  it("does not expose an archive action menu on older overview-only environments", () => {
+  it("keeps configuration available through a menu without exposing unsupported archive actions", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} onSave={async () => true} />,
     );
-    expect(markup).toContain('aria-label="Configure greppy.xyz KPIs"');
-    expect(markup).not.toContain('aria-label="Project actions for greppy.xyz"');
+    expect(markup).not.toContain("Configure greppy.xyz KPIs");
+    expect(markup).not.toContain("lucide-pencil");
+    expect(markup).toContain('aria-label="Project actions for greppy.xyz"');
     expect(markup).not.toContain("Archive project");
     expect(markup).not.toContain("Restore project");
   });
@@ -110,5 +112,7 @@ describe("compact project gallery", () => {
     expect(markup).toContain("Ready");
     expect(markup).toContain('href="https://greppy.xyz/plan"');
     expect(markup).toContain("7 tasks");
+    expect(markup).toMatch(/<dd class="[^"]*text-lg[^"]*">7 tasks<\/dd>/);
+    expect(markup).not.toMatch(/<dt[^>]*class="[^"]*truncate/);
   });
 });

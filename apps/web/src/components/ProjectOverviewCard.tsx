@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ProjectOverview } from "@workjet/contracts";
-import { ArrowUpRightIcon, EllipsisIcon, PencilIcon } from "lucide-react";
+import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
@@ -9,6 +9,11 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
+import {
+  projectKpiPresentation,
+  type PromptedProjectKpis,
+  type SaveProjectKpiPrompts,
+} from "../projectKpis";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectOverviewEditor, type ProjectConfigurationValues } from "./ProjectOverviewEditor";
 import { Button } from "./ui/button";
@@ -22,8 +27,12 @@ export function ProjectOverviewCard({
   canArchive = false,
   statistics,
   onSaveConfiguration,
+  kpis,
+  onSaveKpis,
 }: {
   readonly project: GalleryProject;
+  readonly kpis?: PromptedProjectKpis | undefined;
+  readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
   readonly onOpen: () => void;
   readonly onSaveConfiguration?:
     | ((next: ProjectConfigurationValues) => Promise<boolean>)
@@ -59,7 +68,7 @@ export function ProjectOverviewCard({
     overview.slots[1] ?? defaultSlots[1],
     overview.slots[2] ?? defaultSlots[2],
   ];
-  const editableOverview = { ...overview, slots };
+  const scopedKpis = kpis?.project_id === project.id ? kpis : undefined;
   const titleIsWebsite =
     website != null &&
     project.title.trim().toLowerCase() ===
@@ -122,7 +131,7 @@ export function ProjectOverviewCard({
             </a>
           )}
         </div>
-        {(repository || (onSave && canArchive)) && (
+        {(repository || onSave) && (
           <Menu>
             <MenuTrigger
               aria-label={`Project actions for ${project.title}`}
@@ -131,6 +140,14 @@ export function ProjectOverviewCard({
               <EllipsisIcon className="size-4" aria-hidden="true" />
             </MenuTrigger>
             <MenuPopup align="end">
+              {onSave && (
+                <MenuItem
+                  onClick={() => setEditing(true)}
+                  aria-label={`Configure ${project.title}`}
+                >
+                  Configure project
+                </MenuItem>
+              )}
               {repository && (
                 <MenuItem
                   render={<a href={repository} target="_blank" rel="noreferrer noopener" />}
@@ -205,28 +222,38 @@ export function ProjectOverviewCard({
           <ArrowUpRightIcon className="size-4" aria-hidden="true" />
         </Button>
       </div>
-      <div className="flex items-center gap-2 border-t border-border px-3 py-2">
-        <dl className="grid min-w-0 flex-1 grid-cols-3 gap-3" data-workjet-project-card-slots="">
+      <div className="border-t border-border px-3 py-3">
+        <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
           {(["first", "second", "third"] as const).map((position, index) => {
             const slot = slots[index] ?? null;
+            const metric = scopedKpis
+              ? projectKpiPresentation(scopedKpis.items[index], project.id, index + 1)
+              : null;
             return (
               <div
                 key={position}
-                className="flex min-w-0 items-baseline gap-1"
+                className="flex min-w-0 flex-col gap-0.5"
                 data-workjet-project-card-slot={index + 1}
               >
                 <dt
-                  title={slot?.label}
+                  title={metric?.label ?? slot?.label}
                   className={
                     slot
-                      ? "min-w-0 truncate text-[10px] leading-5 text-muted-foreground"
+                      ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]"
                       : "sr-only"
                   }
                 >
-                  {slot?.label ?? `KPI ${index + 1}`}
+                  {metric?.label ?? slot?.label ?? `KPI ${index + 1}`}
                 </dt>
-                <dd className="min-w-0 truncate text-xs leading-5 font-medium tabular-nums">
-                  {slot === null ? (
+                <dd className="order-first min-w-0 break-words text-lg leading-6 font-semibold tracking-tight tabular-nums [overflow-wrap:anywhere]">
+                  {metric ? (
+                    <span
+                      title={metric.message ?? metric.detail}
+                      data-workjet-kpi-status={metric.status}
+                    >
+                      {metric.value}
+                    </span>
+                  ) : slot === null ? (
                     <span
                       className="text-muted-foreground"
                       aria-label={`KPI ${index + 1} not configured`}
@@ -256,16 +283,6 @@ export function ProjectOverviewCard({
             );
           })}
         </dl>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label={`Configure ${project.title} KPIs`}
-          title="Configure KPIs"
-          disabled={!onSave}
-          onClick={() => setEditing(true)}
-        >
-          <PencilIcon className="size-3.5" aria-hidden="true" />
-        </Button>
       </div>
       {archiveError && (
         <p role="alert" className="px-3 py-2 text-xs text-destructive">
@@ -280,10 +297,13 @@ export function ProjectOverviewCard({
           <DialogPanel>
             {editing && onSave && (
               <ProjectOverviewEditor
-                overview={editableOverview}
+                overview={overview}
                 configuration={project.configuration}
                 onSaveConfiguration={onSaveConfiguration}
                 onSave={onSave}
+                onCancel={() => setEditing(false)}
+                kpis={scopedKpis}
+                onSaveKpis={onSaveKpis}
                 onArchive={canArchive ? changeArchive : undefined}
                 archived={archived}
               />

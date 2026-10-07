@@ -612,6 +612,87 @@ const CtoxComputerId = CtoxProjectText(160);
 const CtoxComputerCapabilities = Schema.Array(CtoxProjectText(80)).check(Schema.isMaxLength(32));
 const CtoxComputerHostingMode = Schema.Literals(["workstation", "self_hosted"]);
 
+const CtoxCapabilityInteger = (maximum: number) =>
+  Schema.Int.check(Schema.isBetween({ minimum: 1, maximum }));
+const CtoxComputerSecretReference = Schema.Struct({
+  scope: CtoxProjectText(128),
+  name: CtoxProjectText(128),
+});
+
+export const CtoxComputerOperationalCapability = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("build"),
+    ssh_endpoint_ref: CtoxProjectText(128),
+    slots: CtoxCapabilityInteger(32),
+    jobs: CtoxCapabilityInteger(64),
+    lane_root: CtoxProjectText(4096),
+    disk_floor_gib: CtoxCapabilityInteger(4294967295),
+    toolchains: Schema.Array(CtoxProjectText(128)).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(16),
+    ),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("storage"),
+    endpoint_ref: CtoxProjectText(128),
+    protocol: Schema.Literals(["ssh", "smb", "nfs"]),
+    root: CtoxProjectText(4096),
+    quota_gib: Schema.NullOr(CtoxCapabilityInteger(Number.MAX_SAFE_INTEGER)),
+    purposes: Schema.Array(Schema.Literals(["artifacts", "backups", "exchange"])).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(3),
+    ),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("gpu"),
+    model: CtoxProjectText(256),
+    vram_gib: CtoxCapabilityInteger(4294967295),
+  }),
+]);
+export type CtoxComputerOperationalCapability = typeof CtoxComputerOperationalCapability.Type;
+const CtoxComputerOperationalCapabilities = Schema.Array(CtoxComputerOperationalCapability).check(
+  Schema.isMaxLength(3),
+  Schema.makeFilter(
+    (capabilities) =>
+      new Set(capabilities.map((capability) => capability.kind)).size === capabilities.length,
+  ),
+);
+
+export const CtoxComputerEndpoint = Schema.Union([
+  Schema.Struct({
+    protocol: Schema.Literal("ssh"),
+    host: CtoxProjectText(253),
+    port: CtoxCapabilityInteger(65535),
+    username: CtoxProjectText(256),
+    root: CtoxProjectText(4096),
+    host_key_sha256: CtoxProjectText(80),
+    host_key_algorithm: Schema.optionalKey(
+      Schema.NullOr(
+        Schema.Literals([
+          "ssh-ed25519",
+          "ecdsa-sha2-nistp256",
+          "ecdsa-sha2-nistp384",
+          "ecdsa-sha2-nistp521",
+          "rsa-sha2-256",
+          "rsa-sha2-512",
+        ]),
+      ),
+    ),
+    private_key: CtoxComputerSecretReference,
+    passphrase: Schema.NullOr(CtoxComputerSecretReference),
+  }),
+  Schema.Struct({
+    protocol: Schema.Literal("smb"),
+    host: CtoxProjectText(253),
+    port: CtoxCapabilityInteger(65535),
+    username: CtoxProjectText(256),
+    root: CtoxProjectText(4096),
+    share: CtoxProjectText(128),
+    password: CtoxComputerSecretReference,
+  }),
+]);
+export type CtoxComputerEndpoint = typeof CtoxComputerEndpoint.Type;
+
 /** Computer membership is confirmed by the selected instance over RxDB/WebRTC. */
 export const CtoxWorkjetComputerControlRequest = Schema.Union([
   Schema.Struct({ action: Schema.Literal("computer.list") }),
@@ -622,12 +703,26 @@ export const CtoxWorkjetComputerControlRequest = Schema.Union([
     displayName: CtoxProjectText(256),
     hostingMode: CtoxComputerHostingMode,
     capabilities: CtoxComputerCapabilities,
+    capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+    agentless: Schema.optionalKey(Schema.Boolean),
     selfHostedColocation: Schema.Literal(false),
   }),
   Schema.Struct({
     action: Schema.Literal("computer.unassign"),
     commandId: CommandId,
     computerId: CtoxComputerId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.endpoint.upsert"),
+    commandId: CommandId,
+    computerId: CtoxComputerId,
+    endpointRef: CtoxProjectText(128),
+    connection: CtoxComputerEndpoint,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("computer.endpoint.disable"),
+    commandId: CommandId,
+    endpointRef: CtoxProjectText(128),
   }),
 ]);
 export type CtoxWorkjetComputerControlRequest = typeof CtoxWorkjetComputerControlRequest.Type;
@@ -666,6 +761,12 @@ export const CtoxWorkjetComputerControlResponse = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("computer.unassign"),
     computer: CtoxWorkjetComputerProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literals(["computer.endpoint.upsert", "computer.endpoint.disable"]),
+    endpointRef: CtoxProjectText(128),
+    computerId: CtoxComputerId,
+    enabled: Schema.Boolean,
   }),
 ]);
 export type CtoxWorkjetComputerControlResponse = typeof CtoxWorkjetComputerControlResponse.Type;

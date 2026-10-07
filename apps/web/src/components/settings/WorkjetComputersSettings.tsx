@@ -26,6 +26,16 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+  DialogDescription,
+} from "../ui/dialog";
+import { ComputerCapabilitiesEditor } from "./ComputerCapabilitiesEditor";
+import type { OperationalComputerEnrollment } from "../../computerCapabilityEnrollment";
 import { toastManager } from "../ui/toast";
 import { useComputerConnections } from "./ConnectionsSettings";
 import {
@@ -160,6 +170,8 @@ export function WorkjetComputersSettingsView({
   onChange,
   membership,
   onAssign,
+  onCapabilities,
+  onUnassignNative,
   onAdd,
   onRemove,
   renderConnection,
@@ -182,6 +194,8 @@ export function WorkjetComputersSettingsView({
   readonly onChange: (configuration: WorkjetConfiguration) => void;
   readonly membership?: ComputerMembershipSnapshot | undefined;
   readonly onAssign?: ((computer: WorkjetComputer, assigned: boolean) => void) | undefined;
+  readonly onCapabilities?: ((computer: WorkjetComputer) => void) | undefined;
+  readonly onUnassignNative?: ((computerId: string) => void) | undefined;
   readonly onAdd?: () => void;
   readonly onRemove?: (computer: WorkjetComputer) => void;
   readonly renderConnection?: (environmentId: EnvironmentId) => ReactNode;
@@ -358,6 +372,19 @@ export function WorkjetComputersSettingsView({
                 }
               >
                 <ComputerCapabilityChips capabilities={nativeComputer?.capabilities ?? []} />
+                {onCapabilities ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      membership?.phase !== "ready" || membership.pendingComputerId !== null
+                    }
+                    onClick={() => onCapabilities(computer)}
+                    aria-label={`Edit capabilities for ${computer.label}`}
+                  >
+                    Capabilities
+                  </Button>
+                ) : null}
                 {renderConnection?.(computer.environmentId)}
                 <div className="mt-1 space-y-1 pb-3">
                   {onAssign && membership ? (
@@ -474,6 +501,21 @@ export function WorkjetComputersSettingsView({
           key={computer.id}
           title={computer.displayName}
           description="Assigned to the selected Business OS"
+          control={
+            onUnassignNative ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={membership?.phase !== "ready" || membership.pendingComputerId !== null}
+                onClick={() => onUnassignNative(computer.id)}
+                aria-label={`Remove ${computer.displayName} from selected Business OS`}
+              >
+                {membership?.pendingComputerId === computer.id
+                  ? "Waiting for confirmation…"
+                  : "Remove from Business OS"}
+              </Button>
+            ) : undefined
+          }
         >
           <div data-workjet-native-computer={computer.id}>
             <ComputerCapabilityChips capabilities={computer.capabilities} />
@@ -530,6 +572,13 @@ export function WorkjetComputersSettings({
     [],
   );
   const [setupComputer, setSetupComputer] = useState<WorkjetComputer | null>(null);
+  const [addMode, setAddMode] = useState<"choose" | "capabilities" | null>(null);
+  const [capabilityComputer, setCapabilityComputer] = useState<WorkjetComputer | null>(null);
+  useEffect(() => {
+    setAddMode(null);
+    setCapabilityComputer(null);
+    setSetupComputer(null);
+  }, [selectedInstanceId]);
   const [pendingComputerId, setPendingComputerId] = useState<EnvironmentId | null>(null);
   const [pendingKind, setPendingKind] = useState<"local" | "ssh" | "tailscale" | undefined>();
   const targetOptions = workjetEnvironmentTargetOptions(environments);
@@ -576,8 +625,19 @@ export function WorkjetComputersSettings({
       },
     });
     setSetupComputer(computer);
+    if (!setupOnly) {
+      setCapabilityComputer(computer);
+      setAddMode("capabilities");
+    }
     setPendingComputerId(null);
-  }, [pendingTarget, pendingKind, pendingInspection.data, settings.workjet, updateSettings]);
+  }, [
+    pendingTarget,
+    pendingKind,
+    pendingInspection.data,
+    settings.workjet,
+    setupOnly,
+    updateSettings,
+  ]);
   const setupBusy = connections.busy || membership.pendingComputerId !== null;
   useEffect(() => {
     onBusyChange?.(setupBusy);
@@ -591,10 +651,67 @@ export function WorkjetComputersSettings({
       : serverEnvironment.workjetHarnessInspect({ environmentId, input: {} }),
   );
 
+  const saveCapabilities = async (enrollment: OperationalComputerEnrollment) => {
+    if (!selectedInstanceId) throw new Error("Select a Business OS before adding this computer.");
+    await membershipStore.enroll(selectedInstanceId, enrollment, window.desktopBridge?.ctox);
+    setAddMode(null);
+    setCapabilityComputer(null);
+    if (setupOnly) onCompleted?.();
+  };
+  const enrollmentAvailable =
+    !!selectedInstanceId &&
+    activeMembership?.phase === "ready" &&
+    activeMembership.pendingComputerId === null;
+  const addChoices = (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Connect a computer for coding, or register a build, GPU, or storage computer such as a NAS.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          onClick={() => {
+            setAddMode(null);
+            connections.openAddComputer();
+          }}
+        >
+          Coding computer
+        </Button>
+        <Button
+          variant="outline"
+          disabled={!enrollmentAvailable}
+          onClick={() => {
+            setCapabilityComputer(null);
+            setAddMode("capabilities");
+          }}
+        >
+          Build, GPU, or storage computer
+        </Button>
+      </div>
+      {!enrollmentAvailable ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Select a connected Business OS and wait for its computer list to register capabilities.
+        </p>
+      ) : null}
+    </div>
+  );
+
   if (setupOnly)
     return (
       <div className="space-y-4">
-        {setupComputer === null && pendingComputerId === null ? connections.form : null}
+        {setupComputer === null && pendingComputerId === null ? (
+          addMode === "capabilities" ? (
+            <ComputerCapabilitiesEditor
+              onSave={saveCapabilities}
+              onCancel={() => setAddMode(null)}
+            />
+          ) : (
+            <>
+              {addChoices}
+              {connections.form}
+            </>
+          )
+        ) : null}
         {pendingComputerId !== null ? (
           <p role="status">Verbindung hergestellt. Coding-Harnesses werden geprüft…</p>
         ) : null}
@@ -630,41 +747,32 @@ export function WorkjetComputersSettings({
                 {activeMembership.error}
               </p>
             ) : null}
-            <div className="flex flex-wrap gap-2">
+            <ComputerCapabilitiesEditor
+              key={setupComputer.id}
+              computer={setupComputer}
+              preserveExistingCapabilities={
+                activeMembership?.computers.some(
+                  (entry) =>
+                    entry.id === setupComputer.id &&
+                    entry.capabilities.some((kind) =>
+                      OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind),
+                    ),
+                ) ?? false
+              }
+              onSave={saveCapabilities}
+              onCancel={() => setSetupComputer(null)}
+            />
+            {activeMembership?.phase === "failed" ? (
               <Button
-                disabled={
-                  !selectedInstanceId ||
-                  activeMembership?.phase !== "ready" ||
-                  activeMembership.pendingComputerId !== null
-                }
+                variant="outline"
                 onClick={() => {
-                  if (!selectedInstanceId) return;
-                  void membershipStore
-                    .setAssigned(
-                      selectedInstanceId,
-                      setupComputer,
-                      true,
-                      window.desktopBridge?.ctox,
-                    )
-                    .then((confirmed) => {
-                      if (confirmed) onCompleted?.();
-                    });
+                  if (selectedInstanceId)
+                    void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
                 }}
               >
-                Dem Netzwerk hinzufügen
+                Zuordnung erneut prüfen
               </Button>
-              {activeMembership?.phase === "failed" ? (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (selectedInstanceId)
-                      void membershipStore.refresh(selectedInstanceId, window.desktopBridge?.ctox);
-                  }}
-                >
-                  Zuordnung erneut prüfen
-                </Button>
-              ) : null}
-            </div>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -686,6 +794,45 @@ export function WorkjetComputersSettings({
           />
         ))}
       {connections.dialog}
+      <Dialog
+        open={addMode !== null}
+        onOpenChange={(open) => {
+          if (!open && !setupBusy) setAddMode(null);
+        }}
+      >
+        <DialogPopup showCloseButton={!setupBusy}>
+          <DialogHeader>
+            <DialogTitle>
+              {addMode === "choose" ? "Add computer" : "Computer capabilities"}
+            </DialogTitle>
+            <DialogDescription>
+              Save capabilities in the selected Business OS after it confirms the computer and
+              access.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            {addMode === "choose" ? (
+              addChoices
+            ) : addMode === "capabilities" ? (
+              <ComputerCapabilitiesEditor
+                key={capabilityComputer?.id ?? "operational-new"}
+                {...(capabilityComputer ? { computer: capabilityComputer } : {})}
+                preserveExistingCapabilities={
+                  activeMembership?.computers.some(
+                    (entry) =>
+                      entry.id === capabilityComputer?.id &&
+                      entry.capabilities.some((kind) =>
+                        OPERATIONAL_CAPABILITIES.some((capability) => capability.kind === kind),
+                      ),
+                  ) ?? false
+                }
+                onSave={saveCapabilities}
+                onCancel={() => setAddMode(null)}
+              />
+            ) : null}
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
       <div className="px-3 sm:px-4">
         {pendingComputerId ? (
           <p role="status" className="text-sm">
@@ -709,7 +856,26 @@ export function WorkjetComputersSettings({
         harnessInspections={harnessInspections}
         environmentId={environmentId}
         onChange={(workjet) => updateSettings({ workjet })}
-        onAdd={connections.openAddComputer}
+        onAdd={() => setAddMode("choose")}
+        onCapabilities={
+          selectedInstanceId
+            ? (computer) => {
+                setCapabilityComputer(computer);
+                setAddMode("capabilities");
+              }
+            : undefined
+        }
+        onUnassignNative={
+          selectedInstanceId
+            ? (computerId) => {
+                void membershipStore.unassign(
+                  selectedInstanceId,
+                  computerId,
+                  window.desktopBridge?.ctox,
+                );
+              }
+            : undefined
+        }
         renderConnection={connections.renderConnection}
         connectedEnvironmentIds={environments
           .filter((entry) => entry.connection.phase === "connected")

@@ -1,10 +1,15 @@
 import {
   CommandId,
   type CtoxWorkjetComputerProjection,
+  type CtoxWorkjetComputerControlRequest,
   type DesktopCtoxBridge,
   type WorkjetComputer,
 } from "@workjet/contracts";
 import { randomUUID } from "./lib/utils";
+import {
+  enrollOperationalComputer,
+  type OperationalComputerEnrollment,
+} from "./computerCapabilityEnrollment";
 
 export interface ComputerMembershipSnapshot {
   readonly instanceId: string | null;
@@ -94,10 +99,11 @@ export function createComputerMembershipStore() {
       });
     }
   };
-  const setAssigned = async (
+  const changeAssignment = async (
     instanceId: string,
-    computer: WorkjetComputer,
+    computerId: string,
     assigned: boolean,
+    request: CtoxWorkjetComputerControlRequest,
     bridge: DesktopCtoxBridge | undefined,
   ): Promise<boolean> => {
     if (
@@ -107,36 +113,22 @@ export function createComputerMembershipStore() {
     )
       return false;
     const revision = ++generation;
-    publish({ ...snapshot, pendingComputerId: computer.id, error: null });
+    publish({ ...snapshot, pendingComputerId: computerId, error: null });
     try {
       if (!bridge?.requestComputerControl) throw new Error(membershipError("unsupported"));
-      const common = { commandId: CommandId.make(randomUUID()), computerId: computer.id };
-      const result = await bridge.requestComputerControl(
-        instanceId,
-        assigned
-          ? {
-              action: "computer.assign",
-              ...common,
-              displayName: computer.label,
-              hostingMode: "workstation",
-              selfHostedColocation: false,
-              capabilities: computer.harnesses
-                .filter((entry) => entry.available)
-                .map((entry) => entry.harness),
-            }
-          : { action: "computer.unassign", ...common },
-      );
+      const result = await bridge.requestComputerControl(instanceId, request);
       if (revision !== generation) return false;
       if (result._tag === "failed") throw new Error(membershipError(result.code));
       const response = result.response;
       if (
+        (response.action !== "computer.assign" && response.action !== "computer.unassign") ||
         response.action !== (assigned ? "computer.assign" : "computer.unassign") ||
-        response.computer.id !== computer.id ||
+        response.computer.id !== computerId ||
         response.computer.status !== (assigned ? "assigned" : "unassigned")
       ) {
         throw new Error(membershipError("guest_failed"));
       }
-      const remaining = snapshot.computers.filter((entry) => entry.id !== computer.id);
+      const remaining = snapshot.computers.filter((entry) => entry.id !== computerId);
       publish({
         ...snapshot,
         computers: assigned ? [...remaining, response.computer] : remaining,
@@ -154,6 +146,85 @@ export function createComputerMembershipStore() {
       return false;
     }
   };
+  const unassign = (
+    instanceId: string,
+    computerId: string,
+    bridge: DesktopCtoxBridge | undefined,
+  ) =>
+    changeAssignment(
+      instanceId,
+      computerId,
+      false,
+      {
+        action: "computer.unassign",
+        commandId: CommandId.make(randomUUID()),
+        computerId,
+      },
+      bridge,
+    );
+  const setAssigned = (
+    instanceId: string,
+    computer: WorkjetComputer,
+    assigned: boolean,
+    bridge: DesktopCtoxBridge | undefined,
+  ) =>
+    assigned
+      ? changeAssignment(
+          instanceId,
+          computer.id,
+          true,
+          {
+            action: "computer.assign",
+            commandId: CommandId.make(randomUUID()),
+            computerId: computer.id,
+            displayName: computer.label,
+            hostingMode: "workstation",
+            selfHostedColocation: false,
+            capabilities: computer.harnesses
+              .filter((entry) => entry.available)
+              .map((entry) => entry.harness),
+          },
+          bridge,
+        )
+      : unassign(instanceId, computer.id, bridge);
+
+  const enroll = async (
+    instanceId: string,
+    enrollment: OperationalComputerEnrollment,
+    bridge: DesktopCtoxBridge | undefined,
+  ): Promise<void> => {
+    if (
+      snapshot.instanceId !== instanceId ||
+      snapshot.phase !== "ready" ||
+      snapshot.pendingComputerId !== null
+    ) {
+      throw new Error("Wait for the selected Business OS to finish checking its computers.");
+    }
+    const revision = ++generation;
+    const isCurrent = () => revision === generation && snapshot.instanceId === instanceId;
+    publish({ ...snapshot, pendingComputerId: enrollment.computerId, error: null });
+    try {
+      const control = bridge?.requestComputerControl;
+      if (!control) throw new Error(membershipError("unsupported"));
+      const confirmed = await enrollOperationalComputer(
+        enrollment,
+        (request) => control(instanceId, request),
+        () => CommandId.make(randomUUID()),
+        isCurrent,
+      );
+      if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
+      publish({
+        ...snapshot,
+        computers: [...snapshot.computers.filter((entry) => entry.id !== confirmed.id), confirmed],
+        pendingComputerId: null,
+        error: null,
+      });
+    } catch (failure) {
+      const message = failure instanceof Error ? failure.message : membershipError("guest_failed");
+      if (isCurrent()) publish({ ...snapshot, pendingComputerId: null, error: message });
+      throw new Error(message, { cause: failure });
+    }
+  };
   return {
     getSnapshot: () => snapshot,
     subscribe: (listener: () => void) => {
@@ -165,6 +236,8 @@ export function createComputerMembershipStore() {
     select,
     refresh,
     setAssigned,
+    unassign,
+    enroll,
   };
 }
 

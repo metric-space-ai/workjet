@@ -37,9 +37,9 @@ export function ComputerCapabilitiesEditor({
     "artifacts",
   ]);
   const [protocol, setProtocol] = useState<"ssh" | "smb">("ssh");
-  const [hostKeyType, setHostKeyType] = useState<
-    (typeof SSH_HOST_KEY_TYPES)[number]["value"] | ""
-  >("");
+  const [hostKeyType, setHostKeyType] = useState<(typeof SSH_HOST_KEY_TYPES)[number]["value"] | "">(
+    "",
+  );
   const [usePassphrase, setUsePassphrase] = useState(false);
   const [fields, setFields] = useState({
     host: "",
@@ -288,8 +288,8 @@ export function ComputerCapabilitiesEditor({
                 value={hostKeyType}
                 onChange={(event) =>
                   setHostKeyType(
-                    SSH_HOST_KEY_TYPES.find((entry) => entry.value === event.target.value)
-                      ?.value ?? "",
+                    SSH_HOST_KEY_TYPES.find((entry) => entry.value === event.target.value)?.value ??
+                      "",
                   )
                 }
               >

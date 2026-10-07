@@ -11,7 +11,12 @@ import {
 import { WorkjetConnectionId, WorkjetConnectionSummary } from "./workjet.ts";
 import { BusinessOsShellUpdateStatus } from "./businessOsShell.ts";
 import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
-import { WorkjetSupervisorBinding, WorkjetSupervisorGoal, WorkjetSupervisorThreadId, WorkjetSupervisorTurn } from "./workjetSupervisor.ts";
+import {
+  WorkjetSupervisorBinding,
+  WorkjetSupervisorGoal,
+  WorkjetSupervisorThreadId,
+  WorkjetSupervisorTurn,
+} from "./workjetSupervisor.ts";
 
 const NoAsciiControlCharacters = Schema.makeFilter((input: string) => {
   for (let index = 0; index < input.length; index += 1) {
@@ -673,9 +678,13 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     commandId: CommandId,
     projectId: ProjectId,
     binding: WorkjetSupervisorBinding,
-  }).check(Schema.makeFilter((response) =>
-    response.projectId === response.binding.projectId || "Supervisor binding belongs to another project.",
-  )),
+  }).check(
+    Schema.makeFilter(
+      (response) =>
+        response.projectId === response.binding.projectId ||
+        "Supervisor binding belongs to another project.",
+    ),
+  ),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.submit"),
     commandId: CommandId,
@@ -684,11 +693,14 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     binding: WorkjetSupervisorBinding,
     turn: WorkjetSupervisorTurn,
     messageId: CtoxProjectText(256),
-  }).check(Schema.makeFilter((response) =>
-    response.projectId === response.binding.projectId &&
-    response.binding.threadId === response.turn.threadId
-      ? true : "Supervisor turn belongs to another binding.",
-  )),
+  }).check(
+    Schema.makeFilter((response) =>
+      response.projectId === response.binding.projectId &&
+      response.binding.threadId === response.turn.threadId
+        ? true
+        : "Supervisor turn belongs to another binding.",
+    ),
+  ),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.watch"),
     commandId: CommandId,
@@ -696,11 +708,14 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     contract: Schema.Literal("ctox.workjet.supervisor_turn.v1"),
     binding: WorkjetSupervisorBinding,
     turn: WorkjetSupervisorTurn,
-  }).check(Schema.makeFilter((response) =>
-    response.projectId === response.binding.projectId &&
-    response.binding.threadId === response.turn.threadId
-      ? true : "Supervisor turn belongs to another binding.",
-  )),
+  }).check(
+    Schema.makeFilter((response) =>
+      response.projectId === response.binding.projectId &&
+      response.binding.threadId === response.turn.threadId
+        ? true
+        : "Supervisor turn belongs to another binding.",
+    ),
+  ),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.cancel"),
     commandId: CommandId,
@@ -713,11 +728,14 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
       sideEffectsMayHaveStarted: Schema.Boolean,
       workerInterruptAcknowledged: Schema.Literal(false),
     }),
-  }).check(Schema.makeFilter((response) =>
-    response.projectId === response.binding.projectId &&
-    response.binding.threadId === response.turn.threadId
-      ? true : "Supervisor turn belongs to another binding.",
-  )),
+  }).check(
+    Schema.makeFilter((response) =>
+      response.projectId === response.binding.projectId &&
+      response.binding.threadId === response.turn.threadId
+        ? true
+        : "Supervisor turn belongs to another binding.",
+    ),
+  ),
   Schema.Struct({
     action: Schema.Literal("project.list"),
     projects: CtoxWorkjetProjectList,
@@ -755,13 +773,22 @@ export function isWorkjetSupervisorReceiptForRequest(
   response: CtoxWorkjetProjectControlResponse,
 ): boolean {
   if (!request.action.startsWith("project.supervisor.")) return true;
-  if (!("binding" in response) || !("threadId" in request) || !("commandId" in response)) return false;
-  if (response.action !== request.action || response.commandId !== request.commandId ||
-      response.projectId !== request.projectId || response.binding.projectId !== request.projectId ||
-      response.binding.threadId !== request.threadId) return false;
+  if (!("binding" in response) || !("threadId" in request) || !("commandId" in response))
+    return false;
+  if (
+    response.action !== request.action ||
+    response.commandId !== request.commandId ||
+    response.projectId !== request.projectId ||
+    response.binding.projectId !== request.projectId ||
+    response.binding.threadId !== request.threadId
+  )
+    return false;
   if (request.action === "project.supervisor.bind") return response.action === request.action;
   if (!("turn" in response) || response.turn.threadId !== request.threadId) return false;
-  if (request.action === "project.supervisor.turn.watch" || request.action === "project.supervisor.turn.cancel") {
+  if (
+    request.action === "project.supervisor.turn.watch" ||
+    request.action === "project.supervisor.turn.cancel"
+  ) {
     return response.turn.commandId === request.targetCommandId;
   }
   return response.action === "project.supervisor.turn.submit";

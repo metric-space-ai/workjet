@@ -7,13 +7,18 @@ import {
   type CtoxWorkjetProjectControlResult,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
-import { requestWorkjetProjectControl, type WorkjetProjectControlPort } from "./workjetProjectControl";
-
+import {
+  requestWorkjetProjectControl,
+  type WorkjetProjectControlPort,
+} from "./workjetProjectControl";
 
 export interface WorkjetSupervisorJournalPort {
   /** Backed by the Code server's persisted thread state, never just localStorage. */
   readonly save: (journal: WorkjetSupervisorJournal) => Promise<void>;
 }
+
+const decodeIntent = Schema.decodeUnknownSync(WorkjetSupervisorTurnIntent, { onExcessProperty: "error" });
+const decodeJournal = Schema.decodeUnknownSync(WorkjetSupervisorJournal, { onExcessProperty: "error" });
 
 async function confirmedControl(
   intent: WorkjetSupervisorTurnIntent,
@@ -21,7 +26,10 @@ async function confirmedControl(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   const result = await requestWorkjetProjectControl(intent.instanceId, request, port);
-  if (result._tag === "completed" && !isWorkjetSupervisorReceiptForRequest(request, result.response)) {
+  if (
+    result._tag === "completed" &&
+    !isWorkjetSupervisorReceiptForRequest(request, result.response)
+  ) {
     return { _tag: "failed", code: "guest_failed" };
   }
   return result;
@@ -33,22 +41,30 @@ export async function submitWorkjetSupervisorTurn(
   journal: WorkjetSupervisorJournalPort,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
-  Schema.decodeUnknownSync(WorkjetSupervisorTurnIntent, { onExcessProperty: "error" })(intent);
+  decodeIntent(intent);
   await journal.save({ intent, turn: null });
-  const binding = await confirmedControl(intent, {
-    action: "project.supervisor.bind",
-    commandId: CommandId.make(`${intent.commandId}:bind`),
-    projectId: intent.projectId,
-    threadId: intent.threadId,
-  }, port);
+  const binding = await confirmedControl(
+    intent,
+    {
+      action: "project.supervisor.bind",
+      commandId: CommandId.make(`${intent.commandId}:bind`),
+      projectId: intent.projectId,
+      threadId: intent.threadId,
+    },
+    port,
+  );
   if (binding._tag !== "completed") return binding;
-  const result = await confirmedControl(intent, {
-    action: "project.supervisor.turn.submit",
-    commandId: intent.commandId,
-    projectId: intent.projectId,
-    threadId: intent.threadId,
-    goal: intent.goal,
-  }, port);
+  const result = await confirmedControl(
+    intent,
+    {
+      action: "project.supervisor.turn.submit",
+      commandId: intent.commandId,
+      projectId: intent.projectId,
+      threadId: intent.threadId,
+      goal: intent.goal,
+    },
+    port,
+  );
   if (result._tag === "completed" && result.response.action === "project.supervisor.turn.submit") {
     await journal.save({ intent, turn: result.response.turn });
   }
@@ -62,15 +78,19 @@ export async function resumeWorkjetSupervisorTurn(
   journal: WorkjetSupervisorJournalPort,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
-  Schema.decodeUnknownSync(WorkjetSupervisorJournal, { onExcessProperty: "error" })(saved);
+  decodeJournal(saved);
   if (saved.turn === null) return submitWorkjetSupervisorTurn(saved.intent, journal, port);
-  const result = await confirmedControl(saved.intent, {
-    action: "project.supervisor.turn.watch",
-    commandId: observationId,
-    projectId: saved.intent.projectId,
-    threadId: saved.intent.threadId,
-    targetCommandId: saved.turn.commandId,
-  }, port);
+  const result = await confirmedControl(
+    saved.intent,
+    {
+      action: "project.supervisor.turn.watch",
+      commandId: observationId,
+      projectId: saved.intent.projectId,
+      threadId: saved.intent.threadId,
+      targetCommandId: saved.turn.commandId,
+    },
+    port,
+  );
   if (result._tag === "completed" && result.response.action === "project.supervisor.turn.watch") {
     await journal.save({ intent: saved.intent, turn: result.response.turn });
   }

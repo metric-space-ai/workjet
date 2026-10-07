@@ -4,7 +4,9 @@ import { CommandId, IsoDateTime, ProjectId, TrimmedNonEmptyString } from "./base
 const Identity = TrimmedNonEmptyString.check(Schema.isMaxLength(256));
 export const WorkjetSupervisorThreadId = TrimmedNonEmptyString.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
-  Schema.makeFilter((value) => value !== "00000000-0000-0000-0000-000000000000" || "Use a real thread UUID."),
+  Schema.makeFilter(
+    (value) => value !== "00000000-0000-0000-0000-000000000000" || "Use a real thread UUID.",
+  ),
 );
 export const WorkjetSupervisorGoal = TrimmedNonEmptyString.check(
   Schema.isMaxLength(4096),
@@ -19,9 +21,13 @@ export const WorkjetSupervisorBinding = Schema.Struct({
   projectId: ProjectId,
   threadId: WorkjetSupervisorThreadId,
   threadKey: Identity,
-}).check(Schema.makeFilter((binding) =>
-  binding.threadKey === `business-os/threads/${binding.threadId}` || "Supervisor thread key does not match its UUID.",
-));
+}).check(
+  Schema.makeFilter(
+    (binding) =>
+      binding.threadKey === `business-os/threads/${binding.threadId}` ||
+      "Supervisor thread key does not match its UUID.",
+  ),
+);
 export type WorkjetSupervisorBinding = typeof WorkjetSupervisorBinding.Type;
 
 /** Native task facts only. This DTO does not expose a run id or an event page. */
@@ -39,12 +45,14 @@ export const WorkjetSupervisorTurn = Schema.Struct({
   resultTruncated: Schema.Boolean,
   errorCode: Schema.NullOr(Identity),
   errorMessage: Schema.NullOr(Schema.String),
-}).check(Schema.makeFilter((turn) =>
-  turn.threadKey === `business-os/threads/${turn.threadId}` &&
-  turn.terminal === (turn.executionPhase === "terminal")
-    ? true
-    : "Native supervisor turn has inconsistent thread or terminal facts.",
-));
+}).check(
+  Schema.makeFilter((turn) =>
+    turn.threadKey === `business-os/threads/${turn.threadId}` &&
+    turn.terminal === (turn.executionPhase === "terminal")
+      ? true
+      : "Native supervisor turn has inconsistent thread or terminal facts.",
+  ),
+);
 export type WorkjetSupervisorTurn = typeof WorkjetSupervisorTurn.Type;
 
 /** A durable submission intent, saved before dispatch. It grants no native authority. */
@@ -61,8 +69,11 @@ export type WorkjetSupervisorTurnIntent = typeof WorkjetSupervisorTurnIntent.Typ
 export const WorkjetSupervisorJournal = Schema.Struct({
   intent: WorkjetSupervisorTurnIntent,
   turn: Schema.NullOr(WorkjetSupervisorTurn),
-}).check(Schema.makeFilter((journal) =>
-  journal.turn === null || journal.turn.threadId === journal.intent.threadId
-    ? true : "The observed native turn belongs to another submission intent.",
-));
+}).check(
+  Schema.makeFilter((journal) =>
+    journal.turn === null || journal.turn.threadId === journal.intent.threadId
+      ? true
+      : "The observed native turn belongs to another submission intent.",
+  ),
+);
 export type WorkjetSupervisorJournal = typeof WorkjetSupervisorJournal.Type;

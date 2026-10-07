@@ -2599,10 +2599,42 @@ describe("CtoxGuestManager", () => {
       yield* manager.enterBusinessOsMode;
       yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
       const threadId = "e28290b0-7b0a-4d19-a242-f27041fadb84";
-      const request = { action: "project.supervisor.turn.watch" as const, commandId: CommandId.make("observe-supervisor"), projectId: ProjectId.make("project-one"), threadId, targetCommandId: "native-execution-one" };
-      const binding = { contract: "ctox.workjet.supervisor_binding.v1", projectId: request.projectId, threadId, threadKey: `business-os/threads/${threadId}` } as const;
-      const turn = { commandId: request.targetCommandId, taskId: "native-task-one", threadId, threadKey: binding.threadKey, executionPhase: "running", status: "running", queueStatus: "running", attempt: 1, terminal: false, result: null, resultTruncated: false, errorCode: null, errorMessage: null };
-      const response = { action: request.action, commandId: request.commandId, projectId: request.projectId, contract: "ctox.workjet.supervisor_turn.v1", binding, turn } as const;
+      const request = {
+        action: "project.supervisor.turn.watch" as const,
+        commandId: CommandId.make("observe-supervisor"),
+        projectId: ProjectId.make("project-one"),
+        threadId,
+        targetCommandId: "native-execution-one",
+      };
+      const binding = {
+        contract: "ctox.workjet.supervisor_binding.v1",
+        projectId: request.projectId,
+        threadId,
+        threadKey: `business-os/threads/${threadId}`,
+      } as const;
+      const turn = {
+        commandId: request.targetCommandId,
+        taskId: "native-task-one",
+        threadId,
+        threadKey: binding.threadKey,
+        executionPhase: "running",
+        status: "running",
+        queueStatus: "running",
+        attempt: 1,
+        terminal: false,
+        result: null,
+        resultTruncated: false,
+        errorCode: null,
+        errorMessage: null,
+      };
+      const response = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        contract: "ctox.workjet.supervisor_turn.v1",
+        binding,
+        turn,
+      } as const;
       for (const result of [
         { ...response, commandId: "other-observation" },
         { ...response, projectId: "other-project" },
@@ -2611,10 +2643,19 @@ describe("CtoxGuestManager", () => {
         { ...response, turn: { ...turn, runId: "invented-run" } },
       ]) {
         harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result });
-        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), { _tag: "failed", code: "guest_failed" });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
       }
-      harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: response });
-      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), { _tag: "completed", response });
+      harness.views[0]?.executeJavaScript.mockResolvedValue({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
     }).pipe(Effect.provide(harness.layer));
   });
 

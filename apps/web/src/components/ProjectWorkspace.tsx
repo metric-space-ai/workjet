@@ -1,0 +1,261 @@
+import { useState } from "react";
+import { effectiveSnoozed } from "@workjet/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
+import type { ScopedThreadRef } from "@workjet/contracts";
+import { scopeThreadRef } from "@workjet/client-runtime/environment";
+import { ArrowUpRightIcon, CalendarDaysIcon, GitBranchIcon, PlusIcon } from "lucide-react";
+import {
+  groupThreadsByProjectTeam,
+  PROJECT_TEAM_SECTIONS,
+  projectTeamStatus,
+} from "../lib/projectTeamSections";
+import {
+  type GalleryProject,
+  projectUpdateAge,
+  resolveGalleryProjectOverview,
+} from "../projectOverview";
+import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
+import { SidebarInset } from "./ui/sidebar";
+import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+
+export function ProjectWorkspace({
+  project,
+  threads,
+  onOpenChat,
+  onAddParent,
+}: {
+  readonly project: GalleryProject;
+  readonly threads: readonly EnvironmentThreadShell[];
+  readonly onOpenChat: (thread: ScopedThreadRef) => void;
+  readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
+}) {
+  const [editingParent, setEditingParent] = useState(false);
+  const [domain, setDomain] = useState("");
+  const [goal, setGoal] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const local = project.local;
+  const members = threads.filter((thread) => {
+    const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
+    return (
+      local !== null &&
+      thread.environmentId === local.environmentId &&
+      thread.projectId === local.id &&
+      thread.archivedAt === null &&
+      thread.deletedAt == null &&
+      !effectiveSnoozed(thread, { now: new Date().toISOString() }) &&
+      team?.projectId === thread.projectId &&
+      team.threadId === thread.id
+    );
+  });
+  const groups = groupThreadsByProjectTeam(members);
+  const overview = resolveGalleryProjectOverview(project);
+  const info = project.configuration?.info;
+  const meeting = project.configuration?.jourFixe;
+  const weekdays = [
+    "",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ];
+  return (
+    <SidebarInset className="min-h-0 overflow-auto">
+      <WorkjetHeaderContent>
+        <span className="text-sm font-medium">{project.title}</span>
+        <span className="text-sm text-muted-foreground">Overview</span>
+      </WorkjetHeaderContent>
+      <main className="mx-auto w-full max-w-6xl p-6" data-workjet-project-overview={project.id}>
+        <header className="mb-6">
+          <h1 className="text-xl font-semibold">{project.title}</h1>
+          {info?.description ? (
+            <p className="mt-1 text-sm text-muted-foreground">{info.description}</p>
+          ) : null}
+          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setEditingParent(true)}>
+            <PlusIcon className="size-3" />
+            Parent
+          </Button>
+        </header>
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="min-w-0 space-y-6">
+            {PROJECT_TEAM_SECTIONS.map(({ section, label }) => {
+              const group = groups[section];
+              if (group.length === 0) return null;
+              return (
+                <section key={section} aria-label={label} data-workjet-overview-section={section}>
+                  <h2 className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    {label}
+                    {section !== "supervisor" ? <span>{group.length}</span> : null}
+                  </h2>
+                  <ul className="overflow-hidden rounded-lg border border-border bg-card">
+                    {group.map((thread) => {
+                      const status = projectTeamStatus(thread);
+                      const team =
+                        thread.workjetConfig.schemaVersion === 2
+                          ? thread.workjetConfig.team
+                          : undefined;
+                      return (
+                        <li key={thread.id} className="border-b border-border last:border-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenChat(scopeThreadRef(thread.environmentId, thread.id))
+                            }
+                            className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
+                          >
+                            <span
+                              className={`size-2 shrink-0 rounded-full ${status.dot}`}
+                              title={status.label}
+                              aria-label={status.label}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium">
+                                {thread.title}
+                              </span>
+                              {section === "supervisor" && team?.goal ? (
+                                <span className="mt-1 block text-xs text-muted-foreground">
+                                  {team.goal}
+                                </span>
+                              ) : null}
+                              {section === "workers" && thread.branch ? (
+                                <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                                  <GitBranchIcon className="size-3" />
+                                  {thread.branch}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="hidden text-xs text-muted-foreground sm:block">
+                              {thread.modelSelection.instanceId} · {thread.modelSelection.model}
+                            </span>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {projectUpdateAge(thread.updatedAt)}
+                            </span>
+                            <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+          <aside className="space-y-5 text-sm">
+            {meeting ? (
+              <section className="rounded-lg border border-border p-4">
+                <h2 className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <CalendarDaysIcon className="size-4" />
+                  Jour fixe
+                </h2>
+                <p>
+                  {weekdays[meeting.weekday]} · {meeting.time}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">{meeting.timezone}</p>
+              </section>
+            ) : null}
+            {info?.goal ? (
+              <section>
+                <h2 className="mb-2 text-xs font-medium text-muted-foreground">Project goal</h2>
+                <p>{info.goal}</p>
+              </section>
+            ) : null}
+            {info?.phase || info?.status ? (
+              <p className="text-xs text-muted-foreground">
+                {[info.phase, info.status].filter(Boolean).join(" · ")}
+              </p>
+            ) : null}
+            {overview.websiteUrl || overview.repositoryUrl ? (
+              <section className="space-y-2">
+                <h2 className="text-xs font-medium text-muted-foreground">Links</h2>
+                {[
+                  ["Website", overview.websiteUrl],
+                  ["Repository", overview.repositoryUrl],
+                ].map(([label, url]) =>
+                  url ? (
+                    <a
+                      key={label}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between gap-2 hover:underline"
+                    >
+                      {label}
+                      <ArrowUpRightIcon className="size-3" />
+                    </a>
+                  ) : null,
+                )}
+              </section>
+            ) : null}
+          </aside>
+        </div>
+      </main>
+      <Dialog
+        open={editingParent}
+        onOpenChange={(open) => {
+          if (!saving) setEditingParent(open);
+        }}
+      >
+        <DialogPopup className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add parent</DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            <form
+              className="grid gap-3"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (saving || !domain.trim() || !goal.trim()) return;
+                setSaving(true);
+                setError(null);
+                try {
+                  if (!(await onAddParent(domain.trim(), goal.trim())))
+                    throw new Error("Could not save this parent.");
+                  setEditingParent(false);
+                  setDomain("");
+                  setGoal("");
+                } catch {
+                  setError("Could not save this parent. Check the connection and model settings.");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              <label className="grid gap-1 text-sm">
+                Name
+                <Input
+                  required
+                  maxLength={256}
+                  value={domain}
+                  onChange={(event) => setDomain(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                Goal
+                <textarea
+                  required
+                  maxLength={4096}
+                  value={goal}
+                  onChange={(event) => setGoal(event.target.value)}
+                  className="min-h-24 rounded-md border border-input bg-transparent p-2"
+                />
+              </label>
+              {error ? (
+                <p role="alert" className="text-sm text-destructive">
+                  {error}
+                </p>
+              ) : null}
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : "Add parent"}
+              </Button>
+            </form>
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
+    </SidebarInset>
+  );
+}

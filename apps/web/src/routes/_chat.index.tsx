@@ -4,7 +4,7 @@ import {
   resolveInstanceOnboardingState,
 } from "../components/ctox/InstanceOnboarding";
 import { useCtoxMode } from "../components/ctox/CtoxModeShell";
-import { scopeProjectRef, scopeThreadRef } from "@workjet/client-runtime/environment";
+import { scopeProjectRef } from "@workjet/client-runtime/environment";
 import { canCreateProjectInEnvironment } from "@workjet/client-runtime/operations/projects";
 import { squashAtomCommandFailure } from "@workjet/client-runtime/state/runtime";
 import { RegistryContext } from "@effect/atom-react";
@@ -23,6 +23,7 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
+import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
 import { configureWorkjetProject } from "../workjetProjectControl";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -37,7 +38,6 @@ import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
-import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { usePrimarySettings } from "../hooks/useSettings";
 import {
   useAllEnvironmentShellsBootstrapped,
@@ -87,8 +87,8 @@ function ChatIndexRouteView() {
 }
 
 /**
- * Opens the retained supervisor for the selected project. Legacy projects can
- * still open a draft, and an empty workspace offers project creation.
+ * Opens a selected project overview; its retained supervisor is created through
+ * the existing durable command path, and only a chat click opens the composer.
  */
 function IndexDraftLanding() {
   const projects = useProjects();
@@ -115,10 +115,7 @@ function IndexDraftLanding() {
   });
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
-  const handleNewThread = useNewThreadHandler();
   const navigate = useNavigate();
-  const startingRef = useRef(false);
-  const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
   const [selectedLegacyProject, setSelectedLegacyProject] = useState<ReturnType<
     typeof scopeProjectRef
   > | null>(null);
@@ -172,36 +169,6 @@ function IndexDraftLanding() {
           threads,
           scopeProjectRef(landingProject.environmentId, landingProject.id),
         );
-
-  useEffect(() => {
-    if (landingProject === null || startingRef.current) return;
-    // Native selection always opens its Supervisor, including joined legacy histories.
-    // A newly persisted project may arrive immediately before its supervisor event.
-    if ((selectedNative !== null || landingProject.ctoxRegistration != null) && supervisor === null)
-      return;
-    startingRef.current = true;
-    const opening =
-      supervisor === null
-        ? handleNewThread(scopeProjectRef(landingProject.environmentId, landingProject.id), {
-            replace: true,
-          })
-        : navigate({
-            to: "/$environmentId/$threadId",
-            replace: true,
-            params: buildThreadRouteParams(scopeThreadRef(supervisor.environmentId, supervisor.id)),
-          });
-    void opening.catch(() => {
-      startingRef.current = false;
-      setStartState((state) => ({ ...state, failed: true }));
-    });
-  }, [
-    handleNewThread,
-    landingProject,
-    navigate,
-    selectedNative,
-    startState.retryRequest,
-    supervisor,
-  ]);
 
   const openNativeSupervisor = useCallback(
     async (nativeProject = selectedNative, overview?: ProjectOverview): Promise<boolean> => {
@@ -367,14 +334,72 @@ function IndexDraftLanding() {
     supervisor,
   ]);
 
-  if (landingProject !== null && !(selectedNative !== null && supervisor === null))
-    return startState.failed ? (
-      <DraftStartError
-        onRetry={() =>
-          setStartState((state) => ({ failed: false, retryRequest: state.retryRequest + 1 }))
-        }
-      />
-    ) : null;
+  if (landingProject !== null && !(selectedNative !== null && supervisor === null)) {
+    const project = galleryProjects.find(
+      (candidate) =>
+        candidate.local?.id === landingProject.id &&
+        candidate.local.environmentId === landingProject.environmentId,
+    );
+    if (project)
+      return (
+        <ProjectWorkspace
+          project={project}
+          threads={threads}
+          onAddParent={async (domain, goal) => {
+            if (
+              !supervisor ||
+              supervisor.workjetConfig.schemaVersion !== 2 ||
+              supervisor.workjetConfig.team?.role !== "supervisor" ||
+              readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+            )
+              return false;
+            const modelSelection = resolveProjectTeamModelSelection(
+              environments.find(
+                (environment) => environment.environmentId === supervisor.environmentId,
+              )?.serverConfig?.providers ?? [],
+            );
+            if (!modelSelection) return false;
+            const threadId = newThreadId();
+            const createdAt = new Date().toISOString();
+            const result = await createThread({
+              environmentId: supervisor.environmentId,
+              input: {
+                threadId,
+                projectId: supervisor.projectId,
+                title: domain,
+                modelSelection,
+                runtimeMode: supervisor.runtimeMode,
+                interactionMode: "default",
+                workjetConfig: {
+                  ...supervisor.workjetConfig,
+                  role: "orchestrator",
+                  parent: null,
+                  team: {
+                    role: "specialist",
+                    projectId: supervisor.projectId,
+                    threadId,
+                    parentThreadId: supervisor.id,
+                    domain,
+                    goal,
+                    createdAt,
+                  },
+                },
+                branch: null,
+                worktreePath: null,
+                createdAt,
+              },
+            });
+            return result._tag === "Success";
+          }}
+          onOpenChat={(thread) =>
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(thread),
+            })
+          }
+        />
+      );
+  }
   if (selectedNative !== null)
     return (
       <WorkjetProjectOpening
@@ -621,27 +646,6 @@ function WorkjetProjectOpening({
               </Button>
             </div>
           )}
-        </EmptyHeader>
-      </Empty>
-    </SidebarInset>
-  );
-}
-
-function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <Empty className="flex-1">
-        <EmptyHeader className="max-w-md">
-          <EmptyTitle className="text-foreground text-xl">Couldn’t open project</EmptyTitle>
-          <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-            The project is still available. Try opening it again.
-          </EmptyDescription>
-          <div className="mt-5 flex justify-center">
-            <Button size="sm" onClick={onRetry}>
-              <RotateCcwIcon className="size-4" />
-              Try again
-            </Button>
-          </div>
         </EmptyHeader>
       </Empty>
     </SidebarInset>

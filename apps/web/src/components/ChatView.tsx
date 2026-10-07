@@ -191,10 +191,7 @@ import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import {
-  NO_PROVIDER_MODEL_SELECTION,
-  resolveProjectTeamModelSelection,
-} from "../providerInstances";
+import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -326,8 +323,8 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import { resolveThreadPr } from "./ThreadStatusIndicators";
-import { WorkjetHandoffInbox, WorkjetWorkerOverview } from "./workjetSurfaces";
-import { ProjectTeamPanel } from "./chat/ProjectTeamPanel";
+import { WorkjetHandoffInbox } from "./workjetSurfaces";
+
 import { publishCrossModeResultSubmitted } from "../crossMode/crossModeNotificationProducer";
 import { CrossModeNotificationCenter } from "../crossMode/CrossModeNotifications";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
@@ -7098,123 +7095,6 @@ function ChatViewContent(props: ChatViewProps) {
           an ordinary thread in the sidebar. Hidden for non-orchestrator threads
           and when the orchestrator owns no workers (the component returns null).
         */}
-        {activeServerThread && activeThreadEnvironmentId ? (
-          <ProjectTeamPanel
-            compact
-            key={`${activeThreadEnvironmentId}:${activeServerThread.id}`}
-            thread={activeServerThread}
-            threads={allThreadShells.filter(
-              (thread) => thread.environmentId === activeThreadEnvironmentId,
-            )}
-            onOpen={(threadId) =>
-              onOpenWorkjetPeerThread({ environmentId: activeThreadEnvironmentId, threadId })
-            }
-            onSaveGoal={async (goal) => {
-              const config = activeServerThread.workjetConfig;
-              if (config.schemaVersion !== 2 || !config.team) return false;
-              const result = await setThreadWorkjetConfig({
-                environmentId: activeThreadEnvironmentId,
-                input: {
-                  threadId: activeServerThread.id,
-                  workjetConfig: { ...config, team: { ...config.team, goal } },
-                },
-              });
-              return result._tag === "Success";
-            }}
-            onCreateSupervisor={async () => {
-              const modelSelection = resolveProjectTeamModelSelection(providerStatuses);
-              if (modelSelection === null) {
-                toastManager.add({
-                  type: "error",
-                  title: "Project Luma model unavailable",
-                  description: "Configure an available gpt-6.1-sol model in Models.",
-                });
-                return false;
-              }
-              const threadId = newThreadId();
-              const createdAt = new Date().toISOString();
-              const result = await createThread({
-                environmentId: activeThreadEnvironmentId,
-                input: {
-                  threadId,
-                  projectId: activeServerThread.projectId,
-                  title: "Project supervisor",
-                  modelSelection,
-                  runtimeMode: activeServerThread.runtimeMode,
-                  interactionMode: "default",
-                  workjetConfig: {
-                    ...DEFAULT_WORKJET_THREAD_CONFIG,
-                    role: "orchestrator",
-                    team: {
-                      role: "supervisor",
-                      projectId: activeServerThread.projectId,
-                      threadId,
-                      parentThreadId: null,
-                      goal: "Coordinate this project",
-                      createdAt,
-                    },
-                  },
-                  branch: null,
-                  worktreePath: null,
-                  createdAt,
-                },
-              });
-              return result._tag === "Success";
-            }}
-            onAddSpecialist={async (domain, goal) => {
-              const config = activeServerThread.workjetConfig;
-              if (config.schemaVersion !== 2 || config.team?.role !== "supervisor") return false;
-              const modelSelection = resolveProjectTeamModelSelection(providerStatuses);
-              if (modelSelection === null) {
-                toastManager.add({
-                  type: "error",
-                  title: "Project Luma model unavailable",
-                  description: "Configure an available gpt-6.1-sol model in Models.",
-                });
-                return false;
-              }
-              const threadId = newThreadId();
-              const createdAt = new Date().toISOString();
-              const result = await createThread({
-                environmentId: activeThreadEnvironmentId,
-                input: {
-                  threadId,
-                  projectId: activeServerThread.projectId,
-                  title: domain,
-                  modelSelection,
-                  runtimeMode: activeServerThread.runtimeMode,
-                  interactionMode: "default",
-                  workjetConfig: {
-                    ...config,
-                    role: "orchestrator",
-                    parent: null,
-                    team: {
-                      role: "specialist",
-                      projectId: activeServerThread.projectId,
-                      threadId,
-                      parentThreadId: activeServerThread.id,
-                      domain,
-                      goal,
-                      createdAt,
-                    },
-                  },
-                  branch: null,
-                  worktreePath: null,
-                  createdAt,
-                },
-              });
-              return result._tag === "Success";
-            }}
-          />
-        ) : null}
-        {workjetIsOrchestratorThread && activeThreadEnvironmentId && activeThreadId ? (
-          <WorkjetWorkerOverview
-            environmentId={activeThreadEnvironmentId}
-            orchestratorThreadId={activeThreadId}
-            threads={allThreadShells}
-            onOpenWorker={onOpenWorkjetPeerThread}
-          />
-        ) : null}
         {/*
           The receiving half of the typed thread handoff: work another machine
           offered this one. It renders nothing until something arrives, and it
@@ -7368,15 +7248,44 @@ function ChatViewContent(props: ChatViewProps) {
                     }
                   >
                     <div
-                      className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-5xl",
-                        showComposerContextStrip && "chat-composer-glass-shell-with-context",
-                      )}
+                      className={cn("chat-composer-glass-shell relative mx-auto w-full max-w-5xl")}
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}
+                            workspaceExtraControls={
+                              showComposerContextStrip ? (
+                                <div className="pointer-events-auto">
+                                  <BranchToolbar
+                                    environmentId={activeThread.environmentId}
+                                    threadId={activeThread.id}
+                                    showGitControls={isGitRepo}
+                                    {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                                    onEnvModeChange={onEnvModeChange}
+                                    startFromOrigin={startFromOrigin}
+                                    onStartFromOriginChange={onStartFromOriginChange}
+                                    {...(canOverrideServerThreadEnvMode
+                                      ? { effectiveEnvModeOverride: envMode }
+                                      : {})}
+                                    {...(canOverrideServerThreadEnvMode
+                                      ? {
+                                          activeThreadBranchOverride: activeThreadBranch,
+                                          onActiveThreadBranchOverrideChange:
+                                            setPendingServerThreadBranch,
+                                        }
+                                      : {})}
+                                    envLocked={envLocked}
+                                    onComposerFocusRequest={scheduleComposerFocus}
+                                    {...(canCheckoutPullRequestIntoThread
+                                      ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                                      : {})}
+                                    {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
+                                    availableEnvironments={logicalProjectEnvironments}
+                                  />
+                                </div>
+                              ) : null
+                            }
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}
                             routeKind={routeKind}
@@ -7484,38 +7393,7 @@ function ChatViewContent(props: ChatViewProps) {
                         <div
                           data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
                           className="relative z-0"
-                        >
-                          {showComposerContextStrip && (
-                            <div className="pointer-events-auto">
-                              <BranchToolbar
-                                environmentId={activeThread.environmentId}
-                                threadId={activeThread.id}
-                                showGitControls={isGitRepo}
-                                {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                                onEnvModeChange={onEnvModeChange}
-                                startFromOrigin={startFromOrigin}
-                                onStartFromOriginChange={onStartFromOriginChange}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
-                                  : {})}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? {
-                                      activeThreadBranchOverride: activeThreadBranch,
-                                      onActiveThreadBranchOverrideChange:
-                                        setPendingServerThreadBranch,
-                                    }
-                                  : {})}
-                                envLocked={envLocked}
-                                onComposerFocusRequest={scheduleComposerFocus}
-                                {...(canCheckoutPullRequestIntoThread
-                                  ? { onCheckoutPullRequestRequest: openPullRequestDialog }
-                                  : {})}
-                                {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
-                                availableEnvironments={logicalProjectEnvironments}
-                              />
-                            </div>
-                          )}
-                        </div>
+                        ></div>
                       </div>
                     </div>
                     <div

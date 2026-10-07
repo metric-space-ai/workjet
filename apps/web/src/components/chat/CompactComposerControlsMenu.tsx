@@ -1,6 +1,6 @@
 import { ProviderInteractionMode } from "@workjet/contracts";
 import { memo, type ReactNode } from "react";
-import { EllipsisIcon } from "lucide-react";
+import { EllipsisIcon, PlusIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -16,6 +16,8 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showInteractionModeToggle: boolean;
   /** Worker + Computer groups, so both choices exist below the breakpoint. */
   workerMenuContent?: ReactNode;
+  addIcon?: boolean;
+  extraMenuContent?: ReactNode;
   traitsMenuContent?: ReactNode;
   /** Context usage stays reachable between Effort and System Prompt. */
   contextWindowMenuContent?: ReactNode;
@@ -36,9 +38,19 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           />
         }
       >
-        <EllipsisIcon aria-hidden="true" className="size-4" />
+        {props.addIcon ? (
+          <PlusIcon aria-hidden="true" className="size-4" />
+        ) : (
+          <EllipsisIcon aria-hidden="true" className="size-4" />
+        )}
       </MenuTrigger>
       <MenuPopup align="start">
+        {props.extraMenuContent ? (
+          <>
+            {props.extraMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
         {props.workerMenuContent ? (
           <>
             {props.workerMenuContent}

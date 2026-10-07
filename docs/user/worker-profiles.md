@@ -1,5 +1,7 @@
 # Choose and edit a worker
 
+A project Supervisor or Parent can dispatch a one-time Luma with a bounded task and its own worktree. The Luma remains linked to the chat that started it and cannot start another worker.
+
 Open the Worker control in the composer to choose a saved worker or Manual. Each worker shows its harness, model and reasoning level before you choose it.
 
 Use the arrow beside a worker to edit its profile. The editor opens beside the list when there is enough room; in a narrow window it replaces the list temporarily. Click the same worker's arrow again to collapse its editor, or use Back to return to the choices. Collapsing keeps your unfinished draft; reopen the arrow to continue editing. Editing a profile does not select that worker or send a message.

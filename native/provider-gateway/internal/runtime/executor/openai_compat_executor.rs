@@ -357,6 +357,10 @@ impl OpenAiCompatExecutor {
         );
         self.prepare_request(&mut upstream, &request.auth_attributes);
         let response = client.execute(upstream).await?;
+        crate::internal::api::account_selection::record_upstream_status(
+            response.status_code,
+            &response.body,
+        );
         if !(200..300).contains(&response.status_code) {
             return Err(Arc::new(OpenAiCompatError::status(
                 response.status_code,
@@ -448,6 +452,10 @@ impl OpenAiCompatExecutor {
         let mut response = client.execute_stream(upstream).await?;
         if !(200..300).contains(&response.status_code) {
             let body = collect_http_stream_body(&mut response.chunks).await;
+            crate::internal::api::account_selection::record_upstream_status(
+                response.status_code,
+                &body,
+            );
             return Err(Arc::new(OpenAiCompatError::status(
                 response.status_code,
                 super::helps::summarize_error_body(

@@ -45,6 +45,10 @@ pub struct Observation {
 }
 impl Observation {
     fn identify(&mut self, provider: &str, body: &[u8]) {
+        if workjet_provider_gateway::internal::api::account_selection::is_model_check() {
+            self.receipt = None;
+            return;
+        }
         self.allow_reported_zero = provider.eq_ignore_ascii_case("codex");
         let model = serde_json::from_slice::<Value>(body).ok().and_then(|v| {
             v.get("model")
@@ -478,6 +482,8 @@ mod tests {
         use workjet_provider_gateway::sdk::api::handlers::claude::code_handlers::claude_models_response;
         for (request, expected) in [
             ("POST /v1/responses HTTP/1.1\r\nHost: localhost\r\nContent-Length: 17\r\n\r\n{\"model\":\"alias\"}", true),
+            ("POST /v1/responses HTTP/1.1\r\nHost: localhost\r\nX-CTOX-Account: account-a\r\nX-CTOX-Purpose: model-check\r\nContent-Length: 17\r\n\r\n{\"model\":\"alias\"}", false),
+            ("POST /v1/responses HTTP/1.1\r\nHost: localhost\r\nX-CTOX-Purpose: model-check\r\nContent-Length: 17\r\n\r\n{\"model\":\"alias\"}", true),
             ("GET /v1/models HTTP/1.1\r\nHost: localhost\r\n\r\n", false),
         ] {
             let (mut client, mut server) = tokio::io::duplex(4096);

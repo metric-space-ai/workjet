@@ -67,14 +67,17 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
     H: ClaudeMessagesRouteHandler + ?Sized,
 {
-    let mut response = match read_request(stream).await {
-        Ok(request) => dispatch_messages_request(request, handler).await,
-        Err(error) => ClaudeMessagesRouteResponse::Buffered(ClaudeMessagesHttpResponse::error(
-            error.status,
-            error.message,
-        )),
-    };
-    write_messages_route_response(stream, &mut response, None).await
+    super::account_selection::ACCOUNT_SELECTION
+        .scope(std::sync::Mutex::new(Default::default()), async {
+            let mut response = match read_request(stream).await {
+                Ok(request) => dispatch_messages_request(request, handler).await,
+                Err(error) => ClaudeMessagesRouteResponse::Buffered(
+                    ClaudeMessagesHttpResponse::error(error.status, error.message),
+                ),
+            };
+            write_messages_route_response(stream, &mut response, None).await
+        })
+        .await
 }
 
 /// Serves both provider-independent Responses and Claude Messages on a
@@ -196,77 +199,81 @@ where
     R: OpenAiResponsesRouteHandler + ?Sized,
     C: ClaudeMessagesRouteHandler + ?Sized,
 {
-    let request = match tokio::time::timeout(header_timeout, read_request(stream)).await {
-        Err(_) => return Ok(()),
-        Ok(Ok(request)) => request,
-        Ok(Err(error)) => {
-            let response = OpenAiResponsesHttpResponse::error(error.status, error.message);
-            return write_response(stream, &response).await;
-        }
-    };
-    let mut response_writer =
-        policy.and_then(|policy| response_writer_for_request(&request, policy));
-    let route = resolve_server_route(&request.target);
-    let write_result = if route == ServerRoute::Models {
-        let mut response = ClaudeMessagesRouteResponse::Buffered(if request.method == "GET" {
-            models_response.clone()
-        } else {
-            ClaudeMessagesHttpResponse::error(405, "method not allowed")
-        });
-        prepare_messages_response_writer(response_writer.as_mut(), &response);
-        write_messages_route_response(stream, &mut response, response_writer.as_mut()).await
-    } else if route == ServerRoute::Messages {
-        let mut response = match messages_handler {
-            Some(handler) => dispatch_messages_request(request, handler).await,
-            None => ClaudeMessagesRouteResponse::Buffered(ClaudeMessagesHttpResponse::error(
-                404,
-                "route not found",
-            )),
-        };
-        prepare_messages_response_writer(response_writer.as_mut(), &response);
-        write_messages_route_response(stream, &mut response, response_writer.as_mut()).await
-    } else if matches!(
-        route,
-        ServerRoute::CountTokens
-            | ServerRoute::AlphaSearch
-            | ServerRoute::Live
-            | ServerRoute::Realtime
-    ) {
-        let response = if !route.allows_method(&request.method) {
-            AuxiliaryRouteResponse::json_error(405, "method not allowed")
-        } else if let Some(handler) = auxiliary_handler {
-            let auxiliary_request = AuxiliaryRouteRequest {
-                route,
-                method: request.method,
-                target: request.target,
-                provider: request.provider,
-                headers: request.headers,
-                body: request.body,
+    super::account_selection::ACCOUNT_SELECTION
+        .scope(std::sync::Mutex::new(Default::default()), async {
+            let request = match tokio::time::timeout(header_timeout, read_request(stream)).await {
+                Err(_) => return Ok(()),
+                Ok(Ok(request)) => request,
+                Ok(Err(error)) => {
+                    let response = OpenAiResponsesHttpResponse::error(error.status, error.message);
+                    return write_response(stream, &response).await;
+                }
             };
-            handler
-                .handle(auxiliary_request)
-                .await
-                .unwrap_or_else(|| AuxiliaryRouteResponse::json_error(404, "route not found"))
-        } else {
-            AuxiliaryRouteResponse::json_error(404, "route not found")
-        };
-        prepare_auxiliary_response_writer(response_writer.as_mut(), &response);
-        write_auxiliary_response(stream, &response, response_writer.as_mut()).await
-    } else {
-        let mut response = dispatch_request(request, responses_handler).await;
-        prepare_response_writer(response_writer.as_mut(), &response);
-        write_route_response(stream, &mut response, response_writer.as_mut()).await
-    };
-    if let Some(writer) = response_writer {
-        let logging_result = tokio::task::spawn_blocking(move || writer.finalize_with_outcome())
-            .await
-            .map_err(|_| io::Error::other("request logger worker panicked"))
-            .and_then(|result| result);
-        if let Some(policy) = policy {
-            policy.metrics().record(&logging_result);
-        }
-    }
-    write_result
+            let mut response_writer =
+                policy.and_then(|policy| response_writer_for_request(&request, policy));
+            let route = resolve_server_route(&request.target);
+            let write_result = if route == ServerRoute::Models {
+                let mut response =
+                    ClaudeMessagesRouteResponse::Buffered(if request.method == "GET" {
+                        models_response.clone()
+                    } else {
+                        ClaudeMessagesHttpResponse::error(405, "method not allowed")
+                    });
+                prepare_messages_response_writer(response_writer.as_mut(), &response);
+                write_messages_route_response(stream, &mut response, response_writer.as_mut()).await
+            } else if route == ServerRoute::Messages {
+                let mut response = match messages_handler {
+                    Some(handler) => dispatch_messages_request(request, handler).await,
+                    None => ClaudeMessagesRouteResponse::Buffered(
+                        ClaudeMessagesHttpResponse::error(404, "route not found"),
+                    ),
+                };
+                prepare_messages_response_writer(response_writer.as_mut(), &response);
+                write_messages_route_response(stream, &mut response, response_writer.as_mut()).await
+            } else if matches!(
+                route,
+                ServerRoute::CountTokens
+                    | ServerRoute::AlphaSearch
+                    | ServerRoute::Live
+                    | ServerRoute::Realtime
+            ) {
+                let response = if !route.allows_method(&request.method) {
+                    AuxiliaryRouteResponse::json_error(405, "method not allowed")
+                } else if let Some(handler) = auxiliary_handler {
+                    let auxiliary_request = AuxiliaryRouteRequest {
+                        route,
+                        method: request.method,
+                        target: request.target,
+                        provider: request.provider,
+                        headers: request.headers,
+                        body: request.body,
+                    };
+                    handler.handle(auxiliary_request).await.unwrap_or_else(|| {
+                        AuxiliaryRouteResponse::json_error(404, "route not found")
+                    })
+                } else {
+                    AuxiliaryRouteResponse::json_error(404, "route not found")
+                };
+                prepare_auxiliary_response_writer(response_writer.as_mut(), &response);
+                write_auxiliary_response(stream, &response, response_writer.as_mut()).await
+            } else {
+                let mut response = dispatch_request(request, responses_handler).await;
+                prepare_response_writer(response_writer.as_mut(), &response);
+                write_route_response(stream, &mut response, response_writer.as_mut()).await
+            };
+            if let Some(writer) = response_writer {
+                let logging_result =
+                    tokio::task::spawn_blocking(move || writer.finalize_with_outcome())
+                        .await
+                        .map_err(|_| io::Error::other("request logger worker panicked"))
+                        .and_then(|result| result);
+                if let Some(policy) = policy {
+                    policy.metrics().record(&logging_result);
+                }
+            }
+            write_result
+        })
+        .await
 }
 
 pub async fn serve_responses_connection_with_logging<S, H>(
@@ -290,30 +297,33 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
     H: OpenAiResponsesRouteHandler + ?Sized,
 {
-    let mut response = match read_request(stream).await {
-        Ok(request) => {
-            let mut response_writer =
-                policy.and_then(|policy| response_writer_for_request(&request, policy));
-            let mut response = dispatch_request(request, handler).await;
-            prepare_response_writer(response_writer.as_mut(), &response);
-            let write_result =
-                write_route_response(stream, &mut response, response_writer.as_mut()).await;
-            if let (Some(policy), Some(writer)) = (policy, response_writer) {
-                let logging_result =
-                    tokio::task::spawn_blocking(move || writer.finalize_with_outcome())
-                        .await
-                        .map_err(|_| io::Error::other("request logger worker panicked"))
-                        .and_then(|result| result);
-                policy.metrics().record(&logging_result);
-            }
-            return write_result;
-        }
-        Err(error) => OpenAiResponsesRouteResponse::Buffered(OpenAiResponsesHttpResponse::error(
-            error.status,
-            error.message,
-        )),
-    };
-    write_route_response(stream, &mut response, None).await
+    super::account_selection::ACCOUNT_SELECTION
+        .scope(std::sync::Mutex::new(Default::default()), async {
+            let mut response = match read_request(stream).await {
+                Ok(request) => {
+                    let mut response_writer =
+                        policy.and_then(|policy| response_writer_for_request(&request, policy));
+                    let mut response = dispatch_request(request, handler).await;
+                    prepare_response_writer(response_writer.as_mut(), &response);
+                    let write_result =
+                        write_route_response(stream, &mut response, response_writer.as_mut()).await;
+                    if let (Some(policy), Some(writer)) = (policy, response_writer) {
+                        let logging_result =
+                            tokio::task::spawn_blocking(move || writer.finalize_with_outcome())
+                                .await
+                                .map_err(|_| io::Error::other("request logger worker panicked"))
+                                .and_then(|result| result);
+                        policy.metrics().record(&logging_result);
+                    }
+                    return write_result;
+                }
+                Err(error) => OpenAiResponsesRouteResponse::Buffered(
+                    OpenAiResponsesHttpResponse::error(error.status, error.message),
+                ),
+            };
+            write_route_response(stream, &mut response, None).await
+        })
+        .await
 }
 
 pub(super) struct ParsedRequest {
@@ -430,6 +440,7 @@ where
 
     let mut content_length = None;
     let mut provider = None;
+    let mut account = None;
     let mut parsed_headers = BTreeMap::<String, Vec<String>>::new();
     for line in lines {
         let Some((name, value)) = line.split_once(':') else {
@@ -460,6 +471,15 @@ where
                         message: "invalid content length",
                     })?,
             );
+        }
+        if name.eq_ignore_ascii_case("x-ctox-account") {
+            if account.is_some() || !super::account_selection::valid_account_id(value.trim()) {
+                return Err(RequestReadError {
+                    status: 400,
+                    message: "invalid account selection",
+                });
+            }
+            account = Some(value.trim().to_owned());
         }
         if name.eq_ignore_ascii_case("x-ctox-provider") {
             if provider.is_some() || value.trim().is_empty() {
@@ -520,6 +540,21 @@ where
     {
         parsed_headers.retain(|key, _| !key.eq_ignore_ascii_case("content-encoding"));
     }
+    if account.is_some()
+        && !matches!(
+            resolve_server_route(&target),
+            ServerRoute::Responses | ServerRoute::Messages
+        )
+    {
+        return Err(RequestReadError {
+            status: 400,
+            message: "account selection is unavailable on this route",
+        });
+    }
+    super::account_selection::request_model_check(
+        account.is_some() && header_value(&parsed_headers, "x-ctox-purpose") == Some("model-check"),
+    );
+    super::account_selection::request_account(account);
     Ok(ParsedRequest {
         method,
         target,
@@ -644,7 +679,16 @@ where
         response.content_type(),
         response.body().len(),
     );
-    stream.write_all(head.as_bytes()).await?;
+    stream
+        .write_all(
+            head.replacen(
+                "\r\n\r\n",
+                &format!("\r\n{}\r\n", super::account_selection::acknowledgement()),
+                1,
+            )
+            .as_bytes(),
+        )
+        .await?;
     stream.write_all(response.body()).await?;
     stream.shutdown().await
 }
@@ -664,7 +708,16 @@ where
         response.content_type(),
         response.body().len(),
     );
-    stream.write_all(head.as_bytes()).await?;
+    stream
+        .write_all(
+            head.replacen(
+                "\r\n\r\n",
+                &format!("\r\n{}\r\n", super::account_selection::acknowledgement()),
+                1,
+            )
+            .as_bytes(),
+        )
+        .await?;
     let body_result = stream.write_all(response.body()).await;
     if let Some(capture) = capture {
         capture.write(response.body());
@@ -692,7 +745,7 @@ where
         OpenAiResponsesRouteResponse::Stream(stream_response) => {
             stream
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
                 )
                 .await?;
             while let Some(chunk) = stream_response.next_chunk().await {
@@ -714,7 +767,7 @@ where
         OpenAiResponsesRouteResponse::CodexStream(stream_response) => {
             stream
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
                 )
                 .await?;
             while let Some(chunk) = stream_response.next_chunk().await {
@@ -729,7 +782,7 @@ where
         OpenAiResponsesRouteResponse::AntigravityStream(stream_response) => {
             stream
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
                 )
                 .await?;
             while let Some(chunk) = stream_response.next_chunk().await {
@@ -749,7 +802,7 @@ where
         OpenAiResponsesRouteResponse::ApiKeyStream(stream_response) => {
             stream
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
                 )
                 .await?;
             // Like the Claude and Antigravity paths, the OpenAI-compat
@@ -771,7 +824,7 @@ where
         OpenAiResponsesRouteResponse::XaiStream(stream_response) => {
             stream
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
                 )
                 .await?;
             // xAI frames arrive COMPLETE — terminator included — so they are
@@ -806,7 +859,16 @@ where
                 response.content_type(),
                 response.body().len(),
             );
-            stream.write_all(head.as_bytes()).await?;
+            stream
+                .write_all(
+                    head.replacen(
+                        "\r\n\r\n",
+                        &format!("\r\n{}\r\n", super::account_selection::acknowledgement()),
+                        1,
+                    )
+                    .as_bytes(),
+                )
+                .await?;
             let body_result = stream.write_all(response.body()).await;
             if let Some(capture) = capture.as_deref_mut() {
                 capture.write(response.body());
@@ -816,7 +878,7 @@ where
         ClaudeMessagesRouteResponse::Stream(stream_response) => {
             stream
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
                 )
                 .await?;
             while let Some(chunk) = stream_response.next_chunk().await {
@@ -829,7 +891,7 @@ where
         }
         ClaudeMessagesRouteResponse::ResponsesStream(stream_response) => {
             stream.write_all(
-                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
             ).await?;
             while let Some(chunk) = stream_response.next_chunk().await {
                 let chunk_result = stream.write_all(&chunk).await;
@@ -845,7 +907,7 @@ where
         ClaudeMessagesRouteResponse::ClaudeStream(stream_response) => {
             stream
                 .write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                    format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes(),
                 )
                 .await?;
             while let Some(chunk) = stream_response.next_chunk().await {
@@ -896,7 +958,16 @@ where
         }
     }
     head.push_str("\r\n");
-    stream.write_all(head.as_bytes()).await?;
+    stream
+        .write_all(
+            head.replacen(
+                "\r\n\r\n",
+                &format!("\r\n{}\r\n", super::account_selection::acknowledgement()),
+                1,
+            )
+            .as_bytes(),
+        )
+        .await?;
     stream.write_all(&response.body).await?;
     if let Some(capture) = capture {
         capture.write(&response.body);
@@ -1503,6 +1574,264 @@ mod tests {
           data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":4}}\n\n\
           data: {\"type\":\"message_stop\"}\n\n"
             .to_vec()
+    }
+
+    fn claude_pool_with_response_spec(
+        status: u16,
+        response_body: Vec<u8>,
+        account_id: &str,
+        disabled: bool,
+        model: Option<&str>,
+        secondary: bool,
+    ) -> (ClaudeTestPool, Arc<SseTransport>) {
+        let handles = ClaudeCredentialHandles::new(
+            ClaudeSecretHandle::new("subscriptions", "access-a", ClaudeSecretKind::AccessToken)
+                .unwrap(),
+            ClaudeSecretHandle::new("subscriptions", "refresh-a", ClaudeSecretKind::RefreshToken)
+                .unwrap(),
+        )
+        .unwrap();
+        let secret_store = Arc::new(MemorySecretStore(Mutex::new(ClaudeStoredCredentials::new(
+            SecretString::new("access-secret").unwrap(),
+            SecretString::new("refresh-secret").unwrap(),
+        ))));
+        let auth = Arc::new(ClaudeSubscriptionAuth::new(
+            handles,
+            secret_store,
+            Arc::new(UnusedRefreshTransport),
+            Arc::new(FixedRefreshClock),
+            Arc::new(ClaudeRefreshCoordinator::default()),
+        ));
+        let cooldowns = Arc::new(MemoryCooldownStore::default());
+        let conductor = Arc::new(CooldownConductor::new(cooldowns.clone()));
+        let transport = Arc::new(SseTransport::new(status, response_body));
+        let executor = Arc::new(
+            ClaudeSubscriptionMessagesExecutor::new(
+                auth.clone(),
+                transport.clone(),
+                Duration::from_secs(30),
+            )
+            .with_stream_transport(transport.clone())
+            .with_account_state_clock(account_id, conductor.clone(), Arc::new(FixedAccountClock))
+            .unwrap(),
+        );
+        let mut candidates = vec![AccountCandidate {
+            auth_id: account_id.into(),
+            provider: "claude".into(),
+            priority: 1,
+            weight: 1,
+            supported_models: model.into_iter().map(str::to_owned).collect(),
+            disabled,
+            ..Default::default()
+        }];
+        let mut executors = HashMap::from([(account_id.to_owned(), executor)]);
+        let mut targets = HashMap::from([(
+            account_id.to_owned(),
+            ClaudeUpstreamTarget::new("https", "api.anthropic.com").unwrap(),
+        )]);
+        if secondary {
+            let healthy_transport = Arc::new(SseTransport::new(200, claude_sse()));
+            let healthy_executor = Arc::new(
+                ClaudeSubscriptionMessagesExecutor::new(
+                    auth,
+                    healthy_transport.clone(),
+                    Duration::from_secs(30),
+                )
+                .with_stream_transport(healthy_transport)
+                .with_account_state_clock("account-b", conductor, Arc::new(FixedAccountClock))
+                .unwrap(),
+            );
+            candidates.push(AccountCandidate {
+                auth_id: "account-b".into(),
+                provider: "claude".into(),
+                weight: 1,
+                ..Default::default()
+            });
+            executors.insert("account-b".into(), healthy_executor);
+            targets.insert(
+                "account-b".into(),
+                ClaudeUpstreamTarget::new("https", "api.anthropic.com").unwrap(),
+            );
+        }
+        let pool = crate::internal::runtime::executor::ClaudeSubscriptionAccountPool::with_clock(
+            Arc::new(AccountRouter::new(cooldowns)),
+            candidates,
+            executors,
+            Arc::new(FixedAccountClock),
+        )
+        .unwrap()
+        .with_targets(targets)
+        .unwrap();
+        (Arc::new(pool), transport)
+    }
+
+    async fn account_probe_http(
+        account: &str,
+        status: u16,
+        disabled: bool,
+        model: Option<&str>,
+        stream: bool,
+    ) -> (String, usize) {
+        account_probe_http_body(account, status, disabled, model, stream, claude_sse()).await
+    }
+
+    async fn account_probe_http_body(
+        account: &str,
+        status: u16,
+        disabled: bool,
+        model: Option<&str>,
+        stream: bool,
+        response_body: Vec<u8>,
+    ) -> (String, usize) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (pool, transport) = claude_pool_with_response_spec(
+            status,
+            response_body,
+            "account-a",
+            disabled,
+            model,
+            true,
+        );
+        let handler = Arc::new(OpenAiResponsesClaudeHandler::new(pool));
+        let server = tokio::spawn(async move {
+            serve_one_responses_connection(&listener, &handler)
+                .await
+                .unwrap();
+        });
+        let body = format!(
+            r#"{{"model":"claude-sonnet-4-5","input":[{{"role":"user","content":"Hi"}}],"stream":{stream}}}"#
+        );
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client.write_all(format!("POST /v1/responses HTTP/1.1\r\nHost: localhost\r\nX-CTOX-Account: {account}\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        server.await.unwrap();
+        let count = transport.requests.lock().unwrap().len();
+        (String::from_utf8(response).unwrap(), count)
+    }
+    #[tokio::test]
+    async fn account_pin_loopback_acknowledges_actual_configured_account_buffered_and_streaming() {
+        for stream in [false, true] {
+            let (response, count) = account_probe_http("account-a", 200, false, None, stream).await;
+            assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+            assert!(response.contains("X-CTOX-Account-Selected: account-a\r\n"));
+            assert_eq!(count, 1);
+        }
+    }
+    #[tokio::test]
+    async fn account_pin_loopback_rejects_unknown_disabled_and_ineligible_accounts() {
+        for (id, disabled, model) in [
+            ("unknown", false, None),
+            ("account-a", true, None),
+            ("account-a", false, Some("other-model")),
+            ("bad/id", false, None),
+        ] {
+            let (response, count) = account_probe_http(id, 200, disabled, model, false).await;
+            assert!(!response.starts_with("HTTP/1.1 200"));
+            assert!(!response.contains("X-CTOX-Account-Selected:"));
+            assert_eq!(count, 0);
+        }
+    }
+    #[tokio::test]
+    async fn account_pin_upstream_failure_is_not_a_success() {
+        let (response, count) = account_probe_http("account-a", 503, false, None, false).await;
+        assert!(!response.starts_with("HTTP/1.1 200"));
+        assert_eq!(count, 1);
+    }
+    #[tokio::test]
+    async fn account_pin_loopback_selects_healthy_second_account_without_touching_broken_first() {
+        for stream in [false, true] {
+            let (response, count) = account_probe_http("account-b", 503, false, None, stream).await;
+            assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+            assert!(response.contains("X-CTOX-Account-Selected: account-b\r\n"));
+            assert_eq!(count, 0);
+        }
+    }
+    #[tokio::test]
+    async fn account_pin_loopback_rejects_provider_mismatch_and_duplicate_selector() {
+        for header in [
+            "account-a\r\nX-CTOX-Provider: codex",
+            "account-a\r\nX-CTOX-Account: account-b",
+        ] {
+            let (response, count) = account_probe_http(header, 200, false, None, false).await;
+            assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+            assert!(!response.contains("X-CTOX-Account-Selected:"));
+            assert_eq!(count, 0);
+        }
+    }
+    #[tokio::test]
+    async fn pinned_probe_classifies_only_safe_structured_upstream_errors() {
+        for (status, body, expected) in [
+            (
+                404,
+                br#"{"error":{"code":"model_not_found","message":"secret-fixture"}}"#.to_vec(),
+                "unknown-model",
+            ),
+            (
+                401,
+                br#"{"error":{"message":"secret-fixture"}}"#.to_vec(),
+                "auth",
+            ),
+            (
+                429,
+                br#"{"error":{"message":"secret-fixture"}}"#.to_vec(),
+                "quota-rate-limit",
+            ),
+            (
+                404,
+                br#"{"error":{"message":"model_not_found secret-fixture"}}"#.to_vec(),
+                "network-provider",
+            ),
+        ] {
+            let (response, count) =
+                account_probe_http_body("account-a", status, false, None, false, body).await;
+            assert!(!response.starts_with("HTTP/1.1 200"));
+            assert!(
+                response.contains(&format!("X-CTOX-Error-Class: {expected}\r\n")),
+                "{response}"
+            );
+            assert!(!response.contains("secret-fixture"));
+            assert_eq!(count, 1);
+        }
+    }
+    #[tokio::test]
+    async fn account_pin_messages_loopback_covers_buffered_and_streaming() {
+        for stream in [false, true] {
+            for account in ["antigravity-a", "unknown"] {
+                let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = listener.local_addr().unwrap();
+                let (pool, transport) = antigravity_pool();
+                let handler = Arc::new(ClaudeMessagesAntigravityHandler::new(
+                    pool,
+                    None,
+                    Arc::new(|_, _| true),
+                ));
+                let server = tokio::spawn(async move {
+                    serve_one_messages_connection(&listener, &handler)
+                        .await
+                        .unwrap();
+                });
+                let body = format!(
+                    r#"{{"model":"claude-sonnet-4-5","messages":[{{"role":"user","content":"Hi"}}],"stream":{stream}}}"#
+                );
+                let mut client = TcpStream::connect(address).await.unwrap();
+                client.write_all(format!("POST /v1/messages HTTP/1.1\r\nHost: localhost\r\nX-CTOX-Account: {account}\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+                let mut response = Vec::new();
+                client.read_to_end(&mut response).await.unwrap();
+                server.await.unwrap();
+                let response = String::from_utf8(response).unwrap();
+                if account == "antigravity-a" {
+                    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+                    assert!(response.contains("X-CTOX-Account-Selected: antigravity-a\r\n"));
+                    assert_eq!(transport.0.lock().unwrap().len(), 1);
+                } else {
+                    assert!(!response.starts_with("HTTP/1.1 200"));
+                    assert!(!response.contains("X-CTOX-Account-Selected:"));
+                    assert!(transport.0.lock().unwrap().is_empty());
+                }
+            }
+        }
     }
 
     fn handler() -> ClaudeTestHandler {

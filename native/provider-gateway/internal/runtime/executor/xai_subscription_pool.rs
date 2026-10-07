@@ -122,6 +122,7 @@ impl XaiSubscriptionAccountPool {
     /// everywhere else: an empty list serves anything, entries match with the
     /// shared anchored wildcard semantics.
     fn select(&self, model: &str, body: &[u8]) -> Option<&PoolMember> {
+        let pinned = crate::internal::api::account_selection::requested_account();
         if let Some(policy) = &self.policy {
             let candidates = self
                 .members
@@ -135,6 +136,7 @@ impl XaiSubscriptionAccountPool {
                     ..Default::default()
                 })
                 .collect::<Vec<_>>();
+            let candidates = crate::internal::api::account_selection::candidates(&candidates);
             let selected = policy
                 .select(
                     "xai",
@@ -151,6 +153,7 @@ impl XaiSubscriptionAccountPool {
         let mut eligible: Vec<&PoolMember> = self
             .members
             .iter()
+            .filter(|member| pinned.as_deref().is_none_or(|id| id == member.id))
             .filter(|member| {
                 !member.disabled
                     && (member.models.is_empty()
@@ -210,6 +213,7 @@ impl XaiSubscriptionAccountPool {
     /// endpoint for nothing.
     pub async fn execute(&self, model: &str, body: &[u8]) -> Result<Vec<u8>, XaiPoolError> {
         let member = self.select(model, body).ok_or(XaiPoolError::NoAccount)?;
+        crate::internal::api::account_selection::record_selected(&member.id);
         let request = Self::request(model, body);
         let options = Self::options(false);
         let auth = member.auth.lock().await.clone();
@@ -270,6 +274,7 @@ impl XaiSubscriptionAccountPool {
         body: &[u8],
     ) -> Result<mpsc::Receiver<Result<Vec<u8>, XaiExecutionError>>, XaiPoolError> {
         let member = self.select(model, body).ok_or(XaiPoolError::NoAccount)?;
+        crate::internal::api::account_selection::record_selected(&member.id);
         let request = Self::request(model, body);
         let options = Self::options(true);
         let auth = member.auth.lock().await.clone();

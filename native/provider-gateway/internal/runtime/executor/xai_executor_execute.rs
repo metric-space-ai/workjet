@@ -143,6 +143,10 @@ impl XaiExecutor {
             .execute(&upstream, self.timeout)
             .await
             .map_err(XaiExecutionError::Transport)?;
+        crate::internal::api::account_selection::record_upstream_status(
+            response.status,
+            &response.body,
+        );
         if !(200..300).contains(&response.status) {
             return Err(XaiExecutionError::Status(xai_status_error(
                 response.status,

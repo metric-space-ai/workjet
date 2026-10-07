@@ -107,7 +107,9 @@ pub fn mask_authorization_header(value: &str) -> String {
 
 pub fn mask_sensitive_header_value(key: &str, value: &str) -> String {
     let key = key.trim().to_ascii_lowercase();
-    if key.contains("authorization") {
+    if key == "x-ctox-account" {
+        "[REDACTED]".to_owned()
+    } else if key.contains("authorization") {
         mask_authorization_header(value)
     } else if key.contains("api-key")
         || key.contains("apikey")

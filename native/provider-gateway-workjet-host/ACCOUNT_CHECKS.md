@@ -1,0 +1,5 @@
+The bundled Workjet host includes the request-scoped account selection from CTOX PR361 (d6c62692e), adapted to its no-log listener and its own API-key/xAI pools. The accepted upstream pin remains a88197; this is a host integration change, not upstream promotion.
+
+For minimal model checks, runtime-status exposes features.account_selection, the caller sends X-CTOX-Account, and success acknowledges X-CTOX-Account-Selected. A selected account never falls back to a different account. X-CTOX-Error-Class carries only auth/quota-rate-limit/unknown-model/network-provider classifications. Invalid selectors are rejected and redacted by optional request logging.
+
+A pinned request additionally marked X-CTOX-Purpose: model-check is excluded from Workjet model-usage statistics. Ordinary requests and ordinary account pins remain counted. The purpose lives only in the current connection task; no provider prompt/key/body is added to the usage journal.

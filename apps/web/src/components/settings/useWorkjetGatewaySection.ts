@@ -76,25 +76,67 @@ export function useWorkjetGatewaySection(
   const checkModels = useAtomCommand(serverEnvironment.checkWorkjetGatewayModels, {
     reportFailure: false,
   });
-  const [checksBusy, setChecksBusy] = useState(false);
+  const [checksSubmitting, setChecksSubmitting] = useState(false);
   const [checksError, setChecksError] = useState<string | null>(null);
   const checksFlight = useRef(false);
-  const runChecks = useCallback(async (accountId?: string, force = false) => {
-    if (environmentId === null || checksFlight.current) return;
-    checksFlight.current = true;
-    setChecksBusy(true);
-    setChecksError(null);
-    try {
-      const result = await checkModels({
-        environmentId,
-        input: { force, ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}) },
-      });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
-        setChecksError("Model checks could not finish. Check the provider connection and retry.");
-      checksQuery.refresh();
-    } finally { checksFlight.current = false; setChecksBusy(false); }
-  }, [environmentId, checkModels, checksQuery.refresh]);
-  const modelFingerprint = JSON.stringify((catalogQuery.data?.accounts ?? []).map((account) => [account.id, account.enabled, account.modelIds]));
+  const checksPollingDeadline = useRef(0);
+  const checksPolls = useRef(0);
+  const runChecks = useCallback(
+    async (accountId?: string, force = false, continuation = false) => {
+      if (environmentId === null || checksFlight.current) return;
+      if (!continuation) {
+        checksPollingDeadline.current = Date.now() + 20 * 60_000;
+        checksPolls.current = 0;
+      }
+      checksFlight.current = true;
+      setChecksSubmitting(true);
+      setChecksError(null);
+      try {
+        const result = await checkModels({
+          environmentId,
+          input: {
+            force,
+            ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}),
+          },
+        });
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
+          setChecksError("Model checks could not finish. Check the provider connection and retry.");
+        checksQuery.refresh();
+      } finally {
+        checksFlight.current = false;
+        setChecksSubmitting(false);
+      }
+    },
+    [environmentId, checkModels, checksQuery.refresh],
+  );
+  const checksBusy = checksSubmitting || (checksQuery.data?.pending.length ?? 0) > 0;
+  useEffect(() => {
+    checksPollingDeadline.current = 0;
+    checksPolls.current = 0;
+  }, [environmentId]);
+  useEffect(() => {
+    if (environmentId === null || checksQuery.error !== null || !checksQuery.data) return;
+    const { pending, deferredCount } = checksQuery.data;
+    if (pending.length === 0 && deferredCount === 0) return;
+    if (checksPollingDeadline.current === 0) checksPollingDeadline.current = Date.now() + 20 * 60_000;
+    if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) return;
+    // Only this mounted page owns the timer. Completed observations persist
+    // server-side; each continuation admits another bounded, non-forced batch.
+    const timer = setTimeout(() => {
+      checksPolls.current += 1;
+      if (pending.length > 0) checksQuery.refresh();
+      else void runChecks(undefined, false, true);
+    }, 2_000);
+    return () => clearTimeout(timer);
+  }, [environmentId, checksQuery.data, checksQuery.error, checksQuery.refresh, runChecks]);
+
+  const modelFingerprint = JSON.stringify(
+    (catalogQuery.data?.accounts ?? []).map((account) => [
+      account.id,
+      account.enabled,
+      account.modelIds,
+    ]),
+  );
   const autoCheckedFingerprint = useRef<string | null>(null);
   useEffect(() => {
     if (statusQuery.data?.phase !== "ready" || catalogQuery.data === null) return;
@@ -531,9 +573,13 @@ export function useWorkjetGatewaySection(
     loginAccountId,
     accountErrors,
     modelChecks: checksQuery.data?.checks ?? [],
+    pendingModelChecks: checksQuery.data?.pending ?? [],
+    deferredChecksCount: checksQuery.data?.deferredCount ?? 0,
     checksBusy,
     checksError: checksError ?? checksQuery.error,
-    onCheckModels: (accountId) => { void runChecks(accountId, true); },
+    onCheckModels: (accountId) => {
+      void runChecks(accountId, true);
+    },
     accountHealth: Object.fromEntries(
       (healthQuery.data?.accounts ?? []).map((account) => [
         account.accountId,

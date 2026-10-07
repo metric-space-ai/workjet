@@ -166,6 +166,7 @@ impl ApiKeyAccountPool {
     /// configured priority first. Returns `None` when the provider has no
     /// usable account for the requested model.
     fn select(&self, model: &str, body: &[u8]) -> Option<&ApiKeyAccount> {
+        let pinned = crate::internal::api::account_selection::requested_account();
         if let Some(policy) = &self.policy {
             let candidates = self
                 .accounts
@@ -179,6 +180,7 @@ impl ApiKeyAccountPool {
                     ..Default::default()
                 })
                 .collect::<Vec<_>>();
+            let candidates = crate::internal::api::account_selection::candidates(&candidates);
             let selected = policy
                 .select(
                     &self.provider,
@@ -194,6 +196,7 @@ impl ApiKeyAccountPool {
         let mut eligible: Vec<&ApiKeyAccount> = self
             .accounts
             .iter()
+            .filter(|account| pinned.as_deref().is_none_or(|id| id == account.id))
             .filter(|account| !account.disabled && account.serves(model))
             .collect();
         if eligible.is_empty() {
@@ -235,6 +238,7 @@ impl ApiKeyAccountPool {
 
     pub async fn execute(&self, model: &str, body: &[u8]) -> Result<Vec<u8>, ApiKeyPoolError> {
         let account = self.select(model, body).ok_or(ApiKeyPoolError::NoAccount)?;
+        crate::internal::api::account_selection::record_selected(&account.id);
         let request = self.executor_request(account, model, body, false);
         self.executor
             .execute(request)
@@ -253,6 +257,7 @@ impl ApiKeyAccountPool {
         body: &[u8],
     ) -> Result<mpsc::Receiver<ExecutorStreamChunk>, ApiKeyPoolError> {
         let account = self.select(model, body).ok_or(ApiKeyPoolError::NoAccount)?;
+        crate::internal::api::account_selection::record_selected(&account.id);
         let request = self.executor_request(account, model, body, true);
         self.executor
             .execute_stream(request)

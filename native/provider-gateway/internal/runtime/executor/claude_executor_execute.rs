@@ -531,6 +531,7 @@ impl ClaudeSubscriptionMessagesExecutor {
             ));
         }
 
+        crate::internal::api::account_selection::record_upstream_status(401, &[]);
         let refreshed = self
             .auth
             .refresh_after_status(401)
@@ -674,6 +675,7 @@ impl ClaudeSubscriptionMessagesExecutor {
             ));
         }
 
+        crate::internal::api::account_selection::record_upstream_status(401, &[]);
         let refreshed = self
             .auth
             .refresh_after_status(401)
@@ -829,6 +831,10 @@ impl ClaudeSubscriptionMessagesExecutor {
         {
             response = ClaudeMessagesStreamResponse::synthetic(502);
         }
+        crate::internal::api::account_selection::record_upstream_status(
+            response.status(),
+            response.error_body(),
+        );
         let request_scoped = fast_request && !(200..300).contains(&response.status());
         let state_persisted = if request_scoped {
             Some(true)
@@ -944,6 +950,10 @@ impl ClaudeSubscriptionMessagesExecutor {
         model: Option<&str>,
         response: &ClaudeMessagesResponse,
     ) -> Option<bool> {
+        crate::internal::api::account_selection::record_upstream_status(
+            response.status(),
+            response.body(),
+        );
         self.record_account_status(model, response.status(), response.retry_after())
             .await
     }
@@ -1618,7 +1628,7 @@ impl ClaudeSubscriptionAccountPool {
         model: &str,
         body: Vec<u8>,
     ) -> Result<ClaudePooledStreamExecutionOutcome, ClaudeAccountPoolError> {
-        let mut remaining = self.candidates.clone();
+        let mut remaining = crate::internal::api::account_selection::candidates(&self.candidates);
         let mut attempted_auth_ids = Vec::new();
         let mut last_execution_error = None;
         let mut last_outcome = None;
@@ -1634,6 +1644,7 @@ impl ClaudeSubscriptionAccountPool {
                     &body,
                 )
                 .map_err(ClaudeAccountPoolError::Routing)?;
+            crate::internal::api::account_selection::record_selected(&selected.auth_id);
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
             let executor = self
@@ -1691,7 +1702,7 @@ impl ClaudeSubscriptionAccountPool {
         body: Vec<u8>,
         stream: bool,
     ) -> Result<ClaudePooledExecutionOutcome, ClaudeAccountPoolError> {
-        let mut remaining = self.candidates.clone();
+        let mut remaining = crate::internal::api::account_selection::candidates(&self.candidates);
         let mut attempted_auth_ids = Vec::new();
         let mut last_execution_error = None;
         let mut last_outcome = None;
@@ -1707,6 +1718,7 @@ impl ClaudeSubscriptionAccountPool {
                     &body,
                 )
                 .map_err(ClaudeAccountPoolError::Routing)?;
+            crate::internal::api::account_selection::record_selected(&selected.auth_id);
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
             let executor = self

@@ -265,7 +265,9 @@ export function ProviderSettingsPanel({
     options.length === 1 && options[0]?.entry.target._tag === "PrimaryConnectionTarget";
 
   return (
-    <SettingsPageContainer className={sections === "models" ? "mx-0 max-w-[75rem] gap-8" : undefined}>
+    <SettingsPageContainer
+      className={sections === "models" ? "mx-0 max-w-[75rem] gap-8" : undefined}
+    >
       {!onlyPrimaryDevice ? (
         <SettingsSection title="Environments">
           {options.length === 0 ? (

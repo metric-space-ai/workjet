@@ -201,6 +201,7 @@ impl CodexSubscriptionResponsesExecutor {
                 .await
                 .map_err(CodexExecutionError::Transport)?;
             if response.status() == 401 && attempt == 1 {
+                crate::internal::api::account_selection::record_upstream_status(401, &[]);
                 credentials = self
                     .auth
                     .refresh_after_status(401)
@@ -210,6 +211,10 @@ impl CodexSubscriptionResponsesExecutor {
                     .clone();
                 continue;
             }
+            crate::internal::api::account_selection::record_upstream_status(
+                response.status(),
+                response.body(),
+            );
             if !(200..300).contains(&response.status()) {
                 if let (Some(cache), Some(scope)) = (&self.reasoning, &replay_scope) {
                     cache.clear_on_invalid_signature(scope, response.status(), response.body());
@@ -268,6 +273,7 @@ impl CodexSubscriptionResponsesExecutor {
                 .await
                 .map_err(CodexExecutionError::Transport)?;
             if response.status() == 401 && attempt == 1 {
+                crate::internal::api::account_selection::record_upstream_status(401, &[]);
                 credentials = self
                     .auth
                     .refresh_after_status(401)
@@ -277,6 +283,7 @@ impl CodexSubscriptionResponsesExecutor {
                     .clone();
                 continue;
             }
+            crate::internal::api::account_selection::record_upstream_status(response.status(), &[]);
             if !(200..300).contains(&response.status()) {
                 return Err(CodexExecutionError::Http {
                     status: response.status(),
@@ -358,6 +365,7 @@ impl CodexSubscriptionResponsesExecutor {
                 .await
                 .map_err(CodexExecutionError::Transport)?;
             if response.status() == 401 && attempt == 1 {
+                crate::internal::api::account_selection::record_upstream_status(401, &[]);
                 credentials = self
                     .auth
                     .refresh_after_status(401)
@@ -426,6 +434,7 @@ impl CodexSubscriptionResponsesExecutor {
                 .await
                 .map_err(CodexExecutionError::Transport)?;
             if response.status() == 401 && attempt == 1 {
+                crate::internal::api::account_selection::record_upstream_status(401, &[]);
                 credentials = self
                     .auth
                     .refresh_after_status(401)
@@ -435,6 +444,7 @@ impl CodexSubscriptionResponsesExecutor {
                     .clone();
                 continue;
             }
+            crate::internal::api::account_selection::record_upstream_status(response.status(), &[]);
             if !(200..300).contains(&response.status()) {
                 return Err(CodexExecutionError::Http {
                     status: response.status(),
@@ -492,6 +502,7 @@ impl CodexSubscriptionResponsesExecutor {
             // transports cannot accidentally require `response.completed`.
             response.set_passthrough();
             if response.status() == 401 && attempt == 1 {
+                crate::internal::api::account_selection::record_upstream_status(401, &[]);
                 credentials = self
                     .auth
                     .refresh_after_status(401)
@@ -501,6 +512,7 @@ impl CodexSubscriptionResponsesExecutor {
                     .clone();
                 continue;
             }
+            crate::internal::api::account_selection::record_upstream_status(response.status(), &[]);
             if !(200..300).contains(&response.status()) {
                 return Err(CodexExecutionError::Http {
                     status: response.status(),
@@ -746,7 +758,7 @@ impl CodexSubscriptionAccountPool {
         body: Vec<u8>,
         responses_lite: bool,
     ) -> Result<CodexPooledExecutionOutcome, CodexAccountPoolError> {
-        let mut remaining = self.candidates.clone();
+        let mut remaining = crate::internal::api::account_selection::candidates(&self.candidates);
         let mut attempted_auth_ids = Vec::new();
         let mut last_error = None;
 
@@ -755,6 +767,7 @@ impl CodexSubscriptionAccountPool {
                 .router
                 .select_for_request("codex", Some(model), self.clock.now_ms(), &remaining, &body)
                 .map_err(CodexAccountPoolError::Routing)?;
+            crate::internal::api::account_selection::record_selected(&selected.auth_id);
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
             let executor = self
@@ -801,7 +814,7 @@ impl CodexSubscriptionAccountPool {
         body: Vec<u8>,
         responses_lite: bool,
     ) -> Result<CodexPooledStreamExecutionOutcome, CodexAccountPoolError> {
-        let mut remaining = self.candidates.clone();
+        let mut remaining = crate::internal::api::account_selection::candidates(&self.candidates);
         let mut attempted_auth_ids = Vec::new();
         let mut last_error = None;
 
@@ -810,6 +823,7 @@ impl CodexSubscriptionAccountPool {
                 .router
                 .select_for_request("codex", Some(model), self.clock.now_ms(), &remaining, &body)
                 .map_err(CodexAccountPoolError::Routing)?;
+            crate::internal::api::account_selection::record_selected(&selected.auth_id);
             remaining.retain(|candidate| candidate.auth_id != selected.auth_id);
             attempted_auth_ids.push(selected.auth_id.clone());
             let executor = self

@@ -943,6 +943,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         );
         assert.equal(adapter.respondToRequest.mock.calls.length, 0);
         yield* provider.stopSession({ threadId });
+        adapter.startSession.mockClear();
       }),
     );
   }

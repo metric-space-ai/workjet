@@ -115,7 +115,7 @@ describe("source gateway inference", () => {
       }) },
       gateway: { scopedCatalog: () => Effect.succeed(catalog) },
       transport: {
-        probe: () => Effect.void,
+        probe: () => Effect.succeed(undefined),
         callTool: (target, tool, args) => Effect.sync(() => {
           expect(target.token).toBe("source-only");
           expect(tool).toBe("business_os.remote_worker_admission");

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { effectiveSnoozed } from "@workjet/client-runtime/state/thread-settled";
+import { selectThreadsForProjectScope } from "@workjet/client-runtime/state/worker-overview";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
 import { scopeThreadRef } from "@workjet/client-runtime/environment";
@@ -42,11 +43,14 @@ export function ProjectWorkspace({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const local = project.local;
-  const members = threads.filter((thread) => {
+  const scoped = selectThreadsForProjectScope(
+    threads,
+    new Set(local === null ? [] : [`${local.environmentId}:${local.id}`]),
+  );
+  const members = scoped.filter((thread) => {
     const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
     return (
       local !== null &&
-      thread.environmentId === local.environmentId &&
       thread.projectId === local.id &&
       thread.archivedAt === null &&
       thread.deletedAt == null &&
@@ -155,7 +159,7 @@ export function ProjectWorkspace({
                           ? thread.workjetConfig.team
                           : undefined;
                       return (
-                        <li key={thread.id} className="border-b border-border last:border-0">
+                        <li key={`${thread.environmentId}:${thread.id}`} className="border-b border-border last:border-0">
                           <button
                             type="button"
                             onClick={() =>
@@ -254,7 +258,7 @@ export function ProjectWorkspace({
                 {decisions.map((thread) => (
                   <button
                     type="button"
-                    key={thread.id}
+                    key={`${thread.environmentId}:${thread.id}`}
                     onClick={() => onOpenChat(scopeThreadRef(thread.environmentId, thread.id))}
                     className="block w-full truncate py-1 text-left text-sm hover:underline"
                   >

@@ -105,16 +105,14 @@ describe("groupWorkerThreads", () => {
     expect(grouping.unlinkedWorkers).toEqual([worker]);
   });
 
-  it("excludes a cross-environment parent reference", () => {
-    // Parent orchestrator genuinely exists, but in a different environment than
-    // the worker: the link is invalid and the worker is unlinked.
+  it("resolves a cross-environment parent reference", () => {
     const orchestratorInB = makeThread("orch-1", envB, orchestratorConfig());
     const workerInA = makeThread("worker-1", envA, workerConfig(envB, orchestratorInB.id));
 
     const grouping = groupWorkerThreads([orchestratorInB, workerInA]);
 
-    expect(grouping.groups).toEqual([]);
-    expect(grouping.unlinkedWorkers).toEqual([workerInA]);
+    expect(grouping.groups).toEqual([{ orchestrator: orchestratorInB, workers: [workerInA] }]);
+    expect(grouping.unlinkedWorkers).toEqual([]);
   });
 
   it("never treats standard or orchestrator threads as worker children", () => {

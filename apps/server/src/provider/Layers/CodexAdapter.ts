@@ -71,6 +71,7 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { readWorkerSourceHarness } from "../../workjet/WorkerSourceHarness.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1710,7 +1711,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           input.modelSelection?.instanceId === boundInstanceId
             ? input.modelSelection.model
             : undefined;
-        const sessionEnvironment = options?.resolveSessionEnvironment
+        const workerSource = readWorkerSourceHarness(input.threadId);
+        const sessionEnvironment = workerSource
+          ? { ...process.env, WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey }
+          : options?.resolveSessionEnvironment
           ? yield* options.resolveSessionEnvironment({ model: selectedModel })
           : options?.environment;
         const runtimeInput: CodexSessionRuntimeOptions = {
@@ -1718,7 +1722,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
-          launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, sessionEnvironment),
+          launchArgs: workerSource ? "" : resolveCodexLaunchArgs(codexConfig.launchArgs, sessionEnvironment),
           ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
@@ -1729,7 +1733,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { resumePolicy: "require-existing" as const }
             : {}),
           runtimeMode: input.runtimeMode,
-          ...(input.modelSelection?.instanceId === boundInstanceId
+          ...(workerSource ? { model: workerSource.model } : input.modelSelection?.instanceId === boundInstanceId
             ? { model: input.modelSelection.model }
             : {}),
           ...(serviceTier ? { serviceTier } : {}),
@@ -1752,6 +1756,17 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 ],
               }
             : {}),
+          ...(workerSource ? {
+            appServerArgs: [
+              ...(mcpSession ? ["-c", `mcp_servers.workjet.url=${mcpSession.endpoint}`, "-c", 'mcp_servers.workjet.bearer_token_env_var="WORKJET_MCP_BEARER_TOKEN"'] : []),
+              "-c", "model_provider=workjet_worker_source",
+              "-c", "model_providers.workjet_worker_source.name=WorkjetWorker",
+              "-c", `model_providers.workjet_worker_source.base_url=${workerSource.baseUrl}`,
+              "-c", "model_providers.workjet_worker_source.wire_api=responses",
+              "-c", "model_providers.workjet_worker_source.env_key=WORKJET_WORKER_SOURCE_KEY",
+              "-c", "model_providers.workjet_worker_source.requires_openai_auth=false",
+            ],
+          } : {}),
         };
         const sessionScope = yield* Scope.make("sequential");
         const processes: Array<ProviderTrackedProcess> = [];

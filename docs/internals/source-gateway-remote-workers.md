@@ -26,6 +26,7 @@ explicit worker profile’s `modelId` as `modelSelection.model` and its
 Instances selects and binds the immutable target harness/profile in
 `workerRequest`. Resolving these source references does not start or configure
 a source Code harness.
+
 The resolver intersects configured `llmRoutes[].gatewayAccountId` with the
 fresh scoped catalog for the exact target and exact model ID. One enabled,
 granted account must match. Multiple accounts fail closed unless an explicit

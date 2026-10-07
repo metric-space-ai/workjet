@@ -9,5 +9,5 @@ import * as Effect from "effect/Effect";
 export class RemoteWorkerAdmission extends Context.Service<
   RemoteWorkerAdmission,
   { readonly admit: (request: RemoteWorkerRequest) => Effect.Effect<void, RemoteWorkerDispatchError> }
->()("workjet/workjet/RemoteWorkerReceiver/RemoteWorkerAdmission") {}
+>()("workjet/workjet/RemoteWorkerAdmission") {}
 

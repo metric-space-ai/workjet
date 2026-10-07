@@ -19,6 +19,7 @@ import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { ProviderService } from "../provider/Services/ProviderService.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import { forkParked } from "../serverActivation.ts";
+import { readWorkerSourceHarness } from "./WorkerSourceHarness.ts";
 import {
   WorkerPullRequestStore,
   sameWorkerPullRequest,
@@ -55,6 +56,8 @@ export const make = Effect.gen(function* () {
       commandId: CommandId.make(`worker-pr-archive-${thread.id}`),
       threadId: thread.id,
     });
+    const harness = readWorkerSourceHarness(thread.id);
+    if (harness) yield* Effect.promise(() => harness.revoke());
   });
 
   const reconcile = Effect.fn("WorkerPullRequestLifecycle.reconcile")(function* (

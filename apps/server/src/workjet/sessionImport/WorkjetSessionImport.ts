@@ -194,6 +194,7 @@ const transcriptParser = (
   let model: string | null = null;
   let valid = true;
   let userFound = false;
+  let contextOnlyUserFound = false;
   let meaningful = false;
   let count = 0;
   let firstUser = "";
@@ -236,6 +237,7 @@ const transcriptParser = (
         visibleText(payload.content, role === "user" ? "input_text" : "output_text"),
       );
       text = role === "user" ? stripInjectedCodexContext(visible) : visible;
+      if (role === "user" && visible && !text) contextOnlyUserFound = true;
     } else {
       if (record.isSidechain === true) valid = false;
       workspaceRoot = asString(record.cwd) ?? workspaceRoot;
@@ -267,7 +269,16 @@ const transcriptParser = (
     feed,
     hasContent: () => meaningful,
     finish: (messages: ReadonlyArray<ImportedMessage>): ParsedSession | null => {
-      if (!valid || !userFound) return null;
+      // Some named Codex work histories log only injected context as user messages.
+      // Keep their visible assistant history without fabricating a user request.
+      const namedContextHistory =
+        source === "codex" &&
+        contextOnlyUserFound &&
+        meaningful &&
+        !!sourceThreadId &&
+        !!recordedTitle.trim() &&
+        !initializationText(recordedTitle);
+      if (!valid || (!userFound && !namedContextHistory)) return null;
       const title =
         customTitle ||
         recordedTitle ||

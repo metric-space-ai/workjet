@@ -192,7 +192,10 @@ export function WorkjetComputersSettingsView({
   const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
   const editingComputer =
     configuration.computers.find((computer) => computer.id === editingComputerId) ?? null;
-  const nativeComputers = membership?.phase === "ready" ? membership.computers : [];
+  const nativeComputers =
+    membership?.phase === "ready"
+      ? membership.computers.filter((computer) => computer.status === "assigned")
+      : [];
   const nativeOnlyComputers = nativeComputers.filter(
     (computer) => !configuration.computers.some((configured) => configured.id === computer.id),
   );
@@ -264,7 +267,8 @@ export function WorkjetComputersSettingsView({
         </Button>
       </div>
       {configuration.computers.length === 0 &&
-      (membership === undefined || (membership.phase === "ready" && nativeComputers.length === 0)) ? (
+      (membership === undefined ||
+        (membership.phase === "ready" && nativeComputers.length === 0)) ? (
         <SettingsRow
           title="No computers yet"
           description="Add this computer, an SSH host, or a computer on your Tailscale network."

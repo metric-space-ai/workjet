@@ -138,10 +138,11 @@ const fixture = () => {
         events.push("catalog");
         return scoped;
       }),
-    revalidate: () => Effect.suspend(() => {
-      events.push("native");
-      return nativeError === undefined ? Effect.succeed(receipt) : Effect.fail(nativeError);
-    }),
+    revalidate: () =>
+      Effect.suspend(() => {
+        events.push("native");
+        return nativeError === undefined ? Effect.succeed(receipt) : Effect.fail(nativeError);
+      }),
     forward: (selected, request, deadline) =>
       Effect.sync(() => {
         events.push("forward");

@@ -1751,6 +1751,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   startedAt: row.startedAt,
                   completedAt: row.completedAt,
                   assistantMessageId: row.assistantMessageId,
+                  ...(row.assistantMessagePreview ? { assistantMessagePreview: row.assistantMessagePreview } : {}),
                   ...(row.sourceProposedPlanThreadId !== null && row.sourceProposedPlanId !== null
                     ? {
                         sourceProposedPlan: {

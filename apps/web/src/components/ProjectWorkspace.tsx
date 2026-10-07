@@ -61,7 +61,9 @@ export function ProjectWorkspace({
   const meeting = project.configuration?.jourFixe;
   const defaults = suggestedProjectKpis(project.title);
   const kpis = overview.slots.map((slot, index) => slot ?? defaults?.[index] ?? null);
-  const decisions = members.filter((thread) => thread.hasPendingApprovals || thread.hasPendingUserInput);
+  const decisions = members.filter(
+    (thread) => thread.hasPendingApprovals || thread.hasPendingUserInput,
+  );
   const weekdays = [
     "",
     "Monday",
@@ -92,18 +94,35 @@ export function ProjectWorkspace({
           </Button>
         </header>
         <dl className="mb-6 flex flex-wrap gap-x-8 gap-y-3" data-workjet-overview-kpis="">
-          {kpis.map((slot, index) => slot ? (
-            <div key={index} className="min-w-0">
-              <dd className="text-[22px] font-semibold tracking-tight tabular-nums">
-                {slot.kind === "metric"
-                  ? `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
-                  : slot.kind === "text" ? slot.value
-                  : slot.kind === "updated" ? (local?.updatedAt ? projectUpdateAge(local.updatedAt) : "—")
-                  : <a href={slot.url} target="_blank" rel="noopener noreferrer" className="hover:underline">↗</a>}
-              </dd>
-              <dt className="max-w-48 break-words text-xs text-muted-foreground">{slot.label}</dt>
-            </div>
-          ) : null)}
+          {kpis.map((slot, index) =>
+            slot ? (
+              <div key={index} className="min-w-0">
+                <dd className="text-[22px] font-semibold tracking-tight tabular-nums">
+                  {slot.kind === "metric" ? (
+                    `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+                  ) : slot.kind === "text" ? (
+                    slot.value
+                  ) : slot.kind === "updated" ? (
+                    local?.updatedAt ? (
+                      projectUpdateAge(local.updatedAt)
+                    ) : (
+                      "—"
+                    )
+                  ) : (
+                    <a
+                      href={slot.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      ↗
+                    </a>
+                  )}
+                </dd>
+                <dt className="max-w-48 break-words text-xs text-muted-foreground">{slot.label}</dt>
+              </div>
+            ) : null,
+          )}
         </dl>
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-6">
@@ -130,12 +149,19 @@ export function ProjectWorkspace({
                             onClick={() =>
                               onOpenChat(scopeThreadRef(thread.environmentId, thread.id))
                             }
-                            className={section === "supervisor"
-                              ? "flex w-full items-start gap-3 bg-muted/20 p-4 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
-                              : "grid w-full grid-cols-[8px_minmax(0,1fr)_44px] items-center gap-3 md:grid-cols-[8px_minmax(0,1.1fr)_minmax(0,1.4fr)_64px_44px] px-3 py-2.5 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"}
+                            className={
+                              section === "supervisor"
+                                ? "flex w-full items-start gap-3 bg-muted/20 p-4 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
+                                : "grid w-full grid-cols-[8px_minmax(0,1fr)_44px] items-center gap-3 md:grid-cols-[8px_minmax(0,1.1fr)_minmax(0,1.4fr)_64px_44px] px-3 py-2.5 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
+                            }
                           >
                             {section === "supervisor" ? (
-                              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-sm font-semibold text-primary" aria-hidden="true">S</span>
+                              <span
+                                className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-sm font-semibold text-primary"
+                                aria-hidden="true"
+                              >
+                                S
+                              </span>
                             ) : null}
                             <span
                               className={`size-2 shrink-0 rounded-full ${status.dot} ${section === "supervisor" ? "mt-2" : ""}`}
@@ -147,7 +173,8 @@ export function ProjectWorkspace({
                                 <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                                   <span className="text-sm font-semibold">{thread.title}</span>
                                   <span className="text-xs text-muted-foreground">
-                                    {thread.modelSelection.model} · {projectUpdateAge(thread.updatedAt)}
+                                    {thread.modelSelection.model} ·{" "}
+                                    {projectUpdateAge(thread.updatedAt)}
                                   </span>
                                 </span>
                                 {thread.latestTurn?.assistantMessagePreview ? (
@@ -163,17 +190,32 @@ export function ProjectWorkspace({
                               </span>
                             ) : (
                               <>
-                                <span className="min-w-0 truncate text-sm font-medium" title={thread.title}>{thread.title}</span>
+                                <span
+                                  className="min-w-0 truncate text-sm font-medium"
+                                  title={thread.title}
+                                >
+                                  {thread.title}
+                                </span>
                                 <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:block">
-                                  {thread.planProgress?.step ?? thread.latestTurn?.assistantMessagePreview ?? (status.label === "Idle" ? "" : status.label)}
+                                  {thread.planProgress?.step ??
+                                    thread.latestTurn?.assistantMessagePreview ??
+                                    (status.label === "Idle" ? "" : status.label)}
                                   {section === "workers" && thread.branch ? (
-                                    <span className="inline-flex items-center gap-1"><GitBranchIcon className="size-3" />{thread.branch}</span>
+                                    <span className="inline-flex items-center gap-1">
+                                      <GitBranchIcon className="size-3" />
+                                      {thread.branch}
+                                    </span>
                                   ) : null}
                                 </span>
-                                <span className="hidden truncate text-[11px] text-muted-foreground md:block" title={`${thread.modelSelection.instanceId} · ${thread.modelSelection.model}`}>
+                                <span
+                                  className="hidden truncate text-[11px] text-muted-foreground md:block"
+                                  title={`${thread.modelSelection.instanceId} · ${thread.modelSelection.model}`}
+                                >
                                   {thread.session?.providerName ?? thread.modelSelection.instanceId}
                                 </span>
-                                <span className="text-right text-[11px] text-muted-foreground">{projectUpdateAge(thread.updatedAt)}</span>
+                                <span className="text-right text-[11px] text-muted-foreground">
+                                  {projectUpdateAge(thread.updatedAt)}
+                                </span>
                               </>
                             )}
                           </button>
@@ -188,10 +230,18 @@ export function ProjectWorkspace({
           <aside className="space-y-4 text-sm">
             {decisions.length > 0 ? (
               <section className="rounded-lg border border-border p-3">
-                <h2 className="mb-2 text-xs font-medium text-muted-foreground">Open decisions · {decisions.length}</h2>
+                <h2 className="mb-2 text-xs font-medium text-muted-foreground">
+                  Open decisions · {decisions.length}
+                </h2>
                 {decisions.map((thread) => (
-                  <button type="button" key={thread.id} onClick={() => onOpenChat(scopeThreadRef(thread.environmentId, thread.id))}
-                    className="block w-full truncate py-1 text-left text-sm hover:underline">{thread.title}</button>
+                  <button
+                    type="button"
+                    key={thread.id}
+                    onClick={() => onOpenChat(scopeThreadRef(thread.environmentId, thread.id))}
+                    className="block w-full truncate py-1 text-left text-sm hover:underline"
+                  >
+                    {thread.title}
+                  </button>
                 ))}
               </section>
             ) : null}

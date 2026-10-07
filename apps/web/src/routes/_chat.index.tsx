@@ -517,9 +517,17 @@ function ProjectGallery({
             </div>
           </div>
           {projectsUnavailable ? (
-            <div role="status" className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm" data-workjet-project-registry-stale="">
+            <div
+              role="status"
+              className="mb-4 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-sm"
+              data-workjet-project-registry-stale=""
+            >
               <span>Projektliste veraltet</span>
-              {onRefresh && <Button size="sm" variant="ghost" onClick={onRefresh}>Refresh</Button>}
+              {onRefresh && (
+                <Button size="sm" variant="ghost" onClick={onRefresh}>
+                  Refresh
+                </Button>
+              )}
             </div>
           ) : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

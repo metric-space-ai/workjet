@@ -151,13 +151,23 @@ export function ProjectTeamPanel(props: {
     }
   };
   return (
-    <section aria-label="Project team" className={props.compact ? "flex max-h-52 shrink-0 flex-wrap items-start gap-x-4 gap-y-1 overflow-auto border-b px-4 py-2 text-xs" : "border-b px-4 py-2 text-sm"} data-workjet-team-toolbar={props.compact ? "compact" : undefined}>
+    <section
+      aria-label="Project team"
+      className={
+        props.compact
+          ? "flex max-h-52 shrink-0 flex-wrap items-start gap-x-4 gap-y-1 overflow-auto border-b px-4 py-2 text-xs"
+          : "border-b px-4 py-2 text-sm"
+      }
+      data-workjet-team-toolbar={props.compact ? "compact" : undefined}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <strong className="capitalize">{team.role}</strong>
         {team.role === "specialist" ? <span>{team.domain}</span> : null}
-        {props.compact ? null : <span>
-          {props.thread.modelSelection.instanceId} · {props.thread.modelSelection.model}
-        </span>}
+        {props.compact ? null : (
+          <span>
+            {props.thread.modelSelection.instanceId} · {props.thread.modelSelection.model}
+          </span>
+        )}
         {team.parentThreadId ? (
           <button type="button" onClick={() => props.onOpen(team.parentThreadId!)}>
             Parent: {parent?.title ?? team.parentThreadId}

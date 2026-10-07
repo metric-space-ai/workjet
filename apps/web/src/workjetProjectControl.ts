@@ -50,3 +50,11 @@ export function createWorkjetProject(
 ): Promise<CtoxWorkjetProjectControlResult> {
   return requestWorkjetProjectControl(instanceId, request, port);
 }
+
+export function configureWorkjetProject(
+  instanceId: string,
+  request: Extract<CtoxWorkjetProjectControlRequest, { readonly action: "project.configure" }>,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return requestWorkjetProjectControl(instanceId, request, port);
+}

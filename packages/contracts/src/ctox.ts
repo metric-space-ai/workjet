@@ -493,12 +493,55 @@ export type CtoxWorkjetDeviceControlResult = typeof CtoxWorkjetDeviceControlResu
 const CtoxProjectText = (maximum: number) =>
   TrimmedNonEmptyString.check(Schema.isMaxLength(maximum), NoAsciiControlCharacters);
 
+const CtoxProjectUrl = CtoxProjectText(2_048).check(
+  Schema.makeFilter((value) => {
+    try {
+      const url = new URL(value);
+      return (["http:", "https:"].includes(url.protocol) && !!url.hostname &&
+        !url.username && !url.password) || "Use an HTTP(S) URL without credentials.";
+    } catch { return "Use an absolute HTTP(S) URL."; }
+  }),
+);
+const projectInfoText = (maximum: number) => Schema.String.check(
+  Schema.isMaxLength(maximum),
+  Schema.isPattern(/^[^\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]*$/u),
+);
+export const CtoxWorkjetProjectInfo = Schema.Struct({
+  description: Schema.optionalKey(projectInfoText(4_096)),
+  goal: Schema.optionalKey(projectInfoText(4_096)),
+  phase: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128), NoAsciiControlCharacters)),
+  status: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128), NoAsciiControlCharacters)),
+});
+export const CtoxWorkjetJourFixe = Schema.Struct({
+  weekday: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 7 })),
+  time: Schema.String.check(Schema.isPattern(/^([01][0-9]|2[0-3]):[0-5][0-9]$/)),
+  timezone: CtoxProjectText(128).check(Schema.makeFilter((value) => {
+    try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; }
+    catch { return "Use a valid IANA timezone."; }
+  })),
+});
+export const CtoxWorkjetProjectConfiguration = Schema.Struct({
+  description: Schema.optionalKey(Schema.NullOr(projectInfoText(4_096))),
+  repoUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
+  publicUrl: Schema.optionalKey(Schema.NullOr(CtoxProjectUrl)),
+  info: Schema.optionalKey(Schema.NullOr(CtoxWorkjetProjectInfo)),
+  jourFixe: Schema.optionalKey(Schema.NullOr(CtoxWorkjetJourFixe)),
+});
+export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfiguration.Type;
+
 /**
  * Project control travels only through the selected CTOX guest's existing
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   Schema.Struct({ action: Schema.Literal("project.list") }),
+  Schema.Struct({
+    action: Schema.Literal("project.configure"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    title: CtoxProjectText(256),
+    ...CtoxWorkjetProjectConfiguration.fields,
+  }),
   Schema.Struct({
     action: Schema.Literal("project.worker.add"),
     commandId: CommandId,
@@ -544,10 +587,14 @@ export const CtoxWorkjetWorkingCopyProjection = Schema.Struct({
 });
 export type CtoxWorkjetWorkingCopyProjection = typeof CtoxWorkjetWorkingCopyProjection.Type;
 
-export const CtoxWorkjetProjectProjection = Schema.Struct({
+export const CtoxWorkjetProjectMetadataProjection = Schema.Struct({
   id: ProjectId,
   title: CtoxProjectText(256),
   createdAt: Schema.optionalKey(IsoDateTime),
+  ...CtoxWorkjetProjectConfiguration.fields,
+});
+export const CtoxWorkjetProjectProjection = Schema.Struct({
+  ...CtoxWorkjetProjectMetadataProjection.fields,
   workingCopies: Schema.Array(CtoxWorkjetWorkingCopyProjection).check(Schema.isMaxLength(500)),
 });
 export type CtoxWorkjetProjectProjection = typeof CtoxWorkjetProjectProjection.Type;
@@ -587,6 +634,11 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   Schema.Struct({
     action: Schema.Literal("project.create"),
     project: CtoxWorkjetProjectProjection,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.configure"),
+    commandId: CommandId,
+    project: CtoxWorkjetProjectMetadataProjection,
   }),
 ]);
 export type CtoxWorkjetProjectControlResponse = typeof CtoxWorkjetProjectControlResponse.Type;

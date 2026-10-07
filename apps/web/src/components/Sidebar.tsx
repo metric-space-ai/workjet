@@ -2003,6 +2003,26 @@ export default function Sidebar() {
       const project = workjetProjects.find((candidate) => candidate.id === projectId);
       if (instanceId === null || (project === undefined && localProject === undefined)) return;
       if (localProject !== undefined) {
+        if (project !== undefined) {
+          projectSwitchPending.current = true;
+          setIsSwitchingProject(true);
+          try {
+            if (!selectWorkjetProject(instanceId, project.id)) return;
+            setProjectScopeKey(null);
+            await router.navigate({ to: "/" });
+            if (isMobile) setOpenMobile(false);
+          } catch (error) {
+            toastManager.add({
+              type: "error",
+              title: "Could not open project overview",
+              description: error instanceof Error ? error.message : "Please try again.",
+            });
+          } finally {
+            projectSwitchPending.current = false;
+            setIsSwitchingProject(false);
+          }
+          return;
+        }
         const supervisor = findProjectSupervisor(
           threads,
           scopeProjectRef(localProject.environmentId, localProject.id),
@@ -2051,7 +2071,7 @@ export default function Sidebar() {
       try {
         selectWorkjetProject(instanceId, project.id);
         setProjectScopeKey(null);
-        // The landing route opens the retained supervisor; never create a draft on selection.
+        // The landing route opens the overview and ensures its retained supervisor.
         await router.navigate({ to: "/" });
         if (isMobile) setOpenMobile(false);
       } catch (error) {
@@ -3844,6 +3864,18 @@ export default function Sidebar() {
                     <FolderPlusIcon aria-hidden className="size-4" />
                   </SidebarMenuButton>
                 </div>
+                {selectedWorkjetProject ? (
+                  <SidebarMenuButton
+                    type="button"
+                    data-workjet-action="project.workspace.overview"
+                    disabled={isSwitchingProject}
+                    isActive={routeTarget === null}
+                    onClick={() => void handleWorkjetProjectSelection(selectedWorkjetProject.id)}
+                  >
+                    <FolderIcon aria-hidden className="size-4 shrink-0" />
+                    <span>Overview</span>
+                  </SidebarMenuButton>
+                ) : null}
               </div>
             ) : null}
           </SidebarGroup>

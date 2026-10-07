@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { randomUUID } from "../lib/utils";
 import { JourFixePlayer } from "./JourFixePlayer";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSeparator } from "./WorkspaceBreadcrumb";
@@ -24,7 +25,7 @@ export interface JourFixeRoomProps {
   readonly onSlideChange?: (slideId: string) => void;
   readonly onToggleMicrophone?: () => void;
   readonly microphoneActive?: boolean;
-  readonly partialTranscript?: JourFixePartialTranscript;
+  readonly partialTranscript?: JourFixePartialTranscript | undefined;
   /** Blob obtained through the selected instance's authorized file channel. */
   readonly audio?: { readonly meetingId: string; readonly projectId: string; readonly slideId: string; readonly deckRevision: number; readonly blobUrl: string };
 }
@@ -108,7 +109,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
             </fieldset>)}
             {todoDraft && !hasTodoEdits && <p role="status" className="text-sm text-amber-500">The proposal changed. Review the updated list before editing again.</p>}
             {meeting.todos?.status === "proposed" && meeting.state === "review" && <div className="flex flex-wrap items-center justify-end gap-2">
-              {canRevise && <Button variant="outline" disabled={busy || todos.length >= 100} onClick={() => editTodos([...todos, { id: crypto.randomUUID(), title: "", acceptance: "", priority: "P1", evidenceIds: [] }])}><PlusIcon />Add todo</Button>}
+              {canRevise && <Button variant="outline" disabled={busy || todos.length >= 100} onClick={() => editTodos([...todos, { id: randomUUID(), title: "", acceptance: "", priority: "P1", evidenceIds: [] }])}><PlusIcon />Add todo</Button>}
               {hasTodoEdits && onReviseTodos && <Button disabled={busy || todos.some((todo) => !todo.title.trim() || !todo.acceptance.trim())} onClick={() => void perform(() => onReviseTodos(meeting.id, meeting.revision, meeting.todos!.revision, todos), () => setTodoDraft(null))}>Save edits</Button>}
               {!hasTodoEdits && todos.length === 0 && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmEmpty} onChange={(event) => setConfirmEmpty(event.target.checked)} disabled={busy} />Confirm no to-dos for this meeting</label>}
               {onConfirmTodos && <Button disabled={busy || hasTodoEdits || meeting.previousGoalRevision === undefined || (todos.length === 0 && !confirmEmpty)} onClick={() => void perform(() => onConfirmTodos(meeting.id, meeting.revision, meeting.todos!.revision, meeting.previousGoalRevision!))}>Confirm {todos.length} to-dos</Button>}

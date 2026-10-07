@@ -8,6 +8,7 @@ import { ProjectCalendar } from "../components/ProjectCalendar";
 import { Button } from "../components/ui/button";
 import { type JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import type { GalleryProject } from "../projectOverview";
+import { randomUUID } from "../lib/utils";
 import fixture from "./jour-fixe.contract.json";
 import "../index.css";
 
@@ -68,8 +69,8 @@ function Fixture() {
       onRefresh={async () => { setMeeting({ ...meeting }); }}
       onStartMeeting={(_id, revision) => apply(revision, (current) => ({ ...current, state: "live", revision: current.revision + 1 }))}
       onEndMeeting={(_id, revision) => apply(revision, (current) => ({ ...current, state: "review", revision: current.revision + 1 }))}
-      onComment={(draft, text) => apply(draft.expectedRevision, (current) => ({ ...current, revision: current.revision + 1, comments: [...current.comments, { id: crypto.randomUUID(), slideId: draft.slideId, deckRevision: draft.deckRevision, x: draft.x, y: draft.y, text }] }))}
-      onMessage={(_id, revision, text) => apply(revision, (current) => ({ ...current, revision: current.revision + 1, transcript: [...current.transcript, { id: crypto.randomUUID(), sequence: Math.max(0, ...current.transcript.map((turn) => turn.sequence)) + 1, speaker: "owner", text }] }))}
+      onComment={(draft, text) => apply(draft.expectedRevision, (current) => ({ ...current, revision: current.revision + 1, comments: [...current.comments, { id: randomUUID(), slideId: draft.slideId, deckRevision: draft.deckRevision, x: draft.x, y: draft.y, text }] }))}
+      onMessage={(_id, revision, text) => apply(revision, (current) => ({ ...current, revision: current.revision + 1, transcript: [...current.transcript, { id: randomUUID(), sequence: Math.max(0, ...current.transcript.map((turn) => turn.sequence)) + 1, speaker: "owner", text }] }))}
       onReviseTodos={(_id, revision, proposal, items) => apply(revision, (current) => { if (current.todos?.revision !== proposal) throw new Error("Stale proposal"); return { ...current, revision: current.revision + 1, todos: { revision: proposal + 1, status: "proposed", items } }; })}
       onConfirmTodos={(_id, revision, proposal, goalRevision) => apply(revision, (current) => { if (current.todos?.revision !== proposal || current.previousGoalRevision !== goalRevision) throw new Error("Stale goal"); return { ...current, state: "confirmed", revision: current.revision + 1, todos: { ...current.todos, status: "confirmed" } }; })}
     />}

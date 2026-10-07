@@ -3,7 +3,7 @@ import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from "lucide-r
 import { Button } from "./ui/button";
 
 export interface JourFixePlayerProps {
-  readonly source?: string;
+  readonly source?: string | undefined;
   readonly hasPrevious: boolean;
   readonly hasNext: boolean;
   readonly onPrevious: () => void;

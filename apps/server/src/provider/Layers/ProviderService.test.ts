@@ -36,6 +36,7 @@ import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -70,6 +71,7 @@ import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const serverConfigTestLayer = ServerConfig.layerTest(process.cwd(), process.cwd()).pipe(
   Layer.provide(NodeServices.layer),
 );
@@ -934,7 +936,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         const sent = adapter.sendTurn.mock.calls[0]?.[0];
         assert.deepEqual(sent?.importedHistory, history);
         assert.equal(sent?.requestId, "persisted-continuation");
-        assert.ok(sent?.input?.includes(JSON.stringify(history)));
+        assert.ok(sent?.input?.includes(encodeUnknownJson(history)));
         assert.ok(sent?.input?.endsWith("Current request:\n\nContinue the investigation."));
         assert.ok(
           sent?.input?.includes(
@@ -968,7 +970,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
           ],
         }),
       );
-      assert.ok(error instanceof ProviderAdapterRequestError);
+      assert.ok(Schema.is(ProviderAdapterRequestError)(error));
       assert.ok(error.detail.includes("cannot continue imported conversation history"));
       assert.equal(routing.cursor.sendTurn.mock.calls.length, 0);
       yield* provider.stopSession({ threadId });
@@ -999,7 +1001,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
           ],
         }),
       );
-      assert.ok(error instanceof ProviderAdapterRequestError);
+      assert.ok(Schema.is(ProviderAdapterRequestError)(error));
       assert.ok(error.detail.includes("No messages were omitted and no turn was sent"));
       assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
       yield* provider.stopSession({ threadId });

@@ -4,7 +4,8 @@ import type {
   ProjectId,
   ThreadId,
 } from "@workjet/contracts";
-import { OrchestrationCommand } from "@workjet/contracts";
+import { OrchestrationCommand, RemoteWorkerRequest } from "@workjet/contracts";
+import { make as makeRemoteWorkerStore } from "../../workjet/RemoteWorkerStore.ts";
 import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -68,6 +69,8 @@ interface CommandEnvelope {
   startedAtMs: number;
   deferWhileBusy?: boolean | undefined;
   workerDelegation?: OrchestrationDispatchOptions["workerDelegation"] | undefined;
+  remoteWorkerRequest?: RemoteWorkerRequest | undefined;
+  remoteProjectMirror?: true | undefined;
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
@@ -92,6 +95,7 @@ function commandToAggregateRef(command: OrchestrationCommand): {
 
 const makeOrchestrationEngine = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const remoteWorkerStore = yield* makeRemoteWorkerStore;
   const mailbox = yield* WorkjetMailboxStore.pipe(Effect.provide(WorkjetMailboxStoreLive));
   const eventStore = yield* OrchestrationEventStore;
   const commandReceiptRepository = yield* OrchestrationCommandReceiptRepository;
@@ -315,6 +319,46 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           }
         }
 
+        let remoteWorkerRequest: RemoteWorkerRequest | undefined;
+        const command = envelope.command;
+        const existingThread = "threadId" in command
+          ? commandReadModel.threads.find((thread) => thread.id === command.threadId)
+          : undefined;
+        const isRemoteWorker = environmentId !== undefined && existingThread?.workjetConfig.role === "worker" &&
+          existingThread.workjetConfig.parent.environmentId !== environmentId;
+        if (envelope.remoteWorkerRequest || isRemoteWorker) {
+          const requestId = envelope.remoteWorkerRequest?.requestId ?? existingThread!.id;
+          const bound = yield* remoteWorkerStore.get("inbound", requestId).pipe(
+            Effect.mapError((cause) => new OrchestrationCommandInvariantError({
+              commandType: command.type, detail: "Remote worker receipt is unavailable.", cause,
+            })),
+          );
+          if (Option.isNone(bound) || bound.value.response?.outcome.status === "failed") {
+            return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type, detail: "Remote worker has no accepted native request.",
+            });
+          }
+          const request = bound.value.request;
+          if (envelope.remoteWorkerRequest) {
+            const encode = Schema.encodeSync(Schema.fromJsonString(RemoteWorkerRequest));
+            if (command.type !== "thread.create" ||
+              encode(request) !== encode(envelope.remoteWorkerRequest) ||
+              command.threadId !== request.requestId || command.projectId !== request.project.id ||
+              command.branch !== `workjet/worker/${request.requestId}` ||
+              command.worktreePath !== bound.value.worktreePath || command.worktreePath === null ||
+              request.targetEnvironmentId !== environmentId ||
+              request.parent.environmentId === environmentId
+            ) return yield* new OrchestrationCommandInvariantError({
+              commandType: command.type, detail: "Remote worker creation does not match its native receipt.",
+            });
+          }
+          remoteWorkerRequest = request;
+        }
+        if (envelope.remoteProjectMirror && command.type !== "project.create") {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type, detail: "Only a target project creation can be a remote mirror.",
+          });
+        }
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
@@ -322,6 +366,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           workerCleanupComplete,
           workerPullRequestTerminal,
           workerExecutionStopped,
+          remoteWorkerRequest,
+          remoteProjectMirror: envelope.remoteProjectMirror,
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>
@@ -531,6 +577,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         startedAtMs: yield* Clock.currentTimeMillis,
         deferWhileBusy: options?.deferWhileBusy,
         workerDelegation: options?.workerDelegation,
+        remoteWorkerRequest: options?.remoteWorkerRequest,
+        remoteProjectMirror: options?.remoteProjectMirror,
       });
       return yield* Deferred.await(result);
     });

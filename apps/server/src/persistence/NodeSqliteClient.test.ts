@@ -33,6 +33,30 @@ layer("NodeSqliteClient", (it) => {
     }),
   );
 
+  it.effect("refreshes cached result columns when a migration rebuilds a table", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`CREATE TABLE rebuilt_entries(id TEXT, name TEXT, deleted_at TEXT)`;
+      yield* sql`INSERT INTO rebuilt_entries VALUES ('one', 'Preserved', NULL)`;
+      const before = yield* sql`SELECT * FROM rebuilt_entries`;
+      assert.deepEqual(before, [{ id: "one", name: "Preserved", deleted_at: null }]);
+      yield* sql`
+        CREATE TABLE rebuilt_entries_next(id TEXT, registration TEXT, name TEXT, deleted_at TEXT)
+      `;
+      yield* sql`
+        INSERT INTO rebuilt_entries_next SELECT id, NULL, name, deleted_at FROM rebuilt_entries
+      `;
+      yield* sql`DROP TABLE rebuilt_entries`;
+      yield* sql`ALTER TABLE rebuilt_entries_next RENAME TO rebuilt_entries`;
+      const after = yield* sql`SELECT * FROM rebuilt_entries`;
+      assert.deepEqual(after, [
+        { id: "one", registration: null, name: "Preserved", deleted_at: null },
+      ]);
+      const values = yield* sql`SELECT * FROM rebuilt_entries`.values;
+      assert.deepEqual(values, [["one", null, "Preserved", null]]);
+    }),
+  );
+
   it.effect("returns a typed failure when an unprepared statement cannot be prepared", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

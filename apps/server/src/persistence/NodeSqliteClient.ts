@@ -182,8 +182,24 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
         }
       });
 
+    // Node caches result-column metadata on StatementSync. A statement
+    // automatically recompiled after DDL can otherwise return the old column
+    // names for a rebuilt table, losing or mislabelling migration data.
+    const afterSchemaChange = (
+      sql: string,
+      effect: Effect.Effect<ReadonlyArray<any>, SqlError>,
+    ) =>
+      /^\s*(?:(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)\s*)*(?:CREATE|ALTER|DROP|VACUUM|REINDEX)\b/i.test(
+        sql,
+      )
+        ? effect.pipe(Effect.tap(() => Cache.invalidateAll(prepareCache)))
+        : effect;
+
     const run = (sql: string, params: ReadonlyArray<unknown>, raw = false) =>
-      Effect.flatMap(Cache.get(prepareCache, sql), (s) => runStatement(s, params, raw));
+      afterSchemaChange(
+        sql,
+        Effect.flatMap(Cache.get(prepareCache, sql), (s) => runStatement(s, params, raw)),
+      );
 
     const runStatementValues = (
       statement: NodeSqlite.StatementSync,
@@ -230,8 +246,11 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
       );
 
     const runValues = (sql: string, params: ReadonlyArray<unknown>) =>
-      Effect.flatMap(Cache.get(prepareCache, sql), (statement) =>
-        runStatementValues(statement, params),
+      afterSchemaChange(
+        sql,
+        Effect.flatMap(Cache.get(prepareCache, sql), (statement) =>
+          runStatementValues(statement, params),
+        ),
       );
 
     return identity<Connection>({
@@ -245,13 +264,19 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
         return runValues(sql, params);
       },
       executeValuesUnprepared(sql, params) {
-        return Effect.flatMap(prepare(sql), (statement) =>
-          runStatementValues(statement, params ?? []),
+        return afterSchemaChange(
+          sql,
+          Effect.flatMap(prepare(sql), (statement) =>
+            runStatementValues(statement, params ?? []),
+          ),
         );
       },
       executeUnprepared(sql, params, rowTransform) {
-        const effect = prepare(sql).pipe(
-          Effect.flatMap((statement) => runStatement(statement, params ?? [], false)),
+        const effect = afterSchemaChange(
+          sql,
+          prepare(sql).pipe(
+            Effect.flatMap((statement) => runStatement(statement, params ?? [], false)),
+          ),
         );
         return rowTransform ? Effect.map(effect, rowTransform) : effect;
       },

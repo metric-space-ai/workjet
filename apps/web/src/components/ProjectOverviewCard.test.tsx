@@ -13,6 +13,21 @@ const project: GalleryProject = {
 };
 
 describe("project gallery previews", () => {
+  it.each(["fzul.app", "i-hate-ai.community"])(
+    "shows %s from its bundled snapshot without a live iframe",
+    (title) => {
+      const markup = renderToStaticMarkup(
+        <ProjectOverviewCard project={{ ...project, title }} onOpen={() => {}} />,
+      );
+      expect(markup).toContain(`alt="Saved website preview for ${title}"`);
+      expect(markup).toContain("<img");
+      expect(markup).not.toContain("<iframe");
+      expect(markup).toContain("Saved preview");
+      expect(markup).toContain("2026-10-07");
+      expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+    },
+  );
+
   it("previews a domain-named native project immediately in an isolated lazy frame", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} />,
@@ -39,7 +54,7 @@ describe("project gallery previews", () => {
             ctoxRegistration: null,
             overview: {
               archived: true,
-              websiteUrl: "https://greppy.xyz",
+              websiteUrl: "https://fzul.app",
               slots: [{ kind: "text", label: "Status", value: "Retained" }, null, null],
             },
           },
@@ -52,6 +67,7 @@ describe("project gallery previews", () => {
     expect(markup).toContain("Restore project");
     expect(markup).toContain('aria-label="Restore greppy.xyz"');
     expect(markup).not.toContain("<iframe");
+    expect(markup).not.toContain("<img");
     expect(markup).toContain("Retained");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });

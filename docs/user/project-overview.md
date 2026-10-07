@@ -41,7 +41,11 @@ use that domain until you save an overview. A saved website address takes
 precedence; clearing it keeps the preview off. **Hide preview** closes the preview,
 and **Show preview** restores it.
 
-Previews use an isolated sandbox. If a website blocks embedding or requires
+Fzul and I-hate-AI use a saved website screenshot, with its capture date,
+instead of loading an embedded page. These previews remain visible offline.
+Changing the website address to another page uses that page's own preview.
+
+Live previews use an isolated sandbox. If a website blocks embedding or requires
 features unavailable in the preview, **Open website** opens it directly.
 Viewing a preview does not select or open another project.
 

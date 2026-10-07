@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ProjectOverview } from "@workjet/contracts";
+import { resolveCachedProjectPreview } from "../cachedProjectPreview";
 import {
   type GalleryProject,
   projectUpdateAge,
@@ -21,10 +22,12 @@ export function ProjectOverviewCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const overview = resolveGalleryProjectOverview(project);
   const website = overview?.websiteUrl;
+  const cachedPreview = resolveCachedProjectPreview(website);
   const repository = overview?.repositoryUrl;
   const slots = overview?.slots ?? [null, null, null];
   const archived = overview.archived === true;
@@ -67,7 +70,22 @@ export function ProjectOverviewCard({
       )}
       {website && !archived && (
         <div className="grid gap-2">
-          {showPreview && (
+          {showPreview && cachedPreview && failedCachedWebsite !== website && (
+            <img
+              src={cachedPreview.image}
+              alt={`Saved website preview for ${project.title}`}
+              loading="lazy"
+              decoding="async"
+              onError={() => setFailedCachedWebsite(website)}
+              className="h-36 w-full rounded-md border border-border bg-background object-cover object-top"
+            />
+          )}
+          {showPreview && cachedPreview && failedCachedWebsite === website && (
+            <p className="text-xs text-muted-foreground">
+              Preview unavailable. Open the website directly.
+            </p>
+          )}
+          {showPreview && !cachedPreview && (
             <iframe
               src={website}
               title={`Website preview for ${project.title}`}
@@ -92,7 +110,9 @@ export function ProjectOverviewCard({
           </div>
           {showPreview && (
             <p className="text-xs text-muted-foreground">
-              If the website blocks its preview, open it directly.
+              {cachedPreview
+                ? `Saved preview · ${cachedPreview.capturedOn}`
+                : "If the website blocks its preview, open it directly."}
             </p>
           )}
         </div>

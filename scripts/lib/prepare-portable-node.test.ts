@@ -10,6 +10,11 @@ import { HostProcessPlatform, HostProcessArchitecture } from "@workjet/shared/ho
 import * as RemoteNode from "@workjet/ssh/remoteNode";
 import { preparePortableNode, stageVerifiedNodeArchive } from "./prepare-portable-node.ts";
 
+vi.mock("node:child_process", async (original) => {
+  const actual = await original<typeof NodeChildProcess>();
+  return { ...actual, execFile: vi.fn(actual.execFile) };
+});
+
 const hostContext = Context.empty();
 const hostPlatform = Context.get(hostContext, HostProcessPlatform);
 const hostArchitecture = Context.get(hostContext, HostProcessArchitecture);
@@ -110,6 +115,51 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
       expect((await NodeFSP.readdir(root)).some((entry) => entry.startsWith(".node-stage-"))).toBe(
         false,
       );
+    });
+  });
+
+  it("bounds a stalled identity probe, redacts child diagnostics and cleans its stage", async () => {
+    await fixture(async (input, root) => {
+      const execute = vi
+        .mocked(NodeChildProcess.execFile)
+        .mockImplementationOnce((_file, _arguments, _options, callback) => {
+          callback!(
+            Object.assign(new Error("PRIVATE child command"), {
+              code: "ETIMEDOUT",
+              signal: "SIGKILL" as const,
+              killed: true,
+            }),
+            "PRIVATE stdout",
+            "PRIVATE stderr",
+          );
+          return new NodeChildProcess.ChildProcess();
+        });
+      try {
+        const failure = await stageVerifiedNodeArchive(input).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        expect(failure).toBeInstanceOf(Error);
+        expect((failure as Error).message).toMatch(
+          /identity verification failed \(180000ms deadline; elapsed \d+ms; code ETIMEDOUT; signal SIGKILL\)/,
+        );
+        expect((failure as Error).message).not.toContain("PRIVATE");
+        expect((failure as Error).cause).toBeUndefined();
+        expect(execute.mock.calls[0]?.[2]).toMatchObject({
+          timeout: 180_000,
+          killSignal: "SIGKILL",
+          env: expect.objectContaining({ NODE_OPTIONS: "", NODE_PATH: "" }),
+        });
+        await expect(NodeFSP.access(input.destination)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(
+          (await NodeFSP.readdir(root)).some((entry) => entry.startsWith(".node-stage-")),
+        ).toBe(false);
+      } finally {
+        execute.mockImplementation(
+          (await vi.importActual<typeof NodeChildProcess>("node:child_process")).execFile,
+        );
+        execute.mockClear();
+      }
     });
   });
 

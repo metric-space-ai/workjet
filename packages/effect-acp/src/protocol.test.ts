@@ -470,7 +470,12 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
           })}\n`,
         ),
       );
-      const failure = yield* Fiber.join(extension).pipe(Effect.flip);
+      const failure = yield* Fiber.join(extension).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => assert.fail("Expected the native JSON-RPC request to fail"),
+        }),
+      );
       assert.instanceOf(failure, AcpError.AcpRequestError);
       assert.deepInclude(failure, {
         code: -32002,

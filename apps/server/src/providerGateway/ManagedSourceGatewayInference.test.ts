@@ -22,7 +22,10 @@ const target = {
   instanceId: "target-native-instance",
   computerId: WorkjetComputerId.make("target-native-computer"),
 };
-const workerProfile = { modelId: "worker-model", llmRouteId: WorkjetLlmRouteId.make("worker-route") };
+const workerProfile = {
+  modelId: "worker-model",
+  llmRouteId: WorkjetLlmRouteId.make("worker-route"),
+};
 const references = {
   credentialRef: { environmentId, accountId: WorkjetGatewayAccountId.make("worker-account") },
   providerRef: { environmentId, provider: "codex" as const },
@@ -37,7 +40,10 @@ const fixture = () => {
   let settings: ServerSettings = {
     ...DEFAULT_SERVER_SETTINGS,
     // A native Supervisor and a different explicit worker model/profile.
-    textGenerationModelSelection: { instanceId: sourceInstanceId, model: "supervisor-native-model" },
+    textGenerationModelSelection: {
+      instanceId: sourceInstanceId,
+      model: "supervisor-native-model",
+    },
     providerInstances: {
       [sourceInstanceId]: {
         driver: ProviderDriverKind.make("ctox-native"),
@@ -51,37 +57,61 @@ const fixture = () => {
     workjet: {
       ...DEFAULT_SERVER_SETTINGS.workjet,
       llmRoutes: [
-        { id: workerProfile.llmRouteId, label: "Worker route", gatewayAccountId: references.credentialRef.accountId },
-        { id: WorkjetLlmRouteId.make("other-route"), label: "Other route", gatewayAccountId: WorkjetGatewayAccountId.make("other-account") },
+        {
+          id: workerProfile.llmRouteId,
+          label: "Worker route",
+          gatewayAccountId: references.credentialRef.accountId,
+        },
+        {
+          id: WorkjetLlmRouteId.make("other-route"),
+          label: "Other route",
+          gatewayAccountId: WorkjetGatewayAccountId.make("other-account"),
+        },
       ],
     },
   };
   let catalog: WorkjetGatewayScopedCatalog = {
     schemaVersion: 1,
     target,
-    accounts: [{ credentialRef: references.credentialRef, providerRef: references.providerRef,
-      label: "Worker account", modelRefs: [references.modelRef] }],
+    accounts: [
+      {
+        credentialRef: references.credentialRef,
+        providerRef: references.providerRef,
+        label: "Worker account",
+        modelRefs: [references.modelRef],
+      },
+    ],
   };
   const consumer = makeManagedSourceGatewayInference({
     environmentId: Effect.succeed(environmentId),
     settings: { getSettings: Effect.sync(() => settings) },
     gateway: {
-      scopedCatalog: (requestedTarget, source) => Effect.sync(() => {
-        expect(requestedTarget).toEqual(target);
-        expect(source).toBe(environmentId);
-        return catalog;
-      }),
+      scopedCatalog: (requestedTarget, source) =>
+        Effect.sync(() => {
+          expect(requestedTarget).toEqual(target);
+          expect(source).toBe(environmentId);
+          return catalog;
+        }),
       status: () => Effect.die("Binding must not start or inspect a source Code harness"),
     },
     connections: undefined,
   });
   return {
     consumer,
-    disable: () => { settings = { ...settings, providerInstances: {
-      [sourceInstanceId]: { ...settings.providerInstances[sourceInstanceId]!, enabled: false },
-    } }; },
-    remove: () => { settings = { ...settings, providerInstances: {} }; },
-    revokeGrant: () => { catalog = { ...catalog, accounts: [] }; },
+    disable: () => {
+      settings = {
+        ...settings,
+        providerInstances: {
+          [sourceInstanceId]: { ...settings.providerInstances[sourceInstanceId]!, enabled: false },
+        },
+      };
+    },
+    remove: () => {
+      settings = { ...settings, providerInstances: {} };
+    },
+    revokeGrant: () => {
+      catalog = { ...catalog, accounts: [] };
+    },
   };
 };
 const reason = async (effect: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =>
@@ -90,18 +120,36 @@ const reason = async (effect: Effect.Effect<unknown, WorkjetGatewayInferenceErro
 describe("managed source gateway binding", () => {
   it("binds an enabled native source to the explicit worker route/model without source CLI routing", async () => {
     const f = fixture();
-    expect(await Effect.runPromise(f.consumer.bindModel(bindInput))).toEqual({ target, ...references });
+    expect(await Effect.runPromise(f.consumer.bindModel(bindInput))).toEqual({
+      target,
+      ...references,
+    });
   });
-  it.each(["disable", "remove"] as const)("refuses a currently %s source instance", async (action) => {
-    const f = fixture();
-    await Effect.runPromise(f.consumer.bindModel(bindInput));
-    f[action]();
-    expect(await reason(f.consumer.bindModel(bindInput))).toBe("binding-mismatch");
-  });
+  it.each(["disable", "remove"] as const)(
+    "refuses a currently %s source instance",
+    async (action) => {
+      const f = fixture();
+      await Effect.runPromise(f.consumer.bindModel(bindInput));
+      f[action]();
+      expect(await reason(f.consumer.bindModel(bindInput))).toBe("binding-mismatch");
+    },
+  );
   it.each([
-    { input: { ...bindInput, modelSelection: { instanceId: sourceInstanceId, model: "supervisor-native-model" } }, reason: "grant-unavailable" },
-    { input: { ...bindInput, routeId: WorkjetLlmRouteId.make("other-route") }, reason: "grant-unavailable" },
-    { input: { ...bindInput, routeId: WorkjetLlmRouteId.make("missing-route") }, reason: "binding-mismatch" },
+    {
+      input: {
+        ...bindInput,
+        modelSelection: { instanceId: sourceInstanceId, model: "supervisor-native-model" },
+      },
+      reason: "grant-unavailable",
+    },
+    {
+      input: { ...bindInput, routeId: WorkjetLlmRouteId.make("other-route") },
+      reason: "grant-unavailable",
+    },
+    {
+      input: { ...bindInput, routeId: WorkjetLlmRouteId.make("missing-route") },
+      reason: "binding-mismatch",
+    },
   ])("refuses a mismatched explicit worker model or route", async (test) => {
     expect(await reason(fixture().consumer.bindModel(test.input))).toBe(test.reason);
   });

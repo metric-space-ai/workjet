@@ -359,10 +359,8 @@ const closeRun = (
   // Interrupt that owned fiber first; its ensuring clause releases resources.
   const close = Option.match(run.fiber, {
     onNone: () => Scope.close(run.scope, Exit.void),
-    onSome: (fiber) => Fiber.interrupt(fiber).pipe(
-      Effect.andThen(Scope.close(run.scope, Exit.void)),
-      Effect.asVoid,
-    ),
+    onSome: (fiber) =>
+      Fiber.interrupt(fiber).pipe(Effect.andThen(Scope.close(run.scope, Exit.void)), Effect.asVoid),
   });
   const timeout = options?.timeout;
 

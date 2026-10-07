@@ -69,7 +69,11 @@ describe("desktop resource monitor staging", () => {
   it("stages from the configured Cargo cache rather than the default target directory", () => {
     const repoRoot = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workjet-monitor-cache-"));
     const targetDirectory = NodePath.join(repoRoot, "external-cache", "monitor");
-    const paths = resolveResourceMonitorStagePaths({ repoRoot, platform: "linux", targetDirectory });
+    const paths = resolveResourceMonitorStagePaths({
+      repoRoot,
+      platform: "linux",
+      targetDirectory,
+    });
     try {
       const staged = stageResourceMonitor({
         repoRoot,

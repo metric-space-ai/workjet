@@ -23,6 +23,7 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
+import { ProjectCalendar } from "../components/ProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
 import { configureWorkjetProject } from "../workjetProjectControl";
@@ -541,6 +542,7 @@ function ProjectGallery({
 }) {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const [showArchived, setShowArchived] = useState(false);
+  const [view, setView] = useState<"gallery" | "calendar">("gallery");
   const visibleProjects = visibleGalleryProjects(projects, showArchived);
   const archivedCount = visibleGalleryProjects(projects, true).length;
 
@@ -571,6 +573,26 @@ function ProjectGallery({
               </Button>
             </div>
           </div>
+          <div className="mb-5 inline-flex gap-1 rounded-md border border-border p-1" aria-label="Project view">
+            <Button
+              size="sm"
+              variant={view === "gallery" ? "secondary" : "ghost"}
+              aria-pressed={view === "gallery"}
+              data-workjet-action="project.view.gallery"
+              onClick={() => setView("gallery")}
+            >
+              Projects
+            </Button>
+            <Button
+              size="sm"
+              variant={view === "calendar" ? "secondary" : "ghost"}
+              aria-pressed={view === "calendar"}
+              data-workjet-action="project.view.calendar"
+              onClick={() => setView("calendar")}
+            >
+              Calendar
+            </Button>
+          </div>
           {projectsUnavailable ? (
             <div
               role="status"
@@ -585,6 +607,9 @@ function ProjectGallery({
               )}
             </div>
           ) : null}
+          {view === "calendar" ? (
+            <ProjectCalendar projects={visibleProjects} />
+          ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {visibleProjects.map((project) => (
               <ProjectOverviewCard
@@ -598,6 +623,7 @@ function ProjectGallery({
               />
             ))}
           </div>
+          )}
         </div>
       </main>
     </SidebarInset>

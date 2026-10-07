@@ -1,4 +1,3 @@
-import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
@@ -69,6 +68,7 @@ import {
   type ReactNode,
 } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
+import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverviewSelection";
 
 import {
   isAtomCommandInterrupted,
@@ -1921,6 +1921,27 @@ export default function Sidebar() {
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
   const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
+  const overviewProjectRef = useProjectOverviewRef(workjetProjectRegistry.presentationInstanceId);
+  useEffect(() => {
+    if (routeTarget !== null || overviewProjectRef === null) return;
+    const group = projectGroups.find((candidate) =>
+      candidate.memberProjects.some(
+        (project) =>
+          project.environmentId === overviewProjectRef.environmentId &&
+          project.id === overviewProjectRef.projectId &&
+          (workjetProjectRegistry.presentationInstanceId === null
+            ? project.ctoxRegistration == null
+            : project.ctoxRegistration?.instanceId ===
+              workjetProjectRegistry.presentationInstanceId),
+      ),
+    );
+    if (group) setProjectScopeKey(group.projectKey);
+  }, [
+    overviewProjectRef,
+    projectGroups,
+    routeTarget,
+    workjetProjectRegistry.presentationInstanceId,
+  ]);
   const lastActiveProjectKey = useRef<string | null>(null);
   const activeProjectThread = newThreadContext.activeDraftThread ?? newThreadContext.activeThread;
   const activeProjectEnvironmentId = activeProjectThread?.environmentId;
@@ -1953,7 +1974,9 @@ export default function Sidebar() {
   const selectedLocalLogicalProject =
     localLogicalProjects.find(
       (project) =>
-        project.id === activeProjectId && project.environmentId === activeProjectEnvironmentId,
+        project.id === (routeTarget === null ? overviewProjectRef?.projectId : activeProjectId) &&
+        project.environmentId ===
+          (routeTarget === null ? overviewProjectRef?.environmentId : activeProjectEnvironmentId),
     ) ?? null;
   const projectSwitchPending = useRef(false);
   const [isSwitchingProject, setIsSwitchingProject] = useState(false);
@@ -2008,6 +2031,7 @@ export default function Sidebar() {
           setIsSwitchingProject(true);
           try {
             if (!selectWorkjetProject(instanceId, project.id)) return;
+            selectProjectOverviewRef(instanceId, null);
             setProjectScopeKey(null);
             await router.navigate({ to: "/" });
             if (isMobile) setOpenMobile(false);
@@ -2023,19 +2047,14 @@ export default function Sidebar() {
           }
           return;
         }
-        const supervisor = findProjectSupervisor(
-          threads,
-          scopeProjectRef(localProject.environmentId, localProject.id),
-        );
         projectSwitchPending.current = true;
         setIsSwitchingProject(true);
         try {
-          if (supervisor === null)
-            throw new Error("Refresh this instance’s project catalog to open its supervisor.");
-          await router.navigate({
-            to: "/$environmentId/$threadId",
-            params: buildThreadRouteParams(scopeThreadRef(supervisor.environmentId, supervisor.id)),
-          });
+          selectProjectOverviewRef(
+            instanceId,
+            scopeProjectRef(localProject.environmentId, localProject.id),
+          );
+          await router.navigate({ to: "/" });
           const group = projectGroups.find((candidate) =>
             candidate.memberProjectRefs.some(
               (ref) =>
@@ -2061,7 +2080,8 @@ export default function Sidebar() {
       projectSwitchPending.current = true;
       setIsSwitchingProject(true);
       try {
-        selectWorkjetProject(instanceId, project.id);
+        if (!selectWorkjetProject(instanceId, project.id)) return;
+        selectProjectOverviewRef(instanceId, null);
         setProjectScopeKey(null);
         // The landing route opens the overview and ensures its retained supervisor.
         await router.navigate({ to: "/" });
@@ -3749,6 +3769,7 @@ export default function Sidebar() {
               onClick={() => {
                 const instanceId = workjetProjectRegistry.presentationInstanceId;
                 if (instanceId !== null && !selectWorkjetProject(instanceId, null)) return;
+                selectProjectOverviewRef(instanceId, null);
                 setProjectScopeKey(null);
                 setProjectScopeMenuOpen(false);
                 if (isMobile) setOpenMobile(false);
@@ -3856,13 +3877,17 @@ export default function Sidebar() {
                     <FolderPlusIcon aria-hidden className="size-4" />
                   </SidebarMenuButton>
                 </div>
-                {selectedWorkjetProject ? (
+                {selectedWorkjetProject || selectedLocalLogicalProject ? (
                   <SidebarMenuButton
                     type="button"
                     data-workjet-action="project.workspace.overview"
                     disabled={isSwitchingProject}
                     isActive={routeTarget === null}
-                    onClick={() => void handleWorkjetProjectSelection(selectedWorkjetProject.id)}
+                    onClick={() =>
+                      void handleWorkjetProjectSelection(
+                        (selectedWorkjetProject ?? selectedLocalLogicalProject)!.id,
+                      )
+                    }
                   >
                     <FolderIcon aria-hidden className="size-4 shrink-0" />
                     <span>Overview</span>

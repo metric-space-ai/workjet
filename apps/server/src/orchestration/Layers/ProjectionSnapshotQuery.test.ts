@@ -1,4 +1,4 @@
-import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, WorkjetThreadConfig } from "@workjet/contracts";
 import {
   CheckpointRef,
   EventId,
@@ -12,6 +12,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -28,6 +29,7 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
+const encodeWorkerConfig = Schema.encodeUnknownEffect(Schema.fromJsonString(WorkjetThreadConfig));
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
@@ -78,7 +80,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
            workjet_config_json, branch, worktree_path, created_at, updated_at, archived_at, deleted_at)
         VALUES (${threadId}, ${projectId}, 'Retained worker',
                 '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
-                ${JSON.stringify(config)}, 'workjet/worker/retained-pr-worker',
+                ${yield* encodeWorkerConfig(config)}, 'workjet/worker/retained-pr-worker',
                 '/safe/worktrees/retained-pr-worker', ${at}, ${at}, ${at}, NULL)
       `;
       yield* sql`
@@ -105,11 +107,11 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`UPDATE projection_threads SET deleted_at = NULL, archived_at = NULL WHERE thread_id = ${threadId}`;
       assert.equal((yield* query.getArchivedTeamWorkerDetailSnapshot(threadId))._tag, "None");
       yield* sql`UPDATE projection_threads SET archived_at = ${at},
-        workjet_config_json = ${JSON.stringify({ ...config, team: { ...config.team, threadId: "other-worker" } })}
+        workjet_config_json = ${yield* encodeWorkerConfig({ ...config, team: { ...config.team, threadId: "other-worker" } })}
         WHERE thread_id = ${threadId}`;
       assert.equal((yield* query.getArchivedTeamWorkerDetailSnapshot(threadId))._tag, "None");
       yield* sql`UPDATE projection_threads
-        SET workjet_config_json = ${JSON.stringify({ ...config, role: "specialist", team: { ...config.team, role: "specialist" } })}
+        SET workjet_config_json = ${yield* encodeWorkerConfig({ ...config, role: "orchestrator", parent: null, team: { ...config.team, role: "specialist", domain: "History" } })}
         WHERE thread_id = ${threadId}`;
       assert.equal((yield* query.getArchivedTeamWorkerDetailSnapshot(threadId))._tag, "None");
     }).pipe(
@@ -119,7 +121,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = 'retained-pr-worker'`;
           yield* sql`DELETE FROM projection_threads WHERE thread_id = 'retained-pr-worker'`;
           yield* sql`DELETE FROM projection_projects WHERE project_id = 'retained-pr-project'`;
-        }),
+        }).pipe(Effect.orDie),
       ),
     ),
   );

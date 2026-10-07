@@ -18,16 +18,19 @@ export function ProjectCalendar({ projects }: { readonly projects: readonly Cale
         {WEEKDAYS.map((day, index) => {
           const meetings = scheduled
             .filter((project) => project.configuration?.jourFixe?.weekday === index + 1)
-            .toSorted((a, b) =>
-              (a.configuration?.jourFixe?.time ?? "").localeCompare(
-                b.configuration?.jourFixe?.time ?? "",
-              ) || a.title.localeCompare(b.title),
+            .toSorted(
+              (a, b) =>
+                (a.configuration?.jourFixe?.time ?? "").localeCompare(
+                  b.configuration?.jourFixe?.time ?? "",
+                ) || a.title.localeCompare(b.title),
             );
           return (
             <section key={day} aria-label={day} className="min-w-0 border-t border-border pt-3">
               <h2 className="mb-3 text-sm font-medium">{day}</h2>
               {meetings.length === 0 ? (
-                <p className="text-sm text-muted-foreground" aria-label="No regular meetings">—</p>
+                <p className="text-sm text-muted-foreground" aria-label="No regular meetings">
+                  —
+                </p>
               ) : (
                 <div className="space-y-2">
                   {meetings.map((project) => (
@@ -55,7 +58,10 @@ export function ProjectCalendar({ projects }: { readonly projects: readonly Cale
         })}
       </div>
       {unscheduled.length > 0 && (
-        <section className="mt-7 border-t border-border pt-4" aria-label="Projects without a regular meeting">
+        <section
+          className="mt-7 border-t border-border pt-4"
+          aria-label="Projects without a regular meeting"
+        >
           <h2 className="text-sm font-medium">No regular meeting configured</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Open a project to set its regular meeting in project settings.

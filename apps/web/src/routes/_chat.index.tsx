@@ -573,7 +573,10 @@ function ProjectGallery({
               </Button>
             </div>
           </div>
-          <div className="mb-5 inline-flex gap-1 rounded-md border border-border p-1" aria-label="Project view">
+          <div
+            className="mb-5 inline-flex gap-1 rounded-md border border-border p-1"
+            aria-label="Project view"
+          >
             <Button
               size="sm"
               variant={view === "gallery" ? "secondary" : "ghost"}
@@ -610,19 +613,19 @@ function ProjectGallery({
           {view === "calendar" ? (
             <ProjectCalendar projects={visibleProjects} />
           ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {visibleProjects.map((project) => (
-              <ProjectOverviewCard
-                key={project.key}
-                project={project}
-                onOpen={project.onOpen}
-                onSave={project.onSave}
-                onSaveConfiguration={project.onSaveConfiguration}
-                canArchive={project.canArchive}
-                statistics={project.statistics}
-              />
-            ))}
-          </div>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {visibleProjects.map((project) => (
+                <ProjectOverviewCard
+                  key={project.key}
+                  project={project}
+                  onOpen={project.onOpen}
+                  onSave={project.onSave}
+                  onSaveConfiguration={project.onSaveConfiguration}
+                  canArchive={project.canArchive}
+                  statistics={project.statistics}
+                />
+              ))}
+            </div>
           )}
         </div>
       </main>

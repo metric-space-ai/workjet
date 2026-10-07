@@ -18,11 +18,18 @@ function project(id: string, meeting?: { weekday: number; time: string; timezone
 
 describe("weekly project calendar", () => {
   it("preserves the native weekday, wall-clock time and timezone without inventing dates", () => {
-    const html = renderToStaticMarkup(<ProjectCalendar projects={[
-      project("ctox.dev", { weekday: 3, time: "09:30", timezone: "Europe/Berlin" }),
-      project("greppy.xyz", { weekday: 3, time: "08:00", timezone: "America/New_York" }),
-    ]} />);
-    const wednesday = html.slice(html.indexOf('aria-label="Wednesday"'), html.indexOf('aria-label="Thursday"'));
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        projects={[
+          project("ctox.dev", { weekday: 3, time: "09:30", timezone: "Europe/Berlin" }),
+          project("greppy.xyz", { weekday: 3, time: "08:00", timezone: "America/New_York" }),
+        ]}
+      />,
+    );
+    const wednesday = html.slice(
+      html.indexOf('aria-label="Wednesday"'),
+      html.indexOf('aria-label="Thursday"'),
+    );
     expect(wednesday).toContain("09:30");
     expect(wednesday).toContain("Europe/Berlin");
     expect(wednesday).toContain("08:00");

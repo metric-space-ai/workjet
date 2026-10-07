@@ -126,6 +126,30 @@ export function includeSavedComputers(
   };
 }
 
+const OPERATIONAL_CAPABILITIES = [
+  { kind: "build", label: "Build" },
+  { kind: "storage", label: "Storage" },
+  { kind: "gpu", label: "GPU" },
+] as const;
+
+function ComputerCapabilityChips({ capabilities }: { readonly capabilities: readonly string[] }) {
+  const declared = OPERATIONAL_CAPABILITIES.filter(({ kind }) => capabilities.includes(kind));
+  if (declared.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 pb-2" aria-label="Operational capabilities">
+      {declared.map(({ kind, label }) => (
+        <span
+          key={kind}
+          data-workjet-capability={kind}
+          className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
+        >
+          {label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function WorkjetComputersSettingsView({
   configuration,
   environments,
@@ -168,6 +192,10 @@ export function WorkjetComputersSettingsView({
   const [editingComputerId, setEditingComputerId] = useState<string | null>(null);
   const editingComputer =
     configuration.computers.find((computer) => computer.id === editingComputerId) ?? null;
+  const nativeComputers = membership?.phase === "ready" ? membership.computers : [];
+  const nativeOnlyComputers = nativeComputers.filter(
+    (computer) => !configuration.computers.some((configured) => configured.id === computer.id),
+  );
   const computerEditor = (
     <div className="px-3 pt-2 sm:px-4">
       <WorkjetComputerEditor
@@ -235,7 +263,8 @@ export function WorkjetComputersSettingsView({
           Add computer
         </Button>
       </div>
-      {configuration.computers.length === 0 ? (
+      {configuration.computers.length === 0 &&
+      (membership === undefined || (membership.phase === "ready" && nativeComputers.length === 0)) ? (
         <SettingsRow
           title="No computers yet"
           description="Add this computer, an SSH host, or a computer on your Tailscale network."
@@ -270,6 +299,7 @@ export function WorkjetComputersSettingsView({
             environments.find((environment) => environment.environmentId === computer.environmentId)
               ?.label ?? null;
           const isCurrent = configuration.selectedComputerId === computer.id;
+          const nativeComputer = nativeComputers.find((entry) => entry.id === computer.id);
           const locationDescription =
             environmentId === computer.environmentId
               ? "This machine"
@@ -323,6 +353,7 @@ export function WorkjetComputersSettingsView({
                   </div>
                 }
               >
+                <ComputerCapabilityChips capabilities={nativeComputer?.capabilities ?? []} />
                 {renderConnection?.(computer.environmentId)}
                 <div className="mt-1 space-y-1 pb-3">
                   {onAssign && membership ? (
@@ -434,6 +465,17 @@ export function WorkjetComputersSettingsView({
           );
         })}
       </div>
+      {nativeOnlyComputers.map((computer) => (
+        <SettingsRow
+          key={computer.id}
+          title={computer.displayName}
+          description="Assigned to the selected Business OS"
+        >
+          <div data-workjet-native-computer={computer.id}>
+            <ComputerCapabilityChips capabilities={computer.capabilities} />
+          </div>
+        </SettingsRow>
+      ))}
     </SettingsSection>
   );
 }

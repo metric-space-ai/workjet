@@ -12,6 +12,16 @@ its own goal. Use **+ Parent** to add one to this project.
 
 The overview also shows the project's saved goal, phase, links and Jour fixe.
 
+On **All projects**, choose **Calendar** to see the weekly regular meetings.
+The calendar reads each project's saved Jour fixe: weekday, time and timezone.
+Times use the timezone written next to the project; they are not silently
+converted to your computer's timezone. Choose **Projects** to return to the cards.
+
+Projects without a regular meeting appear below the week. Select a project
+from either section to open its overview. To add or change its meeting, open
+that project's configuration and save its Jour fixe. Viewing the calendar does
+not create appointments or change a project's schedule.
+
 Choose **Archive project** to hide its card from All projects. This retains the
 project, its conversations and its three saved info fields. Open **Archived
 projects**, then choose **Restore project** to return the same project to the

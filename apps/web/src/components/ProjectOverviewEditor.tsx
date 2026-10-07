@@ -5,7 +5,13 @@ import {
   type ProjectOverview,
 } from "@workjet/contracts";
 import * as Schema from "effect/Schema";
-import { decodeOverviewDraft, overviewDraft, type OverviewSlotDraft } from "../projectOverview";
+import { decodeOverviewDraft, overviewDraft } from "../projectOverview";
+import {
+  projectKpiPromptInputs,
+  type PromptedProjectKpis,
+  type SaveProjectKpiPrompts,
+} from "../projectKpis";
+import { ProjectKpiResult } from "./ProjectKpiResult";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -25,11 +31,17 @@ export function ProjectOverviewEditor({
   archived = false,
   configuration,
   onSaveConfiguration,
+  onCancel,
+  kpis,
+  onSaveKpis,
 }: {
   readonly overview: ProjectOverview | null | undefined;
   readonly onSave: (next: ProjectOverview) => Promise<boolean>;
   readonly onArchive?: (() => Promise<boolean>) | undefined;
   readonly archived?: boolean;
+  readonly onCancel?: (() => void) | undefined;
+  readonly kpis?: PromptedProjectKpis | undefined;
+  readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
   readonly configuration?: CtoxWorkjetProjectMetadataProjection | undefined;
   readonly onSaveConfiguration?:
     | ((next: ProjectConfigurationValues) => Promise<boolean>)
@@ -50,13 +62,30 @@ export function ProjectOverviewEditor({
     time: configuration?.jourFixe?.time ?? "09:00",
     timezone: configuration?.jourFixe?.timezone ?? "Europe/Berlin",
   }));
-  const editSlot = (index: 0 | 1 | 2, change: Partial<OverviewSlotDraft>) => {
-    setState({ pending: false, message: "" });
-    setDraft((current) => {
-      const slots = [...current.slots] as typeof current.slots;
-      slots[index] = { ...slots[index], ...change };
-      return { ...current, slots };
+  const scopedKpis = configuration?.id === kpis?.project_id ? kpis : undefined;
+  const [initialKpis] = useState(scopedKpis);
+  const initialPrompts = () =>
+    [0, 1, 2].map((index) => initialKpis?.items[index]?.prompt.prompt ?? "");
+  const [prompts, setPrompts] = useState(initialPrompts);
+  const canConfigureKpis = !!(configuration && initialKpis && scopedKpis && onSaveKpis);
+  const promptsChanged = prompts.some((prompt, index) => prompt !== initialPrompts()[index]);
+  const cancel = () => {
+    if (onCancel) return onCancel();
+    setDraft(overviewDraft(overview));
+    setInfo({
+      description: configuration?.info?.description ?? "",
+      goal: configuration?.info?.goal ?? "",
+      phase: configuration?.info?.phase ?? "",
+      status: configuration?.info?.status ?? "",
     });
+    setMeeting({
+      enabled: configuration?.jourFixe != null,
+      weekday: configuration?.jourFixe?.weekday ?? 1,
+      time: configuration?.jourFixe?.time ?? "09:00",
+      timezone: configuration?.jourFixe?.timezone ?? "Europe/Berlin",
+    });
+    setPrompts(initialPrompts());
+    setState({ pending: false, message: "" });
   };
   return (
     <form
@@ -97,7 +126,7 @@ export function ProjectOverviewEditor({
         } catch {
           setState({
             pending: false,
-            message: "Check labels, values and URLs. Metrics need a finite number.",
+            message: "Check the URLs and meeting settings.",
           });
           return;
         }
@@ -110,11 +139,25 @@ export function ProjectOverviewEditor({
             });
             return;
           }
+          if (canConfigureKpis && promptsChanged && initialKpis && onSaveKpis) {
+            const savedKpis = await onSaveKpis(
+              projectKpiPromptInputs(prompts, initialKpis),
+              initialKpis.revision,
+            );
+            if (!savedKpis) {
+              setState({
+                pending: false,
+                message: "Couldn’t save KPI prompts. Reopen project settings and try again.",
+              });
+              return;
+            }
+          }
           const saved = await onSave(next);
+          if (saved) onCancel?.();
           setState({
             pending: false,
             message: saved
-              ? "Overview saved."
+              ? "Project saved."
               : "Couldn’t save the overview. Reconnect and try again.",
           });
         } catch {
@@ -125,227 +168,172 @@ export function ProjectOverviewEditor({
         }
       }}
     >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-xs" htmlFor={`${id}-repository`}>
+      <div className="grid items-center gap-x-3 gap-y-2 sm:grid-cols-[6rem_minmax(0,1fr)]">
+        <label className="text-xs text-muted-foreground" htmlFor={`${id}-repository`}>
           Repository
-          <Input
-            id={`${id}-repository`}
-            type="url"
-            maxLength={2048}
-            value={draft.repositoryUrl ?? ""}
-            onChange={(event) => {
-              setState({ pending: false, message: "" });
-              setDraft((current) => ({ ...current, repositoryUrl: event.target.value }));
-            }}
-            placeholder="https://github.com/owner/repository"
-            disabled={state.pending}
-          />
         </label>
-        <label className="grid gap-1 text-xs" htmlFor={`${id}-website`}>
+        <Input
+          id={`${id}-repository`}
+          type="url"
+          maxLength={2048}
+          value={draft.repositoryUrl ?? ""}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, repositoryUrl: event.target.value }))
+          }
+          placeholder="https://github.com/owner/repository"
+          disabled={state.pending}
+        />
+        <label className="text-xs text-muted-foreground" htmlFor={`${id}-website`}>
           Website
-          <Input
-            id={`${id}-website`}
-            type="url"
-            maxLength={2048}
-            value={draft.websiteUrl}
-            onChange={(event) => {
-              setState({ pending: false, message: "" });
-              setDraft((current) => ({ ...current, websiteUrl: event.target.value }));
-            }}
-            placeholder="https://example.com"
-            disabled={state.pending}
-          />
         </label>
-      </div>
-      {configuration && onSaveConfiguration && (
-        <>
-          <fieldset className="grid gap-2 border-t border-border pt-2" disabled={state.pending}>
-            <legend className="text-xs font-medium">Project info</legend>
-            <label className="grid gap-1 text-xs">
-              Short description
+        <Input
+          id={`${id}-website`}
+          type="url"
+          maxLength={2048}
+          value={draft.websiteUrl}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, websiteUrl: event.target.value }))
+          }
+          placeholder="https://example.com"
+          disabled={state.pending}
+        />
+        {configuration && onSaveConfiguration && (
+          <>
+            <span className="text-xs text-muted-foreground">Jour fixe</span>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_5.5rem_minmax(0,1.2fr)] gap-2">
+              <select
+                aria-label="Jour fixe weekday"
+                className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-xs"
+                disabled={state.pending}
+                value={meeting.enabled ? meeting.weekday : "none"}
+                onChange={(event) =>
+                  setMeeting((current) => ({
+                    ...current,
+                    enabled: event.target.value !== "none",
+                    weekday:
+                      event.target.value === "none" ? current.weekday : Number(event.target.value),
+                  }))
+                }
+              >
+                <option value="none">No meeting</option>
+                {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(
+                  (day, index) => (
+                    <option key={day} value={index + 1}>
+                      {day}
+                    </option>
+                  ),
+                )}
+              </select>
               <Input
-                maxLength={4096}
-                value={info.description}
+                aria-label="Jour fixe time"
+                type="time"
+                required={meeting.enabled}
+                disabled={state.pending || !meeting.enabled}
+                value={meeting.time}
                 onChange={(event) =>
-                  setInfo((current) => ({ ...current, description: event.target.value }))
+                  setMeeting((current) => ({ ...current, time: event.target.value }))
                 }
               />
-            </label>
-            <label className="grid gap-1 text-xs">
-              Goal
-              <textarea
-                className="min-h-16 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                maxLength={4096}
-                value={info.goal}
+              <Input
+                aria-label="Jour fixe timezone"
+                required={meeting.enabled}
+                disabled={state.pending || !meeting.enabled}
+                value={meeting.timezone}
                 onChange={(event) =>
-                  setInfo((current) => ({ ...current, goal: event.target.value }))
+                  setMeeting((current) => ({ ...current, timezone: event.target.value }))
                 }
               />
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="grid gap-1 text-xs">
-                Phase
-                <Input
-                  maxLength={128}
-                  value={info.phase}
-                  onChange={(event) =>
-                    setInfo((current) => ({ ...current, phase: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="grid gap-1 text-xs">
-                Status
-                <Input
-                  maxLength={128}
-                  value={info.status}
-                  onChange={(event) =>
-                    setInfo((current) => ({ ...current, status: event.target.value }))
-                  }
-                />
-              </label>
             </div>
-          </fieldset>
-          <fieldset className="grid gap-2 border-t border-border pt-2" disabled={state.pending}>
-            <legend className="text-xs font-medium">Weekly meeting</legend>
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={meeting.enabled}
-                onChange={(event) =>
-                  setMeeting((current) => ({ ...current, enabled: event.target.checked }))
-                }
-              />
-              Enable recurring meeting
+            <label className="text-xs text-muted-foreground" htmlFor={`${id}-description`}>
+              Description
             </label>
-            {meeting.enabled && (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <label className="grid gap-1 text-xs">
-                  Weekday
-                  <select
-                    className="h-8 rounded-md border border-input bg-background px-2"
-                    value={meeting.weekday}
-                    onChange={(event) =>
-                      setMeeting((current) => ({ ...current, weekday: Number(event.target.value) }))
-                    }
-                  >
-                    {[
-                      "Monday",
-                      "Tuesday",
-                      "Wednesday",
-                      "Thursday",
-                      "Friday",
-                      "Saturday",
-                      "Sunday",
-                    ].map((day, index) => (
-                      <option key={day} value={index + 1}>
-                        {day}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-1 text-xs">
-                  Time
+            <Input
+              id={`${id}-description`}
+              maxLength={4096}
+              value={info.description}
+              disabled={state.pending}
+              onChange={(event) =>
+                setInfo((current) => ({ ...current, description: event.target.value }))
+              }
+            />
+            <details className="sm:col-start-2">
+              <summary className="cursor-pointer text-xs text-muted-foreground">
+                Goal, phase and status
+              </summary>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <label className="col-span-2 grid gap-1 text-xs">
+                  Goal
                   <Input
-                    type="time"
-                    required
-                    value={meeting.time}
+                    maxLength={4096}
+                    value={info.goal}
+                    disabled={state.pending}
                     onChange={(event) =>
-                      setMeeting((current) => ({ ...current, time: event.target.value }))
+                      setInfo((current) => ({ ...current, goal: event.target.value }))
                     }
                   />
                 </label>
-                <label className="col-span-2 grid gap-1 text-xs sm:col-span-1">
-                  Timezone
+                <label className="grid gap-1 text-xs">
+                  Phase
                   <Input
-                    required
-                    value={meeting.timezone}
+                    maxLength={128}
+                    value={info.phase}
+                    disabled={state.pending}
                     onChange={(event) =>
-                      setMeeting((current) => ({ ...current, timezone: event.target.value }))
+                      setInfo((current) => ({ ...current, phase: event.target.value }))
+                    }
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  Status
+                  <Input
+                    maxLength={128}
+                    value={info.status}
+                    disabled={state.pending}
+                    onChange={(event) =>
+                      setInfo((current) => ({ ...current, status: event.target.value }))
                     }
                   />
                 </label>
               </div>
-            )}
-          </fieldset>
-        </>
-      )}
-      {([0, 1, 2] as const).map((index) => {
-        const slot = draft.slots[index];
-        const prefix = `${id}-${index}`;
-        return (
-          <fieldset
+            </details>
+          </>
+        )}
+      </div>
+      <div className="grid gap-2 border-t border-border pt-3" data-workjet-prompted-kpis="">
+        {([0, 1, 2] as const).map((index) => (
+          <div
             key={index}
-            className="grid grid-cols-2 gap-2 border-t border-border pt-2 sm:grid-cols-[8rem_1fr_1fr]"
-            disabled={state.pending}
+            className="grid items-center gap-2 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(8rem,0.6fr)]"
           >
-            <legend className="text-xs font-medium">KPI {index + 1}</legend>
-            <label htmlFor={`${prefix}-type`} className="grid gap-1 text-xs">
-              Type
-              <select
-                id={`${prefix}-type`}
-                aria-label={`KPI ${index + 1} type`}
-                className="h-8 rounded-md border border-input bg-background px-2"
-                value={slot.kind}
-                onChange={(event) =>
-                  editSlot(index, { kind: event.target.value as OverviewSlotDraft["kind"] })
-                }
-              >
-                <option value="empty">Empty</option>
-                <option value="text">Text</option>
-                <option value="link">Link</option>
-                <option value="updated">Project update age</option>
-                <option value="metric">Entered metric</option>
-              </select>
+            <label htmlFor={`${id}-kpi-${index}`} className="text-xs text-muted-foreground">
+              KPI {index + 1}
             </label>
-            {slot.kind !== "empty" && (
-              <label htmlFor={`${prefix}-label`} className="grid gap-1 text-xs">
-                Label
-                <Input
-                  id={`${prefix}-label`}
-                  aria-label={`KPI ${index + 1} label`}
-                  maxLength={96}
-                  value={slot.label}
-                  required
-                  onChange={(event) => editSlot(index, { label: event.target.value })}
-                />
-              </label>
-            )}
-            {slot.kind !== "empty" && slot.kind !== "updated" && (
-              <label
-                htmlFor={`${prefix}-value`}
-                className="col-span-2 grid gap-1 text-xs sm:col-span-1"
-              >
-                {slot.kind === "link" ? "URL" : "Value"}
-                <Input
-                  id={`${prefix}-value`}
-                  aria-label={`KPI ${index + 1} value`}
-                  type={slot.kind === "link" ? "url" : slot.kind === "metric" ? "number" : "text"}
-                  step={slot.kind === "metric" ? "any" : undefined}
-                  maxLength={slot.kind === "link" ? 2048 : 512}
-                  value={slot.value}
-                  required
-                  onChange={(event) => editSlot(index, { value: event.target.value })}
-                />
-              </label>
-            )}
-            {slot.kind === "metric" && (
-              <label
-                htmlFor={`${prefix}-unit`}
-                className="col-start-2 grid gap-1 text-xs sm:col-start-3"
-              >
-                Unit
-                <Input
-                  id={`${prefix}-unit`}
-                  aria-label={`KPI ${index + 1} unit`}
-                  maxLength={32}
-                  value={slot.unit}
-                  onChange={(event) => editSlot(index, { unit: event.target.value })}
-                />
-              </label>
-            )}
-          </fieldset>
-        );
-      })}
+            <Input
+              id={`${id}-kpi-${index}`}
+              maxLength={1024}
+              value={prompts[index]}
+              placeholder="Describe the metric in one sentence"
+              disabled={state.pending || !canConfigureKpis}
+              onChange={(event) =>
+                setPrompts((current) =>
+                  current.map((prompt, slot) => (slot === index ? event.target.value : prompt)),
+                )
+              }
+            />
+            <ProjectKpiResult
+              record={canConfigureKpis ? kpis?.items[index] : undefined}
+              projectId={configuration?.id ?? ""}
+              position={index + 1}
+              draftPrompt={prompts[index] ?? ""}
+            />
+          </div>
+        ))}
+        {!canConfigureKpis && (
+          <p className="text-xs text-muted-foreground" role="status">
+            KPI prompts need the CTOX KPI service. Existing card values are retained.
+          </p>
+        )}
+      </div>
       <div className="sticky bottom-0 flex flex-wrap items-center gap-3 border-t border-border bg-popover pt-3">
         {onArchive && (
           <Button
@@ -369,6 +357,16 @@ export function ProjectOverviewEditor({
             {archived ? "Restore project" : "Archive project"}
           </Button>
         )}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={state.pending}
+          className="ml-auto"
+          onClick={cancel}
+        >
+          Cancel
+        </Button>
         <Button type="submit" size="sm" disabled={state.pending}>
           {state.pending ? "Saving…" : "Save project"}
         </Button>

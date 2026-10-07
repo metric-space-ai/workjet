@@ -175,7 +175,8 @@ export const make = Effect.gen(function* () {
   const verify = Effect.fn("WorkerConnection.verify")(function* (input: typeof RemoteWorkerTargetRouteInput.Type) {
     const { workerRequest: request, reservation, route } = input;
     const saved = reservations.get(request.requestId);
-    if (request.targetEnvironmentId !== environmentId || !current(request) || !saved ||
+    if (request.targetEnvironmentId !== environmentId || reservation.targetEnvironmentId !== environmentId ||
+      reservation.requestId !== request.requestId || !current(request) || !saved ||
       saved.reservation.bootstrapId !== reservation.bootstrapId || reservation.requestDigest !== (yield* digest(request)) ||
       route.requestDigest !== reservation.requestDigest || route.requestId !== request.requestId ||
       route.sourceEnvironmentId !== request.parent.environmentId || route.targetEnvironmentId !== environmentId ||
@@ -208,6 +209,7 @@ export const make = Effect.gen(function* () {
   const confirm = Effect.fn("WorkerConnection.confirm")(function* (input: RemoteWorkerRouteProof) {
     const saved = sources.get(input.reservation.requestId);
     if (!saved || input.sourceEnvironmentId !== environmentId ||
+      input.reservation.targetEnvironmentId !== saved.route.targetEnvironmentId ||
       input.reservation.bootstrapId !== saved.reservation.bootstrapId ||
       input.reservation.requestDigest !== saved.digest || input.reservation.remotePort !== saved.route.port ||
       input.capabilityDigest !== tokenDigest(saved.route.capability) || !input.loopbackOnly) return yield* failure();

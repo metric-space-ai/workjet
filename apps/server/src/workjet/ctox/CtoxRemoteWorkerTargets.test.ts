@@ -19,7 +19,7 @@ it.effect("uses the exact BO tuple and explicit build values, strips only the in
       assert.equal(connectionId, scope.connectionId); assert.equal(instanceId, scope.instanceId);
       return Effect.succeed({ endpoint: "http://127.0.0.1:8080/mcp", token: "fixture-token" });
     },
-  }, transport: { probe: () => Effect.void, callTool: (_source, tool, args) => {
+  }, transport: { probe: () => Effect.succeed(undefined), callTool: (_source, tool, args) => {
     assert.equal(tool, "business_os.remote_worker_admission");
     assert.deepEqual(args, { action: "enroll_target", target: { sourceEnvironmentId: source, targetEnvironmentId: target, ...assignment },
       computer: { displayName: computer.displayName, hostingMode: computer.hostingMode,
@@ -32,13 +32,13 @@ it.effect("rejects altered native build capacity and foreign target identity", (
   for (const changed of [{ ...receipt, buildCapability: { ...computer.buildCapability, slots: 9 } },
     { ...receipt, target: { ...receipt.target, targetConnectionId: "desktop-ssh-profile" } }]) {
     const service = makeCtoxRemoteWorkerTargets({ connections: { resolveReadyTarget: () => Effect.succeed({ endpoint: "http://127.0.0.1:8080/mcp", token: "fixture-token" }) },
-      transport: { probe: () => Effect.void, callTool: () => Effect.succeed({ structuredContent: changed }) } });
+      transport: { probe: () => Effect.succeed(undefined), callTool: () => Effect.succeed({ structuredContent: changed }) } });
     yield* Effect.flip(service.enroll(scope, source, target, assignment, computer));
   }
 }));
 it.effect("accepts revoked receipts without positive admission fields", () => Effect.gen(function* () {
   const { capabilityEpoch: _epoch, buildCapability: _build, ...revoked } = { ...receipt, state: "revoked" };
   const service = makeCtoxRemoteWorkerTargets({ connections: { resolveReadyTarget: () => Effect.succeed({ endpoint: "http://127.0.0.1:8080/mcp", token: "fixture-token" }) },
-    transport: { probe: () => Effect.void, callTool: () => Effect.succeed({ structuredContent: revoked }) } });
+    transport: { probe: () => Effect.succeed(undefined), callTool: () => Effect.succeed({ structuredContent: revoked }) } });
   assert.equal((yield* service.revoke(scope, source, target, 1)).state, "revoked");
 }));

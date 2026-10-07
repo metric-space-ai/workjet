@@ -205,8 +205,11 @@ export const make = Effect.gen(function* () {
       const candidates = (yield* providerInstances.value.listInstances).filter(
         (instance) => instance.enabled && instance.driverKind === "codex",
       );
-      const selected = candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId)
-        ?? (candidates.length === 1 ? candidates[0] : candidates.find((instance) => instance.instanceId === "codex"));
+      const selected =
+        candidates.find((instance) => instance.instanceId === request.modelSelection.instanceId) ??
+        (candidates.length === 1
+          ? candidates[0]
+          : candidates.find((instance) => instance.instanceId === "codex"));
       if (selected === undefined || sourceHarness.model !== request.modelSelection.model)
         return yield* failure("computer-unavailable");
       runtimeModelSelection = { instanceId: selected.instanceId, model: sourceHarness.model };

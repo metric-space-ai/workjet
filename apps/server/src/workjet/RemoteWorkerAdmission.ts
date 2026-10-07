@@ -8,6 +8,9 @@ import * as Effect from "effect/Effect";
  * It must be safe to repeat under the same immutable worker execution identity. */
 export class RemoteWorkerAdmission extends Context.Service<
   RemoteWorkerAdmission,
-  { readonly admit: (request: RemoteWorkerRequest) => Effect.Effect<void, RemoteWorkerDispatchError> }
+  {
+    readonly admit: (
+      request: RemoteWorkerRequest,
+    ) => Effect.Effect<void, RemoteWorkerDispatchError>;
+  }
 >()("workjet/workjet/RemoteWorkerAdmission") {}
-

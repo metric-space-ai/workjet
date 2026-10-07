@@ -35,9 +35,9 @@ export const RemoteWorkerNativeBinding = Schema.Struct({
   credentialRef: WorkjetGatewayCredentialRef,
   providerRef: WorkjetGatewayProviderRef,
   modelRef: WorkjetGatewayModelRef,
-  capabilities: Schema.Array(Schema.Literals([
-    "repository_read", "repository_write", "run_checks", "open_pull_request",
-  ])),
+  capabilities: Schema.Array(
+    Schema.Literals(["repository_read", "repository_write", "run_checks", "open_pull_request"]),
+  ),
 });
 export type RemoteWorkerNativeBinding = typeof RemoteWorkerNativeBinding.Type;
 export const RemoteWorkerNativeReceipt = Schema.Struct({
@@ -70,9 +70,11 @@ const failure = (reason: RemoteWorkerDispatchError["reason"]) =>
 const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
-    return `{${Object.entries(value).filter(([, entry]) => entry !== undefined)
-      .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
-      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`).join(",")}}`;
+    return `{${Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value) ?? "null";
 };
@@ -115,20 +117,36 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
       binding.providerRef.provider !== binding.modelRef.provider ||
       new Set(binding.capabilities).size !== binding.capabilities.length ||
       binding.capabilities.length === 0
-    ) return yield* failure("invalid-request");
+    )
+      return yield* failure("invalid-request");
     let repository: URL;
-    try { repository = new URL(binding.repositoryUrl); }
-    catch { return yield* failure("invalid-request"); }
+    try {
+      repository = new URL(binding.repositoryUrl);
+    } catch {
+      return yield* failure("invalid-request");
+    }
     // The canonical repository key is verified by native ownership policy too.
-    const normalize = (url: URL) => `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, "").replace(/\.git$/, "")}`;
+    const normalize = (url: URL) =>
+      `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, "").replace(/\.git$/, "")}`;
     let requestRepository: URL;
     try {
-      requestRepository = new URL(request.project.repository.locator.remoteUrl.replace(
-        /^git@([A-Za-z0-9.-]+):/, "https://$1/",
-      ));
-    } catch { return yield* failure("invalid-request"); }
-    if (repository.protocol !== "https:" || repository.username || repository.password ||
-      repository.search || repository.hash || normalize(repository) !== normalize(requestRepository)) {
+      requestRepository = new URL(
+        request.project.repository.locator.remoteUrl.replace(
+          /^git@([A-Za-z0-9.-]+):/,
+          "https://$1/",
+        ),
+      );
+    } catch {
+      return yield* failure("invalid-request");
+    }
+    if (
+      repository.protocol !== "https:" ||
+      repository.username ||
+      repository.password ||
+      repository.search ||
+      repository.hash ||
+      normalize(repository) !== normalize(requestRepository)
+    ) {
       return yield* failure("invalid-request");
     }
     const target: WorkjetGatewayGrantTarget = {
@@ -139,15 +157,18 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     // Native computer IDs can differ from the UI catalog ID. The exact native
     // assignment, not a hostname/display chip, scopes the source gateway grant.
     if (!requireGatewayGrant) return;
-    const catalog = yield* dependencies.gateway.scopedCatalog(
-      target,
-      request.parent.environmentId,
-    ).pipe(Effect.mapError(() => failure("computer-unavailable")));
-    if (!catalog.accounts.some((account) =>
-      NodeUtil.isDeepStrictEqual(account.credentialRef, binding.credentialRef) &&
-      NodeUtil.isDeepStrictEqual(account.providerRef, binding.providerRef) &&
-      account.modelRefs.some((model) => NodeUtil.isDeepStrictEqual(model, binding.modelRef))
-    )) return yield* failure("computer-unavailable");
+    const catalog = yield* dependencies.gateway
+      .scopedCatalog(target, request.parent.environmentId)
+      .pipe(Effect.mapError(() => failure("computer-unavailable")));
+    if (
+      !catalog.accounts.some(
+        (account) =>
+          NodeUtil.isDeepStrictEqual(account.credentialRef, binding.credentialRef) &&
+          NodeUtil.isDeepStrictEqual(account.providerRef, binding.providerRef) &&
+          account.modelRefs.some((model) => NodeUtil.isDeepStrictEqual(model, binding.modelRef)),
+      )
+    )
+      return yield* failure("computer-unavailable");
   });
   const execute = Effect.fn("CtoxRemoteWorkerAdmission.execute")(function* (
     scope: RemoteWorkerNativeScope,
@@ -159,35 +180,45 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     renewalSequence?: number,
   ) {
     yield* validate(scope, request, binding, action !== "revoke");
-    if (action === "renew" && (!Number.isSafeInteger(renewalSequence) || renewalSequence === undefined || renewalSequence < 1))
+    if (
+      action === "renew" &&
+      (!Number.isSafeInteger(renewalSequence) ||
+        renewalSequence === undefined ||
+        renewalSequence < 1)
+    )
       return yield* failure("invalid-request");
-    const target = yield* dependencies.connections.resolveReadyTarget(
-      scope.connectionId, scope.instanceId,
-    ).pipe(Effect.mapError(() => failure("source-unavailable")));
-    const name = "business_os.remote_worker_admission";
-    yield* dependencies.transport.probe(target, [name])
+    const target = yield* dependencies.connections
+      .resolveReadyTarget(scope.connectionId, scope.instanceId)
       .pipe(Effect.mapError(() => failure("source-unavailable")));
-    const response = yield* dependencies.transport.callTool(target, name, {
-      action, binding,
-      ...(action === "issue" ? { ttl_seconds: 300 } : { permit_id: permitId }),
-      ...(action === "renew" ? { ttl_seconds: 300, renewal_sequence: renewalSequence } : {}),
-      ...(executionId === undefined ? {} : { execution_id: executionId }),
-    }).pipe(Effect.mapError(() => failure("source-unavailable")));
+    const name = "business_os.remote_worker_admission";
+    yield* dependencies.transport
+      .probe(target, [name])
+      .pipe(Effect.mapError(() => failure("source-unavailable")));
+    const response = yield* dependencies.transport
+      .callTool(target, name, {
+        action,
+        binding,
+        ...(action === "issue" ? { ttl_seconds: 300 } : { permit_id: permitId }),
+        ...(action === "renew" ? { ttl_seconds: 300, renewal_sequence: renewalSequence } : {}),
+        ...(executionId === undefined ? {} : { execution_id: executionId }),
+      })
+      .pipe(Effect.mapError(() => failure("source-unavailable")));
     if (response.isError || response.structuredContent === undefined)
       return yield* failure("computer-unavailable");
     const receipt = yield* Schema.decodeUnknownEffect(RemoteWorkerNativeReceipt)(
       response.structuredContent,
     ).pipe(Effect.mapError(() => failure("invalid-request")));
-    if (!NodeUtil.isDeepStrictEqual(receipt.binding, binding) ||
+    if (
+      !NodeUtil.isDeepStrictEqual(receipt.binding, binding) ||
       (permitId !== undefined && receipt.permitId !== permitId) ||
       ((action === "claim" || action === "revalidate" || action === "renew") &&
         (receipt.state !== "claimed" || receipt.executionId !== executionId)) ||
       (action === "renew" && receipt.renewalSequence !== renewalSequence) ||
       (action === "revoke" && receipt.state !== "revoked") ||
       (action === "issue" && receipt.state !== "issued" && receipt.state !== "claimed")
-    ) return yield* failure("invalid-request");
+    )
+      return yield* failure("invalid-request");
     return receipt;
   });
   return { execute };
 }
-

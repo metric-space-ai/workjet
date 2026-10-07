@@ -58,5 +58,7 @@ export const RemoteWorkerComputerEnrollmentInput = Schema.Struct({
   profile: RemoteWorkerSourceProfile,
 });
 export type RemoteWorkerComputerEnrollmentInput = typeof RemoteWorkerComputerEnrollmentInput.Type;
-export const RemoteWorkerComputerEnrollmentResult = Schema.Struct({ computerId: WorkjetComputerId });
+export const RemoteWorkerComputerEnrollmentResult = Schema.Struct({
+  computerId: WorkjetComputerId,
+});
 export type RemoteWorkerComputerEnrollmentResult = typeof RemoteWorkerComputerEnrollmentResult.Type;

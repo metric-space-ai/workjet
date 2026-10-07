@@ -584,15 +584,25 @@ export function createServerEnvironmentAtoms<R, E>(
   const updateStateAtom = (environmentId: EnvironmentId | null) =>
     environmentId === null ? EMPTY_SERVER_UPDATE_STATE_ATOM : updateStateValueAtom(environmentId);
   const enrollWorkjetRemoteComputer = createRuntimeCommand<
-    EnvironmentRegistry | EnvironmentCacheStore | R, E,
-    { readonly environmentId: EnvironmentId; readonly targetEnvironmentId: EnvironmentId;
-      readonly input: Omit<RemoteWorkerComputerEnrollmentInput, "profile"> },
-    RemoteWorkerComputerEnrollmentResult, unknown
+    EnvironmentRegistry | EnvironmentCacheStore | R,
+    E,
+    {
+      readonly environmentId: EnvironmentId;
+      readonly targetEnvironmentId: EnvironmentId;
+      readonly input: Omit<RemoteWorkerComputerEnrollmentInput, "profile">;
+    },
+    RemoteWorkerComputerEnrollmentResult,
+    unknown
   >(runtime, {
     label: "environment-data:workjet:enroll-remote-computer",
     scheduler: configScheduler,
     concurrency: configConcurrency,
-    execute: (target) => enrollRegisteredWorkerComputer(target.environmentId, target.targetEnvironmentId, target.input),
+    execute: (target) =>
+      enrollRegisteredWorkerComputer(
+        target.environmentId,
+        target.targetEnvironmentId,
+        target.input,
+      ),
   });
   const updateServer = createRuntimeCommand<
     EnvironmentRegistry | EnvironmentCacheStore | R,

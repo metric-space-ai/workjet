@@ -1,31 +1,75 @@
-it.effect("requires one explicit configured remote worker profile", () => Effect.gen(function* () {
-  for (const profiles of [[], [remoteProfile, { ...remoteProfile, id: WorkjetWorkerProfileId.make("second-profile") }]]) {
-    const harness = makeHarness({ remoteSource: true });
-    const service = yield* harness.service.pipe(Effect.provide(serverSettingsLayerTest({ workjet: {
-      computers: [remoteComputer], workerProfiles: profiles,
-      llmRoutes: [{ id: remoteProfile.llmRouteId, label: "Worker route", gatewayAccountId: WorkjetGatewayAccountId.make("worker-account") }],
-    } })));
-    const error = yield* Effect.flip(service.dispatch(invocation, { task: "Fix docs", computerId: remoteComputer.id }));
-    expect(error.reason).toBe("worker-profile-unavailable");
-    expect(harness.remoteRequests).toEqual([]);
-    expect(harness.worktreeCreates).toEqual([]);
-  }
-}));
-it.effect("explicit profile disambiguates the computer and preserves exact retry options", () => Effect.gen(function* () {
-  const harness = makeHarness({ remoteSource: true, remoteReplyLost: true });
-  const service = yield* harness.service.pipe(Effect.provide(serverSettingsLayerTest({ workjet: {
-    computers: [remoteComputer], workerProfiles: [remoteProfile, { ...remoteProfile, id: WorkjetWorkerProfileId.make("second-profile") }],
-    llmRoutes: [{ id: remoteProfile.llmRouteId, label: "Worker route", gatewayAccountId: WorkjetGatewayAccountId.make("worker-account") }],
-  } })));
-  const input = { task: "Fix docs", workerProfileId: remoteProfile.id,
-    modelSelection: { ...inheritedModel, model: remoteProfile.modelId } };
-  const pending = yield* Effect.flip(service.dispatch(invocation, input));
-  expect(pending.reason).toBe("remote-dispatch-pending");
-  const result = yield* service.dispatch(invocation, { ...input, remoteRequestId: pending.remoteRequestId! });
-  expect(result.workerThreadId).toBe(ids[0]);
-  expect(harness.remoteRequests).toHaveLength(1);
-  expect(harness.remoteRequests[0]?.modelSelection).toEqual(input.modelSelection);
-}));
+it.effect("requires one explicit configured remote worker profile", () =>
+  Effect.gen(function* () {
+    for (const profiles of [
+      [],
+      [remoteProfile, { ...remoteProfile, id: WorkjetWorkerProfileId.make("second-profile") }],
+    ]) {
+      const harness = makeHarness({ remoteSource: true });
+      const service = yield* harness.service.pipe(
+        Effect.provide(
+          serverSettingsLayerTest({
+            workjet: {
+              computers: [remoteComputer],
+              workerProfiles: profiles,
+              llmRoutes: [
+                {
+                  id: remoteProfile.llmRouteId,
+                  label: "Worker route",
+                  gatewayAccountId: WorkjetGatewayAccountId.make("worker-account"),
+                },
+              ],
+            },
+          }),
+        ),
+      );
+      const error = yield* Effect.flip(
+        service.dispatch(invocation, { task: "Fix docs", computerId: remoteComputer.id }),
+      );
+      expect(error.reason).toBe("worker-profile-unavailable");
+      expect(harness.remoteRequests).toEqual([]);
+      expect(harness.worktreeCreates).toEqual([]);
+    }
+  }),
+);
+it.effect("explicit profile disambiguates the computer and preserves exact retry options", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ remoteSource: true, remoteReplyLost: true });
+    const service = yield* harness.service.pipe(
+      Effect.provide(
+        serverSettingsLayerTest({
+          workjet: {
+            computers: [remoteComputer],
+            workerProfiles: [
+              remoteProfile,
+              { ...remoteProfile, id: WorkjetWorkerProfileId.make("second-profile") },
+            ],
+            llmRoutes: [
+              {
+                id: remoteProfile.llmRouteId,
+                label: "Worker route",
+                gatewayAccountId: WorkjetGatewayAccountId.make("worker-account"),
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const input = {
+      task: "Fix docs",
+      workerProfileId: remoteProfile.id,
+      modelSelection: { ...inheritedModel, model: remoteProfile.modelId },
+    };
+    const pending = yield* Effect.flip(service.dispatch(invocation, input));
+    expect(pending.reason).toBe("remote-dispatch-pending");
+    const result = yield* service.dispatch(invocation, {
+      ...input,
+      remoteRequestId: pending.remoteRequestId!,
+    });
+    expect(result.workerThreadId).toBe(ids[0]);
+    expect(harness.remoteRequests).toHaveLength(1);
+    expect(harness.remoteRequests[0]?.modelSelection).toEqual(input.modelSelection);
+  }),
+);
 it.effect(
   "dispatches a registered remote worker without creating a source checkout or thread",
   () =>
@@ -205,16 +249,29 @@ const remoteComputer = {
   presentationKind: "ssh",
 } as const satisfies WorkjetComputer;
 const remoteProfile = {
-  id: WorkjetWorkerProfileId.make("gpu3-docs"), name: "GPU3 documentation",
-  computerId: remoteComputer.id, harness: "codex-cli" as const,
-  llmRouteId: WorkjetLlmRouteId.make("worker-route"), modelId: "gpt-worker",
-  reasoning: "automatic" as const, role: "standard" as const,
-  capabilityIds: ["greppy"] as const, capabilityBindings: [],
+  id: WorkjetWorkerProfileId.make("gpu3-docs"),
+  name: "GPU3 documentation",
+  computerId: remoteComputer.id,
+  harness: "codex-cli" as const,
+  llmRouteId: WorkjetLlmRouteId.make("worker-route"),
+  modelId: "gpt-worker",
+  reasoning: "automatic" as const,
+  role: "standard" as const,
+  capabilityIds: ["greppy"] as const,
+  capabilityBindings: [],
 };
 const computerCatalogLayer = serverSettingsLayerTest({
-  workjet: { computers: [localComputer, remoteComputer], selectedComputerId: null,
+  workjet: {
+    computers: [localComputer, remoteComputer],
+    selectedComputerId: null,
     workerProfiles: [remoteProfile],
-    llmRoutes: [{ id: remoteProfile.llmRouteId, label: "Worker route", gatewayAccountId: WorkjetGatewayAccountId.make("worker-account") }],
+    llmRoutes: [
+      {
+        id: remoteProfile.llmRouteId,
+        label: "Worker route",
+        gatewayAccountId: WorkjetGatewayAccountId.make("worker-account"),
+      },
+    ],
   },
 });
 const ids = [

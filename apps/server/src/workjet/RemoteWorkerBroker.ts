@@ -78,8 +78,12 @@ export const make = Effect.gen(function* () {
         result.enabledCapabilityIds.length !== request.enabledCapabilityIds.length ||
         result.enabledCapabilityIds.some((id) => !request.enabledCapabilityIds.includes(id)) ||
         !NodeUtil.isDeepStrictEqual(
-          (yield* Schema.encodeEffect(ModelSelection)(result.modelSelection).pipe(Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "invalid-request" })))),
-          (yield* Schema.encodeEffect(ModelSelection)(request.modelSelection).pipe(Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "invalid-request" })))),
+          yield* Schema.encodeEffect(ModelSelection)(result.modelSelection).pipe(
+            Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "invalid-request" })),
+          ),
+          yield* Schema.encodeEffect(ModelSelection)(request.modelSelection).pipe(
+            Effect.mapError(() => new RemoteWorkerDispatchError({ reason: "invalid-request" })),
+          ),
         )
       ) {
         return yield* new RemoteWorkerDispatchError({ reason: "invalid-request" });

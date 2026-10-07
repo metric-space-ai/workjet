@@ -1909,6 +1909,14 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (decoded.value.action !== request.action) {
           return { _tag: "failed", code: "guest_failed" };
         }
+        if (
+          request.action === "project.supervisor.turn.watch" &&
+          request.executionPage !== undefined &&
+          decoded.value.action === request.action &&
+          decoded.value.executionPage === undefined
+        ) {
+          return { _tag: "failed", code: "unsupported" };
+        }
         if (!isWorkjetSupervisorReceiptForRequest(request, decoded.value)) {
           return { _tag: "failed", code: "guest_failed" };
         }

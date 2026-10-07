@@ -455,7 +455,7 @@ const RemoteWorkerComputerEnrollmentLayerLive = RemoteWorkerComputerEnrollmentLi
 const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
   Layer.provide(RemoteWorkerSourceOperationsLive.layer.pipe(
     Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
-    Layer.provide(CtoxThreadBindingSourceLive),
+    Layer.provide(CtoxThreadBindingSourceLive.pipe(Layer.provide(ProviderSessionDirectoryLayerLive))),
     Layer.provide(RemoteWorkerAuthorityStore.layer),
     Layer.provide(DecisionHubConnectionRegistryLive),
   )),

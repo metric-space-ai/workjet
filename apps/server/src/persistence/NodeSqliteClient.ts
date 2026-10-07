@@ -183,17 +183,21 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
       });
 
     // Node caches result-column metadata on StatementSync. A statement
-    // automatically recompiled after DDL can otherwise return the old column
-    // names for a rebuilt table, losing or mislabelling migration data.
+    // automatically recompiled after DDL can otherwise omit columns from
+    // queries against a rebuilt table.
     const afterSchemaChange = (
       sql: string,
       effect: Effect.Effect<ReadonlyArray<any>, SqlError>,
-    ) =>
-      /^\s*(?:(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)\s*)*(?:CREATE|ALTER|DROP|VACUUM|REINDEX)\b/i.test(
-        sql,
-      )
-        ? effect.pipe(Effect.tap(() => Cache.invalidateAll(prepareCache)))
-        : effect;
+    ) => {
+      if (
+        /^\s*(?:(?:--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)\s*)*(?:CREATE|ALTER|DROP|VACUUM|REINDEX)\b/i.test(
+          sql,
+        )
+      ) {
+        return effect.pipe(Effect.tap(() => Cache.invalidateAll(prepareCache)));
+      }
+      return effect;
+    };
 
     const run = (sql: string, params: ReadonlyArray<unknown>, raw = false) =>
       afterSchemaChange(

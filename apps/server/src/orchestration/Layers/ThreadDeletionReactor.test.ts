@@ -348,6 +348,17 @@ describe("worker worktree cleanup on thread.deleted", () => {
       },
     } as WorkerCleanupReceiptStore["Service"]);
 
+    const fixtureServicesLayer = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (fs) => ({
+        ...fs,
+        exists: (candidate) =>
+          candidate === workerWorktreePath
+            ? Effect.succeed(worktreePresent)
+            : fs.exists(candidate),
+      })),
+    ).pipe(Layer.provideMerge(NodeServices.layer));
+
     const workerWorktreeCleanupLayer = Layer.effect(
       WorkerWorktreeCleanup,
       makeWorkerWorktreeCleanup(({ worktreePath }) =>
@@ -373,15 +384,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           receiptLayer,
           nativeRemoverLayer,
           worktreeStorageLayerTest({ trustedRoots: [worktreeRoot] }),
-          NodeServices.layer,
-        ).pipe(
-          Layer.updateService(FileSystem.FileSystem, (fs) => ({
-            ...fs,
-            exists: (candidate) =>
-              candidate === workerWorktreePath
-                ? Effect.succeed(worktreePresent)
-                : fs.exists(candidate),
-          })),
+          fixtureServicesLayer,
         ),
       ),
     );

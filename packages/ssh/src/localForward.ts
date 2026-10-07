@@ -78,6 +78,8 @@ export interface SshLocalForwardSpawnInput {
   readonly localPort: number;
   readonly remotePort: number;
   readonly authOptions?: SshAuthOptions;
+  /** Internal shared spawn direction. Reverse binds target loopback explicitly. */
+  readonly direction?: "local" | "reverse";
   /** Host-key pinning or other options inserted before the destination. */
   readonly preHostArgs?: ReadonlyArray<string>;
 }
@@ -139,8 +141,10 @@ export const spawnSshLocalForwardProcess = Effect.fn(
     "ServerAliveCountMax=3",
     "-n",
     "-N",
-    "-L",
-    `${input.localPort}:${LOOPBACK_HOST}:${input.remotePort}`,
+    input.direction === "reverse" ? "-R" : "-L",
+    input.direction === "reverse"
+      ? `${LOOPBACK_HOST}:${input.remotePort}:${LOOPBACK_HOST}:${input.localPort}`
+      : `${input.localPort}:${LOOPBACK_HOST}:${input.remotePort}`, 
     ...(input.preHostArgs ?? []),
     hostSpec,
   ];

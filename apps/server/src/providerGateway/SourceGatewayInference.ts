@@ -1,6 +1,7 @@
 import {
   WorkjetGatewayInferenceError,
   WorkjetGatewayInferenceInput,
+  WorkjetGatewayAdmissionInput,
   WorkjetRemoteWorkerPermit,
   type EnvironmentId,
   type WorkjetGatewayBindModelInput,
@@ -54,7 +55,7 @@ export function makeSourceGatewayInference(dependencies: {
     Effect.Effect<void, WorkjetGatewayInferenceError>;
   readonly scopedCatalog: (target: WorkjetGatewayGrantTarget, environmentId: EnvironmentId) =>
     Effect.Effect<WorkjetGatewayScopedCatalog, WorkjetGatewayInferenceError>;
-  readonly revalidate: (input: WorkjetGatewayInferenceInput) =>
+  readonly revalidate: (input: WorkjetGatewayAdmissionInput) =>
     Effect.Effect<unknown, WorkjetGatewayInferenceError>;
   readonly forward: (selected: WorkjetGatewayModelBinding, requestJson: string, deadlineMs: number) =>
     Effect.Effect<string, WorkjetGatewayInferenceError>;
@@ -85,10 +86,9 @@ export function makeSourceGatewayInference(dependencies: {
     return selected;
   });
 
-  const infer = Effect.fn("SourceGatewayInference.infer")(function* (raw: WorkjetGatewayInferenceInput) {
-    // Snapshot all nested input before asynchronous authority calls.
-    const input = yield* Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput)(raw).pipe(
-      Effect.mapError(() => failure("invalid-request")));
+  const requireAuthority = Effect.fn("SourceGatewayInference.requireAuthority")(function* (
+    input: WorkjetGatewayAdmissionInput,
+  ) {
     const environmentId = yield* dependencies.environmentId;
     const binding = input.permit.binding;
     if (binding.sourceEnvironmentId !== environmentId ||
@@ -96,6 +96,30 @@ export function makeSourceGatewayInference(dependencies: {
       return yield* failure("binding-mismatch");
     const selected = { target: gatewayTargetForWorker(binding), credentialRef: binding.credentialRef,
       providerRef: binding.providerRef, modelRef: binding.modelRef };
+    const catalog = yield* dependencies.scopedCatalog(selected.target, environmentId);
+    yield* Effect.try({ try: () => requireScopedGatewayModel(catalog, selected, environmentId),
+      catch: (error) => Schema.is(WorkjetGatewayInferenceError)(error) ? error : failure("grant-unavailable") });
+    const receipt = yield* dependencies.revalidate(input).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit)),
+      Effect.mapError(() => failure("native-admission-rejected")));
+    if (JSON.stringify(receipt) !== JSON.stringify(input.permit) ||
+        receipt.expiresAtMs <= (yield* dependencies.now))
+      return yield* failure("native-admission-rejected");
+    return selected;
+  });
+
+  const admit = Effect.fn("SourceGatewayInference.admit")(function* (raw: WorkjetGatewayAdmissionInput) {
+    const input = yield* Schema.decodeUnknownEffect(WorkjetGatewayAdmissionInput)(raw).pipe(
+      Effect.mapError(() => failure("invalid-request")));
+    yield* requireAuthority(input);
+    return {};
+  });
+
+  const infer = Effect.fn("SourceGatewayInference.infer")(function* (raw: WorkjetGatewayInferenceInput) {
+    // Snapshot all nested input before asynchronous authority calls.
+    const input = yield* Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput)(raw).pipe(
+      Effect.mapError(() => failure("invalid-request")));
+    const binding = input.permit.binding;
     // Restrict the protocol at the source boundary; arbitrary URLs/headers never pass through.
     yield* Effect.try({ try: () => {
       if (new TextEncoder().encode(input.requestJson).byteLength > 256 * 1024) throw new Error();
@@ -106,22 +130,11 @@ export function makeSourceGatewayInference(dependencies: {
           request.background === true || request.previous_response_id !== undefined ||
           request.conversation !== undefined || request.input === undefined) throw new Error();
     }, catch: () => failure("invalid-request") });
-    const requireAuthority = Effect.fn("SourceGatewayInference.requireAuthority")(function* () {
-      const catalog = yield* dependencies.scopedCatalog(selected.target, environmentId);
-      yield* Effect.try({ try: () => requireScopedGatewayModel(catalog, selected, environmentId),
-        catch: (error) => Schema.is(WorkjetGatewayInferenceError)(error) ? error : failure("grant-unavailable") });
-      const receipt = yield* dependencies.revalidate(input).pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit)),
-        Effect.mapError(() => failure("native-admission-rejected")));
-      if (JSON.stringify(receipt) !== JSON.stringify(input.permit) ||
-          receipt.expiresAtMs <= (yield* dependencies.now))
-        return yield* failure("native-admission-rejected");
-    });
-    yield* requireAuthority();
+    const selected = yield* requireAuthority(input);
     const result = yield* dependencies.forward(selected, input.requestJson, input.permit.expiresAtMs);
     // A revoked/expired grant or native permit also prevents publication after the await.
-    yield* requireAuthority();
+    yield* requireAuthority(input);
     return { requestJson: result };
   });
-  return { bindModel, infer };
+  return { bindModel, admit, infer };
 }

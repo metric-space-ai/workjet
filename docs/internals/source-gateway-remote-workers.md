@@ -1,6 +1,6 @@
 # Source gateway inference for remote workers
 
-The source Workjet server exposes two authenticated environment WebSocket RPCs.
+The source Workjet server exposes three authenticated environment WebSocket RPCs.
 They live in the managed server, independently of the renderer or Electron UI.
 Provider API keys, OAuth material, the source CTOX Owner bearer and the source
 Workjet session credential remain in the source managed process. The target
@@ -28,6 +28,17 @@ The result is `{target, credentialRef, providerRef, modelRef}`. These references
 are selected scope, not permission to perform inference. The source broker
 uses them in the immutable CTOX remote-worker admission binding.
 
+## Revalidate create and turn admission
+
+`workjet.providerGateway.admit` accepts `{sourceConnectionId, workerRequest,
+permit}` and requires orchestration operate scope. It returns `{}` only after
+the same current scoped grant and source native execution checks as inference.
+The Receiver and serialized Engine `RemoteWorkerAdmission.admit(request)`
+adapter can use this source bridge endpoint with the durable claimed receipt.
+The claimed receipt includes its exact `renewalSequence`; a stale renewal,
+owner epoch, execution binding or expiry fails closed. Native renewal remains
+owned by the shared admission client; the model consumer never extends a lease.
+
 ## Execute through the source bridge
 
 `workjet.providerGateway.infer` requires orchestration operate scope and accepts:
@@ -35,6 +46,7 @@ uses them in the immutable CTOX remote-worker admission binding.
 ```ts
 {
   sourceConnectionId, // server-held source CTOX connection
+  workerRequest: immutableRemoteWorkerRequest,
   permit: claimedNativeRemoteWorkerReceipt,
   requestJson: JSON.stringify({ model: exactModelId, input, stream: false }),
 }
@@ -61,9 +73,11 @@ Failures expose safe error classes, never credential material or raw headers.
 ## Remaining receiver integration
 
 `ws.ts` is the production caller of `makeSourceGatewayInference`; its revalidation
-port currently uses the existing native MCP transport. The Instances admission
-owner should supply its shared typed revalidation client at that port when
-integrating admission, rather than creating another credential store.
+port calls `makeCtoxRemoteWorkerAdmissionClient.execute` with the immutable
+worker request, source native scope, binding, `"revalidate"`, permit ID and
+execution ID. This shares the Instances admission owner's actual typed client,
+including canonical request digest verification and current source connection
+resolution. It creates no separate native credential store or owner authorizer.
 
 The target Receiver/CLI still needs an owned managed bridge that carries each
 inference request back to these source RPCs, using its bound execution and

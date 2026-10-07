@@ -201,6 +201,7 @@ import {
 import { VcsError } from "./vcs.ts";
 import {
   WorkjetGatewayBindModelInput,
+  WorkjetGatewayAdmissionInput,
   WorkjetGatewayModelBinding,
   WorkjetGatewayInferenceInput,
   WorkjetGatewayInferenceResult,
@@ -409,6 +410,7 @@ export const WS_METHODS = {
   workjetGatewayScopedCatalog: "workjet.providerGateway.scopedCatalog",
   workjetGatewayBindModel: "workjet.providerGateway.bindModel",
   workjetGatewayInfer: "workjet.providerGateway.infer",
+  workjetGatewayAdmit: "workjet.providerGateway.admit",
   workjetGatewaySetGrant: "workjet.providerGateway.setGrant",
   workjetGatewayStart: "workjet.providerGateway.start",
   workjetGatewayStop: "workjet.providerGateway.stop",
@@ -730,6 +732,12 @@ export const WsWorkjetGatewayScopedCatalogRpc = Rpc.make(WS_METHODS.workjetGatew
 export const WsWorkjetGatewayBindModelRpc = Rpc.make(WS_METHODS.workjetGatewayBindModel, {
   payload: WorkjetGatewayBindModelInput,
   success: WorkjetGatewayModelBinding,
+  error: Schema.Union([EnvironmentAuthorizationError, WorkjetGatewayInferenceError]),
+});
+
+export const WsWorkjetGatewayAdmitRpc = Rpc.make(WS_METHODS.workjetGatewayAdmit, {
+  payload: WorkjetGatewayAdmissionInput,
+  success: Schema.Struct({}),
   error: Schema.Union([EnvironmentAuthorizationError, WorkjetGatewayInferenceError]),
 });
 
@@ -1732,6 +1740,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayScopedCatalogRpc,
   WsWorkjetGatewayBindModelRpc,
   WsWorkjetGatewayInferRpc,
+  WsWorkjetGatewayAdmitRpc,
   WsWorkjetGatewaySetGrantRpc,
   WsWorkjetGatewayStartRpc,
   WsWorkjetGatewayStopRpc,

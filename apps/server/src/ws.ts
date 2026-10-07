@@ -127,6 +127,7 @@ import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import { makeSourceGatewayInference } from "./providerGateway/SourceGatewayInference.ts";
 import { forwardSourceGatewayResponses } from "./providerGateway/ProviderGatewayNodeAdapter.ts";
 import { makeCtoxMcpTransport } from "./workjet/ctox/CtoxMcpTransport.ts";
+import { makeCtoxRemoteWorkerAdmissionClient } from "./workjet/ctox/CtoxRemoteWorkerAdmission.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -677,29 +678,26 @@ const makeWsRpcLayer = (
               : Effect.fail(new WorkjetGatewayInferenceError({ reason: "binding-mismatch" }));
           }),
         ),
-        scopedCatalog: (target, environmentId) => requireGatewayGrantTarget(target).pipe(
-          Effect.andThen(providerGateway.scopedCatalog(target, environmentId)),
+        // Native assigned computer identity can differ from the presentation row.
+        // The exact tuple is checked by the current grant and native admission.
+        scopedCatalog: (target, environmentId) => providerGateway.scopedCatalog(target, environmentId).pipe(
           Effect.mapError(() => new WorkjetGatewayInferenceError({ reason: "grant-unavailable" })),
         ),
         revalidate: (input) => withDecisionHubConnections((registry) =>
           Effect.gen(function* () {
-            // Resolve the source managed credential in the source process on every call.
-            // The remote computer receives a permit locator, never this bearer.
-            const target = yield* registry.resolveReadyTarget(
-              input.sourceConnectionId, input.permit.binding.sourceInstanceId,
-            );
-            const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
-            const tool = "business_os.remote_worker_admission";
-            yield* transport.probe(target, [tool]);
-            const result = yield* transport.callTool(target, tool, {
-              action: "revalidate",
-              permit_id: input.permit.permitId,
-              execution_id: input.permit.executionId,
-              binding: input.permit.binding,
+            const admission = makeCtoxRemoteWorkerAdmissionClient({
+              connections: registry,
+              gateway: providerGateway,
+              transport: makeCtoxMcpTransport(yield* HttpClient.HttpClient),
             });
-            if (result.isError || result.structuredContent === undefined)
-              return yield* new WorkjetGatewayInferenceError({ reason: "native-admission-rejected" });
-            return result.structuredContent;
+            return yield* admission.execute(
+              { connectionId: input.sourceConnectionId, instanceId: input.permit.binding.sourceInstanceId },
+              input.workerRequest,
+              input.permit.binding,
+              "revalidate",
+              input.permit.permitId,
+              input.permit.executionId,
+            );
           }).pipe(
             Effect.provide(FetchHttpClient.layer),
             Effect.mapError(() => new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" })),
@@ -2067,6 +2065,10 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.workjetGatewayBindModel]: (input) =>
           observeRpcEffect(WS_METHODS.workjetGatewayBindModel, sourceGateway.bindModel(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayAdmit]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayAdmit, sourceGateway.admit(input), {
             "rpc.aggregate": "workjet-provider-gateway",
           }),
         [WS_METHODS.workjetGatewayInfer]: (input) =>

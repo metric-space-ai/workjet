@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { ModelSelection } from "./orchestration.ts";
+import { RemoteWorkerRequest } from "./remoteWorker.ts";
 import { EnvironmentId, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   WorkjetConnectionId,
@@ -60,14 +61,20 @@ export const WorkjetRemoteWorkerPermit = Schema.Struct({
   expiresAtMs: NonNegativeInt,
   binding: WorkjetRemoteWorkerBinding,
   state: Schema.Literal("claimed"),
+  renewalSequence: NonNegativeInt,
   executionId: Identifier,
 });
 export type WorkjetRemoteWorkerPermit = typeof WorkjetRemoteWorkerPermit.Type;
 
 /** Only the source-side managed bridge calls this. No source bearer is a worker credential. */
-export const WorkjetGatewayInferenceInput = Schema.Struct({
+export const WorkjetGatewayAdmissionInput = Schema.Struct({
   sourceConnectionId: WorkjetConnectionId,
+  workerRequest: RemoteWorkerRequest,
   permit: WorkjetRemoteWorkerPermit,
+});
+export type WorkjetGatewayAdmissionInput = typeof WorkjetGatewayAdmissionInput.Type;
+export const WorkjetGatewayInferenceInput = Schema.Struct({
+  ...WorkjetGatewayAdmissionInput.fields,
   // Responses protocol, non-streaming, bounded UTF-8 JSON. No URL or header injection.
   requestJson: Schema.String.check(Schema.isMaxLength(256 * 1024)),
 });

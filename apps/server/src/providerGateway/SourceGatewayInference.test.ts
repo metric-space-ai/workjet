@@ -7,6 +7,7 @@ import {
   WorkjetGatewayAccountId,
   WorkjetLlmRouteId,
   ProviderInstanceId,
+  ProjectId,
   WorkjetGatewayInferenceError,
   type WorkjetGatewayInferenceInput,
   type WorkjetGatewayScopedCatalog,
@@ -14,6 +15,7 @@ import {
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vite-plus/test";
 import { makeSourceGatewayInference } from "./SourceGatewayInference.ts";
+import { makeCtoxRemoteWorkerAdmissionClient, remoteWorkerRequestDigest } from "../workjet/ctox/CtoxRemoteWorkerAdmission.ts";
 
 const environmentId = EnvironmentId.make("source");
 const target = { connectionId: WorkjetConnectionId.make("target-connection"), instanceId: "target-instance",
@@ -28,10 +30,23 @@ const catalog: WorkjetGatewayScopedCatalog = { schemaVersion: 1, target,
     label: "Actual account", modelRefs: [references.modelRef] }] };
 const input: WorkjetGatewayInferenceInput = {
   sourceConnectionId: WorkjetConnectionId.make("source-native"),
+  workerRequest: {
+    schemaVersion: 1, requestId: ThreadId.make("request"), targetEnvironmentId: EnvironmentId.make("target"),
+    computerId: target.computerId,
+    parent: { environmentId, threadId: ThreadId.make("supervisor") },
+    parentTeamRole: "supervisor", parentCapabilityIds: ["greppy"], enabledCapabilityIds: ["greppy"],
+    managedInstructions: "One PR", project: { id: ProjectId.make("project"), title: "Project",
+      repository: { canonicalKey: "github:example/repository", locator: { source: "git-remote",
+        remoteName: "origin", remoteUrl: "https://github.com/example/repository" } } },
+    revision: "c".repeat(40), task: "Task", title: "Task",
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "exact-model" },
+    runtimeMode: "full-access", interactionMode: "default",
+    createdAt: "2026-10-07T10:00:00.000Z", expiresAt: "2026-10-08T10:00:00.000Z",
+  },
   permit: {
     contract: "ctox.workjet.remote-worker-admission.v1", permitId: "permit", ownerUserId: "owner",
     authorityEpoch: 1, authorityFingerprint: `sha256:${"a".repeat(64)}`, expiresAtMs: 9000,
-    state: "claimed", executionId: "execution",
+    state: "claimed", executionId: "execution", renewalSequence: 0,
     binding: {
       requestId: "request", requestDigest: "b".repeat(64), sourceEnvironmentId: environmentId,
       sourceSupervisorThreadId: ThreadId.make("supervisor"), sourceInstanceId: "source-instance",
@@ -79,6 +94,56 @@ const reason = async (request: Effect.Effect<unknown, WorkjetGatewayInferenceErr
   (await Effect.runPromise(Effect.flip(request))).reason;
 
 describe("source gateway inference", () => {
+  it("provides current create/turn admission without performing model inference", async () => {
+    const f = fixture();
+    expect(await Effect.runPromise(f.consumer.admit(input))).toEqual({});
+    expect(f.events).toEqual(["catalog", "native"]);
+    f.scope({ ...catalog, accounts: [] });
+    expect(await reason(f.consumer.admit(input))).toBe("grant-unavailable");
+    expect(f.events).not.toContain("forward");
+  });
+
+  it("uses the Instances admission client to verify the immutable worker request and source scope", async () => {
+    const calls: unknown[] = [];
+    const digest = await Effect.runPromise(remoteWorkerRequestDigest(input.workerRequest));
+    const prepared = { ...input, permit: { ...input.permit, binding: { ...input.permit.binding, requestDigest: digest } } };
+    const admission = makeCtoxRemoteWorkerAdmissionClient({
+      connections: { resolveReadyTarget: (connectionId, instanceId) => Effect.sync(() => {
+        expect(connectionId).toBe(input.sourceConnectionId);
+        expect(instanceId).toBe(input.permit.binding.sourceInstanceId);
+        return { endpoint: "https://source.example/mcp", token: "source-only" };
+      }) },
+      gateway: { scopedCatalog: () => Effect.succeed(catalog) },
+      transport: {
+        probe: () => Effect.void,
+        callTool: (target, tool, args) => Effect.sync(() => {
+          expect(target.token).toBe("source-only");
+          expect(tool).toBe("business_os.remote_worker_admission");
+          calls.push(args);
+          return { structuredContent: prepared.permit };
+        }),
+      },
+    });
+    const consumer = makeSourceGatewayInference({
+      environmentId: Effect.succeed(environmentId),
+      configuration: Effect.succeed(DEFAULT_WORKJET_CONFIGURATION),
+      requireSourceInstance: () => Effect.void,
+      scopedCatalog: () => Effect.succeed(catalog),
+      revalidate: (current) => admission.execute(
+        { connectionId: current.sourceConnectionId, instanceId: current.permit.binding.sourceInstanceId },
+        current.workerRequest, current.permit.binding, "revalidate", current.permit.permitId, current.permit.executionId,
+      ).pipe(Effect.mapError(() => new WorkjetGatewayInferenceError({ reason: "native-admission-rejected" }))),
+      forward: () => Effect.succeed("{\"output\":[]}"),
+      now: Effect.succeed(1000),
+    });
+    expect(await Effect.runPromise(consumer.infer(prepared))).toEqual({ requestJson: "{\"output\":[]}" });
+    expect(calls).toHaveLength(2);
+    const tampered = { ...prepared, workerRequest: { ...prepared.workerRequest, task: "Changed task" } };
+    expect(await reason(consumer.infer(tampered))).toBe("native-admission-rejected");
+    expect(calls).toHaveLength(2);
+  });
+
+
   it("resolves a real llmRoutes account into exact source references", async () => {
     const f = fixture();
     expect(await Effect.runPromise(f.consumer.bindModel({ target,
@@ -96,9 +161,9 @@ describe("source gateway inference", () => {
     expect(await reason(f.consumer.infer(input))).toBe("grant-unavailable");
     expect(f.events.filter((e) => e === "forward")).toHaveLength(1);
   });
-  it.each(["ownerUserId", "authorityEpoch", "executionId", "permitId", "expiresAtMs"])("rejects changed native %s before forwarding", async (field) => {
+  it.each(["ownerUserId", "authorityEpoch", "executionId", "permitId", "expiresAtMs", "renewalSequence"])("rejects changed native %s before forwarding", async (field) => {
     const f = fixture();
-    f.native({ ...input.permit, [field]: field === "authorityEpoch" || field === "expiresAtMs" ? 2 : "changed" });
+    f.native({ ...input.permit, [field]: field === "authorityEpoch" || field === "expiresAtMs" || field === "renewalSequence" ? 2 : "changed" });
     expect(await reason(f.consumer.infer(input))).toBe("native-admission-rejected");
     expect(f.events).not.toContain("forward");
   });

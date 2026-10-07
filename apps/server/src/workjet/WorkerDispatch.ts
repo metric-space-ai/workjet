@@ -262,67 +262,116 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         const broker = remoteBroker.value;
         let request: RemoteWorkerRequest;
         if (input.remoteRequestId) {
-          const saved = yield* broker.read(input.remoteRequestId).pipe(
-            Effect.mapError(() => failure("remote-dispatch-failed")),
-          );
-          if (Option.isNone(saved) || saved.value.request.parent.environmentId !== invocation.environmentId ||
-            saved.value.request.parent.threadId !== parent.id || saved.value.request.computerId !== computerId ||
-            saved.value.request.targetEnvironmentId !== targetEnvironmentId || saved.value.request.task !== input.task ||
-            (input.title !== undefined && saved.value.request.title !== (input.title.trim() || deriveWorkerTitle(input.task))) ||
-            (input.modelSelection !== undefined && !NodeUtil.isDeepStrictEqual(
-              Schema.encodeSync(ModelSelection)(saved.value.request.modelSelection),
-              Schema.encodeSync(ModelSelection)(input.modelSelection),
-            )) || (input.enabledCapabilityIds !== undefined &&
+          const saved = yield* broker
+            .read(input.remoteRequestId)
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          if (
+            Option.isNone(saved) ||
+            saved.value.request.parent.environmentId !== invocation.environmentId ||
+            saved.value.request.parent.threadId !== parent.id ||
+            saved.value.request.computerId !== computerId ||
+            saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
+            saved.value.request.task !== input.task ||
+            (input.title !== undefined &&
+              saved.value.request.title !==
+                (input.title.trim() || deriveWorkerTitle(input.task))) ||
+            (input.modelSelection !== undefined &&
+              !NodeUtil.isDeepStrictEqual(
+                (yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(Effect.mapError(() => failure("remote-dispatch-failed")))),
+                (yield* Schema.encodeEffect(ModelSelection)(input.modelSelection).pipe(Effect.mapError(() => failure("remote-dispatch-failed")))),
+              )) ||
+            (input.enabledCapabilityIds !== undefined &&
               (saved.value.request.enabledCapabilityIds.length !== enabledCapabilityIds.length ||
-               saved.value.request.enabledCapabilityIds.some((id) => !enabledCapabilityIds.includes(id))))) {
+                saved.value.request.enabledCapabilityIds.some(
+                  (id) => !enabledCapabilityIds.includes(id),
+                )))
+          ) {
             return yield* failure("remote-dispatch-failed");
           }
           request = saved.value.request;
         } else {
-          const project = Option.getOrUndefined(yield* query.getProjectShellById(parent.projectId).pipe(
-            Effect.mapError(() => failure("remote-dispatch-failed")),
-          ));
+          const project = Option.getOrUndefined(
+            yield* query
+              .getProjectShellById(parent.projectId)
+              .pipe(Effect.mapError(() => failure("remote-dispatch-failed"))),
+          );
           const cwd = parent.worktreePath ?? project?.workspaceRoot;
           if (!project?.repositoryIdentity || !cwd) return yield* failure("remote-dispatch-failed");
-          const status = yield* gitWorkflow.localStatus({ cwd }).pipe(
-            Effect.mapError(() => failure("remote-dispatch-failed")),
-          );
+          const status = yield* gitWorkflow
+            .localStatus({ cwd })
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
           // Do not silently discard unpublished source edits on another host.
-          if (!status.isRepo || status.hasWorkingTreeChanges) return yield* failure("remote-dispatch-failed");
-          const revision = (yield* sourceGit.value.execute({
-            operation: "WorkerDispatch.remoteSourceRevision", cwd, args: ["rev-parse", "HEAD"],
-            timeoutMs: 5000, maxOutputBytes: 128,
-          }).pipe(Effect.mapError(() => failure("remote-dispatch-failed")))).stdout.trim();
+          if (!status.isRepo || status.hasWorkingTreeChanges)
+            return yield* failure("remote-dispatch-failed");
+          const revision = (yield* sourceGit.value
+            .execute({
+              operation: "WorkerDispatch.remoteSourceRevision",
+              cwd,
+              args: ["rev-parse", "HEAD"],
+              timeoutMs: 5000,
+              maxOutputBytes: 128,
+            })
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")))).stdout.trim();
           const createdAt = yield* sources.nowIso;
           const { rootPath: _sourcePath, ...repository } = project.repositoryIdentity;
-          const remoteUrl = repository.locator.remoteUrl.replace(/^git@github\.com:/, "https://github.com/");
+          const remoteUrl = repository.locator.remoteUrl.replace(
+            /^git@github\.com:/,
+            "https://github.com/",
+          );
           request = yield* Schema.decodeUnknownEffect(RemoteWorkerRequest)({
-            schemaVersion: 1, requestId: ThreadId.make(yield* sources.randomUUID),
-            targetEnvironmentId, computerId,
+            schemaVersion: 1,
+            requestId: ThreadId.make(yield* sources.randomUUID),
+            targetEnvironmentId,
+            computerId,
             parent: { environmentId: invocation.environmentId, threadId: parent.id },
             ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
             parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
             managedInstructions: parent.workjetConfig.managedInstructions,
-            project: { id: project.id, title: project.title, repository: {
-              ...repository, locator: { ...repository.locator, remoteUrl },
-            } },
-            revision, task: input.task, title: input.title?.trim() || deriveWorkerTitle(input.task),
-            modelSelection, runtimeMode: parent.runtimeMode, interactionMode: parent.interactionMode,
-            enabledCapabilityIds, createdAt,
-            expiresAt: DateTime.makeUnsafe(createdAt).pipe(DateTime.add({ days: 7 }), DateTime.formatIso),
+            project: {
+              id: project.id,
+              title: project.title,
+              repository: {
+                ...repository,
+                locator: { ...repository.locator, remoteUrl },
+              },
+            },
+            revision,
+            task: input.task,
+            title: input.title?.trim() || deriveWorkerTitle(input.task),
+            modelSelection,
+            runtimeMode: parent.runtimeMode,
+            interactionMode: parent.interactionMode,
+            enabledCapabilityIds,
+            createdAt,
+            expiresAt: DateTime.makeUnsafe(createdAt).pipe(
+              DateTime.add({ days: 7 }),
+              DateTime.formatIso,
+            ),
           }).pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
-          yield* broker.enqueue(request).pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          yield* broker
+            .enqueue(request)
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
         }
         const response = yield* broker.awaitResponse(request.requestId).pipe(
           Effect.timeout("4 minutes"),
-          Effect.mapError(() => new WorkerDispatchError({
-            reason: "remote-dispatch-pending", remoteRequestId: request.requestId, targetEnvironmentId,
-          })),
+          Effect.mapError(
+            () =>
+              new WorkerDispatchError({
+                reason: "remote-dispatch-pending",
+                remoteRequestId: request.requestId,
+                targetEnvironmentId,
+              }),
+          ),
         );
-        if (response.outcome.status === "failed") return yield* new WorkerDispatchError({
-          reason: response.outcome.reason === "rollback-failed" ? "rollback-failed" : "remote-dispatch-failed",
-          remoteRequestId: request.requestId, targetEnvironmentId,
-        });
+        if (response.outcome.status === "failed")
+          return yield* new WorkerDispatchError({
+            reason:
+              response.outcome.reason === "rollback-failed"
+                ? "rollback-failed"
+                : "remote-dispatch-failed",
+            remoteRequestId: request.requestId,
+            targetEnvironmentId,
+          });
         return response.outcome.result;
       }
       if (input.remoteRequestId) return yield* failure("remote-dispatch-failed");

@@ -1,3 +1,8 @@
+it("keeps worker prompts, starts and acknowledgements out of read-only RPC authority", () => {
+  for (const method of [WS_METHODS.workjetWorkerRequests, WS_METHODS.workjetWorkerReceive, WS_METHODS.workjetWorkerRespond]) {
+    expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
+  }
+});
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,

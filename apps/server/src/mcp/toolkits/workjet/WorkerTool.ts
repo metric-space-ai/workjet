@@ -117,7 +117,12 @@ const failureResult = (
       error: {
         _tag: "WorkjetWorkerDispatchError",
         reason,
-        ...(recovery.remoteRequestId ? { remoteRequestId: recovery.remoteRequestId, targetEnvironmentId: recovery.targetEnvironmentId } : {}),
+        ...(recovery.remoteRequestId
+          ? {
+              remoteRequestId: recovery.remoteRequestId,
+              targetEnvironmentId: recovery.targetEnvironmentId,
+            }
+          : {}),
         ...(recovery.recoveryWorktreePath || recovery.recoveryAdminPath
           ? {
               recovery: {
@@ -206,7 +211,12 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
             WorkerDispatchError: (error) =>
               Effect.succeed(
                 failureResult(error.reason, {
-                  ...(error.remoteRequestId ? { remoteRequestId: error.remoteRequestId, targetEnvironmentId: error.targetEnvironmentId } : {}),
+                  ...(error.remoteRequestId
+                    ? {
+                        remoteRequestId: error.remoteRequestId,
+                        ...(error.targetEnvironmentId ? { targetEnvironmentId: error.targetEnvironmentId } : {}),
+                      }
+                    : {}),
                   ...(error.originalWorktreePath
                     ? { originalWorktreePath: error.originalWorktreePath }
                     : {}),

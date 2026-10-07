@@ -1,36 +1,63 @@
-it.effect("dispatches a registered remote worker without creating a source checkout or thread", () => Effect.gen(function* () {
-  const harness = makeHarness({ remoteSource: true });
-  const service = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
-  const result = yield* service.dispatch(invocation, { task: "Fix documentation", computerId: remoteComputer.id });
-  expect(result.environmentId).toBe(remoteComputer.environmentId);
-  expect(result.worktreePath).toBe("/gpu3/owned-worker");
-  expect(harness.commands).toEqual([]);
-  expect(harness.worktreeCreates).toEqual([]);
-  expect(harness.remoteRequests).toHaveLength(1);
-  expect(harness.remoteRequests[0]?.project.repository.rootPath).toBeUndefined();
-  expect(harness.remoteRequests[0]?.project.repository.locator.remoteUrl).toBe("https://github.com/example/project.git");
-}));
-it.effect("reconciles a lost remote reply under its saved ID and rejects retry substitutions", () => Effect.gen(function* () {
-  const harness = makeHarness({ remoteSource: true, remoteReplyLost: true });
-  const service = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
-  const input = { task: "Fix documentation", computerId: remoteComputer.id };
-  const pending = yield* Effect.flip(service.dispatch(invocation, input));
-  expect(pending.reason).toBe("remote-dispatch-pending");
-  expect(pending.remoteRequestId).toBe(ids[0]);
-  const retry = { ...input, remoteRequestId: pending.remoteRequestId! };
-  expect((yield* Effect.flip(service.dispatch(invocation, { ...retry, task: "Different task" }))).reason).toBe("remote-dispatch-failed");
-  expect((yield* Effect.flip(service.dispatch(invocation, { ...retry, modelSelection: { ...inheritedModel, model: "substitution" } }))).reason).toBe("remote-dispatch-failed");
-  expect((yield* service.dispatch(invocation, retry)).workerThreadId).toBe(ids[0]);
-  expect(harness.remoteRequests).toHaveLength(1);
-  expect(harness.commands).toEqual([]);
-}));
-it.effect("does not discard dirty source edits during remote dispatch", () => Effect.gen(function* () {
-  const harness = makeHarness({ remoteSource: true, sourceDirty: true });
-  const service = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
-  expect((yield* Effect.flip(service.dispatch(invocation, { task: "Fix documentation", computerId: remoteComputer.id }))).reason).toBe("remote-dispatch-failed");
-  expect(harness.remoteRequests).toEqual([]);
-  expect(harness.commands).toEqual([]);
-}));
+it.effect(
+  "dispatches a registered remote worker without creating a source checkout or thread",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ remoteSource: true });
+      const service = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
+      const result = yield* service.dispatch(invocation, {
+        task: "Fix documentation",
+        computerId: remoteComputer.id,
+      });
+      expect(result.environmentId).toBe(remoteComputer.environmentId);
+      expect(result.worktreePath).toBe("/gpu3/owned-worker");
+      expect(harness.commands).toEqual([]);
+      expect(harness.worktreeCreates).toEqual([]);
+      expect(harness.remoteRequests).toHaveLength(1);
+      expect(harness.remoteRequests[0]?.project.repository.rootPath).toBeUndefined();
+      expect(harness.remoteRequests[0]?.project.repository.locator.remoteUrl).toBe(
+        "https://github.com/example/project.git",
+      );
+    }),
+);
+it.effect("reconciles a lost remote reply under its saved ID and rejects retry substitutions", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ remoteSource: true, remoteReplyLost: true });
+    const service = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
+    const input = { task: "Fix documentation", computerId: remoteComputer.id };
+    const pending = yield* Effect.flip(service.dispatch(invocation, input));
+    expect(pending.reason).toBe("remote-dispatch-pending");
+    expect(pending.remoteRequestId).toBe(ids[0]);
+    const retry = { ...input, remoteRequestId: pending.remoteRequestId! };
+    expect(
+      (yield* Effect.flip(service.dispatch(invocation, { ...retry, task: "Different task" })))
+        .reason,
+    ).toBe("remote-dispatch-failed");
+    expect(
+      (yield* Effect.flip(
+        service.dispatch(invocation, {
+          ...retry,
+          modelSelection: { ...inheritedModel, model: "substitution" },
+        }),
+      )).reason,
+    ).toBe("remote-dispatch-failed");
+    expect((yield* service.dispatch(invocation, retry)).workerThreadId).toBe(ids[0]);
+    expect(harness.remoteRequests).toHaveLength(1);
+    expect(harness.commands).toEqual([]);
+  }),
+);
+it.effect("does not discard dirty source edits during remote dispatch", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ remoteSource: true, sourceDirty: true });
+    const service = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
+    expect(
+      (yield* Effect.flip(
+        service.dispatch(invocation, { task: "Fix documentation", computerId: remoteComputer.id }),
+      )).reason,
+    ).toBe("remote-dispatch-failed");
+    expect(harness.remoteRequests).toEqual([]);
+    expect(harness.commands).toEqual([]);
+  }),
+);
 // @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded results.
 import { expect, it } from "@effect/vitest";
 import {
@@ -262,7 +289,23 @@ const makeHarness = (input?: {
           : Option.some(parent),
       );
     },
-    getProjectShellById: () => Effect.succeed(Option.some({ id: parent.projectId, title: "Project", workspaceRoot, repositoryIdentity: { canonicalKey: "github:example/project", rootPath: workspaceRoot, locator: { source: "git-remote", remoteName: "origin", remoteUrl: "git@github.com:example/project.git" } } })),
+    getProjectShellById: () =>
+      Effect.succeed(
+        Option.some({
+          id: parent.projectId,
+          title: "Project",
+          workspaceRoot,
+          repositoryIdentity: {
+            canonicalKey: "github:example/project",
+            rootPath: workspaceRoot,
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "git@github.com:example/project.git",
+            },
+          },
+        }),
+      ),
   } as unknown as ProjectionSnapshotQuery["Service"];
   const receipts = {
     getByCommandId: ({ commandId }: { commandId: string }) => {
@@ -299,7 +342,8 @@ const makeHarness = (input?: {
   const service = Effect.gen(function* () {
     const storage = yield* WorktreeStorage;
     const gitWorkflow = {
-      localStatus: () => Effect.succeed({ isRepo: true, hasWorkingTreeChanges: input?.sourceDirty ?? false }),
+      localStatus: () =>
+        Effect.succeed({ isRepo: true, hasWorkingTreeChanges: input?.sourceDirty ?? false }),
       createWorktree: (worktreeInput: {
         readonly cwd: string;
         readonly refName: string;
@@ -349,15 +393,52 @@ const makeHarness = (input?: {
       },
     } as unknown as GitWorkflowService["Service"];
     const broker = {
-      enqueue: (request: RemoteWorkerRequest) => Effect.sync(() => { remoteRequests.push(request); }),
-      read: (id: ThreadId) => Effect.succeed(Option.fromUndefinedOr(remoteRequests.find((request) => request.requestId === id)).pipe(Option.map((request) => ({ request, response: null, worktreePath: null })))),
-      awaitResponse: (id: ThreadId) => Effect.suspend(() => {
-        if (loseRemoteReply) { loseRemoteReply = false; return Effect.fail({ _tag: "TransportUnavailable" }); }
-        const request = remoteRequests.find((request) => request.requestId === id)!;
-        return Effect.succeed({ requestId: id, outcome: { status: "dispatched", result: { schemaVersion: 1, status: "dispatched", environmentId: request.targetEnvironmentId, workerThreadId: id, computerId: request.computerId, branch: `${WORKER_REF_PREFIX}${id}`, worktreePath: "/gpu3/owned-worker", parent: request.parent, modelSelection: request.modelSelection, enabledCapabilityIds: request.enabledCapabilityIds } } });
-      }),
+      enqueue: (request: RemoteWorkerRequest) =>
+        Effect.sync(() => {
+          remoteRequests.push(request);
+        }),
+      read: (id: ThreadId) =>
+        Effect.succeed(
+          Option.fromUndefinedOr(remoteRequests.find((request) => request.requestId === id)).pipe(
+            Option.map((request) => ({ request, response: null, worktreePath: null })),
+          ),
+        ),
+      awaitResponse: (id: ThreadId) =>
+        Effect.suspend(() => {
+          if (loseRemoteReply) {
+            loseRemoteReply = false;
+            return Effect.fail({ _tag: "TransportUnavailable" });
+          }
+          const request = remoteRequests.find((request) => request.requestId === id)!;
+          return Effect.succeed({
+            requestId: id,
+            outcome: {
+              status: "dispatched",
+              result: {
+                schemaVersion: 1,
+                status: "dispatched",
+                environmentId: request.targetEnvironmentId,
+                workerThreadId: id,
+                computerId: request.computerId,
+                branch: `${WORKER_REF_PREFIX}${id}`,
+                worktreePath: "/gpu3/owned-worker",
+                parent: request.parent,
+                modelSelection: request.modelSelection,
+                enabledCapabilityIds: request.enabledCapabilityIds,
+              },
+            },
+          });
+        }),
     } as unknown as RemoteWorkerBroker["Service"];
-    const remoteSources = input?.remoteSource ? (effect: ReturnType<typeof makeWorkerDispatchWithSources>) => effect.pipe(Effect.provideService(RemoteWorkerBroker, broker), Effect.provideService(GitVcsDriver, { execute: () => Effect.succeed({ stdout: "a".repeat(40), stderr: "", exitCode: 0 }) } as unknown as GitVcsDriver["Service"])) : (effect: ReturnType<typeof makeWorkerDispatchWithSources>) => effect;
+    const remoteSources = input?.remoteSource
+      ? (effect: ReturnType<typeof makeWorkerDispatchWithSources>) =>
+          effect.pipe(
+            Effect.provideService(RemoteWorkerBroker, broker),
+            Effect.provideService(GitVcsDriver, {
+              execute: () => Effect.succeed({ stdout: "a".repeat(40), stderr: "", exitCode: 0 }),
+            } as unknown as GitVcsDriver["Service"]),
+          )
+      : (effect: ReturnType<typeof makeWorkerDispatchWithSources>) => effect;
     return yield* makeWorkerDispatchWithSources(sources).pipe(
       remoteSources,
       Effect.provideService(OrchestrationEngineService, engine),
@@ -389,7 +470,15 @@ const makeHarness = (input?: {
       }),
     );
   }).pipe(Effect.provide(worktreeStorageLayer));
-  return { commands, dispatchOptions, service, remoteRequests, worktreeCreates, worktreeRemovals, branchDeletions };
+  return {
+    commands,
+    dispatchOptions,
+    service,
+    remoteRequests,
+    worktreeCreates,
+    worktreeRemovals,
+    branchDeletions,
+  };
 };
 
 for (const failCreateAttempts of [0, 1, 2]) {

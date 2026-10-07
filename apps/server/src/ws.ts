@@ -1301,24 +1301,30 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
-        [WS_METHODS.workjetWorkerRequests]: () => observeRpcStream(
-          WS_METHODS.workjetWorkerRequests,
-          Option.isSome(workerBroker) ? workerBroker.value.requests : Stream.fail(
-            new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
-          { "rpc.aggregate": "worker-dispatch" },
-        ),
-        [WS_METHODS.workjetWorkerReceive]: (input) => observeRpcEffect(
-          WS_METHODS.workjetWorkerReceive,
-          Option.isSome(workerReceiver) ? workerReceiver.value.receive(input) : Effect.fail(
-            new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
-          { "rpc.aggregate": "worker-dispatch" },
-        ),
-        [WS_METHODS.workjetWorkerRespond]: (input) => observeRpcEffect(
-          WS_METHODS.workjetWorkerRespond,
-          Option.isSome(workerBroker) ? workerBroker.value.respond(input) : Effect.fail(
-            new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
-          { "rpc.aggregate": "worker-dispatch" },
-        ),
+        [WS_METHODS.workjetWorkerRequests]: () =>
+          observeRpcStream(
+            WS_METHODS.workjetWorkerRequests,
+            Option.isSome(workerBroker)
+              ? workerBroker.value.requests
+              : Stream.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+            { "rpc.aggregate": "worker-dispatch" },
+          ),
+        [WS_METHODS.workjetWorkerReceive]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetWorkerReceive,
+            Option.isSome(workerReceiver)
+              ? workerReceiver.value.receive(input)
+              : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+            { "rpc.aggregate": "worker-dispatch" },
+          ),
+        [WS_METHODS.workjetWorkerRespond]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetWorkerRespond,
+            Option.isSome(workerBroker)
+              ? workerBroker.value.respond(input)
+              : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+            { "rpc.aggregate": "worker-dispatch" },
+          ),
 
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(

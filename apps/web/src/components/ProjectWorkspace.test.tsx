@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
-import { DEFAULT_WORKJET_THREAD_CONFIG, EnvironmentId, ProjectId, ThreadId } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+} from "@workjet/contracts";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import { ProjectWorkspace } from "./ProjectWorkspace";
 import type { GalleryProject } from "../projectOverview";
@@ -25,7 +30,11 @@ const project: GalleryProject = {
     faviconPath: null,
   },
 };
-function shell(environmentId: EnvironmentId, role: "supervisor" | "worker", archivedAt: string | null = null): EnvironmentThreadShell {
+function shell(
+  environmentId: EnvironmentId,
+  role: "supervisor" | "worker",
+  archivedAt: string | null = null,
+): EnvironmentThreadShell {
   const id = role === "supervisor" ? parentId : ThreadId.make("remote-worker");
   const base = {
     id,
@@ -62,7 +71,14 @@ function shell(environmentId: EnvironmentId, role: "supervisor" | "worker", arch
   return base as unknown as EnvironmentThreadShell;
 }
 function markup(threads: readonly EnvironmentThreadShell[]) {
-  return renderToStaticMarkup(<ProjectWorkspace project={project} threads={threads} onOpenChat={() => {}} onAddParent={async () => true} />);
+  return renderToStaticMarkup(
+    <ProjectWorkspace
+      project={project}
+      threads={threads}
+      onOpenChat={() => {}}
+      onAddParent={async () => true}
+    />,
+  );
 }
 
 describe("source project remote workers", () => {

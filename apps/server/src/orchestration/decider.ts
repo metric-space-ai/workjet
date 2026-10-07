@@ -249,7 +249,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   readonly workerPullRequestTerminal?: boolean;
   readonly workerExecutionStopped?: boolean;
   readonly remoteWorkerRequest?: import("@workjet/contracts").RemoteWorkerRequest | undefined;
-  readonly remoteProjectMirror?: boolean;
+  readonly remoteProjectMirror?: boolean | undefined;
   readonly environmentId?: EnvironmentId | undefined;
   readonly readModel: OrchestrationReadModel;
 }): Effect.fn.Return<

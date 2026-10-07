@@ -159,7 +159,10 @@ export function ProjectWorkspace({
                           ? thread.workjetConfig.team
                           : undefined;
                       return (
-                        <li key={`${thread.environmentId}:${thread.id}`} className="border-b border-border last:border-0">
+                        <li
+                          key={`${thread.environmentId}:${thread.id}`}
+                          className="border-b border-border last:border-0"
+                        >
                           <button
                             type="button"
                             onClick={() =>

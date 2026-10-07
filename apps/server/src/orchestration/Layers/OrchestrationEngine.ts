@@ -321,42 +321,57 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
         let remoteWorkerRequest: RemoteWorkerRequest | undefined;
         const command = envelope.command;
-        const existingThread = "threadId" in command
-          ? commandReadModel.threads.find((thread) => thread.id === command.threadId)
-          : undefined;
-        const isRemoteWorker = environmentId !== undefined && existingThread?.workjetConfig.role === "worker" &&
+        const existingThread =
+          "threadId" in command
+            ? commandReadModel.threads.find((thread) => thread.id === command.threadId)
+            : undefined;
+        const isRemoteWorker =
+          environmentId !== undefined &&
+          existingThread?.workjetConfig.role === "worker" &&
           existingThread.workjetConfig.parent.environmentId !== environmentId;
         if (envelope.remoteWorkerRequest || isRemoteWorker) {
           const requestId = envelope.remoteWorkerRequest?.requestId ?? existingThread!.id;
           const bound = yield* remoteWorkerStore.get("inbound", requestId).pipe(
-            Effect.mapError((cause) => new OrchestrationCommandInvariantError({
-              commandType: command.type, detail: "Remote worker receipt is unavailable.", cause,
-            })),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationCommandInvariantError({
+                  commandType: command.type,
+                  detail: "Remote worker receipt is unavailable.",
+                  cause,
+                }),
+            ),
           );
           if (Option.isNone(bound) || bound.value.response?.outcome.status === "failed") {
             return yield* new OrchestrationCommandInvariantError({
-              commandType: command.type, detail: "Remote worker has no accepted native request.",
+              commandType: command.type,
+              detail: "Remote worker has no accepted native request.",
             });
           }
           const request = bound.value.request;
           if (envelope.remoteWorkerRequest) {
-            const encode = Schema.encodeSync(Schema.fromJsonString(RemoteWorkerRequest));
-            if (command.type !== "thread.create" ||
-              encode(request) !== encode(envelope.remoteWorkerRequest) ||
-              command.threadId !== request.requestId || command.projectId !== request.project.id ||
+            const encode = (input: RemoteWorkerRequest) => Schema.encodeEffect(Schema.fromJsonString(RemoteWorkerRequest))(input).pipe(Effect.mapError((cause) => new OrchestrationCommandInvariantError({ commandType: command.type, detail: "Remote request encoding failed.", cause })));
+            if (
+              command.type !== "thread.create" ||
+              (yield* encode(request)) !== (yield* encode(envelope.remoteWorkerRequest)) ||
+              command.threadId !== request.requestId ||
+              command.projectId !== request.project.id ||
               command.branch !== `workjet/worker/${request.requestId}` ||
-              command.worktreePath !== bound.value.worktreePath || command.worktreePath === null ||
+              command.worktreePath !== bound.value.worktreePath ||
+              command.worktreePath === null ||
               request.targetEnvironmentId !== environmentId ||
               request.parent.environmentId === environmentId
-            ) return yield* new OrchestrationCommandInvariantError({
-              commandType: command.type, detail: "Remote worker creation does not match its native receipt.",
-            });
+            )
+              return yield* new OrchestrationCommandInvariantError({
+                commandType: command.type,
+                detail: "Remote worker creation does not match its native receipt.",
+              });
           }
           remoteWorkerRequest = request;
         }
         if (envelope.remoteProjectMirror && command.type !== "project.create") {
           return yield* new OrchestrationCommandInvariantError({
-            commandType: command.type, detail: "Only a target project creation can be a remote mirror.",
+            commandType: command.type,
+            detail: "Only a target project creation can be a remote mirror.",
           });
         }
         const eventBase = yield* decideOrchestrationCommand({

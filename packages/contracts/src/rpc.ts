@@ -3,7 +3,12 @@ import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
-import { RemoteWorkerRequest, RemoteWorkerResult, RemoteWorkerResponse, RemoteWorkerDispatchError } from "./remoteWorker.ts";
+import {
+  RemoteWorkerRequest,
+  RemoteWorkerResult,
+  RemoteWorkerResponse,
+  RemoteWorkerDispatchError,
+} from "./remoteWorker.ts";
 import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
@@ -1656,20 +1661,26 @@ export const WsSubscribeWorkjetMailboxAuditRpc = Rpc.make(WS_METHODS.subscribeWo
 });
 
 export const WsWorkerRequestsRpc = Rpc.make(WS_METHODS.workjetWorkerRequests, {
-  payload: Schema.Struct({}), success: Schema.Array(RemoteWorkerRequest),
-  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]), stream: true,
+  payload: Schema.Struct({}),
+  success: Schema.Array(RemoteWorkerRequest),
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+  stream: true,
 });
 export const WsWorkerReceiveRpc = Rpc.make(WS_METHODS.workjetWorkerReceive, {
-  payload: RemoteWorkerRequest, success: RemoteWorkerResult,
+  payload: RemoteWorkerRequest,
+  success: RemoteWorkerResult,
   error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
 });
 export const WsWorkerRespondRpc = Rpc.make(WS_METHODS.workjetWorkerRespond, {
-  payload: RemoteWorkerResponse, success: Schema.Void,
+  payload: RemoteWorkerResponse,
+  success: Schema.Void,
   error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
 });
 
 export const WsRpcGroup = RpcGroup.make(
-  WsWorkerRequestsRpc, WsWorkerReceiveRpc, WsWorkerRespondRpc,
+  WsWorkerRequestsRpc,
+  WsWorkerReceiveRpc,
+  WsWorkerRespondRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,

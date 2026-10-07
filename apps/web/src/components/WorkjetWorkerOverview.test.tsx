@@ -198,18 +198,30 @@ describe("WorkjetWorkerOverview", () => {
 describe("remote worker navigation", () => {
   it("opens the actual target computer thread under the source orchestrator", () => {
     const orchestratorId = "orch-remote" as ThreadId;
-    const orchestrator = makeShell({ id: orchestratorId, title: "Source", workjetConfig: orchestratorConfig() });
+    const orchestrator = makeShell({
+      id: orchestratorId,
+      title: "Source",
+      workjetConfig: orchestratorConfig(),
+    });
     const remote = {
-      ...makeShell({ id: "remote-worker", title: "Remote package", workjetConfig: workerConfig(orchestratorId) }),
+      ...makeShell({
+        id: "remote-worker",
+        title: "Remote package",
+        workjetConfig: workerConfig(orchestratorId),
+      }),
       environmentId: "gpu3" as EnvironmentId,
     };
     const onOpenWorker = vi.fn();
-    const rows = collectByTestId(WorkjetWorkerOverview({
-      environmentId: envA,
-      orchestratorThreadId: orchestratorId,
-      threads: [orchestrator, remote],
-      onOpenWorker,
-    }), "workjet-worker-row", []);
+    const rows = collectByTestId(
+      WorkjetWorkerOverview({
+        environmentId: envA,
+        orchestratorThreadId: orchestratorId,
+        threads: [orchestrator, remote],
+        onOpenWorker,
+      }),
+      "workjet-worker-row",
+      [],
+    );
     expect(rows).toHaveLength(1);
     (rows[0]!.props as { onClick: () => void }).onClick();
     expect(onOpenWorker).toHaveBeenCalledWith({ environmentId: "gpu3", threadId: "remote-worker" });

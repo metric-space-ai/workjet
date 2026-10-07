@@ -440,9 +440,12 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
 const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
   Layer.provide(NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer))),
 );
-const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(Layer.provide(RemoteWorkerStore.layer));
+const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
+  Layer.provide(RemoteWorkerStore.layer),
+);
 const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
+  Layer.provide(WorktreeStorageLayerLive),
   Layer.provide(OrchestrationCommandReceiptRepositoryLive),
   Layer.provide(WorkerDispatchRollbackLayerLive),
 );

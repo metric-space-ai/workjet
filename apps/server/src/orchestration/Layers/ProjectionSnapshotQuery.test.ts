@@ -431,6 +431,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             startedAt: "2026-02-24T00:00:08.000Z",
             completedAt: "2026-02-24T00:00:08.000Z",
             assistantMessageId: asMessageId("message-1"),
+            assistantMessagePreview: "hello from projection",
             sourceProposedPlan: {
               threadId: ThreadId.make("thread-1"),
               planId: "plan-1",
@@ -553,6 +554,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             startedAt: "2026-02-24T00:00:08.000Z",
             completedAt: "2026-02-24T00:00:08.000Z",
             assistantMessageId: asMessageId("message-1"),
+            assistantMessagePreview: "hello from projection",
             sourceProposedPlan: {
               threadId: ThreadId.make("thread-1"),
               planId: "plan-1",
@@ -591,6 +593,24 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       if (threadDetail._tag === "Some") {
         assert.deepEqual(threadDetail.value, snapshot.threads[0]);
       }
+      // The overview receives a bounded excerpt, never the imported history body.
+      yield* sql`UPDATE projection_thread_messages SET text = ${"x".repeat(4096)}
+        WHERE message_id = 'message-1'`;
+      const bounded = yield* snapshotQuery.getThreadShellById(ThreadId.make("thread-1"));
+      assert.equal(bounded._tag, "Some");
+      if (bounded._tag === "Some")
+        assert.equal(bounded.value.latestTurn?.assistantMessagePreview, "x".repeat(280));
+
+      // A stale pointer must not expose another thread's message or a user prompt.
+      yield* sql`UPDATE projection_thread_messages SET thread_id = 'foreign-thread'
+        WHERE message_id = 'message-1'`;
+      const foreign = yield* snapshotQuery.getShellSnapshot();
+      assert.equal(foreign.threads[0]?.latestTurn?.assistantMessagePreview, undefined);
+      yield* sql`UPDATE projection_thread_messages SET thread_id = 'thread-1', role = 'user'
+        WHERE message_id = 'message-1'`;
+      const userPrompt = yield* snapshotQuery.getThreadShellById(ThreadId.make("thread-1"));
+      if (userPrompt._tag === "Some")
+        assert.equal(userPrompt.value.latestTurn?.assistantMessagePreview, undefined);
     }),
   );
 

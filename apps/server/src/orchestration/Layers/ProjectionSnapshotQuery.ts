@@ -117,6 +117,7 @@ const ProjectionLatestTurnDbRowSchema = Schema.Struct({
   startedAt: Schema.NullOr(IsoDateTime),
   completedAt: Schema.NullOr(IsoDateTime),
   assistantMessageId: Schema.NullOr(MessageId),
+  assistantMessagePreview: Schema.optional(Schema.NullOr(Schema.String)),
   sourceProposedPlanThreadId: Schema.NullOr(ThreadId),
   sourceProposedPlanId: Schema.NullOr(OrchestrationProposedPlanId),
 });
@@ -302,6 +303,9 @@ function mapLatestTurn(
     startedAt: row.startedAt,
     completedAt: row.completedAt,
     assistantMessageId: row.assistantMessageId,
+    ...(row.assistantMessagePreview
+      ? { assistantMessagePreview: row.assistantMessagePreview }
+      : {}),
     ...(row.sourceProposedPlanThreadId !== null && row.sourceProposedPlanId !== null
       ? {
           sourceProposedPlan: {
@@ -740,6 +744,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
           turns.assistant_message_id AS "assistantMessageId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.message_id = turns.assistant_message_id
+              AND messages.thread_id = turns.thread_id
+              AND messages.role = 'assistant'
+            LIMIT 1) AS "assistantMessagePreview",
           turns.source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           turns.source_proposed_plan_id AS "sourceProposedPlanId"
         FROM projection_threads threads
@@ -764,6 +774,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
           turns.assistant_message_id AS "assistantMessageId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.message_id = turns.assistant_message_id
+              AND messages.thread_id = turns.thread_id
+              AND messages.role = 'assistant'
+            LIMIT 1) AS "assistantMessagePreview",
           turns.source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           turns.source_proposed_plan_id AS "sourceProposedPlanId"
         FROM projection_threads threads
@@ -790,6 +806,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
           turns.assistant_message_id AS "assistantMessageId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.message_id = turns.assistant_message_id
+              AND messages.thread_id = turns.thread_id
+              AND messages.role = 'assistant'
+            LIMIT 1) AS "assistantMessagePreview",
           turns.source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           turns.source_proposed_plan_id AS "sourceProposedPlanId"
         FROM projection_threads threads
@@ -1219,6 +1241,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turns.started_at AS "startedAt",
           turns.completed_at AS "completedAt",
           turns.assistant_message_id AS "assistantMessageId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.message_id = turns.assistant_message_id
+              AND messages.thread_id = turns.thread_id
+              AND messages.role = 'assistant'
+            LIMIT 1) AS "assistantMessagePreview",
           turns.source_proposed_plan_thread_id AS "sourceProposedPlanThreadId",
           turns.source_proposed_plan_id AS "sourceProposedPlanId"
         FROM projection_threads threads
@@ -1725,6 +1753,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   startedAt: row.startedAt,
                   completedAt: row.completedAt,
                   assistantMessageId: row.assistantMessageId,
+                  ...(row.assistantMessagePreview
+                    ? { assistantMessagePreview: row.assistantMessagePreview }
+                    : {}),
                   ...(row.sourceProposedPlanThreadId !== null && row.sourceProposedPlanId !== null
                     ? {
                         sourceProposedPlan: {

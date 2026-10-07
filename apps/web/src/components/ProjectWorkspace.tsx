@@ -19,6 +19,8 @@ import { SidebarInset } from "./ui/sidebar";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { suggestedProjectKpis } from "../projectKpiSuggestions";
+import { sortPinnedThreadsForSidebar, sortThreadsForSidebar } from "./Sidebar.logic";
 
 export function ProjectWorkspace({
   project,
@@ -50,10 +52,21 @@ export function ProjectWorkspace({
       team.threadId === thread.id
     );
   });
-  const groups = groupThreadsByProjectTeam(members);
+  const groups = groupThreadsByProjectTeam([
+    ...sortPinnedThreadsForSidebar(members.filter((thread) => thread.pinnedAt != null)),
+    ...sortThreadsForSidebar(members.filter((thread) => thread.pinnedAt == null)),
+  ]);
   const overview = resolveGalleryProjectOverview(project);
   const info = project.configuration?.info;
   const meeting = project.configuration?.jourFixe;
+  const defaults = suggestedProjectKpis(project.title);
+  const kpis = ["primary", "secondary", "tertiary"].map((id, index) => ({
+    id,
+    slot: overview.slots[index] ?? defaults?.[index] ?? null,
+  }));
+  const decisions = members.filter(
+    (thread) => thread.hasPendingApprovals || thread.hasPendingUserInput,
+  );
   const weekdays = [
     "",
     "Monday",
@@ -67,20 +80,53 @@ export function ProjectWorkspace({
   return (
     <SidebarInset className="min-h-0 overflow-auto">
       <WorkjetHeaderContent>
-        <span className="text-sm font-medium">{project.title}</span>
-        <span className="text-sm text-muted-foreground">Overview</span>
+        <span className="text-sm text-muted-foreground">{project.title} /</span>
+        <span className="text-sm font-medium">Overview</span>
       </WorkjetHeaderContent>
       <main className="mx-auto w-full max-w-6xl p-6" data-workjet-project-overview={project.id}>
-        <header className="mb-6">
-          <h1 className="text-xl font-semibold">{project.title}</h1>
-          {info?.description ? (
-            <p className="mt-1 text-sm text-muted-foreground">{info.description}</p>
-          ) : null}
-          <Button variant="ghost" size="sm" className="mt-2" onClick={() => setEditingParent(true)}>
+        <header className="mb-5 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold">{project.title}</h1>
+            {info?.description ? (
+              <p className="mt-1 text-sm text-muted-foreground">{info.description}</p>
+            ) : null}
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setEditingParent(true)}>
             <PlusIcon className="size-3" />
             Parent
           </Button>
         </header>
+        <dl className="mb-6 flex flex-wrap gap-x-8 gap-y-3" data-workjet-overview-kpis="">
+          {kpis.map(({ slot, id }) =>
+            slot ? (
+              <div key={id} className="min-w-0">
+                <dd className="text-[22px] font-semibold tracking-tight tabular-nums">
+                  {slot.kind === "metric" ? (
+                    `${slot.value}${slot.unit ? ` ${slot.unit}` : ""}`
+                  ) : slot.kind === "text" ? (
+                    slot.value
+                  ) : slot.kind === "updated" ? (
+                    local?.updatedAt ? (
+                      projectUpdateAge(local.updatedAt)
+                    ) : (
+                      "—"
+                    )
+                  ) : (
+                    <a
+                      href={slot.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      ↗
+                    </a>
+                  )}
+                </dd>
+                <dt className="max-w-48 break-words text-xs text-muted-foreground">{slot.label}</dt>
+              </div>
+            ) : null,
+          )}
+        </dl>
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-6">
             {PROJECT_TEAM_SECTIONS.map(({ section, label }) => {
@@ -106,36 +152,75 @@ export function ProjectWorkspace({
                             onClick={() =>
                               onOpenChat(scopeThreadRef(thread.environmentId, thread.id))
                             }
-                            className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
+                            className={
+                              section === "supervisor"
+                                ? "flex w-full items-start gap-3 bg-muted/20 p-4 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
+                                : "grid w-full grid-cols-[8px_minmax(0,1fr)_44px] items-center gap-3 md:grid-cols-[8px_minmax(0,1.1fr)_minmax(0,1.4fr)_64px_44px] px-3 py-2.5 text-left hover:bg-muted/40 focus-visible:outline focus-visible:outline-ring"
+                            }
                           >
+                            {section === "supervisor" ? (
+                              <span
+                                className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-sm font-semibold text-primary"
+                                aria-hidden="true"
+                              >
+                                S
+                              </span>
+                            ) : null}
                             <span
-                              className={`size-2 shrink-0 rounded-full ${status.dot}`}
+                              className={`size-2 shrink-0 rounded-full ${status.dot} ${section === "supervisor" ? "mt-2" : ""}`}
                               title={status.label}
                               aria-label={status.label}
                             />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium">
-                                {thread.title}
+                            {section === "supervisor" ? (
+                              <span className="min-w-0 flex-1">
+                                <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                                  <span className="text-sm font-semibold">{thread.title}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {thread.modelSelection.model} ·{" "}
+                                    {projectUpdateAge(thread.updatedAt)}
+                                  </span>
+                                </span>
+                                {thread.latestTurn?.assistantMessagePreview ? (
+                                  <span className="mt-1 block line-clamp-2 text-sm text-muted-foreground">
+                                    {thread.latestTurn.assistantMessagePreview}
+                                  </span>
+                                ) : null}
+                                {team?.goal ? (
+                                  <span className="mt-2 inline-block max-w-full rounded-md border border-border bg-background/50 px-2 py-1 text-xs text-muted-foreground">
+                                    {team.goal}
+                                  </span>
+                                ) : null}
                               </span>
-                              {section === "supervisor" && team?.goal ? (
-                                <span className="mt-1 block text-xs text-muted-foreground">
-                                  {team.goal}
+                            ) : (
+                              <>
+                                <span
+                                  className="min-w-0 truncate text-sm font-medium"
+                                  title={thread.title}
+                                >
+                                  {thread.title}
                                 </span>
-                              ) : null}
-                              {section === "workers" && thread.branch ? (
-                                <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                                  <GitBranchIcon className="size-3" />
-                                  {thread.branch}
+                                <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:block">
+                                  {thread.planProgress?.step ??
+                                    thread.latestTurn?.assistantMessagePreview ??
+                                    (status.label === "Idle" ? "" : status.label)}
+                                  {section === "workers" && thread.branch ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <GitBranchIcon className="size-3" />
+                                      {thread.branch}
+                                    </span>
+                                  ) : null}
                                 </span>
-                              ) : null}
-                            </span>
-                            <span className="hidden text-xs text-muted-foreground sm:block">
-                              {thread.modelSelection.instanceId} · {thread.modelSelection.model}
-                            </span>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {projectUpdateAge(thread.updatedAt)}
-                            </span>
-                            <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                                <span
+                                  className="hidden truncate text-[11px] text-muted-foreground md:block"
+                                  title={`${thread.modelSelection.instanceId} · ${thread.modelSelection.model}`}
+                                >
+                                  {thread.session?.providerName ?? thread.modelSelection.instanceId}
+                                </span>
+                                <span className="text-right text-[11px] text-muted-foreground">
+                                  {projectUpdateAge(thread.updatedAt)}
+                                </span>
+                              </>
+                            )}
                           </button>
                         </li>
                       );
@@ -145,7 +230,24 @@ export function ProjectWorkspace({
               );
             })}
           </div>
-          <aside className="space-y-5 text-sm">
+          <aside className="space-y-4 text-sm">
+            {decisions.length > 0 ? (
+              <section className="rounded-lg border border-border p-3">
+                <h2 className="mb-2 text-xs font-medium text-muted-foreground">
+                  Open decisions · {decisions.length}
+                </h2>
+                {decisions.map((thread) => (
+                  <button
+                    type="button"
+                    key={thread.id}
+                    onClick={() => onOpenChat(scopeThreadRef(thread.environmentId, thread.id))}
+                    className="block w-full truncate py-1 text-left text-sm hover:underline"
+                  >
+                    {thread.title}
+                  </button>
+                ))}
+              </section>
+            ) : null}
             {meeting ? (
               <section className="rounded-lg border border-border p-4">
                 <h2 className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">

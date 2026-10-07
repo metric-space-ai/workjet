@@ -94,7 +94,7 @@ function ModelField({
         ? XIcon
         : CircleDashedIcon;
   return (
-    <span className="max-w-full">
+    <span className="max-w-full shrink-0">
       <span
         className={cn(
           "inline-flex max-w-full items-center rounded border border-border/60 bg-muted/20 pr-1.5 transition-colors focus-within:border-ring focus-within:bg-background",
@@ -185,18 +185,23 @@ export function WorkjetModelsCell({
 }) {
   const [adding, setAdding] = useState(false);
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1">
-      {account.modelIds.map((model) => (
-        <ModelField
-          key={model}
-          account={account}
-          model={model}
-          check={state.modelChecks?.find(
-            (check) => check.accountId === account.id && check.modelId === model,
-          )}
-          state={state}
-        />
-      ))}
+    <div className="flex min-w-0 items-center gap-1">
+      <div
+        className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:thin]"
+        aria-label={`Models for ${account.label}`}
+      >
+        {account.modelIds.map((model) => (
+          <ModelField
+            key={model}
+            account={account}
+            model={model}
+            check={state.modelChecks?.find(
+              (check) => check.accountId === account.id && check.modelId === model,
+            )}
+            state={state}
+          />
+        ))}
+      </div>
       {adding ? (
         <ModelField
           account={account}

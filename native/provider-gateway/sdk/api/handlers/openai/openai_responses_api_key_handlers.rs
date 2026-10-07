@@ -509,6 +509,76 @@ mod tests {
         )
     }
 
+    #[tokio::test]
+    async fn exact_account_probe_covers_api_key_and_policy_selection_without_fallback() {
+        use crate::internal::api::account_selection::{
+            acknowledgement, request_account, SchedulerPolicy, ACCOUNT_SELECTION,
+        };
+        for provider in ["zai", "minimax", "xai", "kimi"] {
+            for policy in [false, true] {
+                let client = Arc::new(RecordingClient {
+                    seen: Mutex::new(Vec::new()),
+                    body: br#"{"id":"chatcmpl","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#.to_vec(),
+                });
+                let accounts = ["first", "second", "disabled", "other-model"]
+                    .into_iter()
+                    .map(|id| {
+                        ApiKeyAccount::new(
+                            id,
+                            "https://provider.example/v1",
+                            Zeroizing::new(format!("fixture-key-{id}")),
+                            if id == "other-model" {
+                                vec!["different".into()]
+                            } else {
+                                vec![]
+                            },
+                            if id == "first" { 99 } else { 0 },
+                            id == "disabled",
+                            client.clone(),
+                        )
+                        .unwrap()
+                    })
+                    .collect();
+                let mut pool = ApiKeyAccountPool::new(
+                    provider,
+                    accounts,
+                    crate::sdk::translator::builtin::registry(),
+                )
+                .unwrap();
+                if policy {
+                    pool = pool.with_policy(Arc::new(SchedulerPolicy));
+                }
+                for id in ["second", "missing", "disabled", "other-model"] {
+                    let before = client.seen.lock().unwrap().len();
+                    ACCOUNT_SELECTION
+                        .scope(Mutex::new(Default::default()), async {
+                            request_account(Some(id.into()));
+                            let result = pool
+                                .execute("test-model", br#"{"model":"test-model","input":"Hi"}"#)
+                                .await;
+                            if id == "second" {
+                                assert!(result.is_ok(), "{provider}");
+                                assert!(
+                                    acknowledgement().contains("X-CTOX-Account-Selected: second")
+                                );
+                                let seen = client.seen.lock().unwrap();
+                                assert_eq!(seen.len(), before + 1);
+                                assert_eq!(
+                                    header(seen.last().unwrap(), "Authorization").as_deref(),
+                                    Some("Bearer fixture-key-second")
+                                );
+                            } else {
+                                assert!(matches!(result, Err(ApiKeyPoolError::NoAccount)));
+                                assert_eq!(client.seen.lock().unwrap().len(), before);
+                                assert!(acknowledgement().is_empty());
+                            }
+                        })
+                        .await;
+                }
+            }
+        }
+    }
+
     fn header(request: &HttpRequest, name: &str) -> Option<String> {
         request
             .headers

@@ -818,6 +818,12 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           {state.checksError}
         </p>
       )}
+      {(state.deferredChecksCount ?? 0) > 0 && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {state.deferredChecksCount} model checks remaining.
+          {!state.checksBusy && " Use Check all to continue."}
+        </p>
+      )}
       {accounts.length === 0 && adding === null && !state.isInitialLoading && (
         <p className="py-4 text-sm text-muted-foreground">
           Add a provider and connect through subscription sign-in or an API key.

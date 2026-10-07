@@ -150,6 +150,26 @@ pub fn record_upstream_status(status: u16, body: &[u8]) {
 }
 
 #[cfg(test)]
+pub(crate) struct SchedulerPolicy;
+#[cfg(test)]
+impl crate::sdk::cliproxy::auth::conductor_execution::AccountPolicy for SchedulerPolicy {
+    fn select(
+        &self,
+        provider: &str,
+        model: Option<&str>,
+        now_ms: i64,
+        candidates: &[AccountCandidate],
+        _cooldowns: &[crate::sdk::cliproxy::auth::CooldownStateRecord],
+        _body: &[u8],
+    ) -> Result<AccountCandidate, crate::sdk::cliproxy::auth::AccountSelectionError> {
+        crate::sdk::cliproxy::auth::AccountRouter::new(std::sync::Arc::new(
+            crate::sdk::cliproxy::auth::MemoryCooldownStore::default(),
+        ))
+        .select(provider, model, now_ms, candidates)
+    }
+}
+
+#[cfg(test)]
 mod isolation_tests {
     use super::*;
     #[tokio::test]

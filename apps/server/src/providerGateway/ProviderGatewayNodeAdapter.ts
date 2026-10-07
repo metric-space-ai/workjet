@@ -20,17 +20,23 @@ const readBoundedResponse = async (response: Response, maximumBytes: number): Pr
   const reader = response.body.getReader();
   const chunks: Array<Uint8Array> = [];
   let size = 0;
-  for (;;) {
-    const next = await reader.read();
-    if (next.done) break;
-    size += next.value.byteLength;
-    if (size > maximumBytes) {
-      await reader.cancel();
-      throw new Error("oversized");
+  let complete = false;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) {
+        complete = true;
+        break;
+      }
+      size += next.value.byteLength;
+      if (size > maximumBytes) throw new Error("oversized");
+      chunks.push(next.value);
     }
-    chunks.push(next.value);
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    if (!complete) await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
-  return Buffer.concat(chunks).toString("utf8");
 };
 
 const withTimeout = async <A>(
@@ -88,7 +94,7 @@ export async function forwardSourceGatewayResponses(
     },
     body: requestJson,
     signal: AbortSignal.any([
-      AbortSignal.timeout(Math.min(15_000, remaining)),
+      AbortSignal.timeout(Math.min(120_000, remaining)),
       ...(signal === undefined ? [] : [signal]),
     ]),
   });

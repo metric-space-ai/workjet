@@ -272,7 +272,13 @@ describe("ProviderGatewayService", () => {
       }),
     );
     expect(probes).toBe(0);
-    expect(result.checks[0]?.errorClass).toBe("account-selection-unavailable");
+    expect(result.checks[0]).toMatchObject({
+      status: "unavailable",
+      source: "gateway",
+      errorClass: null,
+      httpStatus: null,
+      unavailableReason: "exact-account-unavailable",
+    });
   });
   it("reads durable environment usage while the host is stopped and never starts it", async () => {
     const now = Date.parse("2026-10-02T12:00:00Z");

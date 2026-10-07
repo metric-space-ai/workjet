@@ -118,7 +118,12 @@ export interface ProviderGatewayPlatform {
     accountId: string,
     modelId: string,
     signal?: AbortSignal,
-  ) => Promise<Pick<WorkjetGatewayModelCheck, "status" | "errorClass" | "httpStatus">>;
+  ) => Promise<
+    Pick<
+      WorkjetGatewayModelCheck,
+      "status" | "errorClass" | "httpStatus" | "source" | "unavailableReason"
+    >
+  >;
   readonly joinPath: (...parts: ReadonlyArray<string>) => string;
   readonly defaultExecutable: (stateDir: string) => string;
   readonly byteLength: (value: Uint8Array | string) => number;
@@ -508,16 +513,18 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       },
       probe: async (target, signal) => {
         const unavailable = {
-          status: "error" as const,
-          errorClass: "account-selection-unavailable" as const,
+          status: "unavailable" as const,
+          errorClass: null,
           httpStatus: null,
+          source: "gateway" as const,
+          unavailableReason: "exact-account-unavailable" as const,
         };
         if (
           currentStatus.providerEndpoint === null ||
           currentStatus.managementEndpoint === null ||
           managementCredential === undefined
         ) {
-          return { status: "error", errorClass: "network-provider", httpStatus: null };
+          return { ...unavailable, unavailableReason: "gateway-not-ready" as const };
         }
         const runtime = await platform.managementGet(
           currentStatus.managementEndpoint,
@@ -536,7 +543,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           (item) => item.id === target.accountId,
         );
         if (account === undefined || !account.enabled)
-          return { status: "error", errorClass: "auth", httpStatus: null };
+          return { ...unavailable, unavailableReason: "account-unavailable" as const };
         return platform.providerModelCheck(
           currentStatus.providerEndpoint,
           account.provider,

@@ -14,18 +14,39 @@ const FAILURE_LABELS: Readonly<Record<string, string>> = {
   "account-selection-unavailable": "Gateway update required to check this exact account",
 };
 
+const UNAVAILABLE_LABELS: Readonly<Record<string, string>> = {
+  "gateway-not-ready": "Not checked · the gateway is not ready",
+  "exact-account-unavailable": "Not checked · the gateway could not select this exact account",
+  "account-unavailable": "Not checked · this account is disabled or unavailable",
+  transport: "Not checked · the gateway request could not finish",
+  "unverified-response": "Not checked · the gateway did not confirm an upstream result",
+};
+
+export function modelCheckState(check: ModelsModelCheck | undefined) {
+  if (!check) return "unchecked";
+  if (
+    check.status === "unavailable" ||
+    (check.status === "error" && (check.source !== "upstream" || check.httpStatus === null))
+  )
+    return "unavailable";
+  return check.status;
+}
+
 export function modelCheckDescription(
   check: ModelsModelCheck | undefined,
   checking: boolean,
 ): string {
   if (!check) return checking ? "Checking this model" : "Not checked";
+  const status = modelCheckState(check);
   const result =
-    check.status === "ok"
-      ? `Responded · ${check.latencyMs} ms`
-      : check.errorClass === "auth" && check.httpStatus === 403
-        ? "Access denied · check this account's permissions and subscription"
-        : (FAILURE_LABELS[check.errorClass ?? ""] ?? "Model check failed");
-  return `${result}${check.httpStatus === null ? "" : ` · HTTP ${check.httpStatus}`} · ${new Date(check.checkedAtMs).toLocaleString()}${checking ? " · checking again" : ""}`;
+    status === "unavailable"
+      ? (UNAVAILABLE_LABELS[check.unavailableReason ?? ""] ?? "Not checked · re-check this model")
+      : status === "ok"
+        ? `Responded · ${check.latencyMs} ms`
+        : check.errorClass === "auth" && check.httpStatus === 403
+          ? "Access denied · check this account's permissions and subscription"
+          : (FAILURE_LABELS[check.errorClass ?? ""] ?? "Model check failed");
+  return `${result}${check.httpStatus === null ? "" : ` · ${status === "unavailable" ? "Gateway " : ""}HTTP ${check.httpStatus}`} · ${new Date(check.checkedAtMs).toLocaleString()}${checking ? " · checking again" : ""}`;
 }
 
 function ModelField({
@@ -89,11 +110,12 @@ function ModelField({
     pending?.status === "queued"
       ? `${modelCheckDescription(check, false)} · queued`
       : modelCheckDescription(check, pending?.status === "running");
+  const status = modelCheckState(check);
   const StatusIcon = pending
     ? CircleDashedIcon
-    : check?.status === "ok"
+    : status === "ok"
       ? CheckIcon
-      : check?.status === "error"
+      : status === "error"
         ? XIcon
         : CircleDashedIcon;
   return (
@@ -154,14 +176,14 @@ function ModelField({
           <span
             title={description}
             aria-label={`${model}: ${description}`}
-            data-model-check={pending?.status ?? check?.status ?? "unchecked"}
+            data-model-check={pending?.status ?? status}
             className={cn(
               "shrink-0",
               pending
                 ? "text-muted-foreground"
-                : check?.status === "ok"
+                : status === "ok"
                   ? "text-emerald-500"
-                  : check?.status === "error"
+                  : status === "error"
                     ? "text-destructive"
                     : "text-muted-foreground",
             )}

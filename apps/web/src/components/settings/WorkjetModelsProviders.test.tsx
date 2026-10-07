@@ -31,6 +31,7 @@ const check: ModelsModelCheck = {
   modelId: first.modelIds[0]!,
   status: "ok",
   errorClass: null,
+  source: "upstream",
   httpStatus: 200,
   checkedAtMs: Date.parse("2026-10-07T10:00:00Z"),
   latencyMs: 354,
@@ -147,6 +148,39 @@ describe("Provider account table", () => {
     expect(modelCheckDescription(denied, false)).not.toContain("sign in again");
   });
 
+  it("shows gateway failures and old unverified errors as grey without a login demand", () => {
+    for (const unavailable of [
+      {
+        ...check,
+        status: "unavailable" as const,
+        source: "gateway" as const,
+        errorClass: null,
+        httpStatus: 503,
+        unavailableReason: "exact-account-unavailable" as const,
+      },
+      {
+        ...check,
+        status: "error" as const,
+        source: undefined,
+        errorClass: "auth",
+        httpStatus: null,
+      },
+      {
+        ...check,
+        status: "error" as const,
+        source: undefined,
+        errorClass: "auth",
+        httpStatus: 401,
+      },
+    ]) {
+      const rendered = html({ modelChecks: [unavailable] });
+      expect(rendered).toContain('data-model-check="unavailable"');
+      expect(rendered).not.toContain('data-model-check="error"');
+      expect(rendered).not.toContain("Re-login");
+      expect(modelCheckDescription(unavailable, false)).toContain("Not checked");
+      expect(modelCheckDescription(unavailable, false)).not.toContain("Authentication failed");
+    }
+  });
   it("keeps timing and old results honest during a new check", () => {
     expect(modelCheckDescription(undefined, false)).toBe("Not checked");
     expect(modelCheckDescription(undefined, true)).toBe("Checking this model");

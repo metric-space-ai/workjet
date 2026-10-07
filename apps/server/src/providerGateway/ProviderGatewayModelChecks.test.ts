@@ -30,7 +30,12 @@ const setup = () => {
     },
     probe: async (item: ModelCheckTarget) => {
       calls.push(item.accountId);
-      return { status: "ok" as const, errorClass: null, httpStatus: 200 };
+      return {
+        status: "ok" as const,
+        errorClass: null,
+        httpStatus: 200,
+        source: "upstream" as const,
+      };
     },
   };
   return {
@@ -46,6 +51,32 @@ const setup = () => {
   };
 };
 describe("bounded model checks", () => {
+  it("discards legacy checks without response provenance and checks them afresh", async () => {
+    const fixture = setup();
+    const legacy = JSON.stringify({
+      schemaVersion: 1,
+      entries: [
+        {
+          revision: target().revision,
+          check: {
+            accountId: "one",
+            modelId: "model",
+            status: "error",
+            errorClass: "auth",
+            httpStatus: null,
+            checkedAtMs: 1000,
+            latencyMs: 0,
+          },
+        },
+      ],
+    });
+    const checks = makeModelChecks({ ...fixture.options, read: async () => legacy });
+    expect((await checks.list()).checks).toEqual([]);
+    const result = await checks.run({});
+    expect(fixture.calls).toEqual(["one", "two"]);
+    expect(result.checks.every((check) => check.source === "upstream")).toBe(true);
+    expect(JSON.parse(fixture.persisted()!).schemaVersion).toBe(2);
+  });
   it("advances every slow target before repeating a cooled prefix across mixed commands", async () => {
     const fixture = setup();
     const targets = Array.from({ length: 100 }, (_, index) => ({
@@ -199,7 +230,7 @@ describe("bounded model checks", () => {
     fixture.setTargets([]);
     expect((await checks.list()).checks).toEqual([]);
   });
-  it("stores a fixed error class when a provider throws private content", async () => {
+  it("stores no upstream error class when a local request throws private content", async () => {
     const fixture = setup();
     const checks = makeModelChecks({
       ...fixture.options,
@@ -208,7 +239,12 @@ describe("bounded model checks", () => {
       },
     });
     const result = await checks.run({});
-    expect(result.checks.every((item) => item.errorClass === "network-provider")).toBe(true);
+    expect(
+      result.checks.every(
+        (item) =>
+          item.status === "unavailable" && item.source === "gateway" && item.errorClass === null,
+      ),
+    ).toBe(true);
     expect(fixture.persisted()).not.toContain("private");
     expect(fixture.persisted()).not.toContain("Hi");
   });
@@ -244,23 +280,47 @@ describe("real loopback model probe", () => {
       request.on("end", () => {
         requests.push({ headers: request.headers, body });
         const input = JSON.parse(body) as { model: string };
-        if (input.model !== "ignored-pin")
+        if (
+          ![
+            "ignored-pin",
+            "ignored-error-pin",
+            "preflight-auth",
+            "preflight-quota",
+            "cooldown",
+          ].includes(input.model)
+        )
           response.setHeader("X-CTOX-Account-Selected", request.headers["x-ctox-account"] ?? "");
         response.setHeader("content-type", "application/json");
         if (input.model === "oversized") {
           response.end("x".repeat(70 * 1024));
+        } else if (["preflight-auth", "ignored-error-pin"].includes(input.model)) {
+          response.statusCode = 401;
+          if (input.model === "ignored-error-pin") response.setHeader("X-CTOX-Error-Class", "auth");
+          response.end("{}");
+        } else if (input.model === "preflight-quota") {
+          response.statusCode = 429;
+          response.end("{}");
+        } else if (input.model === "cooldown") {
+          response.statusCode = 503;
+          response.end("{}");
+        } else if (input.model === "preflight-model") {
+          response.statusCode = 400;
+          response.end(JSON.stringify({ error: { code: "model_not_found" } }));
         } else if (input.model === "native-unknown") {
           response.statusCode = 503;
           response.setHeader("X-CTOX-Error-Class", "unknown-model");
           response.end("{}");
         } else if (input.model === "html-auth") {
           response.statusCode = 401;
+          response.setHeader("X-CTOX-Error-Class", "auth");
           response.end("<html>private authentication error</html>");
         } else if (input.model === "quota") {
           response.statusCode = 429;
+          response.setHeader("X-CTOX-Error-Class", "quota-rate-limit");
           response.end("{}");
         } else if (input.model === "unknown") {
           response.statusCode = 400;
+          response.setHeader("X-CTOX-Error-Class", "unknown-model");
           response.end(
             JSON.stringify({ error: { code: "model_not_found", message: "secret-provider-text" } }),
           );
@@ -292,18 +352,34 @@ describe("real loopback model probe", () => {
         status: "ok",
         errorClass: null,
         httpStatus: 200,
+        source: "upstream",
       });
       expect((await probe(endpoint, "kimi", "chosen", "unknown")).errorClass).toBe("unknown-model");
-      expect((await probe(endpoint, "kimi", "chosen", "ignored-pin")).errorClass).toBe(
-        "account-selection-unavailable",
-      );
-      expect((await probe(endpoint, "kimi", "chosen", "empty")).status).toBe("error");
+      for (const model of [
+        "ignored-pin",
+        "ignored-error-pin",
+        "preflight-auth",
+        "preflight-quota",
+        "preflight-model",
+        "cooldown",
+        "bare-404",
+        "empty",
+        "error-payload",
+        "failed-status",
+      ]) {
+        const result = await probe(endpoint, "kimi", "chosen", model);
+        expect(result.status, model).toBe("unavailable");
+        expect(result.source, model).toBe("gateway");
+        expect(result.errorClass, model).toBeNull();
+      }
       expect((await probe(endpoint, "minimax", "chosen", "null-error")).status).toBe("ok");
-      expect((await probe(endpoint, "minimax", "chosen", "error-payload")).status).toBe("error");
-      expect((await probe(endpoint, "minimax", "chosen", "failed-status")).status).toBe("error");
-      expect((await probe(endpoint, "claude", "chosen", "bare-404")).errorClass).toBe(
-        "network-provider",
+      expect((await probe(endpoint, "minimax", "chosen", "error-payload")).status).toBe(
+        "unavailable",
       );
+      expect((await probe(endpoint, "minimax", "chosen", "failed-status")).status).toBe(
+        "unavailable",
+      );
+      expect((await probe(endpoint, "claude", "chosen", "bare-404")).errorClass).toBeNull();
       expect((await probe(endpoint, "kimi", "chosen", "native-unknown")).errorClass).toBe(
         "unknown-model",
       );

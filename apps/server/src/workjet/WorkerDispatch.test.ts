@@ -2,6 +2,7 @@
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  WorkjetComputerId,
   WorkjetMeshWorkspaceId,
   WorkjetContentDigest,
   WorkjetSealedPayloadRef,
@@ -11,11 +12,13 @@ import {
   type ModelSelection,
   type OrchestrationCommand,
   type OrchestrationThread,
+  type WorkjetComputer,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { layerTest as serverSettingsLayerTest, ServerSettingsService } from "../serverSettings.ts";
 import { OrchestrationCommandReceiptRepository } from "../persistence/Services/OrchestrationCommandReceipts.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import {
@@ -90,6 +93,23 @@ const invocation: McpInvocationScope = {
   workjetRole: "orchestrator",
   issuedAt: 1,
 };
+const localComputer = {
+  id: WorkjetComputerId.make("saved-local"),
+  label: "Local build computer",
+  environmentId,
+  presentationKind: "local",
+  harnesses: [],
+} as const satisfies WorkjetComputer;
+const remoteComputer = {
+  ...localComputer,
+  id: WorkjetComputerId.make("saved-gpu3"),
+  label: "GPU3",
+  environmentId: EnvironmentId.make("environment-gpu3"),
+  presentationKind: "ssh",
+} as const satisfies WorkjetComputer;
+const computerCatalogLayer = serverSettingsLayerTest({
+  workjet: { computers: [localComputer, remoteComputer], selectedComputerId: null },
+});
 const ids = [
   "00000000-0000-4000-8000-000000000001",
   "00000000-0000-4000-8000-000000000002",
@@ -485,6 +505,8 @@ it.effect("dispatches exact normal create and turn-start commands with inherited
       status: "dispatched",
       environmentId,
       workerThreadId: ThreadId.make(ids[0]),
+      branch: workerRefFor(ids[0]),
+      worktreePath: workerPathFor(ids[0]),
       parent: { environmentId, threadId: parentThreadId },
       modelSelection: inheritedModel,
       enabledCapabilityIds: ["greppy", "web-search"],
@@ -528,6 +550,103 @@ it.effect("dispatches exact normal create and turn-start commands with inherited
     ]);
     expect(JSON.stringify(result)).not.toContain(task);
   }),
+);
+
+it.effect("returns the explicitly selected native computer and actual isolated checkout", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const service = yield* harness.service;
+    const result = yield* service.dispatch(invocation, {
+      task: "Implement one pull request.",
+      computerId: localComputer.id,
+    });
+    expect(result).toMatchObject({
+      computerId: localComputer.id,
+      environmentId,
+      branch: workerRefFor(ids[0]),
+      worktreePath: workerPathFor(ids[0]),
+    });
+    expect(harness.commands[0]).toMatchObject({
+      branch: result.branch,
+      worktreePath: result.worktreePath,
+    });
+  }).pipe(Effect.provide(computerCatalogLayer)),
+);
+
+it.effect("infers only an unambiguous current-environment computer", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const service = yield* harness.service;
+    const result = yield* service.dispatch(invocation, {
+      task: "Use the native current computer.",
+    });
+    expect(result.computerId).toBe(localComputer.id);
+  }).pipe(Effect.provide(computerCatalogLayer)),
+);
+
+for (const [computerId, reason] of [
+  [WorkjetComputerId.make("missing-computer"), "computer-unavailable"],
+  [remoteComputer.id, "remote-dispatch-unavailable"],
+] as const) {
+  it.effect(`rejects ${reason} before creating a checkout or thread`, () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const service = yield* harness.service;
+      const error = yield* service
+        .dispatch(invocation, {
+          task: "COMPUTER_TASK_CANARY",
+          computerId,
+        })
+        .pipe(Effect.flip);
+      expect(error.reason).toBe(reason);
+      expect(JSON.stringify(error)).not.toContain("COMPUTER_TASK_CANARY");
+      expect(harness.worktreeCreates).toEqual([]);
+      expect(harness.commands).toEqual([]);
+    }).pipe(Effect.provide(computerCatalogLayer)),
+  );
+}
+
+it.effect("never treats an explicit computer as local when its native catalog is absent", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const service = yield* harness.service;
+    const error = yield* service
+      .dispatch(invocation, {
+        task: "Do not guess placement.",
+        computerId: localComputer.id,
+      })
+      .pipe(Effect.flip);
+    expect(error.reason).toBe("computer-unavailable");
+    expect(harness.worktreeCreates).toEqual([]);
+    expect(harness.commands).toEqual([]);
+  }),
+);
+
+it.effect("rechecks native selection and honors an explicit local override", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness();
+    const settings = yield* ServerSettingsService;
+    const service = yield* harness.service;
+    const first = yield* service.dispatch(invocation, { task: "Use the current saved computer." });
+    expect(first.computerId).toBe(localComputer.id);
+    const createdBefore = harness.worktreeCreates.length;
+    const current = yield* settings.getSettings;
+    yield* settings.updateSettings({
+      workjet: { ...current.workjet, selectedComputerId: remoteComputer.id },
+    });
+    const error = yield* service
+      .dispatch(invocation, {
+        task: "Do not fall back locally after selection changes.",
+      })
+      .pipe(Effect.flip);
+    expect(error.reason).toBe("remote-dispatch-unavailable");
+    expect(harness.worktreeCreates).toHaveLength(createdBefore);
+    const explicit = yield* service.dispatch(invocation, {
+      task: "Use the explicitly chosen local computer.",
+      computerId: localComputer.id,
+    });
+    expect(explicit.computerId).toBe(localComputer.id);
+  }).pipe(Effect.provide(computerCatalogLayer)),
 );
 
 it.effect("accepts a capability subset and canonical model override including options", () =>

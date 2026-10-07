@@ -10,6 +10,7 @@ import {
   type ModelSelection,
   type OrchestrationCommand,
   type WorkjetCapabilityId,
+  type WorkjetComputerId,
   type WorkjetParentThreadReference,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -22,6 +23,7 @@ import * as Schema from "effect/Schema";
 import { resolveDelegatedCapabilities } from "@metric-space-ai/workjet-capabilities";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -34,6 +36,7 @@ import type { OrchestrationDispatchOptions } from "../orchestration/Services/Orc
 
 export interface WorkerDispatchInput {
   readonly task: string;
+  readonly computerId?: WorkjetComputerId;
   readonly title?: string;
   readonly enabledCapabilityIds?: ReadonlyArray<WorkjetCapabilityId>;
   readonly modelSelection?: ModelSelection;
@@ -44,6 +47,9 @@ export interface WorkerDispatchResult {
   readonly status: "dispatched";
   readonly environmentId: EnvironmentId;
   readonly workerThreadId: ThreadId;
+  readonly computerId?: WorkjetComputerId;
+  readonly branch: string;
+  readonly worktreePath: string;
   readonly parent: WorkjetParentThreadReference;
   readonly modelSelection: ModelSelection;
   readonly enabledCapabilityIds: ReadonlyArray<WorkjetCapabilityId>;
@@ -55,6 +61,8 @@ export type WorkerDispatchFailureReason =
   | "parent-not-orchestrator"
   | "duplicate-capabilities"
   | "capability-escalation"
+  | "computer-unavailable"
+  | "remote-dispatch-unavailable"
   | "worktree-failed"
   | "create-failed"
   | "turn-start-failed"
@@ -69,6 +77,8 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       "parent-not-orchestrator",
       "duplicate-capabilities",
       "capability-escalation",
+      "computer-unavailable",
+      "remote-dispatch-unavailable",
       "worktree-failed",
       "create-failed",
       "turn-start-failed",
@@ -93,6 +103,10 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
         return "Worker capability selections must not contain duplicates.";
       case "capability-escalation":
         return "The requested worker capabilities exceed the parent grants.";
+      case "computer-unavailable":
+        return "The selected worker computer is unavailable in native settings.";
+      case "remote-dispatch-unavailable":
+        return "Fresh worker dispatch to another computer environment is not available yet.";
       case "worktree-failed":
         return "The isolated worker worktree could not be created.";
       case "create-failed":
@@ -150,6 +164,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const meshIdentity = yield* Effect.serviceOption(WorkjetMeshIdentity);
   const mailbox = yield* Effect.serviceOption(WorkjetMailboxStore);
   const rollback = yield* WorkerDispatchRollback;
+  const settings = yield* Effect.serviceOption(ServerSettingsService);
 
   const dispatch: WorkerDispatchShape["dispatch"] = Effect.fn("WorkerDispatch.dispatch")(
     function* (invocation, input) {
@@ -193,6 +208,33 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         ) {
           return yield* failure("capability-escalation");
         }
+      }
+
+      // A computer ID is an explicit catalog binding, never a hostname or an
+      // inferred transport. Until the target host can verify a fresh foreign
+      // parent, this native entry must not silently run a remote selection here.
+      let computerId = input.computerId;
+      if (Option.isSome(settings)) {
+        const configuration = yield* settings.value.getSettings.pipe(
+          Effect.map((current) => current.workjet),
+          Effect.mapError(() => failure("computer-unavailable")),
+        );
+        computerId ??= configuration.selectedComputerId ?? undefined;
+        if (computerId === undefined) {
+          const localComputers = configuration.computers.filter(
+            (computer) => computer.environmentId === invocation.environmentId,
+          );
+          if (localComputers.length === 1) computerId = localComputers[0]?.id;
+        }
+        if (computerId !== undefined) {
+          const matches = configuration.computers.filter((computer) => computer.id === computerId);
+          if (matches.length !== 1) return yield* failure("computer-unavailable");
+          if (matches[0]?.environmentId !== invocation.environmentId) {
+            return yield* failure("remote-dispatch-unavailable");
+          }
+        }
+      } else if (computerId !== undefined) {
+        return yield* failure("computer-unavailable");
       }
 
       const modelSelection = input.modelSelection ?? parent.modelSelection;
@@ -303,6 +345,18 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           Effect.map((created) => created.worktree),
           Effect.mapError(() => failure("worktree-failed")),
         );
+      const dispatchedResult = {
+        schemaVersion: 1,
+        status: "dispatched",
+        environmentId: invocation.environmentId,
+        workerThreadId,
+        ...(computerId !== undefined ? { computerId } : {}),
+        branch: workerWorktree.refName,
+        worktreePath: workerWorktree.path,
+        parent: parentReference,
+        modelSelection,
+        enabledCapabilityIds,
+      } as const satisfies WorkerDispatchResult;
       const preparedRollback = yield* rollback
         .prepare({
           cwd: gitCwd,
@@ -419,15 +473,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
               const receipt = Option.getOrUndefined(receiptRead.success);
               if (receipt?.aggregateKind === "thread" && receipt.aggregateId === workerThreadId) {
                 if (receipt.status === "accepted") {
-                  return {
-                    schemaVersion: 1,
-                    status: "dispatched",
-                    environmentId: invocation.environmentId,
-                    workerThreadId,
-                    parent: parentReference,
-                    modelSelection,
-                    enabledCapabilityIds,
-                  } as const;
+                  return dispatchedResult;
                 }
                 if (receipt.status === "rejected") {
                   const cleanupExit = yield* removeWorkerWorktree(createCommandId);
@@ -473,15 +519,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
                     worker.workjetConfig.team?.threadId === workerThreadId &&
                     worker.workjetConfig.team?.parentThreadId === parent.id
                   ) {
-                    return {
-                      schemaVersion: 1,
-                      status: "dispatched",
-                      environmentId: invocation.environmentId,
-                      workerThreadId,
-                      parent: parentReference,
-                      modelSelection,
-                      enabledCapabilityIds,
-                    } as const;
+                    return dispatchedResult;
                   }
                 }
               }
@@ -499,15 +537,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       // Thread and queued delegation have one durable receipt. The existing
       // executor alone starts the turn and returns its result after a restart.
       if (preparedDelegation) {
-        return {
-          schemaVersion: 1,
-          status: "dispatched",
-          environmentId: invocation.environmentId,
-          workerThreadId,
-          parent: parentReference,
-          modelSelection,
-          enabledCapabilityIds,
-        } as const;
+        return dispatchedResult;
       }
 
       const turnStartCommand = {
@@ -545,15 +575,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         return yield* failure("turn-start-failed", worktreeRollbackExit.value);
       }
 
-      return {
-        schemaVersion: 1,
-        status: "dispatched",
-        environmentId: invocation.environmentId,
-        workerThreadId,
-        parent: parentReference,
-        modelSelection,
-        enabledCapabilityIds,
-      } as const;
+      return dispatchedResult;
     },
   );
 

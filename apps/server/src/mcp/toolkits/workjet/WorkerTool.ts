@@ -5,6 +5,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
   WorkjetCapabilityId,
+  WorkjetComputerId,
   WorkjetParentThreadReference,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -39,6 +40,7 @@ export const CanonicalWorkerModelSelection = Schema.Struct({
 
 export const WorkerDispatchInputSchema = Schema.Struct({
   task: NonBlankTask,
+  computerId: Schema.optional(WorkjetComputerId),
   title: Schema.optional(OptionalWorkerTitle),
   enabledCapabilityIds: Schema.optional(DelegatedCapabilityIds),
   modelSelection: Schema.optional(CanonicalWorkerModelSelection),
@@ -49,6 +51,9 @@ export const WorkerDispatchResultSchema = Schema.Struct({
   status: Schema.Literal("dispatched"),
   environmentId: EnvironmentId,
   workerThreadId: ThreadId,
+  computerId: Schema.optional(WorkjetComputerId),
+  branch: TrimmedNonEmptyString,
+  worktreePath: TrimmedNonEmptyString,
   parent: WorkjetParentThreadReference,
   modelSelection: CanonicalWorkerModelSelection,
   enabledCapabilityIds: Schema.Array(WorkjetCapabilityId),
@@ -77,7 +82,7 @@ const enabledWhen = () => {
 
 export const WorkerDispatchMcpTool = Tool.make(WORKJET_DISPATCH_WORKER_TOOL_NAME, {
   description:
-    "Create an ordinary local Workjet worker thread in this server environment and start its first Workjet turn. The call returns immediately after dispatch and does not wait for completion.",
+    "Create an isolated Workjet worker in this native server environment and start its first turn. Select a saved computer with computerId, or use the native selected computer. Remote environments fail before creation until fresh remote-parent dispatch is available. Returns the actual computer binding, branch and worktree without waiting for completion.",
   parameters: WorkerDispatchInputSchema,
   success: WorkerDispatchResultSchema,
   dependencies: [McpInvocationContext.McpInvocationContext, WorkerDispatch.WorkerDispatch],
@@ -172,6 +177,7 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
             : undefined;
           const dispatchInput: WorkerDispatch.WorkerDispatchInput = {
             task: input.task,
+            ...(input.computerId !== undefined ? { computerId: input.computerId } : {}),
             ...(input.title !== undefined ? { title: input.title } : {}),
             ...(input.enabledCapabilityIds !== undefined
               ? { enabledCapabilityIds: input.enabledCapabilityIds }

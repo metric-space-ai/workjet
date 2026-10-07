@@ -1,6 +1,6 @@
 // @effect-diagnostics preferSchemaOverJson:off -- redaction assertions inspect complete bounded MCP results.
 import { expect, it, vi } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@workjet/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId, WorkjetComputerId } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -66,6 +66,7 @@ it("declares the dispatch operation as destructive and non-idempotent", () => {
   expect(schema.additionalProperties).toBe(false);
   expect(schema.properties).toHaveProperty("task");
   expect(schema.properties).toHaveProperty("modelSelection");
+  expect(schema.properties).toHaveProperty("computerId");
 });
 
 it.effect("rejects unknown keys, malformed values, duplicates, and legacy model selections", () =>
@@ -73,6 +74,8 @@ it.effect("rejects unknown keys, malformed values, duplicates, and legacy model 
     const task = "TASK_CANARY_SHOULD_NOT_LEAK";
     const invalidPayloads = [
       { task, unknown: true },
+      { task, computerId: "   " },
+      { task, computerId: { environmentId: "environment-foreign" } },
       { task: "   " },
       { task: "x".repeat(32_001) },
       { task, title: "   " },
@@ -146,6 +149,9 @@ it.effect("returns only the bounded dispatched result", () => {
         status: "dispatched" as const,
         environmentId,
         workerThreadId: ThreadId.make("00000000-0000-4000-8000-000000000001"),
+        ...(input.computerId !== undefined ? { computerId: input.computerId } : {}),
+        branch: "workjet/worker/00000000-0000-4000-8000-000000000001",
+        worktreePath: "/native/worktrees/worker-1",
         parent: { environmentId, threadId },
         modelSelection:
           input.modelSelection ??
@@ -164,6 +170,7 @@ it.effect("returns only the bounded dispatched result", () => {
         name: WORKJET_DISPATCH_WORKER_TOOL_NAME,
         arguments: {
           task,
+          computerId: WorkjetComputerId.make("saved-local"),
           enabledCapabilityIds: ["web-search"],
           modelSelection: {
             instanceId: "claude-team",
@@ -183,6 +190,9 @@ it.effect("returns only the bounded dispatched result", () => {
       status: "dispatched",
       environmentId,
       workerThreadId: "00000000-0000-4000-8000-000000000001",
+      computerId: "saved-local",
+      branch: "workjet/worker/00000000-0000-4000-8000-000000000001",
+      worktreePath: "/native/worktrees/worker-1",
       parent: { environmentId, threadId },
       modelSelection: {
         instanceId: "claude-team",

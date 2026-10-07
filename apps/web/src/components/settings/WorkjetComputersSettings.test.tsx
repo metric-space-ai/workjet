@@ -35,6 +35,81 @@ const configurationWith = (...computers: ReadonlyArray<WorkjetComputer>) => ({
   computers,
 });
 
+describe("native computer capabilities", () => {
+  const membership = {
+    instanceId: "selected-instance",
+    phase: "ready" as const,
+    pendingComputerId: null,
+    error: null,
+    computers: [
+      {
+        id: "nas-native",
+        displayName: "flashstore24-nas",
+        hostingMode: "self_hosted" as const,
+        status: "assigned" as const,
+        capabilities: ["storage"],
+        selfHostedColocation: false,
+      },
+      {
+        id: localComputer.id,
+        displayName: localComputer.label,
+        hostingMode: "workstation" as const,
+        status: "assigned" as const,
+        capabilities: ["build", "gpu"],
+        selfHostedColocation: false,
+      },
+    ],
+  };
+  const render = (phase: "ready" | "loading" | "failed") =>
+    renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(localComputer)}
+        environments={[]}
+        environmentsReady
+        membership={{ ...membership, phase }}
+        onChange={() => undefined}
+      />,
+    );
+
+  it("shows a native NAS without creating a Code connection or selectable worker target", () => {
+    const markup = render("ready");
+    expect(markup).toContain("flashstore24-nas");
+    expect(markup).toContain('data-workjet-capability="storage"');
+    expect(markup).toContain('data-workjet-capability="build"');
+    expect(markup).toContain('data-workjet-capability="gpu"');
+    expect(markup).not.toContain("Use flashstore24-nas as current computer");
+    expect(markup.match(/data-workjet-native-computer=/g)).toHaveLength(1);
+  });
+
+  it("does not describe an unassigned native host as assigned", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(localComputer)}
+        environments={[]}
+        environmentsReady
+        membership={{
+          ...membership,
+          computers: membership.computers.map((computer) => ({
+            ...computer,
+            status: "unassigned",
+          })),
+        }}
+        onChange={() => undefined}
+      />,
+    );
+    expect(markup).not.toContain("flashstore24-nas");
+    expect(markup).not.toContain("data-workjet-capability=");
+  });
+
+  it("does not claim native capabilities from stale or failed inventory", () => {
+    for (const phase of ["loading", "failed"] as const) {
+      const markup = render(phase);
+      expect(markup).not.toContain("flashstore24-nas");
+      expect(markup).not.toContain("data-workjet-capability=");
+    }
+  });
+});
+
 describe("current computer settings", () => {
   const inspection = (version: string): WorkjetHarnessAvailabilitySnapshot => ({
     schemaVersion: 1,

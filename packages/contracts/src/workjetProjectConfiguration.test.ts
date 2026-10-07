@@ -4,7 +4,7 @@ import {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResponse,
   CtoxWorkjetProjectProjection,
-} from "./ctox";
+} from "./ctox.js";
 
 const request = {
   action: "project.configure",

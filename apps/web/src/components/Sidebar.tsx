@@ -2030,15 +2030,8 @@ export default function Sidebar() {
         projectSwitchPending.current = true;
         setIsSwitchingProject(true);
         try {
-          if (supervisor === null) {
-            if (project === undefined)
-              throw new Error("Refresh this instance’s project catalog to open its supervisor.");
-            if (!selectWorkjetProject(instanceId, project.id)) return;
-            setProjectScopeKey(null);
-            await router.navigate({ to: "/" });
-            if (isMobile) setOpenMobile(false);
-            return;
-          }
+          if (supervisor === null)
+            throw new Error("Refresh this instance’s project catalog to open its supervisor.");
           await router.navigate({
             to: "/$environmentId/$threadId",
             params: buildThreadRouteParams(scopeThreadRef(supervisor.environmentId, supervisor.id)),
@@ -2051,7 +2044,6 @@ export default function Sidebar() {
             ),
           );
           setProjectScopeKey(group?.projectKey ?? null);
-          if (project !== undefined) selectWorkjetProject(instanceId, project.id);
           if (isMobile) setOpenMobile(false);
         } catch (error) {
           toastManager.add({

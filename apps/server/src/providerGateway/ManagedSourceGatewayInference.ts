@@ -49,10 +49,10 @@ export function makeManagedSourceGatewayInference(dependencies: {
       return yield* admission.execute(
         { connectionId: input.sourceConnectionId, instanceId: input.permit.binding.sourceInstanceId },
         input.workerRequest, input.permit.binding, "revalidate", input.permit.permitId, input.permit.executionId,
-      );
+      ).pipe(Effect.mapError((error) => failure(error.reason === "source-unavailable"
+        ? "native-admission-unavailable" : "native-admission-rejected")));
     }).pipe(
       Effect.provide(FetchHttpClient.layer),
-      Effect.mapError(() => failure("native-admission-unavailable")),
     ),
     forward: (selected, requestJson, deadlineMs) => Effect.gen(function* () {
       const status = yield* dependencies.gateway.status();

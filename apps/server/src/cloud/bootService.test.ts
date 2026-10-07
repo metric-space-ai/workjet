@@ -143,12 +143,11 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         if (input.args[0] === "bootstrap" && control.onBootstrap !== undefined)
           yield* Effect.promise(control.onBootstrap);
         return {
-          stdout:
-            verification
-              ? `workjet v${control.verificationVersion}\n`
-              : command === "/bin/launchctl help bootout" && control.supportsWait
-                ? "bootout [--wait] <service-target>"
-                : "",
+          stdout: verification
+            ? `workjet v${control.verificationVersion}\n`
+            : command === "/bin/launchctl help bootout" && control.supportsWait
+              ? "bootout [--wait] <service-target>"
+              : "",
           stderr: "",
           code: ChildProcessSpawner.ExitCode(command === control.failCommand ? 1 : 0),
           timedOut: command === control.timeoutCommand || verificationTimedOut,
@@ -200,12 +199,7 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
         `accepts a 35-second ${bundled ? "bundled" : "npm"} CLI cold-start on ${platform}`,
         () =>
           Effect.gen(function* () {
-            const { service, control } = yield* makeHarness(
-              platform,
-              false,
-              false,
-              bundled,
-            );
+            const { service, control } = yield* makeHarness(platform, false, false, bundled);
             control.verificationElapsedMs = 35_000;
             yield* service.install;
             expect((yield* service.status).current).toBe(true);

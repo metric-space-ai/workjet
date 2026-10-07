@@ -49,6 +49,8 @@ const MAX_PREVIEW_BYTES = 1024 * 1024;
 const MAX_CACHED_PREVIEWS = 512;
 const MAX_MESSAGE_CHARS = 200_000;
 const IMPORT_CHUNK_SIZE = 200;
+// Retain the full normalized object and property order used by persisted prefix hashes.
+const encodeImportedMessageJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 interface SourceLocation {
   readonly source: WorkjetSessionImportSource;
@@ -958,9 +960,7 @@ export const make = Effect.gen(function* () {
         if (next.done) break;
         const message = next.value;
         if (sourceIndex) prefix.update(",");
-        prefix.update(
-          yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(message).pipe(Effect.orDie),
-        );
+        prefix.update(yield* encodeImportedMessageJson(message).pipe(Effect.orDie));
         const persisted = persistedById.get(
           MessageId.make(stableUuid(`message:${messageSeed}:${sourceIndex}`)),
         );

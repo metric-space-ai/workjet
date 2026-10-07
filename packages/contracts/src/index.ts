@@ -22,6 +22,7 @@ export * from "./pullRequest.ts";
 export * from "./orchestration.ts";
 export * from "./workjet.ts";
 export * from "./workjetProjectTeam.ts";
+export * from "./remoteWorker.ts";
 export * from "./workjetBusinessOsComputers.ts";
 export * from "./workjetBusinessOsComputerMembershipHttp.ts";
 export * from "./workjetManagedBackendControl.ts";

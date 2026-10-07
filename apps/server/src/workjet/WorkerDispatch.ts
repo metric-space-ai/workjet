@@ -306,6 +306,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
             saved.value.request.computerId !== computerId ||
             saved.value.request.workerProfileId !== profile.id ||
             saved.value.request.llmRouteId !== profile.llmRouteId ||
+            saved.value.request.modelSelection.model !== profile.modelId ||
+            saved.value.request.enabledCapabilityIds.some((id) => !profile.capabilityIds.includes(id)) ||
             saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
             saved.value.request.task !== input.task ||
             (input.title !== undefined &&

@@ -354,11 +354,16 @@ const closeRun = (
   parentScope: Scope.Scope,
   options?: { readonly timeout?: Duration.Duration },
 ): Effect.Effect<boolean> => {
-  const waitForFiber = Option.match(run.fiber, {
-    onNone: () => Effect.void,
-    onSome: (fiber) => Fiber.await(fiber).pipe(Effect.asVoid),
+  // The runner is forked in the parent scope. Closing its resource scope
+  // does not interrupt a service runner waiting for a disconnected signal.
+  // Interrupt that owned fiber first; its ensuring clause releases resources.
+  const close = Option.match(run.fiber, {
+    onNone: () => Scope.close(run.scope, Exit.void),
+    onSome: (fiber) => Fiber.interrupt(fiber).pipe(
+      Effect.andThen(Scope.close(run.scope, Exit.void)),
+      Effect.asVoid,
+    ),
   });
-  const close = Scope.close(run.scope, Exit.void).pipe(Effect.andThen(waitForFiber));
   const timeout = options?.timeout;
 
   if (!timeout) {

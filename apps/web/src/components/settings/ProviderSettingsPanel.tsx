@@ -266,7 +266,7 @@ export function ProviderSettingsPanel({
 
   return (
     <SettingsPageContainer
-      className={sections === "models" ? "mx-0 max-w-[75rem] gap-8" : undefined}
+      {...(sections === "models" ? { className: "mx-0 max-w-[75rem] gap-8" } : {})}
     >
       {!onlyPrimaryDevice ? (
         <SettingsSection title="Environments">

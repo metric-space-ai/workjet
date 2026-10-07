@@ -353,9 +353,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
       Effect.map(FileSystem.FileSystem, (fs) => ({
         ...fs,
         exists: (candidate) =>
-          candidate === workerWorktreePath
-            ? Effect.succeed(worktreePresent)
-            : fs.exists(candidate),
+          candidate === workerWorktreePath ? Effect.succeed(worktreePresent) : fs.exists(candidate),
       })),
     ).pipe(Layer.provideMerge(NodeServices.layer));
 

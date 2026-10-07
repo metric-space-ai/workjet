@@ -270,9 +270,7 @@ const makeWithDatabase = Effect.fn("makeWithDatabase")(function* (
       executeValuesUnprepared(sql, params) {
         return afterSchemaChange(
           sql,
-          Effect.flatMap(prepare(sql), (statement) =>
-            runStatementValues(statement, params ?? []),
-          ),
+          Effect.flatMap(prepare(sql), (statement) => runStatementValues(statement, params ?? [])),
         );
       },
       executeUnprepared(sql, params, rowTransform) {

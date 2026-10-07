@@ -42,6 +42,69 @@ const projectionSnapshotLayer = it.layer(
 );
 
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
+  it.effect("projects bounded latest assistant text for turnless imported histories", () =>
+    Effect.gen(function* () {
+      const query = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("imported-preview-parent");
+      const at = "2026-10-07T15:00:00.000Z";
+      const later = "2026-10-07T16:00:00.000Z";
+      yield* sql`
+        INSERT INTO projection_projects
+          (project_id, title, workspace_root, default_model_selection_json, scripts_json, created_at, updated_at)
+        VALUES ('imported-preview-project', 'Imported project', '/safe/imported-project', NULL, '[]', ${at}, ${at})
+      `;
+      yield* sql`
+        INSERT INTO projection_threads
+          (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode,
+           workjet_config_json, created_at, updated_at)
+        VALUES (${threadId}, 'imported-preview-project', 'Imported parent',
+                '{"instanceId":"claudeAgent","model":"historical-model"}', 'full-access', 'default',
+                ${yield* encodeWorkerConfig(DEFAULT_WORKJET_THREAD_CONFIG)}, ${at}, ${at})
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_messages
+          (message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at)
+        VALUES
+          ('imported-preview-old', ${threadId}, NULL, 'assistant', 'Earlier result', 0, ${at}, ${at}),
+          ('imported-preview-current', ${threadId}, NULL, 'assistant', ${"Latest result ".repeat(100)}, 0, ${later}, ${later}),
+          ('imported-preview-user', ${threadId}, NULL, 'user', 'Do not use a user prompt', 0, ${later}, ${later}),
+          ('imported-preview-blank', ${threadId}, NULL, 'assistant', '   ', 0, ${later}, ${later}),
+          ('imported-preview-foreign', 'another-parent', NULL, 'assistant', 'Foreign text', 0, ${later}, ${later})
+      `;
+      const expected = "Latest result ".repeat(100).slice(0, 280);
+      const shell = (yield* query.getShellSnapshot()).threads.find((thread) => thread.id === threadId);
+      assert.equal(shell?.latestAssistantMessagePreview, expected);
+      assert.equal(shell?.latestTurn, null);
+      assert.equal(shell?.session, null);
+      const individual = yield* query.getThreadShellById(threadId);
+      assert.equal(individual._tag, "Some");
+      if (individual._tag === "Some") {
+        assert.equal(individual.value.latestAssistantMessagePreview, expected);
+        assert.equal(individual.value.latestTurn, null);
+      }
+
+      // Incremental re-import changes the preview without manufacturing a turn.
+      yield* sql`UPDATE projection_thread_messages SET text = 'Newly imported result'
+        WHERE message_id = 'imported-preview-current'`;
+      const refreshed = yield* query.getThreadShellById(threadId);
+      if (refreshed._tag === "Some")
+        assert.equal(refreshed.value.latestAssistantMessagePreview, "Newly imported result");
+      yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = ${threadId} AND role = 'assistant'`;
+      const noAssistant = yield* query.getThreadShellById(threadId);
+      if (noAssistant._tag === "Some")
+        assert.equal(noAssistant.value.latestAssistantMessagePreview, undefined);
+    }).pipe(
+      Effect.ensuring(Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = 'imported-preview-parent'
+          OR message_id = 'imported-preview-foreign'`;
+        yield* sql`DELETE FROM projection_threads WHERE thread_id = 'imported-preview-parent'`;
+        yield* sql`DELETE FROM projection_projects WHERE project_id = 'imported-preview-project'`;
+      }).pipe(Effect.orDie)),
+    ),
+  );
+
   it.effect("reads retained archived worker history without exposing it as an active worker", () =>
     Effect.gen(function* () {
       const query = yield* ProjectionSnapshotQuery;
@@ -437,6 +500,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               planId: "plan-1",
             },
           },
+          latestAssistantMessagePreview: "hello from projection",
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
@@ -560,6 +624,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               planId: "plan-1",
             },
           },
+          latestAssistantMessagePreview: "hello from projection",
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,

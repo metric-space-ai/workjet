@@ -95,6 +95,7 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     workjetConfig: Schema.fromJsonString(WorkjetThreadConfig),
+    latestAssistantMessagePreview: Schema.optional(Schema.NullOr(Schema.String)),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -317,6 +318,12 @@ function mapLatestTurn(
   };
 }
 
+function mapAssistantPreview(row: Schema.Schema.Type<typeof ProjectionThreadDbRowSchema>) {
+  return row.latestAssistantMessagePreview
+    ? { latestAssistantMessagePreview: row.latestAssistantMessagePreview }
+    : {};
+}
+
 function mapTitleRegeneration(row: Schema.Schema.Type<typeof ProjectionThreadDbRowSchema>) {
   return row.titleRegenerationRequestId != null && row.titleRegenerationStartedAt != null
     ? {
@@ -467,6 +474,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.thread_id = projection_threads.thread_id
+              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+            ORDER BY messages.created_at DESC, messages.message_id DESC
+            LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
@@ -504,6 +517,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.thread_id = projection_threads.thread_id
+              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+            ORDER BY messages.created_at DESC, messages.message_id DESC
+            LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
@@ -543,6 +562,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.thread_id = projection_threads.thread_id
+              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+            ORDER BY messages.created_at DESC, messages.message_id DESC
+            LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
@@ -1062,6 +1087,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.thread_id = projection_threads.thread_id
+              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+            ORDER BY messages.created_at DESC, messages.message_id DESC
+            LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
@@ -1102,6 +1133,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           latest_turn_id AS "latestTurnId",
+          (SELECT substr(messages.text, 1, 280)
+            FROM projection_thread_messages messages
+            WHERE messages.thread_id = projection_threads.thread_id
+              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+            ORDER BY messages.created_at DESC, messages.message_id DESC
+            LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           archived_at AS "archivedAt",
@@ -1815,6 +1852,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 branch: row.branch,
                 worktreePath: row.worktreePath,
                 latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                ...mapAssistantPreview(row),
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
                 archivedAt: row.archivedAt,
@@ -2025,6 +2063,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   branch: row.branch,
                   worktreePath: row.worktreePath,
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                ...mapAssistantPreview(row),
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
@@ -2162,6 +2201,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       branch: row.branch,
                       worktreePath: row.worktreePath,
                       latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                ...mapAssistantPreview(row),
                       createdAt: row.createdAt,
                       updatedAt: row.updatedAt,
                       archivedAt: row.archivedAt,
@@ -2308,6 +2348,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   branch: row.branch,
                   worktreePath: row.worktreePath,
                   latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                ...mapAssistantPreview(row),
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                   archivedAt: row.archivedAt,
@@ -2632,6 +2673,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
+        ...mapAssistantPreview(threadRow.value),
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,
@@ -2761,6 +2803,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
+        ...mapAssistantPreview(threadRow.value),
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,
         archivedAt: threadRow.value.archivedAt,

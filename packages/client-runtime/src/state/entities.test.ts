@@ -207,6 +207,7 @@ describe("environment entity projections", () => {
       title: "Cached thread",
       branch: "stale-branch",
       worktreePath: "/repo/stale-worktree",
+      latestAssistantMessagePreview: "Cached imported result",
       deletedAt: null,
       messages,
       proposedPlans: [],
@@ -219,6 +220,7 @@ describe("environment entity projections", () => {
       title: "Current thread",
       branch: "current-branch",
       worktreePath: "/repo/current-worktree",
+      latestAssistantMessagePreview: "Latest imported result",
     };
 
     const merged = mergeEnvironmentThread(detail, shell);
@@ -227,8 +229,13 @@ describe("environment entity projections", () => {
       title: "Current thread",
       branch: "current-branch",
       worktreePath: "/repo/current-worktree",
+      latestAssistantMessagePreview: "Latest imported result",
     });
     expect(merged?.messages).toBe(messages);
+    const withoutPreview = mergeEnvironmentThread(detail, {
+      ...shell, latestAssistantMessagePreview: undefined,
+    });
+    expect(withoutPreview?.latestAssistantMessagePreview).toBeUndefined();
   });
 
   it("preserves untouched project and thread identities across unrelated shell updates", () => {

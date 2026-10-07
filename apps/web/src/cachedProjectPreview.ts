@@ -4,7 +4,7 @@ import flylabsPreview from "./assets/project-previews/flylabs.dev.png";
 import kunstmenPreview from "./assets/project-previews/kunstmen.com.png";
 import miltonPreview from "./assets/project-previews/miltonticket.app.png";
 import ctoxPreview from "./assets/project-previews/ctox.dev.png";
-import pokedexPreview from "./assets/project-previews/mypokedex.app.png";
+import pokedexPreview from "./assets/project-previews/mypokedex.app-logo.svg";
 
 const cachedPreviews = new Map([
   ["https://i-hate-ai.community", communityPreview],
@@ -26,7 +26,7 @@ export function resolveCachedProjectPreview(website: string | null | undefined) 
       return null;
     }
     const image = cachedPreviews.get(url.origin);
-    return image ? { image, capturedOn: "2026-10-07" } : null;
+    return image ? { image, capturedOn: "2026-10-07", kind: url.origin === "https://mypokedex.app" ? "logo" : "preview" } : null;
   } catch {
     return null;
   }

@@ -147,12 +147,12 @@ export function ProjectOverviewCard({
         {!archived && cachedPreview && failedCachedWebsite !== website ? (
           <img
             src={cachedPreview.image}
-            alt={`Saved website preview for ${project.title}`}
+            alt={cachedPreview.kind === "logo" ? `Project logo for ${project.title}` : `Saved website preview for ${project.title}`}
             title={`Saved preview · ${cachedPreview.capturedOn}`}
             loading="lazy"
             decoding="async"
             onError={() => setFailedCachedWebsite(website ?? null)}
-            className="size-full object-cover object-top"
+            className={cachedPreview.kind === "logo" ? "size-full object-contain p-12" : "size-full object-cover object-top"}
           />
         ) : (
           <div

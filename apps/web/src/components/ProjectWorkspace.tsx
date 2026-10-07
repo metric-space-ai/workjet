@@ -18,6 +18,11 @@ import {
   resolveGalleryProjectOverview,
 } from "../projectOverview";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
+import {
+  WorkspaceBreadcrumb,
+  WorkspaceBreadcrumbItem,
+  WorkspaceBreadcrumbSeparator,
+} from "./WorkspaceBreadcrumb";
 import { SidebarInset } from "./ui/sidebar";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
 import { Button } from "./ui/button";
@@ -84,11 +89,13 @@ export function ProjectWorkspace({
   return (
     <SidebarInset className="min-h-0 overflow-auto">
       <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-sm">
-        <span className="min-w-0 truncate text-muted-foreground">{project.title}</span>
-        <span className="shrink-0 text-muted-foreground" aria-hidden="true">
-          /
-        </span>
-        <span className="shrink-0 font-medium">Übersicht</span>
+        <WorkspaceBreadcrumb ariaLabel="Project breadcrumb">
+          <WorkspaceBreadcrumbItem className="shrink min-w-0">
+            <span className="truncate">{project.title}</span>
+          </WorkspaceBreadcrumbItem>
+          <WorkspaceBreadcrumbSeparator />
+          <WorkspaceBreadcrumbItem current>Overview</WorkspaceBreadcrumbItem>
+        </WorkspaceBreadcrumb>
       </WorkjetHeaderContent>
       <main className="mx-auto w-full max-w-6xl p-6" data-workjet-project-overview={project.id}>
         <header className="mb-5 flex items-start justify-between gap-4">

@@ -13,3 +13,11 @@ A connected computer and a computer assigned to your Business OS are different s
 If confirmation fails, the error stays visible. Use **Refresh assignments** to check whether a slow request completed before retrying. Workjet also refreshes the inventory when you return to the app. Switching Business OS discards the previous instance's inventory immediately.
 
 This workflow requires a Workjet host and Business OS that support computer assignments. A host without that support displays an update message; it does not claim that assignment succeeded.
+
+## Build and storage access
+
+Choose **Add computer → Build, GPU, or storage** to register operational capabilities. A storage-only computer can represent a NAS without a coding agent.
+
+For SSH access, enter the fingerprint of the server key you verified. **SSH host-key type** can select the corresponding Ed25519, ECDSA, or RSA key; leave **Automatic negotiation** selected when the default negotiated key matches that fingerprint.
+
+Choose an SSH key already saved in the CTOX Secret Store. If that key is encrypted, enable **SSH key uses a saved passphrase** and enter the group and name of its saved passphrase. The form uses these saved references to connect.

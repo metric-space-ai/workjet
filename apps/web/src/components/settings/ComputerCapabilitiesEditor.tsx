@@ -5,6 +5,15 @@ import { randomUUID } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
+const SSH_HOST_KEY_TYPES = [
+  { value: "ssh-ed25519", label: "Ed25519" },
+  { value: "ecdsa-sha2-nistp256", label: "ECDSA P-256" },
+  { value: "ecdsa-sha2-nistp384", label: "ECDSA P-384" },
+  { value: "ecdsa-sha2-nistp521", label: "ECDSA P-521" },
+  { value: "rsa-sha2-256", label: "RSA SHA-256" },
+  { value: "rsa-sha2-512", label: "RSA SHA-512" },
+] as const;
+
 export function ComputerCapabilitiesEditor({
   computer,
   preserveExistingCapabilities = false,
@@ -28,6 +37,10 @@ export function ComputerCapabilitiesEditor({
     "artifacts",
   ]);
   const [protocol, setProtocol] = useState<"ssh" | "smb">("ssh");
+  const [hostKeyType, setHostKeyType] = useState<(typeof SSH_HOST_KEY_TYPES)[number]["value"] | "">(
+    "",
+  );
+  const [usePassphrase, setUsePassphrase] = useState(false);
   const [fields, setFields] = useState({
     host: "",
     port: "22",
@@ -36,6 +49,8 @@ export function ComputerCapabilitiesEditor({
     keyPin: "",
     credentialScope: "computer-access",
     credentialName: "",
+    passphraseScope: "computer-access",
+    passphraseName: "",
     share: "",
     slots: "1",
     jobs: "2",
@@ -132,8 +147,14 @@ export function ComputerCapabilitiesEditor({
                           ...connection,
                           protocol: "ssh",
                           host_key_sha256: fields.keyPin.trim(),
+                          ...(hostKeyType ? { host_key_algorithm: hostKeyType } : {}),
                           private_key: credential,
-                          passphrase: null,
+                          passphrase: usePassphrase
+                            ? {
+                                scope: fields.passphraseScope.trim(),
+                                name: fields.passphraseName.trim(),
+                              }
+                            : null,
                         }
                       : {
                           ...connection,
@@ -259,11 +280,51 @@ export function ComputerCapabilitiesEditor({
           {protocol === "ssh"
             ? field("keyPin", "SSH host-key SHA256 fingerprint")
             : field("share", "SMB share")}
+          {protocol === "ssh" ? (
+            <label className="grid gap-1 text-sm">
+              <span>SSH host-key type</span>
+              <select
+                className="h-9 rounded-md border bg-background px-3"
+                value={hostKeyType}
+                onChange={(event) =>
+                  setHostKeyType(
+                    SSH_HOST_KEY_TYPES.find((entry) => entry.value === event.target.value)?.value ??
+                      "",
+                  )
+                }
+              >
+                <option value="">Automatic negotiation</option>
+                {SSH_HOST_KEY_TYPES.map((entry) => (
+                  <option key={entry.value} value={entry.value}>
+                    {entry.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           {field("credentialScope", "Saved credential group")}
           {field(
             "credentialName",
             protocol === "ssh" ? "Saved SSH key name" : "Saved password name",
           )}
+          {protocol === "ssh" ? (
+            <>
+              <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={usePassphrase}
+                  onChange={(event) => setUsePassphrase(event.target.checked)}
+                />
+                SSH key uses a saved passphrase
+              </label>
+              {usePassphrase ? (
+                <>
+                  {field("passphraseScope", "Saved SSH passphrase group")}
+                  {field("passphraseName", "Saved SSH passphrase name")}
+                </>
+              ) : null}
+            </>
+          ) : null}
           <p className="text-xs text-muted-foreground sm:col-span-2">
             Choose a credential already saved in the CTOX Secret Store.
           </p>

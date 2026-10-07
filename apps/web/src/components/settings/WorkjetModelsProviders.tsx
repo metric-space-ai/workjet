@@ -406,13 +406,10 @@ function AccountRow({
   const authRequired =
     account.enabled &&
     (health?.status === "auth-required" ||
-      (health?.status !== "ready" &&
-        state.modelChecks?.some(
-          (check) =>
-            check.accountId === account.id &&
-            check.errorClass === "auth" &&
-            check.httpStatus !== 403,
-        )));
+      state.modelChecks?.some(
+        (check) =>
+          check.accountId === account.id && check.errorClass === "auth" && check.httpStatus !== 403,
+      ));
   const accessDenied =
     account.enabled &&
     state.modelChecks?.some(

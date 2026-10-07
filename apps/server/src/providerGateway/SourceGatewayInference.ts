@@ -126,8 +126,9 @@ export function makeSourceGatewayInference(dependencies: {
       const body: unknown = JSON.parse(input.requestJson);
       if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error();
       const request = body as Record<string, unknown>;
-      if (request.model !== binding.modelRef.modelId || request.stream === true ||
-          request.background === true || request.previous_response_id !== undefined ||
+      if (request.model !== binding.modelRef.modelId ||
+          (request.stream !== undefined && request.stream !== false) ||
+          (request.background !== undefined && request.background !== false) || request.previous_response_id !== undefined ||
           request.conversation !== undefined || request.input === undefined) throw new Error();
     }, catch: () => failure("invalid-request") });
     const selected = yield* requireAuthority(input);

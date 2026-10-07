@@ -3978,7 +3978,10 @@ export default function Sidebar() {
                       [...pinnedThreads, ...activeThreads].some(
                         (thread) => projectTeamSectionOf(thread) !== "other",
                       ));
-                  const duplicateTitles = duplicateProjectTeamTitles([...pinnedThreads, ...activeThreads]);
+                  const duplicateTitles = duplicateProjectTeamTitles([
+                    ...pinnedThreads,
+                    ...activeThreads,
+                  ]);
                   const renderThreadRow = (
                     thread: EnvironmentThreadShell,
                     section: "pinned" | "active" | "snoozed" | "settled",
@@ -4005,7 +4008,11 @@ export default function Sidebar() {
                         thread={thread}
                         variant={rowVariant}
                         projectTeam={groupByTeam}
-                        teamHarnessLabel={groupByTeam && duplicateTitles.has(thread.title) ? projectTeamHarnessLabel(thread) : undefined}
+                        teamHarnessLabel={
+                          groupByTeam && duplicateTitles.has(thread.title)
+                            ? projectTeamHarnessLabel(thread)
+                            : undefined
+                        }
                         // Snoozed rows wake; settled rows un-settle (explicit
                         // settles clear the override, auto-settled rows get
                         // pinned active); cards settle.

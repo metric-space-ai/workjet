@@ -85,7 +85,9 @@ export function ProjectWorkspace({
     <SidebarInset className="min-h-0 overflow-auto">
       <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-sm">
         <span className="min-w-0 truncate text-muted-foreground">{project.title}</span>
-        <span className="shrink-0 text-muted-foreground" aria-hidden="true">/</span>
+        <span className="shrink-0 text-muted-foreground" aria-hidden="true">
+          /
+        </span>
         <span className="shrink-0 font-medium">Übersicht</span>
       </WorkjetHeaderContent>
       <main className="mx-auto w-full max-w-6xl p-6" data-workjet-project-overview={project.id}>
@@ -211,7 +213,10 @@ export function ProjectWorkspace({
                                     </span>
                                   ) : null}
                                 </span>
-                                <span className="hidden min-w-0 truncate text-xs text-muted-foreground md:block" title={progress || status.label}>
+                                <span
+                                  className="hidden min-w-0 truncate text-xs text-muted-foreground md:block"
+                                  title={progress || status.label}
+                                >
                                   {progress || (status.label === "Idle" ? "" : status.label)}
                                   {section === "workers" && thread.branch ? (
                                     <span className="inline-flex items-center gap-1">

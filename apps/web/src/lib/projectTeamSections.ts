@@ -65,7 +65,7 @@ export function projectTeamStatus(thread: {
 
 export function projectTeamProgressPreview(thread: {
   readonly latestTurn?: { readonly assistantMessagePreview?: string | undefined } | null;
-  readonly planProgress?: { readonly step: string } | null;
+  readonly planProgress?: { readonly step: string } | null | undefined;
 }) {
   const assistant = thread.latestTurn?.assistantMessagePreview?.replace(/\s+/gu, " ").trim();
   return assistant || thread.planProgress?.step.trim() || "";
@@ -76,7 +76,9 @@ export function projectTeamHarnessLabel(thread: {
   readonly modelSelection: { readonly instanceId: string };
 }) {
   const name = thread.session?.providerName ?? thread.modelSelection.instanceId;
-  return Object.entries(PROVIDER_DISPLAY_NAMES).find(([provider]) => provider === name)?.[1] ?? name;
+  return (
+    Object.entries(PROVIDER_DISPLAY_NAMES).find(([provider]) => provider === name)?.[1] ?? name
+  );
 }
 
 export function duplicateProjectTeamTitles(threads: readonly { readonly title: string }[]) {

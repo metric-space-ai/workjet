@@ -6,6 +6,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeOS from "node:os";
+import { parse as parseYaml } from "yaml";
 import { SSH_NODE_VERSION } from "../packages/ssh/src/remoteNode.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
@@ -31,6 +32,15 @@ const program = Effect.gen(function* () {
       throw new Error(`Unsupported SSH server build: ${platform}`);
     const manifest = JSON.parse(
       await NodeFSP.readFile(NodePath.join(root, "apps/server/package.json"), "utf8"),
+    );
+    const lock = parseYaml(await NodeFSP.readFile(NodePath.join(root, "pnpm-lock.yaml"), "utf8"));
+    const nativeDependencies = Object.fromEntries(
+      ["node-pty", "@ff-labs/fff-node"].map((name) => {
+        const version = lock.importers["apps/server"].dependencies[name].version.split("(")[0];
+        if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/u.test(version))
+          throw new Error(`Missing locked native dependency: ${name}`);
+        return [name, version];
+      }),
     );
     const stage = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workjet-ssh-package-"));
     try {
@@ -111,10 +121,7 @@ const program = Effect.gen(function* () {
             version: manifest.version,
             type: "module",
             engines: manifest.engines,
-            dependencies: {
-              "node-pty": manifest.dependencies["node-pty"],
-              "@ff-labs/fff-node": manifest.dependencies["@ff-labs/fff-node"],
-            },
+            dependencies: nativeDependencies,
           },
           null,
           2,

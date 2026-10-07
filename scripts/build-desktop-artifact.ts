@@ -20,6 +20,7 @@ import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import { verifyBundledServerSource } from "./lib/bundled-server-source.ts";
+import { buildLinuxSshServer } from "./lib/build-linux-ssh-server.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
 import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
 import {
@@ -164,6 +165,7 @@ interface BuildCliInput {
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
   readonly diagnosticProviderGatewayHost?: Option.Option<string>;
+  readonly gpuBuildOwner?: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -439,6 +441,8 @@ export class StageLockfileResolutionError extends Schema.TaggedErrorClass<StageL
     return `Stage lockfile has ${this.reason} repository resolution data for '${this.dependencyName}' (${this.specifier}) in ${this.source}.`;
   }
 }
+
+const isStageLockfileResolutionError = Schema.is(StageLockfileResolutionError);
 
 export class StageLockfileReadError extends Schema.TaggedErrorClass<StageLockfileReadError>()(
   "StageLockfileReadError",
@@ -768,6 +772,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
   readonly diagnosticProviderGatewayHost?: string;
+  readonly gpuBuildOwner?: string;
 }
 
 interface StagePackageJson {
@@ -1592,6 +1597,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const diagnosticProviderGatewayHost = Option.getOrUndefined(
     input.diagnosticProviderGatewayHost ?? Option.none(),
   );
+  const gpuBuildOwner = Option.getOrUndefined(input.gpuBuildOwner ?? Option.none());
 
   return {
     platform,
@@ -1607,6 +1613,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdateServerPort,
     wslPrebuild,
     ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
+    ...(gpuBuildOwner === undefined ? {} : { gpuBuildOwner }),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2682,8 +2689,8 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   // The managed local service installs this archive, not the server inside ASAR.
-  // Generate the host-native archive from the fresh build; cross-host inputs
-  // must already match that same build and are verified before packaging.
+  // Generate native archives around this fresh build. Linux native dependencies
+  // are built on gpu3, never in the shared Mac packaging slot.
   const localServerPlatform = options.platform === "mac" ? "darwin" : options.platform;
   const hostArchitecture = yield* HostProcessArchitecture;
   const buildsHostRuntime =
@@ -2711,6 +2718,18 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ),
       { label: "build current bundled local server", verbose: options.verbose },
     );
+  }
+  if (options.platform === "mac") {
+    yield* Effect.tryPromise({
+      try: () =>
+        buildLinuxSshServer({
+          repoRoot,
+          serverDist: distDirs.serverDist,
+          archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+          owner: options.gpuBuildOwner,
+        }),
+      catch: (cause) => new BundledServerSourceVerificationError({ cause }),
+    });
   }
   const verifiedServerArchives = yield* Effect.tryPromise({
     try: () =>
@@ -2874,7 +2893,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         patchedDependencies: stagePatchedDependencies,
       }),
     catch: (cause) =>
-      Schema.is(StageLockfileResolutionError)(cause)
+      isStageLockfileResolutionError(cause)
         ? cause
         : new StageLockfileSerializationError({ lockfilePath: stageLockfilePath, cause }),
   });
@@ -3105,6 +3124,10 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.withDescription(
       "Explicit source-matching local Mac host receipt; does not publish or replace the six-platform release pin.",
     ),
+    Flag.optional,
+  ),
+  gpuBuildOwner: Flag.string("gpu-build-owner").pipe(
+    Flag.withDescription("Owning thread ID for the required gpu3 Linux SSH server build on Mac."),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(

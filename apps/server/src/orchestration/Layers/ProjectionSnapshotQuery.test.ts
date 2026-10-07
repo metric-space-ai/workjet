@@ -69,7 +69,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ('imported-preview-old', ${threadId}, NULL, 'assistant', 'Earlier result', 0, ${at}, ${at}),
           ('imported-preview-current', ${threadId}, NULL, 'assistant', ${"Latest result ".repeat(100)}, 0, ${later}, ${later}),
           ('imported-preview-user', ${threadId}, NULL, 'user', 'Do not use a user prompt', 0, ${later}, ${later}),
-          ('imported-preview-blank', ${threadId}, NULL, 'assistant', '   ', 0, ${later}, ${later}),
+          ('imported-preview-zblank', ${threadId}, NULL, 'assistant', ${" \t\r\n "}, 0, ${later}, ${later}),
           ('imported-preview-foreign', 'another-parent', NULL, 'assistant', 'Foreign text', 0, ${later}, ${later})
       `;
       const expected = "Latest result ".repeat(100).slice(0, 280);

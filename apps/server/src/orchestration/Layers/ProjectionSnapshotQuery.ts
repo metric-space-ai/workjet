@@ -477,7 +477,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           (SELECT substr(messages.text, 1, 280)
             FROM projection_thread_messages messages
             WHERE messages.thread_id = projection_threads.thread_id
-              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+              AND messages.role = 'assistant'
+              AND trim(messages.text, char(9) || char(10) || char(13) || ' ') <> ''
             ORDER BY messages.created_at DESC, messages.message_id DESC
             LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
@@ -520,7 +521,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           (SELECT substr(messages.text, 1, 280)
             FROM projection_thread_messages messages
             WHERE messages.thread_id = projection_threads.thread_id
-              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+              AND messages.role = 'assistant'
+              AND trim(messages.text, char(9) || char(10) || char(13) || ' ') <> ''
             ORDER BY messages.created_at DESC, messages.message_id DESC
             LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
@@ -565,7 +567,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           (SELECT substr(messages.text, 1, 280)
             FROM projection_thread_messages messages
             WHERE messages.thread_id = projection_threads.thread_id
-              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+              AND messages.role = 'assistant'
+              AND trim(messages.text, char(9) || char(10) || char(13) || ' ') <> ''
             ORDER BY messages.created_at DESC, messages.message_id DESC
             LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
@@ -1090,7 +1093,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           (SELECT substr(messages.text, 1, 280)
             FROM projection_thread_messages messages
             WHERE messages.thread_id = projection_threads.thread_id
-              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+              AND messages.role = 'assistant'
+              AND trim(messages.text, char(9) || char(10) || char(13) || ' ') <> ''
             ORDER BY messages.created_at DESC, messages.message_id DESC
             LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",
@@ -1136,7 +1140,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           (SELECT substr(messages.text, 1, 280)
             FROM projection_thread_messages messages
             WHERE messages.thread_id = projection_threads.thread_id
-              AND messages.role = 'assistant' AND trim(messages.text) <> ''
+              AND messages.role = 'assistant'
+              AND trim(messages.text, char(9) || char(10) || char(13) || ' ') <> ''
             ORDER BY messages.created_at DESC, messages.message_id DESC
             LIMIT 1) AS "latestAssistantMessagePreview",
           created_at AS "createdAt",

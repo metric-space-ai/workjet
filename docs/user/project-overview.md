@@ -11,6 +11,12 @@ counts and status dots; empty groups are hidden. A Parent is a specialist with
 its own goal. Use **+ Parent** to add one to this project.
 
 The overview also shows the project's saved goal, phase, links and Jour fixe.
+Yellow status dots mean a session is running; rose dots mean an approval or
+answer is waiting for you. Failed sessions have a red error dot, and idle
+histories remain gray. The overview and sidebar use the same session state.
+Each Parent row shows its latest assistant message, falling back to its current
+plan step when no message is available. Equal conversation titles retain their
+names and show the harness beside them in both the overview and sidebar.
 
 On **All projects**, choose **Calendar** to see the weekly regular meetings.
 The calendar reads each project's saved Jour fixe: weekday, time and timezone.

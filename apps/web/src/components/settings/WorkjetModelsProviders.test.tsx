@@ -138,6 +138,15 @@ describe("Provider account table", () => {
     expect(rendered).toContain("Unknown model · edit this model ID");
     expect(rendered).not.toContain('data-model-check="ok"');
   });
+  it("does not offer re-login for a provider permission denial", () => {
+    const denied = { ...check, status: "error" as const, errorClass: "auth", httpStatus: 403 };
+    const rendered = html({ modelChecks: [denied] });
+    expect(rendered).toContain("provider denied access (HTTP 403)");
+    expect(rendered).not.toContain("Re-login");
+    expect(modelCheckDescription(denied, false)).toContain("Access denied");
+    expect(modelCheckDescription(denied, false)).not.toContain("sign in again");
+  });
+
   it("keeps timing and old results honest during a new check", () => {
     expect(modelCheckDescription(undefined, false)).toBe("Not checked");
     expect(modelCheckDescription(undefined, true)).toBe("Checking this model");

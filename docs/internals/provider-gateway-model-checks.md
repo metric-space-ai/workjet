@@ -39,3 +39,11 @@ account in `X-CTOX-Account-Selected`. Older hosts receive no inference request a
 produce `account-selection-unavailable`. Errors use the host's closed-whitelist
 `X-CTOX-Error-Class` when present, then HTTP status and structured error codes.
 Raw error messages are never displayed. An empty/malformed success is not green.
+
+A valid Responses success may include `error: null`. Codex subscription checks
+use `store: false` and a short-reply instruction because that upstream rejects
+`max_output_tokens`; other providers retain the eight-token output bound. A bare
+404 is a connection/provider failure unless the structured error or native class
+identifies an unknown model. A 403 does not establish expired credentials and
+does not show Re-login. Native retry cooldowns are displayed with their retry
+time and the observed failure, separately from quota exhaustion.

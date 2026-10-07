@@ -264,11 +264,19 @@ describe("real loopback model probe", () => {
           response.end(
             JSON.stringify({ error: { code: "model_not_found", message: "secret-provider-text" } }),
           );
+        } else if (input.model === "bare-404") {
+          response.statusCode = 404;
+          response.end("{}");
         } else if (input.model === "empty") response.end("{}");
         else
           response.end(
             JSON.stringify({
-              status: "completed",
+              status: input.model === "failed-status" ? "failed" : "completed",
+              ...(input.model === "null-error" || input.model === "failed-status"
+                ? { error: null }
+                : input.model === "error-payload"
+                  ? { error: { code: "upstream_error", message: "private failure" } }
+                  : {}),
               output: [{ type: "message", content: [{ text: "private generated content" }] }],
             }),
           );
@@ -290,6 +298,12 @@ describe("real loopback model probe", () => {
         "account-selection-unavailable",
       );
       expect((await probe(endpoint, "kimi", "chosen", "empty")).status).toBe("error");
+      expect((await probe(endpoint, "minimax", "chosen", "null-error")).status).toBe("ok");
+      expect((await probe(endpoint, "minimax", "chosen", "error-payload")).status).toBe("error");
+      expect((await probe(endpoint, "minimax", "chosen", "failed-status")).status).toBe("error");
+      expect((await probe(endpoint, "claude", "chosen", "bare-404")).errorClass).toBe(
+        "network-provider",
+      );
       expect((await probe(endpoint, "kimi", "chosen", "native-unknown")).errorClass).toBe(
         "unknown-model",
       );
@@ -305,6 +319,14 @@ describe("real loopback model probe", () => {
         model: "valid",
         input: [{ role: "user", content: "Hi" }],
         max_output_tokens: 8,
+        stream: false,
+      });
+      expect((await probe(endpoint, "codex", "chosen", "null-error")).status).toBe("ok");
+      expect(JSON.parse(requests.at(-1)!.body)).toEqual({
+        model: "null-error",
+        input: [{ role: "user", content: "Hi" }],
+        instructions: "Reply with Hi only.",
+        store: false,
         stream: false,
       });
     } finally {

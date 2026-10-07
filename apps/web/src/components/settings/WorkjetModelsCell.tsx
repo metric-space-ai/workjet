@@ -22,7 +22,9 @@ export function modelCheckDescription(
   const result =
     check.status === "ok"
       ? `Responded · ${check.latencyMs} ms`
-      : (FAILURE_LABELS[check.errorClass ?? ""] ?? "Model check failed");
+      : check.errorClass === "auth" && check.httpStatus === 403
+        ? "Access denied · check this account's permissions and subscription"
+        : (FAILURE_LABELS[check.errorClass ?? ""] ?? "Model check failed");
   return `${result}${check.httpStatus === null ? "" : ` · HTTP ${check.httpStatus}`} · ${new Date(check.checkedAtMs).toLocaleString()}${checking ? " · checking again" : ""}`;
 }
 

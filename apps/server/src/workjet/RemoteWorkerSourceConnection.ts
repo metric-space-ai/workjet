@@ -47,7 +47,10 @@ export const openManagedWorkerSourceConnection = Effect.fn("workjet.openManagedW
   }, {
     ...(registered.authOptions ? { authOptions: registered.authOptions } : {}),
     probe: () => registered.verifyRoute(route),
-  }).pipe(Effect.mapError(() => new WorkerSourceReconnectRequired({ requestId: input.requestId })));
+  }).pipe(
+    Effect.mapError(() => new WorkerSourceReconnectRequired({ requestId: input.requestId })),
+    Effect.onError(() => Effect.promise(listener.close)),
+  );
   const ended = yield* Deferred.make<never, WorkerSourceReconnectRequired>();
   const disconnected = forward.disconnected.pipe(
     Effect.onExit(() => Effect.promise(async () => { listener.revoke(input.requestId); await listener.close(); })),

@@ -104,6 +104,21 @@ describe("Provider account table", () => {
     expect(rendered).toContain("Check all");
     expect(rendered).toContain("Actions for work@example.test");
   });
+  it("keeps the API key recognizer with its editable account identity", () => {
+    const apiAccount: WorkjetGatewayAccountSummary = {
+      ...first,
+      provider: "zai",
+      label: "Production",
+      credentialKind: "api-key",
+      credentialSuffix: "mAzP",
+      modelIds: ["glm-5.3-flash"],
+    };
+    const rendered = html({ catalog: { ...state.catalog!, accounts: [apiAccount] } });
+    expect(rendered).toContain('aria-label="Account name Production"');
+    expect(rendered).toContain('aria-label="Edit API key for Production"');
+    expect(rendered).toContain("API key ··mAzP");
+    expect(html()).not.toContain("API key");
+  });
   it("reveals re-login only when this enabled account has an authentication failure", () => {
     expect(
       html({ modelChecks: [{ ...check, status: "error", errorClass: "auth", httpStatus: 401 }] }),

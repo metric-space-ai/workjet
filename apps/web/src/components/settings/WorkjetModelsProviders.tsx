@@ -447,8 +447,11 @@ function AccountRow({
               </Button>
             </div>
           )}
-          <div className={cn("flex min-w-0 items-center gap-1", grouped && "pl-5")}>
-            <div className="min-w-0 flex-1">
+          <div className={cn("flex min-w-0 flex-wrap items-center gap-x-1", grouped && "pl-5")}>
+            <div
+              className={cn("min-w-0", isKey ? "max-w-full" : "flex-1")}
+              style={isKey ? { width: `${account.label.length + 2}ch` } : undefined}
+            >
               <InlineField
                 action={`models.account.${account.id}.name`}
                 label={`Account name ${account.label}`}
@@ -469,7 +472,7 @@ function AccountRow({
                 className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground"
                 aria-label={`Edit API key for ${account.label}`}
               >
-                {account.credentialSuffix === null ? "Key" : `••${account.credentialSuffix}`}
+                API key{account.credentialSuffix === null ? "" : ` ··${account.credentialSuffix}`}
               </button>
             )}
           </div>

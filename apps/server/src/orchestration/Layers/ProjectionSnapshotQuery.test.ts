@@ -2113,9 +2113,11 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     for (let index = 0; index < count; index += 1) {
       const id = "static-" + String(index).padStart(3, "0");
       const role = assistantOnly || index % 2 !== 0 ? "assistant" : "user";
+      const hour = String(Math.floor(index / 60)).padStart(2, "0");
+      const minute = String(index % 60).padStart(2, "0");
       const at = sameTimestamp
         ? "2026-03-01T00:00:00.000Z"
-        : new Date(Date.UTC(2026, 2, 1, 0, index)).toISOString();
+        : `2026-03-01T${hour}:${minute}:00.000Z`;
       yield* sql`
         INSERT INTO projection_thread_messages (
           message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
@@ -2177,7 +2179,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
             assert.equal(result._tag, "Some");
             if (result._tag !== "Some") return;
             assert.equal(result.value.thread.messages.length, size);
-            assert.ok(result.value.thread.messages.every((message) => message.role === "assistant"));
+            assert.ok(
+              result.value.thread.messages.every((message) => message.role === "assistant"),
+            );
             seen.push(...messageIds(result.value));
             assert.equal(result.value.page?.hasMore, pageIndex === 0);
             cursor = result.value.page?.beforeCursor ?? undefined;

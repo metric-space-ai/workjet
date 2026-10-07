@@ -63,7 +63,10 @@ describe("static Workjet session transcript parsing", () => {
         role: "user",
         content: [
           { type: "input_text", text: "<recommended_plugins>Fixture</recommended_plugins>" },
-          { type: "input_text", text: "<permissions instructions>Fixture</permissions instructions>" },
+          {
+            type: "input_text",
+            text: "<permissions instructions>Fixture</permissions instructions>",
+          },
           { type: "input_text", text: "<environment_context>Fixture</environment_context>" },
         ],
       },
@@ -98,7 +101,9 @@ describe("static Workjet session transcript parsing", () => {
     });
 
     it("requires a meaningful source name for a context-only history", () => {
-      expect(parseCodexSessionTranscript([meta(), context, reply("Work completed.")], NOW)).toBeNull();
+      expect(
+        parseCodexSessionTranscript([meta(), context, reply("Work completed.")], NOW),
+      ).toBeNull();
       expect(
         parseCodexSessionTranscript(
           [meta({ title: "READY" }), context, reply("Work completed.")],
@@ -109,8 +114,12 @@ describe("static Workjet session transcript parsing", () => {
 
     it("still rejects init-only replies and assistant-only or child transcripts", () => {
       const names = new Map([["named-history", "SMS verification"]]);
-      expect(parseCodexSessionTranscript([meta(), context, reply("BEREIT")], NOW, names)).toBeNull();
-      expect(parseCodexSessionTranscript([meta(), reply("Work completed.")], NOW, names)).toBeNull();
+      expect(
+        parseCodexSessionTranscript([meta(), context, reply("BEREIT")], NOW, names),
+      ).toBeNull();
+      expect(
+        parseCodexSessionTranscript([meta(), reply("Work completed.")], NOW, names),
+      ).toBeNull();
       expect(
         parseCodexSessionTranscript(
           [meta({ parent_thread_id: "parent" }), context, reply("Work completed.")],

@@ -54,7 +54,7 @@ describe("project gallery previews", () => {
             ctoxRegistration: null,
             overview: {
               archived: true,
-              websiteUrl: "https://greppy.xyz",
+              websiteUrl: "https://fzul.app",
               slots: [{ kind: "text", label: "Status", value: "Retained" }, null, null],
             },
           },
@@ -67,6 +67,7 @@ describe("project gallery previews", () => {
     expect(markup).toContain("Restore project");
     expect(markup).toContain('aria-label="Restore greppy.xyz"');
     expect(markup).not.toContain("<iframe");
+    expect(markup).not.toContain("<img");
     expect(markup).toContain("Retained");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });

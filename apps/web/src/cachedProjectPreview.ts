@@ -11,13 +11,7 @@ export function resolveCachedProjectPreview(website: string | null | undefined) 
   if (!website) return null;
   try {
     const url = new URL(website);
-    if (
-      url.username ||
-      url.password ||
-      url.pathname !== "/" ||
-      url.search ||
-      url.hash
-    ) {
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
       return null;
     }
     const image = cachedPreviews.get(url.origin);

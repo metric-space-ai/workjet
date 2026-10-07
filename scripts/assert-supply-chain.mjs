@@ -122,12 +122,30 @@ try {
 // Issue #88: these three upstream advisories have no fixed release. Accept
 // only the reviewed package/patch bytes, together with passing exploit probes.
 const reviewedAdvisories = new Map([
-  ["GHSA-86w9-cpqp-85rv", { name: "node-forge", version: "1.4.0",
-    hash: "040d8f10200da8284660a06edf39ec4367049d64b5171381984aacfbb171e585" }],
-  ["GHSA-ch52-4w7c-c8xp", { name: "http-cache-semantics", version: "4.2.0",
-    hash: "66e1f44b13e11dbf8d65ef0bdf59e40dedb788b2f96705b268289b6573b33a2f" }],
-  ["GHSA-vfj7-8cjw-p6xm", { name: "braces", version: "3.0.3",
-    hash: "68564b6b6a80aed1a0b459149e5afa1afeb7681e0cc7268f5f7d9d4abae9d974" }],
+  [
+    "GHSA-86w9-cpqp-85rv",
+    {
+      name: "node-forge",
+      version: "1.4.0",
+      hash: "040d8f10200da8284660a06edf39ec4367049d64b5171381984aacfbb171e585",
+    },
+  ],
+  [
+    "GHSA-ch52-4w7c-c8xp",
+    {
+      name: "http-cache-semantics",
+      version: "4.2.0",
+      hash: "66e1f44b13e11dbf8d65ef0bdf59e40dedb788b2f96705b268289b6573b33a2f",
+    },
+  ],
+  [
+    "GHSA-vfj7-8cjw-p6xm",
+    {
+      name: "braces",
+      version: "3.0.3",
+      hash: "68564b6b6a80aed1a0b459149e5afa1afeb7681e0cc7268f5f7d9d4abae9d974",
+    },
+  ],
 ]);
 const acceptedAdvisories = [];
 for (const advisory of Object.values(auditReport.advisories ?? {})) {
@@ -135,7 +153,9 @@ for (const advisory of Object.values(auditReport.advisories ?? {})) {
   const id = advisory.github_advisory_id;
   const reviewed = reviewedAdvisories.get(id);
   if (!reviewed || advisory.module_name !== reviewed.name)
-    fail(`unaccepted ${advisory.severity} advisory ${id ?? advisory.id} in ${advisory.module_name}`);
+    fail(
+      `unaccepted ${advisory.severity} advisory ${id ?? advisory.id} in ${advisory.module_name}`,
+    );
   const packagePin = reviewed.name + "@" + reviewed.version;
   const patchPath = "patches/" + packagePin + ".patch";
   if (!workspace.split(/\r?\n/).includes("  " + packagePin + ": " + patchPath))
@@ -146,13 +166,18 @@ for (const advisory of Object.values(auditReport.advisories ?? {})) {
   acceptedAdvisories.push(id);
 }
 if (acceptedAdvisories.length > 0) {
-  const regression = NodeChildProcess.spawnSync(process.execPath,
+  const regression = NodeChildProcess.spawnSync(
+    process.execPath,
     ["--test", "scripts/security-dependency-patches.test.mjs"],
-    { cwd: root, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
+    { cwd: root, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 },
+  );
   if (regression.error || regression.status !== 0)
     fail("reviewed dependency patch regressions failed: " + regression.stderr);
-  console.log("Known advisories " + acceptedAdvisories.join(", ") +
-    ": pinned patch bytes and exploit regressions verified; tracked in issue #88.");
+  console.log(
+    "Known advisories " +
+      acceptedAdvisories.join(", ") +
+      ": pinned patch bytes and exploit regressions verified; tracked in issue #88.",
+  );
 }
 
 const mobileRequire = NodeModule.createRequire(NodePath.join(root, "apps/mobile/package.json"));

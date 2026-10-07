@@ -98,7 +98,7 @@ describe("remote worker project scope", () => {
     const sourceParent = parent();
     const remote = worker();
     const config = remote.workjetConfig;
-    if (config.schemaVersion !== 2 || config.team?.role !== "worker") throw new Error("invalid fixture");
+    if (config.schemaVersion !== 2 || config.role !== "worker" || config.team?.role !== "worker") throw new Error("invalid fixture");
     const variants = [
       { ...remote, projectId: ProjectId.make("foreign-project") },
       { ...remote, workjetConfig: { ...config, team: { ...config.team, projectId: ProjectId.make("foreign-project") } } },
@@ -114,7 +114,7 @@ describe("remote worker project scope", () => {
     const sourceParent = parent();
     const remote = worker();
     const config = sourceParent.workjetConfig;
-    if (config.schemaVersion !== 2 || config.team?.role !== "specialist") throw new Error("invalid fixture");
+    if (config.schemaVersion !== 2 || config.role !== "orchestrator" || config.team?.role !== "specialist") throw new Error("invalid fixture");
     const standard = { ...sourceParent, workjetConfig: { ...config, role: "standard" as const } };
     const mismatch = { ...sourceParent, workjetConfig: { ...config, team: { ...config.team, threadId: ThreadId.make("wrong") } } };
     for (const invalid of [standard, mismatch]) {

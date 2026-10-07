@@ -192,6 +192,7 @@ import {
   groupThreadsByProjectTeam,
   PROJECT_TEAM_SECTIONS,
   projectTeamSectionOf,
+  projectTeamStatus,
 } from "../lib/projectTeamSections";
 
 // Settled-tail paging: recent history is the common lookup; the deep tail
@@ -669,6 +670,7 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
 const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   thread: SidebarThreadSummary;
   variant: "card" | "slim";
+  projectTeam?: boolean | undefined;
   // Slim rows are either settled (action: un-settle) or merely quiet
   // (seen Ready threads — action: settle).
   variantAction: "settle" | "unsettle" | "unsnooze";
@@ -1139,6 +1141,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   ) : null;
 
   if (variant === "slim") {
+    const teamStatus = props.projectTeam ? projectTeamStatus(thread) : null;
     return (
       <li
         data-thread-item
@@ -1165,17 +1168,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <span
               className={cn(
                 "shrink-0 transition-opacity",
-                !props.isActive &&
+                !props.isActive && !props.projectTeam &&
                   "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
-              <ProjectFavicon
-                environmentId={thread.environmentId}
-                cwd={props.projectCwd ?? ""}
-                faviconPath={props.projectFaviconPath}
-                className="size-4"
-                fallbackIcon={MessageSquareIcon}
-              />
+              {teamStatus ? <span className={cn("block size-2 rounded-full", teamStatus.dot)} title={teamStatus.label} aria-label={teamStatus.label} /> : (
+                <ProjectFavicon environmentId={thread.environmentId} cwd={props.projectCwd ?? ""} faviconPath={props.projectFaviconPath} className="size-4" fallbackIcon={MessageSquareIcon} />
+              )}
             </span>
             {title}
             {terminalStatusIcon}
@@ -2267,6 +2266,8 @@ export default function Sidebar() {
         // arise from stale or raced writes.)
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);
+      } else if (scopedProjectKeys !== null && projectTeamSectionOf(thread) !== "other") {
+        active.push(thread);
       } else if (
         supportsSettlement &&
         effectiveSettled(thread, {
@@ -3901,6 +3902,12 @@ export default function Sidebar() {
             >
               <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
                 {(() => {
+                  const groupByTeam =
+                    selectedWorkjetProject !== null ||
+                    (scopedProjectGroup !== null &&
+                      [...pinnedThreads, ...activeThreads].some(
+                        (thread) => projectTeamSectionOf(thread) !== "other",
+                      ));
                   const renderThreadRow = (
                     thread: EnvironmentThreadShell,
                     section: "pinned" | "active" | "snoozed" | "settled",
@@ -3913,7 +3920,7 @@ export default function Sidebar() {
                     // row: every other thread is a full card. Density comes
                     // from users (or the auto rules) actually parking work,
                     // not from the sidebar second-guessing what still matters.
-                    const isCard = section === "active" || section === "pinned";
+                    const isCard = !groupByTeam && (section === "active" || section === "pinned");
                     const rowVariant = isCard ? "card" : "slim";
                     return (
                       <SidebarThreadRow
@@ -3926,6 +3933,7 @@ export default function Sidebar() {
                         key={`${threadKey}:${rowVariant}`}
                         thread={thread}
                         variant={rowVariant}
+                        projectTeam={groupByTeam}
                         // Snoozed rows wake; settled rows un-settle (explicit
                         // settles clear the override, auto-settled rows get
                         // pinned active); cards settle.
@@ -4050,7 +4058,8 @@ export default function Sidebar() {
                       </SortableContext>
                     </DndContext>,
                   ];
-                  if (pinnedThreads.length > 0) {
+                  if (groupByTeam) items.splice(1);
+                  if (pinnedThreads.length > 0 && !groupByTeam) {
                     items.push(
                       <li
                         key="pinned-divider"
@@ -4063,15 +4072,10 @@ export default function Sidebar() {
                   // A project opened through the gallery, or a sidebar scoped to one project
                   // whose chats carry team roles, reads as its team: supervisor first, then
                   // the long-lived parents, then one-time PR workers (archived on merge).
-                  const groupByTeam =
-                    selectedWorkjetProject !== null ||
-                    (scopedProjectGroup !== null &&
-                      [...pinnedThreads, ...activeThreads].some(
-                        (thread) => projectTeamSectionOf(thread) !== "other",
-                      ));
                   if (groupByTeam) {
-                    const team = groupThreadsByProjectTeam(activeThreads);
-                    for (const { section, label, empty } of PROJECT_TEAM_SECTIONS) {
+                    const team = groupThreadsByProjectTeam([...orderedPinnedThreads, ...activeThreads]);
+                    for (const { section, label } of PROJECT_TEAM_SECTIONS) {
+                      if (team[section].length === 0) continue;
                       items.push(
                         <li
                           key={`team-${section}-header`}
@@ -4079,27 +4083,13 @@ export default function Sidebar() {
                           className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5 first:mt-1"
                         >
                           <span className="text-xs font-medium text-muted-foreground/70">
-                            {label}
+                            {label}{section === "supervisor" ? "" : ` ${team[section].length}`}
                           </span>
                           <span className="h-px flex-1 bg-sidebar-border/60" />
                         </li>,
                       );
-                      // A pinned supervisor or parent already shows above; no empty hint then.
-                      const pinnedHere = pinnedThreads.some(
-                        (thread) => projectTeamSectionOf(thread) === section,
-                      );
-                      if (team[section].length === 0 && !pinnedHere) {
-                        items.push(
-                          <li
-                            key={`team-${section}-empty`}
-                            className="list-none px-2.5 pb-1 text-[11px] text-muted-foreground/50"
-                          >
-                            {empty}
-                          </li>,
-                        );
-                      }
                       for (const thread of team[section]) {
-                        items.push(renderThreadRow(thread, "active"));
+                        items.push(renderThreadRow(thread, pinnedThreads.includes(thread) ? "pinned" : "active"));
                       }
                     }
                     if (team.other.length > 0) {

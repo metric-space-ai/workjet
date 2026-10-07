@@ -41,3 +41,19 @@ export function groupThreadsByProjectTeam<T extends TeamThread>(
   for (const thread of threads) groups[projectTeamSectionOf(thread)].push(thread);
   return groups;
 }
+
+/** One native-state status mapping shared by the project overview and sidebar. */
+export function projectTeamStatus(thread: {
+  readonly session: { readonly status: string } | null;
+  readonly hasPendingApprovals: boolean;
+  readonly hasPendingUserInput: boolean;
+  readonly backgroundLiveness?: string | null | undefined;
+}) {
+  if (thread.hasPendingApprovals || thread.hasPendingUserInput)
+    return { label: "Needs attention", dot: "bg-amber-400" };
+  if (thread.session?.status === "error") return { label: "Error", dot: "bg-red-400" };
+  if (thread.session?.status === "running" || thread.session?.status === "starting" || thread.backgroundLiveness === "working")
+    return { label: "Working", dot: "bg-emerald-400" };
+  if (thread.backgroundLiveness === "monitoring") return { label: "Monitoring", dot: "bg-blue-400" };
+  return { label: "Idle", dot: "bg-muted-foreground/50" };
+}

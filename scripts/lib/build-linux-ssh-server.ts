@@ -50,6 +50,8 @@ export async function buildLinuxSshServer(input: {
       "greppy",
       [
         "bash-smart",
+        "-e",
+        "receipt /Volumes/tmp/",
         "--",
         NodePath.join(NodeOS.homedir(), ".codex/bin/gpu-build-run.sh"),
         "--owner",

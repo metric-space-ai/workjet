@@ -7,6 +7,8 @@ export interface JourFixeRoomSnapshot {
   readonly state: "planned" | "preparing" | "ready" | "live" | "review" | "confirmed" | "cancelled" | "failed";
   readonly scheduledAt: number;
   readonly timezone: string;
+  /** Last goal revision supplied by the authority; unknown disables confirmation. */
+  readonly previousGoalRevision?: number;
   readonly slides: readonly {
     readonly id: string;
     readonly position: number;
@@ -41,6 +43,7 @@ export interface JourFixeTodo {
   readonly acceptance: string;
   readonly priority: "P0" | "P1" | "P2";
   readonly evidenceIds: readonly string[];
+  readonly dueAt?: number;
 }
 
 export interface JourFixeCommentDraft {
@@ -90,4 +93,19 @@ export function jourFixeCommentsForSlide(meeting: JourFixeRoomSnapshot, slideId:
   return meeting.comments.filter((comment) =>
     comment.slideId === slideId && comment.deckRevision === meeting.deckRevision,
   );
+}
+
+export function jourFixeEvidenceLabel(meeting: JourFixeRoomSnapshot, evidenceId: string): string {
+  const slides = [...meeting.slides].sort((a, b) => a.position - b.position);
+  const slideIndex = slides.findIndex((slide) => slide.id === evidenceId);
+  if (slideIndex >= 0) return `Slide ${slideIndex + 1}`;
+  const comment = meeting.comments.find((item) => item.id === evidenceId);
+  if (comment) {
+    const slideNumber = slides.findIndex((slide) => slide.id === comment.slideId) + 1;
+    const siblings = meeting.comments.filter((item) => item.slideId === comment.slideId && item.deckRevision === comment.deckRevision);
+    return `Comment ${siblings.findIndex((item) => item.id === comment.id) + 1}${slideNumber > 0 ? ` · Slide ${slideNumber}` : ""}`;
+  }
+  const turn = meeting.transcript.find((item) => item.id === evidenceId);
+  if (turn) return `Transcript ${turn.sequence}`;
+  return "Source unavailable";
 }

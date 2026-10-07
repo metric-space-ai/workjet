@@ -1,0 +1,60 @@
+{
+  "source": {
+    "contract": "ctox.workjet.jour_fixe.v1",
+    "ctoxRevision": "b862849c17d998002969377b32046fbf1e8a0c79",
+    "fixture": "src/core/rxdb/tests/fixtures/workjet-jour-fixe-v1.json",
+    "case": "Meeting review"
+  },
+  "meeting": {
+    "id": "meeting-1",
+    "projectId": "project-1",
+    "revision": 3,
+    "deckRevision": 1,
+    "state": "review",
+    "scheduledAt": 1791450000000,
+    "timezone": "Europe/Berlin",
+    "previousGoalRevision": 2,
+    "slides": [
+      {
+        "id": "slide-1",
+        "position": 0,
+        "title": "Stand gegen Ziele",
+        "markdown": "PR merged; decision pending."
+      }
+    ],
+    "comments": [
+      {
+        "id": "comment-1",
+        "slideId": "slide-1",
+        "deckRevision": 1,
+        "x": 0.25,
+        "y": 0.75,
+        "text": "Please prioritize persistence."
+      }
+    ],
+    "transcript": [
+      {
+        "id": "turn-1",
+        "sequence": 1,
+        "speaker": "owner",
+        "text": "Das \u00fcbernehmen wir."
+      }
+    ],
+    "todos": {
+      "revision": 1,
+      "status": "proposed",
+      "items": [
+        {
+          "id": "todo-1",
+          "title": "Verify persistence",
+          "acceptance": "Save survives Quit/Reopen",
+          "priority": "P1",
+          "evidenceIds": [
+            "comment-1",
+            "turn-1"
+          ]
+        }
+      ]
+    }
+  }
+}

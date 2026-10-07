@@ -3,7 +3,7 @@ import { ArrowUpRightIcon } from "lucide-react";
 import { Button } from "./ui/button";
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-type CalendarProject = GalleryProject & { readonly onOpen: () => void };
+type CalendarProject = GalleryProject & { readonly onOpen: () => void; readonly onOpenJourFixe?: () => void };
 
 /** Weekly wall-clock meetings retain the native timezone; no inferred appointments. */
 export function ProjectCalendar({ projects }: { readonly projects: readonly CalendarProject[] }) {
@@ -37,10 +37,10 @@ export function ProjectCalendar({ projects }: { readonly projects: readonly Cale
                     <button
                       key={project.key}
                       type="button"
-                      onClick={project.onOpen}
+                      onClick={project.onOpenJourFixe ?? project.onOpen}
                       data-workjet-action={`project.open.calendar:${project.key}`}
                       className="w-full rounded-md border border-border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                      aria-label={`Open ${project.title}`}
+                      aria-label={project.onOpenJourFixe ? `Open meeting for ${project.title}` : `Open ${project.title}`}
                     >
                       <div className="mb-2 text-sm font-semibold tabular-nums">
                         {project.configuration?.jourFixe?.time}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { jourFixeCommentAnchor, jourFixeCommentIsCurrent, jourFixeCommentsForSlide, type JourFixeRoomSnapshot } from "./jourFixeRoom";
+import { jourFixeCommentAnchor, jourFixeCommentIsCurrent, jourFixeCommentsForSlide, jourFixeEvidenceLabel, type JourFixeRoomSnapshot } from "./jourFixeRoom";
 
 const meeting: JourFixeRoomSnapshot = {
   id: "meeting-1", projectId: "project-1", revision: 4, deckRevision: 2, state: "live",
@@ -40,5 +40,18 @@ describe("Jour fixe comment identity and geometry", () => {
   it("does not put old-deck or other-slide comments on the current slide", () => {
     const comment = { id: "comment-1", slideId: "slide-1", deckRevision: 2, x: .25, y: .5, text: "Question" };
     expect(jourFixeCommentsForSlide({ ...meeting, comments: [comment, { ...comment, id: "old", deckRevision: 1 }, { ...comment, id: "foreign", slideId: "slide-2" }] }, "slide-1")).toEqual([comment]);
+  });
+});
+
+describe("Jour fixe evidence labels", () => {
+  it("resolves retained slide, comment and transcript identities without inventing a source", () => {
+    const current = { ...meeting,
+      comments: [{ id: "comment-1", slideId: "slide-1", deckRevision: 1, x: .2, y: .3, text: "Earlier deck" }],
+      transcript: [{ id: "turn-1", sequence: 7, speaker: "owner" as const, text: "Acceptance" }],
+    };
+    expect(jourFixeEvidenceLabel(current, "slide-1")).toBe("Slide 1");
+    expect(jourFixeEvidenceLabel(current, "comment-1")).toBe("Comment 1 · Slide 1");
+    expect(jourFixeEvidenceLabel(current, "turn-1")).toBe("Transcript 7");
+    expect(jourFixeEvidenceLabel(current, "unknown")).toBe("Source unavailable");
   });
 });

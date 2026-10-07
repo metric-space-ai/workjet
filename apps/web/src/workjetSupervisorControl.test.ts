@@ -113,7 +113,7 @@ describe("durable native supervisor submission", () => {
       _tag: "failed",
       code: "timeout",
     });
-    expect(state.saved).toEqual({ intent, turn: null });
+    expect(state.saved).toEqual({ intent, turn: null, submission: "awaiting-receipt" });
     // A fresh UI/runtime uses only persisted intent; it has no in-memory send token.
     await resumeWorkjetSupervisorTurn(
       structuredClone(state.saved!),
@@ -139,6 +139,17 @@ describe("durable native supervisor submission", () => {
       result: "Change completed.",
     });
   });
+  it("records a pre-submit refusal without treating a lost submit reply as a refusal", async () => {
+    const observations: WorkjetSupervisorJournal[] = [];
+    const result = await submitWorkjetSupervisorTurn(intent, { save: async (value) => { observations.push(value); } }, async (_instance, request) => {
+      expect(request.action).toBe("project.supervisor.bind");
+      return { _tag: "failed", code: "unsupported" };
+    });
+    expect(result).toEqual({ _tag: "failed", code: "unsupported" });
+    expect(observations.map((value) => value.submission)).toEqual(["prepared", "not-submitted"]);
+    expect(observations.at(-1)?.submissionError).toBe("unsupported");
+  });
+
   it("does not dispatch if saving the intent fails", async () => {
     let calls = 0;
     await expect(
@@ -160,7 +171,7 @@ describe("durable native supervisor submission", () => {
   it("rejects a receipt for another native execution and keeps the original intent", async () => {
     let saved: WorkjetSupervisorJournal | null = null;
     const result = await resumeWorkjetSupervisorTurn(
-      { intent, turn },
+      { intent, turn, submission: "confirmed" },
       CommandId.make("watch-1"),
       {
         save: async (value) => {

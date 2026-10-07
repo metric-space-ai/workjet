@@ -46,7 +46,18 @@ export async function submitWorkjetSupervisorTurn(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   decodeIntent(intent);
-  await journal.save({ intent, turn: null });
+  return dispatchSavedSupervisorTurn({ intent, turn: null, submission: "prepared" }, journal, port);
+}
+
+async function dispatchSavedSupervisorTurn(
+  saved: WorkjetSupervisorJournal,
+  journal: WorkjetSupervisorJournalPort,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  const { intent } = saved;
+  if (saved.submission === "not-submitted") return { _tag: "failed", code: saved.submissionError ?? "unsupported" };
+  await journal.save(saved);
+  if (saved.submission === "prepared") {
   const binding = await confirmedControl(
     intent,
     {
@@ -57,7 +68,13 @@ export async function submitWorkjetSupervisorTurn(
     },
     port,
   );
-  if (binding._tag !== "completed") return binding;
+  if (binding._tag !== "completed") {
+    await journal.save({ intent, turn: null, submission: "not-submitted", submissionError: binding.code });
+    return binding;
+  }
+  }
+  // Persist the uncertainty boundary before the first native submit can start.
+  await journal.save({ intent, turn: null, submission: "awaiting-receipt" });
   const result = await confirmedControl(
     intent,
     {
@@ -70,7 +87,7 @@ export async function submitWorkjetSupervisorTurn(
     port,
   );
   if (result._tag === "completed" && result.response.action === "project.supervisor.turn.submit") {
-    await journal.save({ intent, turn: result.response.turn });
+    await journal.save({ intent, turn: result.response.turn, submission: "confirmed" });
   }
   return result;
 }
@@ -83,7 +100,7 @@ export async function resumeWorkjetSupervisorTurn(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   decodeJournal(saved);
-  if (saved.turn === null) return submitWorkjetSupervisorTurn(saved.intent, journal, port);
+  if (saved.turn === null) return dispatchSavedSupervisorTurn(saved, journal, port);
   const result = await confirmedControl(
     saved.intent,
     {
@@ -96,7 +113,7 @@ export async function resumeWorkjetSupervisorTurn(
     port,
   );
   if (result._tag === "completed" && result.response.action === "project.supervisor.turn.watch") {
-    await journal.save({ intent: saved.intent, turn: result.response.turn });
+    await journal.save({ intent: saved.intent, turn: result.response.turn, submission: "confirmed" });
   }
   return result;
 }

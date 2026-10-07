@@ -89,6 +89,7 @@ describe("native Workjet supervisor contract", () => {
         createdAt: "2026-10-07T21:00:00.000Z",
       },
       turn,
+      submission: "confirmed" as const,
     };
     expect(decodeJournal(journal)).toEqual(journal);
     expect(() =>

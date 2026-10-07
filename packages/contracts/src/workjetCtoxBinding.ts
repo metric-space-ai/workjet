@@ -7,6 +7,32 @@ export function retainWorkjetCtoxBinding(
 ): { readonly config: WorkjetThreadConfig; readonly error: string | null } {
   const before = normalizeWorkjetThreadConfig(previous);
   const after = normalizeWorkjetThreadConfig(next);
+  const previousSupervisor = before.ctoxSupervisorTurn;
+  const nextSupervisor = after.ctoxSupervisorTurn;
+  if (previousSupervisor && nextSupervisor) {
+    const a = previousSupervisor.intent;
+    const b = nextSupervisor.intent;
+    if (a.instanceId !== b.instanceId || a.projectId !== b.projectId || a.threadId !== b.threadId) {
+      return { config: next, error: "This thread keeps its original native supervisor binding." };
+    }
+    if (a.commandId !== b.commandId && previousSupervisor.submission !== "not-submitted" && !previousSupervisor.turn?.terminal) {
+      return { config: next, error: "The existing native supervisor submission is still unresolved. Resume that saved command before starting another turn." };
+    }
+    if (a.commandId === b.commandId) {
+      if (a.goal !== b.goal || a.createdAt !== b.createdAt) {
+        return { config: next, error: "A native supervisor retry must keep its saved command and payload." };
+      }
+      if ((previousSupervisor.submission === "awaiting-receipt" && nextSupervisor.submission !== "awaiting-receipt" && nextSupervisor.submission !== "confirmed") || (previousSupervisor.submission === "confirmed" && nextSupervisor.submission !== "confirmed")) {
+        return { config: next, error: "A native supervisor submission cannot erase its dispatch or receipt." };
+      }
+      if (previousSupervisor.turn && nextSupervisor.turn &&
+          (previousSupervisor.turn.commandId !== nextSupervisor.turn.commandId ||
+           (previousSupervisor.turn.taskId !== null && previousSupervisor.turn.taskId !== nextSupervisor.turn.taskId) ||
+           previousSupervisor.turn.attempt > nextSupervisor.turn.attempt)) {
+        return { config: next, error: "Native supervisor observation must retain its task and execution identity." };
+      }
+    }
+  }
   const original = before.capabilityBindings.find(
     (binding) => binding.capabilityId === "ctox-business-os",
   );
@@ -60,14 +86,17 @@ export function retainWorkjetCtoxBinding(
   // instance binding, so a later command cannot erase or retarget it.
   const retainedChat =
     originalChat && !requestedChat ? { ...after, ctoxCrewChat: originalChat } : next;
+  const retainedSupervisor = previousSupervisor && !nextSupervisor
+    ? { ...normalizeWorkjetThreadConfig(retainedChat), ctoxSupervisorTurn: previousSupervisor }
+    : retainedChat;
   return {
     config:
       original && !binding
         ? {
-            ...normalizeWorkjetThreadConfig(retainedChat),
+            ...normalizeWorkjetThreadConfig(retainedSupervisor),
             capabilityBindings: [...after.capabilityBindings, original],
           }
-        : retainedChat,
+        : retainedSupervisor,
     error: null,
   };
 }

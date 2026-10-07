@@ -15,6 +15,11 @@ native run/history projection and must not be synthesized from Code IDs.
 `submitWorkjetSupervisorTurn` saves `WorkjetSupervisorJournal` before it calls
 the native guest. Its journal port must acknowledge the Code server's durable
 thread configuration update (`ctoxSupervisorTurn`), not a localStorage write.
+The journal records preparation, the uncertainty boundary before submit,
+confirmation, or refusal before submit. The server retains an unresolved
+submission across unrelated config updates and rejects a second command while
+its receipt or terminal result is pending. It rejects altered retry payloads,
+cleared dispatch facts and changed native task/command identities.
 After a lost reply, `resumeWorkjetSupervisorTurn` repeats the saved submission
 with the exact command ID, goal and target. Once the canonical native turn is
 known, resume only watches that turn. Every watch gets a new observation ID

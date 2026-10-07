@@ -48,8 +48,11 @@ export async function stageVerifiedNodeArchive(input: {
     );
     const root = NodePath.join(staging, input.pin.directoryName);
     const nodePath = NodePath.join(root, "bin", "node");
-    const reported = JSON.parse(
-      NodeChildProcess.execFileSync(
+    // The first execution of a verified binary can include macOS security
+    // assessment and cold disk reads. Bound that work without skipping identity.
+    const identityStartedAt = Date.now();
+    const identity = await new Promise<string>((resolve, reject) => {
+      NodeChildProcess.execFile(
         nodePath,
         [
           "-p",
@@ -57,11 +60,28 @@ export async function stageVerifiedNodeArchive(input: {
         ],
         {
           encoding: "utf8",
-          timeout: 30_000,
+          timeout: 180_000,
+          killSignal: "SIGKILL",
           env: { ...process.env, NODE_OPTIONS: "", NODE_PATH: "" },
         },
-      ),
-    ) as { version?: unknown; platform?: unknown; arch?: unknown; electron?: unknown };
+        (error, stdout) => {
+          if (error) {
+            // Never copy child output or its command into release diagnostics.
+            const code = typeof error.code === "string" && /^[A-Z0-9_]+$/.test(error.code)
+              ? error.code
+              : typeof error.code === "number" ? String(error.code) : "unknown";
+            const signal = error.signal === null || error.signal === undefined
+              ? "none" : error.signal;
+            reject(new Error(
+              `Portable Node identity verification failed (180000ms deadline; elapsed ${Date.now() - identityStartedAt}ms; code ${code}; signal ${signal}).`,
+            ));
+          } else resolve(stdout);
+        },
+      );
+    });
+    const reported = JSON.parse(identity) as {
+      version?: unknown; platform?: unknown; arch?: unknown; electron?: unknown;
+    };
     if (
       reported.version !== input.pin.version ||
       reported.platform !== input.pin.platform ||

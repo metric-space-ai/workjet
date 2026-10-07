@@ -113,6 +113,48 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
     });
   });
 
+  it("bounds a stalled identity probe, redacts child diagnostics and cleans its stage", async () => {
+    await fixture(async (input, root) => {
+      const execute = vi.spyOn(NodeChildProcess, "execFile").mockImplementationOnce(
+        (_file, _arguments, _options, callback) => {
+          callback!(
+            Object.assign(new Error("PRIVATE child command"), {
+              code: "ETIMEDOUT",
+              signal: "SIGKILL" as const,
+              killed: true,
+            }),
+            "PRIVATE stdout",
+            "PRIVATE stderr",
+          );
+          return new NodeChildProcess.ChildProcess();
+        },
+      );
+      try {
+        const failure = await stageVerifiedNodeArchive(input).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        expect(failure).toBeInstanceOf(Error);
+        expect((failure as Error).message).toMatch(
+          /identity verification failed \(180000ms deadline; elapsed \d+ms; code ETIMEDOUT; signal SIGKILL\)/,
+        );
+        expect((failure as Error).message).not.toContain("PRIVATE");
+        expect((failure as Error).cause).toBeUndefined();
+        expect(execute.mock.calls[0]?.[2]).toMatchObject({
+          timeout: 180_000,
+          killSignal: "SIGKILL",
+          env: expect.objectContaining({ NODE_OPTIONS: "", NODE_PATH: "" }),
+        });
+        await expect(NodeFSP.access(input.destination)).rejects.toMatchObject({ code: "ENOENT" });
+        expect((await NodeFSP.readdir(root)).some((entry) => entry.startsWith(".node-stage-"))).toBe(
+          false,
+        );
+      } finally {
+        execute.mockRestore();
+      }
+    });
+  });
+
   it("downloads a valid archive in tiny chunks and preserves full buffers plus the final tail", async () => {
     await fixture(
       async (input, root) => {

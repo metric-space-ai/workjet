@@ -89,6 +89,10 @@ export const make = Effect.gen(function* () {
       } });
     }).pipe(Effect.asVoid),
     invoke: (request, operation, payload, signal) => Effect.runPromise(Effect.gen(function* () {
+      if (operation === "retire") {
+        yield* authority.revoke(request);
+        return { retired: true };
+      }
       const scope = yield* currentSource(request);
       const current = yield* authority.admit(request);
       if (scope.connectionId !== current.sourceConnectionId || scope.instanceId !== current.permit.binding.sourceInstanceId)

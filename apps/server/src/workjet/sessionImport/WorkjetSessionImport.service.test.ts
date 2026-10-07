@@ -427,6 +427,62 @@ describe("project-directed static session imports", () => {
         }),
       ),
   );
+  it.effect("imports and repeats a named history with only injected user context", () =>
+    withFixture(({ root, service, threads, commands }) =>
+      Effect.gen(function* () {
+        const file = NodePath.join(root, "sessions", "context-only.jsonl");
+        const body =
+          [
+            encodeJson({
+              type: "session_meta",
+              payload: { id: "named-context", cwd: "/source", title: "SMS verification" },
+            }),
+            encodeJson({
+              type: "response_item",
+              payload: {
+                type: "message",
+                role: "user",
+                content: [
+                  {
+                    type: "input_text",
+                    text: "<environment_context>Fixture</environment_context>",
+                  },
+                ],
+              },
+            }),
+            encodeJson({
+              type: "response_item",
+              timestamp: NOW,
+              payload: {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "SMS verification is complete." }],
+              },
+            }),
+          ].join("\n") + "\n";
+        yield* Effect.promise(() => NodeFSP.writeFile(file, body));
+        const candidates = (yield* service.inspect()).candidates;
+        expect(candidates).toHaveLength(1);
+        expect(candidates[0]?.title).toBe("SMS verification");
+        const input = {
+          candidateIds: [candidates[0]!.candidateId],
+          projectId: ProjectId.make("project-a"),
+        };
+        const copied = (yield* service.importSessions(input)).items[0]!;
+        expect(copied.status).toBe("imported");
+        expect(copied.totalMessages).toBe(1);
+        expect(
+          threads.get(copied.threadId!)?.messages.map(({ role, text }) => ({ role, text })),
+        ).toEqual([{ role: "assistant", text: "SMS verification is complete." }]);
+        expect((yield* service.importSessions(input)).items[0]?.status).toBe("unchanged");
+        expect(commands.filter((command) => command.type === "thread.history.import")).toHaveLength(
+          1,
+        );
+        expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(body);
+      }),
+    ),
+  );
+
   it.effect("does not create a chat for an initialization-only exchange", () =>
     withFixture(({ root, service, threads }) =>
       Effect.gen(function* () {

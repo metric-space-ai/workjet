@@ -3,12 +3,14 @@ it("keeps worker prompts, starts and acknowledgements out of read-only RPC autho
     WS_METHODS.workjetWorkerRequests,
     WS_METHODS.workjetWorkerReceive,
     WS_METHODS.workjetWorkerRespond,
+    WS_METHODS.workjetWorkerRouteReserve,
+    WS_METHODS.workjetWorkerSourcePrepare,
+    WS_METHODS.workjetWorkerRouteVerify,
+    WS_METHODS.workjetWorkerSourceConfirm,
   ]) {
     expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
   }
 });
-import {
-  AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,

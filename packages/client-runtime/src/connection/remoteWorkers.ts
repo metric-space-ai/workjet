@@ -4,6 +4,10 @@ import {
   type EnvironmentId,
   type RemoteWorkerRequest,
   type RemoteWorkerResponse,
+  type RemoteWorkerSourceProfile,
+  type RemoteWorkerRouteReservation,
+  type RemoteWorkerRouteProof,
+  type RemoteWorkerSourceRoute,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,6 +16,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { EnvironmentRegistry } from "./registry.ts";
+import * as Option from "effect/Option";
+import type { ConnectionCatalogEntry } from "./catalog.ts";
 import { request, subscribe } from "../rpc/client.ts";
 
 export class RemoteWorkerRelayUnavailable extends Schema.TaggedErrorClass<RemoteWorkerRelayUnavailable>()(
@@ -45,6 +51,31 @@ export const relayRemoteWorker = Effect.fn("RemoteWorkers.relay")(function* (
   yield* port.respond(sourceEnvironmentId, { requestId: input.requestId, outcome });
 });
 
+export const registeredWorkerSshProfile = (
+  entry: ConnectionCatalogEntry | undefined,
+  targetEnvironmentId: EnvironmentId,
+): Effect.Effect<RemoteWorkerSourceProfile, RemoteWorkerRelayUnavailable> => {
+  if (!entry || entry.target._tag !== "SshConnectionTarget" || Option.isNone(entry.profile) ||
+    entry.profile.value._tag !== "SshConnectionProfile" || entry.target.environmentId !== targetEnvironmentId ||
+    entry.profile.value.environmentId !== targetEnvironmentId || entry.target.connectionId !== entry.profile.value.connectionId)
+    return Effect.fail(new RemoteWorkerRelayUnavailable({}));
+  return Effect.succeed({ connectionId: entry.profile.value.connectionId, environmentId: targetEnvironmentId,
+    target: entry.profile.value.target });
+};
+
+export interface RemoteWorkerBootstrapPort {
+  readonly reserve: Effect.Effect<RemoteWorkerRouteReservation, RemoteWorkerRelayUnavailable>;
+  readonly prepare: (reservation: RemoteWorkerRouteReservation) => Effect.Effect<RemoteWorkerSourceRoute, RemoteWorkerRelayUnavailable>;
+  readonly verify: (reservation: RemoteWorkerRouteReservation, route: RemoteWorkerSourceRoute) => Effect.Effect<RemoteWorkerRouteProof, RemoteWorkerRelayUnavailable>;
+  readonly confirm: (proof: RemoteWorkerRouteProof) => Effect.Effect<void, RemoteWorkerRelayUnavailable>;
+}
+export const bootstrapWorkerSource = Effect.fn("RemoteWorkers.bootstrapWorkerSource")(function* (port: RemoteWorkerBootstrapPort) {
+  const reservation = yield* port.reserve;
+  const route = yield* port.prepare(reservation);
+  const proof = yield* port.verify(reservation, route);
+  yield* port.confirm(proof);
+});
+
 export const startup = Effect.gen(function* () {
   const registry = yield* EnvironmentRegistry;
   const port: RemoteWorkerRelayPort = {
@@ -53,14 +84,23 @@ export const startup = Effect.gen(function* () {
         // Resolve only registered connections. The connection broker owns SSH,
         // DPoP and credential refresh; no addresses or secrets come from the task.
         const entries = yield* SubscriptionRef.get(registry.entries);
-        if (!entries.has(input.targetEnvironmentId))
-          return yield* new RemoteWorkerRelayUnavailable({});
+        const profile = yield* registeredWorkerSshProfile(entries.get(input.targetEnvironmentId), input.targetEnvironmentId);
         const config = yield* registry.run(
           input.targetEnvironmentId,
           request(WS_METHODS.serverGetConfig, {}),
         );
-        if (!config.environment.capabilities.remoteWorkerDispatch)
+        if (!config.environment.capabilities.remoteWorkerDispatch || config.environment.environmentId !== input.targetEnvironmentId)
           return yield* new RemoteWorkerRelayUnavailable({});
+        const unavailable = () => new RemoteWorkerRelayUnavailable({});
+        yield* bootstrapWorkerSource({
+          reserve: registry.run(input.targetEnvironmentId, request(WS_METHODS.workjetWorkerRouteReserve, input)).pipe(Effect.mapError(unavailable)),
+          prepare: (reservation) => registry.run(input.parent.environmentId,
+            request(WS_METHODS.workjetWorkerSourcePrepare, { workerRequest: input, profile, reservation })).pipe(Effect.mapError(unavailable)),
+          verify: (reservation, route) => registry.run(input.targetEnvironmentId,
+            request(WS_METHODS.workjetWorkerRouteVerify, { workerRequest: input, reservation, route })).pipe(Effect.mapError(unavailable)),
+          confirm: (proof) => registry.run(input.parent.environmentId,
+            request(WS_METHODS.workjetWorkerSourceConfirm, proof)).pipe(Effect.mapError(unavailable)),
+        });
         const received = yield* Effect.result(
           registry.run(input.targetEnvironmentId, request(WS_METHODS.workjetWorkerReceive, input)),
         );

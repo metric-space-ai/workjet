@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
+import { RemoteWorkerSourcePrepareInput, RemoteWorkerSourceRoute, RemoteWorkerRouteReservation, RemoteWorkerTargetRouteInput, RemoteWorkerRouteProof } from "./workerSourceConnection.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   RemoteWorkerRequest,
@@ -363,6 +364,10 @@ export const WS_METHODS = {
   workjetWorkerRequests: "workjet.worker.requests",
   workjetWorkerReceive: "workjet.worker.receive",
   workjetWorkerRespond: "workjet.worker.respond",
+  workjetWorkerRouteReserve: "workjet.worker.routeReserve",
+  workjetWorkerSourcePrepare: "workjet.worker.sourcePrepare",
+  workjetWorkerRouteVerify: "workjet.worker.routeVerify",
+  workjetWorkerSourceConfirm: "workjet.worker.sourceConfirm",
 
   // Server meta
   serverProbe: "server.probe",
@@ -1706,7 +1711,24 @@ export const WsWorkerRespondRpc = Rpc.make(WS_METHODS.workjetWorkerRespond, {
   error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
 });
 
+export const WsWorkerRouteReserveRpc = Rpc.make(WS_METHODS.workjetWorkerRouteReserve, {
+  payload: RemoteWorkerRequest, success: RemoteWorkerRouteReservation,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
+export const WsWorkerSourcePrepareRpc = Rpc.make(WS_METHODS.workjetWorkerSourcePrepare, {
+  payload: RemoteWorkerSourcePrepareInput, success: RemoteWorkerSourceRoute,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
+export const WsWorkerRouteVerifyRpc = Rpc.make(WS_METHODS.workjetWorkerRouteVerify, {
+  payload: RemoteWorkerTargetRouteInput, success: RemoteWorkerRouteProof,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
+export const WsWorkerSourceConfirmRpc = Rpc.make(WS_METHODS.workjetWorkerSourceConfirm, {
+  payload: RemoteWorkerRouteProof, success: Schema.Void,
+  error: Schema.Union([RemoteWorkerDispatchError, EnvironmentAuthorizationError]),
+});
 export const WsRpcGroup = RpcGroup.make(
+  WsWorkerRouteReserveRpc, WsWorkerSourcePrepareRpc, WsWorkerRouteVerifyRpc, WsWorkerSourceConfirmRpc,
   WsWorkerRequestsRpc,
   WsWorkerReceiveRpc,
   WsWorkerRespondRpc,

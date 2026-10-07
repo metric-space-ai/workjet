@@ -55,6 +55,7 @@ import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
 import * as RemoteWorkerBroker from "./workjet/RemoteWorkerBroker.ts";
 import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
+import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnectionBootstrap.ts";
 import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
@@ -444,6 +445,10 @@ const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
 const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
 );
+const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
+  Layer.provide(RemoteWorkerBrokerLayerLive),
+  Layer.provide(ServerSecretStore.layer),
+);
 const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
   Layer.provide(RemoteWorkerTargetAdmission.layer),
   Layer.provide(RemoteWorkerStore.layer),
@@ -590,6 +595,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     // MCP tools use — one delivery service, two entrypoints — so it needs the
     // same three services the MCP server below is given.
     websocketRpcRouteLayer.pipe(
+      Layer.provide(RemoteWorkerConnectionBootstrapLive),
       Layer.provide(RemoteWorkerBrokerLayerLive),
       Layer.provide(RemoteWorkerReceiverLayerLive),
       Layer.provide(DecisionHubConnectionRegistryLive),

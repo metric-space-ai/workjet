@@ -30,6 +30,8 @@ export const openManagedWorkerSourceConnection = Effect.fn("workjet.openManagedW
   dependencies: {
     readonly resolveRegisteredTarget: Effect.Effect<RegisteredWorkerTarget, WorkerSourceReconnectRequired>;
     readonly invoke: (operation: WorkerSourceOperation, payload: unknown, signal: AbortSignal) => Promise<unknown>;
+    /** Bootstrap publishes a pending route before target proof can arrive. */
+    readonly onRoute?: (route: WorkerSourceRoute) => Effect.Effect<void>;
   },
 ) {
   const registered = yield* dependencies.resolveRegisteredTarget;
@@ -42,6 +44,7 @@ export const openManagedWorkerSourceConnection = Effect.fn("workjet.openManagedW
     catch: () => new WorkerSourceReconnectRequired({ requestId: input.requestId }),
   });
   const route: WorkerSourceRoute = { ...local, port: registered.remotePort };
+  if (dependencies.onRoute) yield* dependencies.onRoute(route);
   const forward = yield* openSshReverseForward(registered.target, {
     localPort: listener.port, remotePort: registered.remotePort,
   }, {

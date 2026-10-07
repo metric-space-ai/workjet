@@ -25,6 +25,17 @@ an acknowledgement may be lost after the upstream operation commits. Native
 admission and receipt operations retain their original immutable request identity
 when the owner reconciles that lost acknowledgement.
 
-Verification is scoped to `RemoteWorkerSourceChannel.test.ts`,
+The authenticated EnvironmentRegistry relay first reserves a target loopback
+port, then transfers its actual registered SSH profile to source preparation.
+The source retains the profile under a worker-scoped secret-store reference and
+starts the connection in the Node service scope. Target verification checks its
+kernel listener address, probes live source admission with the pinned identity,
+and installs the target harness before persisting the capability route. Source
+confirmation releases inference only after that proof. Receiver creation follows
+confirmation; a missing profile, native authorization port or harness installer
+fails closed. The source operator bearer is never part of target delivery.
+
+Verification is scoped to `RemoteWorkerConnectionBootstrap.test.ts`,
+`remoteWorkers.bootstrap.test.ts`, `RemoteWorkerSourceChannel.test.ts`,
 `packages/ssh/src/localForward.test.ts`, and `packages/ssh/src/reverseForward.test.ts`.
 Installed UI-quit acceptance belongs to the integrated worker chain owner.

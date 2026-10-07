@@ -22,7 +22,10 @@ export async function verifyBundledServerSource(input: {
   readonly archiveDirectory: string;
   readonly platform: "mac" | "linux" | "win";
   readonly arch: "arm64" | "x64" | "universal";
-  readonly providerGatewayHost?: { readonly archiveFileName: string; readonly executablePath: string };
+  readonly providerGatewayHost?: {
+    readonly archiveFileName: string;
+    readonly executablePath: string;
+  };
 }) {
   const entries = await NodeFSP.readdir(input.archiveDirectory).catch((cause: unknown) => {
     if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return [];
@@ -64,12 +67,18 @@ export async function verifyBundledServerSource(input: {
     }
     const expectedEntries = new Map(expected);
     if (input.providerGatewayHost?.archiveFileName === filename)
-      expectedEntries.set("workjet-provider-gateway-host", await fileDigest(input.providerGatewayHost.executablePath));
+      expectedEntries.set(
+        "workjet-provider-gateway-host",
+        await fileDigest(input.providerGatewayHost.executablePath),
+      );
     for (const [entry, expectedDigest] of expectedEntries) {
       const { stdout } = await execFile("tar", ["-xOf", archivePath, `package/dist/${entry}`], {
         encoding: "buffer",
         timeout: 30_000,
-        maxBuffer: entry === "workjet-provider-gateway-host" ? PROVIDER_GATEWAY_DIAGNOSTIC_EXECUTABLE_MAX_BYTES : 16 * 1024 * 1024,
+        maxBuffer:
+          entry === "workjet-provider-gateway-host"
+            ? PROVIDER_GATEWAY_DIAGNOSTIC_EXECUTABLE_MAX_BYTES
+            : 16 * 1024 * 1024,
       });
       const actual = NodeCrypto.createHash("sha256").update(stdout).digest("hex");
       if (actual !== expectedDigest) {

@@ -2742,12 +2742,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
         platform: options.platform,
         arch: options.arch,
-        ...(options.diagnosticProviderGatewayHost === undefined ? {} : {
-          providerGatewayHost: {
-            archiveFileName: `workjet-server-${localServerPlatform}-${hostArchitecture}.tgz`,
-            executablePath: path.join(providerGatewayHost.installPath, "workjet-provider-gateway-host"),
-          },
-        }),
+        ...(options.diagnosticProviderGatewayHost === undefined
+          ? {}
+          : {
+              providerGatewayHost: {
+                archiveFileName: `workjet-server-${localServerPlatform}-${hostArchitecture}.tgz`,
+                executablePath: path.join(
+                  providerGatewayHost.installPath,
+                  "workjet-provider-gateway-host",
+                ),
+              },
+            }),
       }),
     catch: (cause) => new BundledServerSourceVerificationError({ cause }),
   });

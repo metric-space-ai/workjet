@@ -129,19 +129,33 @@ it("uses the staged WSL server on Windows without requiring a local TGZ", () =>
 
 it("accepts the selected diagnostic host in the managed local server", () =>
   withFixture(async ({ archive, options, gateway }) => {
-    await archive(); await archive("linux-x64");
-    await verifyBundledServerSource({ ...options, providerGatewayHost: {
-      archiveFileName: "workjet-server-darwin-arm64.tgz", executablePath: gateway,
-    } });
+    await archive();
+    await archive("linux-x64");
+    await verifyBundledServerSource({
+      ...options,
+      providerGatewayHost: {
+        archiveFileName: "workjet-server-darwin-arm64.tgz",
+        executablePath: gateway,
+      },
+    });
   }));
 for (const omit of [false, true]) {
   it(`refuses a ${omit ? "missing" : "stale pinned"} runtime host despite valid JS and archive checksums`, () =>
     withFixture(async ({ archive, options, gateway }) => {
-      await archive("darwin-arm64", omit ? undefined : "workjet-provider-gateway-host",
-        omit ? "workjet-provider-gateway-host" : undefined);
+      await archive(
+        "darwin-arm64",
+        omit ? undefined : "workjet-provider-gateway-host",
+        omit ? "workjet-provider-gateway-host" : undefined,
+      );
       await archive("linux-x64");
-      await NodeAssert.rejects(verifyBundledServerSource({ ...options, providerGatewayHost: {
-        archiveFileName: "workjet-server-darwin-arm64.tgz", executablePath: gateway,
-      } }));
+      await NodeAssert.rejects(
+        verifyBundledServerSource({
+          ...options,
+          providerGatewayHost: {
+            archiveFileName: "workjet-server-darwin-arm64.tgz",
+            executablePath: gateway,
+          },
+        }),
+      );
     }));
 }

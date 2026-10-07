@@ -375,6 +375,8 @@ import { useActiveWorkjetScope } from "../activeWorkjetScope";
 import { createWorkjetSession } from "../workjetSessionControl";
 import { resolveDraftCtoxSessionTarget, withCtoxSessionBinding } from "../workjetSessionBinding";
 import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
+import { isNativeSupervisorThread, resolveNativeSupervisorScope } from "../nativeSupervisorComposer";
+import { NativeSupervisorComposer } from "./chat/NativeSupervisorComposer";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
@@ -1661,6 +1663,11 @@ function ChatViewContent(props: ChatViewProps) {
       ? (activeWorkjetConfigOverride?.config ?? activeServerThread.workjetConfig)
       : null;
   const workjetCapabilityBusy = activeWorkjetConfigOverride?.busy ?? false;
+  const nativeSupervisorThread = isNativeSupervisorThread(visibleWorkjetConfig);
+  const nativeSupervisorScope = resolveNativeSupervisorScope({
+    config: visibleWorkjetConfig, project: activeProject ?? null, threadId: activeThreadId,
+    instanceId: presentationInstanceId, registry: workjetProjectRegistry, computers: workjetComputers,
+  });
   const browserSurfaceEnabled = workjetBrowserSurfaceEnabled({
     isServerThread,
     serverConfig: visibleWorkjetConfig,
@@ -2073,6 +2080,8 @@ function ChatViewContent(props: ChatViewProps) {
       // the projection carried the new role and flick the control back.
       const serverCaughtUp =
         activeServerThread.workjetConfig.role === current.config.role &&
+        JSON.stringify(activeServerThread.workjetConfig.schemaVersion === 2 ? activeServerThread.workjetConfig.ctoxSupervisorTurn : undefined) ===
+          JSON.stringify(current.config.schemaVersion === 2 ? current.config.ctoxSupervisorTurn : undefined) &&
         serverCapabilityIds.length === optimisticCapabilityIds.length &&
         serverCapabilityIds.every(
           (capabilityId, index) => capabilityId === optimisticCapabilityIds[index],
@@ -5631,6 +5640,8 @@ function ChatViewContent(props: ChatViewProps) {
     },
   ) => {
     e?.preventDefault();
+    // Native supervisors have one durable CTOX submit path, including keyboard/preview actions.
+    if (nativeSupervisorThread) return;
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
       toastManager.add(
@@ -7252,7 +7263,26 @@ function ChatViewContent(props: ChatViewProps) {
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
-                          <ChatComposer
+                          {nativeSupervisorThread && visibleWorkjetConfig && activeServerThread ? (
+                            <NativeSupervisorComposer
+                              key={`${activeThreadKey}:${presentationInstanceId}`}
+                              scope={nativeSupervisorScope}
+                              config={visibleWorkjetConfig}
+                              unavailable={activeEnvironmentUnavailable || threadDetailLoading || workjetCapabilityBusy}
+                              saveConfig={async (nextConfig) => {
+                                const result = await setThreadWorkjetConfig({
+                                  environmentId: activeServerThread.environmentId,
+                                  input: { threadId: activeServerThread.id, workjetConfig: nextConfig },
+                                });
+                                if (result._tag === "Success" && activeThreadKey) {
+                                  setWorkjetConfigOverridesByThreadKey((current) => ({
+                                    ...current, [activeThreadKey]: { config: nextConfig, busy: false },
+                                  }));
+                                }
+                                return result;
+                              }}
+                            />
+                          ) : <ChatComposer
                             composerRef={composerRef}
                             workspaceExtraControls={
                               showComposerContextStrip ? (
@@ -7386,7 +7416,7 @@ function ChatViewContent(props: ChatViewProps) {
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}
                             onExpandImage={onExpandTimelineImage}
-                          />
+                          />}
                         </div>
                       </div>
                       <div className="min-h-0">

@@ -41,6 +41,8 @@ interface PendingCheck {
 export const makeModelChecks = (options: ModelChecksOptions) => {
   const entries = new Map<string, { revision: string; check: WorkjetGatewayModelCheck }>();
   const pending = new Map<string, PendingCheck>();
+  const admissions = new Map<string, { readonly revision: string; readonly order: number }>();
+  let admissionOrder = 0;
   let pump: Promise<void> | undefined;
   let active: { readonly item: PendingCheck; readonly controller: AbortController } | undefined;
   let loaded: Promise<void> | undefined;
@@ -58,7 +60,11 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
       if (raw === null) return;
       try {
         const decoded = decodePersisted(JSON.parse(raw));
-        for (const entry of decoded.entries) entries.set(key(entry.check), entry);
+        for (const entry of decoded.entries) {
+          const id = key(entry.check);
+          entries.set(id, entry);
+          admissions.set(id, { revision: entry.revision, order: ++admissionOrder });
+        }
       } catch {
         /* Invalid observations never become green. */
       }
@@ -69,6 +75,9 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
     const revisions = new Map(targets.map((target) => [key(target), target.revision]));
     for (const [id, entry] of entries) {
       if (revisions.get(id) !== entry.revision) entries.delete(id);
+    }
+    for (const [id, admission] of admissions) {
+      if (revisions.get(id) !== admission.revision) admissions.delete(id);
     }
     for (const [id, item] of pending) {
       if (revisions.get(id) !== item.target.revision) {
@@ -153,7 +162,13 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
     let admitted = 0;
     deferredCount = 0;
     if (closed) return snapshot();
-    for (const target of targets) {
+    // Admission order is independent of wall time and the provider's own routing policy.
+    // Unseen targets precede previously admitted targets even after their cooldown expires.
+    const ordered = targets.toSorted(
+      (left, right) =>
+        (admissions.get(key(left))?.order ?? 0) - (admissions.get(key(right))?.order ?? 0),
+    );
+    for (const target of ordered) {
       const id = key(target);
       const existing = pending.get(id);
       if (existing?.target.revision === target.revision) {
@@ -167,6 +182,7 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
         continue;
       }
       pending.set(id, { target, force, status: "queued" });
+      admissions.set(id, { revision: target.revision, order: ++admissionOrder });
       admitted += 1;
     }
     const result = snapshot();

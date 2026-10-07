@@ -11,7 +11,12 @@ pairs (`queued` or `running`) and `deferredCount`. Clients refresh the query whi
 pending is nonempty. At most 32 new requests are admitted per command and 64
 requests can be pending globally. For larger lists, `deferredCount` reports
 eligible targets omitted by the bound; follow-up non-forced commands advance the
-unchecked suffix without re-forcing freshly checked models. Pending work is
+unchecked suffix without re-forcing freshly checked models. Admission prioritizes
+never-admitted targets, then the least recently admitted targets, using an
+internal monotonic order independent of the wall clock and provider routing.
+Clients finish one requested pass by tracking its original target observations;
+`deferredCount` describes current eligible work, rather than pass completion,
+because earlier checks may expire during a long pass. Pending work is
 owned by the service scope, aborts on shutdown and is not resumed after restart.
 
 Each check sends a short Responses request through the same local provider

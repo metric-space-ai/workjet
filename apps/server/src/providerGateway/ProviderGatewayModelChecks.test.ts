@@ -46,6 +46,32 @@ const setup = () => {
   };
 };
 describe("bounded model checks", () => {
+  it("advances every slow target before repeating a cooled prefix across mixed commands", async () => {
+    const fixture = setup();
+    const targets = Array.from({ length: 100 }, (_, index) => ({
+      ...target("account"),
+      modelId: `model-${index}`,
+    }));
+    fixture.setTargets(targets);
+    const calledModels: Array<string> = [];
+    const checks = makeModelChecks({
+      ...fixture.options,
+      probe: async (item) => {
+        fixture.setTime(fixture.options.now() + 15_000);
+        calledModels.push(item.modelId);
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
+    });
+    for (const force of [true, false, true, false]) {
+      await checks.run({ force });
+      const firstPass = calledModels.slice(0, targets.length);
+      expect(new Set(firstPass).size).toBe(firstPass.length);
+    }
+    expect(fixture.options.now()).toBeGreaterThan(MODEL_CHECK_COOLDOWN_MS);
+    expect(calledModels.slice(0, targets.length)).toEqual(targets.map((item) => item.modelId));
+    expect((await checks.list()).checks).toHaveLength(100);
+  });
+
   it("bounds slow admission, advances a deferred suffix and cancels active transport", async () => {
     const fixture = setup();
     const targets = Array.from({ length: 100 }, (_, index) => target(`account-${index}`));

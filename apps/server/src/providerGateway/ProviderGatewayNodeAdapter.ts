@@ -95,9 +95,7 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     const safeErrorClass = response.headers.get("X-CTOX-Error-Class");
     const observedStatus = response.headers.get("X-CTOX-Upstream-Status");
     const upstreamHttpStatus =
-      observedStatus !== null && /^[45]\d{2}$/.test(observedStatus)
-        ? Number(observedStatus)
-        : null;
+      observedStatus !== null && /^[45]\d{2}$/.test(observedStatus) ? Number(observedStatus) : null;
     if (
       !response.ok &&
       (observedStatus === null || upstreamHttpStatus !== null) &&

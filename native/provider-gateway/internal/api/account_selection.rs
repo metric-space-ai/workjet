@@ -215,15 +215,20 @@ mod isolation_tests {
     }
     #[tokio::test]
     async fn refreshed_success_replaces_the_first_rejection_without_leaking_provider_text() {
-        ACCOUNT_SELECTION.scope(Mutex::new(Default::default()), async {
-            request_account(Some("account".into()));
-            record_selected("account");
-            assert!(!acknowledgement().contains("Upstream-Status"));
-            record_upstream_status(401, b"private rejection");
-            assert!(acknowledgement().contains("X-CTOX-Upstream-Status: 401\r\n"));
-            record_upstream_status(200, b"private success");
-            assert_eq!(acknowledgement(), "X-CTOX-Account-Selected: account\r\nX-CTOX-Upstream-Status: 200\r\n");
-        }).await;
+        ACCOUNT_SELECTION
+            .scope(Mutex::new(Default::default()), async {
+                request_account(Some("account".into()));
+                record_selected("account");
+                assert!(!acknowledgement().contains("Upstream-Status"));
+                record_upstream_status(401, b"private rejection");
+                assert!(acknowledgement().contains("X-CTOX-Upstream-Status: 401\r\n"));
+                record_upstream_status(200, b"private success");
+                assert_eq!(
+                    acknowledgement(),
+                    "X-CTOX-Account-Selected: account\r\nX-CTOX-Upstream-Status: 200\r\n"
+                );
+            })
+            .await;
         assert!(acknowledgement().is_empty());
     }
 }

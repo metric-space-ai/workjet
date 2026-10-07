@@ -402,11 +402,17 @@ describe("real loopback model probe", () => {
       );
       for (const status of [401, 403]) {
         expect(await probe(endpoint, "xai", "chosen", `wrapped-${status}`)).toEqual({
-          status: "error", errorClass: "auth", httpStatus: status, source: "upstream",
+          status: "error",
+          errorClass: "auth",
+          httpStatus: status,
+          source: "upstream",
         });
       }
       expect(await probe(endpoint, "kimi", "chosen", "wrapped-legacy")).toEqual({
-        status: "error", errorClass: "auth", httpStatus: null, source: "upstream",
+        status: "error",
+        errorClass: "auth",
+        httpStatus: null,
+        source: "upstream",
       });
       await expect(probe(endpoint, "kimi", "chosen", "oversized")).rejects.toThrow("oversized");
       expect(requests[0]?.headers["x-ctox-provider"]).toBe("kimi");

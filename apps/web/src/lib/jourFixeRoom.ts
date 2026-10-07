@@ -104,7 +104,7 @@ export function jourFixeEvidenceLabel(meeting: JourFixeRoomSnapshot, evidenceId:
   if (comment) {
     const slideNumber = slides.findIndex((slide) => slide.id === comment.slideId) + 1;
     const siblings = meeting.comments.filter((item) => item.slideId === comment.slideId && item.deckRevision === comment.deckRevision);
-    return `Comment ${siblings.findIndex((item) => item.id === comment.id) + 1}${slideNumber > 0 ? ` · Slide ${slideNumber}` : ""}`;
+    return `Comment ${siblings.findIndex((item) => item.id === comment.id) + 1}${comment.deckRevision !== meeting.deckRevision ? ` · Deck ${comment.deckRevision}` : slideNumber > 0 ? ` · Slide ${slideNumber}` : ""}`;
   }
   const turn = meeting.transcript.find((item) => item.id === evidenceId);
   if (turn) return `Transcript ${turn.sequence}`;

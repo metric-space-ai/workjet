@@ -49,7 +49,8 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
   const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [todoDraft, setTodoDraft] = useState<{ revision: number; items: readonly JourFixeTodo[] } | null>(null);
-  const [confirmEmpty, setConfirmEmpty] = useState(false);
+  const [emptyDecision, setEmptyDecision] = useState<{ meetingRevision: number; proposalRevision: number } | null>(null);
+  const confirmEmpty = emptyDecision?.meetingRevision === meeting.revision && emptyDecision?.proposalRevision === meeting.todos?.revision;
   const hasTodoEdits = todoDraft !== null && todoDraft.revision === meeting.todos?.revision;
   const todos = hasTodoEdits && todoDraft ? todoDraft.items : meeting.todos?.items ?? [];
   const comments = slide ? jourFixeCommentsForSlide(meeting, slide.id) : [];
@@ -69,7 +70,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
   function selectSlide(id: string) { setSlideId(id); onSlideChange?.(id); }
   function editTodos(items: readonly JourFixeTodo[]) {
     if (!canRevise || meeting.todos === undefined) return;
-    setTodoDraft({ revision: meeting.todos.revision, items }); setConfirmEmpty(false);
+    setTodoDraft({ revision: meeting.todos.revision, items }); setEmptyDecision(null);
   }
   function updateTodo(id: string, key: "title" | "acceptance", value: string) {
     editTodos(todos.map((todo) => todo.id === id ? { ...todo, [key]: value } : todo));
@@ -111,7 +112,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
             {meeting.todos?.status === "proposed" && meeting.state === "review" && <div className="flex flex-wrap items-center justify-end gap-2">
               {canRevise && <Button variant="outline" disabled={busy || todos.length >= 100} onClick={() => editTodos([...todos, { id: randomUUID(), title: "", acceptance: "", priority: "P1", evidenceIds: [] }])}><PlusIcon />Add todo</Button>}
               {hasTodoEdits && onReviseTodos && <Button disabled={busy || todos.some((todo) => !todo.title.trim() || !todo.acceptance.trim())} onClick={() => void perform(() => onReviseTodos(meeting.id, meeting.revision, meeting.todos!.revision, todos), () => setTodoDraft(null))}>Save edits</Button>}
-              {!hasTodoEdits && todos.length === 0 && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmEmpty} onChange={(event) => setConfirmEmpty(event.target.checked)} disabled={busy} />Confirm no to-dos for this meeting</label>}
+              {!hasTodoEdits && todos.length === 0 && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmEmpty} onChange={(event) => setEmptyDecision(event.target.checked && meeting.todos ? { meetingRevision: meeting.revision, proposalRevision: meeting.todos.revision } : null)} disabled={busy} />Confirm no to-dos for this meeting</label>}
               {onConfirmTodos && <Button disabled={busy || hasTodoEdits || meeting.previousGoalRevision === undefined || (todos.length === 0 && !confirmEmpty)} onClick={() => void perform(() => onConfirmTodos(meeting.id, meeting.revision, meeting.todos!.revision, meeting.previousGoalRevision!))}>Confirm {todos.length} to-dos</Button>}
             </div>}
           </div> : slide ? <div className="space-y-3">

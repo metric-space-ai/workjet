@@ -50,7 +50,7 @@ describe("Jour fixe evidence labels", () => {
       transcript: [{ id: "turn-1", sequence: 7, speaker: "owner" as const, text: "Acceptance" }],
     };
     expect(jourFixeEvidenceLabel(current, "slide-1")).toBe("Slide 1");
-    expect(jourFixeEvidenceLabel(current, "comment-1")).toBe("Comment 1 · Slide 1");
+    expect(jourFixeEvidenceLabel(current, "comment-1")).toBe("Comment 1 · Deck 1");
     expect(jourFixeEvidenceLabel(current, "turn-1")).toBe("Transcript 7");
     expect(jourFixeEvidenceLabel(current, "unknown")).toBe("Source unavailable");
   });

@@ -9,7 +9,7 @@ if (!modulePath || !outputDirectory) throw new Error("Usage: node scripts/jour-f
 const { chromium } = await import(pathToFileURL(resolve(modulePath)).href);
 const output = resolve(outputDirectory);
 await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ headless: true, chromiumSandbox: true, args: ["--use-mock-keychain", "--password-store=basic"] });
+const browser = await chromium.launch({ headless: true, chromiumSandbox: true, ...(process.env.WORKJET_FIXTURE_CHROMIUM ? { executablePath: process.env.WORKJET_FIXTURE_CHROMIUM } : {}), args: ["--use-mock-keychain", "--password-store=basic"] });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, recordVideo: { dir: output } });
 const page = await context.newPage();
 const errors = [];

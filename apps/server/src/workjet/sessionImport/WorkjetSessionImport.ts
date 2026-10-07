@@ -334,11 +334,7 @@ const parseSession = (file: SourceFile, text: string, complete: boolean): Parsed
     file.source === "codex"
       ? parseCodexSessionTranscript(lines, fallbackIso, file.sourceTitles)
       : parseClaudeSessionTranscript(lines, fallbackIso);
-  if (
-    !parsed ||
-    (complete &&
-      parsed.messages.every((message) => initializationText(message.text)))
-  )
+  if (!parsed || (complete && parsed.messages.every((message) => initializationText(message.text))))
     return null;
   return parsed;
 };

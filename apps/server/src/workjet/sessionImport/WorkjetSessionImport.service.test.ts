@@ -512,10 +512,14 @@ describe("project-directed static session imports", () => {
               role: "user",
               content: [
                 { type: "input_text", text: "Investigate the attached project diagram" },
-                { type: "input_image", image_url: "data:image/png;base64," + "A".repeat(2 * 1024 * 1024) },
+                {
+                  type: "input_image",
+                  image_url: "data:image/png;base64," + "A".repeat(2 * 1024 * 1024),
+                },
               ],
             },
-          }) + "\n";
+          }) +
+          "\n";
         yield* Effect.promise(() => NodeFSP.writeFile(file, body));
         const found = yield* service.inspect();
         expect(found.candidates).toHaveLength(1);
@@ -538,27 +542,37 @@ describe("project-directed static session imports", () => {
     withFixture(({ root, service, threads }) =>
       Effect.gen(function* () {
         for (const child of [false, true]) {
-          const body = [
-            encodeJson({
-              type: "session_meta",
-              payload: { id: "excluded-source", ...(child ? { parent_thread_id: "parent" } : {}) },
-              timestamp: NOW,
-            }),
-            encodeJson({
-              type: "response_item",
-              timestamp: NOW,
-              payload: {
-                type: "message",
-                role: "user",
-                content: [
-                  { type: "input_text", text: child ? "A real child task" : "hi" },
-                  { type: "input_image", image_url: "data:image/png;base64," + "A".repeat(2 * 1024 * 1024) },
-                ],
-              },
-            }),
-          ].join("\n") + "\n";
+          const body =
+            [
+              encodeJson({
+                type: "session_meta",
+                payload: {
+                  id: "excluded-source",
+                  ...(child ? { parent_thread_id: "parent" } : {}),
+                },
+                timestamp: NOW,
+              }),
+              encodeJson({
+                type: "response_item",
+                timestamp: NOW,
+                payload: {
+                  type: "message",
+                  role: "user",
+                  content: [
+                    { type: "input_text", text: child ? "A real child task" : "hi" },
+                    {
+                      type: "input_image",
+                      image_url: "data:image/png;base64," + "A".repeat(2 * 1024 * 1024),
+                    },
+                  ],
+                },
+              }),
+            ].join("\n") + "\n";
           yield* Effect.promise(() =>
-            NodeFSP.writeFile(NodePath.join(root, "sessions", child ? "child.jsonl" : "init-image.jsonl"), body),
+            NodeFSP.writeFile(
+              NodePath.join(root, "sessions", child ? "child.jsonl" : "init-image.jsonl"),
+              body,
+            ),
           );
         }
         expect((yield* service.inspect()).candidates).toHaveLength(0);

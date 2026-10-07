@@ -70,6 +70,8 @@ export const providerGatewayTestLayer = (
       removeAccount: () => unsupported(),
       health: () => unsupported(),
       usage: () => unsupported(),
+      modelChecks: () => Effect.succeed({ schemaVersion: 1, checks: [] }),
+      checkModels: () => Effect.succeed({ schemaVersion: 1, checks: [] }),
       discoverModels: () => unsupported(),
       updateRouting: () => unsupported(),
     }),

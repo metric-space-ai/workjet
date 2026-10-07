@@ -1,4 +1,7 @@
 import {
+  type WorkjetGatewayModelCheck,
+  type WorkjetGatewayModelChecks,
+  type WorkjetGatewayModelCheckInput,
   WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
   WorkjetGatewayAccountId,
   WorkjetGatewayAccessError,
@@ -77,6 +80,8 @@ import {
   setGatewayGrant,
 } from "./ProviderGatewayGrants.ts";
 
+import { makeModelChecks } from "./ProviderGatewayModelChecks.ts";
+
 const CONFIG_MAX_BYTES = 256 * 1024;
 const READINESS_MAX_BYTES = 4 * 1024;
 const PROCESS_OUTPUT_MAX_BYTES = 64 * 1024;
@@ -106,6 +111,8 @@ export interface GatewayHostProcess {
 }
 
 export interface ProviderGatewayPlatform {
+  readonly fingerprint?: (value: string) => string;
+  readonly providerModelCheck?: (endpoint: string, provider: WorkjetGatewayProvider, accountId: string, modelId: string) => Promise<Pick<WorkjetGatewayModelCheck, "status" | "errorClass" | "httpStatus">>;
   readonly joinPath: (...parts: ReadonlyArray<string>) => string;
   readonly defaultExecutable: (stateDir: string) => string;
   readonly byteLength: (value: Uint8Array | string) => number;
@@ -148,6 +155,8 @@ export interface ProviderGatewayPlatform {
 }
 
 export interface ProviderGatewayServiceShape {
+  readonly modelChecks: () => Effect.Effect<WorkjetGatewayModelChecks, WorkjetGatewayOperationError>;
+  readonly checkModels: (input: WorkjetGatewayModelCheckInput) => Effect.Effect<WorkjetGatewayModelChecks, WorkjetGatewayOperationError>;
   readonly status: () => Effect.Effect<WorkjetGatewayStatus>;
   readonly catalog: () => Effect.Effect<WorkjetGatewayCatalog, WorkjetGatewayOperationError>;
   readonly scopedCatalog: (
@@ -445,6 +454,44 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       if (configuration === undefined) throw safeError("invalid-configuration");
       return configuration;
     };
+
+    const modelChecksPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-model-checks.json");
+    const modelChecks = makeModelChecks({
+      now: platform.now,
+      read: async () => {
+        try { return await platform.readText(modelChecksPath, 8 * 1024 * 1024); }
+        catch (error) { if (isRecord(error) && error.code === "ENOENT") return null; throw error; }
+      },
+      write: (value) => platform.writePrivateText(modelChecksPath, value),
+      targets: async () => {
+        const configuration = await loadConfiguration();
+        const targets = [];
+        for (const account of configuration.accounts) {
+          const credentials = [];
+          for (const reference of accountSecretReferences(account)) {
+            const secret = await runPromise(secrets.get(secretStoreName(reference)));
+            credentials.push(Option.isSome(secret) ? platform.bytesToHex(secret.value) : "missing");
+          }
+          // Only a one-way digest leaves this stack frame; credentials are never stored.
+          if (platform.fingerprint === undefined) continue;
+          const { models: _models, label: _label, priority: _priority, weight: _weight, ...connection } = account;
+          const revision = platform.fingerprint(JSON.stringify([connection, credentials]));
+          for (const modelId of account.models) targets.push({ accountId: account.id, modelId, revision });
+        }
+        return targets;
+      },
+      probe: async (target) => {
+        const unavailable = { status: "error" as const, errorClass: "account-selection-unavailable" as const, httpStatus: null };
+        if (currentStatus.providerEndpoint === null || currentStatus.managementEndpoint === null || managementCredential === undefined) {
+          return { status: "error", errorClass: "network-provider", httpStatus: null };
+        }
+        const runtime = await platform.managementGet(currentStatus.managementEndpoint, "/v0/management/runtime-status", managementCredential, MANAGEMENT_MAX_BYTES);
+        if (!isRecord(runtime) || !isRecord(runtime.features) || runtime.features.account_selection !== true || platform.providerModelCheck === undefined) return unavailable;
+        const account = (await loadConfiguration()).accounts.find((item) => item.id === target.accountId);
+        if (account === undefined || !account.enabled) return { status: "error", errorClass: "auth", httpStatus: null };
+        return platform.providerModelCheck(currentStatus.providerEndpoint, account.provider, target.accountId, target.modelId);
+      },
+    });
 
     const loadGrants = async () => {
       let raw: string;
@@ -1620,6 +1667,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
     );
 
     return ProviderGatewayService.of({
+      modelChecks: () => Effect.tryPromise({ try: modelChecks.list, catch: () => safeError("management-unavailable") }),
+      checkModels: (input) => Effect.tryPromise({ try: () => modelChecks.run(input), catch: () => safeError("management-unavailable") }),
       status: () => Effect.sync(() => currentStatus),
       catalog: () =>
         Effect.tryPromise({
@@ -1713,7 +1762,13 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }),
       oauthPoll: (input) =>
         Effect.tryPromise({
-          try: () => runOauthPoll(input),
+          try: async () => {
+            const result = await runOauthPoll(input);
+            for (const accountId of result.completedAccountIds) {
+              await modelChecks.run({ accountId }).catch(() => undefined);
+            }
+            return result;
+          },
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
         }),
@@ -1725,7 +1780,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }),
       addApiKeyAccount: (input) =>
         Effect.tryPromise({
-          try: () => runAddApiKeyAccount(input),
+          try: async () => {
+            const result = await runAddApiKeyAccount(input);
+            await modelChecks.run({ accountId: result.accountId }).catch(() => undefined);
+            return result;
+          },
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
         }),
@@ -1776,7 +1835,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }),
       updateRouting: (input) =>
         Effect.tryPromise({
-          try: () => runUpdateRouting(input),
+          try: async () => {
+            const result = await runUpdateRouting(input);
+            await modelChecks.run({}).catch(() => undefined);
+            return result;
+          },
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
         }),

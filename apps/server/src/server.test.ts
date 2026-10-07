@@ -371,6 +371,8 @@ const providerGatewayTestLayer = Layer.succeed(
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     health: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     usage: () => Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
+    modelChecks: () => Effect.succeed({ schemaVersion: 1, checks: [] }),
+    checkModels: () => Effect.succeed({ schemaVersion: 1, checks: [] }),
     discoverModels: () =>
       Effect.fail(new WorkjetGatewayOperationError({ reason: "host-unavailable" })),
     updateRouting: () =>

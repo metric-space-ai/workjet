@@ -792,6 +792,20 @@ export function createServerEnvironmentAtoms<R, E>(
     tag: WS_METHODS.workjetHarnessInspect,
     staleTimeMs: WORKJET_GATEWAY_HEALTH_STALE_TIME_MS,
   });
+  const workjetGatewayModelChecks = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:gateway:model-checks",
+    tag: WS_METHODS.workjetGatewayModelChecks,
+    staleTimeMs: 5_000,
+  });
+  const checkWorkjetGatewayModels = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:gateway:check-models",
+    tag: WS_METHODS.workjetGatewayCheckModels,
+    concurrency: { mode: "singleFlight", key: ({ environmentId, input }) =>
+      `${environmentId}:${input.accountId ?? "*"}:${input.modelId ?? "*"}:${input.force ?? false}` },
+    onSuccess: ({ environmentId }, registry) => Effect.sync(() => {
+      registry.refresh(workjetGatewayModelChecks({ environmentId, input: {} }));
+    }),
+  });
   const workjetGatewayModels = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:workjet:gateway:models",
     tag: WS_METHODS.workjetGatewayDiscoverModels,
@@ -838,6 +852,7 @@ export function createServerEnvironmentAtoms<R, E>(
       registry.refresh(workjetGatewayStatus({ environmentId, input: {} }));
       registry.refresh(workjetGatewayCatalog({ environmentId, input: {} }));
       registry.refresh(workjetGatewayHealth({ environmentId, input: {} }));
+      registry.refresh(workjetGatewayModelChecks({ environmentId, input: {} }));
       registry.refresh(workjetGatewayModels({ environmentId, input: {} }));
     });
   const workjetGatewayConcurrency = {
@@ -1154,6 +1169,8 @@ export function createServerEnvironmentAtoms<R, E>(
     workjetGatewayCatalog,
     workjetGatewayHealth,
     workjetGatewayUsage,
+    workjetGatewayModelChecks,
+    checkWorkjetGatewayModels,
     workjetGatewayModels,
     workjetHarnessInspect,
     workjetDecisionHubConnections,

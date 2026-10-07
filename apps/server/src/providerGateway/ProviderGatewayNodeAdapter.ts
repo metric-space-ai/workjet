@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off globalDate:off -- Explicit Node platform boundary injected into the Effect gateway service.
+import * as NodeCrypto from "node:crypto";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
@@ -54,6 +55,53 @@ const withTimeout = async <A>(
 };
 
 export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
+  fingerprint: (value) => NodeCrypto.createHash("sha256").update(value).digest("hex"),
+  providerModelCheck: async (endpoint, provider, accountId, modelId) => {
+    const response = await fetch(new URL("/v1/responses", endpoint), {
+      method: "POST",
+      headers: {
+        authorization: "Bearer workjet-gateway", "content-type": "application/json",
+        "X-CTOX-Provider": provider, "X-CTOX-Account": accountId,
+      },
+      body: JSON.stringify({ model: modelId, input: "Hi", max_output_tokens: 8, stream: false }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    // Never accept an ignored selection header on an older host.
+    if (response.ok && response.headers.get("X-CTOX-Account-Selected") !== accountId) {
+      await response.body?.cancel();
+      return { status: "error", errorClass: "account-selection-unavailable", httpStatus: response.status };
+    }
+    let bytes = 0;
+    const chunks: Array<Uint8Array> = [];
+    const reader = response.body?.getReader();
+    try {
+      if (reader === undefined) throw new Error("empty");
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        bytes += part.value.byteLength;
+        if (bytes > 64 * 1024) throw new Error("oversized");
+        chunks.push(part.value);
+      }
+    } finally { await reader?.cancel(); }
+    // Inspect only protocol fields in memory, then discard all provider text.
+    const body: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const record = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+    const providerError = typeof record.error === "object" && record.error !== null
+      ? record.error as Record<string, unknown> : {};
+    const code = typeof providerError.code === "string" ? providerError.code.toLowerCase() : "";
+    if (response.ok && record.error === undefined && record.status !== "failed" &&
+        Array.isArray(record.output) && record.output.length > 0) {
+      return { status: "ok", errorClass: null, httpStatus: response.status };
+    }
+    if (["model_not_found", "unknown_model", "invalid_model", "unsupported_model"].includes(code)) {
+      return { status: "error", errorClass: "unknown-model", httpStatus: response.status };
+    }
+    const errorClass = response.status === 401 || response.status === 403 ? "auth"
+      : response.status === 402 || response.status === 429 ? "quota-rate-limit"
+      : response.status === 404 ? "unknown-model" : "network-provider";
+    return { status: "error", errorClass, httpStatus: response.status };
+  },
   joinPath: (...parts) => NodePath.join(...parts),
   defaultExecutable: (stateDir) =>
     process.env.WORKJET_PROVIDER_GATEWAY_HOST_EXECUTABLE ??

@@ -109,6 +109,7 @@ const readyHarness = () => {
   };
   const platform: ProviderGatewayPlatform = {
     ...nodeProviderGatewayPlatform,
+    fingerprint: undefined,
     readText: async () => configuration,
     writePrivateText: async (_path, content) => {
       writes.push(content);
@@ -140,6 +141,25 @@ const readyHarness = () => {
 };
 
 describe("ProviderGatewayService", () => {
+  it("makes no inference request without the native account-selection capability", async () => {
+    const harness = readyHarness();
+    let probes = 0;
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      fingerprint: nodeProviderGatewayPlatform.fingerprint,
+      providerModelCheck: async () => { ++probes; return { status: "ok", errorClass: null, httpStatus: 200 }; },
+      readText: async (path, limit) => {
+        if (path.endsWith("model-checks.json")) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return harness.platform.readText(path, limit);
+      },
+    };
+    const result = await runGateway(platform, (gateway) => Effect.gen(function* () {
+      yield* gateway.start();
+      return yield* gateway.checkModels({});
+    }));
+    expect(probes).toBe(0);
+    expect(result.checks[0]?.errorClass).toBe("account-selection-unavailable");
+  });
   it("reads durable environment usage while the host is stopped and never starts it", async () => {
     const now = Date.parse("2026-10-02T12:00:00Z");
     const day = Math.floor(now / 86_400_000);

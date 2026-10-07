@@ -46,9 +46,9 @@ export const WorkjetRemoteWorkerBinding = Schema.Struct({
   credentialRef: WorkjetGatewayCredentialRef,
   providerRef: WorkjetGatewayProviderRef,
   modelRef: WorkjetGatewayModelRef,
-  capabilities: Schema.Array(Schema.Literals([
-    "repository_read", "repository_write", "run_checks", "open_pull_request",
-  ])),
+  capabilities: Schema.Array(
+    Schema.Literals(["repository_read", "repository_write", "run_checks", "open_pull_request"]),
+  ),
 });
 export type WorkjetRemoteWorkerBinding = typeof WorkjetRemoteWorkerBinding.Type;
 
@@ -86,8 +86,15 @@ export type WorkjetGatewayInferenceResult = typeof WorkjetGatewayInferenceResult
 
 export class WorkjetGatewayInferenceError extends Schema.TaggedErrorClass<WorkjetGatewayInferenceError>()(
   "WorkjetGatewayInferenceError",
-  { reason: Schema.Literals([
-    "binding-mismatch", "grant-unavailable", "native-admission-unavailable",
-    "native-admission-rejected", "gateway-unavailable", "invalid-request", "inference-failed",
-  ]) },
+  {
+    reason: Schema.Literals([
+      "binding-mismatch",
+      "grant-unavailable",
+      "native-admission-unavailable",
+      "native-admission-rejected",
+      "gateway-unavailable",
+      "invalid-request",
+      "inference-failed",
+    ]),
+  },
 ) {}

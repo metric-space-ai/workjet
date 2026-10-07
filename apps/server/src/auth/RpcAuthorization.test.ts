@@ -1,5 +1,9 @@
 it("keeps worker prompts, starts and acknowledgements out of read-only RPC authority", () => {
-  for (const method of [WS_METHODS.workjetWorkerRequests, WS_METHODS.workjetWorkerReceive, WS_METHODS.workjetWorkerRespond]) {
+  for (const method of [
+    WS_METHODS.workjetWorkerRequests,
+    WS_METHODS.workjetWorkerReceive,
+    WS_METHODS.workjetWorkerRespond,
+  ]) {
     expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationOperateScope);
   }
 });
@@ -69,9 +73,15 @@ describe("RPC authorization scopes", () => {
     );
   });
   it("requires operate scope for remote inference and read scope for reference binding", () => {
-    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayBindModel)).toBe(AuthOrchestrationReadScope);
-    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayInfer)).toBe(AuthOrchestrationOperateScope);
-    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayAdmit)).toBe(AuthOrchestrationOperateScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayBindModel)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayInfer)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayAdmit)).toBe(
+      AuthOrchestrationOperateScope,
+    );
   });
   it("separates provider gateway reads from lifecycle operation", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayUsage)).toBe(

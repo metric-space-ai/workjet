@@ -149,6 +149,7 @@ export const make = Effect.gen(function* () {
     serverVersion: packageJson.version,
     capabilities: {
       repositoryIdentity: true,
+      remoteWorkerDispatch: true,
       connectionProbe: true,
       pullRequests: true,
       threadSettlement: true,

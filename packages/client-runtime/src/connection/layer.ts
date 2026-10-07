@@ -1,3 +1,4 @@
+import * as RemoteWorkers from "./remoteWorkers.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -44,4 +45,6 @@ export const connectionStartupLayer = Layer.effectDiscard(
   }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
 );
 
-export const layer = connectionStartupLayer.pipe(Layer.provideMerge(connectionServicesLayer));
+export const layer = Layer.mergeAll(connectionStartupLayer, RemoteWorkers.startupLayer).pipe(
+  Layer.provideMerge(connectionServicesLayer),
+);

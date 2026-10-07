@@ -21,6 +21,10 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  * runtime failure.
  */
 export const RPC_REQUIRED_SCOPES = {
+  // These carry source task bytes/create target worktrees; never read-only.
+  [WS_METHODS.workjetWorkerRequests]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerReceive]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerRespond]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getTurnDiff]: AuthOrchestrationReadScope,

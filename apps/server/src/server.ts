@@ -53,6 +53,9 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
+import * as RemoteWorkerBroker from "./workjet/RemoteWorkerBroker.ts";
+import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
+import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import * as DecisionHubEscalationService from "./workjet/decisionHub/DecisionHubEscalationService.ts";
 import * as DecisionHubMcpClient from "./workjet/decisionHub/DecisionHubMcpClient.ts";
@@ -434,6 +437,16 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
 );
 
+const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
+  Layer.provide(NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer))),
+);
+const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(Layer.provide(RemoteWorkerStore.layer));
+const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
+  Layer.provide(RemoteWorkerStore.layer),
+  Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+  Layer.provide(WorkerDispatchRollbackLayerLive),
+);
+
 const RuntimeCoreFoundationLive = Layer.mergeAll(
   ReactorLayerLive,
   WorkerPullRequestLifecycle.layer.pipe(Layer.provide(WorkerPullRequestStore.layer)),
@@ -572,6 +585,8 @@ export const makeRoutesLayer = Layer.mergeAll(
     // MCP tools use — one delivery service, two entrypoints — so it needs the
     // same three services the MCP server below is given.
     websocketRpcRouteLayer.pipe(
+      Layer.provide(RemoteWorkerBrokerLayerLive),
+      Layer.provide(RemoteWorkerReceiverLayerLive),
       Layer.provide(DecisionHubConnectionRegistryLive),
       Layer.provide(
         WorkjetMailboxDelivery.layer.pipe(
@@ -594,6 +609,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     Layer.provide(McpSessionRegistry.layer),
     Layer.provide(
       WorkerDispatch.layer.pipe(
+        Layer.provide(RemoteWorkerBrokerLayerLive),
         Layer.provide(
           WorkerDispatchRollback.layer.pipe(
             Layer.provide(

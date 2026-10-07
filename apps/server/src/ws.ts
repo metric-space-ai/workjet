@@ -1,3 +1,6 @@
+import { RemoteWorkerDispatchError } from "@workjet/contracts";
+import { RemoteWorkerBroker } from "./workjet/RemoteWorkerBroker.ts";
+import { RemoteWorkerReceiver } from "./workjet/RemoteWorkerReceiver.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -401,6 +404,8 @@ const makeWsRpcLayer = (
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
+      const workerBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
+      const workerReceiver = yield* Effect.serviceOption(RemoteWorkerReceiver);
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
@@ -1296,6 +1301,25 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.workjetWorkerRequests]: () => observeRpcStream(
+          WS_METHODS.workjetWorkerRequests,
+          Option.isSome(workerBroker) ? workerBroker.value.requests : Stream.fail(
+            new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+          { "rpc.aggregate": "worker-dispatch" },
+        ),
+        [WS_METHODS.workjetWorkerReceive]: (input) => observeRpcEffect(
+          WS_METHODS.workjetWorkerReceive,
+          Option.isSome(workerReceiver) ? workerReceiver.value.receive(input) : Effect.fail(
+            new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+          { "rpc.aggregate": "worker-dispatch" },
+        ),
+        [WS_METHODS.workjetWorkerRespond]: (input) => observeRpcEffect(
+          WS_METHODS.workjetWorkerRespond,
+          Option.isSome(workerBroker) ? workerBroker.value.respond(input) : Effect.fail(
+            new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+          { "rpc.aggregate": "worker-dispatch" },
+        ),
+
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,

@@ -30,6 +30,7 @@ const config: WorkjetThreadConfig = {
       goal: "Real requested change",
       createdAt: "2026-10-07T00:00:00.000Z",
     },
+    submission: "confirmed",
     turn: {
       commandId: "native-command",
       taskId: "native-task",

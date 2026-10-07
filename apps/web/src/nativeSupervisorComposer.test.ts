@@ -49,6 +49,7 @@ const journal: WorkjetSupervisorJournal = {
     createdAt: "2026-10-07T00:00:00.000Z",
   },
   turn: null,
+  submission: "prepared",
 };
 const registry = {
   presentationInstanceId: instanceId,

@@ -40,7 +40,7 @@ export function NativeSupervisorComposer(props: {
   const scopeMatches =
     scope !== null && (journal === null || supervisorJournalMatchesScope(journal, scope));
   const disabled = props.unavailable || !scopeMatches;
-  const pending = journal !== null && journal.turn?.terminal !== true;
+  const pending = journal !== null && journal.submission !== "not-submitted" && journal.turn?.terminal !== true;
   const latestProps = useRef(props);
   latestProps.current = props;
 
@@ -57,7 +57,7 @@ export function NativeSupervisorComposer(props: {
       return;
     if (
       operation === "send" &&
-      (prompt.trim() === "" || (saved !== null && saved.turn?.terminal !== true))
+      (prompt.trim() === "" || (saved !== null && saved.submission !== "not-submitted" && saved.turn?.terminal !== true))
     )
       return;
     if (operation !== "send" && saved === null) return;
@@ -106,7 +106,7 @@ export function NativeSupervisorComposer(props: {
           isWorkjetSupervisorReceiptForRequest(request, result.response) &&
           result.response.action === "project.supervisor.turn.cancel"
         ) {
-          await port.save({ intent: saved.intent, turn: result.response.turn });
+          await port.save({ intent: saved.intent, turn: result.response.turn, submission: "confirmed" });
           // This receipt requests cancellation; it never confirms a worker interrupt.
           setNotice("Abbruch angefordert; Bestätigung wird aus dem Auftrag gelesen.");
         } else if (result._tag === "completed")
@@ -145,7 +145,7 @@ export function NativeSupervisorComposer(props: {
     // A restored pending intent keeps exactly its saved identity. Confirmed turns only watch.
     if (!restored.current && !disabled && journal !== null) {
       restored.current = true;
-      if (journal.turn?.terminal !== true) void runRef.current("resume");
+      if (journal.submission !== "not-submitted" && journal.turn?.terminal !== true) void runRef.current("resume");
     }
   }, [disabled, journal]);
   useEffect(() => {
@@ -159,7 +159,7 @@ export function NativeSupervisorComposer(props: {
 
   return (
     <section
-      className="mx-auto w-full max-w-5xl rounded-2xl border border-border bg-background p-3"
+      className="mx-auto w-full max-w-5xl p-3"
       aria-label="Supervisor-Auftrag"
     >
       {journal && scopeMatches && (
@@ -168,7 +168,7 @@ export function NativeSupervisorComposer(props: {
           <p className="mt-1 text-xs text-muted-foreground">
             {journal.turn
               ? `${journal.turn.status} · Versuch ${journal.turn.attempt}`
-              : "Bestätigung ausstehend"}
+              : journal.submission === "not-submitted" ? "Nicht gesendet" : "Bestätigung ausstehend"}
           </p>
           {journal.turn?.taskId && (
             <details className="mt-1 text-xs text-muted-foreground">
@@ -185,7 +185,8 @@ export function NativeSupervisorComposer(props: {
           {journal.turn?.resultTruncated && (
             <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>
           )}
-          {journal.turn?.errorMessage && (
+          {journal.submission === "not-submitted" && <p role="alert" className="text-destructive">CTOX: {journal.submissionError}. Neuer Versand möglich.</p>}
+      {journal.turn?.errorMessage && (
             <p role="alert" className="text-destructive">
               {journal.turn.errorCode}: {journal.turn.errorMessage}
             </p>

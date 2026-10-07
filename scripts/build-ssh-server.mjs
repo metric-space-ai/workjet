@@ -9,6 +9,8 @@ import * as NodeOS from "node:os";
 import { parse as parseYaml } from "yaml";
 import { SSH_NODE_VERSION } from "../packages/ssh/src/remoteNode.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
+import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
+import { parseSshServerBuildArguments } from "./lib/ssh-server-build-arguments.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
 import * as Effect from "effect/Effect";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -24,8 +26,9 @@ const program = Effect.gen(function* () {
       );
 
     const root = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
+    const options = parseSshServerBuildArguments(process.argv.slice(2));
     const output = NodePath.resolve(
-      process.argv[2] ?? NodePath.join(root, "apps/desktop/resources/ssh-servers"),
+      options.output ?? NodePath.join(root, "apps/desktop/resources/ssh-servers"),
     );
     const platform = `${hostPlatform}-${hostArchitecture}`;
     if (!["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64"].includes(platform))
@@ -91,27 +94,37 @@ const program = Effect.gen(function* () {
         NodePath.join(monitorTarget, "release/workjet-resource-monitor"),
         NodePath.join(destination, "dist/resource-monitor/workjet-resource-monitor"),
       );
-      const pin = JSON.parse(
-        await NodeFSP.readFile(
-          NodePath.join(root, "apps/desktop/resources/provider-gateway/host-release.pin.json"),
-          "utf8",
-        ),
-      );
-      const host = await prepareProviderGatewayHost({
-        repoRoot: root,
-        platform: hostPlatform === "darwin" ? "mac" : "linux",
-        arch: hostArchitecture,
-        dependencyRoot: NodePath.join(stage, "gateway-download"),
-        pin,
-      });
-      const artifact = pin.release.artifacts.find(
-        (item) => item.os === hostPlatform && item.arch === hostArchitecture,
-      );
-      if (!artifact) throw new Error(`Missing provider gateway for ${platform}`);
-      await NodeFSP.cp(
-        NodePath.join(host.installPath, artifact.fileName),
-        NodePath.join(destination, "dist/workjet-provider-gateway-host"),
-      );
+      let hostPath;
+      if (options.diagnosticProviderGatewayHost !== undefined) {
+        const host = await prepareDiagnosticProviderGatewayHost({
+          repoRoot: root,
+          platform: hostPlatform === "darwin" ? "mac" : "linux",
+          arch: hostArchitecture,
+          manifestPath: options.diagnosticProviderGatewayHost,
+          dependencyRoot: NodePath.join(stage, "gateway-diagnostic"),
+        });
+        hostPath = NodePath.join(host.installPath, host.manifest.artifact.fileName);
+      } else {
+        const pin = JSON.parse(
+          await NodeFSP.readFile(
+            NodePath.join(root, "apps/desktop/resources/provider-gateway/host-release.pin.json"),
+            "utf8",
+          ),
+        );
+        const host = await prepareProviderGatewayHost({
+          repoRoot: root,
+          platform: hostPlatform === "darwin" ? "mac" : "linux",
+          arch: hostArchitecture,
+          dependencyRoot: NodePath.join(stage, "gateway-download"),
+          pin,
+        });
+        const artifact = pin.release.artifacts.find(
+          (item) => item.os === hostPlatform && item.arch === hostArchitecture,
+        );
+        if (!artifact) throw new Error(`Missing provider gateway for ${platform}`);
+        hostPath = NodePath.join(host.installPath, artifact.fileName);
+      }
+      await NodeFSP.cp(hostPath, NodePath.join(destination, "dist/workjet-provider-gateway-host"));
       await NodeFSP.writeFile(
         NodePath.join(destination, "package.json"),
         JSON.stringify(

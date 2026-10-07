@@ -22,6 +22,8 @@ export default defineConfig({
       "**/audit-workjet-content.test.mjs",
       "**/check-workjet-webrtc-only-release.test.ts",
       "**/generate-workjet-install-manifest.test.mjs",
+      "**/security-dependency-patches.test.mjs",
+      "**/security-upstream-repairs.test.mjs",
     ],
     hookTimeout: 60_000,
     testTimeout: 60_000,

@@ -121,6 +121,23 @@ try {
 for (const advisory of Object.values(auditReport.advisories ?? {})) {
   if (advisory.severity !== "high" && advisory.severity !== "critical") continue;
   const id = advisory.github_advisory_id;
+  if (id === "GHSA-86w9-cpqp-85rv" && advisory.module_name === "node-forge") {
+    // Issue #88: upstream has no fixed release. Our pinned patch validates
+    // nested AlgorithmIdentifier element counts and NULL parameters.
+    if (!/^  node-forge@1\.4\.0: patches\/node-forge@1\.4\.0\.patch$/m.test(workspace))
+      fail("node-forge advisory acceptance requires the pinned 1.4.0 patch");
+    const patch = NodeFS.readFileSync(NodePath.join(root, "patches/node-forge@1.4.0.patch"));
+    if (NodeCrypto.createHash("sha256").update(patch).digest("hex") !==
+      "040d8f10200da8284660a06edf39ec4367049d64b5171381984aacfbb171e585")
+      fail("node-forge advisory acceptance requires the reviewed patch bytes");
+    const regression = NodeChildProcess.spawnSync(process.execPath,
+      ["--test", "scripts/security-dependency-patches.test.mjs"],
+      { cwd: root, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
+    if (regression.error || regression.status !== 0)
+      fail("reviewed dependency patch regressions failed: " + regression.stderr);
+    console.log("Known advisory GHSA-86w9-cpqp-85rv: reviewed pinned patch and signature regressions verified; tracked in issue #88.");
+    continue;
+  }
   fail(`unaccepted ${advisory.severity} advisory ${id ?? advisory.id} in ${advisory.module_name}`);
 }
 
@@ -211,5 +228,5 @@ for (const [format, parse] of [
 }
 
 console.log(
-  "Supply-chain guard OK (no high/critical advisories; reviewed image-size parser probes passed).",
+  "Supply-chain guard OK (no unreviewed high/critical advisories; reviewed patch and image-size parser probes passed).",
 );

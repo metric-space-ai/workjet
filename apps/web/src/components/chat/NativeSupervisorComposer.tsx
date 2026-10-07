@@ -16,6 +16,7 @@ export function NativeSupervisorComposer(props: {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const inFlight = useRef(false);
   const restored = useRef(false);
   const journalRef = useRef(journal);
@@ -58,15 +59,24 @@ export function NativeSupervisorComposer(props: {
           result.response.action === "project.supervisor.turn.cancel") {
           await port.save({ intent: saved.intent, turn: result.response.turn });
           // This receipt requests cancellation; it never confirms a worker interrupt.
-          setError("Abbruch angefordert; Bestätigung wird aus dem Auftrag gelesen.");
+          setNotice("Abbruch angefordert; Bestätigung wird aus dem Auftrag gelesen.");
         } else if (result._tag === "completed") throw new Error("Antwort gehört zu einem anderen Auftrag.");
       }
+      if (journalRef.current?.turn?.terminal) setNotice(null);
       if (result?._tag === "failed") setError(`CTOX: ${result.code}. Auftrag prüfen und erneut verbinden.`);
       if (result?._tag === "completed" && (operation === "send" || prompt.trim() === saved?.intent.goal)) setPrompt("");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "CTOX-Auftrag konnte nicht bestätigt werden."); }
     finally { inFlight.current = false; setBusy(false); }
   };
   const runRef = useRef(run); runRef.current = run;
+  const persistedJournal = props.config.schemaVersion === 2 ? props.config.ctoxSupervisorTurn ?? null : null;
+  useEffect(() => {
+    if (!inFlight.current && persistedJournal !== null && persistedJournal !== journalRef.current) {
+      journalRef.current = persistedJournal;
+      setJournal(persistedJournal);
+      setError(null);
+    }
+  }, [persistedJournal]);
 
   useEffect(() => {
     // A restored pending intent keeps exactly its saved identity. Confirmed turns only watch.
@@ -91,6 +101,7 @@ export function NativeSupervisorComposer(props: {
       {journal.turn?.errorMessage && <p role="alert" className="text-destructive">{journal.turn.errorCode}: {journal.turn.errorMessage}</p>}
     </div>}
     {disabled && <p role="status" className="mb-2 text-xs text-muted-foreground">Projekt und CTOX-Verbindung müssen bestätigt sein.</p>}
+    {notice && <p role="status" className="mb-2 text-xs text-muted-foreground">{notice}</p>}
     {error && <p role="alert" className="mb-2 text-xs text-destructive">{error}</p>}
     <form onSubmit={(event) => { event.preventDefault(); void run("send"); }} className="flex items-end gap-2">
       <textarea aria-label="Nachricht an Supervisor" placeholder="Auftrag an den Supervisor …" rows={2}

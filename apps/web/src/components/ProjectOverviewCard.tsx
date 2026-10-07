@@ -10,7 +10,7 @@ import {
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { ProjectOverviewEditor } from "./ProjectOverviewEditor";
+import { ProjectOverviewEditor, type ProjectConfigurationValues } from "./ProjectOverviewEditor";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
@@ -21,9 +21,11 @@ export function ProjectOverviewCard({
   onSave,
   canArchive = false,
   statistics,
+  onSaveConfiguration,
 }: {
   readonly project: GalleryProject;
   readonly onOpen: () => void;
+  readonly onSaveConfiguration?: ((next: ProjectConfigurationValues) => Promise<boolean>) | undefined;
   readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   readonly canArchive?: boolean | undefined;
   readonly statistics?: GalleryProjectStatistics | undefined;
@@ -277,6 +279,8 @@ export function ProjectOverviewCard({
             {editing && onSave && (
               <ProjectOverviewEditor
                 overview={editableOverview}
+                configuration={project.configuration}
+                onSaveConfiguration={onSaveConfiguration}
                 onSave={onSave}
                 onArchive={canArchive ? changeArchive : undefined}
                 archived={archived}

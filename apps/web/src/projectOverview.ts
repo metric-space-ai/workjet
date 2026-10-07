@@ -1,6 +1,7 @@
 import {
   ProjectOverview,
   type CtoxWorkjetProjectProjection,
+  type CtoxWorkjetProjectMetadataProjection,
   type EnvironmentId,
   type OrchestrationProjectShell,
   type WorkjetComputer,
@@ -87,6 +88,7 @@ export type GalleryProject = {
   readonly title: string;
   readonly local: GalleryLocalProject | null;
   readonly native: boolean;
+  readonly configuration?: CtoxWorkjetProjectMetadataProjection;
 };
 export type GalleryProjectStatistics = {
   readonly chatCount: number | null;
@@ -131,13 +133,17 @@ export function resolveGalleryProjectStatistics(
 /** Saved metadata wins, including an explicitly cleared website. Domain-named native projects can preview their website before a local history exists. */
 
 export function resolveGalleryProjectOverview(project: GalleryProject): ProjectOverview {
-  const saved = project.local?.overview;
-  if (saved != null) return saved;
   const title = project.title.trim().toLowerCase();
   const isDomain = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(title);
-  return {
+  const saved = project.local?.overview ?? {
     websiteUrl: isDomain ? `https://${title}` : null,
-    slots: [null, null, null],
+    slots: [null, null, null] as ProjectOverview["slots"],
+  };
+  if (project.configuration?.repoUrl === undefined && project.configuration?.publicUrl === undefined) return saved;
+  return {
+    ...saved,
+    ...(project.configuration?.repoUrl === undefined ? {} : { repositoryUrl: project.configuration.repoUrl }),
+    ...(project.configuration?.publicUrl === undefined ? {} : { websiteUrl: project.configuration.publicUrl }),
   };
 }
 /** Archiving keeps identity joins and histories intact; only the chosen gallery view changes. */
@@ -212,6 +218,7 @@ export function buildProjectGallery(input: {
       title: project.title,
       local,
       native: true,
+      configuration: project,
     };
   });
   const ids = new Set(native.map((project) => project.id));

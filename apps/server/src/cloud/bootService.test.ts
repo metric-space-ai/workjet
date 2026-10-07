@@ -8,6 +8,7 @@ import {
   HostProcessUserId,
 } from "@workjet/shared/hostProcess";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -119,29 +120,37 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
     timeoutCommand: string | undefined;
     supportsWait: boolean;
     onBootstrap: (() => Promise<void>) | undefined;
+    verificationElapsedMs: number;
+    verificationVersion: string;
   } = {
     failCommand: undefined,
     timeoutCommand: undefined,
     supportsWait: true,
     onBootstrap: undefined,
+    verificationElapsedMs: 0,
+    verificationVersion: "1.2.3",
   };
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
         const command = `${input.command} ${input.args.join(" ")}`;
         commands.push(command);
+        const verification = input.args[1] === "--version";
+        const verificationTimedOut =
+          verification &&
+          input.timeout !== undefined &&
+          control.verificationElapsedMs > Duration.toMillis(input.timeout);
         if (input.args[0] === "bootstrap" && control.onBootstrap !== undefined)
           yield* Effect.promise(control.onBootstrap);
         return {
-          stdout:
-            input.args[1] === "--version"
-              ? "workjet v1.2.3\n"
-              : command === "/bin/launchctl help bootout" && control.supportsWait
-                ? "bootout [--wait] <service-target>"
-                : "",
+          stdout: verification
+            ? `workjet v${control.verificationVersion}\n`
+            : command === "/bin/launchctl help bootout" && control.supportsWait
+              ? "bootout [--wait] <service-target>"
+              : "",
           stderr: "",
           code: ChildProcessSpawner.ExitCode(command === control.failCommand ? 1 : 0),
-          timedOut: command === control.timeoutCommand,
+          timedOut: command === control.timeoutCommand || verificationTimedOut,
           stdoutTruncated: false,
           stderrTruncated: false,
           stdoutInvalidUtf8: false,
@@ -183,6 +192,57 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
     tailscaleServeEnabled: false,
     tailscaleServePort: 443,
   };
+
+  for (const platform of ["darwin", "linux"] as const) {
+    for (const bundled of [false, true]) {
+      it.effect(
+        `accepts a 35-second ${bundled ? "bundled" : "npm"} CLI cold-start on ${platform}`,
+        () =>
+          Effect.gen(function* () {
+            const { service, control } = yield* makeHarness(platform, false, false, bundled);
+            control.verificationElapsedMs = 35_000;
+            yield* service.install;
+            expect((yield* service.status).current).toBe(true);
+          }),
+      );
+    }
+
+    it.effect(
+      `preserves the running ${platform} service when CLI verification times out or reports another version`,
+      () =>
+        Effect.gen(function* () {
+          const { service, fs, statePath, commands, control, runtime } = yield* makeHarness(
+            platform,
+            false,
+            false,
+            true,
+          );
+          const plan = yield* service.install;
+          const before = {
+            state: yield* fs.readFileString(statePath),
+            launcher: yield* fs.readFileString(plan.launcherPath),
+            unit: yield* fs.readFileString(plan.unitPath),
+          };
+          for (const failure of [
+            { elapsedMs: 91_000, version: "1.2.3" },
+            { elapsedMs: 0, version: "1.2.4" },
+          ]) {
+            commands.length = 0;
+            control.verificationElapsedMs = failure.elapsedMs;
+            control.verificationVersion = failure.version;
+            const error = yield* service.install.pipe(Effect.flip);
+            expect(error._tag).toBe("BootServiceCommandError");
+            expect(commands).toEqual([
+              ...(platform === "darwin" ? ["/bin/launchctl help bootout"] : []),
+              `${bundledRuntimeNodePath(runtime.entryPath)} ${runtime.entryPath} --version`,
+            ]);
+            expect(yield* fs.readFileString(statePath)).toBe(before.state);
+            expect(yield* fs.readFileString(plan.launcherPath)).toBe(before.launcher);
+            expect(yield* fs.readFileString(plan.unitPath)).toBe(before.unit);
+          }
+        }),
+    );
+  }
 
   it.effect("installs a fresh Desktop profile and releases runtime ownership before handoff", () =>
     Effect.gen(function* () {

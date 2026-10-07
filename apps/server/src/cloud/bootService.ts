@@ -622,7 +622,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
             command:
               host.bundle === undefined ? host.execPath : bundledRuntimeNodePath(runtime.entryPath),
             args: [runtime.entryPath, "--version"],
-            timeout: Duration.seconds(30),
+            // A newly extracted CLI can cold-start slowly on a busy host.
+            // Keep verification bounded and finish it before stopping the service.
+            timeout: Duration.seconds(90),
           })
           .pipe(
             Effect.mapError(

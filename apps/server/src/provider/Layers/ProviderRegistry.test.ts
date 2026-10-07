@@ -1578,7 +1578,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   codex: { enabled: true, binaryPath: firstMissing },
                   claudeAgent: { enabled: false },
                   cursor: { enabled: false },
+                  greppy: { enabled: false },
                   grok: { enabled: false },
+                  minimax: { enabled: false },
                   opencode: { enabled: false },
                 },
               }),
@@ -1846,7 +1848,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 "claudeAgent",
                 "codex",
                 "cursor",
+                "greppy",
                 "grok",
+                "minimax",
                 "opencode",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);

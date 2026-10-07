@@ -913,17 +913,34 @@ routing.layer("ProviderServiceLive routing", (it) => {
         });
         adapter.sendTurn.mockClear();
         const history = [
-          { id: MessageId.make("source-user"), role: "user" as const, text: "Use the existing project. Approved the earlier read-only inspection." },
-          { id: MessageId.make("source-result"), role: "assistant" as const, text: "The regression is in parser.ts; the prior test returned 7 passing cases." },
+          {
+            id: MessageId.make("source-user"),
+            role: "user" as const,
+            text: "Use the existing project. Approved the earlier read-only inspection.",
+          },
+          {
+            id: MessageId.make("source-result"),
+            role: "assistant" as const,
+            text: "The regression is in parser.ts; the prior test returned 7 passing cases.",
+          },
         ];
-        yield* provider.sendTurn({ threadId, requestId: "persisted-continuation", input: "Continue the investigation.", importedHistory: history });
+        yield* provider.sendTurn({
+          threadId,
+          requestId: "persisted-continuation",
+          input: "Continue the investigation.",
+          importedHistory: history,
+        });
         assert.equal(adapter.sendTurn.mock.calls.length, 1);
         const sent = adapter.sendTurn.mock.calls[0]?.[0];
         assert.deepEqual(sent?.importedHistory, history);
         assert.equal(sent?.requestId, "persisted-continuation");
         assert.ok(sent?.input?.includes(JSON.stringify(history)));
         assert.ok(sent?.input?.endsWith("Current request:\n\nContinue the investigation."));
-        assert.ok(sent?.input?.includes("pending approvals and provider resume tokens cannot be transferred"));
+        assert.ok(
+          sent?.input?.includes(
+            "pending approvals and provider resume tokens cannot be transferred",
+          ),
+        );
         assert.equal(adapter.respondToRequest.mock.calls.length, 0);
         yield* provider.stopSession({ threadId });
       }),
@@ -941,11 +958,15 @@ routing.layer("ProviderServiceLive routing", (it) => {
         runtimeMode: "full-access",
       });
       routing.cursor.sendTurn.mockClear();
-      const error = yield* Effect.flip(provider.sendTurn({
-        threadId,
-        input: "Continue",
-        importedHistory: [{ id: MessageId.make("source-unsupported"), role: "user", text: "Previous context" }],
-      }));
+      const error = yield* Effect.flip(
+        provider.sendTurn({
+          threadId,
+          input: "Continue",
+          importedHistory: [
+            { id: MessageId.make("source-unsupported"), role: "user", text: "Previous context" },
+          ],
+        }),
+      );
       assert.ok(error instanceof ProviderAdapterRequestError);
       assert.ok(error.detail.includes("cannot continue imported conversation history"));
       assert.equal(routing.cursor.sendTurn.mock.calls.length, 0);
@@ -957,13 +978,26 @@ routing.layer("ProviderServiceLive routing", (it) => {
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       const threadId = asThreadId("oversized-imported-context");
-      yield* provider.startSession(threadId, { provider: CODEX_DRIVER, providerInstanceId: codexInstanceId, threadId, runtimeMode: "full-access" });
-      routing.codex.sendTurn.mockClear();
-      const error = yield* Effect.flip(provider.sendTurn({
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
         threadId,
-        input: "Continue",
-        importedHistory: [{ id: MessageId.make("source-large"), role: "assistant", text: "prior-result ".repeat(12_000) }],
-      }));
+        runtimeMode: "full-access",
+      });
+      routing.codex.sendTurn.mockClear();
+      const error = yield* Effect.flip(
+        provider.sendTurn({
+          threadId,
+          input: "Continue",
+          importedHistory: [
+            {
+              id: MessageId.make("source-large"),
+              role: "assistant",
+              text: "prior-result ".repeat(12_000),
+            },
+          ],
+        }),
+      );
       assert.ok(error instanceof ProviderAdapterRequestError);
       assert.ok(error.detail.includes("No messages were omitted and no turn was sent"));
       assert.equal(routing.codex.sendTurn.mock.calls.length, 0);

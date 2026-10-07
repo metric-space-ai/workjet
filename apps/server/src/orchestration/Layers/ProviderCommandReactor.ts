@@ -889,10 +889,9 @@ const make = Effect.gen(function* () {
           : requestedModelSelection
         : input.modelSelection;
 
-    const importedMessageIds =
-      projectionSnapshotQuery.getThreadImportedMessageIds
-        ? yield* projectionSnapshotQuery.getThreadImportedMessageIds(input.threadId)
-        : [];
+    const importedMessageIds = projectionSnapshotQuery.getThreadImportedMessageIds
+      ? yield* projectionSnapshotQuery.getThreadImportedMessageIds(input.threadId)
+      : [];
     const messagesById = new Map(thread.messages.map((message) => [message.id, message]));
     const importedHistory = yield* Effect.forEach(importedMessageIds, (id) =>
       Effect.gen(function* () {

@@ -1,24 +1,121 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Real loopback transport regression.
-import * as Http from "node:http";
+import * as NodeHttp from "node:http";
 import { describe, expect, it } from "vite-plus/test";
 import { WorkjetGatewayAccountId } from "@workjet/contracts";
-import { makeModelChecks, MODEL_CHECK_COOLDOWN_MS, type ModelCheckTarget } from "./ProviderGatewayModelChecks.ts";
+import {
+  makeModelChecks,
+  MODEL_CHECK_COOLDOWN_MS,
+  MODEL_CHECK_BATCH_LIMIT,
+  MODEL_CHECK_QUEUE_LIMIT,
+  type ModelCheckTarget,
+} from "./ProviderGatewayModelChecks.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
 
-const target = (accountId = "one", revision = "credential-version-one"): ModelCheckTarget => ({ accountId, modelId: "model", revision });
+const target = (accountId = "one", revision = "credential-version-one"): ModelCheckTarget => ({
+  accountId,
+  modelId: "model",
+  revision,
+});
 const setup = () => {
   let time = 1000;
   let persisted: string | null = null;
   let targets = [target(), target("two")];
   const calls: Array<string> = [];
   const options = {
-    now: () => time, targets: async () => targets,
-    read: async () => persisted, write: async (text: string) => { persisted = text; },
-    probe: async (item: ModelCheckTarget) => { calls.push(item.accountId); return { status: "ok" as const, errorClass: null, httpStatus: 200 }; },
+    now: () => time,
+    targets: async () => targets,
+    read: async () => persisted,
+    write: async (text: string) => {
+      persisted = text;
+    },
+    probe: async (item: ModelCheckTarget) => {
+      calls.push(item.accountId);
+      return { status: "ok" as const, errorClass: null, httpStatus: 200 };
+    },
   };
-  return { options, calls, setTime: (next: number) => { time = next; }, setTargets: (next: Array<ModelCheckTarget>) => { targets = next; }, persisted: () => persisted };
+  return {
+    options,
+    calls,
+    setTime: (next: number) => {
+      time = next;
+    },
+    setTargets: (next: Array<ModelCheckTarget>) => {
+      targets = next;
+    },
+    persisted: () => persisted,
+  };
 };
 describe("bounded model checks", () => {
+  it("bounds slow admission, advances a deferred suffix and cancels active transport", async () => {
+    const fixture = setup();
+    const targets = Array.from({ length: 100 }, (_, index) => target(`account-${index}`));
+    fixture.setTargets(targets);
+    let started!: () => void;
+    const began = new Promise<void>((resolve) => { started = resolve; });
+    let aborted = false;
+    const slow = makeModelChecks({ ...fixture.options, probe: async (_item, signal) => {
+      started();
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => { aborted = true; resolve(); }, { once: true }));
+      return { status: "ok", errorClass: null, httpStatus: 200 };
+    }});
+    const first = await slow.schedule({});
+    expect(first.pending).toHaveLength(MODEL_CHECK_BATCH_LIMIT);
+    expect(first.deferredCount).toBe(100 - MODEL_CHECK_BATCH_LIMIT);
+    await began;
+    const second = await slow.schedule({});
+    expect(second.pending.length).toBeLessThanOrEqual(MODEL_CHECK_QUEUE_LIMIT);
+    await slow.shutdown();
+    expect(aborted).toBe(true);
+    expect((await slow.list()).checks).toEqual([]);
+    expect((await slow.list()).pending).toEqual([]);
+
+    const checks = makeModelChecks(fixture.options);
+    await checks.run({ force: true });
+    expect(fixture.calls).toHaveLength(32);
+    await checks.run({ force: false });
+    await checks.run({ force: false });
+    const done = await checks.run({ force: false });
+    expect(new Set(fixture.calls).size).toBe(100);
+    expect(done.deferredCount).toBe(0);
+    expect(done.checks).toHaveLength(100);
+  });
+  it("discards a delayed green when the account is replaced", async () => {
+    const fixture = setup();
+    fixture.setTargets([target()]);
+    let release!: () => void;
+    let started!: () => void;
+    const began = new Promise<void>((resolve) => { started = resolve; });
+    const checks = makeModelChecks({ ...fixture.options, probe: async () => {
+      started(); await new Promise<void>((resolve) => { release = resolve; });
+      return { status: "ok", errorClass: null, httpStatus: 200 };
+    }});
+    await checks.schedule({});
+    await began;
+    fixture.setTargets([target("one", "new-credential")]);
+    release();
+    await checks.drain();
+    expect((await checks.list()).checks).toEqual([]);
+    expect(fixture.persisted()).toBeNull();
+  });
+  it("does not count future timestamps as fresh after clock rollback", async () => {
+    const fixture = setup();
+    const checks = makeModelChecks(fixture.options);
+    await checks.run({});
+    fixture.setTime(500);
+    await checks.run({});
+    expect(fixture.calls).toHaveLength(4);
+  });
+  it("schedules only changed credentials or newly added models after a mutation", async () => {
+    const fixture = setup();
+    const checks = makeModelChecks(fixture.options);
+    const before = await checks.captureRevisions();
+    fixture.setTargets([target(), target("two"), { ...target("one"), modelId: "new-model" }]);
+    const result = await checks.scheduleChanged(before);
+    expect(result.pending.map((item) => item.modelId)).toEqual(["new-model"]);
+    await checks.drain();
+    expect(fixture.calls).toEqual(["one"]);
+  });
+
   it("coalesces, serializes, gates and persists checks across restart", async () => {
     const fixture = setup();
     const checks = makeModelChecks(fixture.options);
@@ -56,7 +153,12 @@ describe("bounded model checks", () => {
   });
   it("stores a fixed error class when a provider throws private content", async () => {
     const fixture = setup();
-    const checks = makeModelChecks({ ...fixture.options, probe: async () => { throw new Error("key-private prompt Hi output-private"); } });
+    const checks = makeModelChecks({
+      ...fixture.options,
+      probe: async () => {
+        throw new Error("key-private prompt Hi output-private");
+      },
+    });
     const result = await checks.run({});
     expect(result.checks.every((item) => item.errorClass === "network-provider")).toBe(true);
     expect(fixture.persisted()).not.toContain("private");
@@ -66,30 +168,62 @@ describe("bounded model checks", () => {
     const fixture = setup();
     let active = 0;
     let maximum = 0;
-    const checks = makeModelChecks({ ...fixture.options, probe: async () => {
-      maximum = Math.max(maximum, ++active);
-      await Promise.resolve(); --active;
-      return { status: "ok", errorClass: null, httpStatus: 200 };
-    }});
-    await Promise.all([checks.run({ accountId: WorkjetGatewayAccountId.make("one") }), checks.run({ accountId: WorkjetGatewayAccountId.make("two") })]);
+    const checks = makeModelChecks({
+      ...fixture.options,
+      probe: async () => {
+        maximum = Math.max(maximum, ++active);
+        await Promise.resolve();
+        --active;
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
+    });
+    await Promise.all([
+      checks.run({ accountId: WorkjetGatewayAccountId.make("one") }),
+      checks.run({ accountId: WorkjetGatewayAccountId.make("two") }),
+    ]);
     expect(maximum).toBe(1);
   });
 });
 
 describe("real loopback model probe", () => {
   it("pins the account and refuses ignored pins, invalid success and unknown models", async () => {
-    const requests: Array<{ headers: Http.IncomingHttpHeaders; body: string }> = [];
-    const server = Http.createServer((request, response) => {
+    const requests: Array<{ headers: NodeHttp.IncomingHttpHeaders; body: string }> = [];
+    const server = NodeHttp.createServer((request, response) => {
       let body = "";
-      request.on("data", (chunk) => { body += String(chunk); });
+      request.on("data", (chunk) => {
+        body += String(chunk);
+      });
       request.on("end", () => {
         requests.push({ headers: request.headers, body });
         const input = JSON.parse(body) as { model: string };
-        if (input.model !== "ignored-pin") response.setHeader("X-CTOX-Account-Selected", request.headers["x-ctox-account"] ?? "");
+        if (input.model !== "ignored-pin")
+          response.setHeader("X-CTOX-Account-Selected", request.headers["x-ctox-account"] ?? "");
         response.setHeader("content-type", "application/json");
-        if (input.model === "unknown") { response.statusCode = 400; response.end(JSON.stringify({ error: { code: "model_not_found", message: "secret-provider-text" } })); }
-        else if (input.model === "empty") response.end("{}");
-        else response.end(JSON.stringify({ status: "completed", output: [{ type: "message", content: [{ text: "private generated content" }] }] }));
+        if (input.model === "oversized") {
+          response.end("x".repeat(70 * 1024));
+        } else if (input.model === "native-unknown") {
+          response.statusCode = 503;
+          response.setHeader("X-CTOX-Error-Class", "unknown-model");
+          response.end("{}");
+        } else if (input.model === "html-auth") {
+          response.statusCode = 401;
+          response.end("<html>private authentication error</html>");
+        } else if (input.model === "quota") {
+          response.statusCode = 429;
+          response.end("{}");
+        } else if (input.model === "unknown") {
+          response.statusCode = 400;
+          response.end(
+            JSON.stringify({ error: { code: "model_not_found", message: "secret-provider-text" } }),
+          );
+        } else if (input.model === "empty") response.end("{}");
+        else
+          response.end(
+            JSON.stringify({
+              status: "completed",
+              output: [{ type: "message", content: [{ text: "private generated content" }] }],
+            }),
+          );
       });
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -98,13 +232,32 @@ describe("real loopback model probe", () => {
       if (address === null || typeof address === "string") throw new Error("address");
       const endpoint = `http://127.0.0.1:${address.port}`;
       const probe = nodeProviderGatewayPlatform.providerModelCheck!;
-      expect(await probe(endpoint, "kimi", "chosen", "valid")).toEqual({ status: "ok", errorClass: null, httpStatus: 200 });
+      expect(await probe(endpoint, "kimi", "chosen", "valid")).toEqual({
+        status: "ok",
+        errorClass: null,
+        httpStatus: 200,
+      });
       expect((await probe(endpoint, "kimi", "chosen", "unknown")).errorClass).toBe("unknown-model");
-      expect((await probe(endpoint, "kimi", "chosen", "ignored-pin")).errorClass).toBe("account-selection-unavailable");
+      expect((await probe(endpoint, "kimi", "chosen", "ignored-pin")).errorClass).toBe(
+        "account-selection-unavailable",
+      );
       expect((await probe(endpoint, "kimi", "chosen", "empty")).status).toBe("error");
+      expect((await probe(endpoint, "kimi", "chosen", "native-unknown")).errorClass).toBe("unknown-model");
+      expect((await probe(endpoint, "kimi", "chosen", "html-auth")).errorClass).toBe("auth");
+      expect((await probe(endpoint, "kimi", "chosen", "quota")).errorClass).toBe("quota-rate-limit");
+      await expect(probe(endpoint, "kimi", "chosen", "oversized")).rejects.toThrow("oversized");
       expect(requests[0]?.headers["x-ctox-provider"]).toBe("kimi");
       expect(requests[0]?.headers["x-ctox-account"]).toBe("chosen");
-      expect(JSON.parse(requests[0]!.body)).toEqual({ model: "valid", input: "Hi", max_output_tokens: 8, stream: false });
-    } finally { await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
+      expect(JSON.parse(requests[0]!.body)).toEqual({
+        model: "valid",
+        input: "Hi",
+        max_output_tokens: 8,
+        stream: false,
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 });

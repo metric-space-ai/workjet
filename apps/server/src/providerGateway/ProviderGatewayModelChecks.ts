@@ -7,14 +7,16 @@ import {
 import * as Schema from "effect/Schema";
 
 export const MODEL_CHECK_COOLDOWN_MS = 5 * 60_000;
+export const MODEL_CHECK_BATCH_LIMIT = 32;
+export const MODEL_CHECK_QUEUE_LIMIT = 64;
 const Persisted = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   entries: Schema.Array(Schema.Struct({ revision: Schema.String, check: WorkjetGatewayModelCheck })),
 });
+const decodePersisted = Schema.decodeUnknownSync(Persisted);
 export interface ModelCheckTarget {
   readonly accountId: string;
   readonly modelId: string;
-  /** A server-only digest of account configuration and credentials. */
   readonly revision: string;
 }
 export interface ModelChecksOptions {
@@ -22,24 +24,39 @@ export interface ModelChecksOptions {
   readonly targets: () => Promise<ReadonlyArray<ModelCheckTarget>>;
   readonly read: () => Promise<string | null>;
   readonly write: (value: string) => Promise<void>;
-  readonly probe: (target: ModelCheckTarget) => Promise<Pick<WorkjetGatewayModelCheck, "status" | "errorClass" | "httpStatus">>;
+  readonly probe: (
+    target: ModelCheckTarget,
+    signal: AbortSignal,
+  ) => Promise<Pick<WorkjetGatewayModelCheck, "status" | "errorClass" | "httpStatus">>;
+}
+interface PendingCheck {
+  readonly target: ModelCheckTarget;
+  force: boolean;
+  status: "queued" | "running";
 }
 
-/** Serial transport, per-target coalescing and a durable credential-sensitive cooldown. */
+/** The service owns shutdown: bounded admission and a single cancellable pump. */
 export const makeModelChecks = (options: ModelChecksOptions) => {
   const entries = new Map<string, { revision: string; check: WorkjetGatewayModelCheck }>();
-  const flights = new Map<string, Promise<void>>();
-  const forced = new Set<string>();
-  let queue: Promise<void> = Promise.resolve();
+  const pending = new Map<string, PendingCheck>();
+  let pump: Promise<void> | undefined;
+  let active: { readonly item: PendingCheck; readonly controller: AbortController } | undefined;
   let loaded: Promise<void> | undefined;
-  const key = (target: Pick<ModelCheckTarget, "accountId" | "modelId">) => JSON.stringify([target.accountId, target.modelId]);
+  let closed = false;
+  let deferredCount = 0;
+  const key = (target: Pick<ModelCheckTarget, "accountId" | "modelId">) =>
+    JSON.stringify([target.accountId, target.modelId]);
+  const fresh = (check: WorkjetGatewayModelCheck) => {
+    const age = options.now() - check.checkedAtMs;
+    return age >= 0 && age < MODEL_CHECK_COOLDOWN_MS;
+  };
   const load = () => loaded ??= (async () => {
     const raw = await options.read();
     if (raw === null) return;
     try {
-      const decoded = Schema.decodeUnknownSync(Persisted)(JSON.parse(raw));
+      const decoded = decodePersisted(JSON.parse(raw));
       for (const entry of decoded.entries) entries.set(key(entry.check), entry);
-    } catch { /* Invalid observations are discarded; never promote corrupt data to green. */ }
+    } catch { /* Invalid observations never become green. */ }
   })();
   const reconcile = async () => {
     await load();
@@ -48,48 +65,105 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
     for (const [id, entry] of entries) {
       if (revisions.get(id) !== entry.revision) entries.delete(id);
     }
+    for (const [id, item] of pending) {
+      if (revisions.get(id) !== item.target.revision) {
+        pending.delete(id);
+        if (active?.item === item) active.controller.abort();
+      }
+    }
     return targets;
   };
-  const snapshot = (): WorkjetGatewayModelChecks => ({ schemaVersion: 1, checks: [...entries.values()].map((entry) => entry.check) });
+  const snapshot = (): WorkjetGatewayModelChecks => ({
+    schemaVersion: 1,
+    checks: [...entries.values()].map((entry) => entry.check),
+    pending: [...pending.values()].map(({ target, status }) => ({
+      accountId: WorkjetGatewayAccountId.make(target.accountId), modelId: target.modelId, status,
+    })),
+    deferredCount,
+  });
   const list = async () => { await reconcile(); return snapshot(); };
-  const run = async (input: WorkjetGatewayModelCheckInput) => {
+  const captureRevisions = async () => new Map((await reconcile()).map((target) => [key(target), target.revision]));
+  const processQueue = async () => {
+    while (!closed && pending.size > 0) {
+      const first = pending.entries().next().value;
+      if (first === undefined) break;
+      const [id, item] = first;
+      await reconcile();
+      if (pending.get(id) !== item) continue;
+      const previous = entries.get(id);
+      if (!item.force && previous?.revision === item.target.revision && fresh(previous.check)) {
+        pending.delete(id); continue;
+      }
+      const controller = new AbortController();
+      active = { item, controller };
+      item.status = "running";
+      const startedAt = options.now();
+      const result = await options.probe(item.target, controller.signal).catch(() => ({
+        status: "error" as const, errorClass: "network-provider" as const, httpStatus: null,
+      }));
+      await reconcile();
+      // Shutdown and config replacement both discard results of the old request.
+      if (!closed && !controller.signal.aborted && pending.get(id) === item) {
+        const check: WorkjetGatewayModelCheck = {
+          accountId: WorkjetGatewayAccountId.make(item.target.accountId), modelId: item.target.modelId,
+          ...result, checkedAtMs: options.now(), latencyMs: Math.max(0, options.now() - startedAt),
+        };
+        entries.set(id, { revision: item.target.revision, check });
+        try { await options.write(JSON.stringify({ schemaVersion: 1, entries: [...entries.values()] })); }
+        catch { entries.delete(id); }
+      }
+      if (pending.get(id) === item) pending.delete(id);
+      active = undefined;
+    }
+  };
+  const kick = () => {
+    if (pump !== undefined || closed || pending.size === 0) return;
+    const running = processQueue().catch(() => { pending.clear(); });
+    pump = running;
+    void running.finally(() => {
+      if (pump === running) pump = undefined;
+      active = undefined;
+      kick();
+    });
+  };
+  const admit = (targets: ReadonlyArray<ModelCheckTarget>, force: boolean) => {
+    let admitted = 0;
+    deferredCount = 0;
+    if (closed) return snapshot();
+    for (const target of targets) {
+      const id = key(target);
+      const existing = pending.get(id);
+      if (existing?.target.revision === target.revision) {
+        existing.force ||= force;
+        continue;
+      }
+      const previous = entries.get(id);
+      if (!force && previous?.revision === target.revision && fresh(previous.check)) continue;
+      if (admitted >= MODEL_CHECK_BATCH_LIMIT || pending.size >= MODEL_CHECK_QUEUE_LIMIT) {
+        deferredCount += 1; continue;
+      }
+      pending.set(id, { target, force, status: "queued" });
+      admitted += 1;
+    }
+    const result = snapshot();
+    kick();
+    return result;
+  };
+  const schedule = async (input: WorkjetGatewayModelCheckInput) => {
     const targets = (await reconcile()).filter((target) =>
       (input.accountId === undefined || target.accountId === input.accountId) &&
       (input.modelId === undefined || target.modelId === input.modelId));
-    await Promise.all(targets.map((target) => {
-      const id = key(target);
-      const flightKey = JSON.stringify([id, target.revision]);
-      if (input.force) forced.add(flightKey);
-      const existing = flights.get(flightKey);
-      if (existing !== undefined) return existing;
-      const flight = queue.then(async () => {
-        // Recheck after queue admission: another command may have just tested it.
-        const previous = entries.get(id);
-        if (!forced.has(flightKey) && previous?.revision === target.revision &&
-            options.now() - previous.check.checkedAtMs < MODEL_CHECK_COOLDOWN_MS) return;
-        // Config edits during a queued request must never publish old greens.
-        const current = await options.targets();
-        if (!current.some((item) => key(item) === id && item.revision === target.revision)) return;
-        const startedAt = options.now();
-        const result = await options.probe(target).catch(() => ({
-          status: "error" as const, errorClass: "network-provider" as const, httpStatus: null,
-        }));
-        const check: WorkjetGatewayModelCheck = {
-          accountId: WorkjetGatewayAccountId.make(target.accountId), modelId: target.modelId,
-          ...result, checkedAtMs: options.now(), latencyMs: Math.max(0, options.now() - startedAt),
-        };
-        const latest = await options.targets();
-        if (!latest.some((item) => key(item) === id && item.revision === target.revision)) return;
-        entries.set(id, { revision: target.revision, check });
-        await options.write(JSON.stringify({ schemaVersion: 1, entries: [...entries.values()] }));
-      });
-      queue = flight.catch(() => undefined);
-      flights.set(flightKey, flight);
-      void flight.finally(() => { if (flights.get(flightKey) === flight) { flights.delete(flightKey); forced.delete(flightKey); } }).catch(() => undefined);
-      return flight;
-    }));
-    await reconcile();
-    return snapshot();
+    return admit(targets, input.force === true);
   };
-  return { list, run };
+  const scheduleChanged = async (previous: ReadonlyMap<string, string>) =>
+    admit((await reconcile()).filter((target) => previous.get(key(target)) !== target.revision), false);
+  const drain = async () => { while (pump !== undefined) await pump; };
+  const run = async (input: WorkjetGatewayModelCheckInput) => { await schedule(input); await drain(); return list(); };
+  const cancel = async () => {
+    pending.clear();
+    active?.controller.abort();
+    await drain();
+  };
+  const shutdown = async () => { closed = true; await cancel(); };
+  return { list, schedule, scheduleChanged, captureRevisions, drain, run, cancel, shutdown };
 };

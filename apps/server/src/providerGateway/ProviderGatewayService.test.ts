@@ -144,19 +144,34 @@ describe("ProviderGatewayService", () => {
   it("makes no inference request without the native account-selection capability", async () => {
     const harness = readyHarness();
     let probes = 0;
+    let persist!: () => void;
+    const persisted = new Promise<void>((resolve) => { persist = resolve; });
     const platform: ProviderGatewayPlatform = {
       ...harness.platform,
       fingerprint: nodeProviderGatewayPlatform.fingerprint,
-      providerModelCheck: async () => { ++probes; return { status: "ok", errorClass: null, httpStatus: 200 }; },
+      writePrivateText: async (path, content) => {
+        await harness.platform.writePrivateText(path, content);
+        if (path.endsWith("model-checks.json")) persist();
+      },
+      providerModelCheck: async () => {
+        ++probes;
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
       readText: async (path, limit) => {
-        if (path.endsWith("model-checks.json")) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
         return harness.platform.readText(path, limit);
       },
     };
-    const result = await runGateway(platform, (gateway) => Effect.gen(function* () {
-      yield* gateway.start();
-      return yield* gateway.checkModels({});
-    }));
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const queued = yield* gateway.checkModels({});
+        expect(queued.pending).toHaveLength(1);
+        yield* Effect.promise(() => persisted);
+        return yield* gateway.modelChecks();
+      }),
+    );
     expect(probes).toBe(0);
     expect(result.checks[0]?.errorClass).toBe("account-selection-unavailable");
   });

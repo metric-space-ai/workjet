@@ -800,11 +800,15 @@ export function createServerEnvironmentAtoms<R, E>(
   const checkWorkjetGatewayModels = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:gateway:check-models",
     tag: WS_METHODS.workjetGatewayCheckModels,
-    concurrency: { mode: "singleFlight", key: ({ environmentId, input }) =>
-      `${environmentId}:${input.accountId ?? "*"}:${input.modelId ?? "*"}:${input.force ?? false}` },
-    onSuccess: ({ environmentId }, registry) => Effect.sync(() => {
-      registry.refresh(workjetGatewayModelChecks({ environmentId, input: {} }));
-    }),
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) =>
+        `${environmentId}:${input.accountId ?? "*"}:${input.modelId ?? "*"}:${input.force ?? false}`,
+    },
+    onSuccess: ({ environmentId }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(workjetGatewayModelChecks({ environmentId, input: {} }));
+      }),
   });
   const workjetGatewayModels = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:workjet:gateway:models",

@@ -111,8 +111,14 @@ export interface GatewayHostProcess {
 }
 
 export interface ProviderGatewayPlatform {
-  readonly fingerprint?: (value: string) => string;
-  readonly providerModelCheck?: (endpoint: string, provider: WorkjetGatewayProvider, accountId: string, modelId: string) => Promise<Pick<WorkjetGatewayModelCheck, "status" | "errorClass" | "httpStatus">>;
+  readonly fingerprint?: ((value: string) => string) | undefined;
+  readonly providerModelCheck?: (
+    endpoint: string,
+    provider: WorkjetGatewayProvider,
+    accountId: string,
+    modelId: string,
+    signal?: AbortSignal,
+  ) => Promise<Pick<WorkjetGatewayModelCheck, "status" | "errorClass" | "httpStatus">>;
   readonly joinPath: (...parts: ReadonlyArray<string>) => string;
   readonly defaultExecutable: (stateDir: string) => string;
   readonly byteLength: (value: Uint8Array | string) => number;
@@ -155,8 +161,13 @@ export interface ProviderGatewayPlatform {
 }
 
 export interface ProviderGatewayServiceShape {
-  readonly modelChecks: () => Effect.Effect<WorkjetGatewayModelChecks, WorkjetGatewayOperationError>;
-  readonly checkModels: (input: WorkjetGatewayModelCheckInput) => Effect.Effect<WorkjetGatewayModelChecks, WorkjetGatewayOperationError>;
+  readonly modelChecks: () => Effect.Effect<
+    WorkjetGatewayModelChecks,
+    WorkjetGatewayOperationError
+  >;
+  readonly checkModels: (
+    input: WorkjetGatewayModelCheckInput,
+  ) => Effect.Effect<WorkjetGatewayModelChecks, WorkjetGatewayOperationError>;
   readonly status: () => Effect.Effect<WorkjetGatewayStatus>;
   readonly catalog: () => Effect.Effect<WorkjetGatewayCatalog, WorkjetGatewayOperationError>;
   readonly scopedCatalog: (
@@ -455,12 +466,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return configuration;
     };
 
-    const modelChecksPath = platform.joinPath(serverConfig.stateDir, "provider-gateway-model-checks.json");
+    const modelChecksPath = platform.joinPath(
+      serverConfig.stateDir,
+      "provider-gateway-model-checks.json",
+    );
     const modelChecks = makeModelChecks({
       now: platform.now,
       read: async () => {
-        try { return await platform.readText(modelChecksPath, 8 * 1024 * 1024); }
-        catch (error) { if (isRecord(error) && error.code === "ENOENT") return null; throw error; }
+        try {
+          return await platform.readText(modelChecksPath, 8 * 1024 * 1024);
+        } catch (error) {
+          if (isRecord(error) && error.code === "ENOENT") return null;
+          throw error;
+        }
       },
       write: (value) => platform.writePrivateText(modelChecksPath, value),
       targets: async () => {
@@ -474,22 +492,57 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           }
           // Only a one-way digest leaves this stack frame; credentials are never stored.
           if (platform.fingerprint === undefined) continue;
-          const { models: _models, label: _label, priority: _priority, weight: _weight, ...connection } = account;
+          const {
+            models: _models,
+            label: _label,
+            priority: _priority,
+            weight: _weight,
+            ...connection
+          } = account;
           const revision = platform.fingerprint(JSON.stringify([connection, credentials]));
-          for (const modelId of account.models) targets.push({ accountId: account.id, modelId, revision });
+          for (const modelId of account.models)
+            targets.push({ accountId: account.id, modelId, revision });
         }
         return targets;
       },
-      probe: async (target) => {
-        const unavailable = { status: "error" as const, errorClass: "account-selection-unavailable" as const, httpStatus: null };
-        if (currentStatus.providerEndpoint === null || currentStatus.managementEndpoint === null || managementCredential === undefined) {
+      probe: async (target, signal) => {
+        const unavailable = {
+          status: "error" as const,
+          errorClass: "account-selection-unavailable" as const,
+          httpStatus: null,
+        };
+        if (
+          currentStatus.providerEndpoint === null ||
+          currentStatus.managementEndpoint === null ||
+          managementCredential === undefined
+        ) {
           return { status: "error", errorClass: "network-provider", httpStatus: null };
         }
-        const runtime = await platform.managementGet(currentStatus.managementEndpoint, "/v0/management/runtime-status", managementCredential, MANAGEMENT_MAX_BYTES);
-        if (!isRecord(runtime) || !isRecord(runtime.features) || runtime.features.account_selection !== true || platform.providerModelCheck === undefined) return unavailable;
-        const account = (await loadConfiguration()).accounts.find((item) => item.id === target.accountId);
-        if (account === undefined || !account.enabled) return { status: "error", errorClass: "auth", httpStatus: null };
-        return platform.providerModelCheck(currentStatus.providerEndpoint, account.provider, target.accountId, target.modelId);
+        const runtime = await platform.managementGet(
+          currentStatus.managementEndpoint,
+          "/v0/management/runtime-status",
+          managementCredential,
+          MANAGEMENT_MAX_BYTES,
+        );
+        if (
+          !isRecord(runtime) ||
+          !isRecord(runtime.features) ||
+          runtime.features.account_selection !== true ||
+          platform.providerModelCheck === undefined
+        )
+          return unavailable;
+        const account = (await loadConfiguration()).accounts.find(
+          (item) => item.id === target.accountId,
+        );
+        if (account === undefined || !account.enabled)
+          return { status: "error", errorClass: "auth", httpStatus: null };
+        return platform.providerModelCheck(
+          currentStatus.providerEndpoint,
+          account.provider,
+          target.accountId,
+          target.modelId,
+          signal,
+        );
       },
     });
 
@@ -1666,9 +1719,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       ),
     );
 
+    yield* Effect.addFinalizer(() => Effect.promise(modelChecks.shutdown));
+
     return ProviderGatewayService.of({
-      modelChecks: () => Effect.tryPromise({ try: modelChecks.list, catch: () => safeError("management-unavailable") }),
-      checkModels: (input) => Effect.tryPromise({ try: () => modelChecks.run(input), catch: () => safeError("management-unavailable") }),
+      modelChecks: () =>
+        Effect.tryPromise({
+          try: modelChecks.list,
+          catch: () => safeError("management-unavailable"),
+        }),
+      checkModels: (input) =>
+        Effect.tryPromise({
+          try: () => modelChecks.schedule(input),
+          catch: () => safeError("management-unavailable"),
+        }),
       status: () => Effect.sync(() => currentStatus),
       catalog: () =>
         Effect.tryPromise({
@@ -1750,7 +1813,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }),
       stop: () =>
         Effect.tryPromise({
-          try: stopSingleFlight,
+          try: async () => { await modelChecks.cancel(); return stopSingleFlight(); },
           catch: (error) =>
             isGatewayOperationError(error) ? error : safeError("shutdown-timeout"),
         }),
@@ -1763,10 +1826,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       oauthPoll: (input) =>
         Effect.tryPromise({
           try: async () => {
+            const previous = await modelChecks.captureRevisions().catch(() => new Map<string, string>());
             const result = await runOauthPoll(input);
-            for (const accountId of result.completedAccountIds) {
-              await modelChecks.run({ accountId }).catch(() => undefined);
-            }
+            if (result.completedAccountIds.length > 0) await modelChecks.scheduleChanged(previous).catch(() => undefined);
             return result;
           },
           catch: (error) =>
@@ -1781,8 +1843,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       addApiKeyAccount: (input) =>
         Effect.tryPromise({
           try: async () => {
+            const previous = await modelChecks.captureRevisions().catch(() => new Map<string, string>());
             const result = await runAddApiKeyAccount(input);
-            await modelChecks.run({ accountId: result.accountId }).catch(() => undefined);
+            await modelChecks.scheduleChanged(previous).catch(() => undefined);
             return result;
           },
           catch: (error) =>
@@ -1836,8 +1899,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       updateRouting: (input) =>
         Effect.tryPromise({
           try: async () => {
+            const previous = await modelChecks.captureRevisions().catch(() => new Map<string, string>());
             const result = await runUpdateRouting(input);
-            await modelChecks.run({}).catch(() => undefined);
+            await modelChecks.scheduleChanged(previous).catch(() => undefined);
             return result;
           },
           catch: (error) =>

@@ -789,10 +789,14 @@ export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGate
 });
 
 export const WsWorkjetGatewayModelChecksRpc = Rpc.make(WS_METHODS.workjetGatewayModelChecks, {
-  payload: Schema.Struct({}), success: WorkjetGatewayModelChecks, error: WorkjetGatewayRpcError,
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayModelChecks,
+  error: WorkjetGatewayRpcError,
 });
 export const WsWorkjetGatewayCheckModelsRpc = Rpc.make(WS_METHODS.workjetGatewayCheckModels, {
-  payload: WorkjetGatewayModelCheckInput, success: WorkjetGatewayModelChecks, error: WorkjetGatewayRpcError,
+  payload: WorkjetGatewayModelCheckInput,
+  success: WorkjetGatewayModelChecks,
+  error: WorkjetGatewayRpcError,
 });
 
 /** Edits the host-wide selection strategy and per-account pool membership. */

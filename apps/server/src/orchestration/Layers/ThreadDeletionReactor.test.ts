@@ -9,6 +9,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -227,7 +228,16 @@ describe("worker worktree cleanup on thread.deleted", () => {
         }),
     } as unknown as GitWorkflowService["Service"]);
     const nativeRemoverLayer = Layer.mock(NativeWorkerWorktreeRemover)({
-      remove: (worktreePath: string) => {
+      capture: (worktreePath: string) =>
+        Effect.succeed({
+          worktreePath,
+          worktreeDev: "1",
+          worktreeIno: "2",
+          adminPath: "/workspace/project/.git/worktrees/worker-a",
+          adminDev: "1",
+          adminIno: "3",
+        }),
+      removeCaptured: ({ worktreePath }) => {
         if (input.rejectRemovalPathOnSecondCheck) {
           return Effect.fail(new NativeWorkerWorktreeRemovalError({ reason: "identity" }));
         }
@@ -338,6 +348,15 @@ describe("worker worktree cleanup on thread.deleted", () => {
       },
     } as WorkerCleanupReceiptStore["Service"]);
 
+    const fixtureServicesLayer = Layer.effect(
+      FileSystem.FileSystem,
+      Effect.map(FileSystem.FileSystem, (fs) => ({
+        ...fs,
+        exists: (candidate) =>
+          candidate === workerWorktreePath ? Effect.succeed(worktreePresent) : fs.exists(candidate),
+      })),
+    ).pipe(Layer.provideMerge(NodeServices.layer));
+
     const workerWorktreeCleanupLayer = Layer.effect(
       WorkerWorktreeCleanup,
       makeWorkerWorktreeCleanup(({ worktreePath }) =>
@@ -363,7 +382,7 @@ describe("worker worktree cleanup on thread.deleted", () => {
           receiptLayer,
           nativeRemoverLayer,
           worktreeStorageLayerTest({ trustedRoots: [worktreeRoot] }),
-          NodeServices.layer,
+          fixtureServicesLayer,
         ),
       ),
     );

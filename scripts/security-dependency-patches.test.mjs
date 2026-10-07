@@ -1,9 +1,15 @@
-import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import test from "node:test";
-import path from "node:path";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeCrypto from "node:crypto";
+import * as NodeModule from "node:module";
+import * as NodeURL from "node:url";
+import * as NodeTest from "node:test";
+import * as NodePath from "node:path";
+const assert = NodeAssert;
+const { generateKeyPairSync } = NodeCrypto;
+const { createRequire } = NodeModule;
+const { fileURLToPath } = NodeURL;
+const test = NodeTest.test;
+const path = NodePath;
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const mobile = createRequire(path.join(root, "apps/mobile/package.json"));

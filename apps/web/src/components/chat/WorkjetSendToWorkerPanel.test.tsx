@@ -695,8 +695,8 @@ describe("WorkjetSendToWorkerPanel compact variant", () => {
 
     expect(control.props["data-workjet-send-control-compact"]).toBe("false");
     const rendered = control.props.render as InspectableElement;
-    expect(rendered.props["aria-label"]).toBe("Send to worker");
-    expect(textContent(control.props.children)).toContain("Send to worker");
+    expect(rendered.props["aria-label"]).toBe("Send to Luma");
+    expect(textContent(control.props.children)).toContain("Send to Luma");
   });
 
   it("keeps the send-to-worker trigger bounded for long localized labels", () => {
@@ -718,9 +718,9 @@ describe("WorkjetSendToWorkerPanel compact variant", () => {
     expect(control.props["data-workjet-send-control-compact"]).toBe("true");
     const rendered = control.props.render as InspectableElement;
     // The visible label goes; the ACCESSIBLE name does not.
-    expect(rendered.props["aria-label"]).toBe("Send to worker");
+    expect(rendered.props["aria-label"]).toBe("Send to Luma");
     const label = descendants(control.props.children).find(
-      (element) => textContent(element) === "Send to worker",
+      (element) => textContent(element) === "Send to Luma",
     );
     expect(label?.props.className).toBe("sr-only");
     // The popover still holds the complete panel, not a reduced one.

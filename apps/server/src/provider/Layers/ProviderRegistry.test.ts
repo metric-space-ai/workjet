@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -1570,6 +1571,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         Effect.gen(function* () {
           const firstMissing = `workjet_codex_first_`;
           const secondMissing = `workjet_codex_second_`;
+          const secondProbeFinished = yield* Deferred.make<void>();
           const spawnedCommands: Array<string> = [];
           const serverSettings = yield* makeMutableServerSettingsService(
             decodeServerSettings(
@@ -1578,7 +1580,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   codex: { enabled: true, binaryPath: firstMissing },
                   claudeAgent: { enabled: false },
                   cursor: { enabled: false },
+                  greppy: { enabled: false },
                   grok: { enabled: false },
+                  minimax: { enabled: false },
                   opencode: { enabled: false },
                 },
               }),
@@ -1611,8 +1615,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             Layer.provideMerge(stoppedProviderGatewayTestLayer),
             Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
               ChildProcessSpawner.make((command) => {
-                spawnedCommands.push((command as { readonly command: string }).command);
-                return spawner.spawn(command);
+                const executable = (command as { readonly command: string }).command;
+                spawnedCommands.push(executable);
+                const spawned = spawner.spawn(command);
+                return executable === secondMissing
+                  ? spawned.pipe(Effect.ensuring(Deferred.succeed(secondProbeFinished, undefined)))
+                  : spawned;
               }),
             ),
             Layer.provideMerge(NodeServices.layer),
@@ -1660,9 +1668,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               },
             });
 
-            // Poll until the injected process boundary observes the new
-            // executable. This verifies the public settings-to-probe behavior
-            // without depending on timestamps assigned by TestClock.
+            // Wait for the real process boundary before advancing the virtual
+            // clock. Rapid TestClock polling can finish before native ENOENT
+            // and the settings reconciliation complete on a loaded build host.
+            yield* Deferred.await(secondProbeFinished);
             const refreshed = yield* Effect.gen(function* () {
               for (let attempts = 0; attempts < 60; attempts += 1) {
                 const providers = yield* registry.getProviders;
@@ -1846,7 +1855,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 "claudeAgent",
                 "codex",
                 "cursor",
+                "greppy",
                 "grok",
+                "minimax",
                 "opencode",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);

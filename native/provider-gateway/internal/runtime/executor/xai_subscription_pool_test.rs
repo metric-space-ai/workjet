@@ -124,6 +124,52 @@ fn account(id: &str, models: &[&str], token: &str) -> XaiSubscriptionPoolAccount
 }
 
 #[tokio::test]
+async fn exact_pin_selects_second_subscription_and_refuses_unusable_accounts() {
+    use crate::internal::api::account_selection::{
+        acknowledgement, request_account, SchedulerPolicy, ACCOUNT_SELECTION,
+    };
+    for policy in [false, true] {
+        let transport = Arc::new(FlippingTransport {
+            calls: AtomicUsize::new(0),
+        });
+        let mut disabled = account("disabled", &[], "fresh-token-disabled");
+        disabled.disabled = true;
+        let mut pool = pool_with(
+            vec![
+                account("first", &[], "fresh-token-first"),
+                account("second", &[], "fresh-token-second"),
+                disabled,
+                account("other-model", &["different"], "fresh-token-other"),
+            ],
+            transport.clone(),
+        );
+        if policy {
+            pool = pool.with_policy(Arc::new(SchedulerPolicy));
+        }
+        for id in ["second", "missing", "disabled", "other-model"] {
+            let before = transport.calls.load(Ordering::SeqCst);
+            ACCOUNT_SELECTION
+                .scope(std::sync::Mutex::new(Default::default()), async {
+                    request_account(Some(id.into()));
+                    let result = pool
+                        .execute("grok-test", br#"{"model":"grok-test","input":"Hi"}"#)
+                        .await;
+                    if id == "second" {
+                        assert!(result.is_ok());
+                        assert!(acknowledgement().contains("X-CTOX-Account-Selected: second"));
+                        assert_eq!(transport.calls.load(Ordering::SeqCst), before + 1);
+                    } else {
+                        assert!(matches!(result, Err(XaiPoolError::NoAccount)));
+                        assert_eq!(transport.calls.load(Ordering::SeqCst), before);
+                        assert!(acknowledgement().is_empty());
+                    }
+                })
+                .await;
+        }
+    }
+}
+
+#[tokio::test]
 async fn refreshes_once_on_unauthorized_and_persists_the_rotation() {
     // The upstream rejects the stale token, the pool refreshes EXACTLY once,
     // retries, and hands the rotated refresh token to the persist port —

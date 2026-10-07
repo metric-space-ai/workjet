@@ -381,6 +381,9 @@ impl AccountPolicy for AccountState {
             })
             .ok_or(AccountSelectionError::Unavailable)?
             .clone();
+        if workjet_provider_gateway::internal::api::account_selection::is_model_check() {
+            return Ok(selected);
+        }
         let mut next = state.clone();
         next.affinities.insert(key, selected.auth_id.clone());
         self.persist(&next)

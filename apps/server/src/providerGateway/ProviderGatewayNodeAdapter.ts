@@ -64,8 +64,14 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
         "content-type": "application/json",
         "X-CTOX-Provider": provider,
         "X-CTOX-Account": accountId,
+        "X-CTOX-Purpose": "model-check",
       },
-      body: JSON.stringify({ model: modelId, input: "Hi", max_output_tokens: 8, stream: false }),
+      body: JSON.stringify({
+        model: modelId,
+        input: [{ role: "user", content: "Hi" }],
+        max_output_tokens: 8,
+        stream: false,
+      }),
       signal: AbortSignal.any([
         AbortSignal.timeout(15_000),
         ...(signal === undefined ? [] : [signal]),

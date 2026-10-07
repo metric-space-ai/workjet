@@ -300,9 +300,10 @@ describe("real loopback model probe", () => {
       await expect(probe(endpoint, "kimi", "chosen", "oversized")).rejects.toThrow("oversized");
       expect(requests[0]?.headers["x-ctox-provider"]).toBe("kimi");
       expect(requests[0]?.headers["x-ctox-account"]).toBe("chosen");
+      expect(requests[0]?.headers["x-ctox-purpose"]).toBe("model-check");
       expect(JSON.parse(requests[0]!.body)).toEqual({
         model: "valid",
-        input: "Hi",
+        input: [{ role: "user", content: "Hi" }],
         max_output_tokens: 8,
         stream: false,
       });

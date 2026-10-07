@@ -34,6 +34,11 @@ import type {
 } from "./WorkjetGatewayPools";
 import type { ModelsManagementState } from "./WorkjetModelsProviders";
 import { modelsAccountHealth } from "./WorkjetModelsHealth";
+import {
+  createModelCheckPass,
+  remainingModelChecks,
+  type ModelCheckPass,
+} from "./WorkjetModelsChecks";
 
 /**
  * Runtime state for the Workjet provider-gateway account surface.
@@ -68,6 +73,143 @@ export function useWorkjetGatewaySection(
       ? null
       : serverEnvironment.workjetGatewayModels({ environmentId, input: {} }),
   );
+  const checksQuery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetGatewayModelChecks({ environmentId, input: {} }),
+  );
+  const checkModels = useAtomCommand(serverEnvironment.checkWorkjetGatewayModels, {
+    reportFailure: false,
+  });
+  const [checksSubmitting, setChecksSubmitting] = useState(false);
+  const [checksError, setChecksError] = useState<string | null>(null);
+  const checksFlight = useRef<object | null>(null);
+  const checksPollingDeadline = useRef(0);
+  const checksPolls = useRef(0);
+  const checksPass = useRef<ModelCheckPass | null>(null);
+  const runChecks = useCallback(
+    async (accountId?: string, force = false, continuation = false) => {
+      if (environmentId === null || checksFlight.current !== null || checksQuery.data === null)
+        return;
+      if (!continuation) {
+        checksPass.current = createModelCheckPass(
+          catalogQuery.data?.accounts ?? [],
+          checksQuery.data.checks,
+          Date.now(),
+          accountId,
+          force,
+        );
+        checksPollingDeadline.current = Date.now() + 20 * 60_000;
+        checksPolls.current = 0;
+      }
+      const flight = {};
+      checksFlight.current = flight;
+      setChecksSubmitting(true);
+      setChecksError(null);
+      try {
+        const result = await checkModels({
+          environmentId,
+          input: {
+            force,
+            ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}),
+          },
+        });
+        if (checksFlight.current !== flight) return;
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
+          setChecksError("Model checks could not finish. Check the provider connection and retry.");
+        checksQuery.refresh();
+      } finally {
+        if (checksFlight.current === flight) {
+          checksFlight.current = null;
+          setChecksSubmitting(false);
+        }
+      }
+    },
+    [environmentId, checkModels, checksQuery.refresh, checksQuery.data, catalogQuery.data],
+  );
+  const checksBusy = checksSubmitting || (checksQuery.data?.pending.length ?? 0) > 0;
+  useEffect(() => {
+    checksPollingDeadline.current = 0;
+    checksPolls.current = 0;
+    checksPass.current = null;
+    setChecksSubmitting(false);
+    setChecksError(null);
+    return () => {
+      checksFlight.current = null;
+    };
+  }, [environmentId]);
+  useEffect(() => {
+    if (
+      environmentId === null ||
+      checksSubmitting ||
+      checksQuery.error !== null ||
+      checksError !== null ||
+      !checksQuery.data
+    )
+      return;
+    const { pending, deferredCount } = checksQuery.data;
+    if (pending.length === 0 && deferredCount === 0) return;
+    const pass = checksPass.current;
+    if (
+      pending.length === 0 &&
+      (pass === null ||
+        remainingModelChecks(pass, catalogQuery.data?.accounts ?? [], checksQuery.data.checks) ===
+          0)
+    )
+      return;
+    if (checksPollingDeadline.current === 0)
+      checksPollingDeadline.current = Date.now() + 20 * 60_000;
+    if (Date.now() >= checksPollingDeadline.current || checksPolls.current >= 600) return;
+    // Only this mounted page owns the timer. Completed observations persist
+    // server-side; each continuation admits a bounded batch from this finite pass.
+    const timer = setTimeout(() => {
+      checksPolls.current += 1;
+      if (pending.length > 0) checksQuery.refresh();
+      else if (pass !== null) void runChecks(pass.accountId, pass.force, true);
+    }, 2_000);
+    return () => clearTimeout(timer);
+  }, [
+    environmentId,
+    checksSubmitting,
+    checksError,
+    checksQuery.data,
+    checksQuery.error,
+    checksQuery.refresh,
+    catalogQuery.data,
+    runChecks,
+  ]);
+
+  const modelFingerprint = JSON.stringify(
+    (catalogQuery.data?.accounts ?? []).map((account) => [
+      account.id,
+      account.enabled,
+      account.modelIds,
+    ]),
+  );
+  const autoCheckedFingerprint = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      statusQuery.data?.phase !== "ready" ||
+      catalogQuery.data === null ||
+      checksQuery.data === null ||
+      checksSubmitting ||
+      checksFlight.current !== null
+    )
+      return;
+    const key = `${environmentId}:${modelFingerprint}`;
+    if (autoCheckedFingerprint.current === key) return;
+    autoCheckedFingerprint.current = key;
+    void runChecks();
+  }, [
+    environmentId,
+    modelFingerprint,
+    statusQuery.data?.phase,
+    catalogQuery.data,
+    checksQuery.data,
+    checksSubmitting,
+    runChecks,
+  ]);
+
   const updateRouting = useAtomCommand(serverEnvironment.updateWorkjetGatewayRouting, {
     reportFailure: false,
   });
@@ -175,7 +317,8 @@ export function useWorkjetGatewaySection(
     catalogQuery.refresh();
     healthQuery.refresh();
     modelsQuery.refresh();
-  }, [catalogQuery, healthQuery, modelsQuery, statusQuery]);
+    checksQuery.refresh();
+  }, [catalogQuery, healthQuery, modelsQuery, statusQuery, checksQuery]);
 
   /**
    * Persist the pool edit. The server rewrites the gateway configuration and
@@ -493,6 +636,24 @@ export function useWorkjetGatewaySection(
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
     loginAccountId,
     accountErrors,
+    modelChecks: checksQuery.data?.checks ?? [],
+    pendingModelChecks: checksQuery.data?.pending ?? [],
+    deferredChecksCount:
+      checksPass.current === null
+        ? (checksQuery.data?.deferredCount ?? 0)
+        : Math.max(
+            0,
+            remainingModelChecks(
+              checksPass.current,
+              catalogQuery.data?.accounts ?? [],
+              checksQuery.data?.checks ?? [],
+            ) - (checksQuery.data?.pending.length ?? 0),
+          ),
+    checksBusy,
+    checksError: checksError ?? checksQuery.error,
+    onCheckModels: (accountId) => {
+      void runChecks(accountId, true);
+    },
     accountHealth: Object.fromEntries(
       (healthQuery.data?.accounts ?? []).map((account) => [
         account.accountId,

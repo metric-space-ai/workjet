@@ -62,6 +62,8 @@ function withStateRoot<A>(
       const filePath = path.join(stateRoot, entry.path);
       yield* fileSystem.makeDirectory(path.dirname(filePath), { recursive: true });
       yield* fileSystem.writeFileString(filePath, entry.contents);
+      // Discovery requires an owner-only fixture, independent of the build host's umask.
+      yield* fileSystem.chmod(filePath, 0o600);
     }
     return yield* use({
       stateRoot,

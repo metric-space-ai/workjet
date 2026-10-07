@@ -1,6 +1,9 @@
-import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import vm from "node:vm";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeFS from "node:fs";
+import * as NodeVM from "node:vm";
+const assert = NodeAssert;
+const { readFileSync } = NodeFS;
+const vm = NodeVM;
 
 // Execute the production JS embedded in Rust; no provider/browser/network call.
 const rust = readFileSync(

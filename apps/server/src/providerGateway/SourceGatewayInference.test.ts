@@ -82,7 +82,7 @@ const input: WorkjetGatewayInferenceInput = {
     ownerUserId: "owner",
     authorityEpoch: 1,
     authorityFingerprint: `sha256:${"a".repeat(64)}`,
-    expiresAtMs: 9000,
+    expiresAtMs: 300000,
     state: "claimed",
     executionId: "execution",
     renewalSequence: 0,
@@ -112,6 +112,7 @@ const input: WorkjetGatewayInferenceInput = {
 };
 const fixture = () => {
   const events: string[] = [];
+  const deadlines: number[] = [];
   let scoped = catalog;
   let receipt: unknown = input.permit;
   let nativeError: WorkjetGatewayInferenceError | undefined;
@@ -148,7 +149,7 @@ const fixture = () => {
         events.push("forward");
         expect(selected).toEqual({ target, ...references });
         expect(request).toBe(input.requestJson);
-        expect(deadline).toBe(input.permit.expiresAtMs);
+        deadlines.push(deadline);
         afterForward();
         return JSON.stringify({ output: [{ text: "result" }] });
       }),
@@ -157,6 +158,7 @@ const fixture = () => {
   return {
     consumer,
     events,
+    deadlines,
     scope: (value: WorkjetGatewayScopedCatalog) => {
       scoped = value;
     },
@@ -167,7 +169,7 @@ const fixture = () => {
       nativeError = new WorkjetGatewayInferenceError({ reason: "native-admission-unavailable" });
     },
     expire: () => {
-      now = 10000;
+      now = 1000000;
     },
     afterForward: (action: () => void) => {
       afterForward = action;
@@ -299,12 +301,59 @@ describe("source gateway inference", () => {
       requestJson: JSON.stringify({ output: [{ text: "result" }] }),
     });
     expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+    expect(f.deadlines).toEqual([input.permit.expiresAtMs]);
     f.scope({ ...catalog, accounts: [] });
     expect(await reason(f.consumer.infer(input))).toBe("grant-unavailable");
     expect(f.events.filter((e) => e === "forward")).toHaveLength(1);
   });
+  it("accepts monotonic renewal of the same execution before and during inference", async () => {
+    const f = fixture();
+    f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 600000 });
+    f.afterForward(() => f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 900000 }));
+    expect(await Effect.runPromise(f.consumer.infer(input))).toEqual({
+      requestJson: JSON.stringify({ output: [{ text: "result" }] }),
+    });
+    expect(f.deadlines).toEqual([600000]);
+    expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+  });
+  it("withholds a renewed response if immutable native authority was substituted", async () => {
+    for (const mutation of [
+      { ownerUserId: "other-owner" },
+      { authorityEpoch: 2 },
+      { authorityFingerprint: `sha256:${"b".repeat(64)}` },
+      { permitId: "other-permit" },
+      { executionId: "other-execution" },
+      { state: "revoked" },
+      { binding: { ...input.permit.binding, projectId: "other-project" } },
+    ]) {
+      const f = fixture();
+      f.afterForward(() => f.native({
+        ...input.permit, renewalSequence: 1, expiresAtMs: 600000, ...mutation,
+      }));
+      expect(await reason(f.consumer.infer(input))).toBe("native-admission-rejected");
+    }
+  });
+  it("rejects a renewal sequence regression against the fresh pre-forward receipt", async () => {
+
+    const f = fixture();
+    f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 600000 });
+    f.afterForward(() => f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 900000 }));
+    expect(await reason(f.consumer.infer(input))).toBe("native-admission-rejected");
+    expect(f.events).toContain("forward");
+  });
+  it("rejects expiry extension without native renewal and requires a full bounded turn lease", async () => {
+    const unsequenced = fixture();
+    unsequenced.native({ ...input.permit, expiresAtMs: 600000 });
+    expect(await reason(unsequenced.consumer.infer(input))).toBe("native-admission-rejected");
+    const nearExpiry = fixture();
+    const short = { ...input, permit: { ...input.permit, expiresAtMs: 5000 } };
+    nearExpiry.native(short.permit);
+    expect(await reason(nearExpiry.consumer.infer(short))).toBe("native-admission-rejected");
+    expect(nearExpiry.events).not.toContain("forward");
+  });
   it.each([
     "ownerUserId",
+
     "authorityEpoch",
     "executionId",
     "permitId",

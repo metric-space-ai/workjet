@@ -16,6 +16,9 @@ import * as Schema from "effect/Schema";
 const failure = (reason: WorkjetGatewayInferenceError["reason"]) =>
   new WorkjetGatewayInferenceError({ reason });
 
+// A lifecycle heartbeat must not extend an already dispatched model turn.
+export const SOURCE_GATEWAY_TURN_TIMEOUT_MS = 120_000;
+
 export const gatewayTargetForWorker = (binding: WorkjetRemoteWorkerPermit["binding"]) => ({
   connectionId: binding.targetConnectionId,
   instanceId: binding.targetInstanceId,
@@ -143,12 +146,16 @@ export function makeSourceGatewayInference(dependencies: {
           : failure("native-admission-rejected"),
       ),
     );
+    const { renewalSequence: previousSequence, expiresAtMs: previousExpiry, ...previousAuthority } = input.permit;
+    const { renewalSequence, expiresAtMs, ...currentAuthority } = receipt;
     if (
-      JSON.stringify(receipt) !== JSON.stringify(input.permit) ||
+      JSON.stringify(currentAuthority) !== JSON.stringify(previousAuthority) ||
+      renewalSequence < previousSequence ||
+      (renewalSequence === previousSequence ? expiresAtMs !== previousExpiry : expiresAtMs <= previousExpiry) ||
       receipt.expiresAtMs <= (yield* dependencies.now)
     )
       return yield* failure("native-admission-rejected");
-    return selected;
+    return { selected, permit: receipt };
   });
 
   const admit = Effect.fn("SourceGatewayInference.admit")(function* (
@@ -188,14 +195,16 @@ export function makeSourceGatewayInference(dependencies: {
       },
       catch: () => failure("invalid-request"),
     });
-    const selected = yield* requireAuthority(input);
+    const authority = yield* requireAuthority(input);
+    if (authority.permit.expiresAtMs - (yield* dependencies.now) < SOURCE_GATEWAY_TURN_TIMEOUT_MS)
+      return yield* failure("native-admission-rejected");
     const result = yield* dependencies.forward(
-      selected,
+      authority.selected,
       input.requestJson,
-      input.permit.expiresAtMs,
+      authority.permit.expiresAtMs,
     );
     // A revoked/expired grant or native permit also prevents publication after the await.
-    yield* requireAuthority(input);
+    yield* requireAuthority({ ...input, permit: authority.permit });
     return { requestJson: result };
   });
   return { bindModel, admit, infer };

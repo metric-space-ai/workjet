@@ -217,7 +217,7 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
       `preserves the running ${platform} service when CLI verification times out or reports another version`,
       () =>
         Effect.gen(function* () {
-          const { service, fs, statePath, commands, control } = yield* makeHarness(
+          const { service, fs, statePath, commands, control, runtime } = yield* makeHarness(
             platform,
             false,
             false,
@@ -238,8 +238,10 @@ it.layer(NodeServices.layer)("bundled service executable", (it) => {
             control.verificationVersion = failure.version;
             const error = yield* service.install.pipe(Effect.flip);
             expect(error._tag).toBe("BootServiceCommandError");
-            expect(commands).toHaveLength(1);
-            expect(commands[0]).toContain("--version");
+            expect(commands).toEqual([
+              ...(platform === "darwin" ? ["/bin/launchctl help bootout"] : []),
+              `${bundledRuntimeNodePath(runtime.entryPath)} ${runtime.entryPath} --version`,
+            ]);
             expect(yield* fs.readFileString(statePath)).toBe(before.state);
             expect(yield* fs.readFileString(plan.launcherPath)).toBe(before.launcher);
             expect(yield* fs.readFileString(plan.unitPath)).toBe(before.unit);

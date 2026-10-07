@@ -11,6 +11,7 @@ import {
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -158,7 +159,21 @@ export const make = Effect.gen(function* () {
         yield* Deferred.succeed(published, typed);
       }),
     }).pipe(
-      Effect.flatMap((connection) => Deferred.succeed(ready, undefined).pipe(Effect.andThen(connection.disconnected))),
+      Effect.flatMap((connection) => Effect.gen(function* () {
+        yield* Deferred.succeed(ready, undefined);
+        // A live worker can spend more than the native five-minute lease in a
+        // tool/build step. The owning source service renews current authority
+        // while the confirmed route exists, including during desktop Quit.
+        const heartbeat = yield* Effect.tryPromise({
+          try: (signal) => operations.value.invoke(request, "admit", undefined, signal), catch: failure,
+        }).pipe(
+          Effect.timeout("20 seconds"),
+          Effect.repeat(Schedule.spaced("60 seconds")),
+          Effect.catch(() => connection.close),
+          Effect.forkIn(scope),
+        );
+        yield* connection.disconnected.pipe(Effect.ensuring(Fiber.interrupt(heartbeat)));
+      })),
       Effect.catch(() => Effect.all([Deferred.fail(published, failure()), Deferred.fail(ready, failure())])),
       Effect.ensuring(Effect.sync(() => sources.delete(request.requestId))),
       Effect.provideService(Scope.Scope, scope), Effect.provide(runtime),

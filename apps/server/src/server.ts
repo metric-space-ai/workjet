@@ -58,6 +58,7 @@ import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
 import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnectionBootstrap.ts";
 import * as RemoteWorkerStore from "./workjet/RemoteWorkerStore.ts";
 import * as RemoteWorkerAuthorityStore from "./workjet/RemoteWorkerAuthorityStore.ts";
+import * as RemoteWorkerComputerEnrollmentLive from "./workjet/RemoteWorkerComputerEnrollmentLive.ts";
 import * as RemoteWorkerSourceOperationsLive from "./workjet/RemoteWorkerSourceOperationsLive.ts";
 import * as RemoteWorkerTargetHarnessSetupLive from "./workjet/RemoteWorkerTargetHarnessSetupLive.ts";
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
@@ -448,8 +449,12 @@ const WorkerDispatchRollbackLayerLive = WorkerDispatchRollback.layer.pipe(
 const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
 );
+const RemoteWorkerComputerEnrollmentLayerLive = RemoteWorkerComputerEnrollmentLive.layer.pipe(
+  Layer.provide(DecisionHubConnectionRegistryLive), Layer.provide(ServerSecretStore.layer),
+);
 const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
   Layer.provide(RemoteWorkerSourceOperationsLive.layer.pipe(
+    Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
     Layer.provide(RemoteWorkerAuthorityStore.layer),
     Layer.provide(DecisionHubConnectionRegistryLive),
   )),
@@ -604,6 +609,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     // same three services the MCP server below is given.
     websocketRpcRouteLayer.pipe(
       Layer.provide(RemoteWorkerConnectionBootstrapLive),
+      Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
       Layer.provide(RemoteWorkerBrokerLayerLive),
       Layer.provide(RemoteWorkerReceiverLayerLive),
       Layer.provide(DecisionHubConnectionRegistryLive),

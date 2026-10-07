@@ -22,6 +22,7 @@ import { makeCtoxRemoteWorkerTargets } from "./ctox/CtoxRemoteWorkerTargets.ts";
 import { RemoteWorkerAuthorityStore } from "./RemoteWorkerAuthorityStore.ts";
 import { makeRemoteWorkerSourceAuthority } from "./RemoteWorkerSourceAuthority.ts";
 import { RemoteWorkerSourceOperations } from "./RemoteWorkerConnectionBootstrap.ts";
+import { RemoteWorkerComputerEnrollment } from "./RemoteWorkerComputerEnrollment.ts";
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "computer-unavailable" });
 const InferPayload = Schema.Struct({ requestJson: Schema.String.check(Schema.isMaxLength(256 * 1024)) });
@@ -34,6 +35,7 @@ export const make = Effect.gen(function* () {
   const connections = yield* DecisionHubConnectionRegistry;
   const gateway = yield* ProviderGatewayService;
   const store = yield* RemoteWorkerAuthorityStore;
+  const enrollment = yield* RemoteWorkerComputerEnrollment;
   const transport = makeCtoxMcpTransport(yield* HttpClient.HttpClient);
   const native = makeCtoxRemoteWorkerAdmissionClient({ connections, gateway, transport });
   const targets = makeCtoxRemoteWorkerTargets({ connections, transport });
@@ -65,6 +67,7 @@ export const make = Effect.gen(function* () {
     authorize: (request, profile) => Effect.gen(function* () {
       if (profile.environmentId !== request.targetEnvironmentId) return yield* failure();
       const scope = yield* currentSource(request);
+      yield* enrollment.verifyRegisteredProfile(request.computerId, scope, profile);
       const registration = yield* targets.resolve(scope, request.parent.environmentId, request.targetEnvironmentId);
       const target = registration.target;
       if (target.targetComputerId !== request.computerId) return yield* failure();

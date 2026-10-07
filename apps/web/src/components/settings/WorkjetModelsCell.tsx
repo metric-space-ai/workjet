@@ -72,6 +72,7 @@ function ModelField({
     try {
       if (await state.onEditModels([account], next)) {
         setError(null);
+        if (model !== null && next.includes(model)) setDraft(model);
         onDone?.();
       } else setError("Model was not saved. Press Enter to retry.");
     } finally {

@@ -233,7 +233,8 @@ describe("environment entity projections", () => {
     });
     expect(merged?.messages).toBe(messages);
     const withoutPreview = mergeEnvironmentThread(detail, {
-      ...shell, latestAssistantMessagePreview: undefined,
+      ...shell,
+      latestAssistantMessagePreview: undefined,
     });
     expect(withoutPreview?.latestAssistantMessagePreview).toBeUndefined();
   });

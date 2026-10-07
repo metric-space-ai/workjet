@@ -73,7 +73,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ('imported-preview-foreign', 'another-parent', NULL, 'assistant', 'Foreign text', 0, ${later}, ${later})
       `;
       const expected = "Latest result ".repeat(100).slice(0, 280);
-      const shell = (yield* query.getShellSnapshot()).threads.find((thread) => thread.id === threadId);
+      const shell = (yield* query.getShellSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      );
       assert.equal(shell?.latestAssistantMessagePreview, expected);
       assert.equal(shell?.latestTurn, null);
       assert.equal(shell?.session, null);
@@ -95,13 +97,15 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       if (noAssistant._tag === "Some")
         assert.equal(noAssistant.value.latestAssistantMessagePreview, undefined);
     }).pipe(
-      Effect.ensuring(Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = 'imported-preview-parent'
+      Effect.ensuring(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`DELETE FROM projection_thread_messages WHERE thread_id = 'imported-preview-parent'
           OR message_id = 'imported-preview-foreign'`;
-        yield* sql`DELETE FROM projection_threads WHERE thread_id = 'imported-preview-parent'`;
-        yield* sql`DELETE FROM projection_projects WHERE project_id = 'imported-preview-project'`;
-      }).pipe(Effect.orDie)),
+          yield* sql`DELETE FROM projection_threads WHERE thread_id = 'imported-preview-parent'`;
+          yield* sql`DELETE FROM projection_projects WHERE project_id = 'imported-preview-project'`;
+        }).pipe(Effect.orDie),
+      ),
     ),
   );
 

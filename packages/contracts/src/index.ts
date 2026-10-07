@@ -40,6 +40,7 @@ export * from "./workjetCtoxBinding.ts";
 export * from "./capability.ts";
 export * from "./ctox.ts";
 export * from "./workjetSupervisor.ts";
+export * from "./workjetSupervisorExecution.ts";
 export * from "./businessOsShell.ts";
 export * from "./computerProvisioning.ts";
 export * from "./mobileShell.ts";

@@ -35,7 +35,7 @@ export function NativeSupervisorComposer(props: {
       (saved !== null && !supervisorJournalMatchesScope(saved, target))) return;
     if (operation === "send" && (prompt.trim() === "" || (saved !== null && saved.turn?.terminal !== true))) return;
     if (operation !== "send" && saved === null) return;
-    if (operation === "cancel" && (saved?.turn === null || saved?.turn.terminal)) return;
+    if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
     inFlight.current = true; setBusy(true); setError(null);
     const port = { save: async (next: WorkjetSupervisorJournal) => {
       await persistSupervisorJournal({ config: current.config, journal: next, dispatch: current.saveConfig });
@@ -62,7 +62,7 @@ export function NativeSupervisorComposer(props: {
         } else if (result._tag === "completed") throw new Error("Antwort gehört zu einem anderen Auftrag.");
       }
       if (result?._tag === "failed") setError(`CTOX: ${result.code}. Auftrag prüfen und erneut verbinden.`);
-      if (operation === "send" && result?._tag === "completed") setPrompt("");
+      if (result?._tag === "completed" && (operation === "send" || prompt.trim() === saved?.intent.goal)) setPrompt("");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "CTOX-Auftrag konnte nicht bestätigt werden."); }
     finally { inFlight.current = false; setBusy(false); }
   };

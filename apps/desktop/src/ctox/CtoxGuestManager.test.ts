@@ -2505,6 +2505,32 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("rejects configuration receipts from another command or project", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
+      const request = { action: "project.configure" as const,
+        commandId: CommandId.make("configure-project"), projectId: ProjectId.make("project-one"),
+        title: "ctox.dev", publicUrl: "https://ctox.dev" };
+      const response = { action: request.action, commandId: request.commandId,
+        project: { id: request.projectId, title: request.title, publicUrl: request.publicUrl } };
+      for (const result of [
+        { ...response, commandId: "other-command" },
+        { ...response, project: { ...response.project, id: "other-project" } },
+        { ...response, project: { ...response.project, title: "other-title" } },
+      ]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request),
+          { _tag: "failed", code: "guest_failed" });
+      }
+      harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: response });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request),
+        { _tag: "completed", response });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("correlates native private chat creation before returning its ID", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {

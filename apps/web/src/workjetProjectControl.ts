@@ -36,11 +36,19 @@ export async function requestWorkjetProjectControl(
   return port(instanceId, request);
 }
 
-export function listWorkjetProjects(
+export async function listWorkjetProjects(
   instanceId: string,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
-  return requestWorkjetProjectControl(instanceId, { action: "project.list" }, port);
+  const configured = await requestWorkjetProjectControl(instanceId,
+    { action: "project.list", includeConfiguration: true }, port);
+  // Older shells reject the additive flag. Retry the same authorized guest's
+  // legacy projection; count/completeness and instance guards remain unchanged.
+  if (configured._tag === "failed" &&
+    (configured.code === "unsupported" || configured.code === "guest_failed")) {
+    return requestWorkjetProjectControl(instanceId, { action: "project.list" }, port);
+  }
+  return configured;
 }
 
 export function createWorkjetProject(

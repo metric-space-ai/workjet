@@ -19,6 +19,11 @@ const request = {
 const decode = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, { onExcessProperty: "error" });
 
 describe("CTOX project configuration contract", () => {
+  it("negotiates optional configuration with a boolean flag", () => {
+    expect(decode({ action: "project.list", includeConfiguration: true })).toEqual({ action: "project.list", includeConfiguration: true });
+    expect(decode({ action: "project.list" })).toEqual({ action: "project.list" });
+    expect(() => decode({ action: "project.list", includeConfiguration: "true" })).toThrow();
+  });
   it("supports the native configure request and explicit clearing", () => {
     expect(decode(request)).toEqual(request);
     expect(decode({ ...request, info: null, jourFixe: null, publicUrl: null }).action).toBe("project.configure");

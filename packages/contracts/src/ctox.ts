@@ -534,7 +534,7 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
-  Schema.Struct({ action: Schema.Literal("project.list") }),
+  Schema.Struct({ action: Schema.Literal("project.list"), includeConfiguration: Schema.optionalKey(Schema.Boolean) }),
   Schema.Struct({
     action: Schema.Literal("project.configure"),
     commandId: CommandId,

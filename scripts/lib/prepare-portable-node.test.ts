@@ -120,7 +120,9 @@ describe.skipIf(hostPlatform === "win32")("portable standalone Node packaging", 
 
   it("bounds a stalled identity probe, redacts child diagnostics and cleans its stage", async () => {
     await fixture(async (input, root) => {
-      const execute = vi.mocked(NodeChildProcess.execFile).mockImplementationOnce((_file, _arguments, _options, callback) => {
+      const execute = vi
+        .mocked(NodeChildProcess.execFile)
+        .mockImplementationOnce((_file, _arguments, _options, callback) => {
           callback!(
             Object.assign(new Error("PRIVATE child command"), {
               code: "ETIMEDOUT",

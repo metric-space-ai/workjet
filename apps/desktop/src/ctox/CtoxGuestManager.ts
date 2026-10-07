@@ -108,8 +108,12 @@ const STATIC_ASSET_EXTENSIONS = new Set([
 const SAFE_EXTERNAL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 const decodeWorkjetDeviceWebRtcResponse = Schema.decodeUnknownEffect(WorkjetDeviceWebRtcResponseV1);
-const decodeWorkjetProjectControlResponse = Schema.decodeUnknownEffect(CtoxWorkjetProjectControlResponse);
-const decodeWorkjetSessionControlResponse = Schema.decodeUnknownEffect(CtoxWorkjetSessionControlResponse);
+const decodeWorkjetProjectControlResponse = Schema.decodeUnknownEffect(
+  CtoxWorkjetProjectControlResponse,
+);
+const decodeWorkjetSessionControlResponse = Schema.decodeUnknownEffect(
+  CtoxWorkjetSessionControlResponse,
+);
 export const REFRESH_MANAGED_LAUNCH_CHANNEL = "instance:refresh-managed-launch";
 
 interface ActiveGuest {
@@ -1893,10 +1897,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (encodedLength > MAX_PROJECT_CONTROL_RESPONSE_BYTES) {
           return { _tag: "failed", code: "response_too_large" };
         }
-        const decoded = yield* decodeWorkjetProjectControlResponse(
-          response,
-          { onExcessProperty: "error" },
-        ).pipe(Effect.option);
+        const decoded = yield* decodeWorkjetProjectControlResponse(response, {
+          onExcessProperty: "error",
+        }).pipe(Effect.option);
         if (Option.isNone(decoded)) return { _tag: "failed", code: "guest_failed" };
         if (decoded.value.action !== request.action) {
           return { _tag: "failed", code: "guest_failed" };
@@ -1961,10 +1964,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (encodedLength > MAX_SESSION_CONTROL_RESPONSE_BYTES) {
           return { _tag: "failed", code: "response_too_large" };
         }
-        const decoded = yield* decodeWorkjetSessionControlResponse(
-          response,
-          { onExcessProperty: "error" },
-        ).pipe(Effect.option);
+        const decoded = yield* decodeWorkjetSessionControlResponse(response, {
+          onExcessProperty: "error",
+        }).pipe(Effect.option);
         if (Option.isNone(decoded)) {
           return { _tag: "failed", code: "guest_failed" };
         }

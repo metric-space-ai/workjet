@@ -55,6 +55,88 @@ describe("static Workjet session transcript parsing", () => {
     ).toBe("actual-claude-id");
   });
 
+  describe("named histories with context-only user records", () => {
+    const context = JSON.stringify({
+      type: "response_item",
+      payload: {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "<recommended_plugins>Fixture</recommended_plugins>" },
+          {
+            type: "input_text",
+            text: "<permissions instructions>Fixture</permissions instructions>",
+          },
+          { type: "input_text", text: "<environment_context>Fixture</environment_context>" },
+        ],
+      },
+    });
+    const reply = (text: string) =>
+      JSON.stringify({
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text }],
+        },
+      });
+    const meta = (extra: Record<string, unknown> = {}) =>
+      JSON.stringify({
+        type: "session_meta",
+        payload: { id: "named-history", cwd: "/source", ...extra },
+      });
+
+    it("keeps substantive assistant messages under the saved Codex thread name", () => {
+      const parsed = parseCodexSessionTranscript(
+        [meta(), context, reply("SMS verification is complete."), reply("The regression passed.")],
+        NOW,
+        new Map([["named-history", "SMS verification"]]),
+      );
+      expect(parsed?.sourceThreadId).toBe("named-history");
+      expect(parsed?.title).toBe("SMS verification");
+      expect(parsed?.messages).toEqual([
+        { role: "assistant", text: "SMS verification is complete.", createdAt: NOW },
+        { role: "assistant", text: "The regression passed.", createdAt: NOW },
+      ]);
+    });
+
+    it("requires a meaningful source name for a context-only history", () => {
+      expect(
+        parseCodexSessionTranscript([meta(), context, reply("Work completed.")], NOW),
+      ).toBeNull();
+      expect(
+        parseCodexSessionTranscript(
+          [meta({ title: "READY" }), context, reply("Work completed.")],
+          NOW,
+        ),
+      ).toBeNull();
+    });
+
+    it("still rejects init-only replies and assistant-only or child transcripts", () => {
+      const names = new Map([["named-history", "SMS verification"]]);
+      expect(
+        parseCodexSessionTranscript([meta(), context, reply("BEREIT")], NOW, names),
+      ).toBeNull();
+      expect(
+        parseCodexSessionTranscript([meta(), reply("Work completed.")], NOW, names),
+      ).toBeNull();
+      expect(
+        parseCodexSessionTranscript(
+          [meta({ parent_thread_id: "parent" }), context, reply("Work completed.")],
+          NOW,
+          names,
+        ),
+      ).toBeNull();
+      expect(
+        parseCodexSessionTranscript(
+          [meta({ agent_path: "parent/child" }), context, reply("Work completed.")],
+          NOW,
+          names,
+        ),
+      ).toBeNull();
+    });
+  });
+
   describe("source session names and initialization", () => {
     it("uses the real Codex thread name without changing the imported prefix", () => {
       const message = (role: string, text: string) =>

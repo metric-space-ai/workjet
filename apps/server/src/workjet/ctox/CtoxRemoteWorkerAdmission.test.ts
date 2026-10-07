@@ -52,7 +52,7 @@ const receiptFor = (binding: RemoteWorkerNativeBinding): RemoteWorkerNativeRecei
   contract: "ctox.workjet.remote-worker-admission.v1", permitId: "permit",
   ownerUserId: "current-owner", authorityEpoch: 3,
   authorityFingerprint: `sha256:${"b".repeat(64)}`, expiresAtMs: 1791389400000,
-  binding, state: "issued", executionId: null,
+  binding, state: "issued", executionId: null, renewalSequence: 0,
 });
 function harness(binding: RemoteWorkerNativeBinding) {
   let granted = true;
@@ -74,6 +74,7 @@ function harness(binding: RemoteWorkerNativeBinding) {
       if (args.action === "claim") {
         receipt = { ...receipt, state: "claimed", executionId: String(args.execution_id) };
       }
+      if (args.action === "renew") receipt = { ...receipt, renewalSequence: Number(args.renewal_sequence) };
       if (args.action === "revoke") receipt = { ...receipt, state: "revoked" };
       if (loseResponse) {
         loseResponse = false;
@@ -198,3 +199,32 @@ it.effect("hashes equivalent key ordering equally and changed work intent differ
   }),
 );
 
+
+it.effect("renews the same claimed execution with a stable sequence after a lost reply", () =>
+  Effect.gen(function* () {
+    const binding = yield* bindingFor;
+    const h = harness(binding);
+    yield* h.client.execute(scope, request, binding, "claim", "permit", request.requestId);
+    h.loseNextResponse();
+    assert.equal((yield* Effect.flip(h.client.execute(scope, request, binding, "renew", "permit", request.requestId, 1))).reason, "source-unavailable");
+    const renewed = yield* h.client.execute(scope, request, binding, "renew", "permit", request.requestId, 1);
+    assert.equal(renewed.executionId, request.requestId);
+    assert.equal(renewed.renewalSequence, 1);
+    assert.deepEqual(h.calls[1], h.calls[2]);
+    assert.equal((yield* Effect.flip(h.client.execute(scope, request, binding, "renew", "permit", request.requestId, 0))).reason, "invalid-request");
+    assert.equal(h.calls.length, 3);
+  }),
+);
+it.effect("allows native cancellation after a model grant is removed without authorizing another usage", () =>
+  Effect.gen(function* () {
+    const binding = yield* bindingFor;
+    const h = harness(binding);
+    yield* h.client.execute(scope, request, binding, "claim", "permit", request.requestId);
+    h.revokeAccount();
+    const revoked = yield* h.client.execute(scope, request, binding, "revoke", "permit");
+    assert.equal(revoked.state, "revoked");
+    assert.equal(h.calls.length, 2);
+    assert.equal((yield* Effect.flip(h.client.execute(scope, request, binding, "renew", "permit", request.requestId, 1))).reason, "computer-unavailable");
+    assert.equal(h.calls.length, 2);
+  }),
+);

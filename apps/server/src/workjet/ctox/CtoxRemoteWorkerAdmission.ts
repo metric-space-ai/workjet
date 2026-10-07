@@ -50,6 +50,7 @@ export const RemoteWorkerNativeReceipt = Schema.Struct({
   binding: RemoteWorkerNativeBinding,
   state: Schema.Literals(["issued", "claimed", "revoked"]),
   executionId: Schema.NullOr(Id),
+  renewalSequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 export type RemoteWorkerNativeReceipt = typeof RemoteWorkerNativeReceipt.Type;
 export interface RemoteWorkerNativeScope {
@@ -94,6 +95,7 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     scope: RemoteWorkerNativeScope,
     request: RemoteWorkerRequest,
     binding: RemoteWorkerNativeBinding,
+    requireGatewayGrant = true,
   ) {
     if (
       binding.requestId !== request.requestId ||
@@ -136,6 +138,7 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     };
     // Native computer IDs can differ from the UI catalog ID. The exact native
     // assignment, not a hostname/display chip, scopes the source gateway grant.
+    if (!requireGatewayGrant) return;
     const catalog = yield* dependencies.gateway.scopedCatalog(
       target,
       request.parent.environmentId,
@@ -150,11 +153,14 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     scope: RemoteWorkerNativeScope,
     request: RemoteWorkerRequest,
     binding: RemoteWorkerNativeBinding,
-    action: "issue" | "claim" | "revalidate" | "revoke",
+    action: "issue" | "claim" | "revalidate" | "renew" | "revoke",
     permitId?: string,
     executionId?: string,
+    renewalSequence?: number,
   ) {
-    yield* validate(scope, request, binding);
+    yield* validate(scope, request, binding, action !== "revoke");
+    if (action === "renew" && (!Number.isSafeInteger(renewalSequence) || renewalSequence === undefined || renewalSequence < 1))
+      return yield* failure("invalid-request");
     const target = yield* dependencies.connections.resolveReadyTarget(
       scope.connectionId, scope.instanceId,
     ).pipe(Effect.mapError(() => failure("source-unavailable")));
@@ -164,6 +170,7 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     const response = yield* dependencies.transport.callTool(target, name, {
       action, binding,
       ...(action === "issue" ? { ttl_seconds: 300 } : { permit_id: permitId }),
+      ...(action === "renew" ? { ttl_seconds: 300, renewal_sequence: renewalSequence } : {}),
       ...(executionId === undefined ? {} : { execution_id: executionId }),
     }).pipe(Effect.mapError(() => failure("source-unavailable")));
     if (response.isError || response.structuredContent === undefined)
@@ -173,8 +180,9 @@ export function makeCtoxRemoteWorkerAdmissionClient(dependencies: {
     ).pipe(Effect.mapError(() => failure("invalid-request")));
     if (!NodeUtil.isDeepStrictEqual(receipt.binding, binding) ||
       (permitId !== undefined && receipt.permitId !== permitId) ||
-      ((action === "claim" || action === "revalidate") &&
+      ((action === "claim" || action === "revalidate" || action === "renew") &&
         (receipt.state !== "claimed" || receipt.executionId !== executionId)) ||
+      (action === "renew" && receipt.renewalSequence !== renewalSequence) ||
       (action === "revoke" && receipt.state !== "revoked") ||
       (action === "issue" && receipt.state !== "issued" && receipt.state !== "claimed")
     ) return yield* failure("invalid-request");

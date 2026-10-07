@@ -2232,6 +2232,40 @@ describe("CtoxGuestManager", () => {
         );
         expect(control).toHaveBeenCalledExactlyOnceWith({ action: "computer.list" });
         assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, {
+            action: "computer.list",
+            includeOperationalDetails: true,
+          }),
+          { _tag: "completed", response: { action: "computer.list", computers: [] } },
+        );
+        expect(control).toHaveBeenLastCalledWith({ action: "computer.list" });
+        Object.assign(control, { supportsOperationalDetails: true });
+        const detailedComputer = {
+          id: "gpu3",
+          displayName: "gpu3",
+          hostingMode: "workstation",
+          status: "assigned",
+          capabilities: ["gpu"],
+          selfHostedColocation: false,
+          agentless: false,
+          capabilityConfig: [{ kind: "gpu", model: "A4500", vram_gib: 20 }],
+        } as const;
+        control.mockResolvedValueOnce({ action: "computer.list", computers: [detailedComputer] });
+        assert.deepEqual(
+          yield* manager.requestComputerControl(descriptor.id, {
+            action: "computer.list",
+            includeOperationalDetails: true,
+          }),
+          {
+            _tag: "completed",
+            response: { action: "computer.list", computers: [detailedComputer] },
+          },
+        );
+        expect(control).toHaveBeenLastCalledWith({
+          action: "computer.list",
+          includeOperationalDetails: true,
+        });
+        assert.deepEqual(
           yield* manager.requestComputerControl("managed:other", { action: "computer.list" }),
           { _tag: "failed", code: "not_active" },
         );

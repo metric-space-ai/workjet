@@ -695,7 +695,10 @@ export type CtoxComputerEndpoint = typeof CtoxComputerEndpoint.Type;
 
 /** Computer membership is confirmed by the selected instance over RxDB/WebRTC. */
 export const CtoxWorkjetComputerControlRequest = Schema.Union([
-  Schema.Struct({ action: Schema.Literal("computer.list") }),
+  Schema.Struct({
+    action: Schema.Literal("computer.list"),
+    includeOperationalDetails: Schema.optionalKey(Schema.Boolean),
+  }),
   Schema.Struct({
     action: Schema.Literal("computer.assign"),
     commandId: CommandId,
@@ -738,6 +741,8 @@ export const CtoxWorkjetComputerProjection = Schema.Struct({
   hostingMode: CtoxComputerHostingMode,
   status: Schema.Literals(["assigned", "unassigned"]),
   capabilities: CtoxComputerCapabilities,
+  capabilityConfig: Schema.optionalKey(CtoxComputerOperationalCapabilities),
+  agentless: Schema.optionalKey(Schema.Boolean),
   selfHostedColocation: Schema.Boolean,
 });
 export type CtoxWorkjetComputerProjection = typeof CtoxWorkjetComputerProjection.Type;

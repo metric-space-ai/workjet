@@ -291,9 +291,11 @@ export function SettingResetButton({
 export function SettingsPageContainer({
   children,
   className,
+  wide = false,
 }: {
   children: ReactNode;
   className?: string;
+  wide?: boolean;
 }) {
   const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
@@ -304,8 +306,19 @@ export function SettingsPageContainer({
 
   return (
     <SettingsSearchTargetProvider targetId={targetId} onTargetHandled={clearTargetHash}>
-      <div className="settings-page-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto px-4 pt-10 pb-7 sm:px-8 sm:pt-12 sm:pb-10">
-        <div className={cn("mx-auto flex w-full max-w-4xl flex-col gap-12", className)}>
+      <div
+        className={cn(
+          "settings-page-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto px-4 pb-7 sm:pb-10",
+          wide ? "pt-6 sm:px-5" : "pt-10 sm:px-8 sm:pt-12",
+        )}
+      >
+        <div
+          className={cn(
+            "flex w-full flex-col gap-12",
+            wide ? "mr-auto max-w-[1200px]" : "mx-auto max-w-4xl",
+            className,
+          )}
+        >
           {children}
         </div>
       </div>

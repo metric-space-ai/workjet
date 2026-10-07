@@ -424,7 +424,11 @@ function buildGuestComputerControlExpression(request: CtoxWorkjetComputerControl
       ? "authentication_required" : "unsupported" };
   }
   try {
-    const result = await control(${JSON.stringify(request)});
+    const payload = ${JSON.stringify(request)};
+    if (payload.action === "computer.list" && control.supportsOperationalDetails !== true) {
+      delete payload.includeOperationalDetails;
+    }
+    const result = await control(payload);
     return { status: "completed", result };
   } catch (error) {
     // Return only fixed diagnostic codes; exception text can contain credentials.

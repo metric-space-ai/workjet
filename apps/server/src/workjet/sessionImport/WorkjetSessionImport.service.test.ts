@@ -498,6 +498,89 @@ describe("project-directed static session imports", () => {
     ),
   );
 
+  it.effect("discovers a conversation whose first visible message contains a large image", () =>
+    withFixture(({ root, service, threads }) =>
+      Effect.gen(function* () {
+        const file = NodePath.join(root, "sessions", "image-first.jsonl");
+        const body =
+          transcript("# AGENTS.md instructions\n<INSTRUCTIONS>Fixture context</INSTRUCTIONS>") +
+          encodeJson({
+            type: "response_item",
+            timestamp: NOW,
+            payload: {
+              type: "message",
+              role: "user",
+              content: [
+                { type: "input_text", text: "Investigate the attached project diagram" },
+                {
+                  type: "input_image",
+                  image_url: "data:image/png;base64," + "A".repeat(2 * 1024 * 1024),
+                },
+              ],
+            },
+          }) +
+          "\n";
+        yield* Effect.promise(() => NodeFSP.writeFile(file, body));
+        const found = yield* service.inspect();
+        expect(found.candidates).toHaveLength(1);
+        expect(found.candidates[0]?.title).toBe("Investigate the attached project diagram");
+        const result = yield* service.importSessions({
+          candidateIds: [found.candidates[0]!.candidateId],
+          projectId: ProjectId.make("project-a"),
+        });
+        expect(result.items[0]?.status).toBe("imported");
+        expect(result.items[0]?.totalMessages).toBe(1);
+        expect([...threads.values()][0]?.messages.map((message) => message.text)).toEqual([
+          "Investigate the attached project diagram",
+        ]);
+        expect(yield* Effect.promise(() => NodeFSP.readFile(file, "utf8"))).toBe(body);
+      }),
+    ),
+  );
+
+  it.effect("extended previews still reject initialization-only and child sessions", () =>
+    withFixture(({ root, service, threads }) =>
+      Effect.gen(function* () {
+        for (const child of [false, true]) {
+          const body =
+            [
+              encodeJson({
+                type: "session_meta",
+                payload: {
+                  id: "excluded-source",
+                  ...(child ? { parent_thread_id: "parent" } : {}),
+                },
+                timestamp: NOW,
+              }),
+              encodeJson({
+                type: "response_item",
+                timestamp: NOW,
+                payload: {
+                  type: "message",
+                  role: "user",
+                  content: [
+                    { type: "input_text", text: child ? "A real child task" : "hi" },
+                    {
+                      type: "input_image",
+                      image_url: "data:image/png;base64," + "A".repeat(2 * 1024 * 1024),
+                    },
+                  ],
+                },
+              }),
+            ].join("\n") + "\n";
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(root, "sessions", child ? "child.jsonl" : "init-image.jsonl"),
+              body,
+            ),
+          );
+        }
+        expect((yield* service.inspect()).candidates).toHaveLength(0);
+        expect(threads.size).toBe(0);
+      }),
+    ),
+  );
+
   it.effect("imports visible messages across a tool result larger than the former file limit", () =>
     withFixture(({ root, service, threads, commands }) =>
       Effect.gen(function* () {

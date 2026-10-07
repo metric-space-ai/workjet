@@ -104,7 +104,7 @@ export function ProjectOverviewEditor({
               Type
               <select
                 id={`${prefix}-type`}
-                  aria-label={`KPI ${index + 1} type`}
+                aria-label={`KPI ${index + 1} type`}
                 className="h-8 rounded-md border border-input bg-background px-2"
                 value={slot.kind}
                 onChange={(event) =>

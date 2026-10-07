@@ -38,10 +38,19 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           />
         }
       >
-        {props.addIcon ? <PlusIcon aria-hidden="true" className="size-4" /> : <EllipsisIcon aria-hidden="true" className="size-4" />}
+        {props.addIcon ? (
+          <PlusIcon aria-hidden="true" className="size-4" />
+        ) : (
+          <EllipsisIcon aria-hidden="true" className="size-4" />
+        )}
       </MenuTrigger>
       <MenuPopup align="start">
-        {props.extraMenuContent ? <>{props.extraMenuContent}<MenuDivider /></> : null}
+        {props.extraMenuContent ? (
+          <>
+            {props.extraMenuContent}
+            <MenuDivider />
+          </>
+        ) : null}
         {props.workerMenuContent ? (
           <>
             {props.workerMenuContent}

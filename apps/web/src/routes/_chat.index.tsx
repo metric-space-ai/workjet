@@ -170,7 +170,6 @@ function IndexDraftLanding() {
           scopeProjectRef(landingProject.environmentId, landingProject.id),
         );
 
-
   const openNativeSupervisor = useCallback(
     async (nativeProject = selectedNative, overview?: ProjectOverview): Promise<boolean> => {
       if (openingNative.current || nativeProject === null || activeCtoxInstanceId === null)
@@ -336,42 +335,70 @@ function IndexDraftLanding() {
   ]);
 
   if (landingProject !== null && !(selectedNative !== null && supervisor === null)) {
-    const project = galleryProjects.find((candidate) =>
-      candidate.local?.id === landingProject.id &&
-      candidate.local.environmentId === landingProject.environmentId,
+    const project = galleryProjects.find(
+      (candidate) =>
+        candidate.local?.id === landingProject.id &&
+        candidate.local.environmentId === landingProject.environmentId,
     );
-    if (project) return (
-      <ProjectWorkspace project={project} threads={threads}
-        onAddParent={async (domain, goal) => {
-          if (!supervisor || supervisor.workjetConfig.schemaVersion !== 2 ||
+    if (project)
+      return (
+        <ProjectWorkspace
+          project={project}
+          threads={threads}
+          onAddParent={async (domain, goal) => {
+            if (
+              !supervisor ||
+              supervisor.workjetConfig.schemaVersion !== 2 ||
               supervisor.workjetConfig.team?.role !== "supervisor" ||
-              readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return false;
-          const modelSelection = resolveProjectTeamModelSelection(
-            environments.find((environment) => environment.environmentId === supervisor.environmentId)?.serverConfig?.providers ?? [],
-          );
-          if (!modelSelection) return false;
-          const threadId = newThreadId();
-          const createdAt = new Date().toISOString();
-          const result = await createThread({
-            environmentId: supervisor.environmentId,
-            input: {
-              threadId, projectId: supervisor.projectId, title: domain, modelSelection,
-              runtimeMode: supervisor.runtimeMode, interactionMode: "default",
-              workjetConfig: {
-                ...supervisor.workjetConfig, role: "orchestrator", parent: null,
-                team: { role: "specialist", projectId: supervisor.projectId, threadId,
-                  parentThreadId: supervisor.id, domain, goal, createdAt },
+              readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+            )
+              return false;
+            const modelSelection = resolveProjectTeamModelSelection(
+              environments.find(
+                (environment) => environment.environmentId === supervisor.environmentId,
+              )?.serverConfig?.providers ?? [],
+            );
+            if (!modelSelection) return false;
+            const threadId = newThreadId();
+            const createdAt = new Date().toISOString();
+            const result = await createThread({
+              environmentId: supervisor.environmentId,
+              input: {
+                threadId,
+                projectId: supervisor.projectId,
+                title: domain,
+                modelSelection,
+                runtimeMode: supervisor.runtimeMode,
+                interactionMode: "default",
+                workjetConfig: {
+                  ...supervisor.workjetConfig,
+                  role: "orchestrator",
+                  parent: null,
+                  team: {
+                    role: "specialist",
+                    projectId: supervisor.projectId,
+                    threadId,
+                    parentThreadId: supervisor.id,
+                    domain,
+                    goal,
+                    createdAt,
+                  },
+                },
+                branch: null,
+                worktreePath: null,
+                createdAt,
               },
-              branch: null, worktreePath: null, createdAt,
-            },
-          });
-          return result._tag === "Success";
-        }}
-        onOpenChat={(thread) => void navigate({
-          to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(thread),
-        })} />
-    );
+            });
+            return result._tag === "Success";
+          }}
+          onOpenChat={(thread) =>
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(thread),
+            })
+          }
+        />
+      );
   }
   if (selectedNative !== null)
     return (
@@ -624,7 +651,6 @@ function WorkjetProjectOpening({
     </SidebarInset>
   );
 }
-
 
 function NoProjectsHero() {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);

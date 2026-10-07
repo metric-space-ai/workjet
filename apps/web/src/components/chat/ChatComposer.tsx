@@ -3993,13 +3993,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 ref={composerFooterFlowRef}
                 className={cn(
                   "@container/composer-controls -m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 p-1 ps-3.5",
-                  workjetManualControlsAvailable || props.workspaceExtraControls ? "flex-nowrap" : "flex-wrap",
+                  workjetManualControlsAvailable || props.workspaceExtraControls
+                    ? "flex-nowrap"
+                    : "flex-wrap",
                 )}
               >
                 {/* With Workjet manual controls the retired provider picker
                     stays hidden in BOTH layouts — compact used to fall back
                     to it, resurrecting the removed provider chip (K-A2). */}
-                {isComposerFooterCompact && !props.workspaceExtraControls ? renderLegacyProviderTargetControl(true) : null}
+                {isComposerFooterCompact && !props.workspaceExtraControls
+                  ? renderLegacyProviderTargetControl(true)
+                  : null}
 
                 {!composerTargetIsThread &&
                 selectedWorkjetWorker !== null &&
@@ -4052,29 +4056,81 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <CompactComposerControlsMenu
                       addIcon
                       interactionMode={interactionMode}
-                      showInteractionModeToggle={!workerModeActive && composerProviderControls.showInteractionModeToggle}
+                      showInteractionModeToggle={
+                        !workerModeActive && composerProviderControls.showInteractionModeToggle
+                      }
                       onToggleInteractionMode={toggleInteractionMode}
                       traitsMenuContent={workerModeActive ? undefined : providerTraitsMenuContent}
                       contextWindowMenuContent={composerContextWindowMenuContent}
                       systemPromptMenuContent={composerSystemPromptControl}
-                      workerMenuContent={<ComposerWorkerControl key={environmentId} environmentId={environmentId} workers={workjetWorkers} selectedWorkerId={selectedWorkjetWorkerId} disabled={effectiveWorkjetCapabilityDisabled} onSelectWorker={handleSelectWorkjetWorker} onOpenWorkjetSettings={onOpenWorkjetSettings} />}
-                      extraMenuContent={<div className="flex max-w-sm flex-col items-start gap-2 px-2 py-1">{props.workspaceExtraControls}{composerAttachmentControl}{workerModeActive ? null : workjetSendToWorkerControl?.({ compact: true })}</div>}
-                      workjetMenuContent={effectiveWorkjetGreppyEnabled === null ? undefined : (
-                        <WorkjetCapabilityMenu compact greppyEnabled={effectiveWorkjetGreppyEnabled} busy={effectiveWorkjetCapabilityBusy} disabled={effectiveWorkjetCapabilityDisabled}
-                          onGreppyEnabledChange={effectiveGreppyEnabledChange} onCapabilityEnabledChange={effectiveCapabilityEnabledChange} enabledCapabilityIds={effectiveEnabledCapabilityIds}
-                          decisionHubConnections={decisionHubConnections} decisionHubConnectionId={decisionHubConnectionId} onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
-                          ctoxBusinessOsConnections={ctoxBusinessOsConnections} ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId} ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked} onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
-                          workjetRole={workerModeActive ? null : effectiveWorkjetRole} onWorkjetRoleChange={effectiveWorkjetRoleChange} />
-                      )}
+                      workerMenuContent={
+                        <ComposerWorkerControl
+                          key={environmentId}
+                          environmentId={environmentId}
+                          workers={workjetWorkers}
+                          selectedWorkerId={selectedWorkjetWorkerId}
+                          disabled={effectiveWorkjetCapabilityDisabled}
+                          onSelectWorker={handleSelectWorkjetWorker}
+                          onOpenWorkjetSettings={onOpenWorkjetSettings}
+                        />
+                      }
+                      extraMenuContent={
+                        <div className="flex max-w-sm flex-col items-start gap-2 px-2 py-1">
+                          {props.workspaceExtraControls}
+                          {composerAttachmentControl}
+                          {workerModeActive
+                            ? null
+                            : workjetSendToWorkerControl?.({ compact: true })}
+                        </div>
+                      }
+                      workjetMenuContent={
+                        effectiveWorkjetGreppyEnabled === null ? undefined : (
+                          <WorkjetCapabilityMenu
+                            compact
+                            greppyEnabled={effectiveWorkjetGreppyEnabled}
+                            busy={effectiveWorkjetCapabilityBusy}
+                            disabled={effectiveWorkjetCapabilityDisabled}
+                            onGreppyEnabledChange={effectiveGreppyEnabledChange}
+                            onCapabilityEnabledChange={effectiveCapabilityEnabledChange}
+                            enabledCapabilityIds={effectiveEnabledCapabilityIds}
+                            decisionHubConnections={decisionHubConnections}
+                            decisionHubConnectionId={decisionHubConnectionId}
+                            onDecisionHubConnectionChange={handleDecisionHubConnectionChange}
+                            ctoxBusinessOsConnections={ctoxBusinessOsConnections}
+                            ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
+                            ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
+                            onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
+                            workjetRole={workerModeActive ? null : effectiveWorkjetRole}
+                            onWorkjetRoleChange={effectiveWorkjetRoleChange}
+                          />
+                        )
+                      }
                     />
-                    <div className="flex min-w-0 items-center gap-1" data-workjet-composer-target="">{composerManualTargetControls}</div>
-                    <ComposerComputerControl key={environmentId} editor={{ state: computerEditorState, update: setComputerEditorState }}
-                      computers={workjetComputers} selectedComputerId={composerSelectedComputerId} activeEnvironmentId={environmentId} selectableEnvironmentIds={selectableEnvironmentIds}
-                      disabledReason={composerComputerDisabledReason} mismatchNote={composerComputerMismatchNote} onSelectComputer={handleSelectComposerComputer}
+                    <div
+                      className="flex min-w-0 items-center gap-1"
+                      data-workjet-composer-target=""
+                    >
+                      {composerManualTargetControls}
+                    </div>
+                    <ComposerComputerControl
+                      key={environmentId}
+                      editor={{ state: computerEditorState, update: setComputerEditorState }}
+                      computers={workjetComputers}
+                      selectedComputerId={composerSelectedComputerId}
+                      activeEnvironmentId={environmentId}
+                      selectableEnvironmentIds={selectableEnvironmentIds}
+                      disabledReason={composerComputerDisabledReason}
+                      mismatchNote={composerComputerMismatchNote}
+                      onSelectComputer={handleSelectComposerComputer}
                       onAddComputer={() => {
-                        try { window.sessionStorage.setItem("workjet-computer-create", "1"); } catch { /* The settings route still opens. */ }
+                        try {
+                          window.sessionStorage.setItem("workjet-computer-create", "1");
+                        } catch {
+                          /* The settings route still opens. */
+                        }
                         window.location.hash = "#/settings/computers";
-                      }} />
+                      }}
+                    />
                   </>
                 ) : isComposerFooterCompact ? (
                   <>

@@ -1168,12 +1168,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <span
               className={cn(
                 "shrink-0 transition-opacity",
-                !props.isActive && !props.projectTeam &&
+                !props.isActive &&
+                  !props.projectTeam &&
                   "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
             >
-              {teamStatus ? <span className={cn("block size-2 rounded-full", teamStatus.dot)} title={teamStatus.label} aria-label={teamStatus.label} /> : (
-                <ProjectFavicon environmentId={thread.environmentId} cwd={props.projectCwd ?? ""} faviconPath={props.projectFaviconPath} className="size-4" fallbackIcon={MessageSquareIcon} />
+              {teamStatus ? (
+                <span
+                  className={cn("block size-2 rounded-full", teamStatus.dot)}
+                  title={teamStatus.label}
+                  aria-label={teamStatus.label}
+                />
+              ) : (
+                <ProjectFavicon
+                  environmentId={thread.environmentId}
+                  cwd={props.projectCwd ?? ""}
+                  faviconPath={props.projectFaviconPath}
+                  className="size-4"
+                  fallbackIcon={MessageSquareIcon}
+                />
               )}
             </span>
             {title}
@@ -4073,7 +4086,10 @@ export default function Sidebar() {
                   // whose chats carry team roles, reads as its team: supervisor first, then
                   // the long-lived parents, then one-time PR workers (archived on merge).
                   if (groupByTeam) {
-                    const team = groupThreadsByProjectTeam([...orderedPinnedThreads, ...activeThreads]);
+                    const team = groupThreadsByProjectTeam([
+                      ...orderedPinnedThreads,
+                      ...activeThreads,
+                    ]);
                     for (const { section, label } of PROJECT_TEAM_SECTIONS) {
                       if (team[section].length === 0) continue;
                       items.push(
@@ -4083,13 +4099,19 @@ export default function Sidebar() {
                           className="mb-1 mt-3 flex list-none items-center gap-2 px-2.5 first:mt-1"
                         >
                           <span className="text-xs font-medium text-muted-foreground/70">
-                            {label}{section === "supervisor" ? "" : ` ${team[section].length}`}
+                            {label}
+                            {section === "supervisor" ? "" : ` ${team[section].length}`}
                           </span>
                           <span className="h-px flex-1 bg-sidebar-border/60" />
                         </li>,
                       );
                       for (const thread of team[section]) {
-                        items.push(renderThreadRow(thread, pinnedThreads.includes(thread) ? "pinned" : "active"));
+                        items.push(
+                          renderThreadRow(
+                            thread,
+                            pinnedThreads.includes(thread) ? "pinned" : "active",
+                          ),
+                        );
                       }
                     }
                     if (team.other.length > 0) {

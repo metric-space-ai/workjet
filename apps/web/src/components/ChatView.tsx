@@ -191,9 +191,7 @@ import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import {
-  NO_PROVIDER_MODEL_SELECTION,
-} from "../providerInstances";
+import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -7250,44 +7248,44 @@ function ChatViewContent(props: ChatViewProps) {
                     }
                   >
                     <div
-                      className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-5xl",
-                      )}
+                      className={cn("chat-composer-glass-shell relative mx-auto w-full max-w-5xl")}
                     >
                       <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}
-                            workspaceExtraControls={showComposerContextStrip ? (
-                            <div className="pointer-events-auto">
-                              <BranchToolbar
-                                environmentId={activeThread.environmentId}
-                                threadId={activeThread.id}
-                                showGitControls={isGitRepo}
-                                {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                                onEnvModeChange={onEnvModeChange}
-                                startFromOrigin={startFromOrigin}
-                                onStartFromOriginChange={onStartFromOriginChange}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? { effectiveEnvModeOverride: envMode }
-                                  : {})}
-                                {...(canOverrideServerThreadEnvMode
-                                  ? {
-                                      activeThreadBranchOverride: activeThreadBranch,
-                                      onActiveThreadBranchOverrideChange:
-                                        setPendingServerThreadBranch,
-                                    }
-                                  : {})}
-                                envLocked={envLocked}
-                                onComposerFocusRequest={scheduleComposerFocus}
-                                {...(canCheckoutPullRequestIntoThread
-                                  ? { onCheckoutPullRequestRequest: openPullRequestDialog }
-                                  : {})}
-                                {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
-                                availableEnvironments={logicalProjectEnvironments}
-                              />
-                            </div>
-                            ) : null}
+                            workspaceExtraControls={
+                              showComposerContextStrip ? (
+                                <div className="pointer-events-auto">
+                                  <BranchToolbar
+                                    environmentId={activeThread.environmentId}
+                                    threadId={activeThread.id}
+                                    showGitControls={isGitRepo}
+                                    {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                                    onEnvModeChange={onEnvModeChange}
+                                    startFromOrigin={startFromOrigin}
+                                    onStartFromOriginChange={onStartFromOriginChange}
+                                    {...(canOverrideServerThreadEnvMode
+                                      ? { effectiveEnvModeOverride: envMode }
+                                      : {})}
+                                    {...(canOverrideServerThreadEnvMode
+                                      ? {
+                                          activeThreadBranchOverride: activeThreadBranch,
+                                          onActiveThreadBranchOverrideChange:
+                                            setPendingServerThreadBranch,
+                                        }
+                                      : {})}
+                                    envLocked={envLocked}
+                                    onComposerFocusRequest={scheduleComposerFocus}
+                                    {...(canCheckoutPullRequestIntoThread
+                                      ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                                      : {})}
+                                    {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
+                                    availableEnvironments={logicalProjectEnvironments}
+                                  />
+                                </div>
+                              ) : null
+                            }
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}
                             routeKind={routeKind}
@@ -7395,9 +7393,7 @@ function ChatViewContent(props: ChatViewProps) {
                         <div
                           data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
                           className="relative z-0"
-                        >
-
-                        </div>
+                        ></div>
                       </div>
                     </div>
                     <div

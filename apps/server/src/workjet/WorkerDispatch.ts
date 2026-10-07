@@ -169,7 +169,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       }
       const parentTeam =
         parent.workjetConfig.schemaVersion === 2 ? parent.workjetConfig.team : undefined;
-      if (parentTeam && parentTeam.role !== "specialist") {
+      if (parentTeam && parentTeam.role !== "specialist" && parentTeam.role !== "supervisor") {
         return yield* failure("role-not-authorized");
       }
 

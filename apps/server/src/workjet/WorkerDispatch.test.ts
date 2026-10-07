@@ -643,6 +643,70 @@ it.effect(
     }),
 );
 
+it.effect("a project supervisor dispatches an isolated leaf with its durable parent binding", () =>
+  Effect.gen(function* () {
+    const supervisor = {
+      ...teamParent,
+      workjetConfig: {
+        ...teamConfig,
+        team: {
+          projectId: parent.projectId,
+          threadId: parent.id,
+          role: "supervisor" as const,
+          parentThreadId: null,
+          goal: "Coordinate the project",
+          createdAt: now,
+        },
+      },
+    } as OrchestrationThread;
+    const harness = makeHarness({ currentParent: supervisor });
+    const service = yield* harness.service;
+    const result = yield* service.dispatch(invocation, { task: "Implement one bounded PR." });
+    expect(result.parent).toEqual({ environmentId, threadId: parent.id });
+    expect(harness.worktreeCreates).toHaveLength(1);
+    expect(harness.commands[0]).toMatchObject({
+      type: "thread.create",
+      workjetConfig: {
+        role: "worker",
+        parent: { environmentId, threadId: parent.id },
+        team: {
+          role: "worker",
+          projectId: parent.projectId,
+          parentThreadId: parent.id,
+          threadId: result.workerThreadId,
+        },
+      },
+    });
+    expect(harness.dispatchOptions[0]?.workerDelegation?.delegation).toMatchObject({
+      source: { threadId: parent.id },
+      target: { threadId: result.workerThreadId },
+      budget: { maxDepth: 1 },
+    });
+  }),
+);
+
+it.effect("a team worker cannot redelegate through a stale orchestrator role", () =>
+  Effect.gen(function* () {
+    const worker = {
+      ...teamParent,
+      workjetConfig: {
+        ...teamConfig,
+        team: {
+          ...teamConfig.team,
+          role: "worker" as const,
+          packageId: parent.id,
+        },
+      },
+    } as OrchestrationThread;
+    const harness = makeHarness({ currentParent: worker });
+    const service = yield* harness.service;
+    const error = yield* service.dispatch(invocation, { task: "Do not redelegate." }).pipe(Effect.flip);
+    expect(error.reason).toBe("role-not-authorized");
+    expect(harness.worktreeCreates).toEqual([]);
+    expect(harness.commands).toEqual([]);
+  }),
+);
+
 it.effect("denies a stale invocation role even when the persisted parent is an orchestrator", () =>
   Effect.gen(function* () {
     for (const workjetRole of ["standard", "worker", undefined] as const) {

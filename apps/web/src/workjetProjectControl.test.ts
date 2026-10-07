@@ -1,10 +1,47 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  listWorkjetProjects,
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
   type WorkjetProjectPoolPort,
 } from "./workjetProjectControl";
+
+describe("listWorkjetProjects", () => {
+  const result = {
+    _tag: "completed",
+    response: { action: "project.list", projects: [], count: 0, truncated: false },
+  } as const;
+
+  it("requests configuration from the selected instance", async () => {
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledExactlyOnceWith("managed:selected", {
+      action: "project.list",
+      includeConfiguration: true,
+    });
+  });
+
+  it.each(["unsupported", "guest_failed"] as const)(
+    "falls back to the same guest's legacy projection for %s",
+    async (code) => {
+      const request = vi
+        .fn<WorkjetProjectControlPort>()
+        .mockResolvedValueOnce({ _tag: "failed", code })
+        .mockResolvedValueOnce(result);
+      await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(request).toHaveBeenNthCalledWith(2, "managed:selected", { action: "project.list" });
+    },
+  );
+
+  it("preserves authentication failure without retrying a denied request", async () => {
+    const result = { _tag: "failed", code: "authentication_required" } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledOnce();
+  });
+});
 
 describe("requestWorkjetProjectControl", () => {
   it("pools once after not_active, retries once, and returns the successful response", async () => {

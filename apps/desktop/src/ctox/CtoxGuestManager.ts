@@ -1918,6 +1918,14 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         ) {
           return { _tag: "failed", code: "guest_failed" };
         }
+        if (
+          request.action === "project.configure" &&
+          decoded.value.action === "project.configure" &&
+          (decoded.value.commandId !== request.commandId ||
+            decoded.value.project.id !== request.projectId ||
+            decoded.value.project.title !== request.title)
+        )
+          return { _tag: "failed", code: "guest_failed" };
         return { _tag: "completed", response: decoded.value };
       });
 

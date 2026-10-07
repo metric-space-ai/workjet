@@ -10,7 +10,7 @@ import {
 } from "../projectOverview";
 import { suggestedProjectKpis } from "../projectKpiSuggestions";
 import { ProjectFavicon } from "./ProjectFavicon";
-import { ProjectOverviewEditor } from "./ProjectOverviewEditor";
+import { ProjectOverviewEditor, type ProjectConfigurationValues } from "./ProjectOverviewEditor";
 import { Button } from "./ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "./ui/menu";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel } from "./ui/dialog";
@@ -21,9 +21,13 @@ export function ProjectOverviewCard({
   onSave,
   canArchive = false,
   statistics,
+  onSaveConfiguration,
 }: {
   readonly project: GalleryProject;
   readonly onOpen: () => void;
+  readonly onSaveConfiguration?:
+    | ((next: ProjectConfigurationValues) => Promise<boolean>)
+    | undefined;
   readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
   readonly canArchive?: boolean | undefined;
   readonly statistics?: GalleryProjectStatistics | undefined;
@@ -66,14 +70,17 @@ export function ProjectOverviewCard({
         .toLowerCase();
   const archived = overview.archived === true;
   const changeArchive = async () => {
-    if (!onSave || archivePending) return;
+    if (!onSave || archivePending) return false;
     setArchivePending(true);
     setArchiveError(null);
     try {
       if (!(await onSave({ ...overview, archived: !archived })))
         throw new Error("The project could not be saved. Try again.");
+      setEditing(false);
+      return true;
     } catch {
       setArchiveError("The project could not be saved. Try again.");
+      return false;
     } finally {
       setArchivePending(false);
     }
@@ -266,13 +273,20 @@ export function ProjectOverviewCard({
         </p>
       )}
       <Dialog open={editing} onOpenChange={setEditing}>
-        <DialogPopup className="w-[min(36rem,calc(100vw-2rem))]">
+        <DialogPopup className="w-[min(44rem,calc(100vw-2rem))] max-w-none">
           <DialogHeader>
-            <DialogTitle>Configure {project.title}</DialogTitle>
+            <DialogTitle>Manage {project.title}</DialogTitle>
           </DialogHeader>
           <DialogPanel>
             {editing && onSave && (
-              <ProjectOverviewEditor overview={editableOverview} onSave={onSave} />
+              <ProjectOverviewEditor
+                overview={editableOverview}
+                configuration={project.configuration}
+                onSaveConfiguration={onSaveConfiguration}
+                onSave={onSave}
+                onArchive={canArchive ? changeArchive : undefined}
+                archived={archived}
+              />
             )}
           </DialogPanel>
         </DialogPopup>

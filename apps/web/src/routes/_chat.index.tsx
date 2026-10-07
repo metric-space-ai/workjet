@@ -23,6 +23,8 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
+import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
+import { configureWorkjetProject } from "../workjetProjectControl";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -402,6 +404,31 @@ function IndexDraftLanding() {
               environment.connection.phase === "connected" &&
               environment.serverConfig?.projectArchive === true,
           ),
+          onSaveConfiguration:
+            project.configuration && activeCtoxInstanceId !== null
+              ? async (values: ProjectConfigurationValues) => {
+                  if (
+                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId ||
+                    !project.configuration
+                  )
+                    return false;
+                  const result = await configureWorkjetProject(activeCtoxInstanceId, {
+                    action: "project.configure",
+                    commandId: newCommandId(),
+                    projectId: project.configuration.id,
+                    title: project.title,
+                    ...values,
+                  });
+                  if (
+                    result._tag !== "completed" ||
+                    result.response.action !== "project.configure" ||
+                    readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId
+                  )
+                    return false;
+                  refreshWorkjetProjectRegistry(activeCtoxInstanceId);
+                  return true;
+                }
+              : undefined,
           onOpen: () => {
             if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return;
             if (project.native && activeCtoxInstanceId !== null)
@@ -479,6 +506,9 @@ function ProjectGallery({
   readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
+    readonly onSaveConfiguration?:
+      | ((next: ProjectConfigurationValues) => Promise<boolean>)
+      | undefined;
     readonly canArchive: boolean;
     readonly statistics: GalleryProjectStatistics;
     readonly onSave?: ((next: ProjectOverview) => Promise<boolean>) | undefined;
@@ -528,6 +558,7 @@ function ProjectGallery({
                 project={project}
                 onOpen={project.onOpen}
                 onSave={project.onSave}
+                onSaveConfiguration={project.onSaveConfiguration}
                 canArchive={project.canArchive}
                 statistics={project.statistics}
               />

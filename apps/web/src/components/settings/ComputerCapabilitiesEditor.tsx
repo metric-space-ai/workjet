@@ -7,10 +7,12 @@ import { Input } from "../ui/input";
 
 export function ComputerCapabilitiesEditor({
   computer,
+  preserveExistingCapabilities = false,
   onSave,
   onCancel,
 }: {
   readonly computer?: WorkjetComputer;
+  readonly preserveExistingCapabilities?: boolean;
   readonly onSave: (enrollment: OperationalComputerEnrollment) => Promise<void>;
   readonly onCancel: () => void;
 }) {
@@ -18,6 +20,7 @@ export function ComputerCapabilitiesEditor({
   const [endpointRef] = useState(() => `endpoint-${randomUUID()}`);
   const [name, setName] = useState(computer?.label ?? "");
   const [storageOnly, setStorageOnly] = useState(computer === undefined);
+  const [preserve, setPreserve] = useState(preserveExistingCapabilities);
   const [build, setBuild] = useState(false);
   const [storage, setStorage] = useState(computer === undefined);
   const [gpu, setGpu] = useState(false);
@@ -77,6 +80,7 @@ export function ComputerCapabilitiesEditor({
         agentCapabilities: storageOnly ? [] :
           (computer?.harnesses.filter((harness) => harness.available).map((harness) => harness.harness) ?? []),
         capabilityConfig: capabilities,
+        preserveOperationalCapabilities: preserve,
         endpoint: connection === null ? null : { ref: endpointRef,
           connection: protocol === "ssh" ? {
             ...connection, protocol: "ssh", host_key_sha256: fields.keyPin.trim(),
@@ -104,7 +108,16 @@ export function ComputerCapabilitiesEditor({
           Storage-only computer (NAS)
         </label>
       ) : null}
-      <fieldset className="flex flex-wrap gap-4" disabled={busy}>
+      {preserveExistingCapabilities ? (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={preserve} disabled={busy} onChange={(event) => {
+            setPreserve(event.target.checked);
+            if (event.target.checked) { setBuild(false); setStorage(false); setGpu(false); }
+          }} />
+          Keep saved build, storage, and GPU settings
+        </label>
+      ) : null}
+      <fieldset className="flex flex-wrap gap-4" disabled={busy || preserve}>
         <legend className="mb-2 text-sm font-medium">Capabilities</legend>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={build} disabled={storageOnly} onChange={(event) => {

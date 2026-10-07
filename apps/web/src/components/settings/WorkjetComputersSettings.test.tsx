@@ -81,6 +81,18 @@ describe("native computer capabilities", () => {
     expect(markup.match(/data-workjet-native-computer=/g)).toHaveLength(1);
   });
 
+  it("offers removal for native-only storage and capability editing for a coding computer", () => {
+    const markup = renderToStaticMarkup(
+      <WorkjetComputersSettingsView
+        configuration={configurationWith(localComputer)} environments={[]} environmentsReady
+        membership={membership} onChange={() => undefined}
+        onUnassignNative={() => undefined} onCapabilities={() => undefined} />,
+    );
+    expect(markup).toContain("Remove flashstore24-nas from selected Business OS");
+    expect(markup).toContain("Edit capabilities for computer-local");
+    expect(markup).not.toContain("Use flashstore24-nas as current computer");
+  });
+
   it("does not describe an unassigned native host as assigned", () => {
     const markup = renderToStaticMarkup(
       <WorkjetComputersSettingsView

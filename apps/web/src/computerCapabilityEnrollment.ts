@@ -14,6 +14,7 @@ export interface OperationalComputerEnrollment {
   readonly agentless: boolean;
   readonly agentCapabilities: readonly string[];
   readonly capabilityConfig: readonly CtoxComputerOperationalCapability[];
+  readonly preserveOperationalCapabilities?: boolean;
   readonly endpoint: { readonly ref: string; readonly connection: CtoxComputerEndpoint } | null;
 }
 
@@ -26,6 +27,10 @@ export async function enrollOperationalComputer(
 ): Promise<CtoxWorkjetComputerProjection> {
   if (!isCurrent()) throw new Error("The selected Business OS changed. Reopen Add computer.");
   const { capabilityConfig, endpoint } = enrollment;
+  if (enrollment.preserveOperationalCapabilities &&
+    (enrollment.agentless || capabilityConfig.length > 0 || endpoint !== null)) {
+    throw new Error("Keep saved capabilities or replace them, without combining both.");
+  }
   const requiresEndpoint = capabilityConfig.some((capability) => capability.kind !== "gpu");
   if (enrollment.agentless && (enrollment.hostingMode !== "self_hosted" ||
     enrollment.agentCapabilities.length > 0 || capabilityConfig.length !== 1 ||
@@ -53,7 +58,7 @@ export async function enrollOperationalComputer(
     displayName: enrollment.displayName,
     hostingMode: enrollment.hostingMode,
     capabilities: enrollment.agentCapabilities,
-    capabilityConfig,
+    ...(enrollment.preserveOperationalCapabilities ? {} : { capabilityConfig }),
     agentless: enrollment.agentless,
     selfHostedColocation: false,
   });

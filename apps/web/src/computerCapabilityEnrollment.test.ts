@@ -24,6 +24,17 @@ const endpoint = { _tag: "completed", response: {
 const command = () => CommandId.make("test-command");
 
 describe("operational computer enrollment", () => {
+  it("preserves existing operational grants when saving a coding computer without replacement", async () => {
+    const control = vi.fn().mockResolvedValue({
+      ...assigned, response: { ...assigned.response,
+        computer: { ...assigned.response.computer, hostingMode: "workstation" } },
+    });
+    await enrollOperationalComputer({ ...nas, agentless: false, hostingMode: "workstation",
+      capabilityConfig: [], endpoint: null, preserveOperationalCapabilities: true },
+      control, command, () => true);
+    expect(control).toHaveBeenCalledTimes(1);
+    expect(control.mock.calls[0]?.[0]).not.toHaveProperty("capabilityConfig");
+  });
   it("enrolls an agentless NAS through both native operations with credential references only", async () => {
     const control = vi.fn().mockResolvedValueOnce(assigned).mockResolvedValueOnce(endpoint);
     await expect(enrollOperationalComputer(nas, control, command, () => true))

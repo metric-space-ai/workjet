@@ -41,6 +41,11 @@ export async function verifyBundledServerSource(input: {
         );
     }
   }
+  if (input.platform === "mac" && !archives.includes("workjet-server-linux-x64.tgz")) {
+    throw new Error(
+      "Missing bundled server workjet-server-linux-x64.tgz. Mac packaging must build the Linux SSH server on gpu3.",
+    );
+  }
   const expected = new Map<string, string>();
   for (const entry of SERVER_ENTRIES)
     expected.set(entry, await fileDigest(NodePath.join(input.serverDist, entry)));

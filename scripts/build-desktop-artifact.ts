@@ -20,6 +20,7 @@ import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import { verifyBundledServerSource } from "./lib/bundled-server-source.ts";
+import { buildLinuxSshServer } from "./lib/build-linux-ssh-server.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
 import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
 import {
@@ -164,6 +165,7 @@ interface BuildCliInput {
   readonly mockUpdateServerPort: Option.Option<number>;
   readonly wslPrebuild: Option.Option<string>;
   readonly diagnosticProviderGatewayHost?: Option.Option<string>;
+  readonly gpuBuildOwner?: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -768,6 +770,7 @@ interface ResolvedBuildOptions {
   readonly mockUpdateServerPort: number | undefined;
   readonly wslPrebuild: string | undefined;
   readonly diagnosticProviderGatewayHost?: string;
+  readonly gpuBuildOwner?: string;
 }
 
 interface StagePackageJson {
@@ -1607,6 +1610,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     mockUpdateServerPort,
     wslPrebuild,
     ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
+    gpuBuildOwner: Option.getOrUndefined(input.gpuBuildOwner ?? Option.none()),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2712,6 +2716,18 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       { label: "build current bundled local server", verbose: options.verbose },
     );
   }
+  if (options.platform === "mac") {
+    yield* Effect.tryPromise({
+      try: () =>
+        buildLinuxSshServer({
+          repoRoot,
+          serverDist: distDirs.serverDist,
+          archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+          owner: options.gpuBuildOwner,
+        }),
+      catch: (cause) => new BundledServerSourceVerificationError({ cause }),
+    });
+  }
   const verifiedServerArchives = yield* Effect.tryPromise({
     try: () =>
       verifyBundledServerSource({
@@ -3105,6 +3121,10 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.withDescription(
       "Explicit source-matching local Mac host receipt; does not publish or replace the six-platform release pin.",
     ),
+    Flag.optional,
+  ),
+  gpuBuildOwner: Flag.string("gpu-build-owner").pipe(
+    Flag.withDescription("Owning thread ID for the required gpu3 Linux SSH server build on Mac."),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(

@@ -65,6 +65,7 @@ for (const entry of ["bin.mjs", "service-launcher.mjs"]) {
   it(`refuses obsolete ${entry} even with a valid archive checksum`, () =>
     withFixture(async ({ archive, options }) => {
       await archive("darwin-arm64", entry);
+      await archive("linux-x64");
       await NodeAssert.rejects(verifyBundledServerSource(options), /Stale bundled server/);
     }));
 }
@@ -80,6 +81,7 @@ it("refuses stale remote archives included beside the native runtime", () =>
 it("refuses changed archive bytes before reading server entries", () =>
   withFixture(async ({ archive, options }) => {
     const path = await archive();
+    await archive("linux-x64");
     await NodeFSP.appendFile(path, "corruption");
     await NodeAssert.rejects(verifyBundledServerSource(options), /checksum mismatch/);
   }));
@@ -91,15 +93,25 @@ it("requires both native architectures for a universal Mac app", () =>
       /Missing bundled server workjet-server-darwin-x64/,
     );
     await archive("darwin-x64");
+    await archive("linux-x64");
     NodeAssert.equal(
       (await verifyBundledServerSource({ ...options, arch: "universal" })).length,
-      2,
+      3,
     );
   }));
 it("refuses an archive without the service launcher", () =>
   withFixture(async ({ archive, options }) => {
     await archive("darwin-arm64", undefined, "service-launcher.mjs");
+    await archive("linux-x64");
     await NodeAssert.rejects(verifyBundledServerSource(options));
+  }));
+it("refuses a Mac bundle that contains only its local server", () =>
+  withFixture(async ({ archive, options }) => {
+    await archive();
+    await NodeAssert.rejects(
+      verifyBundledServerSource(options),
+      /Missing bundled server workjet-server-linux-x64/,
+    );
   }));
 it("uses the staged WSL server on Windows without requiring a local TGZ", () =>
   withFixture(async ({ options }) => {

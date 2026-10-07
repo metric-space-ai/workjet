@@ -1,5 +1,5 @@
 import {
-  CommandId,
+  type CommandId,
   type CtoxComputerEndpoint,
   type CtoxComputerOperationalCapability,
   type CtoxWorkjetComputerControlRequest,
@@ -40,7 +40,8 @@ export async function enrollOperationalComputer(
       capability.ssh_endpoint_ref !== endpoint.ref)) {
       throw new Error("Build computers require their assigned SSH endpoint.");
     }
-    if (capability.kind === "storage" && (capability.endpoint_ref !== endpoint?.ref ||
+    if (capability.kind === "storage" && (endpoint === null ||
+      capability.endpoint_ref !== endpoint.ref ||
       capability.protocol !== endpoint.connection.protocol)) {
       throw new Error("Storage needs its assigned endpoint and protocol.");
     }

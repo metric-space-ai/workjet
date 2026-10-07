@@ -391,14 +391,14 @@ export const runLocalCli = (
     args[0] === "__desktop-target"
       ? "service-discovery"
       : args[0] !== "service"
-      ? "authorization"
-      : args[1] === "install"
-        ? "service-install"
-        : args[1] === "status"
-          ? "service-status"
-          : args[1] === "start"
-            ? "service-start"
-            : "service-other";
+        ? "authorization"
+        : args[1] === "install"
+          ? "service-install"
+          : args[1] === "status"
+            ? "service-status"
+            : args[1] === "start"
+              ? "service-start"
+              : "service-other";
   const failure = (
     kind: LocalCliCommandFailure["kind"],
     details: Pick<LocalCliCommandFailure, "exitCode" | "step"> = {},

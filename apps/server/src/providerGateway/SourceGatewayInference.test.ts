@@ -114,6 +114,7 @@ const fixture = () => {
   const events: string[] = [];
   let scoped = catalog;
   let receipt: unknown = input.permit;
+  let nativeError: WorkjetGatewayInferenceError | undefined;
   let now = 1000;
   let afterForward: () => void = () => undefined;
   const consumer = makeSourceGatewayInference({
@@ -137,11 +138,10 @@ const fixture = () => {
         events.push("catalog");
         return scoped;
       }),
-    revalidate: () =>
-      Effect.sync(() => {
-        events.push("native");
-        return receipt;
-      }),
+    revalidate: () => Effect.suspend(() => {
+      events.push("native");
+      return nativeError === undefined ? Effect.succeed(receipt) : Effect.fail(nativeError);
+    }),
     forward: (selected, request, deadline) =>
       Effect.sync(() => {
         events.push("forward");
@@ -162,6 +162,9 @@ const fixture = () => {
     native: (value: unknown) => {
       receipt = value;
     },
+    unavailable: () => {
+      nativeError = new WorkjetGatewayInferenceError({ reason: "native-admission-unavailable" });
+    },
     expire: () => {
       now = 10000;
     },
@@ -174,6 +177,16 @@ const reason = async (request: Effect.Effect<unknown, WorkjetGatewayInferenceErr
   (await Effect.runPromise(Effect.flip(request))).reason;
 
 describe("source gateway inference", () => {
+  it("distinguishes unavailable native authority from a malformed receipt", async () => {
+    const unavailable = fixture();
+    unavailable.unavailable();
+    expect(await reason(unavailable.consumer.admit(input))).toBe("native-admission-unavailable");
+    expect(unavailable.events).not.toContain("forward");
+    const malformed = fixture();
+    malformed.native({ invalid: true });
+    expect(await reason(malformed.consumer.admit(input))).toBe("native-admission-rejected");
+    expect(malformed.events).not.toContain("forward");
+  });
   it("provides current create/turn admission without performing model inference", async () => {
     const f = fixture();
     expect(await Effect.runPromise(f.consumer.admit(input))).toEqual({});

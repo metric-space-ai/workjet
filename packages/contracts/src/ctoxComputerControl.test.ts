@@ -30,6 +30,27 @@ const computer = {
 };
 
 describe("CTOX computer control boundary", () => {
+  it("accepts optional native operational details and rejects invalid or secret-bearing details", () => {
+    const gpu = { kind: "gpu", model: "A4500", vram_gib: 20 };
+    expect(decodeResponse({ action: "computer.list", computers: [computer] })).toMatchObject({
+      computers: [computer],
+    });
+    expect(
+      decodeResponse({
+        action: "computer.list",
+        computers: [{ ...computer, capabilityConfig: [gpu], agentless: false }],
+      }),
+    ).toMatchObject({ computers: [{ capabilityConfig: [gpu], agentless: false }] });
+    for (const fields of [
+      { capabilityConfig: [{ ...gpu, vram_gib: 0 }] },
+      { capabilityConfig: [{ ...gpu, private_key: "secret" }] },
+      { agentless: "yes" },
+    ]) {
+      expect(() =>
+        decodeResponse({ action: "computer.list", computers: [{ ...computer, ...fields }] }),
+      ).toThrow();
+    }
+  });
   it("accepts opaque identities and rejects transport endpoints, unknown authority flags and co-location shortcuts", () => {
     expect(decodeInput(assign)).toEqual(assign);
     for (const fields of [

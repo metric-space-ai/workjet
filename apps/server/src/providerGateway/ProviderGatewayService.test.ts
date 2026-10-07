@@ -109,6 +109,7 @@ const readyHarness = () => {
   };
   const platform: ProviderGatewayPlatform = {
     ...nodeProviderGatewayPlatform,
+    fingerprint: undefined,
     readText: async () => configuration,
     writePrivateText: async (_path, content) => {
       writes.push(content);
@@ -140,6 +141,139 @@ const readyHarness = () => {
 };
 
 describe("ProviderGatewayService", () => {
+  it("admits no inference or auth error for an intentionally disabled account", async () => {
+    const harness = readyHarness();
+    let probes = 0;
+    const disabled = JSON.stringify({
+      ...JSON.parse(configuration),
+      accounts: JSON.parse(configuration).accounts.map((account: Record<string, unknown>) => ({
+        ...account,
+        enabled: false,
+      })),
+    });
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      fingerprint: nodeProviderGatewayPlatform.fingerprint,
+      readText: async (path) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return disabled;
+      },
+      providerModelCheck: async () => {
+        ++probes;
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
+    };
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const queued = yield* gateway.checkModels({ force: true });
+        expect(queued.pending).toEqual([]);
+        return yield* gateway.modelChecks();
+      }),
+    );
+    expect(probes).toBe(0);
+    expect(result.checks).toEqual([]);
+    expect(result.pending).toEqual([]);
+    expect(result.deferredCount).toBe(0);
+    expect(harness.writes.some((value) => value.includes('"errorClass":"auth"'))).toBe(false);
+  });
+
+  it("discards a late success when its account is disabled during inference", async () => {
+    const harness = readyHarness();
+    let disabled = false;
+    let started!: () => void;
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let cancelled!: () => void;
+    const cancellation = new Promise<void>((resolve) => {
+      cancelled = resolve;
+    });
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      fingerprint: nodeProviderGatewayPlatform.fingerprint,
+      readText: async (path) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        const config = JSON.parse(configuration);
+        if (disabled) config.accounts[0].enabled = false;
+        return JSON.stringify(config);
+      },
+      managementGet: async (endpoint, route, key, maximumBytes) =>
+        route.endsWith("runtime-status")
+          ? {
+              schema: "workjet.provider-gateway.runtime-status.v1",
+              features: { account_selection: true },
+            }
+          : harness.platform.managementGet(endpoint, route, key, maximumBytes),
+      providerModelCheck: async (_endpoint, _provider, _accountId, _modelId, signal) => {
+        started();
+        await new Promise<void>((resolve) =>
+          signal?.addEventListener(
+            "abort",
+            () => {
+              cancelled();
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
+    };
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        yield* gateway.checkModels({});
+        yield* Effect.promise(() => began);
+        disabled = true;
+        const snapshot = yield* gateway.modelChecks();
+        yield* Effect.promise(() => cancellation);
+        return snapshot;
+      }),
+    );
+    expect(result.pending).toEqual([]);
+    expect(result.checks).toEqual([]);
+    expect(harness.writes.some((value) => value.includes('"status":"ok"'))).toBe(false);
+  });
+
+  it("makes no inference request without the native account-selection capability", async () => {
+    const harness = readyHarness();
+    let probes = 0;
+    let persist!: () => void;
+    const persisted = new Promise<void>((resolve) => {
+      persist = resolve;
+    });
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      fingerprint: nodeProviderGatewayPlatform.fingerprint,
+      writePrivateText: async (path, content) => {
+        await harness.platform.writePrivateText(path, content);
+        if (path.endsWith("model-checks.json")) persist();
+      },
+      providerModelCheck: async () => {
+        ++probes;
+        return { status: "ok", errorClass: null, httpStatus: 200 };
+      },
+      readText: async (path, limit) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return harness.platform.readText(path, limit);
+      },
+    };
+    const result = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        const queued = yield* gateway.checkModels({});
+        expect(queued.pending).toHaveLength(1);
+        yield* Effect.promise(() => persisted);
+        return yield* gateway.modelChecks();
+      }),
+    );
+    expect(probes).toBe(0);
+    expect(result.checks[0]?.errorClass).toBe("account-selection-unavailable");
+  });
   it("reads durable environment usage while the host is stopped and never starts it", async () => {
     const now = Date.parse("2026-10-02T12:00:00Z");
     const day = Math.floor(now / 86_400_000);

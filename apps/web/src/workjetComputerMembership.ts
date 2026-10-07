@@ -70,12 +70,18 @@ export function createComputerMembershipStore() {
     publish({ ...snapshot, phase: "loading", error: null, pendingComputerId: null });
     try {
       if (!bridge?.requestComputerControl) throw new Error(membershipError("unsupported"));
-      let result = await bridge.requestComputerControl(instanceId, { action: "computer.list" });
+      let result = await bridge.requestComputerControl(instanceId, {
+        action: "computer.list",
+        includeOperationalDetails: true,
+      });
       if (revision !== generation) return;
       if (result._tag === "failed" && result.code === "not_active" && bridge.ensurePooled) {
         await bridge.ensurePooled(instanceId);
         if (revision !== generation) return;
-        result = await bridge.requestComputerControl(instanceId, { action: "computer.list" });
+        result = await bridge.requestComputerControl(instanceId, {
+          action: "computer.list",
+          includeOperationalDetails: true,
+        });
       }
       if (revision !== generation) return;
       if (result._tag === "failed") throw new Error(membershipError(result.code));

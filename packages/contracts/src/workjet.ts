@@ -1689,3 +1689,42 @@ export class WorkjetGatewayOperationError extends Schema.TaggedErrorClass<Workje
     }
   }
 }
+
+/** Redacted observations from bounded server inference, never provider responses. */
+export const WorkjetGatewayModelCheckErrorClass = Schema.Literals([
+  "auth",
+  "quota-rate-limit",
+  "unknown-model",
+  "network-provider",
+  "account-selection-unavailable",
+]);
+export type WorkjetGatewayModelCheckErrorClass = typeof WorkjetGatewayModelCheckErrorClass.Type;
+export const WorkjetGatewayModelCheck = Schema.Struct({
+  accountId: WorkjetGatewayAccountId,
+  modelId: TrimmedNonEmptyString,
+  status: Schema.Literals(["ok", "error"]),
+  errorClass: Schema.NullOr(WorkjetGatewayModelCheckErrorClass),
+  checkedAtMs: NonNegativeInt,
+  latencyMs: NonNegativeInt,
+  httpStatus: Schema.NullOr(NonNegativeInt),
+});
+export type WorkjetGatewayModelCheck = typeof WorkjetGatewayModelCheck.Type;
+export const WorkjetGatewayModelChecks = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  checks: Schema.Array(WorkjetGatewayModelCheck),
+  pending: Schema.Array(
+    Schema.Struct({
+      accountId: WorkjetGatewayAccountId,
+      modelId: TrimmedNonEmptyString,
+      status: Schema.Literals(["queued", "running"]),
+    }),
+  ),
+  deferredCount: NonNegativeInt,
+});
+export type WorkjetGatewayModelChecks = typeof WorkjetGatewayModelChecks.Type;
+export const WorkjetGatewayModelCheckInput = Schema.Struct({
+  accountId: Schema.optional(WorkjetGatewayAccountId),
+  modelId: Schema.optional(TrimmedNonEmptyString),
+  force: Schema.optional(Schema.Boolean),
+});
+export type WorkjetGatewayModelCheckInput = typeof WorkjetGatewayModelCheckInput.Type;

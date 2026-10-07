@@ -216,6 +216,8 @@ import {
   WorkjetGatewayOauthStartInput,
   WorkjetGatewayOperationError,
   WorkjetGatewayStatus,
+  WorkjetGatewayModelChecks,
+  WorkjetGatewayModelCheckInput,
   WorkjetGatewayUpdateRoutingInput,
   WorkjetGatewayUpdateRoutingResult,
   WorkjetGreppyOperationError,
@@ -397,6 +399,8 @@ export const WS_METHODS = {
   workjetGatewayRemoveAccount: "workjet.providerGateway.removeAccount",
   workjetGatewayHealth: "workjet.providerGateway.health",
   workjetGatewayUsage: "workjet.providerGateway.usage",
+  workjetGatewayModelChecks: "workjet.providerGateway.modelChecks",
+  workjetGatewayCheckModels: "workjet.providerGateway.checkModels",
   workjetGatewayDiscoverModels: "workjet.providerGateway.discoverModels",
   workjetGatewayUpdateRouting: "workjet.providerGateway.updateRouting",
 
@@ -781,6 +785,17 @@ export const WsWorkjetGatewayUsageRpc = Rpc.make(WS_METHODS.workjetGatewayUsage,
 export const WsWorkjetGatewayDiscoverModelsRpc = Rpc.make(WS_METHODS.workjetGatewayDiscoverModels, {
   payload: Schema.Struct({}),
   success: WorkjetGatewayModelDiscovery,
+  error: WorkjetGatewayRpcError,
+});
+
+export const WsWorkjetGatewayModelChecksRpc = Rpc.make(WS_METHODS.workjetGatewayModelChecks, {
+  payload: Schema.Struct({}),
+  success: WorkjetGatewayModelChecks,
+  error: WorkjetGatewayRpcError,
+});
+export const WsWorkjetGatewayCheckModelsRpc = Rpc.make(WS_METHODS.workjetGatewayCheckModels, {
+  payload: WorkjetGatewayModelCheckInput,
+  success: WorkjetGatewayModelChecks,
   error: WorkjetGatewayRpcError,
 });
 
@@ -1673,6 +1688,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayRemoveAccountRpc,
   WsWorkjetGatewayHealthRpc,
   WsWorkjetGatewayUsageRpc,
+  WsWorkjetGatewayModelChecksRpc,
+  WsWorkjetGatewayCheckModelsRpc,
   WsWorkjetGatewayDiscoverModelsRpc,
   WsWorkjetGatewayUpdateRoutingRpc,
   WsWorkjetLegacyImportInspectRpc,

@@ -1,4 +1,8 @@
-import type { CtoxComputerOperationalCapability, WorkjetComputer } from "@workjet/contracts";
+import type {
+  CtoxComputerOperationalCapability,
+  CtoxWorkjetComputerProjection,
+  WorkjetComputer,
+} from "@workjet/contracts";
 import { useState } from "react";
 import type { OperationalComputerEnrollment } from "../../computerCapabilityEnrollment";
 import { randomUUID } from "../../lib/utils";
@@ -16,27 +20,40 @@ const SSH_HOST_KEY_TYPES = [
 
 export function ComputerCapabilitiesEditor({
   computer,
+  nativeComputer,
   preserveExistingCapabilities = false,
   onSave,
   onCancel,
 }: {
   readonly computer?: WorkjetComputer;
+  readonly nativeComputer?: CtoxWorkjetComputerProjection;
   readonly preserveExistingCapabilities?: boolean;
   readonly onSave: (enrollment: OperationalComputerEnrollment) => Promise<void>;
   readonly onCancel: () => void;
 }) {
-  const [computerId] = useState(() => computer?.id ?? `computer-${randomUUID()}`);
+  const savedBuild = nativeComputer?.capabilityConfig?.find((entry) => entry.kind === "build");
+  const savedStorage = nativeComputer?.capabilityConfig?.find((entry) => entry.kind === "storage");
+  const savedGpu = nativeComputer?.capabilityConfig?.find((entry) => entry.kind === "gpu");
+  const [computerId] = useState(
+    () => nativeComputer?.id ?? computer?.id ?? `computer-${randomUUID()}`,
+  );
   const [endpointRef] = useState(() => `endpoint-${randomUUID()}`);
-  const [name, setName] = useState(computer?.label ?? "");
-  const [storageOnly, setStorageOnly] = useState(computer === undefined);
+  const [name, setName] = useState(nativeComputer?.displayName ?? computer?.label ?? "");
+  const [storageOnly, setStorageOnly] = useState(
+    nativeComputer?.agentless ?? computer === undefined,
+  );
   const [preserve, setPreserve] = useState(preserveExistingCapabilities);
   const [build, setBuild] = useState(false);
-  const [storage, setStorage] = useState(computer === undefined);
+  const [storage, setStorage] = useState(
+    nativeComputer ? nativeComputer.agentless === true : computer === undefined,
+  );
   const [gpu, setGpu] = useState(false);
-  const [purposes, setPurposes] = useState<readonly ("artifacts" | "backups" | "exchange")[]>([
-    "artifacts",
-  ]);
-  const [protocol, setProtocol] = useState<"ssh" | "smb">("ssh");
+  const [purposes, setPurposes] = useState<readonly ("artifacts" | "backups" | "exchange")[]>(
+    savedStorage?.purposes ?? ["artifacts"],
+  );
+  const [protocol, setProtocol] = useState<"ssh" | "smb">(
+    savedStorage?.protocol === "smb" ? "smb" : "ssh",
+  );
   const [hostKeyType, setHostKeyType] = useState<(typeof SSH_HOST_KEY_TYPES)[number]["value"] | "">(
     "",
   );
@@ -45,19 +62,19 @@ export function ComputerCapabilitiesEditor({
     host: "",
     port: "22",
     username: "",
-    root: "",
+    root: savedBuild?.lane_root ?? savedStorage?.root ?? "",
     keyPin: "",
     credentialScope: "computer-access",
     credentialName: "",
     passphraseScope: "computer-access",
     passphraseName: "",
     share: "",
-    slots: "1",
-    jobs: "2",
-    diskFloor: "20",
-    toolchains: "rust-stable",
-    gpuModel: "",
-    vram: "",
+    slots: String(savedBuild?.slots ?? 1),
+    jobs: String(savedBuild?.jobs ?? 2),
+    diskFloor: String(savedBuild?.disk_floor_gib ?? 20),
+    toolchains: savedBuild?.toolchains.join(", ") ?? "rust-stable",
+    gpuModel: savedGpu?.model ?? "",
+    vram: savedGpu ? String(savedGpu.vram_gib) : "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +93,15 @@ export function ComputerCapabilitiesEditor({
     </label>
   );
   const hasEndpoint = build || storage;
+  if (savedStorage?.protocol === "nfs")
+    return (
+      <div className="space-y-3">
+        <p role="alert">NFS storage is not supported by this editor.</p>
+        <Button variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+      </div>
+    );
 
   return (
     <form
@@ -103,7 +129,7 @@ export function ComputerCapabilitiesEditor({
             endpoint_ref: endpointRef,
             protocol,
             root: fields.root.trim(),
-            quota_gib: null,
+            quota_gib: savedStorage?.quota_gib ?? null,
             purposes,
           });
         if (gpu)
@@ -133,7 +159,11 @@ export function ComputerCapabilitiesEditor({
             ? []
             : (computer?.harnesses
                 .filter((harness) => harness.available)
-                .map((harness) => harness.harness) ?? []),
+                .map((harness) => harness.harness) ??
+              nativeComputer?.capabilities.filter(
+                (kind) => !["build", "storage", "gpu"].includes(kind),
+              ) ??
+              []),
           capabilityConfig: capabilities,
           preserveOperationalCapabilities: preserve,
           endpoint:

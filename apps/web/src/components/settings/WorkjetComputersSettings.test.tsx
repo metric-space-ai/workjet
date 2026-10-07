@@ -93,7 +93,8 @@ describe("native computer capabilities", () => {
         onCapabilities={() => undefined}
       />,
     );
-    expect(markup).toContain("Remove flashstore24-nas from selected Business OS");
+    expect(markup).toContain("More actions for flashstore24-nas");
+    expect(markup).not.toContain(">Remove from Business OS<");
     expect(markup).toContain("Edit capabilities for computer-local");
     expect(markup).not.toContain("Use flashstore24-nas as current computer");
   });
@@ -349,7 +350,8 @@ describe("unified computer catalog", () => {
         renderConnection={() => <button>Reconnect Remote Linux</button>}
       />,
     );
-    expect(markup).toContain("Reconnect Remote Linux");
+    expect(markup).toContain("More actions for computer-remote");
+    expect(markup).not.toContain("Reconnect Remote Linux");
     expect(markup.match(/>Add computer</g)).toHaveLength(1);
     expect(markup).not.toContain("Add existing connection");
     expect(markup).not.toContain("Remote environments");

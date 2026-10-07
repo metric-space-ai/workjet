@@ -179,6 +179,20 @@ describe("Models account recovery", () => {
     ).toBe("unknown");
   });
 
+  it("does not infer credential rejection without a generation 401", () => {
+    expect(
+      modelsAccountHealth(
+        { ...account, authentication: "rejected", generationHttpStatus: null },
+        1000,
+      ).status,
+    ).toBe("unknown");
+    expect(
+      modelsAccountHealth(
+        { ...account, authentication: "rejected", generationHttpStatus: 403 },
+        1000,
+      ).status,
+    ).not.toBe("auth-required");
+  });
   it("shows rejected generation authentication, but keeps disabled accounts disabled", () => {
     const rejected = {
       ...account,

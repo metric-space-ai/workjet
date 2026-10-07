@@ -3,6 +3,7 @@ import type {
   WorkjetGatewayApiKeyProvider,
   WorkjetGatewayOauthProvider,
   WorkjetGatewayProvider,
+  WorkjetGatewayModelCheck,
 } from "@workjet/contracts";
 import { CheckIcon, EllipsisIcon, PlusIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
@@ -46,8 +47,10 @@ export interface ModelsAccountHealth {
 export interface ModelsModelCheck {
   readonly accountId: string;
   readonly modelId: string;
-  readonly status: "ok" | "error";
+  readonly status: WorkjetGatewayModelCheck["status"];
   readonly errorClass: string | null;
+  readonly source?: WorkjetGatewayModelCheck["source"];
+  readonly unavailableReason?: WorkjetGatewayModelCheck["unavailableReason"];
   readonly checkedAtMs: number;
   readonly latencyMs: number;
   readonly httpStatus: number | null;
@@ -408,13 +411,21 @@ function AccountRow({
     (health?.status === "auth-required" ||
       state.modelChecks?.some(
         (check) =>
-          check.accountId === account.id && check.errorClass === "auth" && check.httpStatus !== 403,
+          check.accountId === account.id &&
+          check.status === "error" &&
+          check.source === "upstream" &&
+          check.errorClass === "auth" &&
+          check.httpStatus === 401,
       ));
   const accessDenied =
     account.enabled &&
     state.modelChecks?.some(
       (check) =>
-        check.accountId === account.id && check.errorClass === "auth" && check.httpStatus === 403,
+        check.accountId === account.id &&
+        check.status === "error" &&
+        check.source === "upstream" &&
+        check.errorClass === "auth" &&
+        check.httpStatus === 403,
     );
   const problem =
     account.enabled &&
@@ -580,7 +591,7 @@ function AccountRow({
                   : health?.status === "cooldown"
                     ? "Limit reached. Available accounts handle new requests."
                     : "Provider unavailable."))}
-            {health?.retryAtMs != null && ` Available again: ${resetLabel(health.retryAtMs)}.`}
+            {health?.retryAtMs != null && ` Gateway retry after: ${resetLabel(health.retryAtMs)}.`}
           </span>
           {authRequired && !isKey ? (
             <Button

@@ -56,7 +56,7 @@ export function modelsAccountHealth(
   );
   const status: ModelsAccountHealth["status"] = account.disabled
     ? "disabled"
-    : account.authentication === "rejected"
+    : account.authentication === "rejected" && generationStatus === 401
       ? "auth-required"
       : blocked || exhausted
         ? "cooldown"
@@ -68,13 +68,13 @@ export function modelsAccountHealth(
             : "unknown";
   const message =
     status === "auth-required"
-      ? "Sign-in expired or credentials rejected."
+      ? "This account's credentials were rejected (HTTP 401)."
       : status === "cooldown"
         ? exhausted || generationStatus === 429
           ? "Limit reached. Available accounts handle new requests."
           : generationStatus === 403
-            ? "The provider denied access (HTTP 403). The gateway is waiting before retrying."
-            : `The gateway is waiting before retrying the last failed request${generationStatus === null ? "" : ` (HTTP ${generationStatus})`}.`
+            ? "This account is cooling down after an access denial (HTTP 403)."
+            : `This account is cooling down after its last failed request${generationStatus === null ? "" : ` (HTTP ${generationStatus})`}.`
         : status === "unavailable"
           ? balanceExhausted
             ? "Available API balance is exhausted. Add funds or check voucher validity."
@@ -84,7 +84,7 @@ export function modelsAccountHealth(
                 ? "The provider denied access. Check this account and subscription."
                 : account.errorCode?.includes("model")
                   ? "Model unavailable. Check the model names above."
-                  : "Provider temporarily unavailable. Try checking again."
+                  : "This account's last request failed. Re-check its models."
           : null;
   const visibleWindows = account.quota.filter((window) => !window.toolOnly);
   return {

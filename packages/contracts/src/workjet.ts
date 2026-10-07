@@ -1740,8 +1740,18 @@ export type WorkjetGatewayModelCheckErrorClass = typeof WorkjetGatewayModelCheck
 export const WorkjetGatewayModelCheck = Schema.Struct({
   accountId: WorkjetGatewayAccountId,
   modelId: TrimmedNonEmptyString,
-  status: Schema.Literals(["ok", "error"]),
+  status: Schema.Literals(["ok", "error", "unavailable"]),
   errorClass: Schema.NullOr(WorkjetGatewayModelCheckErrorClass),
+  source: Schema.optional(Schema.Literals(["upstream", "gateway"])),
+  unavailableReason: Schema.optional(
+    Schema.Literals([
+      "gateway-not-ready",
+      "exact-account-unavailable",
+      "account-unavailable",
+      "transport",
+      "unverified-response",
+    ]),
+  ),
   checkedAtMs: NonNegativeInt,
   latencyMs: NonNegativeInt,
   httpStatus: Schema.NullOr(NonNegativeInt),

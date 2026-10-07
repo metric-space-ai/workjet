@@ -34,16 +34,30 @@ adding one model retains observations for the account's existing models.
 
 The host must advertise `features.account_selection: true` in runtime status
 before a per-account request is sent. Requests carry `X-CTOX-Provider` and
-`X-CTOX-Account`; successful responses must acknowledge exactly the selected
-account in `X-CTOX-Account-Selected`. Older hosts receive no inference request and
-produce `account-selection-unavailable`. Errors use the host's closed-whitelist
-`X-CTOX-Error-Class` when present, then HTTP status and structured error codes.
-Raw error messages are never displayed. An empty/malformed success is not green.
+`X-CTOX-Account`; all responses must acknowledge exactly the selected
+account in `X-CTOX-Account-Selected`, including failures. Older hosts receive no
+inference request. Gateway admission, missing capability, transport failures and
+unacknowledged or unverified responses produce `unavailable` with `source: gateway`,
+a closed unavailable reason and no provider error class. The UI displays a grey
+unchecked icon. Only an acknowledged native `X-CTOX-Error-Class` becomes a red
+upstream error; neither a gateway HTTP code nor model-shaped gateway text implies
+rejected credentials or an unknown provider model. A validated completed response
+becomes green with `source: upstream`. Raw messages are never displayed.
+
+The observation file is version 2. Version-1 observations are discarded because
+they cannot distinguish provider responses from gateway failures; settings and
+credentials are preserved, and the next bounded pass checks the models afresh.
 
 A valid Responses success may include `error: null`. Codex subscription checks
 use `store: false` and a short-reply instruction because that upstream rejects
 `max_output_tokens`; other providers retain the eight-token output bound. A bare
-404 is a connection/provider failure unless the structured error or native class
-identifies an unknown model. A 403 does not establish expired credentials and
+404 without a native upstream class remains unchecked. A 403 does not establish expired credentials and
 does not show Re-login. Native retry cooldowns are displayed with their retry
-time and the observed failure, separately from quota exhaustion.
+time and the observed failure, separately from quota exhaustion. A retry time is
+the gateway's next attempt, not a promise that the provider becomes available.
+
+Settings use the selected Business OS's assigned Code-computer environment. The
+provider endpoint belongs to that Workjet server, not automatically to the
+Business OS daemon's CLIProxy. Explicit harness-instance endpoint overrides also
+remain distinct routes; a ready worker or pool does not verify the exact account
+shown in the Models table.

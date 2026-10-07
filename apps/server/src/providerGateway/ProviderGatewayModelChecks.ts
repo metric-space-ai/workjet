@@ -10,7 +10,7 @@ export const MODEL_CHECK_COOLDOWN_MS = 5 * 60_000;
 export const MODEL_CHECK_BATCH_LIMIT = 32;
 export const MODEL_CHECK_QUEUE_LIMIT = 64;
 const Persisted = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literal(2),
   entries: Schema.Array(
     Schema.Struct({ revision: Schema.String, check: WorkjetGatewayModelCheck }),
   ),
@@ -29,7 +29,12 @@ export interface ModelChecksOptions {
   readonly probe: (
     target: ModelCheckTarget,
     signal: AbortSignal,
-  ) => Promise<Pick<WorkjetGatewayModelCheck, "status" | "errorClass" | "httpStatus">>;
+  ) => Promise<
+    Pick<
+      WorkjetGatewayModelCheck,
+      "status" | "errorClass" | "httpStatus" | "source" | "unavailableReason"
+    >
+  >;
 }
 interface PendingCheck {
   readonly target: ModelCheckTarget;
@@ -121,9 +126,11 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
       item.status = "running";
       const startedAt = options.now();
       const result = await options.probe(item.target, controller.signal).catch(() => ({
-        status: "error" as const,
-        errorClass: "network-provider" as const,
+        status: "unavailable" as const,
+        errorClass: null,
         httpStatus: null,
+        source: "gateway" as const,
+        unavailableReason: "transport" as const,
       }));
       await reconcile();
       // Shutdown and config replacement both discard results of the old request.
@@ -137,7 +144,7 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
         };
         entries.set(id, { revision: item.target.revision, check });
         try {
-          await options.write(JSON.stringify({ schemaVersion: 1, entries: [...entries.values()] }));
+          await options.write(JSON.stringify({ schemaVersion: 2, entries: [...entries.values()] }));
         } catch {
           entries.delete(id);
         }

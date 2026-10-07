@@ -81,13 +81,15 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
         ...(signal === undefined ? [] : [signal]),
       ]),
     });
-    // Never accept an ignored selection header on an older host.
-    if (response.ok && response.headers.get("X-CTOX-Account-Selected") !== accountId) {
+    // Every outcome must acknowledge the exact requested account, including failures.
+    if (response.headers.get("X-CTOX-Account-Selected") !== accountId) {
       await response.body?.cancel();
       return {
-        status: "error",
-        errorClass: "account-selection-unavailable",
+        status: "unavailable",
+        errorClass: null,
         httpStatus: response.status,
+        source: "gateway",
+        unavailableReason: "exact-account-unavailable",
       };
     }
     const safeErrorClass = response.headers.get("X-CTOX-Error-Class");
@@ -99,7 +101,23 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
         safeErrorClass === "network-provider")
     ) {
       await response.body?.cancel();
-      return { status: "error", errorClass: safeErrorClass, httpStatus: response.status };
+      return {
+        status: "error",
+        errorClass: safeErrorClass,
+        httpStatus: response.status,
+        source: "upstream",
+      };
+    }
+    // Gateway admission errors are not observations from the provider.
+    if (!response.ok) {
+      await response.body?.cancel();
+      return {
+        status: "unavailable",
+        errorClass: null,
+        httpStatus: response.status,
+        source: "gateway",
+        unavailableReason: "unverified-response",
+      };
     }
     let bytes = 0;
     const chunks: Array<Uint8Array> = [];
@@ -125,11 +143,7 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     }
     const record =
       typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
-    const providerError =
-      typeof record.error === "object" && record.error !== null
-        ? (record.error as Record<string, unknown>)
-        : {};
-    const code = typeof providerError.code === "string" ? providerError.code.toLowerCase() : "";
+
     if (
       response.ok &&
       (record.error === undefined || record.error === null) &&
@@ -137,18 +151,15 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       Array.isArray(record.output) &&
       record.output.length > 0
     ) {
-      return { status: "ok", errorClass: null, httpStatus: response.status };
+      return { status: "ok", errorClass: null, httpStatus: response.status, source: "upstream" };
     }
-    if (["model_not_found", "unknown_model", "invalid_model", "unsupported_model"].includes(code)) {
-      return { status: "error", errorClass: "unknown-model", httpStatus: response.status };
-    }
-    const errorClass =
-      response.status === 401 || response.status === 403
-        ? "auth"
-        : response.status === 402 || response.status === 429
-          ? "quota-rate-limit"
-          : "network-provider";
-    return { status: "error", errorClass, httpStatus: response.status };
+    return {
+      status: "unavailable",
+      errorClass: null,
+      httpStatus: response.status,
+      source: "gateway",
+      unavailableReason: "unverified-response",
+    };
   },
   joinPath: (...parts) => NodePath.join(...parts),
   defaultExecutable: (stateDir) =>

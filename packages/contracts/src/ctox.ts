@@ -11,6 +11,7 @@ import {
 import { WorkjetConnectionId, WorkjetConnectionSummary } from "./workjet.ts";
 import { BusinessOsShellUpdateStatus } from "./businessOsShell.ts";
 import { BusinessOsInstanceId } from "./workjetBusinessOsComputers.ts";
+import { WorkjetSupervisorBinding, WorkjetSupervisorGoal, WorkjetSupervisorThreadId, WorkjetSupervisorTurn } from "./workjetSupervisor.ts";
 
 const NoAsciiControlCharacters = Schema.makeFilter((input: string) => {
   for (let index = 0; index < input.length; index += 1) {
@@ -557,6 +558,34 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   Schema.Struct({
+    action: Schema.Literal("project.supervisor.bind"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.submit"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+    goal: WorkjetSupervisorGoal,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.watch"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+    targetCommandId: CtoxProjectText(256),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.cancel"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+    targetCommandId: CtoxProjectText(256),
+    reason: Schema.optionalKey(CtoxProjectText(512)),
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.list"),
     includeConfiguration: Schema.optionalKey(Schema.Boolean),
   }),
@@ -640,6 +669,56 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   Schema.Struct({
+    action: Schema.Literal("project.supervisor.bind"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    binding: WorkjetSupervisorBinding,
+  }).check(Schema.makeFilter((response) =>
+    response.projectId === response.binding.projectId || "Supervisor binding belongs to another project.",
+  )),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.submit"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.supervisor_turn.v1"),
+    binding: WorkjetSupervisorBinding,
+    turn: WorkjetSupervisorTurn,
+    messageId: CtoxProjectText(256),
+  }).check(Schema.makeFilter((response) =>
+    response.projectId === response.binding.projectId &&
+    response.binding.threadId === response.turn.threadId
+      ? true : "Supervisor turn belongs to another binding.",
+  )),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.watch"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.supervisor_turn.v1"),
+    binding: WorkjetSupervisorBinding,
+    turn: WorkjetSupervisorTurn,
+  }).check(Schema.makeFilter((response) =>
+    response.projectId === response.binding.projectId &&
+    response.binding.threadId === response.turn.threadId
+      ? true : "Supervisor turn belongs to another binding.",
+  )),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.cancel"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.supervisor_turn.v1"),
+    binding: WorkjetSupervisorBinding,
+    turn: WorkjetSupervisorTurn,
+    cancellation: Schema.Struct({
+      commandId: CtoxProjectText(256),
+      sideEffectsMayHaveStarted: Schema.Boolean,
+      workerInterruptAcknowledged: Schema.Literal(false),
+    }),
+  }).check(Schema.makeFilter((response) =>
+    response.projectId === response.binding.projectId &&
+    response.binding.threadId === response.turn.threadId
+      ? true : "Supervisor turn belongs to another binding.",
+  )),
+  Schema.Struct({
     action: Schema.Literal("project.list"),
     projects: CtoxWorkjetProjectList,
     count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
@@ -669,6 +748,24 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   }),
 ]);
 export type CtoxWorkjetProjectControlResponse = typeof CtoxWorkjetProjectControlResponse.Type;
+
+/** Correlate an authorized guest receipt before projecting it into a Code chat. */
+export function isWorkjetSupervisorReceiptForRequest(
+  request: CtoxWorkjetProjectControlRequest,
+  response: CtoxWorkjetProjectControlResponse,
+): boolean {
+  if (!request.action.startsWith("project.supervisor.")) return true;
+  if (!("binding" in response) || !("threadId" in request) || !("commandId" in response)) return false;
+  if (response.action !== request.action || response.commandId !== request.commandId ||
+      response.projectId !== request.projectId || response.binding.projectId !== request.projectId ||
+      response.binding.threadId !== request.threadId) return false;
+  if (request.action === "project.supervisor.bind") return response.action === request.action;
+  if (!("turn" in response) || response.turn.threadId !== request.threadId) return false;
+  if (request.action === "project.supervisor.turn.watch" || request.action === "project.supervisor.turn.cancel") {
+    return response.turn.commandId === request.targetCommandId;
+  }
+  return response.action === "project.supervisor.turn.submit";
+}
 
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),

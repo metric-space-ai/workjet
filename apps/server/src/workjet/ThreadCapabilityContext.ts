@@ -37,7 +37,7 @@ export function resolveThreadCapabilityContext(
   const activation = validateCapabilityActivation({
     config: workjetConfig,
     registry,
-    ...(connections ?? {}),
+    ...connections,
   });
   const blocked = new Set(activation.issues.map(({ capabilityId }) => capabilityId));
   const enabled = activation.config.enabledCapabilityIds.filter(
@@ -57,7 +57,7 @@ export function resolveThreadCapabilityContext(
           : "Retain ownership of this project across specialist and worker deliveries."
       }\n${
         team.role === "worker"
-          ? "You are a leaf worker. Deliver the assigned package and accept consolidated rework; do not spawn children."
+          ? "You are a leaf worker. Deliver the assigned package and accept consolidated rework; do not spawn children. Open exactly one pull request from your assigned isolated worker branch and keep all rework in that same pull request. Return its URL, branch and verification evidence to your parent. The native lifecycle archives this thread after that pull request is merged or closed and execution is stopped."
           : "Keep your goal and remaining work durable. Report meaningful transitions, not repeated status messages."
       }`
     : "";

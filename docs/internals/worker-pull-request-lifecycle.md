@@ -4,7 +4,22 @@ The execution computer's Workjet server owns this lifecycle. The renderer and
 model may show a PR link, but neither can attest a merge or closure.
 
 The worker dispatcher creates a distinct thread and isolated
-`workjet/worker/<thread-id>` branch. A server-lifetime reconciler scans active
+`workjet/worker/<thread-id>` branch. Its MCP result includes the actual branch
+and checkout path, including recovered dispatches after lost acknowledgements.
+An optional `computerId` resolves against the native settings catalog, falling
+back to its selected computer or an unambiguous binding for this environment.
+A missing/ambiguous saved computer fails before checkout creation. A computer
+bound to another environment also fails before creation: this entry has no
+verified fresh foreign-parent ingress yet and never silently executes a remote
+selection locally. Older unconfigured local environments continue to dispatch
+without an invented computer ID. This binding is execution metadata; registry
+build-capability admission remains a separate native connection.
+
+Project workers are instructed to open exactly one PR on their isolated branch
+and keep review corrections in that PR. The native provider observations below
+remain the authority for binding and archival.
+
+A server-lifetime reconciler scans active
 project workers in bounded batches after runtime activation. It resolves the
 repository through the existing native source-control registry and asks for all
 PR states on that branch. Exactly one same-repository PR with the current native

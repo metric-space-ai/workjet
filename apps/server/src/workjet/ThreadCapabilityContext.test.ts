@@ -5,6 +5,9 @@ import {
 } from "@metric-space-ai/workjet-capabilities";
 import {
   DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
   WorkjetConnectionId,
   type WorkjetThreadConfig,
 } from "@workjet/contracts";
@@ -28,6 +31,33 @@ const registry = createCapabilityRegistry([
 ]);
 
 describe("resolveThreadCapabilityContext", () => {
+  it("gives project workers one PR and the native terminal archive contract", () => {
+    const config = {
+      schemaVersion: 2,
+      role: "worker",
+      parent: {
+        environmentId: EnvironmentId.make("environment-local"),
+        threadId: ThreadId.make("parent"),
+      },
+      managedInstructions: "",
+      enabledCapabilityIds: [],
+      capabilityBindings: [],
+      team: {
+        projectId: ProjectId.make("project"),
+        threadId: ThreadId.make("worker"),
+        role: "worker",
+        parentThreadId: ThreadId.make("parent"),
+        packageId: "package",
+        goal: "Deliver the isolated package.",
+        createdAt: "2026-10-07T15:00:00.000Z",
+      },
+    } as const satisfies WorkjetThreadConfig;
+    const context = resolveThreadCapabilityContext(config);
+    expect(context.compiledManagedPrompt).toContain("Open exactly one pull request");
+    expect(context.compiledManagedPrompt).toContain("keep all rework in that same pull request");
+    expect(context.compiledManagedPrompt).toContain("merged or closed and execution is stopped");
+  });
+
   it("resolves the default config to the collective prompt baseline", () => {
     expect(resolveThreadCapabilityContext(DEFAULT_WORKJET_THREAD_CONFIG)).toEqual({
       workjetRole: "standard",

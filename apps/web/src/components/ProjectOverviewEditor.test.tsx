@@ -9,7 +9,7 @@ describe("compact project configuration", () => {
       <ProjectOverviewEditor
         overview={{
           websiteUrl: "https://example.org",
-          slots: [{ kind: "metric", label: "Retained", value: 17 }, null, null],
+          slots: [{ kind: "metric", label: "Retained", value: 17, unit: "" }, null, null],
         }}
         configuration={{
           id: ProjectId.make("project"),

@@ -68,6 +68,42 @@ export function useWorkjetGatewaySection(
       ? null
       : serverEnvironment.workjetGatewayModels({ environmentId, input: {} }),
   );
+  const checksQuery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetGatewayModelChecks({ environmentId, input: {} }),
+  );
+  const checkModels = useAtomCommand(serverEnvironment.checkWorkjetGatewayModels, {
+    reportFailure: false,
+  });
+  const [checksBusy, setChecksBusy] = useState(false);
+  const [checksError, setChecksError] = useState<string | null>(null);
+  const checksFlight = useRef(false);
+  const runChecks = useCallback(async (accountId?: string, force = false) => {
+    if (environmentId === null || checksFlight.current) return;
+    checksFlight.current = true;
+    setChecksBusy(true);
+    setChecksError(null);
+    try {
+      const result = await checkModels({
+        environmentId,
+        input: { force, ...(accountId ? { accountId: WorkjetGatewayAccountId.make(accountId) } : {}) },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
+        setChecksError("Model checks could not finish. Check the provider connection and retry.");
+      checksQuery.refresh();
+    } finally { checksFlight.current = false; setChecksBusy(false); }
+  }, [environmentId, checkModels, checksQuery.refresh]);
+  const modelFingerprint = JSON.stringify((catalogQuery.data?.accounts ?? []).map((account) => [account.id, account.enabled, account.modelIds]));
+  const autoCheckedFingerprint = useRef<string | null>(null);
+  useEffect(() => {
+    if (statusQuery.data?.phase !== "ready" || catalogQuery.data === null) return;
+    const key = `${environmentId}:${modelFingerprint}`;
+    if (autoCheckedFingerprint.current === key) return;
+    autoCheckedFingerprint.current = key;
+    void runChecks();
+  }, [environmentId, modelFingerprint, statusQuery.data?.phase, catalogQuery.data, runChecks]);
+
   const updateRouting = useAtomCommand(serverEnvironment.updateWorkjetGatewayRouting, {
     reportFailure: false,
   });
@@ -175,7 +211,8 @@ export function useWorkjetGatewaySection(
     catalogQuery.refresh();
     healthQuery.refresh();
     modelsQuery.refresh();
-  }, [catalogQuery, healthQuery, modelsQuery, statusQuery]);
+    checksQuery.refresh();
+  }, [catalogQuery, healthQuery, modelsQuery, statusQuery, checksQuery]);
 
   /**
    * Persist the pool edit. The server rewrites the gateway configuration and
@@ -493,6 +530,10 @@ export function useWorkjetGatewaySection(
     onEditModels: (accounts, models) => editAccounts(accounts, { models }),
     loginAccountId,
     accountErrors,
+    modelChecks: checksQuery.data?.checks ?? [],
+    checksBusy,
+    checksError: checksError ?? checksQuery.error,
+    onCheckModels: (accountId) => { void runChecks(accountId, true); },
     accountHealth: Object.fromEntries(
       (healthQuery.data?.accounts ?? []).map((account) => [
         account.accountId,

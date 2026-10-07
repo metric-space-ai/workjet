@@ -80,7 +80,7 @@ const harness = (options: {
     Layer.succeed(GitWorkflowService, workflow), Layer.succeed(RemoteWorkerStore, store), Layer.succeed(WorkerDispatchRollback, rollback),
     Layer.succeed(OrchestrationCommandReceiptRepository, { getByCommandId: ({ commandId }) => Effect.succeed(Option.fromUndefinedOr(commandReceipts.get(commandId))), upsert: () => Effect.void }),
     Layer.succeed(RepositoryIdentityResolver, { resolve: () => Effect.succeed({ ...request.project.repository, canonicalKey: options.wrongRepository ? "github.com/foreign/project" : request.project.repository.canonicalKey }) }),
-    Layer.succeed(WorktreeStorage, { inspect: () => Effect.succeed({ status: "valid", effectiveRoot: "/target/storage" } as Awaited<never>), resolveAutomaticPath: () => Effect.succeed(workerPath), trustedRoots: Effect.succeed(["/target/storage"]) }),
+    Layer.succeed(WorktreeStorage, { inspect: () => Effect.succeed({ status: "valid", effectiveRoot: "/target/storage", configuredRoot: "/target/storage", defaultRoot: "/target/storage", canonicalRoot: "/target/storage", requestedRoot: "", writable: true, availableBytes: 1000000000 }), resolveAutomaticPath: () => Effect.succeed(workerPath), trustedRoots: Effect.succeed(["/target/storage"]) }),
     FileSystem.layerNoop({ exists: () => Effect.succeed(false), makeDirectory: () => Effect.void, realPath: (path) => Effect.succeed(path) }), Path.layer,
   );
   const admitted = options.missingAdmission ? services : Layer.merge(services, Layer.succeed(RemoteWorkerAdmission, { admit: () => Effect.void }));
@@ -103,7 +103,7 @@ it.effect("clones missing project beneath target storage and suppresses a duplic
 }));
 for (const [label, changed] of [
   ["foreign target", { targetEnvironmentId: EnvironmentId.make("gpu4") }], ["self parent environment", { parent: { ...request.parent, environmentId: target } }],
-  ["self parent thread", { parent: { ...request.parent, threadId: request.requestId } }], ["expired", { expiresAt: "2026-10-07T12:00:00.000Z" }],
+  ["self parent thread", { parent: { ...request.parent, threadId: request.requestId } }], ["expired", { createdAt: "1968-10-07T12:00:00.000Z", expiresAt: "1969-10-07T12:00:00.000Z" }],
   ["capability escalation", { enabledCapabilityIds: ["web-search"] }], ["duplicate capability", { enabledCapabilityIds: ["greppy", "greppy"] }],
 ] as const) it.effect(`rejects ${label} before creating a worktree`, () => Effect.gen(function* () {
   const h = harness(); const receiver = yield* h.receiver; const result = yield* Effect.result(receiver.receive({ ...request, ...changed }));
@@ -143,10 +143,23 @@ it.effect("preserves ambiguous first-turn evidence and reconciles same worker on
   const h = harness({ failStep: "turn" }); const receiver = yield* h.receiver; const first = yield* Effect.result(receiver.receive(request));
   expect(first._tag === "Failure" && first.failure.reason).toBe("rollback-failed"); expect(h.rollbackCalls).toEqual([]);
   h.commandReceipts.set(remoteWorkerCommandId(request.requestId, "turn"), { commandId: remoteWorkerCommandId(request.requestId, "turn"), aggregateKind: "thread", aggregateId: request.requestId, status: "accepted", acceptedAt: request.createdAt, resultSequence: 2, error: null });
-  yield* receiver.receive(request); expect(h.worktreeCalls).toHaveLength(1); expect(h.commands).toHaveLength(2);
+yield* receiver.receive(request); expect(h.worktreeCalls).toHaveLength(1); expect(h.commands).toHaveLength(2);
+}));
+it.effect("preserves worktree evidence when create receipt is ambiguous", () => Effect.gen(function* () {
+  const h = harness({ failStep: "create" }); const receiver = yield* h.receiver; const result = yield* Effect.result(receiver.receive(request));
+  expect(result._tag === "Failure" && result.failure.reason).toBe("rollback-failed"); expect(h.rollbackCalls).toEqual([]); expect(h.commands).toHaveLength(1);
+}));
+it.effect("serializes concurrent replay requests into one worktree and first turn", () => Effect.gen(function* () {
+  const h = harness(); const receiver = yield* h.receiver; const results = yield* Effect.all([receiver.receive(request), receiver.receive(request)], { concurrency: 2 });
+  expect(results[0]).toEqual(results[1]); expect(h.worktreeCalls).toHaveLength(1); expect(h.commands).toHaveLength(2);
 }));
 it("rejects credential-bearing and local repository transports", () => {
-  for (const url of ["file:///source/repo", "/source/repo", "https://secret@github.com/example/project.git", "ssh://git@github.com/example/project.git", "ext::command"]) {
+  for (const url of ["file:///source/repo", "/source/repo", "https://secret@github.com/example/project.git", "ext::command"]) {
     expect(remoteWorkerRepositoryUrl({ ...request, project: { ...request.project, repository: { ...request.project.repository, locator: { ...request.project.repository.locator, remoteUrl: url } } } })).toBeNull();
+  }
+});
+it("converts standard git SSH repository locators to credential-free HTTPS", () => {
+  for (const url of ["git@github.com:example/project.git", "ssh://git@github.com/example/project.git"]) {
+    expect(remoteWorkerRepositoryUrl({ ...request, project: { ...request.project, repository: { ...request.project.repository, locator: { ...request.project.repository.locator, remoteUrl: url } } } })).toBe("https://github.com/example/project.git");
   }
 });

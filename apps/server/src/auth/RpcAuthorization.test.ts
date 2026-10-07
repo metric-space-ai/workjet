@@ -68,6 +68,10 @@ describe("RPC authorization scopes", () => {
       AuthOrchestrationOperateScope,
     );
   });
+  it("requires operate scope for remote inference and read scope for reference binding", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayBindModel)).toBe(AuthOrchestrationReadScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayInfer)).toBe(AuthOrchestrationOperateScope);
+  });
   it("separates provider gateway reads from lifecycle operation", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetGatewayUsage)).toBe(
       AuthOrchestrationReadScope,

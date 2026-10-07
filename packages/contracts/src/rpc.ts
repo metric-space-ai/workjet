@@ -200,6 +200,13 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 import {
+  WorkjetGatewayBindModelInput,
+  WorkjetGatewayModelBinding,
+  WorkjetGatewayInferenceInput,
+  WorkjetGatewayInferenceResult,
+  WorkjetGatewayInferenceError,
+} from "./workjetSourceGateway.ts";
+import {
   GreppyRuntimeSnapshot,
   WorkjetHarnessAvailabilitySnapshot,
   WorkjetGatewayAddApiKeyAccountInput,
@@ -400,6 +407,8 @@ export const WS_METHODS = {
   workjetGatewayStatus: "workjet.providerGateway.status",
   workjetGatewayCatalog: "workjet.providerGateway.catalog",
   workjetGatewayScopedCatalog: "workjet.providerGateway.scopedCatalog",
+  workjetGatewayBindModel: "workjet.providerGateway.bindModel",
+  workjetGatewayInfer: "workjet.providerGateway.infer",
   workjetGatewaySetGrant: "workjet.providerGateway.setGrant",
   workjetGatewayStart: "workjet.providerGateway.start",
   workjetGatewayStop: "workjet.providerGateway.stop",
@@ -716,6 +725,18 @@ export const WsWorkjetGatewayScopedCatalogRpc = Rpc.make(WS_METHODS.workjetGatew
   payload: Schema.Struct({ target: WorkjetGatewayGrantTarget }),
   success: WorkjetGatewayScopedCatalog,
   error: Schema.Union([WorkjetGatewayRpcError, WorkjetGatewayAccessError]),
+});
+
+export const WsWorkjetGatewayBindModelRpc = Rpc.make(WS_METHODS.workjetGatewayBindModel, {
+  payload: WorkjetGatewayBindModelInput,
+  success: WorkjetGatewayModelBinding,
+  error: Schema.Union([EnvironmentAuthorizationError, WorkjetGatewayInferenceError]),
+});
+
+export const WsWorkjetGatewayInferRpc = Rpc.make(WS_METHODS.workjetGatewayInfer, {
+  payload: WorkjetGatewayInferenceInput,
+  success: WorkjetGatewayInferenceResult,
+  error: Schema.Union([EnvironmentAuthorizationError, WorkjetGatewayInferenceError]),
 });
 
 export const WsWorkjetGatewaySetGrantRpc = Rpc.make(WS_METHODS.workjetGatewaySetGrant, {
@@ -1709,6 +1730,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetGatewayStatusRpc,
   WsWorkjetGatewayCatalogRpc,
   WsWorkjetGatewayScopedCatalogRpc,
+  WsWorkjetGatewayBindModelRpc,
+  WsWorkjetGatewayInferRpc,
   WsWorkjetGatewaySetGrantRpc,
   WsWorkjetGatewayStartRpc,
   WsWorkjetGatewayStopRpc,

@@ -2,6 +2,8 @@
 
 Choose **All projects** to see the projects saved in the current instance.
 A project saved locally remains visible while its native registration is pending.
+An existing local history linked through this instance's working copy also keeps
+its saved overview and archive state while the instance reconnects.
 Opening its card returns to its existing supervisor conversation.
 
 Choose **Archive project** to hide its card from All projects. This retains the

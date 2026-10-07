@@ -28,9 +28,10 @@ import {
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
-import { localProjectIsVisible } from "../localProjectVisibility";
+import { visibleLocalProjects } from "../localProjectVisibility";
+import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
-import { environmentServerConfigsAtom } from "./server";
+import { environmentServerConfigsAtom, primaryServerSettingsAtom } from "./server";
 import { allEnvironmentShellsBootstrappedAtom } from "./shell";
 import { environmentThreadDetails, environmentThreadShells } from "./threads";
 
@@ -130,12 +131,17 @@ export function useProjects(): ReadonlyArray<EnvironmentProject> {
   const scope = useBusinessOsCodeScope();
   const { selectedInstanceId } = useActiveWorkjetScope();
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
+  const registry = useWorkjetProjectRegistry(selectedInstanceId);
+  const computers = useAtomValue(primaryServerSettingsAtom).workjet.computers;
   return useMemo(
     () =>
-      projects.filter((project) =>
-        localProjectIsVisible(project, { scope, selectedInstanceId, primaryEnvironmentId }),
+      visibleLocalProjects(
+        projects,
+        { scope, selectedInstanceId, primaryEnvironmentId },
+        registry.projects,
+        computers,
       ),
-    [projects, scope, selectedInstanceId, primaryEnvironmentId],
+    [projects, scope, selectedInstanceId, primaryEnvironmentId, registry.projects, computers],
   );
 }
 

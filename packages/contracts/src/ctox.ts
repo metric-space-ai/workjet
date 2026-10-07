@@ -17,6 +17,11 @@ import {
   WorkjetSupervisorThreadId,
   WorkjetSupervisorTurn,
 } from "./workjetSupervisor.ts";
+import {
+  WorkjetSupervisorExecutionPageRequest,
+  WorkjetSupervisorExecutionPage,
+  isWorkjetSupervisorExecutionPageForRequest,
+} from "./workjetSupervisorExecution.ts";
 
 const NoAsciiControlCharacters = Schema.makeFilter((input: string) => {
   for (let index = 0; index < input.length; index += 1) {
@@ -581,6 +586,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     projectId: ProjectId,
     threadId: WorkjetSupervisorThreadId,
     targetCommandId: CtoxProjectText(256),
+    executionPage: Schema.optionalKey(WorkjetSupervisorExecutionPageRequest),
   }),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.cancel"),
@@ -708,10 +714,15 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
     contract: Schema.Literal("ctox.workjet.supervisor_turn.v1"),
     binding: WorkjetSupervisorBinding,
     turn: WorkjetSupervisorTurn,
+    executionContract: Schema.optionalKey(Schema.Literal("ctox.workjet.supervisor_execution.v1")),
+    executionPage: Schema.optionalKey(WorkjetSupervisorExecutionPage),
   }).check(
     Schema.makeFilter((response) =>
       response.projectId === response.binding.projectId &&
-      response.binding.threadId === response.turn.threadId
+      response.binding.threadId === response.turn.threadId &&
+      (response.executionContract === undefined) === (response.executionPage === undefined) &&
+      (!response.executionPage || (response.executionPage.command_id === response.turn.commandId &&
+        response.executionPage.task_id === response.turn.taskId))
         ? true
         : "Supervisor turn belongs to another binding.",
     ),
@@ -789,6 +800,15 @@ export function isWorkjetSupervisorReceiptForRequest(
     request.action === "project.supervisor.turn.watch" ||
     request.action === "project.supervisor.turn.cancel"
   ) {
+    if (request.action === "project.supervisor.turn.watch") {
+      if (response.action !== request.action) return false;
+      if (request.executionPage === undefined) {
+        if (response.executionPage !== undefined) return false;
+      } else if (!response.executionPage ||
+        !isWorkjetSupervisorExecutionPageForRequest(request.executionPage, response.turn, response.executionPage)) {
+        return false;
+      }
+    }
     return response.turn.commandId === request.targetCommandId;
   }
   return response.action === "project.supervisor.turn.submit";

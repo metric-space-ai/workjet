@@ -2656,6 +2656,23 @@ describe("CtoxGuestManager", () => {
         _tag: "completed",
         response,
       });
+      const observerRequest = { ...request, executionPage: { attempt_id: "actual-attempt", limit: 25 } };
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, observerRequest), {
+        _tag: "failed", code: "unsupported",
+      });
+      const event = { id: "actual-event", sequence: 12, kind: "worker.phase", title: "Recorded step", created_at_ms: 1791410400000 };
+      const page = { command_id: turn.commandId, task_id: turn.taskId, attempt: { attempt_id: "actual-attempt", attempt_index: 47 }, events: [event], next_cursor: { after_sequence: 12, after_event_id: event.id }, has_more: false };
+      const observed = { ...response, executionContract: "ctox.workjet.supervisor_execution.v1", executionPage: page };
+      harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: observed });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, observerRequest), { _tag: "completed", response: observed });
+      for (const changed of [
+        { ...page, task_id: "foreign" },
+        { ...page, attempt: { attempt_id: "foreign" } },
+        { ...page, events: [{ ...event, arguments: { secret: "private" } }] },
+      ]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: { ...observed, executionPage: changed } });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, observerRequest), { _tag: "failed", code: "guest_failed" });
+      }
     }).pipe(Effect.provide(harness.layer));
   });
 

@@ -66,8 +66,7 @@ export function visibleLocalProjects<Project extends ProjectHistoryIdentity>(
     nativeProjects,
     projects: projects.filter(
       (project) =>
-        project.ctoxRegistration == null &&
-        project.environmentId === context.primaryEnvironmentId,
+        project.ctoxRegistration == null && project.environmentId === context.primaryEnvironmentId,
     ),
     computers,
   });

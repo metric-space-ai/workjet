@@ -69,7 +69,11 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       body: JSON.stringify({
         model: modelId,
         input: [{ role: "user", content: "Hi" }],
-        max_output_tokens: 8,
+        // Codex subscriptions reject token caps; checks use non-stored requests.
+        // Other providers keep the small output bound; the transport/body bounds apply to all.
+        ...(provider === "codex"
+          ? { instructions: "Reply with Hi only.", store: false }
+          : { max_output_tokens: 8 }),
         stream: false,
       }),
       signal: AbortSignal.any([
@@ -128,7 +132,7 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
     const code = typeof providerError.code === "string" ? providerError.code.toLowerCase() : "";
     if (
       response.ok &&
-      record.error === undefined &&
+      (record.error === undefined || record.error === null) &&
       record.status !== "failed" &&
       Array.isArray(record.output) &&
       record.output.length > 0
@@ -143,9 +147,7 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
         ? "auth"
         : response.status === 402 || response.status === 429
           ? "quota-rate-limit"
-          : response.status === 404
-            ? "unknown-model"
-            : "network-provider";
+          : "network-provider";
     return { status: "error", errorClass, httpStatus: response.status };
   },
   joinPath: (...parts) => NodePath.join(...parts),

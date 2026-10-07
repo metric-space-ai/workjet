@@ -407,10 +407,18 @@ function AccountRow({
     account.enabled &&
     (health?.status === "auth-required" ||
       state.modelChecks?.some(
-        (check) => check.accountId === account.id && check.errorClass === "auth",
+        (check) =>
+          check.accountId === account.id && check.errorClass === "auth" && check.httpStatus !== 403,
       ));
+  const accessDenied =
+    account.enabled &&
+    state.modelChecks?.some(
+      (check) =>
+        check.accountId === account.id && check.errorClass === "auth" && check.httpStatus === 403,
+    );
   const problem =
-    account.enabled && health && !["ready", "unknown", "disabled"].includes(health.status);
+    account.enabled &&
+    (accessDenied || (health && !["ready", "unknown", "disabled"].includes(health.status)));
   const loginHere =
     state.loginAccountId === account.id &&
     ["starting", "pending", "failed"].includes(state.login.status);
@@ -567,9 +575,11 @@ function AccountRow({
             {authRequired
               ? "Credentials rejected."
               : (health?.message ??
-                (health?.status === "cooldown"
-                  ? "Limit reached. Available accounts handle new requests."
-                  : "Provider unavailable."))}
+                (accessDenied
+                  ? "The provider denied access (HTTP 403). Check this account's permissions and subscription."
+                  : health?.status === "cooldown"
+                    ? "Limit reached. Available accounts handle new requests."
+                    : "Provider unavailable."))}
             {health?.retryAtMs != null && ` Available again: ${resetLabel(health.retryAtMs)}.`}
           </span>
           {authRequired && !isKey ? (

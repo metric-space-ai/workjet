@@ -215,6 +215,21 @@ describe("Models account recovery", () => {
     expect(modelsAccountHealth(exhausted, 1_000_000).status).toBe("unknown");
   });
 
+  it.each([403, 404, 500])(
+    "shows a gateway retry cooldown after generation %s without inventing a login expiry",
+    (generationHttpStatus) => {
+      const health = modelsAccountHealth(
+        { ...account, generationHttpStatus, usable: false, cooldownUntilMs: 5000 },
+        2000,
+      );
+      expect(health.status).toBe("cooldown");
+      expect(health.retryAtMs).toBe(5000);
+      expect(health.message).toContain(`HTTP ${generationHttpStatus}`);
+      expect(health.message).not.toContain("Sign-in expired");
+      expect(health.message).not.toContain("Limit reached");
+    },
+  );
+
   it("never presents a stale positive reading or a passed cooldown as current exhaustion", () => {
     const stale = {
       ...account,

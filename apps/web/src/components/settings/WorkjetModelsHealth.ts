@@ -58,10 +58,9 @@ export function modelsAccountHealth(
     ? "disabled"
     : account.authentication === "rejected"
       ? "auth-required"
-      : (generationStatus === 429 && blocked) || exhausted
+      : blocked || exhausted
         ? "cooldown"
         : balanceExhausted ||
-            blocked ||
             (!account.usable && generationStatus !== null && generationStatus >= 400)
           ? "unavailable"
           : account.authentication === "authenticated"
@@ -70,17 +69,23 @@ export function modelsAccountHealth(
   const message =
     status === "auth-required"
       ? "Sign-in expired or credentials rejected."
-      : status === "unavailable"
-        ? balanceExhausted
-          ? "Available API balance is exhausted. Add funds or check voucher validity."
-          : generationStatus === 402
-            ? "Check your subscription or balance."
-            : generationStatus === 403
-              ? "The provider denied access. Check this account and subscription."
-              : account.errorCode?.includes("model")
-                ? "Model unavailable. Check the model names above."
-                : "Provider temporarily unavailable. Try checking again."
-        : null;
+      : status === "cooldown"
+        ? exhausted || generationStatus === 429
+          ? "Limit reached. Available accounts handle new requests."
+          : generationStatus === 403
+            ? "The provider denied access (HTTP 403). The gateway is waiting before retrying."
+            : `The gateway is waiting before retrying the last failed request${generationStatus === null ? "" : ` (HTTP ${generationStatus})`}.`
+        : status === "unavailable"
+          ? balanceExhausted
+            ? "Available API balance is exhausted. Add funds or check voucher validity."
+            : generationStatus === 402
+              ? "Check your subscription or balance."
+              : generationStatus === 403
+                ? "The provider denied access. Check this account and subscription."
+                : account.errorCode?.includes("model")
+                  ? "Model unavailable. Check the model names above."
+                  : "Provider temporarily unavailable. Try checking again."
+          : null;
   const visibleWindows = account.quota.filter((window) => !window.toolOnly);
   return {
     status,

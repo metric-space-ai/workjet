@@ -31,7 +31,7 @@ export function makeManagedSourceGatewayInference(dependencies: {
         Effect.mapError(() => failure("binding-mismatch")),
         Effect.flatMap((settings) => {
           const instance = settings.providerInstances[instanceId];
-          return instance && instance.enabled !== false && instance.routeViaGateway === true
+          return instance && instance.enabled !== false
             ? Effect.void
             : Effect.fail(failure("binding-mismatch"));
         }),

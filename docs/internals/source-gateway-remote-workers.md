@@ -13,12 +13,20 @@ worker receives only logical references and the claimed native permit locator.
 ```ts
 {
   target: { connectionId, instanceId, computerId },
-  modelSelection: { instanceId: sourceHarnessInstanceId, model: exactModelId },
-  routeId?: configuredLlmRouteId,
+  modelSelection: { instanceId: configuredSourceInstanceId, model: workerProfile.modelId },
+  routeId: workerProfile.llmRouteId,
 }
 ```
 
-The source harness instance must be enabled and opted into gateway routing.
+The configured source instance must be enabled; it may use the native CTOX
+provider. `routeViaGateway` only opts source CLI harness sessions into gateway
+routing and is not required for remote inference. The caller must pass the
+explicit worker profile’s `modelId` as `modelSelection.model` and its
+`llmRouteId` as `routeId`; Supervisor model selection is not a worker profile.
+Instances selects and binds the immutable target harness/profile in
+`workerRequest`. Resolving these source references does not start or configure
+a source Code harness.
+
 The resolver intersects configured `llmRoutes[].gatewayAccountId` with the
 fresh scoped catalog for the exact target and exact model ID. One enabled,
 granted account must match. Multiple accounts fail closed unless an explicit
@@ -36,9 +44,11 @@ permit}` and requires orchestration operate scope. It returns `{}` only after
 the same current scoped grant and source native execution checks as inference.
 The Receiver and serialized Engine `RemoteWorkerAdmission.admit(request)`
 adapter can use this source bridge endpoint with the durable claimed receipt.
-The claimed receipt includes its exact `renewalSequence`; a stale renewal,
-owner epoch, execution binding or expiry fails closed. Native renewal remains
-owned by the shared admission client; the model consumer never extends a lease.
+The receipt includes `renewalSequence`. Fresh native revalidation may return a
+larger sequence with a strictly extended expiry for the same immutable owner,
+epoch, fingerprint, binding, state and execution. Sequence regression, expiry
+changes without renewal and substituted authority fail closed. Native renewal
+remains owned by the shared admission client; the model consumer never renews.
 
 ## Execute through the source bridge
 
@@ -58,7 +68,8 @@ provider/model and target tuple against a newly loaded scoped catalog. It then
 calls `business_os.remote_worker_admission` with `action:"revalidate"` through
 the existing server-held `DecisionHubConnectionRegistry` connection and native
 MCP control transport. The complete claimed receipt (owner, authority epoch,
-fingerprint, expiry, immutable binding and execution ID) must match.
+fingerprint, immutable binding and execution ID) must match; only monotonic
+native renewal metadata may advance.
 No Business OS collection is queried or bridged over HTTP/WebSocket.
 
 Only after both checks does the source send a bounded `/v1/responses` request
@@ -66,7 +77,10 @@ to its own loopback gateway. `X-CTOX-Account` and `X-CTOX-Provider` force the
 bound account/provider. The gateway must acknowledge the same account in
 `X-CTOX-Account-Selected`; missing or different acknowledgement rejects the
 response, including any retry fallback. Request size is 256 KiB, response size
-1 MiB and request duration at most 120 seconds or the permit's remaining life.
+1 MiB and request duration at most 120 seconds. Before dispatch, the fresh
+native receipt must cover that full turn; otherwise the lifecycle owner must
+renew first. The transport uses that fresh expiry and its fixed 120-second cap.
+Heartbeats never extend the timeout of an already dispatched model call.
 Streaming/background requests and cross-request conversation IDs are refused.
 The source repeats grant and native revalidation before publishing the response.
 Failures expose safe error classes, never credential material or raw headers.

@@ -1,11 +1,20 @@
 import { assert, it } from "@effect/vitest";
+it.effect("capability edits reuse the issued computer instead of changing immutable enrollment intent", () => Effect.gen(function* () {
+  const f = fixture(); const service = yield* f.make;
+  yield* service.enroll(input);
+  const edited = yield* service.enroll({ ...input, computerId: nativeId, displayName: "GPU3 renamed",
+    buildCapability: { ...input.buildCapability, slots: 2 } });
+  assert.equal(edited.computerId, nativeId);
+  assert.equal(f.calls(), 1);
+  assert.equal(f.getSettings().workjet.computers[0]?.label, "GPU3 renamed");
+}));
 import { DEFAULT_SERVER_SETTINGS, EnvironmentId, WorkjetComputerId, WorkjetConnectionId,
   WorkjetWorkerProfile, type RemoteWorkerComputerEnrollmentInput, type ServerSettings, type WorkjetConnectionSummary } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import { makeRemoteWorkerComputerEnrollment } from "./RemoteWorkerComputerEnrollment.ts";
-import type { makeCtoxRemoteWorkerTargets } from "./ctox/CtoxRemoteWorkerTargets.ts";
+import type { RemoteWorkerNativeTargetReceipt, makeCtoxRemoteWorkerTargets } from "./ctox/CtoxRemoteWorkerTargets.ts";
 const source = EnvironmentId.make("source");
 const target = EnvironmentId.make("gpu3");
 const draftId = WorkjetComputerId.make("draft");
@@ -24,22 +33,23 @@ const fixture = (entries: ReadonlyArray<WorkjetConnectionSummary> = [ready]) => 
   let settings: ServerSettings = { ...DEFAULT_SERVER_SETTINGS, workjet: { ...DEFAULT_SERVER_SETTINGS.workjet,
     computers: [{ id: draftId, label: "Draft", environmentId: target, presentationKind: "ssh", harnesses: [] }], selectedComputerId: draftId,
     workerProfiles: [Schema.decodeSync(WorkjetWorkerProfile)({ id: "worker", name: "Worker", computerId: draftId,
-      harness: "codex", llmRouteId: "route", modelId: "model", reasoning: "automatic" })] } };
+      harness: "codex-cli", llmRouteId: "route", modelId: "model", reasoning: "automatic" })] } };
   let calls = 0;
+  let issued: RemoteWorkerNativeTargetReceipt | undefined;
   const secrets = new Map<string, Uint8Array>();
   const enroll: ReturnType<typeof makeCtoxRemoteWorkerTargets>["enroll"] = (scope, from, to, assignment, computer) => Effect.sync(() => {
     calls++;
     assert.equal(scope.connectionId, connectionId);
     assert.deepEqual(assignment, { targetConnectionId: connectionId, targetInstanceId: "selected-bo" });
     assert.deepEqual(computer.buildCapability, input.buildCapability);
-    return { contract: "ctox.workjet.remote-worker-target.v1" as const, bindingId: "binding", revision: 1,
+    return issued = { contract: "ctox.workjet.remote-worker-target.v1" as const, bindingId: "binding", revision: 1,
       ownerUserId: "owner", sourceInstanceId: scope.instanceId, target: { sourceEnvironmentId: from,
         targetEnvironmentId: to, ...assignment, targetComputerId: nativeId }, state: "active" as const,
       capabilityEpoch: 1, buildCapability: input.buildCapability };
   });
   return { make: makeRemoteWorkerComputerEnrollment({ environmentId: source,
     connections: { list: Effect.succeed(entries), resolveReadyTarget: () => Effect.succeed({ endpoint: "http://127.0.0.1:8080/mcp", token: "fixture-token" }) },
-    targets: { enroll, resolve: () => Effect.never, register: () => Effect.never, revoke: () => Effect.never },
+    targets: { enroll, resolve: () => Effect.sync(() => { assert.ok(issued); return issued; }), register: () => Effect.never, revoke: () => Effect.never },
     secrets: { remove: (key) => Effect.sync(() => { secrets.delete(key); }), get: (key) => Effect.sync(() => Option.fromUndefinedOr(secrets.get(key))),
       set: (key, bytes) => Effect.sync(() => { secrets.set(key, bytes); }) },
     settings: { getSettings: Effect.sync(() => settings), updateSettings: (patch) => Effect.sync(() => {
@@ -61,10 +71,10 @@ it.effect("retains the issued ID and all configuration links before ACK and afte
   assert.equal(f.getSettings().workjet.selectedComputerId, nativeId);
   assert.equal(f.getSettings().workjet.workerProfiles[0]?.computerId, nativeId);
   assert.deepEqual(yield* service.enroll(input), first);
-  assert.equal(f.calls(), 2);
+  assert.equal(f.calls(), 1);
   yield* Effect.flip(service.enroll({ ...input, profile: { ...input.profile,
     target: { ...input.profile.target, hostname: "changed" } } }));
-  assert.equal(f.calls(), 2);
+  assert.equal(f.calls(), 1);
   yield* service.verifyRegisteredProfile(nativeId, { connectionId, instanceId: "selected-bo" }, input.profile);
   yield* Effect.flip(service.verifyRegisteredProfile(nativeId, { connectionId, instanceId: "foreign-bo" }, input.profile));
   yield* Effect.flip(service.verifyRegisteredProfile(nativeId, { connectionId, instanceId: "selected-bo" },

@@ -96,11 +96,15 @@ export const makeRemoteWorkerComputerEnrollment = Effect.fn("RemoteWorkerCompute
       if (new TextDecoder().decode(previous.value) !== expected)
         return yield* new RemoteWorkerDispatchError({ reason: "request-conflict" });
     }
-    const receipt = yield* dependencies.targets.enroll(
-      { connectionId: selected.connectionId, instanceId: input.selectedInstanceId },
-      dependencies.environmentId, input.profile.environmentId,
-      { targetConnectionId: selected.connectionId, targetInstanceId: input.selectedInstanceId }, input,
-    );
+    const scope = { connectionId: selected.connectionId, instanceId: input.selectedInstanceId };
+    // Enrollment intent is immutable. Later capability edits keep the issued
+    // computer and run through the existing computer.assign policy/epoch path.
+    const receipt = yield* (Option.isSome(previous)
+      ? dependencies.targets.resolve(scope, dependencies.environmentId, input.profile.environmentId)
+      : dependencies.targets.enroll(scope, dependencies.environmentId, input.profile.environmentId,
+        { targetConnectionId: selected.connectionId, targetInstanceId: input.selectedInstanceId }, input));
+    if (Option.isSome(previous) && receipt.target.targetComputerId !== computers[0]!.id)
+      return yield* failure();
     const computerId = yield* Schema.decodeUnknownEffect(WorkjetComputerId)(receipt.target.targetComputerId).pipe(Effect.mapError(failure));
     const registered = yield* encode({ computerId,
       scope: { connectionId: selected.connectionId, instanceId: input.selectedInstanceId }, profile: input.profile,

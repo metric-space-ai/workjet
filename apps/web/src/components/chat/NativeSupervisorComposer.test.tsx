@@ -80,9 +80,24 @@ describe("native supervisor receipt display", () => {
     expect(html).toContain("Verbindung müssen bestätigt sein");
   });
   it("shows a definitive pre-submit refusal and lets the user edit a new prompt", () => {
-    const rejectedConfig: WorkjetThreadConfig = { ...config, schemaVersion: 2,
-      ctoxSupervisorTurn: { ...config.ctoxSupervisorTurn!, submission: "not-submitted", submissionError: "authentication_required", turn: null } };
-    const html = renderToStaticMarkup(<NativeSupervisorComposer scope={scope} config={rejectedConfig} unavailable={false} saveConfig={saveConfig} />);
+    const rejectedConfig: WorkjetThreadConfig = {
+      ...config,
+      schemaVersion: 2,
+      ctoxSupervisorTurn: {
+        ...config.ctoxSupervisorTurn!,
+        submission: "not-submitted",
+        submissionError: "authentication_required",
+        turn: null,
+      },
+    };
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={rejectedConfig}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
     expect(html).toContain("Nicht gesendet");
     expect(html).toContain("authentication_required");
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");

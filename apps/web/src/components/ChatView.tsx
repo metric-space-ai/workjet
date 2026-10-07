@@ -7198,7 +7198,9 @@ function ChatViewContent(props: ChatViewProps) {
                 liveFollowEnabled={timelineLiveFollowEnabled}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading || nativeSupervisorThread}
+                hideEmptyPlaceholder={
+                  isDraftHeroState || threadDetailLoading || nativeSupervisorThread
+                }
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
               />

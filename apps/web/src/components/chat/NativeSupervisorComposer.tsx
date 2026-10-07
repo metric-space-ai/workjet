@@ -254,7 +254,11 @@ export function NativeSupervisorComposer(props: {
                 void run("events", {});
               }}
               onNext={() => {
-                if (execution !== null && execution.commandId === journal.turn?.commandId && execution.page.has_more)
+                if (
+                  execution !== null &&
+                  execution.commandId === journal.turn?.commandId &&
+                  execution.page.has_more
+                )
                   void run("events", nextWorkjetSupervisorExecutionPageRequest(execution.page));
               }}
             />

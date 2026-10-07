@@ -2681,7 +2681,7 @@ describe("CtoxGuestManager", () => {
       };
       const observed = {
         ...response,
-        executionContract: "ctox.workjet.supervisor_execution.v1",
+        executionContract: "ctox.workjet.supervisor_execution.v1" as const,
         executionPage: page,
       };
       harness.views[0]?.executeJavaScript.mockResolvedValue({

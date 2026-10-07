@@ -67,7 +67,6 @@ import {
   type TerminalMetadataStreamEvent,
   WorkjetMailboxError,
   WorkjetGatewayAccessError,
-  WorkjetGatewayInferenceError,
   type WorkjetGatewayGrantTarget,
   WorkjetDecisionHubConnectionError,
   WorkjetCrossModeError,
@@ -79,8 +78,6 @@ import {
 import { resolveServerBackgroundActivitySettings } from "@workjet/shared/backgroundActivitySettings";
 import { validateCapabilityActivation } from "@metric-space-ai/workjet-capabilities";
 import {
-  FetchHttpClient,
-  HttpClient,
   HttpRouter,
   HttpServerRequest,
   HttpServerRespondable,
@@ -131,10 +128,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
-import { makeSourceGatewayInference } from "./providerGateway/SourceGatewayInference.ts";
-import { forwardSourceGatewayResponses } from "./providerGateway/ProviderGatewayNodeAdapter.ts";
-import { makeCtoxMcpTransport } from "./workjet/ctox/CtoxMcpTransport.ts";
-import { makeCtoxRemoteWorkerAdmissionClient } from "./workjet/ctox/CtoxRemoteWorkerAdmission.ts";
+import { makeManagedSourceGatewayInference } from "./providerGateway/ManagedSourceGatewayInference.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -671,80 +665,11 @@ const makeWsRpcLayer = (
             Effect.mapError(() => new WorkjetCrossModeError({ reason: "unverified-authority" })),
           ),
       });
-      const sourceGateway = makeSourceGatewayInference({
+      const sourceGateway = makeManagedSourceGatewayInference({
         environmentId: serverEnvironment.getEnvironmentId,
-        configuration: serverSettings.getSettings.pipe(
-          Effect.map((settings) => settings.workjet),
-          Effect.mapError(() => new WorkjetGatewayInferenceError({ reason: "binding-mismatch" })),
-        ),
-        requireSourceInstance: (instanceId) =>
-          serverSettings.getSettings.pipe(
-            Effect.mapError(() => new WorkjetGatewayInferenceError({ reason: "binding-mismatch" })),
-            Effect.flatMap((settings) => {
-              const instance = settings.providerInstances[instanceId];
-              return instance && instance.enabled !== false && instance.routeViaGateway === true
-                ? Effect.void
-                : Effect.fail(new WorkjetGatewayInferenceError({ reason: "binding-mismatch" }));
-            }),
-          ),
-        // Native assigned computer identity can differ from the presentation row.
-        // The exact tuple is checked by the current grant and native admission.
-        scopedCatalog: (target, environmentId) =>
-          providerGateway
-            .scopedCatalog(target, environmentId)
-            .pipe(
-              Effect.mapError(
-                () => new WorkjetGatewayInferenceError({ reason: "grant-unavailable" }),
-              ),
-            ),
-        revalidate: (input) =>
-          withDecisionHubConnections((registry) =>
-            Effect.gen(function* () {
-              const admission = makeCtoxRemoteWorkerAdmissionClient({
-                connections: registry,
-                gateway: providerGateway,
-                transport: makeCtoxMcpTransport(yield* HttpClient.HttpClient),
-              });
-              return yield* admission.execute(
-                {
-                  connectionId: input.sourceConnectionId,
-                  instanceId: input.permit.binding.sourceInstanceId,
-                },
-                input.workerRequest,
-                input.permit.binding,
-                "revalidate",
-                input.permit.permitId,
-                input.permit.executionId,
-              );
-            }).pipe(
-              Effect.provide(FetchHttpClient.layer),
-              Effect.mapError(
-                () => new WorkjetDecisionHubConnectionError({ reason: "connection-unavailable" }),
-              ),
-            ),
-          ).pipe(
-            Effect.mapError(
-              () => new WorkjetGatewayInferenceError({ reason: "native-admission-unavailable" }),
-            ),
-          ),
-        forward: (selected, requestJson, deadlineMs) =>
-          Effect.gen(function* () {
-            const status = yield* providerGateway.status();
-            if (status.phase !== "ready" || status.providerEndpoint === null)
-              return yield* new WorkjetGatewayInferenceError({ reason: "gateway-unavailable" });
-            return yield* Effect.tryPromise({
-              try: (signal) =>
-                forwardSourceGatewayResponses(
-                  status.providerEndpoint!,
-                  selected,
-                  requestJson,
-                  deadlineMs,
-                  signal,
-                ),
-              catch: () => new WorkjetGatewayInferenceError({ reason: "inference-failed" }),
-            });
-          }),
-        now: Clock.currentTimeMillis,
+        settings: serverSettings,
+        gateway: providerGateway,
+        connections: Option.getOrUndefined(decisionHubConnections),
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({

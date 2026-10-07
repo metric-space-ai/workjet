@@ -6,7 +6,7 @@ import {
   WorkjetComputerId,
   WorkjetConnectionId,
 } from "@workjet/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { forwardSourceGatewayResponses } from "./ProviderGatewayNodeAdapter.ts";
 
 const environmentId = EnvironmentId.make("source");
@@ -95,5 +95,53 @@ describe("source exact-account inference transport", () => {
     await expect(
       forwardSourceGatewayResponses("http://127.0.0.1:1/", selected, requestJson, Date.now() - 1),
     ).rejects.toThrow("expired");
+  });
+  it("honors caller cancellation while reading and releases the response reader", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    let reading!: () => void;
+    const startedReading = new Promise<void>((resolve) => { reading = resolve; });
+    // A real fetch abort rejects its reader; model that behavior without a sleep.
+    let streamController!: ReadableStreamDefaultController<Uint8Array>;
+    const abortableBody = new ReadableStream<Uint8Array>({
+      start(value) { streamController = value; },
+      pull() { reading(); },
+
+    });
+    const abortableResponse = new Response(abortableBody, { headers: { "X-CTOX-Account-Selected": "exact-account" } });
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      init?.signal?.addEventListener("abort", () => streamController.error(new Error("caller aborted")));
+      return abortableResponse;
+    });
+    try {
+      const result = forwardSourceGatewayResponses("http://127.0.0.1:1/", selected, requestJson, Date.now() + 300000, controller.signal);
+      await startedReading;
+      controller.abort();
+      await expect(result).rejects.toThrow("caller aborted");
+      expect(abortableResponse.body?.locked).toBe(false);
+      expect(timeout).toHaveBeenCalledWith(120000);
+    } finally { fetch.mockRestore(); timeout.mockRestore(); }
+  });
+  it("cancels and unlocks an oversized streamed response", async () => {
+    let cancelled = false;
+    const response = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new Uint8Array(1024 * 1024 + 1)); },
+      cancel() { cancelled = true; },
+
+    }), { headers: { "X-CTOX-Account-Selected": "exact-account" } });
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
+    try {
+      await expect(forwardSourceGatewayResponses("http://127.0.0.1:1/", selected, requestJson, Date.now() + 300000)).rejects.toThrow("oversized");
+      expect(cancelled).toBe(true);
+      expect(response.body?.locked).toBe(false);
+    } finally { fetch.mockRestore(); }
+  });
+  it.each([503, 200])("rejects an upstream error response with status %s", async (status) => {
+    await withGateway((_request, response) => {
+      response.writeHead(status, { "X-CTOX-Account-Selected": "exact-account" });
+      response.end(JSON.stringify({ error: { message: "upstream failure" } }));
+    }, async (endpoint) => {
+      await expect(forwardSourceGatewayResponses(endpoint, selected, requestJson, Date.now() + 300000)).rejects.toThrow();
+    });
   });
 });

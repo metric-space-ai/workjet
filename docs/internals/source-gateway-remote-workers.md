@@ -22,7 +22,8 @@ The source harness instance must be enabled and opted into gateway routing.
 The resolver intersects configured `llmRoutes[].gatewayAccountId` with the
 fresh scoped catalog for the exact target and exact model ID. One enabled,
 granted account must match. Multiple accounts fail closed unless an explicit
-route narrows the selection. Provider names come from the selected account;
+route narrows the selection. Automatic source stack account selection is not
+implemented by this binding resolver; native references alone cannot establish it. Provider names come from the selected account;
 labels and model aliases never establish a provider or account identity.
 The result is `{target, credentialRef, providerRef, modelRef}`. These references
 are selected scope, not permission to perform inference. The source broker
@@ -65,15 +66,23 @@ to its own loopback gateway. `X-CTOX-Account` and `X-CTOX-Provider` force the
 bound account/provider. The gateway must acknowledge the same account in
 `X-CTOX-Account-Selected`; missing or different acknowledgement rejects the
 response, including any retry fallback. Request size is 256 KiB, response size
-1 MiB and request duration at most 15 seconds or the permit's remaining life.
+1 MiB and request duration at most 120 seconds or the permit's remaining life.
 Streaming/background requests and cross-request conversation IDs are refused.
 The source repeats grant and native revalidation before publishing the response.
 Failures expose safe error classes, never credential material or raw headers.
 
 ## Remaining receiver integration
 
-`ws.ts` is the production caller of `makeSourceGatewayInference`; its revalidation
-port calls `makeCtoxRemoteWorkerAdmissionClient.execute` with the immutable
+`makeManagedSourceGatewayInference` from
+`apps/server/src/providerGateway/ManagedSourceGatewayInference.ts` is the shared
+production constructor. It accepts `{environmentId: Effect<EnvironmentId>,
+settings: Pick<ServerSettingsService["Service"], "getSettings">,
+gateway: Pick<ProviderGatewayServiceShape, "scopedCatalog" | "status">,
+connections: Pick<DecisionHubConnectionRegistryShape, "resolveReadyTarget"> | undefined}`
+and returns `{bindModel, admit, infer}`. Both authenticated `ws.ts` RPC and the
+source Node worker listener can call this constructor with source-held services;
+an absent registry fails closed. Its revalidation port calls
+`makeCtoxRemoteWorkerAdmissionClient.execute` with the immutable
 worker request, source native scope, binding, `"revalidate"`, permit ID and
 execution ID. This shares the Instances admission owner's actual typed client,
 including canonical request digest verification and current source connection

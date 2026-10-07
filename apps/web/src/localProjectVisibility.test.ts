@@ -70,7 +70,12 @@ describe("retained local working-copy metadata while authority reconnects", () =
     id: ProjectId.make("canonical"),
     title: "Canonical project",
     workingCopies: [
-      { id: "copy", computerId: computer.id, path: physical.workspaceRoot, status: "active" as const },
+      {
+        id: "copy",
+        computerId: computer.id,
+        path: physical.workspaceRoot,
+        status: "active" as const,
+      },
     ],
   };
   it("keeps a saved archive in the gallery through its unique local working-copy identity", () => {
@@ -114,24 +119,68 @@ describe("retained local working-copy metadata while authority reconnects", () =
   it("rejects missing, ambiguous, inactive and wrong-computer working-copy proofs", () => {
     expect(visibleLocalProjects([physical], context, [], [computer])).toEqual([]);
     expect(
-      visibleLocalProjects([physical], context, [native, { ...native, id: ProjectId.make("other") }], [computer]),
+      visibleLocalProjects(
+        [physical],
+        context,
+        [native, { ...native, id: ProjectId.make("other") }],
+        [computer],
+      ),
     ).toEqual([]);
     expect(
-      visibleLocalProjects([physical], context, [{ ...native, workingCopies: [{ ...native.workingCopies[0]!, status: "detached" as const }] }], [computer]),
+      visibleLocalProjects(
+        [physical],
+        context,
+        [
+          {
+            ...native,
+            workingCopies: [{ ...native.workingCopies[0]!, status: "detached" as const }],
+          },
+        ],
+        [computer],
+      ),
     ).toEqual([]);
     expect(
-      visibleLocalProjects([physical], context, [native], [{ ...computer, id: WorkjetComputerId.make("other") }]),
+      visibleLocalProjects(
+        [physical],
+        context,
+        [native],
+        [{ ...computer, id: WorkjetComputerId.make("other") }],
+      ),
     ).toEqual([]);
   });
   it("keeps foreign registration and cleared selection closed", () => {
     expect(
-      visibleLocalProjects([{ ...physical, ctoxRegistration: { instanceId: "other", commandId: CommandId.make("foreign"), status: "confirmed" as const } }], context, [native], [computer]),
+      visibleLocalProjects(
+        [
+          {
+            ...physical,
+            ctoxRegistration: {
+              instanceId: "other",
+              commandId: CommandId.make("foreign"),
+              status: "confirmed" as const,
+            },
+          },
+        ],
+        context,
+        [native],
+        [computer],
+      ),
     ).toEqual([]);
     expect(
-      visibleLocalProjects([physical], { ...context, selectedInstanceId: null }, [native], [computer]),
+      visibleLocalProjects(
+        [physical],
+        { ...context, selectedInstanceId: null },
+        [native],
+        [computer],
+      ),
     ).toEqual([]);
     expect(
-      visibleLocalProjects([physical], { ...context, primaryEnvironmentId: null }, [native], [computer]),
+      visibleLocalProjects(
+        [physical],
+        { ...context, primaryEnvironmentId: null },
+        [native],
+        [computer],
+      ),
     ).toEqual([]);
   });
 });

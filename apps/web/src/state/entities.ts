@@ -29,7 +29,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentProjects } from "./projects";
 import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { visibleLocalProjects } from "../localProjectVisibility";
-import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
+import { readWorkjetProjectRegistry, useWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import { useActiveWorkjetScope, readActiveWorkjetScope } from "../activeWorkjetScope";
 import { environmentServerConfigsAtom, primaryServerSettingsAtom } from "./server";
 import { allEnvironmentShellsBootstrappedAtom } from "./shell";
@@ -181,9 +181,14 @@ export function useAllEnvironmentShellsBootstrapped(): boolean {
   const allBootstrapped = useAtomValue(allEnvironmentShellsBootstrappedAtom);
   const scope = useBusinessOsCodeScope();
   const projects = useProjects();
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   return (
     (scope.phase === "ready" && (scope.environmentIds.size === 0 || allBootstrapped)) ||
-    (allBootstrapped && projects.some((project) => project.ctoxRegistration != null))
+    (allBootstrapped &&
+      projects.some(
+        (project) =>
+          project.ctoxRegistration != null || project.environmentId === primaryEnvironmentId,
+      ))
   );
 }
 
@@ -326,14 +331,20 @@ export function useThreadSession(ref: ScopedThreadRef | null): OrchestrationSess
 
 export function readProject(ref: ScopedProjectRef): EnvironmentProject | null {
   const project = appAtomRegistry.get(environmentProjects.projectAtom(ref));
-  return project !== null &&
-    localProjectIsVisible(project, {
-      scope: readBusinessOsCodeScope(),
-      selectedInstanceId: readActiveWorkjetScope().selectedInstanceId,
-      primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
-    })
-    ? project
-    : null;
+  if (project === null) return null;
+  const selectedInstanceId = readActiveWorkjetScope().selectedInstanceId;
+  return (
+    visibleLocalProjects(
+      [project],
+      {
+        scope: readBusinessOsCodeScope(),
+        selectedInstanceId,
+        primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
+      },
+      readWorkjetProjectRegistry(selectedInstanceId).projects,
+      appAtomRegistry.get(primaryServerSettingsAtom).workjet.computers,
+    )[0] ?? null
+  );
 }
 
 export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | null {

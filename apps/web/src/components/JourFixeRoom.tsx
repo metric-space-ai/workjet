@@ -74,7 +74,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
     editTodos(todos.map((todo) => todo.id === id ? { ...todo, [key]: value } : todo));
   }
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-auto" data-workjet-jour-fixe-room={meeting.id}>
+    <section className="@container flex min-h-0 flex-1 flex-col overflow-auto" data-workjet-jour-fixe-room={meeting.id}>
       <WorkjetHeaderContent className="flex min-w-0 items-center">
         <WorkspaceBreadcrumb ariaLabel="Meeting breadcrumb">
           <WorkspaceBreadcrumbItem><button type="button" onClick={onBack} className="truncate hover:underline">{projectTitle}</button></WorkspaceBreadcrumbItem>
@@ -93,7 +93,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
         {meeting.todos && <Button size="sm" variant="outline" aria-pressed={review} onClick={() => setView(review ? "slides" : "review")}>{review ? "Slides" : "Review"}</Button>}
       </header>
       {(error || meeting.error) && <div role="alert" className="flex items-center gap-2 border-b border-destructive/30 px-5 py-2 text-sm text-destructive"><span>{error ?? meeting.error}</span>{onRefresh && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void perform(onRefresh)}>Refresh</Button>}</div>}
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 @min-[900px]:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 p-4 lg:p-[18px]">
           {review ? <div className="mx-auto max-w-4xl space-y-4" data-workjet-meeting-review="">
             <div><h2 className="text-base font-semibold">{meeting.todos?.status === "confirmed" ? "Confirmed to-dos" : "Proposed to-dos"}</h2><p className="mt-1 text-sm text-muted-foreground">{meeting.todos?.status === "confirmed" ? "This list was confirmed by the project owner." : "Review the acceptance criteria and sources. Confirming sets the supervisor’s goal."}</p></div>
@@ -139,11 +139,11 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
             </nav>
           </div> : <div role="status" className="grid aspect-video place-items-center rounded-lg border border-border px-6 text-center text-sm text-muted-foreground">{meeting.state === "preparing" ? "Supervisor is preparing the deck…" : "No deck is available for this meeting."}</div>}
         </div>
-        <aside className="flex min-h-80 min-w-0 flex-col border-t border-border bg-muted/10 lg:border-t-0 lg:border-l">
+        <aside className="flex min-h-80 min-w-0 flex-col border-t border-border bg-muted/10 @min-[900px]:border-t-0 @min-[900px]:border-l">
           <nav aria-label="Meeting panels" className="flex gap-1 border-b border-border px-3 py-2">
             {(["conversation", "comments", "agenda"] as const).map((name) => <Button key={name} variant={panel === name ? "secondary" : "ghost"} size="sm" aria-pressed={panel === name} onClick={() => setPanel(name)} className="capitalize">{name}{name === "comments" && meeting.comments.length > 0 ? ` ${meeting.comments.length}` : ""}</Button>)}
           </nav>
-          <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 lg:max-h-[calc(100dvh-220px)]">
+          <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 @min-[900px]:max-h-[calc(100dvh-220px)]">
             {panel === "conversation" && <>
               {[...meeting.transcript].sort((a, b) => a.sequence - b.sequence).map((turn) => <div key={turn.id}><p className="text-xs text-muted-foreground">{turn.speaker === "owner" ? "You" : "Supervisor"}</p><p className="mt-1 whitespace-pre-wrap text-sm">{turn.text}</p></div>)}
               {partial && <p role="status" className="text-sm italic text-muted-foreground">{partial}</p>}

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, PauseIcon, PlayIcon } from "lucide-react";
 import { Button } from "./ui/button";
 
@@ -28,6 +28,7 @@ function PlayerContent({ source, hasPrevious, hasNext, onPrevious, onNext }: Jou
   const [speed, setSpeed] = useState(1);
   const [failed, setFailed] = useState(false);
   const playable = source?.startsWith("blob:") === true && !failed;
+  useEffect(() => { const element = audio.current; return () => element?.pause(); }, [source]);
   async function togglePlayback() {
     if (!audio.current || !playable) return;
     if (!audio.current.paused) { audio.current.pause(); return; }

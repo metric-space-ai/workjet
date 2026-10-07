@@ -59,12 +59,13 @@ export function ProjectOverviewEditor({
     timezone: configuration?.jourFixe?.timezone ?? "Europe/Berlin",
   }));
   const scopedKpis = configuration?.id === kpis?.project_id ? kpis : undefined;
-  const initialPrompts = () => [0, 1, 2].map((index) => scopedKpis?.items[index]?.prompt.prompt ?? "");
+  const [initialKpis] = useState(scopedKpis);
+  const initialPrompts = () => [0, 1, 2].map((index) => initialKpis?.items[index]?.prompt.prompt ?? "");
   const [prompts, setPrompts] = useState(initialPrompts);
   const canConfigureKpis = !!(
     configuration &&
-    kpis &&
-    kpis.project_id === configuration.id &&
+    initialKpis &&
+    scopedKpis &&
     onSaveKpis
   );
   const promptsChanged = prompts.some((prompt, index) => prompt !== initialPrompts()[index]);
@@ -138,16 +139,16 @@ export function ProjectOverviewEditor({
             });
             return;
           }
-          if (canConfigureKpis && promptsChanged && kpis && onSaveKpis) {
+          if (canConfigureKpis && promptsChanged && initialKpis && onSaveKpis) {
             const savedKpis = await onSaveKpis(
-              projectKpiPromptInputs(prompts, kpis),
-              kpis.revision,
+              projectKpiPromptInputs(prompts, initialKpis),
+              initialKpis.revision,
             );
             if (!savedKpis) {
               setState({
                 pending: false,
                 message:
-                  "Project settings saved; KPI prompts weren’t saved. Refresh and try again.",
+                  "Couldn’t save KPI prompts. Reopen project settings and try again.",
               });
               return;
             }

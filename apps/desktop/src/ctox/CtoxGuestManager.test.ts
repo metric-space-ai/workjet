@@ -2260,6 +2260,45 @@ describe("CtoxGuestManager", () => {
     },
   );
 
+  it.effect("binds endpoint confirmations to the exact computer, endpoint and requested state", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.enterBusinessOsMode;
+      yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1_000, height: 700 });
+      const control = vi.fn();
+      harness.views[0]?.executeJavaScript.mockImplementation(async (expression: string) =>
+        NodeVM.runInNewContext(expression, { workjetComputerControl: control }),
+      );
+      const request = {
+        action: "computer.endpoint.upsert" as const,
+        commandId: CommandId.make("endpoint-command"),
+        computerId: "nas-1", endpointRef: "endpoint-nas",
+        connection: { protocol: "ssh" as const, host: "nas.example.test", port: 22,
+          username: "admin", root: "/volume1/artifacts", host_key_sha256: "SHA256:example-pin",
+          private_key: { scope: "computer-access", name: "nas-key" }, passphrase: null },
+      };
+      const response = { action: "computer.endpoint.upsert" as const,
+        endpointRef: "endpoint-nas", computerId: "nas-1", enabled: true };
+      control.mockResolvedValueOnce(response);
+      assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, request),
+        { _tag: "completed", response });
+      for (const fields of [
+        { endpointRef: "other-endpoint" }, { computerId: "other-computer" }, { enabled: false },
+      ]) {
+        control.mockResolvedValueOnce({ ...response, ...fields });
+        assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, request),
+          { _tag: "failed", code: "response_invalid" });
+      }
+      control.mockResolvedValueOnce({ ...response, action: "computer.endpoint.disable", enabled: false });
+      assert.deepEqual(yield* manager.requestComputerControl(descriptor.id, {
+        action: "computer.endpoint.disable", commandId: CommandId.make("disable-command"),
+        endpointRef: "endpoint-nas",
+      }), { _tag: "completed", response: { ...response,
+        action: "computer.endpoint.disable", enabled: false } });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("preserves safe computer failure reasons without exposing guest exceptions", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {

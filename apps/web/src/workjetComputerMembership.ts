@@ -130,6 +130,7 @@ export function createComputerMembershipStore() {
       if (result._tag === "failed") throw new Error(membershipError(result.code));
       const response = result.response;
       if (
+        (response.action !== "computer.assign" && response.action !== "computer.unassign") ||
         response.action !== (assigned ? "computer.assign" : "computer.unassign") ||
         response.computer.id !== computer.id ||
         response.computer.status !== (assigned ? "assigned" : "unassigned")

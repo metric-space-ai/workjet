@@ -1812,14 +1812,27 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         if (Option.isNone(decoded) || decoded.value.action !== request.action) {
           return { _tag: "failed", code: "response_invalid" };
         }
+        const confirmed = decoded.value;
+        if (request.action === "computer.assign" || request.action === "computer.unassign") {
+          if (
+            (confirmed.action !== "computer.assign" && confirmed.action !== "computer.unassign") ||
+            confirmed.computer.id !== request.computerId ||
+            confirmed.computer.status !==
+              (request.action === "computer.assign" ? "assigned" : "unassigned")
+          ) return { _tag: "failed", code: "response_invalid" };
+        }
         if (
-          request.action !== "computer.list" &&
-          decoded.value.action !== "computer.list" &&
-          (decoded.value.computer.id !== request.computerId ||
-            decoded.value.computer.status !==
-              (request.action === "computer.assign" ? "assigned" : "unassigned"))
+          request.action === "computer.endpoint.upsert" ||
+          request.action === "computer.endpoint.disable"
         ) {
-          return { _tag: "failed", code: "response_invalid" };
+          if (
+            (confirmed.action !== "computer.endpoint.upsert" &&
+              confirmed.action !== "computer.endpoint.disable") ||
+            confirmed.endpointRef !== request.endpointRef ||
+            confirmed.enabled !== (request.action === "computer.endpoint.upsert") ||
+            (request.action === "computer.endpoint.upsert" &&
+              confirmed.computerId !== request.computerId)
+          ) return { _tag: "failed", code: "response_invalid" };
         }
         return { _tag: "completed", response: decoded.value };
       });

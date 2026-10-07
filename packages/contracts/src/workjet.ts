@@ -1754,6 +1754,7 @@ export const WorkjetGatewayModelCheck = Schema.Struct({
   ),
   checkedAtMs: NonNegativeInt,
   latencyMs: NonNegativeInt,
+  /** Upstream observations use the original provider code; missing native provenance is null. */
   httpStatus: Schema.NullOr(NonNegativeInt),
 });
 export type WorkjetGatewayModelCheck = typeof WorkjetGatewayModelCheck.Type;

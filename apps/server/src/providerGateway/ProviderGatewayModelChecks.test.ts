@@ -51,10 +51,10 @@ const setup = () => {
   };
 };
 describe("bounded model checks", () => {
-  it("discards legacy checks without response provenance and checks them afresh", async () => {
+  it.each([1, 2])("discards legacy v%s checks and checks them afresh", async (schemaVersion) => {
     const fixture = setup();
     const legacy = JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion,
       entries: [
         {
           revision: target().revision,
@@ -63,7 +63,8 @@ describe("bounded model checks", () => {
             modelId: "model",
             status: "error",
             errorClass: "auth",
-            httpStatus: null,
+            httpStatus: 502,
+            source: "upstream",
             checkedAtMs: 1000,
             latencyMs: 0,
           },
@@ -75,7 +76,7 @@ describe("bounded model checks", () => {
     const result = await checks.run({});
     expect(fixture.calls).toEqual(["one", "two"]);
     expect(result.checks.every((check) => check.source === "upstream")).toBe(true);
-    expect(JSON.parse(fixture.persisted()!).schemaVersion).toBe(2);
+    expect(JSON.parse(fixture.persisted()!).schemaVersion).toBe(3);
   });
   it("advances every slow target before repeating a cooled prefix across mixed commands", async () => {
     const fixture = setup();
@@ -309,21 +310,31 @@ describe("real loopback model probe", () => {
         } else if (input.model === "native-unknown") {
           response.statusCode = 503;
           response.setHeader("X-CTOX-Error-Class", "unknown-model");
+          response.setHeader("X-CTOX-Upstream-Status", "404");
           response.end("{}");
         } else if (input.model === "html-auth") {
           response.statusCode = 401;
           response.setHeader("X-CTOX-Error-Class", "auth");
+          response.setHeader("X-CTOX-Upstream-Status", "401");
           response.end("<html>private authentication error</html>");
         } else if (input.model === "quota") {
           response.statusCode = 429;
           response.setHeader("X-CTOX-Error-Class", "quota-rate-limit");
+          response.setHeader("X-CTOX-Upstream-Status", "429");
           response.end("{}");
         } else if (input.model === "unknown") {
           response.statusCode = 400;
           response.setHeader("X-CTOX-Error-Class", "unknown-model");
+          response.setHeader("X-CTOX-Upstream-Status", "400");
           response.end(
             JSON.stringify({ error: { code: "model_not_found", message: "secret-provider-text" } }),
           );
+        } else if (input.model.startsWith("wrapped-")) {
+          response.statusCode = 502;
+          response.setHeader("X-CTOX-Error-Class", "auth");
+          if (input.model !== "wrapped-legacy")
+            response.setHeader("X-CTOX-Upstream-Status", input.model.slice("wrapped-".length));
+          response.end("{}");
         } else if (input.model === "bare-404") {
           response.statusCode = 404;
           response.end("{}");
@@ -366,6 +377,8 @@ describe("real loopback model probe", () => {
         "empty",
         "error-payload",
         "failed-status",
+        "wrapped-200",
+        "wrapped-invalid",
       ]) {
         const result = await probe(endpoint, "kimi", "chosen", model);
         expect(result.status, model).toBe("unavailable");
@@ -387,6 +400,20 @@ describe("real loopback model probe", () => {
       expect((await probe(endpoint, "kimi", "chosen", "quota")).errorClass).toBe(
         "quota-rate-limit",
       );
+      for (const status of [401, 403]) {
+        expect(await probe(endpoint, "xai", "chosen", `wrapped-${status}`)).toEqual({
+          status: "error",
+          errorClass: "auth",
+          httpStatus: status,
+          source: "upstream",
+        });
+      }
+      expect(await probe(endpoint, "kimi", "chosen", "wrapped-legacy")).toEqual({
+        status: "error",
+        errorClass: "auth",
+        httpStatus: null,
+        source: "upstream",
+      });
       await expect(probe(endpoint, "kimi", "chosen", "oversized")).rejects.toThrow("oversized");
       expect(requests[0]?.headers["x-ctox-provider"]).toBe("kimi");
       expect(requests[0]?.headers["x-ctox-account"]).toBe("chosen");

@@ -42,6 +42,17 @@ Installed OAuth acceptance requires a newly built native host, not merely an
 updated web/server bundle. Existing credentials can be used without re-login
 unless the corrected upstream request actually rejects them with HTTP 401.
 
+## Workjet pinned probe HTTP provenance — 2026-10-07
+
+Native provider adapters can wrap an observed upstream rejection in HTTP 502.
+Pinned responses now include `X-CTOX-Upstream-Status` from the same request-local
+observation that owns `X-CTOX-Error-Class`; no provider response text or secrets
+are exported. Refresh/retry success replaces the earlier status, and unpinned
+requests export neither field. Models uses the observed code for authentication
+recovery, treats a missing code on older hosts as unknown, and discards older
+persisted probe results. No account credentials, quotas or session affinity
+are reset by this change.
+
 ## Track boundary adopted 2026-08-05
 
 The project now has two release lanes with separate owners and evidence:

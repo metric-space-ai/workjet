@@ -93,8 +93,12 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       };
     }
     const safeErrorClass = response.headers.get("X-CTOX-Error-Class");
+    const observedStatus = response.headers.get("X-CTOX-Upstream-Status");
+    const upstreamHttpStatus =
+      observedStatus !== null && /^[45]\d{2}$/.test(observedStatus) ? Number(observedStatus) : null;
     if (
       !response.ok &&
+      (observedStatus === null || upstreamHttpStatus !== null) &&
       (safeErrorClass === "auth" ||
         safeErrorClass === "quota-rate-limit" ||
         safeErrorClass === "unknown-model" ||
@@ -104,7 +108,10 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       return {
         status: "error",
         errorClass: safeErrorClass,
-        httpStatus: response.status,
+        // Native adapters may wrap a real upstream 401/403/429 in HTTP 502.
+        // Older native hosts do not report this code: retain the verified class,
+        // but never claim the wrapper code came from the provider.
+        httpStatus: upstreamHttpStatus,
         source: "upstream",
       };
     }

@@ -44,9 +44,17 @@ upstream error; neither a gateway HTTP code nor model-shaped gateway text implie
 rejected credentials or an unknown provider model. A validated completed response
 becomes green with `source: upstream`. Raw messages are never displayed.
 
-The observation file is version 2. Version-1 observations are discarded because
-they cannot distinguish provider responses from gateway failures; settings and
-credentials are preserved, and the next bounded pass checks the models afresh.
+The original provider HTTP code comes from `X-CTOX-Upstream-Status`, emitted
+by the same request-local observation as the native error class. A provider 401
+may be wrapped by the gateway in HTTP 502: only the original 401 warrants
+credential recovery. Older hosts without that header retain their verified
+class with an unknown (`null`) upstream HTTP code. Invalid status headers are
+unverified gateway responses. Refresh/retry success replaces the first failure.
+
+The observation file is version 3. Older observations are discarded because
+version 1 lacked response provenance and version 2 could store a wrapper HTTP
+code as the provider code. Settings and credentials are preserved, and the next
+bounded pass checks the models afresh.
 
 A valid Responses success may include `error: null`. Codex subscription checks
 use `store: false` and a short-reply instruction because that upstream rejects

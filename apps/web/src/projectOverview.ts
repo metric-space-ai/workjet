@@ -110,15 +110,21 @@ export function resolveGalleryProjectStatistics(
   if (local === null || !ready)
     return { chatCount: null, activeChatCount: null, lastActivityAt: local?.updatedAt ?? null };
   const own = threads.filter(
-    (thread) => thread.environmentId === local.environmentId &&
-      thread.projectId === local.id && thread.deletedAt == null,
+    (thread) =>
+      thread.environmentId === local.environmentId &&
+      thread.projectId === local.id &&
+      thread.deletedAt == null,
   );
-  const times = [local.updatedAt, ...own.map((thread) => thread.updatedAt)]
-    .filter((value) => Number.isFinite(Date.parse(value)));
+  const times = [local.updatedAt, ...own.map((thread) => thread.updatedAt)].filter((value) =>
+    Number.isFinite(Date.parse(value)),
+  );
   return {
     chatCount: own.length,
-    activeChatCount: own.filter((thread) => thread.archivedAt === null &&
-      (thread.session?.status === "running" || thread.session?.status === "starting")).length,
+    activeChatCount: own.filter(
+      (thread) =>
+        thread.archivedAt === null &&
+        (thread.session?.status === "running" || thread.session?.status === "starting"),
+    ).length,
     lastActivityAt: times.sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null,
   };
 }

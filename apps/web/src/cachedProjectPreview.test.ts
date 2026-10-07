@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { resolveCachedProjectPreview } from "./cachedProjectPreview";
 
 describe("cached project preview identity", () => {
-  it.each(["https://fzul.app", "https://i-hate-ai.community/"])(
+  it.each(["https://fzul.app", "https://i-hate-ai.community/", "https://flylabs.dev", "https://kunstmen.com", "https://miltonticket.app", "https://ctox.dev", "https://mypokedex.app"])(
     "uses a bundled screenshot for the captured homepage %s",
     (website) => {
       expect(resolveCachedProjectPreview(website)?.image).toBeTruthy();

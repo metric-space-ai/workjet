@@ -18,7 +18,6 @@ import {
   buildProjectGallery,
   resolveGalleryProjectHistory,
   resolveGalleryProjectStatistics,
-
   visibleGalleryProjects,
   type GalleryProject,
   type GalleryProjectStatistics,

@@ -12,7 +12,9 @@ describe("project KPI suggestions", () => {
     }
   });
   it("normalizes website names and leaves unrecognized projects to their real local statistics", () => {
-    expect(suggestedProjectKpis("HTTPS://WWW.GREPPY.XYZ/")).toEqual(suggestedProjectKpis("greppy.xyz"));
+    expect(suggestedProjectKpis("HTTPS://WWW.GREPPY.XYZ/")).toEqual(
+      suggestedProjectKpis("greppy.xyz"),
+    );
     expect(suggestedProjectKpis("A new project")).toBeNull();
   });
 });

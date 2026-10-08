@@ -92,7 +92,13 @@ it.layer(NodeServices.layer)("server host identity", (it) => {
 
   it.effect("omits unavailable, uninitialized and malformed host identities", () =>
     Effect.gen(function* () {
-      for (const text of ["", "uninitialized", "not a machine ID", "0".repeat(32), "1".repeat(34)]) {
+      for (const text of [
+        "",
+        "uninitialized",
+        "not a machine ID",
+        "0".repeat(32),
+        "1".repeat(34),
+      ]) {
         expect(yield* read("linux", text)).toBeUndefined();
       }
       expect(yield* read("darwin", "other output")).toBeUndefined();

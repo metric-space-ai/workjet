@@ -35,10 +35,12 @@ export function ProjectWorkspace({
   threads,
   onOpenChat,
   onAddParent,
+  onOpenJourFixe,
 }: {
   readonly project: GalleryProject;
   readonly threads: readonly EnvironmentThreadShell[];
   readonly onOpenChat: (thread: ScopedThreadRef) => void;
+  readonly onOpenJourFixe?: () => void;
   readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
 }) {
   const [editingParent, setEditingParent] = useState(false);
@@ -280,6 +282,17 @@ export function ProjectWorkspace({
                   {weekdays[meeting.weekday]} · {meeting.time}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">{meeting.timezone}</p>
+                {onOpenJourFixe && (
+                  <Button
+                    className="mt-3"
+                    size="sm"
+                    variant="outline"
+                    onClick={onOpenJourFixe}
+                    data-workjet-action="project.jour-fixe.open"
+                  >
+                    Open meeting
+                  </Button>
+                )}
               </section>
             ) : null}
             {info?.goal ? (

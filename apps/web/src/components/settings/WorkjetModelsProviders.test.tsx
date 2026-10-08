@@ -89,8 +89,13 @@ function html(overrides: Partial<typeof state> = {}) {
 describe("Provider account table", () => {
   it("shows a timeout with a direct retry and no false authentication failure", () => {
     const timeout: ModelsModelCheck = {
-      ...check, status: "unavailable", source: "gateway", errorClass: null,
-      httpStatus: null, unavailableReason: "timeout", latencyMs: 20000,
+      ...check,
+      status: "unavailable",
+      source: "gateway",
+      errorClass: null,
+      httpStatus: null,
+      unavailableReason: "timeout",
+      latencyMs: 20000,
     };
     const rendered = html({ modelChecks: [timeout] });
     expect(rendered).toContain('data-model-check="unavailable"');

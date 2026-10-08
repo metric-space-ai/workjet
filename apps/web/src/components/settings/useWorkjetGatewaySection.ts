@@ -180,12 +180,7 @@ export function useWorkjetGatewaySection(
     };
   }, [environmentId]);
   useEffect(() => {
-    if (
-      environmentId === null ||
-      checksSubmitting ||
-      checksError !== null ||
-      !checksQuery.data
-    )
+    if (environmentId === null || checksSubmitting || checksError !== null || !checksQuery.data)
       return;
     const { pending, deferredCount } = checksQuery.data;
     if (pending.length === 0 && deferredCount === 0) return;

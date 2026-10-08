@@ -1954,7 +1954,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             try: async () => {
               const result = await runOauthPoll(input);
               if (result.completedAccountIds.length > 0)
-                await modelChecks.recheckAccounts(result.completedAccountIds).catch(() => undefined);
+                await modelChecks
+                  .recheckAccounts(result.completedAccountIds)
+                  .catch(() => undefined);
               return result;
             },
             catch: (error) =>

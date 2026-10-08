@@ -55,10 +55,14 @@ describe("bounded model checks", () => {
   it("times out an uncooperative probe, advances the queue and rejects its late success", async () => {
     vi.useFakeTimers();
     const fixture = setup();
-    fixture.setTargets((await fixture.options.targets()).map(item => ({ ...item, modelId: "grok-4.7" })));
+    fixture.setTargets(
+      (await fixture.options.targets()).map((item) => ({ ...item, modelId: "grok-4.7" })),
+    );
     let release!: (value: Awaited<ReturnType<typeof fixture.options.probe>>) => void;
     let started!: () => void;
-    const began = new Promise<void>(resolve => { started = resolve; });
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     let requestSignal!: AbortSignal;
     const checks = makeModelChecks({
       ...fixture.options,
@@ -66,7 +70,9 @@ describe("bounded model checks", () => {
         if (item.accountId !== "one") return fixture.options.probe(item);
         requestSignal = signal;
         started();
-        return new Promise<Awaited<ReturnType<typeof fixture.options.probe>>>(resolve => { release = resolve; });
+        return new Promise<Awaited<ReturnType<typeof fixture.options.probe>>>((resolve) => {
+          release = resolve;
+        });
       },
     });
     try {
@@ -77,14 +83,19 @@ describe("bounded model checks", () => {
       const result = await checks.list();
       expect(result.pending).toEqual([]);
       expect(requestSignal.aborted).toBe(true);
-      expect(result.checks.find(item => item.accountId === "one")).toMatchObject({
-        status: "unavailable", source: "gateway", errorClass: null,
-        httpStatus: null, unavailableReason: "timeout",
+      expect(result.checks.find((item) => item.accountId === "one")).toMatchObject({
+        status: "unavailable",
+        source: "gateway",
+        errorClass: null,
+        httpStatus: null,
+        unavailableReason: "timeout",
       });
-      expect(result.checks.find(item => item.accountId === "two")?.status).toBe("ok");
+      expect(result.checks.find((item) => item.accountId === "two")?.status).toBe("ok");
       release({ status: "ok", source: "upstream", errorClass: null, httpStatus: 200 });
       await Promise.resolve();
-      expect((await checks.list()).checks.find(item => item.accountId === "one")?.status).toBe("unavailable");
+      expect((await checks.list()).checks.find((item) => item.accountId === "one")?.status).toBe(
+        "unavailable",
+      );
       expect(JSON.parse(fixture.persisted()!).entries[0].check.unavailableReason).toBe("timeout");
     } finally {
       await checks.shutdown();
@@ -97,7 +108,9 @@ describe("bounded model checks", () => {
     const fixture = setup();
     fixture.setTargets([{ ...target(), modelId: "grok-4.7" }]);
     let started!: () => void;
-    const began = new Promise<void>(resolve => { started = resolve; });
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     let requestSignal!: AbortSignal;
     const checks = makeModelChecks({
       ...fixture.options,
@@ -123,13 +136,15 @@ describe("bounded model checks", () => {
   });
   it("clears only the reauthenticated account and rechecks even an unchanged revision", async () => {
     const fixture = setup();
-    fixture.setTargets((await fixture.options.targets()).map(item => ({ ...item, modelId: "grok-4.7" })));
+    fixture.setTargets(
+      (await fixture.options.targets()).map((item) => ({ ...item, modelId: "grok-4.7" })),
+    );
     const checks = makeModelChecks(fixture.options);
     await checks.run({});
     fixture.calls.length = 0;
     const next = await checks.recheckAccounts(["one"]);
-    expect(next.checks.map(item => item.accountId)).toEqual(["two"]);
-    expect(next.pending.map(item => item.accountId)).toEqual(["one"]);
+    expect(next.checks.map((item) => item.accountId)).toEqual(["two"]);
+    expect(next.pending.map((item) => item.accountId)).toEqual(["one"]);
     await checks.drain();
     expect(fixture.calls).toEqual(["one"]);
     expect((await checks.list()).checks).toHaveLength(2);

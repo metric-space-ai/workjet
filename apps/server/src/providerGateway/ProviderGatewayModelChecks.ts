@@ -248,7 +248,10 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
       }
     }
     await options.write(JSON.stringify({ schemaVersion: 3, entries: [...entries.values()] }));
-    return admit(targets.filter((target) => selected.has(target.accountId)), true);
+    return admit(
+      targets.filter((target) => selected.has(target.accountId)),
+      true,
+    );
   };
   const drain = async () => {
     for (;;) {
@@ -271,5 +274,15 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
     closed = true;
     await cancel();
   };
-  return { list, schedule, scheduleChanged, recheckAccounts, captureRevisions, drain, run, cancel, shutdown };
+  return {
+    list,
+    schedule,
+    scheduleChanged,
+    recheckAccounts,
+    captureRevisions,
+    drain,
+    run,
+    cancel,
+    shutdown,
+  };
 };

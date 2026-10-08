@@ -198,14 +198,20 @@ function ModelField({
           {error}
         </span>
       )}
-      {!pending && (check?.unavailableReason === "timeout" || check?.unavailableReason === "transport") && (
-        <span role="alert" className="block text-[11px] text-muted-foreground">
-          {check?.unavailableReason === "timeout" ? "Check timed out" : "Check could not finish"} ·{" "}
-          <button type="button" className="underline" onClick={() => state.onCheckModels?.(account.id)}>
-            Retry
-          </button>
-        </span>
-      )}
+      {!pending &&
+        (check?.unavailableReason === "timeout" || check?.unavailableReason === "transport") && (
+          <span role="alert" className="block text-[11px] text-muted-foreground">
+            {check?.unavailableReason === "timeout" ? "Check timed out" : "Check could not finish"}{" "}
+            ·{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => state.onCheckModels?.(account.id)}
+            >
+              Retry
+            </button>
+          </span>
+        )}
     </span>
   );
 }

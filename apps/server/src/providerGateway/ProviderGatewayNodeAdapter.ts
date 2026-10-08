@@ -269,7 +269,9 @@ export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
       child.once("error", () => resolve({ code: null, signal: null }));
     });
     if (child.pid === undefined || child.stdout === null || child.stderr === null) {
-      child.kill("SIGKILL");
+      // A failed spawn has no pid to signal; Node's kill() on that handle reaches
+      // pid 0, i.e. the whole server process group.
+      if (child.pid !== undefined) child.kill("SIGKILL");
       throw new Error("spawn failed");
     }
     return {

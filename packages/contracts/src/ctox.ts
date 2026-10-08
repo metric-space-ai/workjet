@@ -1275,6 +1275,7 @@ export const CtoxWorkjetSessionProjection = Schema.Struct({
   fenceEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   activeTransferId: Schema.NullOr(CtoxSessionId),
   updatedAtMs: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  createdAtMs: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 export type CtoxWorkjetSessionProjection = typeof CtoxWorkjetSessionProjection.Type;
 

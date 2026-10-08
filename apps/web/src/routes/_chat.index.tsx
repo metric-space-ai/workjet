@@ -24,7 +24,7 @@ import {
   type GalleryProjectStatistics,
 } from "../projectOverview";
 import { ProjectOverviewCard } from "../components/ProjectOverviewCard";
-import { ProjectCalendar } from "../components/ProjectCalendar";
+import { ConnectedProjectCalendar } from "../components/ConnectedProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverviewSelection";
 import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
@@ -781,7 +781,7 @@ function ProjectGallery({
             </div>
           ) : null}
           {view === "calendar" ? (
-            <ProjectCalendar projects={visibleProjects} />
+            <ConnectedProjectCalendar projects={visibleProjects} />
           ) : (
             <DndContext
               sensors={sensors}

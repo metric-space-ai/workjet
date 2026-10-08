@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { GalleryProject } from "../projectOverview";
+import type { CtoxWorkjetSessionProjection } from "@workjet/contracts";
 import {
   addDays,
   addMonths,
@@ -17,7 +18,7 @@ import {
 } from "../calendar/calendarDates";
 import { Button } from "./ui/button";
 
-type CalendarView = "day" | "week" | "month" | "year";
+export type CalendarView = "day" | "week" | "month" | "year";
 
 type CalendarProject = GalleryProject & {
   readonly onOpen: () => void;
@@ -35,10 +36,13 @@ type CalendarEvent = {
   readonly minutes: number;
   readonly timeZone: string;
   readonly projectKey: string;
+  readonly allDay?: boolean;
+  readonly point?: boolean;
   readonly onOpen: () => void;
 };
 
 const PROJECT_CALENDAR_ID = "project-meetings";
+const SESSION_CALENDAR_ID = "project-sessions";
 /** Regular meetings carry no duration, so every one is drawn as an hour. */
 const MEETING_MINUTES = 60;
 const HOUR_HEIGHT = 48;
@@ -110,7 +114,7 @@ function formatHour(hour: number): string {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(new Date(2000, 0, 1, hour));
 }
 
-function buildEvents(
+export function buildEvents(
   projects: readonly CalendarProject[],
   from: DateKey,
   to: DateKey,
@@ -138,6 +142,34 @@ function buildEvents(
     .toSorted((a, b) => a.startMs - b.startMs || a.title.localeCompare(b.title));
 }
 
+export function buildSessionEvents(
+  projects: readonly CalendarProject[],
+  sessions: readonly CtoxWorkjetSessionProjection[],
+  displayZone: string,
+): readonly CalendarEvent[] {
+  const byId = new Map(projects.map((project) => [project.id, project]));
+  return sessions.flatMap((session): CalendarEvent[] => {
+    const project = byId.get(session.projectId);
+    // Older native projections carry no start timestamp. Their update time
+    // must never be represented as a session start or fabricated duration.
+    if (project === undefined || session.createdAtMs === undefined) return [];
+    const local = zonedReading(session.createdAtMs, displayZone);
+    return [{
+      id: `session:${session.id}`,
+      calendarId: SESSION_CALENDAR_ID,
+      title: `${project.title} · Session (${session.runStatus})`,
+      startMs: session.createdAtMs,
+      endMs: session.createdAtMs,
+      point: true,
+      date: local.date,
+      minutes: local.minutes,
+      timeZone: displayZone,
+      projectKey: project.key,
+      onOpen: project.onOpen,
+    }];
+  });
+}
+
 function groupByDate(
   events: readonly CalendarEvent[],
 ): ReadonlyMap<DateKey, readonly CalendarEvent[]> {
@@ -157,7 +189,7 @@ function EventButton({
   readonly event: CalendarEvent;
   readonly placement: "block" | "chip";
 }) {
-  const label = `${event.title}, ${formatTime(event.startMs)}`;
+  const label = `${event.title}, ${event.allDay ? "all-day" : formatTime(event.startMs)}`;
   if (placement === "chip") {
     return (
       <button
@@ -168,7 +200,7 @@ function EventButton({
         data-workjet-action={`project.open.calendar:${event.projectKey}`}
         className="block w-full truncate rounded-sm bg-primary/12 px-1.5 py-0.5 text-left text-xs text-foreground transition-colors hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
       >
-        {formatTime(event.startMs)} {event.title}
+        {event.allDay ? "" : formatTime(event.startMs)} {event.title}
       </button>
     );
   }
@@ -182,7 +214,8 @@ function EventButton({
       className="absolute inset-x-0.5 overflow-hidden rounded-md border border-primary/30 bg-primary/12 px-2 py-1 text-left text-xs transition-colors hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
       style={{
         top: (event.minutes / 60) * HOUR_HEIGHT + 1,
-        height: Math.max((MEETING_MINUTES / 60) * HOUR_HEIGHT - 2, 20),
+        height: Math.max(Math.min((event.endMs - event.startMs) / 3_600_000 * HOUR_HEIGHT - 2,
+          (1440 - event.minutes) / 60 * HOUR_HEIGHT - 2), 20),
       }}
     >
       <span className="block font-medium tabular-nums">{formatTime(event.startMs)}</span>
@@ -269,7 +302,8 @@ function TimeGrid({
   }, []);
   const columns = `3.5rem repeat(${days.length}, minmax(0, 1fr))`;
   return (
-    <div className="flex min-w-0 flex-col overflow-hidden rounded-md border border-border">
+    <div className="min-w-0 overflow-x-auto rounded-md border border-border">
+      <div className="flex flex-col" style={{ minWidth: days.length > 1 ? 700 : 0 }}>
       <div className="grid border-b border-border" style={{ gridTemplateColumns: columns }}>
         <span aria-hidden />
         {days.map((date) => {
@@ -302,7 +336,10 @@ function TimeGrid({
             key={date}
             className="min-h-6 border-l border-border px-0.5"
             data-calendar-allday={date}
-          />
+          >
+            {(eventsByDate.get(date) ?? []).filter((event) => event.allDay).map((event) =>
+              <EventButton key={event.id} event={event} placement="chip" />)}
+          </div>
         ))}
       </div>
       <div ref={scrollRef} className="relative h-[min(70vh,44rem)] overflow-y-auto">
@@ -327,7 +364,7 @@ function TimeGrid({
                   style={{ top: hour * HOUR_HEIGHT }}
                 />
               ))}
-              {(eventsByDate.get(date) ?? []).map((event) => (
+              {(eventsByDate.get(date) ?? []).filter((event) => !event.allDay).map((event) => (
                 <EventButton key={event.id} event={event} placement="block" />
               ))}
               {date === today ? (
@@ -340,6 +377,7 @@ function TimeGrid({
             </div>
           ))}
         </div>
+      </div>
       </div>
     </div>
   );
@@ -413,7 +451,15 @@ function MonthGrid({
 export function ProjectCalendar({
   projects,
   initialDate,
+  initialView = "week",
+  sessions = [],
+  sessionsStatus,
+  onRefreshSessions,
 }: {
+  readonly initialView?: CalendarView;
+  readonly sessions?: readonly CtoxWorkjetSessionProjection[];
+  readonly sessionsStatus?: "loading" | "ready" | "unavailable";
+  readonly onRefreshSessions?: () => void;
   readonly projects: readonly CalendarProject[];
   /** Anchor date (YYYY-MM-DD) shown at first render; defaults to today. */
   readonly initialDate?: DateKey;
@@ -428,7 +474,8 @@ export function ProjectCalendar({
   const current = zonedReading(now, displayZone);
   const today = current.date;
 
-  const [view, setView] = useState<CalendarView>("week");
+  const [view, setView] = useState<CalendarView>(initialView);
+  const [projectKey, setProjectKey] = useState("all");
   const [anchor, setAnchor] = useState<DateKey>(() => initialDate ?? today);
   const [hiddenCalendars, setHiddenCalendars] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -439,12 +486,15 @@ export function ProjectCalendar({
   const windowTo = range.to > grid[41]! ? range.to : grid[41]!;
 
   const allEvents = useMemo(
-    () => buildEvents(projects, windowFrom, windowTo, displayZone),
-    [projects, windowFrom, windowTo, displayZone],
+    () => [...buildEvents(projects, windowFrom, windowTo, displayZone),
+      ...buildSessionEvents(projects, sessions, displayZone)
+        .filter((event) => event.date >= windowFrom && event.date <= windowTo)],
+    [projects, sessions, windowFrom, windowTo, displayZone],
   );
   const visibleEvents = useMemo(
-    () => allEvents.filter((event) => !hiddenCalendars.has(event.calendarId)),
-    [allEvents, hiddenCalendars],
+    () => allEvents.filter((event) => !hiddenCalendars.has(event.calendarId)
+      && (projectKey === "all" || event.projectKey === projectKey)),
+    [allEvents, hiddenCalendars, projectKey],
   );
   const eventsByDate = useMemo(() => groupByDate(visibleEvents), [visibleEvents]);
   const eventDates = useMemo(
@@ -463,6 +513,14 @@ export function ProjectCalendar({
       className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]"
     >
       <aside className="order-2 space-y-6 lg:order-1">
+        <label className="block text-sm">
+          Project
+          <select aria-label="Calendar project" value={projectKey} onChange={(event) => setProjectKey(event.target.value)}
+            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2">
+            <option value="all">All projects</option>
+            {projects.map((project) => <option key={project.key} value={project.key}>{project.title}</option>)}
+          </select>
+        </label>
         <MiniMonth
           monthKey={startOfMonth(anchor)}
           today={today}
@@ -489,6 +547,24 @@ export function ProjectCalendar({
             <span className="size-2.5 shrink-0 rounded-full bg-primary" aria-hidden />
             <span className="min-w-0 break-words">Project meetings</span>
           </label>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" className="size-4 accent-primary"
+              checked={!hiddenCalendars.has(SESSION_CALENDAR_ID)}
+              onChange={(event) => setHiddenCalendars((previous) => {
+                const next = new Set(previous);
+                if (event.target.checked) next.delete(SESSION_CALENDAR_ID); else next.add(SESSION_CALENDAR_ID);
+                return next;
+              })} />
+            Project sessions
+          </label>
+          {sessionsStatus !== undefined && sessionsStatus !== "ready" &&
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
+              {sessionsStatus === "loading" ? "Loading sessions…" : "Sessions unavailable. Previously loaded sessions may be out of date."}
+            </p>}
+          {sessions.some((session) => session.createdAtMs === undefined) &&
+            <p role="status" className="mt-2 text-xs text-muted-foreground">Some sessions have no recorded start time.</p>}
+          {onRefreshSessions && <Button size="sm" variant="ghost" disabled={sessionsStatus === "loading"}
+            onClick={onRefreshSessions}>Refresh sessions</Button>}
         </section>
         {unscheduled.length > 0 && (
           <section aria-label="Projects without a regular meeting">

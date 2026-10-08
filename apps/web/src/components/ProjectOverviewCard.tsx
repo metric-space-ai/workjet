@@ -102,7 +102,7 @@ export function ProjectOverviewCard({
       <div className="flex min-w-0 items-center gap-2 px-3 py-2">
         <div className="min-w-0 flex-1">
           <h2
-            className="truncate text-sm font-medium"
+            className="break-words text-sm leading-5 font-medium"
             title={project.title}
             data-workjet-project-title=""
           >
@@ -239,7 +239,7 @@ export function ProjectOverviewCard({
                   title={metric?.label ?? slot?.label}
                   className={
                     slot
-                      ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]"
+                      ? "min-w-0 break-words text-[11px] leading-4 text-muted-foreground"
                       : "sr-only"
                   }
                 >

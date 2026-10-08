@@ -1,84 +1,101 @@
 # Workjet
 
-Workjet provides desktop, web, and mobile interfaces for coding agents and CTOX computers. Workjet builds and distribution status are published in this repository's [releases](https://github.com/metric-space-ai/workjet/releases).
+Workjet is the application through which people work with coding agents and
+with CTOX. It runs as a desktop app on macOS, Windows, and Linux, as a web app
+in the browser, and as a mobile app on iOS and Android. In Workjet you start and
+follow agent threads in your projects, assign them to models, harnesses, and
+computers, and open the Business OS of your CTOX instances.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, Workjet can control them.
+## How Workjet relates to CTOX and ctox.dev
 
-## "Wait, what are you selling me?"
+The product consists of three parts. Workjet, in this repository, is the
+application for the user. [CTOX](https://github.com/metric-space-ai/ctox) is the
+open-source backend underneath it, a Rust daemon with a command-line interface
+that keeps durable work state, runs long-lived agent work, and serves Business
+OS. Workjet installs CTOX on the computers it manages, keeps it up to date, and
+connects to as many CTOX instances as you need, whether they run locally, over
+SSH, or in your tailnet. [ctox.dev](https://ctox.dev) is the commercial service
+around both, with accounts, team access, managed instances, and relays. Workjet
+works without ctox.dev; signing in to ctox.dev additionally brings your managed
+instances into the app.
 
-Nothing. We built Workjet because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
-
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+All desktop and mobile releases of the product are built from this repository.
+The CTOX repository ships only the backend.
 
 ## Installation
 
-> [!WARNING]
-> Workjet currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+The signed desktop app is available on the
+[releases page](https://github.com/metric-space-ai/workjet/releases), whose
+notes state the platform, signing, and verification status of each build. The
+mobile apps are currently distributed through TestFlight and the internal test
+track of Google Play, and they connect to a running
+Workjet server or desktop app on one of your computers. How a phone is paired
+with a computer, either on the local network or through Tailscale, is explained
+in the guide on [remote access](./docs/user/remote-access.md).
 
-### Run from source
+Workjet controls the agent CLIs you already use and does not bring its own. At
+least one of them has to be installed and signed in on the computer that runs
+the Workjet server. Codex is set up with the [Codex CLI](https://developers.openai.com/codex/cli)
+and `codex login`, Claude with [Claude Code](https://claude.com/product/claude-code)
+and `claude auth login`, Cursor with the [Cursor CLI](https://cursor.com/cli)
+and `agent login`, Grok Build with the [Grok Build CLI](https://x.ai/cli) and
+`grok login`, and OpenCode with [OpenCode](https://opencode.ai) and
+`opencode auth login`. The [installation guide](./docs/user/install.md)
+describes the details, including how Workjet finds these programs and what
+happens when a provider is not signed in yet.
 
-Follow the [development overview](./docs/internals/overview.md) to build the server and clients using the repository's pinned toolchain. Use release artifacts from this repository for packaged installations; an unrelated public package or hosted service is not a Workjet release.
+## Using Workjet
 
-### Desktop app
+The user documentation lives in [docs/user](./docs/user). It explains how to
+[add projects](./docs/user/adding-projects.md), how
+[permission modes](./docs/user/permission-modes.md) limit what an agent may do,
+and how [worker profiles](./docs/user/worker-profiles.md) and
+[personalization](./docs/user/worker-personalization.md) shape the team of
+workers. You will also find how CTOX instances are added and selected under
+[instance settings](./docs/user/instance-settings.md), how
+[source control](./docs/user/source-control.md) is connected, how the app and
+server [stay in sync during updates](./docs/user/updating.md), and how Workjet
+runs on Linux as a [background service](./docs/user/background-service.md).
+Several accounts per provider are possible for [Codex](./docs/user/providers-codex.md)
+and [Claude](./docs/user/providers-claude.md), and the
+[keyboard shortcuts](./docs/user/keybindings.md) can be customized.
 
-Download Workjet desktop artifacts from
-[GitHub Releases](https://github.com/metric-space-ai/workjet/releases). Check the release notes for each artifact's platform, signing, and verification status.
+## Development
 
-## Some notes
+Workjet consists of a server and three clients. The server in `apps/server`
+owns agent sessions, workspaces, and version control, and every provider
+process, terminal, and file access runs there. The clients in `apps/web`,
+`apps/desktop`, and `apps/mobile` talk to it over a single authenticated
+WebSocket connection. The [architecture overview](./docs/internals/overview.md)
+is the starting point for building from source and for any deeper change.
 
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Worker personalization and organigram](./docs/user/worker-personalization.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Customize a project icon](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run Workjet as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-Workjet uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
+The repository uses Vite+, so you first need its global `vp` command. On macOS
+and Linux it is installed with the first command below, on Windows with the
+second in PowerShell, and afterwards `vp i` installs the dependencies of the
+workspace. The [Vite+ guide](https://viteplus.dev/guide/) explains the tool
+itself.
 
 ```bash
 curl -fsSL https://vite.plus | bash
 ```
 
-#### Windows
-
-```bash
+```powershell
 irm https://vite.plus/ps1 | iex
 ```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
 
 ```bash
 vp i
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
+Workjet is at an early stage, and we accept outside contributions only to a
+limited extent. Small, focused fixes have a chance, while larger features will
+not be merged. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before you open
+an issue or a pull request, and report problems in the
+[issue tracker of this repository](https://github.com/metric-space-ai/workjet/issues).
 
-Report Workjet issues in [this repository](https://github.com/metric-space-ai/workjet/issues).
+## License
+
+Workjet is released under the [MIT License](LICENSE). Attribution for the
+components it contains is recorded in [NOTICE.md](NOTICE.md), and the policy for
+shared Metric Space AI components is described in
+[LICENSE_POLICY.md](LICENSE_POLICY.md).

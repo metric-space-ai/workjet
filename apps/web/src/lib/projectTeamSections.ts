@@ -65,10 +65,12 @@ export function projectTeamStatus(thread: {
 
 export function projectTeamProgressPreview(thread: {
   readonly latestTurn?: { readonly assistantMessagePreview?: string | undefined } | null;
+  readonly latestAssistantMessagePreview?: string | undefined;
   readonly planProgress?: { readonly step: string } | null | undefined;
 }) {
   const assistant = thread.latestTurn?.assistantMessagePreview?.replace(/\s+/gu, " ").trim();
-  return assistant || thread.planProgress?.step.trim() || "";
+  const history = thread.latestAssistantMessagePreview?.replace(/\s+/gu, " ").trim();
+  return assistant || history || thread.planProgress?.step.trim() || "";
 }
 
 export function projectTeamHarnessLabel(thread: {

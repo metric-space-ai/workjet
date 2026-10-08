@@ -66,6 +66,19 @@ export function resolveNativeSupervisorScope(input: {
   }
 }
 
+/** Names the first unmet condition behind a null scope, for the composer's notice. */
+export function nativeSupervisorBlockReason(input: {
+  readonly project: ProjectHistoryIdentity | null;
+  readonly registry: WorkjetProjectRegistrySnapshot;
+}): string {
+  if (input.registry.refreshFailed) return "Could not read the CTOX project list.";
+  if (input.registry.phase !== "ready") return "The CTOX project list is still loading.";
+  const registration = input.project?.ctoxRegistration;
+  if (registration != null && registration.status !== "confirmed")
+    return "This project is waiting for confirmation from CTOX.";
+  return "This project has no confirmed CTOX binding on this computer.";
+}
+
 export function supervisorJournalMatchesScope(
   journal: WorkjetSupervisorJournal,
   scope: NativeSupervisorScope,

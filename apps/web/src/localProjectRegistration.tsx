@@ -23,6 +23,11 @@ import { usePrimarySettings } from "./hooks/useSettings";
 
 const RETRY_EVENT = "workjet:retry-local-project-registration";
 
+/** Asks the synchronizer to re-attempt a pending CTOX registration without a page reload. */
+export function requestLocalProjectRegistrationRetry(): void {
+  window.dispatchEvent(new Event(RETRY_EVENT));
+}
+
 /** One bounded attempt per intent per connection/focus, using the persisted command identity. */
 export function LocalProjectRegistrationSynchronizer() {
   const projects = useProjects();
@@ -164,11 +169,7 @@ export function ProjectNativeSyncStatus({
       {intent.lastFailure ? (
         <span>{workjetProjectCreationFailureMessage(intent.lastFailure)}</span>
       ) : null}
-      <Button
-        variant="outline"
-        size="xs"
-        onClick={() => window.dispatchEvent(new Event(RETRY_EVENT))}
-      >
+      <Button variant="outline" size="xs" onClick={requestLocalProjectRegistrationRetry}>
         Retry sync
       </Button>
     </div>

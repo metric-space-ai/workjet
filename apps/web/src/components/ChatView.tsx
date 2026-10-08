@@ -377,6 +377,7 @@ import { resolveDraftCtoxSessionTarget, withCtoxSessionBinding } from "../workje
 import { useWorkjetProjectRegistry } from "../workjetProjectRegistry";
 import {
   isNativeSupervisorThread,
+  nativeSupervisorBlockReason,
   resolveNativeSupervisorScope,
 } from "../nativeSupervisorComposer";
 import { NativeSupervisorComposer } from "./chat/NativeSupervisorComposer";
@@ -7283,6 +7284,15 @@ function ChatViewContent(props: ChatViewProps) {
                               key={`${activeThreadKey}:${presentationInstanceId}`}
                               scope={nativeSupervisorScope}
                               config={visibleWorkjetConfig}
+                              instanceId={presentationInstanceId}
+                              blockReason={
+                                nativeSupervisorScope === null
+                                  ? nativeSupervisorBlockReason({
+                                      project: activeProject ?? null,
+                                      registry: workjetProjectRegistry,
+                                    })
+                                  : null
+                              }
                               unavailable={
                                 activeEnvironmentUnavailable ||
                                 threadDetailLoading ||

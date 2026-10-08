@@ -21,12 +21,16 @@ import {
 } from "../../workjetSupervisorControl";
 import { requestWorkjetProjectControl } from "../../workjetProjectControl";
 import { readWorkjetSupervisorExecutionPage } from "../../workjetSupervisorExecution";
+import { requestLocalProjectRegistrationRetry } from "../../localProjectRegistration";
+import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
 export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
   readonly config: WorkjetThreadConfig;
+  readonly instanceId: string | null;
+  readonly blockReason: string | null;
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
 }) {
@@ -134,13 +138,13 @@ export function NativeSupervisorComposer(props: {
             submission: "confirmed",
           });
           // This receipt requests cancellation; it never confirms a worker interrupt.
-          setNotice("Abbruch angefordert; Bestätigung wird aus dem Auftrag gelesen.");
+          setNotice("Cancellation requested; waiting for the task receipt.");
         } else if (result._tag === "completed")
-          throw new Error("Antwort gehört zu einem anderen Auftrag.");
+          throw new Error("The response belongs to a different task.");
       }
       if (journalRef.current?.turn?.terminal) setNotice(null);
       if (result?._tag === "failed")
-        setError(`CTOX: ${result.code}. Auftrag prüfen und erneut verbinden.`);
+        setError(`CTOX: ${result.code}. Check the task and reconnect.`);
       if (
         result?._tag === "completed" &&
         (operation === "send" || prompt.trim() === saved?.intent.goal)
@@ -179,20 +183,16 @@ export function NativeSupervisorComposer(props: {
           } else if (observed._tag === "failed") {
             setExecutionError(
               observed.code === "unsupported"
-                ? "Diese CTOX-Version stellt keinen Ausführungsverlauf bereit."
-                : `Ausführungsverlauf nicht verfügbar: ${observed.code}. Erneut aktualisieren oder von Anfang laden.`,
+                ? "This CTOX version does not provide execution history."
+                : `Execution history unavailable: ${observed.code}. Refresh or load from the start.`,
             );
           }
         } catch {
-          setExecutionError(
-            "Ausführungsverlauf konnte nicht gespeichert werden. Erneut aktualisieren.",
-          );
+          setExecutionError("Could not save execution history. Refresh to retry.");
         }
       }
     } catch (failure) {
-      setError(
-        failure instanceof Error ? failure.message : "CTOX-Auftrag konnte nicht bestätigt werden.",
-      );
+      setError(failure instanceof Error ? failure.message : "Could not confirm the CTOX task.");
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -227,22 +227,22 @@ export function NativeSupervisorComposer(props: {
   }, [disabled, busy, error, journal]);
 
   return (
-    <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor-Auftrag">
+    <section className="mx-auto w-full max-w-5xl p-3" aria-label="Supervisor task">
       {journal && scopeMatches && (
         <div className="mb-3 max-h-52 overflow-y-auto text-sm" aria-live="polite">
           <p className="whitespace-pre-wrap break-words">{journal.intent.goal}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {journal.turn
-              ? `${journal.turn.status} · Versuch ${journal.turn.attempt}`
+              ? `${journal.turn.status} · Attempt ${journal.turn.attempt}`
               : journal.submission === "not-submitted"
-                ? "Nicht gesendet"
-                : "Bestätigung ausstehend"}
+                ? "Not sent"
+                : "Awaiting confirmation"}
           </p>
           {journal.turn?.taskId && (
             <details className="mt-1 text-xs text-muted-foreground">
-              <summary>Auftragsdetails</summary>
+              <summary>Task details</summary>
               <p>Task {journal.turn.taskId}</p>
-              <p>Befehl {journal.turn.commandId}</p>
+              <p>Command {journal.turn.commandId}</p>
             </details>
           )}
           {journal.turn && (
@@ -269,11 +269,11 @@ export function NativeSupervisorComposer(props: {
             </pre>
           )}
           {journal.turn?.resultTruncated && (
-            <p className="text-xs text-muted-foreground">Ergebnis gekürzt</p>
+            <p className="text-xs text-muted-foreground">Result truncated</p>
           )}
           {journal.submission === "not-submitted" && (
             <p role="alert" className="text-destructive">
-              CTOX: {journal.submissionError}. Neuer Versand möglich.
+              CTOX: {journal.submissionError}. You can send a new request.
             </p>
           )}
           {journal.turn?.errorMessage && (
@@ -284,9 +284,24 @@ export function NativeSupervisorComposer(props: {
         </div>
       )}
       {disabled && (
-        <p role="status" className="mb-2 text-xs text-muted-foreground">
-          Projekt und CTOX-Verbindung müssen bestätigt sein.
-        </p>
+        <div
+          role="status"
+          className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+        >
+          <span>{props.blockReason ?? "Confirm the project and CTOX connection to send."}</span>
+          {props.instanceId !== null && (
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              onClick={() => {
+                refreshWorkjetProjectRegistry(props.instanceId);
+                requestLocalProjectRegistrationRetry();
+              }}
+            >
+              Retry connection
+            </button>
+          )}
+        </div>
       )}
       {notice && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
@@ -306,12 +321,12 @@ export function NativeSupervisorComposer(props: {
         className="flex items-end gap-2"
       >
         <textarea
-          aria-label="Nachricht an Supervisor"
-          placeholder="Auftrag an den Supervisor …"
+          aria-label="Message to Supervisor"
+          placeholder="Ask the Supervisor …"
           rows={2}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          disabled={disabled || busy || pending}
+          disabled={busy || pending}
           onKeyDown={(event) => {
             if (
               (event.metaKey || event.ctrlKey) &&
@@ -326,17 +341,17 @@ export function NativeSupervisorComposer(props: {
         />
         <span
           className="pb-2 text-xs text-muted-foreground"
-          title="Ausführung und Modell werden von CTOX verwaltet"
+          title="Execution and model are managed by CTOX"
         >
           CTOX
         </span>
         <button
           type="submit"
-          aria-label="An Supervisor senden"
+          aria-label="Send to Supervisor"
           disabled={disabled || busy || pending || prompt.trim() === ""}
           className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
         >
-          Senden
+          Send
         </button>
       </form>
       {journal && (
@@ -348,7 +363,7 @@ export function NativeSupervisorComposer(props: {
               void run("resume");
             }}
           >
-            Auftrag aktualisieren
+            Refresh task
           </button>
           {pending && journal.turn && (
             <button
@@ -358,7 +373,7 @@ export function NativeSupervisorComposer(props: {
                 void run("cancel");
               }}
             >
-              Abbrechen
+              Cancel
             </button>
           )}
         </div>

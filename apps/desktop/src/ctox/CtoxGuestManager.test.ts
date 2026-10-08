@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { CommandId, ProjectId } from "@workjet/contracts";
+import jourFixeFixture from "../../../../packages/contracts/src/workjetJourFixeMeeting.fixture.json";
 import * as NodeVM from "node:vm";
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
@@ -2601,6 +2602,47 @@ describe("CtoxGuestManager", () => {
       }).pipe(Effect.provide(harness.layer));
     },
   );
+
+  it.effect("bounds meeting metadata independently and correlates native reads", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const request = {
+        action: "project.jour_fixe.meeting.read" as const,
+        commandId: CommandId.make("read-meeting"),
+        projectId: ProjectId.make("project-1"),
+        meetingId: "meeting-1",
+      };
+      const fixture = jourFixeFixture.valid_cases.find((item) => item.type === "Meeting")!.value;
+      const receipt = {
+        action: request.action,
+        commandId: request.commandId,
+        projectId: request.projectId,
+        contract: "ctox.workjet.jour_fixe.v1",
+        meeting: {
+          ...fixture,
+          slides: Array.from({ length: 32 }, (_, position) => ({
+            id: `slide-${position}`, position, title: "Slide", body_markdown: "x".repeat(16384), meeting_id: "meeting-1",
+          })),
+        },
+      };
+      harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: receipt });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), { _tag: "completed", response: receipt });
+      for (const change of [{ commandId: "foreign" }, { projectId: "foreign" }]) {
+        harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: { ...receipt, ...change } });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), { _tag: "failed", code: "guest_failed" });
+      }
+      harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: {
+        ...receipt, meeting: { ...receipt.meeting, slides: [...receipt.meeting.slides, ...receipt.meeting.slides, ...receipt.meeting.slides] },
+      } });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), { _tag: "failed", code: "response_too_large" });
+      harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: {
+        action: "project.list", projects: [], count: 0, truncated: false, padding: "x".repeat(256 * 1024),
+      } });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }), { _tag: "failed", code: "response_too_large" });
+    }).pipe(Effect.provide(harness.layer));
+  });
 
   it.effect("correlates native private chat creation before returning its ID", () => {
     const harness = makeGuestHarness();

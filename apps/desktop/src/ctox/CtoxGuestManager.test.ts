@@ -2565,13 +2565,13 @@ describe("CtoxGuestManager", () => {
           action: request.action,
           commandId: request.commandId,
           projectId: request.projectId,
-          contract: "ctox.workjet.jour_fixe.v1",
+          contract: "ctox.workjet.jour_fixe.v1" as const,
           mutation: {
             operation_id: request.operationId,
             meeting_id: request.meetingId,
             project_id: request.projectId,
             revision: 5,
-            state: "live",
+            state: "live" as const,
           },
         };
         for (const change of [

@@ -21,6 +21,15 @@ type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
  * runtime failure.
  */
 export const RPC_REQUIRED_SCOPES = {
+  // These carry source task bytes/create target worktrees; never read-only.
+  [WS_METHODS.workjetWorkerRequests]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerReceive]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerRespond]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerRouteReserve]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerSourcePrepare]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerRouteVerify]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerSourceConfirm]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetWorkerEnrollComputer]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.dispatchCommand]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_WS_METHODS.getWorkflowScript]: AuthOrchestrationReadScope,
   [ORCHESTRATION_WS_METHODS.getTurnDiff]: AuthOrchestrationReadScope,
@@ -60,6 +69,9 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetGatewayStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayCatalog]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetGatewayScopedCatalog]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayBindModel]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetGatewayInfer]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetGatewayAdmit]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewaySetGrant]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayStart]: AuthOrchestrationOperateScope,
   [WS_METHODS.workjetGatewayStop]: AuthOrchestrationOperateScope,

@@ -1,3 +1,8 @@
+import { RemoteWorkerComputerEnrollment } from "./workjet/RemoteWorkerComputerEnrollment.ts";
+import { RemoteWorkerDispatchError } from "@workjet/contracts";
+import { RemoteWorkerBroker } from "./workjet/RemoteWorkerBroker.ts";
+import { RemoteWorkerReceiver } from "./workjet/RemoteWorkerReceiver.ts";
+import { RemoteWorkerConnectionBootstrap } from "./workjet/RemoteWorkerConnectionBootstrap.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -120,6 +125,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
+import { makeManagedSourceGatewayInference } from "./providerGateway/ManagedSourceGatewayInference.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -401,6 +407,10 @@ const makeWsRpcLayer = (
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
+      const workerBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
+      const workerReceiver = yield* Effect.serviceOption(RemoteWorkerReceiver);
+      const computerEnrollment = yield* Effect.serviceOption(RemoteWorkerComputerEnrollment);
+      const workerConnection = yield* Effect.serviceOption(RemoteWorkerConnectionBootstrap);
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
@@ -652,6 +662,12 @@ const makeWsRpcLayer = (
           ).pipe(
             Effect.mapError(() => new WorkjetCrossModeError({ reason: "unverified-authority" })),
           ),
+      });
+      const sourceGateway = makeManagedSourceGatewayInference({
+        environmentId: serverEnvironment.getEnvironmentId,
+        settings: serverSettings,
+        gateway: providerGateway,
+        connections: Option.getOrUndefined(decisionHubConnections),
       });
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1296,6 +1312,53 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.workjetWorkerEnrollComputer]: (input) =>
+          Option.isSome(computerEnrollment)
+            ? computerEnrollment.value.enroll(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerRouteReserve]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.reserve(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerSourcePrepare]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.prepare(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerRouteVerify]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.verify(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerSourceConfirm]: (input) =>
+          Option.isSome(workerConnection)
+            ? workerConnection.value.confirm(input)
+            : Effect.fail(new RemoteWorkerDispatchError({ reason: "source-unavailable" })),
+        [WS_METHODS.workjetWorkerRequests]: () =>
+          observeRpcStream(
+            WS_METHODS.workjetWorkerRequests,
+            Option.isSome(workerBroker)
+              ? workerBroker.value.requests
+              : Stream.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+            { "rpc.aggregate": "worker-dispatch" },
+          ),
+        [WS_METHODS.workjetWorkerReceive]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetWorkerReceive,
+            Option.isSome(workerReceiver) && Option.isSome(workerConnection)
+              ? workerConnection.value
+                  .resolveTargetRoute(input)
+                  .pipe(Effect.andThen(workerReceiver.value.receive(input)))
+              : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+            { "rpc.aggregate": "worker-dispatch" },
+          ),
+        [WS_METHODS.workjetWorkerRespond]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetWorkerRespond,
+            Option.isSome(workerBroker)
+              ? workerBroker.value.respond(input)
+              : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+            { "rpc.aggregate": "worker-dispatch" },
+          ),
+
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
@@ -1977,6 +2040,18 @@ const makeWsRpcLayer = (
             }),
             { "rpc.aggregate": "workjet-provider-gateway" },
           ),
+        [WS_METHODS.workjetGatewayBindModel]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayBindModel, sourceGateway.bindModel(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayAdmit]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayAdmit, sourceGateway.admit(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
+        [WS_METHODS.workjetGatewayInfer]: (input) =>
+          observeRpcEffect(WS_METHODS.workjetGatewayInfer, sourceGateway.infer(input), {
+            "rpc.aggregate": "workjet-provider-gateway",
+          }),
         [WS_METHODS.workjetGatewaySetGrant]: (input) =>
           observeRpcEffect(
             WS_METHODS.workjetGatewaySetGrant,

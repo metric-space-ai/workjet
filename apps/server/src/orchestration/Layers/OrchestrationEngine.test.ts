@@ -1,3 +1,10 @@
+import {
+  RemoteWorkerRequest,
+  RemoteWorkerDispatchError,
+  WorkjetComputerId,
+} from "@workjet/contracts";
+import { RemoteWorkerAdmission } from "../../workjet/RemoteWorkerAdmission.ts";
+import { make as makeRemoteWorkerStore } from "../../workjet/RemoteWorkerStore.ts";
 import { DEFAULT_WORKJET_THREAD_CONFIG } from "@workjet/contracts";
 import {
   CheckpointRef,
@@ -60,8 +67,11 @@ const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
-async function createOrchestrationSystem(environmentId?: EnvironmentId) {
-  const engineLayer = environmentId
+async function createOrchestrationSystem(
+  environmentId?: EnvironmentId,
+  admission?: RemoteWorkerAdmission["Service"],
+) {
+  const environmentEngineLayer = environmentId
     ? OrchestrationEngineLive.pipe(
         Layer.provide(
           Layer.succeed(ServerEnvironment, {
@@ -71,6 +81,9 @@ async function createOrchestrationSystem(environmentId?: EnvironmentId) {
         ),
       )
     : OrchestrationEngineLive;
+  const engineLayer = admission
+    ? environmentEngineLayer.pipe(Layer.provide(Layer.succeed(RemoteWorkerAdmission, admission)))
+    : environmentEngineLayer;
   const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "workjet-orchestration-engine-test-",
   });
@@ -2089,5 +2102,181 @@ describe("OrchestrationEngine", () => {
     ).rejects.toThrow("already exists");
 
     await system.dispose();
+  });
+});
+
+describe("remote worker native ownership", () => {
+  it("creates no surrogate supervisor and rejects a renderer-forged remote worker", async () => {
+    const target = EnvironmentId.make("target-gpu3");
+    let currentGrant = true;
+    const admission = {
+      admit: () =>
+        currentGrant
+          ? Effect.void
+          : Effect.fail(new RemoteWorkerDispatchError({ reason: "computer-unavailable" })),
+    };
+    const system = await createOrchestrationSystem(target, admission);
+    const projectId = ProjectId.make("source-project");
+    const workerId = ThreadId.make("00000000-0000-4000-8000-000000000001");
+    const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" };
+    const request: RemoteWorkerRequest = {
+      schemaVersion: 1,
+      requestId: workerId,
+      targetEnvironmentId: target,
+      computerId: WorkjetComputerId.make("computer-gpu3"),
+      parent: {
+        environmentId: EnvironmentId.make("source-desktop"),
+        threadId: ThreadId.make("real-source-supervisor"),
+      },
+      parentTeamRole: "supervisor",
+      parentCapabilityIds: ["greppy"],
+      enabledCapabilityIds: ["greppy"],
+      managedInstructions: "One PR",
+      project: {
+        id: projectId,
+        title: "Project",
+        repository: {
+          canonicalKey: "github:example/project",
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: "https://github.com/example/project.git",
+          },
+        },
+      },
+      revision: "a".repeat(40),
+      task: "Documentation",
+      title: "Documentation",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      createdAt: now(),
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    };
+    const worktreePath = "/target/owned-worker";
+    const create = {
+      type: "thread.create" as const,
+      commandId: CommandId.make("remote-forged-create"),
+      threadId: workerId,
+      projectId,
+      title: "Worker",
+      modelSelection,
+      runtimeMode: "full-access" as const,
+      interactionMode: "default" as const,
+      workjetConfig: {
+        ...DEFAULT_WORKJET_THREAD_CONFIG,
+        role: "worker" as const,
+        parent: request.parent,
+        enabledCapabilityIds: ["greppy" as const],
+        team: {
+          projectId,
+          threadId: workerId,
+          role: "worker" as const,
+          parentThreadId: request.parent.threadId,
+          packageId: workerId,
+          goal: "One PR",
+          createdAt: now(),
+        },
+      },
+      branch: `workjet/worker/${workerId}`,
+      worktreePath,
+      createdAt: now(),
+    };
+    try {
+      await system.run(
+        system.engine.dispatch(
+          {
+            type: "project.create",
+            commandId: CommandId.make("remote-mirror-project"),
+            projectId,
+            title: "Project",
+            workspaceRoot: "/target/mirror",
+            createdAt: now(),
+          },
+          { remoteProjectMirror: true },
+        ),
+      );
+      expect((await system.readModel()).threads).toEqual([]);
+      await expect(system.run(system.engine.dispatch(create))).rejects.toThrow();
+      const store = await system.run(
+        makeRemoteWorkerStore.pipe(Effect.provideService(SqlClient.SqlClient, system.sql)),
+      );
+      await system.run(store.put("inbound", request));
+      await system.run(store.recordWorktree(workerId, worktreePath));
+      await expect(
+        system.run(
+          system.engine.dispatch(
+            {
+              ...create,
+              commandId: CommandId.make("remote-wrong-path"),
+              worktreePath: "/target/foreign",
+            },
+            { remoteWorkerRequest: request },
+          ),
+        ),
+      ).rejects.toThrow();
+      await expect(
+        system.run(
+          system.engine.dispatch(
+            {
+              ...create,
+              commandId: CommandId.make("remote-capability-escalation"),
+              workjetConfig: {
+                ...create.workjetConfig,
+                enabledCapabilityIds: ["greppy", "web-search"],
+              },
+            },
+            { remoteWorkerRequest: request },
+          ),
+        ),
+      ).rejects.toThrow();
+      await system.run(
+        system.engine.dispatch(
+          { ...create, commandId: CommandId.make("remote-real-create") },
+          { remoteWorkerRequest: request },
+        ),
+      );
+      const threads = (await system.readModel()).threads;
+      expect(threads).toHaveLength(1);
+      expect(threads[0]?.id).toBe(workerId);
+      expect(threads[0]?.workjetConfig.parent).toEqual(request.parent);
+      currentGrant = false;
+      await expect(
+        system.run(
+          system.engine.dispatch({
+            type: "thread.turn.start",
+            commandId: CommandId.make("remote-revoked-start"),
+            threadId: workerId,
+            message: {
+              messageId: MessageId.make("remote-revoked-message"),
+              role: "user",
+              text: request.task,
+              attachments: [],
+            },
+            runtimeMode: request.runtimeMode,
+            interactionMode: request.interactionMode,
+            createdAt: now(),
+          }),
+        ),
+      ).rejects.toThrow("Current source-native remote worker admission denied.");
+      expect((await system.readModel()).threads[0]?.messages).toEqual([]);
+      await system.run(
+        store.complete("inbound", {
+          requestId: workerId,
+          outcome: { status: "failed", reason: "turn-start-failed" },
+        }),
+      );
+      await expect(
+        system.run(
+          system.engine.dispatch({
+            type: "thread.unarchive",
+            commandId: CommandId.make("remote-failed-revival"),
+            threadId: workerId,
+          }),
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await system.dispose();
+    }
   });
 });

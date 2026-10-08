@@ -71,6 +71,9 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { readWorkerSourceHarness } from "../../workjet/WorkerSourceHarness.ts";
+import { ServerEnvironment } from "../../environment/ServerEnvironment.ts";
+import * as Option from "effect/Option";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -1710,15 +1713,58 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           input.modelSelection?.instanceId === boundInstanceId
             ? input.modelSelection.model
             : undefined;
-        const sessionEnvironment = options?.resolveSessionEnvironment
-          ? yield* options.resolveSessionEnvironment({ model: selectedModel })
-          : options?.environment;
+        const workerSource = readWorkerSourceHarness(input.threadId);
+        if (input.workjetConfig?.role === "worker") {
+          const environment = yield* Effect.serviceOption(ServerEnvironment);
+          const localEnvironmentId = Option.isSome(environment)
+            ? yield* environment.value.getEnvironmentId
+            : undefined;
+          const foreign = input.workjetConfig.parent.environmentId !== localEnvironmentId;
+          if (
+            foreign &&
+            (!workerSource ||
+              workerSource.identity.sourceEnvironmentId !==
+                input.workjetConfig.parent.environmentId ||
+              workerSource.identity.targetEnvironmentId !== localEnvironmentId)
+          ) {
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue:
+                "Foreign worker source route is unavailable or mismatched; reconnect its source before restart.",
+            });
+          }
+        }
+        if (workerSource) {
+          yield* Effect.tryPromise({
+            try: () => workerSource.admit(),
+            catch: () =>
+              new ProviderAdapterValidationError({
+                provider: PROVIDER,
+                operation: "startSession",
+                issue: "Foreign worker source admission failed or expired.",
+              }),
+          });
+        }
+        const sessionEnvironment = workerSource
+          ? {
+              PATH: process.env.PATH,
+              HOME: process.env.HOME,
+              TMPDIR: process.env.TMPDIR,
+              LANG: process.env.LANG,
+              WORKJET_WORKER_SOURCE_KEY: workerSource.apiKey,
+            }
+          : options?.resolveSessionEnvironment
+            ? yield* options.resolveSessionEnvironment({ model: selectedModel })
+            : options?.environment;
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
-          launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, sessionEnvironment),
+          launchArgs: workerSource
+            ? ""
+            : resolveCodexLaunchArgs(codexConfig.launchArgs, sessionEnvironment),
           ...(sessionEnvironment ? { environment: sessionEnvironment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
@@ -1729,9 +1775,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { resumePolicy: "require-existing" as const }
             : {}),
           runtimeMode: input.runtimeMode,
-          ...(input.modelSelection?.instanceId === boundInstanceId
-            ? { model: input.modelSelection.model }
-            : {}),
+          ...(workerSource
+            ? { model: workerSource.model }
+            : input.modelSelection?.instanceId === boundInstanceId
+              ? { model: input.modelSelection.model }
+              : {}),
           ...(serviceTier ? { serviceTier } : {}),
           onProcessSpawn: (handle) => processes.push(trackedChildProcess(handle)),
           ...(mcpSession
@@ -1749,6 +1797,32 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   `mcp_servers.workjet.url=${mcpSession.endpoint}`,
                   "-c",
                   'mcp_servers.workjet.bearer_token_env_var="WORKJET_MCP_BEARER_TOKEN"',
+                ],
+              }
+            : {}),
+          ...(workerSource
+            ? {
+                appServerArgs: [
+                  ...(mcpSession
+                    ? [
+                        "-c",
+                        `mcp_servers.workjet.url=${mcpSession.endpoint}`,
+                        "-c",
+                        'mcp_servers.workjet.bearer_token_env_var="WORKJET_MCP_BEARER_TOKEN"',
+                      ]
+                    : []),
+                  "-c",
+                  "model_provider=workjet_worker_source",
+                  "-c",
+                  "model_providers.workjet_worker_source.name=WorkjetWorker",
+                  "-c",
+                  `model_providers.workjet_worker_source.base_url=${workerSource.baseUrl}`,
+                  "-c",
+                  "model_providers.workjet_worker_source.wire_api=responses",
+                  "-c",
+                  "model_providers.workjet_worker_source.env_key=WORKJET_WORKER_SOURCE_KEY",
+                  "-c",
+                  "model_providers.workjet_worker_source.requires_openai_auth=false",
                 ],
               }
             : {}),

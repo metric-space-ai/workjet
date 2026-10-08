@@ -110,10 +110,7 @@ const decodeResponse = Schema.decodeUnknownSync(WorkjetJourFixeOwnerResponse, {
 });
 
 /** Reject stale/cross-operation guest receipts before resolving a room action. */
-export function isWorkjetJourFixeReceiptForRequest(
-  request: unknown,
-  response: unknown,
-): boolean {
+export function isWorkjetJourFixeReceiptForRequest(request: unknown, response: unknown): boolean {
   if (
     typeof request !== "object" ||
     request === null ||

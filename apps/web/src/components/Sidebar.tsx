@@ -25,6 +25,7 @@ import {
   threadWokeAt,
 } from "@workjet/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
+import { selectThreadsForProjectScope } from "@workjet/client-runtime/state/worker-overview";
 import {
   scopeProjectRef,
   scopeThreadRef,
@@ -2284,12 +2285,7 @@ export default function Sidebar() {
     // memo exactly at the next wake boundary.
     void snoozeWakeTick;
     const preciseNow = new Date().toISOString();
-    const visible = threads.filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        (scopedProjectKeys === null ||
-          scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
-    );
+    const visible = selectThreadsForProjectScope(threads, scopedProjectKeys);
     const pinned: EnvironmentThreadShell[] = [];
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];

@@ -51,6 +51,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeDiscoveredLocalServers
   | typeof WS_METHODS.subscribeResourceTelemetry
   | typeof WS_METHODS.subscribeDesktopTelemetryControl
+  | typeof WS_METHODS.workjetWorkerRequests
   | typeof WS_METHODS.subscribeWorkjetMailboxAudit
   | typeof WS_METHODS.previewAutomationConnect
   | typeof WS_METHODS.subscribeVcsStatus

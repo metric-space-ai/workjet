@@ -10,6 +10,11 @@ The overview itself has no message composer. Its sidebar shows the same groups,
 counts and status dots; empty groups are hidden. A Parent is a specialist with
 its own goal. Use **+ Parent** to add one to this project.
 
+A worker running on another connected computer appears in its source project’s
+Workers group. Opening that row opens the worker’s real conversation on that
+computer. Archived workers leave the overview and sidebar while their history
+remains retained.
+
 The overview also shows the project's saved goal, phase, links and Jour fixe.
 Yellow status dots mean a session is running; rose dots mean an approval or
 answer is waiting for you. Failed sessions have a red error dot, and idle

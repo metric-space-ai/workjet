@@ -23,6 +23,10 @@
       "types": "./src/localForward.ts",
       "import": "./src/localForward.ts"
     },
+    "./reverseForward": {
+      "types": "./src/reverseForward.ts",
+      "import": "./src/reverseForward.ts"
+    },
     "./remoteNode": {
       "types": "./src/remoteNode.ts",
       "import": "./src/remoteNode.ts"

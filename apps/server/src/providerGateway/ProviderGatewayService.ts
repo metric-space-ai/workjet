@@ -60,7 +60,6 @@ import {
   type ProviderGatewayConfiguration,
 } from "./ProviderGatewayConfig.ts";
 import {
-
   decodeRuntimeConfigSummary,
   decodeRuntimeStatus,
   decodeAccountHealth,
@@ -1593,8 +1592,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const configuration = await loadConfiguration();
       const observedAtMs = Math.max(0, Math.trunc(platform.now()));
       let liveCatalog: unknown;
-      try { liveCatalog = await platform.publicModelCatalog?.(); }
-      catch { liveCatalog = undefined; }
+      try {
+        liveCatalog = await platform.publicModelCatalog?.();
+      } catch {
+        liveCatalog = undefined;
+      }
       const providers: Array<WorkjetGatewayProviderModels> = [];
       for (const provider of GATEWAY_PROVIDERS) {
         const accounts = configuration.accounts.filter(
@@ -1603,7 +1605,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         if (accounts.length === 0) continue;
         const liveModels = decodeLiveProviderModels(liveCatalog, provider, platform.now());
         const models: Array<WorkjetGatewayDiscoveredModel> = (liveModels ?? []).map((id) => ({
-          id, displayName: id, source: "gateway-catalog" as const,
+          id,
+          displayName: id,
+          source: "gateway-catalog" as const,
         }));
         const known = new Set(models.map((model) => model.id));
         for (const account of accounts) {
@@ -1614,7 +1618,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           }
         }
         providers.push({
-          provider, channel: null, catalogAvailable: liveModels !== undefined,
+          provider,
+          channel: null,
+          catalogAvailable: liveModels !== undefined,
           models: models.slice(0, 256),
         });
       }

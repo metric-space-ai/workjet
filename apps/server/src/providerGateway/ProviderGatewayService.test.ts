@@ -1457,35 +1457,65 @@ describe("ProviderGatewayService pools, health, and models", () => {
   it("does not recover compiled suggestions when the live catalog is unavailable", async () => {
     const harness = poolHarness();
     const discovery = await runPools(harness, (gateway) => gateway.discoverModels());
-    expect(discovery.providers.every(provider => !provider.catalogAvailable && provider.channel === null)).toBe(true);
-    expect(discovery.providers.flatMap(provider => provider.models).every(model => model.source === "account-configuration")).toBe(true);
-    expect(harness.routes.some(route => route.includes("model-definitions/"))).toBe(false);
+    expect(
+      discovery.providers.every(
+        (provider) => !provider.catalogAvailable && provider.channel === null,
+      ),
+    ).toBe(true);
+    expect(
+      discovery.providers
+        .flatMap((provider) => provider.models)
+        .every((model) => model.source === "account-configuration"),
+    ).toBe(true);
+    expect(harness.routes.some((route) => route.includes("model-definitions/"))).toBe(false);
   });
 
   it("discovers actual Kimi IDs from the fresh public catalog without reading compiled definitions", async () => {
     const harness = readyHarness();
     const configuration = JSON.stringify({
-      schemaVersion: 1, defaultProvider: "kimi",
-      accounts: [{ id: "kimi-observed", label: "Kimi", provider: "kimi", models: [],
-        apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi.key" } }],
-      pools: [], routes: [],
+      schemaVersion: 1,
+      defaultProvider: "kimi",
+      accounts: [
+        {
+          id: "kimi-observed",
+          label: "Kimi",
+          provider: "kimi",
+          models: [],
+          apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi.key" },
+        },
+      ],
+      pools: [],
+      routes: [],
     });
     const platform: ProviderGatewayPlatform = {
-      ...harness.platform, now: () => 1_000,
+      ...harness.platform,
+      now: () => 1_000,
       readText: async () => configuration,
       publicModelCatalog: async () => ({
-        schemaVersion: 1, checkedAt: new Date(1_000).toISOString(), expiresAt: new Date(61_000).toISOString(),
+        schemaVersion: 1,
+        checkedAt: "1970-01-01T00:00:01.000Z",
+        expiresAt: "1970-01-01T00:01:01.000Z",
         providers: [{ provider: "kimi", status: "observed", models: ["k3", "kimi-for-coding"] }],
       }),
     };
-    const discovery = await runGateway(platform, gateway => Effect.gen(function*() {
-      yield* gateway.start();
-      return yield* gateway.discoverModels();
-    }));
-    expect(discovery.providers).toEqual([{
-      provider: "kimi", channel: null, catalogAvailable: true,
-      models: ["k3", "kimi-for-coding"].map(id => ({ id, displayName: id, source: "gateway-catalog" })),
-    }]);
+    const discovery = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        return yield* gateway.discoverModels();
+      }),
+    );
+    expect(discovery.providers).toEqual([
+      {
+        provider: "kimi",
+        channel: null,
+        catalogAvailable: true,
+        models: ["k3", "kimi-for-coding"].map((id) => ({
+          id,
+          displayName: id,
+          source: "gateway-catalog",
+        })),
+      },
+    ]);
   });
 
   it("persists legacy strategy and membership edits while projecting the fixed host policy", async () => {

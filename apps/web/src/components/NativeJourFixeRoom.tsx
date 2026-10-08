@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectId, WorkjetJourFixeReadResponse } from "@workjet/contracts";
 import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
-import { JourFixeRoom } from "./JourFixeRoom";
+import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
+import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { Button } from "./ui/button";
 
 export function NativeJourFixeRoom(props: {
@@ -10,6 +11,7 @@ export function NativeJourFixeRoom(props: {
   readonly projectId: ProjectId;
   readonly projectTitle: string;
   readonly onBack: () => void;
+  readonly speechProvider?: JourFixeSpeechProvider | undefined;
 }) {
   return <NativeJourFixeRoomContent key={`${props.instanceId}:${props.projectId}`} {...props} />;
 }
@@ -18,6 +20,7 @@ function NativeJourFixeRoomContent({
   projectId,
   projectTitle,
   onBack,
+  speechProvider,
 }: Parameters<typeof NativeJourFixeRoom>[0]) {
   const active = useRef(false);
   const recovery = useRef<{ resolve: () => void; reject: (error: Error) => void } | null>(null);
@@ -137,7 +140,9 @@ function NativeJourFixeRoomContent({
           )}
         </div>
       )}
-      <JourFixeRoom
+      <JourFixeSpeechRoom
+        instanceId={instanceId}
+        speechProvider={speechProvider}
         projectTitle={projectTitle}
         meeting={meeting}
         onBack={onBack}

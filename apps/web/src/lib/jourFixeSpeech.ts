@@ -16,6 +16,8 @@ export interface JourFixeSpeechProvider {
     readonly onPartial: (partial: JourFixePartialTranscript) => void;
     /** Called only after the final transcript has a verified native meeting receipt. */
     readonly onCommitted: () => void;
+    /** A bounded utterance may end automatically after trailing silence. */
+    readonly onStopped?: () => void;
     readonly onError: (error: Error) => void;
   }): Promise<{ readonly stop: () => Promise<void> }>;
   /** Resolve authorized narration for this exact slide/deck; never return a file URL. */
@@ -95,6 +97,16 @@ export class JourFixeSpeechSession {
             this.events.onPartial(undefined);
             this.events.onCommitted();
           }
+        },
+        onStopped: () => {
+          if (!current()) return;
+          if (this.listening === controller) {
+            this.listening = undefined;
+            this.stopListening = undefined;
+          }
+          controller.abort();
+          this.events.onMicrophone(false);
+          this.events.onPartial(undefined);
         },
         onError: (error) => {
           if (!current()) return;

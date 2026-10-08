@@ -2545,6 +2545,63 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect(
+    "rejects a stale or foreign Jour fixe mutation before resolving the room action",
+    () => {
+      const harness = makeGuestHarness();
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        yield* manager.enterBusinessOsMode;
+        yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
+        const request = {
+          action: "project.jour_fixe.meeting.start" as const,
+          commandId: CommandId.make("start-meeting"),
+          projectId: ProjectId.make("project-one"),
+          operationId: "start-operation",
+          meetingId: "meeting-one",
+          expectedRevision: 4,
+        };
+        const response = {
+          action: request.action,
+          commandId: request.commandId,
+          projectId: request.projectId,
+          contract: "ctox.workjet.jour_fixe.v1" as const,
+          mutation: {
+            operation_id: request.operationId,
+            meeting_id: request.meetingId,
+            project_id: request.projectId,
+            revision: 5,
+            state: "live" as const,
+          },
+        };
+        for (const change of [
+          { operation_id: "foreign-operation" },
+          { meeting_id: "foreign-meeting" },
+          { project_id: "foreign-project" },
+          { revision: 4 },
+          { state: "confirmed" },
+        ]) {
+          harness.views[0]?.executeJavaScript.mockResolvedValue({
+            status: "completed",
+            result: { ...response, mutation: { ...response.mutation, ...change } },
+          });
+          assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+            _tag: "failed",
+            code: "guest_failed",
+          });
+        }
+        harness.views[0]?.executeJavaScript.mockResolvedValue({
+          status: "completed",
+          result: response,
+        });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+          _tag: "completed",
+          response,
+        });
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
   it.effect("correlates native private chat creation before returning its ID", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {

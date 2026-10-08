@@ -51,6 +51,31 @@ const config: WorkjetThreadConfig = {
 const saveConfig = async () => ({ _tag: "Success" });
 
 describe("native supervisor receipt display", () => {
+  it("shows a pending receipt without asking for Owner confirmation", () => {
+    const pendingConfig: WorkjetThreadConfig = {
+      ...config,
+      schemaVersion: 2,
+      ctoxSupervisorTurn: {
+        ...config.ctoxSupervisorTurn!,
+        submission: "awaiting-receipt",
+        turn: null,
+      },
+    };
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={scope}
+        config={pendingConfig}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain("Waiting for CTOX receipt");
+    expect(html).not.toContain("Awaiting confirmation");
+    expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
+    expect(html).toContain("Refresh task");
+  });
   it("shows received native result and attempt without local provider controls", () => {
     const html = renderToStaticMarkup(
       <NativeSupervisorComposer

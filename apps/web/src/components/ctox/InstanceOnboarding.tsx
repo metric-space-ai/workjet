@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
-import { RefreshCwIcon, SettingsIcon } from "lucide-react";
-import { ActiveCtoxInstanceSelector } from "../ActiveCtoxInstanceSelector";
+import { RefreshCwIcon } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CtoxDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { openInstanceSetup } from "../../instanceSetup";
@@ -144,19 +143,6 @@ export function InstanceOnboarding({
     mode.discovery !== "loading" && mode.discovery._tag === "ready" ? mode.discovery.instances : [];
   return (
     <div className="network-home">
-      <header className="network-home-bar" style={isElectron ? { paddingLeft: 100 } : undefined}>
-        <h1>Workjet</h1>
-        <ActiveCtoxInstanceSelector />
-        <Button
-          className="ml-auto"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Einstellungen"
-          render={<Link to="/settings/business-os" />}
-        >
-          <SettingsIcon size={17} />
-        </Button>
-      </header>
       <InstanceOnboardingView
         state={state}
         instances={instances}

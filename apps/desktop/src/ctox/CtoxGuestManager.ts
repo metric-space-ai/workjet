@@ -20,6 +20,7 @@ import {
   CtoxWorkjetProjectControlResponse,
   CtoxWorkjetComputerControlResponse,
   isWorkjetSupervisorReceiptForRequest,
+  isWorkjetJourFixeReceiptForRequest,
   CtoxWorkjetSessionControlResponse,
   WorkjetDeviceWebRtcResponseV1,
 } from "@workjet/contracts";
@@ -1918,6 +1919,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "unsupported" };
         }
         if (!isWorkjetSupervisorReceiptForRequest(request, decoded.value)) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        if (!isWorkjetJourFixeReceiptForRequest(request, decoded.value)) {
           return { _tag: "failed", code: "guest_failed" };
         }
         if (

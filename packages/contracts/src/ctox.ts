@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as Schema from "effect/Schema";
+import { WorkjetJourFixeOwnerRequests, WorkjetJourFixeOwnerResponse } from "./workjetJourFixeOwner.ts";
+export { isWorkjetJourFixeReceiptForRequest } from "./workjetJourFixeOwner.ts";
 
 import {
   CommandId,
@@ -567,6 +569,7 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
+  ...WorkjetJourFixeOwnerRequests,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,
@@ -679,6 +682,7 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 );
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
+  WorkjetJourFixeOwnerResponse,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,

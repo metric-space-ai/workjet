@@ -91,6 +91,22 @@ describe("project worker activity", () => {
   });
 });
 
+describe("project Jour fixe entry", () => {
+  it("offers joining from the overview even when no recurring time is configured", () => {
+    const html = renderToStaticMarkup(
+      <ProjectWorkspace
+        project={project}
+        threads={[shell(source, "supervisor")]}
+        onOpenChat={() => {}}
+        onOpenJourFixe={() => {}}
+        onAddParent={async () => true}
+      />,
+    );
+    expect(html).toContain("Join Jour fixe");
+    expect(html).toContain("No recurring time is set yet.");
+  });
+});
+
 describe("source project remote workers", () => {
   it("renders the target computer worker in the source project's Workers group", () => {
     const html = markup([shell(source, "supervisor"), shell(target, "worker")]);

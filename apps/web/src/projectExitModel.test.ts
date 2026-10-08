@@ -3,6 +3,8 @@ import { CommandId, ProjectId } from "@workjet/contracts";
 import {
   exitModelPresentation,
   exitSourceUrl,
+  exitModelChange,
+  formatExitChange,
   formatExitEur,
   formatExitMissingInput,
   formatExitFinding,
@@ -19,6 +21,45 @@ const request = {
 const receipt = { ...request, assessment: exitModelFixture };
 
 describe("project exit assessment", () => {
+  it("compares with the previous calculated amount, excluding the current and unfinished runs", () => {
+    const previous = {
+      run_id: "previous-run",
+      as_of: "2026-09-08",
+      exit_date: "2031-09-08",
+      status: "provisional" as const,
+      result: { ...exitModelFixture.result!, expected_exit_equity_eur: 400_000 },
+      missing_inputs: [],
+    };
+    const assessment = {
+      ...exitModelFixture,
+      history: [
+        { ...previous, run_id: exitModelFixture.run_id!, result: exitModelFixture.result },
+        { ...previous, run_id: "research-run", status: "researching" as const, result: null },
+        previous,
+      ],
+    };
+    expect(exitModelChange(assessment)).toEqual({ percent: 100, asOf: "2026-09-08" });
+    expect(formatExitChange(100)).toBe("+100%");
+    expect(formatExitChange(-52.981)).toBe("-53%");
+    expect(exitModelChange({ ...assessment, result: null })).toBeNull();
+    expect(exitModelChange({ ...assessment, history: [] })).toBeNull();
+    expect(
+      exitModelChange({
+        ...assessment,
+        history: [{ ...previous, result: { ...previous.result, expected_exit_equity_eur: 0 } }],
+      }),
+    ).toBeNull();
+    expect(
+      exitModelChange({ ...assessment, history: [{ ...previous, as_of: "2026-11-08" }] }),
+    ).toBeNull();
+    expect(
+      exitModelChange({
+        ...assessment,
+        result: { ...exitModelFixture.result!, expected_exit_equity_eur: 0 },
+      })?.percent,
+    ).toBe(-100);
+  });
+
   it("routes the typed native request only through its selected instance", async () => {
     const port = vi
       .fn<WorkjetProjectControlPort>()
@@ -51,8 +92,7 @@ describe("project exit assessment", () => {
       .mockResolvedValue({ _tag: "failed", code: "unsupported" });
     expect(await requestProjectExitModel("managed:selected", request, port)).toEqual({
       _tag: "failed",
-      message:
-        "The native exit assessment service is unavailable. Update or reconnect this instance.",
+      message: "The exit assessment service is unavailable. Update or reconnect this instance.",
     });
     expect(exitModelPresentation(null, "project-one").value).toBe("—");
   });

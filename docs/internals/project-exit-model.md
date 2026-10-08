@@ -5,6 +5,11 @@ card and project overview. The existing three prompted KPI slots remain
 independent. The gallery opens the assessment directly, including for projects
 whose chat history has not been imported.
 
+This integration targets the shared web renderer and Electron project overview.
+The separate React Native project route currently goes directly to its supervisor
+chat and has no equivalent overview card. It does not gain a valuation screen in
+this change; the native authority and shared wire contracts remain reusable there.
+
 ## Meaning and authority
 
 E5 is the expected nominal EUR sale proceeds for 100% equity at 60 calendar
@@ -59,6 +64,13 @@ game/IP operating models remain explicit gaps. Computed results remain provision
 because v1 has no independent evidence or calibration review adapter. Evidence
 references are pointers, not proof that their contents have been independently
 verified.
+
+PR #204's guarded percentage change is integrated into the summary and report.
+It uses the nearest earlier calculated history entry (authority order is newest
+first), excludes the current run, and requires a positive baseline and a dated
+current result. It is labelled a previous calculated assessment: v1 history has
+no regular-Jour-fixe marker. This does not claim the automatic closing integration
+proposed in the earlier adaptation concept.
 
 ## Verification and delivery
 

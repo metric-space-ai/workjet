@@ -6,6 +6,7 @@ import {
   exitModelPresentation,
   exitSourceUrl,
   formatExitDate,
+  formatExitChange,
   formatExitEur,
   formatExitFinding,
   formatExitMissingInput,
@@ -35,7 +36,9 @@ export function ProjectExitModelSummary({
       data-workjet-exit-model-status={view.status}
     >
       <span className="min-w-0">
-        <span className="block text-[11px] text-muted-foreground">Exit in 5 years</span>
+        <span className="block text-[11px] text-muted-foreground">
+          Essential KPI · Exit in 5 years
+        </span>
         <span className="mt-0.5 block break-words text-xl font-semibold tracking-tight tabular-nums">
           {view.value}
         </span>
@@ -43,6 +46,11 @@ export function ProjectExitModelSummary({
           {view.label}
           {view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : ""}
         </span>
+        {view.change && (
+          <span className="mt-1 block text-[11px] text-muted-foreground">
+            {formatExitChange(view.change.percent)} since previous calculated assessment
+          </span>
+        )}
       </span>
       <ArrowUpRightIcon
         className="mt-1 size-3.5 shrink-0 text-muted-foreground"
@@ -149,7 +157,7 @@ export function ProjectExitModelReport({
     >
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-medium">Exit in 5 years</h2>
+          <h2 className="text-sm font-medium">Essential KPI · Exit in 5 years</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Expected sale proceeds · 100% equity · nominal EUR
           </p>
@@ -275,6 +283,12 @@ export function ProjectExitModelReport({
             {pending === "read" && current === null ? "Loading assessment…" : view.label}
             {current?.as_of ? " · assessed " + formatExitDate(current.as_of) : ""}
           </p>
+          {view.change && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatExitChange(view.change.percent)} since the calculated assessment on{" "}
+              {formatExitDate(view.change.asOf)}
+            </p>
+          )}
         </div>
         {result && (
           <dl className="flex flex-wrap gap-x-6 gap-y-3">

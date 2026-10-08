@@ -33,7 +33,7 @@ export async function requestProjectExitModel(
       return {
         _tag: "failed",
         message: unavailable
-          ? "The native exit assessment service is unavailable. Update or reconnect this instance."
+          ? "The exit assessment service is unavailable. Update or reconnect this instance."
           : "The assessment could not be loaded. Reconnect this instance and try again.",
       };
     }
@@ -128,6 +128,7 @@ export function exitModelPresentation(
       value: "—",
       stale: false,
       assessment: null,
+      change: null,
     };
   if (!isAssessment(assessment) || assessment.project_id !== projectId)
     return {
@@ -136,6 +137,7 @@ export function exitModelPresentation(
       value: "—",
       stale: false,
       assessment: null,
+      change: null,
     };
   const result = assessment.result;
   const stale =
@@ -148,7 +150,40 @@ export function exitModelPresentation(
     value: result === null ? "—" : formatExitEur(result.expected_exit_equity_eur),
     stale,
     assessment,
+    change: exitModelChange(assessment),
   };
+}
+
+/** Carries PR #204's guarded comparison into the persisted assessment history. */
+export function exitModelChange(assessment: WorkjetExitModelAssessment) {
+  const current = assessment.result?.expected_exit_equity_eur;
+  if (current == null || !Number.isFinite(current) || current < 0) return null;
+  // The authority returns newest first, including the current run. Pending or
+  // incomplete runs have no calculated baseline; never relabel them as a value.
+  const previous = assessment.history.find(
+    (run) => run.run_id !== assessment.run_id && run.result !== null,
+  );
+  const amount = previous?.result?.expected_exit_equity_eur;
+  if (
+    !previous ||
+    amount == null ||
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    !assessment.as_of ||
+    previous.as_of > assessment.as_of
+  )
+    return null;
+  const percent = ((current - amount) / amount) * 100;
+  return Number.isFinite(percent) ? { percent, asOf: previous.as_of } : null;
+}
+
+export function formatExitChange(percent: number): string {
+  return (
+    new Intl.NumberFormat("en-GB", {
+      signDisplay: "exceptZero",
+      maximumFractionDigits: 1,
+    }).format(percent) + "%"
+  );
 }
 
 /** Display precision follows the forecast scale; stored calculations retain full precision. */

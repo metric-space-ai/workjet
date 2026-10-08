@@ -1,5 +1,11 @@
 import { z, type ZodIssue } from "zod";
 import { canvasSceneSchema } from "./excalidraw/canvas-schema";
+import { scene3dDataIssue } from "./scene-data";
+import { scene3dSceneIdValues } from "./scenes/scene-ids";
+export { isModellSceneId, modellSceneIdValues, scene3dSceneIdValues } from "./scenes/scene-ids";
+export type { ModellSceneId, Scene3DSceneId } from "./scenes/scene-ids";
+export { BUSINESS_SCENE_DATA_MAX_BYTES, businessSceneDataSchemas, businessSceneIdValues, isBusinessSceneId } from "./scenes/business-data";
+export type { BusinessSceneData, BusinessSceneId, KpiBarsData, TrendData } from "./scenes/business-data";
 export { canvasSceneSchema, canvasElementSchema, canvasEmbedSchema } from "./excalidraw/canvas-schema";
 export type { CanvasScene, CanvasElement, CanvasEmbed } from "./excalidraw/canvas-schema";
 
@@ -59,16 +65,6 @@ export const slideBlockTypeValues = [
   "quizAnchor",
   "spacer",
   "scene3d"
-] as const;
-export const scene3dSceneIdValues = [
-  "modell.morph",
-  "modell.miniature",
-  "modell.law",
-  "modell.limits",
-  "modell.runtime",
-  "modell.learning",
-  "modell.language",
-  "modell.transfer"
 ] as const;
 export const slideAssetKindValues = [
   "text",
@@ -305,6 +301,8 @@ const spacerBlockSchema = blockBaseSchema
 
 // Interaktive 3D-Szene aus der engine-eigenen Szenenbibliothek. Der Block traegt
 // nur eine Szenen-ID und Texte; ausfuehrbarer Code kommt nie aus dem Dokument.
+// Workjet fork delta: business scenes carry bounded `data`; the per-scene rule
+// (required for business ids, absent for modell ids) is a semantic check below.
 const scene3dBlockSchema = blockBaseSchema
   .extend({
     type: z.literal("scene3d"),
@@ -314,7 +312,8 @@ const scene3dBlockSchema = blockBaseSchema
     accent: z
       .string()
       .regex(/^#[0-9a-fA-F]{6}$/, "Use a six-digit hex color such as #8fcfc2.")
-      .optional()
+      .optional(),
+    data: z.unknown().optional()
   })
   .strict();
 
@@ -405,7 +404,6 @@ export type SlideThemeId = (typeof slideThemeIdValues)[number];
 export type SlideLayoutId = (typeof slideLayoutIdValues)[number];
 export type SlideIntent = (typeof slideIntentValues)[number];
 export type SlideBlockType = (typeof slideBlockTypeValues)[number];
-export type Scene3DSceneId = (typeof scene3dSceneIdValues)[number];
 export type SlideAssetKind = (typeof slideAssetKindValues)[number];
 export type SourceReferenceType = (typeof sourceReferenceTypeValues)[number];
 export type QuestionLevel = (typeof questionLevelValues)[number];
@@ -649,6 +647,8 @@ function validateSlideNodeSemantics(
     validateBlockSemantics(block, slide, slideIndex, blockIndex, assetIds, issues);
   });
 
+  validateCanvasEmbedSemantics(slide, slideIndex, issues);
+
   slide.quizAnchors?.forEach((anchor, anchorIndex) => {
     if (quizAnchorIds.has(anchor.id)) {
       issues.push(makeIssue({
@@ -848,6 +848,36 @@ function validateBlockSemantics(
     validateComparisonSide(block.left, "left", slide, slideIndex, blockIndex, block.id, issues);
     validateComparisonSide(block.right, "right", slide, slideIndex, blockIndex, block.id, issues);
   }
+
+  if (block.type === "scene3d") {
+    const problem = scene3dDataIssue(block.sceneId, block.data);
+    if (problem) {
+      issues.push(makeIssue({
+        ...problem,
+        pathSegments: ["slides", slideIndex, "blocks", blockIndex, "data"],
+        slideId: slide.id,
+        blockId: block.id
+      }));
+    }
+  }
+}
+
+// Workjet fork delta: canvas scene3d embeds follow the same data rule as scene3d blocks.
+function validateCanvasEmbedSemantics(slide: SlideNode, slideIndex: number, issues: SlideDocumentValidationIssue[]) {
+  slide.canvas?.elements.forEach((element, elementIndex) => {
+    const embed = element.customData?.learnordie;
+    if (element.isDeleted || embed?.type !== "scene3d") return;
+    const problem = scene3dDataIssue(embed.sceneId, embed.data);
+    if (!problem) return;
+    const sourceBlockId = element.customData?.sourceBlockId;
+    issues.push(makeIssue({
+      ...problem,
+      message: `Canvas element "${element.id}": ${problem.message}`,
+      pathSegments: ["slides", slideIndex, "canvas", "elements", elementIndex, "customData", "learnordie", "data"],
+      slideId: slide.id,
+      ...(sourceBlockId ? { blockId: sourceBlockId } : {})
+    }));
+  });
 }
 
 function validateComparisonSide(
@@ -869,6 +899,27 @@ function validateComparisonSide(
       repairHint: "Add either body text or list items to both sides of the comparison."
     }));
   }
+}
+
+/**
+ * Workjet fork delta: repair issues for a zod failure outside the document schema, such as
+ * a canvas scene parsed on its own. `pathPrefix` locates the parsed value in the document.
+ */
+export function repairIssuesFromZodIssues(
+  zodIssues: readonly ZodIssue[],
+  options: { code?: string; pathPrefix?: Array<string | number>; slideId?: string } = {}
+): SlideDocumentValidationIssue[] {
+  return zodIssues.map((zodIssue) => {
+    const issue = zodIssueToRepairIssue(zodIssue);
+    const pathSegments = [...(options.pathPrefix ?? []), ...issue.pathSegments];
+    return {
+      ...issue,
+      code: options.code ?? issue.code,
+      path: pathToString(pathSegments),
+      pathSegments,
+      ...(options.slideId ? { slideId: options.slideId } : {})
+    };
+  });
 }
 
 function zodIssueToRepairIssue(issue: ZodIssue): SlideDocumentValidationIssue {

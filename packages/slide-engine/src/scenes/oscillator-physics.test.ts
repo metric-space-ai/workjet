@@ -1,11 +1,11 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import { test } from "vite-plus/test";
 import * as T from "three";
 import { advanceOscillator, oscillatorQuantities, wireDiameterRatio, hangingSpringEnergy, GRAVITY } from "./oscillator-physics";
 import { createModellSceneState, trainModellStep, modellLoss, modellLanguageContexts } from "./modell-state";
 import { createModellSceneFactories } from "./modell-factories";
 
-const close = (a: number, b: number, tolerance = 1e-9) => assert.ok(Math.abs(a-b) < tolerance, `${a} != ${b}`);
+const close = (a: number, b: number, tolerance = 1e-9) => NodeAssert.ok(Math.abs(a-b) < tolerance, `${a} != ${b}`);
 
 test("softer hanging spring has greater static sag and a longer period", () => {
   const s = { x: 0, v: 0, time: 0 };
@@ -22,7 +22,7 @@ test("softer hanging spring has greater static sag and a longer period", () => {
 test("stiffness change preserves position/velocity, with correct adjustment work", () => {
   const before = advanceOscillator({ x: GRAVITY / 4 + .65, v: 0, time: 0 }, 4, .71);
   for (const k of [1, 2.5, 9]) {
-    assert.deepEqual(advanceOscillator(before, k, 0), before);
+    NodeAssert.deepEqual(advanceOscillator(before, k, 0), before);
     close(oscillatorQuantities(before, k).energy - oscillatorQuantities(before, 4).energy, .5*(k-4)*before.x**2);
     const dt = 1e-6, after = advanceOscillator(before, k, dt);
     close((after.x-before.x)/dt, before.v, 1e-4);
@@ -59,13 +59,13 @@ test("law mesh, trace and theme reconstruction share one persistent state", () =
   const before={...state.oscillator}; const history=structuredClone(state.oscillatorTrace);
   const y=root.getObjectByName("law-mass")!.position.y;
   state.stiffness=9;instance.update(.5,0);
-  assert.deepEqual(state.oscillator,before);assert.deepEqual(state.oscillatorTrace,history);
+  NodeAssert.deepEqual(state.oscillator,before);NodeAssert.deepEqual(state.oscillatorTrace,history);
   close(root.getObjectByName("law-mass")!.position.y,y);
   const replacement=new T.Group();
   createModellSceneFactories(T).law(replacement,(_a,text)=>({textContent:text} as HTMLElement),state).update(.5,0);
   close(replacement.getObjectByName("law-mass")!.position.y,y);
   close(root.userData.physics.x,state.oscillator.x);
-  assert.equal(root.getObjectByName("law-time-trace")!.type,"Line");
+  NodeAssert.equal(root.getObjectByName("law-time-trace")!.type,"Line");
   state.oscillatorTrace.push({x:25,time:state.oscillator.time});
   instance.update(.5,0);
   close(root.getObjectByName("law-mass")!.position.y,y);
@@ -74,14 +74,14 @@ test("law mesh, trace and theme reconstruction share one persistent state", () =
 test("three physical energies share one scale and conserve their sum", () => {
   const bottom=hangingSpringEnergy(0),top=hangingSpringEnergy(Math.PI/2);
   close(bottom.kinetic,0);close(bottom.gravitational,0);
-  close(top.kinetic,0);assert.ok(top.gravitational>0);
-  assert.ok(bottom.elastic>top.elastic); // Unlike the old cos² 'spring energy'.
+  close(top.kinetic,0);NodeAssert.ok(top.gravitational>0);
+  NodeAssert.ok(bottom.elastic>top.elastic); // Unlike the old cos² 'spring energy'.
   for(let i=0;i<1000;i++){
     const q=hangingSpringEnergy(i*.017);
     close(q.kinetic+q.elastic+q.gravitational,q.totalAtStart);
     close(q.elastic,.5*q.k*q.x**2);
     close(q.gravitational,q.mass*GRAVITY*(bottom.x-q.x));
-    assert.ok(q.kinetic>=0&&q.elastic>=0&&q.gravitational>=-1e-12);
+    NodeAssert.ok(q.kinetic>=0&&q.elastic>=0&&q.gravitational>=-1e-12);
   }
 });
 
@@ -91,19 +91,19 @@ test("force vanishes at equilibrium; all three rendered energy bars use physical
     instance.update(i*Math.PI/24,0);
     const q=root.userData.physics;
     close(q.kinetic+q.elastic+q.gravitational,q.totalAtStart);
-    assert.ok(q.force*q.displacement<=1e-12);
+    NodeAssert.ok(q.force*q.displacement<=1e-12);
     for(const key of ["kinetic","elastic","gravitational"]){
       close(root.getObjectByName(`energy-${key}`)!.scale.y,2.4*q[key]/q.totalAtStart);
     }
   }
   instance.update(Math.PI/4,0);
-  assert.equal(root.children.find(o=>o.type==="ArrowHelper")!.visible,false);
+  NodeAssert.equal(root.children.find(o=>o.type==="ArrowHelper")!.visible,false);
 });
 
 test("pausing and rebuilding actuator never teleports its actual angle to the target", () => {
   const {root,state,instance}=scene("runtime");
   instance.update(.1,.1); const angle=state.servoAngle;
-  assert.ok(angle>0&&angle<state.outputAngle);
+  NodeAssert.ok(angle>0&&angle<state.outputAngle);
   state.outputAngle=-60;instance.update(.1,0);close(state.servoAngle,angle);
   state.executing=false;instance.update(2,1.9);close(state.servoAngle,angle);
   createModellSceneFactories(T).runtime(root,(_a,text)=>({textContent:text} as HTMLElement),state).update(2,0);
@@ -113,9 +113,9 @@ test("pausing and rebuilding actuator never teleports its actual angle to the ta
 test("learning really reduces error and zero time never consumes queued steps", () => {
   const state=createModellSceneState(true), before=modellLoss(state);
   state.trainingRunning=true;state.accumulator=3;
-  trainModellStep(state,0);assert.equal(state.steps,0);
+  trainModellStep(state,0);NodeAssert.equal(state.steps,0);
   for(let i=0;i<200;i++)trainModellStep(state,.05);
-  assert.equal(state.steps,600);assert.equal(state.trainingRunning,false);
-  assert.ok(modellLoss(state)<before/100);
+  NodeAssert.equal(state.steps,600);NodeAssert.equal(state.trainingRunning,false);
+  NodeAssert.ok(modellLoss(state)<before/100);
   for(const context of modellLanguageContexts)close(context.candidates.reduce((s,[,p])=>s+Number(p),0),100);
 });

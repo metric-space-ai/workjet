@@ -1,6 +1,7 @@
 import type { SlideAssetRef, SlideBlock, SlideDocument, SlideNode } from "./schema";
 import { createModellSceneState, modellFallbackDataUri, modellSceneAccents } from "./scenes/modell-state";
-import { scene3dSceneKey } from "./scenes/scene-ids";
+import { businessSceneSnapshotDataUri } from "./scene-data";
+import { isModellSceneId, scene3dSceneKey } from "./scenes/scene-ids";
 import { renderStandaloneCanvas, standaloneCanvasScript, STANDALONE_CANVAS_CSP } from "./standalone-canvas";
 
 export const SLIDE_STANDALONE_RENDERER_VERSION = "learnordie-slide-standalone-v2" as const;
@@ -381,6 +382,11 @@ function renderBlock(
 // Der Export bleibt ohne WebGL-Laufzeit: die Szene erscheint als 2D-Ersatzansicht
 // der Vorlage, der interaktive Teil lebt in der App.
 function renderScene3DBlock(block: Extract<SlideBlock, { type: "scene3d" }>, dataAttrs: string) {
+  // Workjet fork delta: business scenes have no modell fallback; export their data as text.
+  if (!isModellSceneId(block.sceneId)) {
+    const snapshot = businessSceneSnapshotDataUri(block.sceneId, block.data, block.caption ?? block.altText);
+    return `<figure class="slide-doc-block figure-block scene3d-block" ${dataAttrs} data-scene-id="${escapeAttribute(block.sceneId)}"><img src="${escapeAttribute(snapshot)}" alt="${escapeAttribute(block.altText)}"><figcaption>${escapeHtml(block.caption ?? block.altText)}</figcaption></figure>`;
+  }
   const key = scene3dSceneKey(block.sceneId);
   const accent = block.accent ?? modellSceneAccents[key];
   const src = modellFallbackDataUri(key, createModellSceneState(false), accent, block.altText);

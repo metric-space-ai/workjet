@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { scene3dSceneIdValues } from "../scenes/scene-ids";
 
 export const CANVAS_VERSION = "learnordie.excalidraw.v1" as const;
 export const CANVAS_WIDTH = 1600;
@@ -10,11 +11,10 @@ const color = z.string().max(40).regex(/^(?:#[\da-fA-F]{3,8}|transparent|[a-zA-Z
 // HTML is data, never executable application code. The renderer MUST isolate it
 // in an iframe sandbox without allow-scripts or allow-same-origin. Runtime must
 // sanitize HTML/CSS and deny network/navigation; schema validation is NOT an HTML sanitizer.
+// Workjet fork delta: scene ids come from the canonical list in scenes/scene-ids.ts, and
+// `data` carries business scene data (rule enforced with the document, see scene-data.ts).
 export const canvasEmbedSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("scene3d"), sceneId: z.enum([
-    "modell.morph", "modell.miniature", "modell.law", "modell.limits",
-    "modell.runtime", "modell.learning", "modell.language", "modell.transfer"
-  ]), caption: z.string().max(1000).optional(), accent: z.string().regex(/^#[\da-fA-F]{6}$/).optional() }).strict(),
+  z.object({ type: z.literal("scene3d"), sceneId: z.enum(scene3dSceneIdValues), caption: z.string().max(1000).optional(), accent: z.string().regex(/^#[\da-fA-F]{6}$/).optional(), data: z.unknown().optional() }).strict(),
   z.object({ type: z.literal("html"), html: z.string().max(65536), title: z.string().min(1).max(240) }).strict()
 ]);
 export type CanvasEmbed = z.infer<typeof canvasEmbedSchema>;

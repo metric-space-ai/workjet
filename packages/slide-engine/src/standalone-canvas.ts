@@ -1,6 +1,7 @@
 import { canvasSceneSchema, type CanvasScene } from "./excalidraw/canvas-schema";
 import { createModellSceneState, modellFallbackDataUri, modellSceneAccents } from "./scenes/modell-state";
-import { scene3dSceneKey } from "./scenes/scene-ids";
+import { businessSceneSnapshotDataUri, businessSceneSummary } from "./scene-data";
+import { isModellSceneId, scene3dSceneKey } from "./scenes/scene-ids";
 
 const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 const json = (value: unknown) => JSON.stringify(value).replaceAll("<", "\\u003c").replaceAll(">", "\\u003e").replaceAll("&", "\\u0026").replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029");
@@ -14,6 +15,11 @@ export function renderStandaloneCanvas(input: CanvasScene, runtimeAvailable: boo
   for (const element of active) {
     const embed = element.customData?.learnordie;
     if (embed?.type !== "scene3d") continue;
+    // Workjet fork delta: business scenes get a static data snapshot instead of a modell fallback.
+    if (!isModellSceneId(embed.sceneId)) {
+      snapshots[element.id] = businessSceneSnapshotDataUri(embed.sceneId, embed.data, embed.caption ?? embed.sceneId);
+      continue;
+    }
     const key = scene3dSceneKey(embed.sceneId);
     snapshots[element.id] = modellFallbackDataUri(key, createModellSceneState(false), embed.accent ?? modellSceneAccents[key], embed.caption ?? embed.sceneId);
   }
@@ -26,7 +32,7 @@ export function renderStandaloneCanvas(input: CanvasScene, runtimeAvailable: boo
     <p class="caption">Native Canvas-Fassung · ${active.length} Elemente. HTML/CSS bleibt isoliert; 3D ist eine statische Ersatzansicht, nicht interaktiv. Serverfunktionen sind offline nicht verfügbar.</p>
     <details data-native-export-accessible><summary>Canvas-Text und Exporthinweise</summary>${text.map((value) => `<p style="white-space:pre-wrap">${escape(value)}</p>`).join("")}${embeds.map((element) => {
       const embed = element.customData!.learnordie!;
-      return embed.type === "html" ? `<details><summary>HTML/CSS: ${escape(embed.title)}</summary><pre>${escape(embed.html)}</pre></details>` : `<p>Statische 3D-Ansicht: ${escape(embed.caption ?? embed.sceneId)}</p>`;
+      return embed.type === "html" ? `<details><summary>HTML/CSS: ${escape(embed.title)}</summary><pre>${escape(embed.html)}</pre></details>` : `<p>Statische 3D-Ansicht: ${escape(embed.caption ?? embed.sceneId)}</p>${embed.data === undefined ? "" : `<p>${escape(businessSceneSummary(embed.sceneId, embed.data) ?? "")}</p>`}`;
     }).join("")}<p>Originale Canvas-Geometrie, Bilddaten und eingebettete Inhalte bleiben in den Exportdaten erhalten. Für nicht mitgelieferte Schriftzeichen verwendet der Browser verfügbare Ersatzschriften.</p></details>
     <script type="application/json" data-native-export-scene>${json({ scene, snapshots })}</script>
   </div>`;

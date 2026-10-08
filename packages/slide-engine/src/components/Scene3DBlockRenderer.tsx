@@ -20,7 +20,7 @@ import {
 import type { ModellSceneKey, ModellSceneState } from "../scenes/modell-types";
 import { modellTheme } from "../scenes/modell-theme";
 import { modellIsPlaying, toggleModellPlaying } from "../scenes/modell-playback";
-import { scene3dSceneKey } from "../scenes/scene-ids";
+import { scene3dSceneKey, type ModellSceneId } from "../scenes/scene-ids";
 import type { Scene3DBlock } from "./types";
 
 // Unterhalb dieser Breite (Studio-Miniaturen, Uebersichten) bleibt die Szene eine
@@ -30,7 +30,7 @@ const MIN_INTERACTIVE_WIDTH = 280;
 type SceneMode = "fallback" | "live";
 
 export function Scene3DBlockRenderer({ block }: { block: Scene3DBlock }) {
-  const sceneKey = scene3dSceneKey(block.sceneId);
+  const sceneKey = scene3dSceneKey(block.sceneId as ModellSceneId);
   const [dark, setDark] = useState(false);
   const palette = modellTheme(dark);
   const accent = palette.accent;

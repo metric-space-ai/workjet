@@ -1,5 +1,5 @@
 {
-  "name": "@learnordie/slide-engine",
+  "name": "@workjet/slide-engine",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -26,17 +26,37 @@
       "types": "./src/fixtures.ts",
       "default": "./src/fixtures.ts"
     },
+    "./fixtures/jour-fixe-deck": {
+      "types": "./src/fixtures/jour-fixe-deck.ts",
+      "default": "./src/fixtures/jour-fixe-deck.ts"
+    },
     "./legacy": {
       "types": "./src/legacy.ts",
       "default": "./src/legacy.ts"
+    },
+    "./meeting": {
+      "types": "./src/meeting.ts",
+      "default": "./src/meeting.ts"
     },
     "./schema": {
       "types": "./src/schema.ts",
       "default": "./src/schema.ts"
     },
+    "./scenes/business-data": {
+      "types": "./src/scenes/business-data.ts",
+      "default": "./src/scenes/business-data.ts"
+    },
+    "./scenes/scene-ids": {
+      "types": "./src/scenes/scene-ids.ts",
+      "default": "./src/scenes/scene-ids.ts"
+    },
     "./standalone": {
       "types": "./src/standalone.ts",
       "default": "./src/standalone.ts"
+    },
+    "./validator": {
+      "types": "./src/validator/protocol.ts",
+      "default": "./src/validator/protocol.ts"
     },
     "./styles/core.css": "./styles/core.css",
     "./styles/themes/learnordie-north.css": "./styles/themes/learnordie-north.css",
@@ -46,9 +66,21 @@
   "sideEffects": [
     "./styles/**/*.css"
   ],
+  "scripts": {
+    "build:validator": "node scripts/build-validator.mjs",
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
   "dependencies": {
     "three": "0.140.0",
-    "zod": "^4.2.1"
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/react": "19.2.16",
+    "@types/three": "0.140.0",
+    "esbuild": "0.28.1",
+    "vite-plus": "catalog:"
   },
   "peerDependencies": {
     "react": "^19.2.3"

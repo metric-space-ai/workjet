@@ -74,7 +74,7 @@ function blockElements(block: SlideBlock, x: number, y: number, width: number, f
   if (block.type === "scene3d") return [{
     ...base(id("scene"), "embeddable", x, y, width, Math.min(430, width * 0.65), block.id),
     link: `https://learnordie.invalid/embed/${encodeURIComponent(id("scene"))}`,
-    customData: { sourceBlockId: block.id, learnordie: { type: "scene3d", sceneId: block.sceneId, ...(block.caption ? { caption: block.caption } : {}), ...(block.accent ? { accent: block.accent } : {}) } }
+    customData: { sourceBlockId: block.id, learnordie: { type: "scene3d", sceneId: block.sceneId, ...(block.caption ? { caption: block.caption } : {}), ...(block.accent ? { accent: block.accent } : {}), ...(block.data !== undefined ? { data: block.data } : {}) } }
   }];
   if (block.type === "figure" || (block.type === "chart" && block.assetId)) {
     const asset = assets.find((item) => item.id === block.assetId);

@@ -23,7 +23,10 @@ describe("CTOX connection selection", () => {
 
   it("requires the managed source type before resolving a managed catalog alias", () => {
     expect(
-      ctoxConnectionMatchesSelectedInstance({ ...source, source: "local_ctox" }, "managed:tenant-source"),
+      ctoxConnectionMatchesSelectedInstance(
+        { ...source, source: "local_ctox" },
+        "managed:tenant-source",
+      ),
     ).toBe(false);
     expect(
       ctoxConnectionMatchesSelectedInstance({ ...source, source: "local_ctox" }, "source.ctox.dev"),

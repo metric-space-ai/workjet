@@ -1,7 +1,12 @@
 import type { ReactElement, ReactNode } from "react";
 import { isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EnvironmentId, ThreadId, WorkjetConnectionId, type WorkjetThreadConfig } from "@workjet/contracts";
+import {
+  EnvironmentId,
+  ThreadId,
+  WorkjetConnectionId,
+  type WorkjetThreadConfig,
+} from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";

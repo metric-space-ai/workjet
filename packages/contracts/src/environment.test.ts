@@ -14,6 +14,13 @@ const descriptor = {
 } as const;
 
 describe("ExecutionEnvironmentDescriptor", () => {
+  it("allows older servers without a host ID and preserves reported host metadata", () => {
+    expect(decodeDescriptor(descriptor).hostId).toBeUndefined();
+    expect(decodeDescriptor({ ...descriptor, hostId: "linux:reported-host" }).hostId)
+      .toBe("linux:reported-host");
+    expect(() => decodeDescriptor({ ...descriptor, hostId: " " })).toThrow();
+  });
+
   it("treats a missing pull-request capability as unsupported under version skew", () => {
     expect(decodeDescriptor(descriptor).capabilities.pullRequests).toBeUndefined();
   });

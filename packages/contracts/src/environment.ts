@@ -93,7 +93,8 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
   runtimeInstanceId: Schema.optionalKey(TrimmedNonEmptyString),
   /** Stable identity of the machine this server runs on, from the OS machine id.
       Two connections to one machine share it, so clients can avoid listing it twice.
-      Absent when the OS exposes no machine id; clients must never merge on a missing value. */
+      Absent when the OS exposes no machine id; clients must never merge on a missing value.
+      Presentation metadata only, never an authentication credential or native execution fence. */
   hostId: Schema.optionalKey(TrimmedNonEmptyString),
   label: TrimmedNonEmptyString,
   platform: ExecutionEnvironmentPlatform,

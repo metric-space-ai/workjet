@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   applyAutomaticCurrentComputer,
+  findComputerForTarget,
   includeSavedComputers,
   removeComputer,
   toggleCurrentComputer,
@@ -318,6 +319,56 @@ describe("unified computer catalog", () => {
     presentationKind: "ssh" as const,
     detail: "SSH",
   };
+
+  it("reuses a configured computer reached through another connection", () => {
+    const alias = { ...remote, environmentId: EnvironmentId.make("environment-relay"), hostId: "same-host" };
+    const targets = [{ ...remote, hostId: "same-host" }, alias];
+    const original = { ...configurationWith(remoteComputer), selectedComputerId: remoteComputer.id };
+    expect(findComputerForTarget(original, alias, targets)).toBe(remoteComputer);
+    expect(includeSavedComputers(original, targets, localEnvironmentId)).toBe(original);
+  });
+
+  it("shows one row when two saved connections first reveal the same host", () => {
+    const targets = [
+      { ...remote, hostId: "same-host" },
+      { ...remote, environmentId: EnvironmentId.make("environment-relay"), hostId: "same-host" },
+    ];
+    const merged = includeSavedComputers(configurationWith(), targets, localEnvironmentId);
+    expect(merged.computers).toHaveLength(1);
+    expect(merged.computers[0]?.environmentId).toBe(remoteEnvironmentId);
+    expect(includeSavedComputers(merged, targets, localEnvironmentId)).toBe(merged);
+  });
+
+  it("does not create a remote row for another connection to the primary host", () => {
+    const targets = [
+      { ...remote, environmentId: localEnvironmentId, hostId: "local-host" },
+      { ...remote, hostId: "local-host" },
+    ];
+    const original = configurationWith(localComputer);
+    expect(includeSavedComputers(original, targets, localEnvironmentId)).toBe(original);
+  });
+
+  it("never merges equal labels, different hosts or missing host IDs", () => {
+    for (const hostId of [undefined, "", "different-host"]) {
+      const targets = [
+        { ...remote, hostId: "known-host" },
+        { ...remote, environmentId: EnvironmentId.make("another-environment"), ...(hostId === undefined ? {} : { hostId }) },
+      ];
+      const merged = includeSavedComputers(configurationWith(remoteComputer), targets, localEnvironmentId);
+      expect(merged.computers).toHaveLength(2);
+      expect(merged.computers[0]).toBe(remoteComputer);
+    }
+  });
+
+  it("keeps exact environment matches and existing configured rows intact", () => {
+    const aliasComputer = computer("configured-alias", EnvironmentId.make("environment-relay"));
+    const targets = [{ ...remote, hostId: "same-host" }, {
+      ...remote, environmentId: aliasComputer.environmentId, hostId: "same-host",
+    }];
+    const original = configurationWith(remoteComputer, aliasComputer);
+    expect(findComputerForTarget(original, targets[1]!, targets)).toBe(aliasComputer);
+    expect(includeSavedComputers(original, targets, localEnvironmentId)).toBe(original);
+  });
   it("retains saved connections without creating a second record or changing selection", () => {
     const original = { ...configurationWith(localComputer), selectedComputerId: localComputer.id };
     const merged = includeSavedComputers(original, [remote], localEnvironmentId);

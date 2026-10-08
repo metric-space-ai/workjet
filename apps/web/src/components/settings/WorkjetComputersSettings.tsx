@@ -110,32 +110,48 @@ export function removeComputer(
   };
 }
 
+/** Host identity is presentation metadata; it never authorizes a connection or worker. */
+export function findComputerForTarget(
+  configuration: WorkjetConfiguration,
+  target: WorkjetEnvironmentTargetOption,
+  targets: ReadonlyArray<WorkjetEnvironmentTargetOption>,
+): WorkjetComputer | undefined {
+  const exact = configuration.computers.find(
+    (computer) => computer.environmentId === target.environmentId,
+  );
+  if (exact) return exact;
+  const hostId = target.hostId?.trim();
+  if (!hostId) return undefined;
+  return configuration.computers.find((computer) =>
+    targets.some((option) =>
+      option.environmentId === computer.environmentId && option.hostId?.trim() === hostId,
+    ),
+  );
+}
+
 /** Saved connections and configured computers share one catalog in the UI. */
 export function includeSavedComputers(
   configuration: WorkjetConfiguration,
   targets: ReadonlyArray<WorkjetEnvironmentTargetOption>,
   primaryEnvironmentId: EnvironmentId | null,
 ): WorkjetConfiguration {
-  const missing = targets.filter(
-    (target) =>
-      target.environmentId !== primaryEnvironmentId &&
-      !configuration.computers.some((computer) => computer.environmentId === target.environmentId),
-  );
-  if (missing.length === 0) return configuration;
-  return {
-    ...configuration,
-    computers: [
-      ...configuration.computers,
-      ...missing.map((target) =>
-        saveWorkjetComputerDraft(
-          createWorkjetComputerDraft({
-            environments: [target],
-            id: `connection-${target.environmentId}`,
-          }),
-        ),
-      ),
-    ],
-  };
+  let catalog = configuration;
+  const primaryHostId = targets.find((target) => target.environmentId === primaryEnvironmentId)?.hostId?.trim();
+  for (const target of targets) {
+    if (target.environmentId === primaryEnvironmentId ||
+      (primaryHostId && target.hostId?.trim() === primaryHostId) ||
+      findComputerForTarget(catalog, target, targets)) continue;
+    catalog = {
+      ...catalog,
+      computers: [...catalog.computers, saveWorkjetComputerDraft(
+        createWorkjetComputerDraft({
+          environments: [target],
+          id: `connection-${target.environmentId}`,
+        }),
+      )],
+    };
+  }
+  return catalog;
 }
 
 const OPERATIONAL_CAPABILITIES = [
@@ -838,21 +854,7 @@ export function WorkjetComputersSettings({
   );
   useEffect(() => {
     if (!pendingTarget || !pendingInspection.data) return;
-    // The same machine can be reached through two connections. Reuse the entry that already
-    // stands for it, so one machine never gets two rows. Only a reported host id may merge.
-    const existing =
-      settings.workjet.computers.find(
-        (computer) => computer.environmentId === pendingTarget.environmentId,
-      ) ??
-      (pendingTarget.hostId === undefined
-        ? undefined
-        : settings.workjet.computers.find((computer) =>
-            targetOptions.some(
-              (option) =>
-                option.environmentId === computer.environmentId &&
-                option.hostId === pendingTarget.hostId,
-            ),
-          ));
+    const existing = findComputerForTarget(settings.workjet, pendingTarget, targetOptions);
     const draft = createWorkjetComputerDraft({ environments: [pendingTarget] });
     const computer =
       existing ??

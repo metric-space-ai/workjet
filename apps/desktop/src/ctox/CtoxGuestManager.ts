@@ -1896,11 +1896,17 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "guest_failed" };
         }
         const response = (raw as { readonly result?: unknown }).result;
+        // Native Meeting snapshots have a 1 MiB metadata ceiling. Other
+        // project actions retain their existing 256 KiB limit.
+        const responseLimit =
+          request.action === "project.jour_fixe.meeting.read"
+            ? 1024 * 1024
+            : MAX_PROJECT_CONTROL_RESPONSE_BYTES;
         const encodedLength = yield* Effect.try({
           try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
-          catch: () => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1,
-        }).pipe(Effect.orElseSucceed(() => MAX_PROJECT_CONTROL_RESPONSE_BYTES + 1));
-        if (encodedLength > MAX_PROJECT_CONTROL_RESPONSE_BYTES) {
+          catch: () => responseLimit + 1,
+        }).pipe(Effect.orElseSucceed(() => responseLimit + 1));
+        if (encodedLength > responseLimit) {
           return { _tag: "failed", code: "response_too_large" };
         }
         const decoded = yield* decodeWorkjetProjectControlResponse(response, {

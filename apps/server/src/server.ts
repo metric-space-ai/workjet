@@ -466,9 +466,7 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
   Layer.provide(
     RemoteWorkerSourceOperationsLive.layer.pipe(
       Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
-      Layer.provide(
-        CtoxThreadBindingSourceLayerLive,
-      ),
+      Layer.provide(CtoxThreadBindingSourceLayerLive),
       Layer.provide(RemoteWorkerAuthorityStore.layer),
       Layer.provide(DecisionHubConnectionRegistryLive),
     ),

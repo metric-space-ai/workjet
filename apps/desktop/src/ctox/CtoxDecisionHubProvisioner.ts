@@ -34,9 +34,8 @@ import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import { resolveCtoxBinary } from "./CtoxLocalDaemonLaunch.ts";
 import {
-  issueWorkjetWorkerSourceGrant,
+  acquireWorkjetWorkerSourceGrant,
   revokeWorkjetWorkerSourceGrant,
-  WorkerSourceGrantError,
   workerSourceGrantIdentity,
 } from "./CtoxWorkerSourceGrant.ts";
 
@@ -193,23 +192,19 @@ const make = Effect.gen(function* () {
             ? yield* Effect.gen(function* () {
                 const account = yield* sessions.account;
                 if (input.purpose === "worker_source") {
-                  const grant = yield* Effect.tryPromise({
-                    try: () => issueWorkjetWorkerSourceGrant(account.fetch.bind(account), managedTenantId),
-                    catch: (error) => error instanceof WorkerSourceGrantError ? error.code : "grant_unavailable" as const,
-                  });
+                  const grant = yield* acquireWorkjetWorkerSourceGrant(
+                    account.fetch.bind(account), managedTenantId,
+                    (rolledBack) => Ref.update(issuedGrants, (current) =>
+                      current.filter((candidate) => candidate.tokenId !== rolledBack.tokenId)),
+                  ).pipe(Effect.mapError((error) => error.code));
                   const issued = { connectionId: grant.connectionId, tenantId: grant.tenantId,
                     tokenId: grant.tokenId, purpose: "worker_source" as const };
                   yield* Ref.update(issuedGrants, (current) => [...current, issued]);
-                  let committed = false;
-                  yield* Effect.addFinalizer(() => committed ? Effect.void : revokeGrant(issued).pipe(
-                    Effect.andThen(Ref.update(issuedGrants, (current) =>
-                      current.filter((candidate) => candidate.tokenId !== issued.tokenId))),
-                  ));
                   return {
                     connectionId: grant.connectionId, instanceId: grant.instanceId,
                     displayName: grant.displayName, source: grant.source,
                     endpoint: grant.endpoint, token: grant.token,
-                    commit: () => { committed = true; },
+                    commit: grant.commit,
                   };
                 }
                 const response = yield* Effect.promise(() =>

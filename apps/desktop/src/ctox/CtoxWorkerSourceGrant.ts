@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { WorkjetConnectionId } from "@workjet/contracts";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 export const WORKJET_WORKER_SOURCE_TOOLS = [
@@ -108,4 +109,31 @@ export async function issueWorkjetWorkerSourceGrant(
     // Error messages and causes never contain the one-time response or token.
     throw error instanceof WorkerSourceGrantError ? error : new WorkerSourceGrantError("grant_unavailable");
   }
+}
+
+/** Keep an issued client scoped until the environment confirms SecretStore custody.
+ * acquireRelease protects the issue/finalizer boundary from interruption. */
+export function acquireWorkjetWorkerSourceGrant(
+  fetchAccount: AccountFetch,
+  tenantId: string,
+  onRolledBack: (grant: WorkjetWorkerSourceGrant) => Effect.Effect<void> = () => Effect.void,
+) {
+  return Effect.acquireRelease(
+    Effect.tryPromise({
+      try: async () => {
+        const grant = await issueWorkjetWorkerSourceGrant(fetchAccount, tenantId);
+        let committed = false;
+        return { ...grant, commit: () => { committed = true; }, isCommitted: () => committed };
+      },
+      catch: (error) => error instanceof WorkerSourceGrantError ? error : new WorkerSourceGrantError("grant_unavailable"),
+    }),
+    (grant) => grant.isCommitted() ? Effect.void : Effect.tryPromise({
+      try: () => revokeWorkjetWorkerSourceGrant(fetchAccount, grant),
+      catch: () => new WorkerSourceGrantError("grant_revoke_unavailable"),
+    }).pipe(
+      Effect.andThen(onRolledBack(grant)),
+      // Retain the tracked client when revocation is unavailable for revokeAll.
+      Effect.catchCause(() => Effect.void),
+    ),
+  );
 }

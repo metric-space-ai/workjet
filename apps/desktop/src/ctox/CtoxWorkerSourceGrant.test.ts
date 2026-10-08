@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { CtoxDecisionHubProvisionInput } from "@workjet/contracts";
+import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
-  issueWorkjetWorkerSourceGrant, revokeWorkjetWorkerSourceGrant,
+  acquireWorkjetWorkerSourceGrant, issueWorkjetWorkerSourceGrant, revokeWorkjetWorkerSourceGrant,
   workerSourceGrantIdentity, WORKJET_WORKER_SOURCE_TOOLS,
 } from "./CtoxWorkerSourceGrant.ts";
 
@@ -77,5 +80,46 @@ describe("additional Workjet worker source client", () => {
     expect(decode(input).purpose).toBeUndefined();
     expect(decode({ ...input, purpose: "worker_source" }).purpose).toBe("worker_source");
     expect(() => decode({ ...input, purpose: "all_tools" })).toThrow();
+  });
+});
+
+describe("worker source credential custody", () => {
+  it("revokes the newly issued client if the environment RPC fails", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(reply())
+      .mockResolvedValueOnce(reply({ ok: true, revoked: true }));
+    const rolledBack = vi.fn();
+    const exit = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      yield* acquireWorkjetWorkerSourceGrant(fetch, tenant, () => Effect.sync(rolledBack));
+      return yield* Effect.fail("environment RPC rejected");
+    })).pipe(Effect.exit));
+    expect(exit._tag).toBe("Failure");
+    expect(rolledBack).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
+  });
+
+  it("retains the client only after the environment confirms custody", async () => {
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => reply());
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const grant = yield* acquireWorkjetWorkerSourceGrant(fetch, tenant);
+      grant.commit();
+    })));
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("revokes on interruption before the environment confirmation", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(reply())
+      .mockResolvedValueOnce(reply({ ok: true, revoked: true }));
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const acquired = yield* Deferred.make<void>();
+      const fiber = yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
+        yield* acquireWorkjetWorkerSourceGrant(fetch, tenant);
+        yield* Deferred.succeed(acquired, undefined);
+        yield* Effect.never;
+      })));
+      yield* Deferred.await(acquired);
+      yield* Fiber.interrupt(fiber);
+    })));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
   });
 });

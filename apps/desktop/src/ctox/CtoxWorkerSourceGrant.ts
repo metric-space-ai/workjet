@@ -29,8 +29,10 @@ export interface WorkjetWorkerSourceGrant {
   readonly source: "ctox_dev";
 }
 export class WorkerSourceGrantError extends Error {
-  constructor(readonly code: "signed_out" | "grant_unavailable" | "grant_revoke_unavailable") {
+  readonly code: "signed_out" | "grant_unavailable" | "grant_revoke_unavailable";
+  constructor(code: "signed_out" | "grant_unavailable" | "grant_revoke_unavailable") {
     super(code);
+    this.code = code;
   }
 }
 export function workerSourceGrantIdentity(connectionId: string) {
@@ -52,7 +54,6 @@ export async function revokeWorkjetWorkerSourceGrant(
       {
         method: "POST", cache: "no-store", credentials: "include",
         headers: { "content-type": "application/json" },
-        // @effect-diagnostics-next-line preferSchemaOverJson:off -- Electron fetch requires a JSON body.
         body: JSON.stringify({ action: "revoke_token", tokenId: grant.tokenId }),
       },
     );
@@ -74,7 +75,6 @@ export async function issueWorkjetWorkerSourceGrant(
       {
         method: "POST", cache: "no-store", credentials: "include",
         headers: { "content-type": "application/json" },
-        // @effect-diagnostics-next-line preferSchemaOverJson:off -- Electron fetch requires a JSON body.
         body: JSON.stringify({
           action: "rotate_token", label: "Workjet worker source", expiresInDays: 1,
           scopes: {

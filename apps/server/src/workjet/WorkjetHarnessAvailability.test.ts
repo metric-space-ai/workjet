@@ -1,12 +1,22 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import type { WorkjetHarness, WorkjetHarnessAvailabilitySnapshot } from "@workjet/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  type WorkjetHarness,
+  type WorkjetHarnessAvailabilitySnapshot,
+} from "@workjet/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as PlatformError from "effect/PlatformError";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   classifyHarnessProbe,
+  configuredHarnessExecutable,
   harnessDispatchRefusal,
   isHarnessDispatchable,
+  makeChildProcessHarnessProbePort,
   parseHarnessVersion,
   probeHarnessAvailability,
   type HarnessProbeOutcome,
@@ -14,6 +24,128 @@ import {
 
 const CLAUDE = "claude-code" as WorkjetHarness;
 const CODEX = "codex-cli" as WorkjetHarness;
+
+it("resolves all server-configurable harness paths", () => {
+  const providers = DEFAULT_SERVER_SETTINGS.providers;
+  const configured = {
+    providers: {
+      codex: { ...providers.codex, binaryPath: "/custom/codex" },
+      claudeAgent: { ...providers.claudeAgent, binaryPath: "/custom/claude" },
+      cursor: { ...providers.cursor, binaryPath: "/custom/cursor" },
+      grok: { ...providers.grok, binaryPath: "/custom/grok" },
+      opencode: { ...providers.opencode, binaryPath: "/custom/opencode" },
+      greppy: { ...providers.greppy, binaryPath: "/custom/greppy" },
+      minimax: { ...providers.minimax, binaryPath: "/custom/mcode" },
+    },
+  };
+  for (const [harness, expected] of [
+    ["codex-cli", "/custom/codex"],
+    ["claude-code", "/custom/claude"],
+    ["cursor-agent", "/custom/cursor"],
+    ["grok-cli", "/custom/grok"],
+    ["opencode", "/custom/opencode"],
+    ["greppy", "/custom/greppy"],
+    ["minimax-code", "/custom/mcode"],
+  ] as const) {
+    assert.equal(configuredHarnessExecutable(configured, harness), expected);
+  }
+  assert.isUndefined(configuredHarnessExecutable(configured, "pi-code"));
+});
+
+it("prefers the canonical provider instance path and rejects a mismatched driver", () => {
+  const codex = ProviderInstanceId.make("codex");
+  const settings = {
+    ...DEFAULT_SERVER_SETTINGS,
+    providerInstances: {
+      [codex]: {
+        driver: ProviderDriverKind.make("codex"),
+        config: { binaryPath: "/configured/instance/codex" },
+      },
+    },
+  };
+  assert.equal(configuredHarnessExecutable(settings, CODEX), "/configured/instance/codex");
+  const mismatched = {
+    ...settings,
+    providerInstances: {
+      [codex]: {
+        driver: ProviderDriverKind.make("grok"),
+        config: { binaryPath: "/foreign/driver" },
+      },
+    },
+  };
+  assert.equal(configuredHarnessExecutable(mismatched, CODEX), settings.providers.codex.binaryPath);
+});
+
+it.layer(NodeServices.layer)("configured harness executables", (it) => {
+  it.effect("runs the configured executable for Codex and Claude", () =>
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const port = makeChildProcessHarnessProbePort(spawner, () =>
+        Effect.succeed(process.execPath),
+      );
+      for (const harness of [CODEX, CLAUDE]) {
+        const result = yield* port.probe(harness);
+        assert.deepEqual(result, {
+          _tag: "answered",
+          executablePath: process.execPath,
+          stdout: `${process.version}\n`,
+        });
+      }
+    }),
+  );
+
+  it.effect("reads settings again and does not fall back when a configured path is missing", () =>
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      let executable = process.execPath;
+      const port = makeChildProcessHarnessProbePort(spawner, () => Effect.sync(() => executable));
+      assert.equal((yield* port.probe(CODEX))._tag, "answered");
+      executable = `${process.execPath}/missing-workjet-harness`;
+      assert.deepEqual(yield* port.probe(CODEX), { _tag: "not-found" });
+    }),
+  );
+
+  it.effect("keeps CLI defaults and treats configured paths as literal executable names", () =>
+    Effect.gen(function* () {
+      const actualSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const commands: Array<{ command: string; args: readonly string[]; shell: unknown }> = [];
+      const spawner: ChildProcessSpawner.ChildProcessSpawner["Service"] = {
+        ...actualSpawner,
+        spawn: (command) => {
+          if (command._tag === "StandardCommand") {
+            commands.push({
+              command: command.command,
+              args: command.args,
+              shell: command.options.shell,
+            });
+          }
+          return Effect.fail(
+            PlatformError.systemError({
+              _tag: "NotFound",
+              module: "ChildProcess",
+              method: "spawn",
+              description: "test executable is absent",
+            }),
+          );
+        },
+      };
+      const defaults = makeChildProcessHarnessProbePort(spawner);
+      yield* defaults.probe(CODEX);
+      yield* defaults.probe(CLAUDE);
+      yield* defaults.probe("opencode");
+      const literal = "/opt/coding tools/codex;echo unexpected";
+      yield* makeChildProcessHarnessProbePort(spawner, () => Effect.succeed(literal)).probe(CODEX);
+      assert.deepEqual(
+        commands,
+        ["codex", "claude", "opencode", literal].map((command) => ({
+          command,
+          args: ["--version"],
+          shell: false,
+        })),
+      );
+    }),
+  );
+});
 
 const snapshot = (
   harnesses: WorkjetHarnessAvailabilitySnapshot["harnesses"],

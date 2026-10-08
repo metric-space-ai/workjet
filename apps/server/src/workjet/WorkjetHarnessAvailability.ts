@@ -24,13 +24,17 @@
  * it anyway. "executable-not-found" and "not-executable" are separate because
  * they need different fixes — install it, versus fix its permissions.
  */
+import { ProviderInstanceId } from "@workjet/contracts";
 import type {
+  ServerSettings,
   WorkjetHarness,
   WorkjetHarnessAvailability,
   WorkjetHarnessAvailabilitySnapshot,
 } from "@workjet/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -179,6 +183,38 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
   "pi-code": "pi",
 };
 
+/** Probe the executable configured on this server, never a client's local override. */
+const configuredBinaryPath = Schema.decodeUnknownOption(Schema.Struct({ binaryPath: Schema.Trim }));
+
+export function configuredHarnessExecutable(
+  settings: Pick<ServerSettings, "providers"> & Partial<Pick<ServerSettings, "providerInstances">>,
+  harness: WorkjetHarness,
+): string | undefined {
+  const driver =
+    harness === "codex-cli"
+      ? "codex"
+      : harness === "claude-code"
+        ? "claudeAgent"
+        : harness === "cursor-agent"
+          ? "cursor"
+          : harness === "grok-cli"
+            ? "grok"
+            : harness === "minimax-code"
+              ? "minimax"
+              : harness === "opencode" || harness === "greppy"
+                ? harness
+                : undefined;
+  if (driver === undefined) return undefined;
+  const instance = settings.providerInstances?.[ProviderInstanceId.make(driver)];
+  if (instance?.driver === driver) {
+    const decoded = configuredBinaryPath(instance.config);
+    if (Option.isSome(decoded) && decoded.value.binaryPath.length > 0) {
+      return decoded.value.binaryPath;
+    }
+  }
+  return settings.providers[driver].binaryPath;
+}
+
 /**
  * A probe port backed by a real child process.
  *
@@ -189,10 +225,17 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
  */
 export const makeChildProcessHarnessProbePort = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+  /**
+   * The binary the server's own provider settings point at, when it differs
+   * from the CLI name. The probe must ask the same binary the provider runs;
+   * otherwise a Codex installed at a configured path reads as missing.
+   */
+  configuredExecutable: (harness: WorkjetHarness) => Effect.Effect<string | undefined> = () =>
+    Effect.succeed(undefined),
 ): HarnessProbePort => ({
   probe: (harness) =>
     Effect.gen(function* () {
-      const executable = HARNESS_EXECUTABLES[harness];
+      const executable = (yield* configuredExecutable(harness)) ?? HARNESS_EXECUTABLES[harness];
       if (executable === undefined) {
         // An unknown harness is not a probe failure — this server simply does
         // not know how to ask it, which is a different thing from asking and

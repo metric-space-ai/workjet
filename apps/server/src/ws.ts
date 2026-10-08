@@ -419,9 +419,6 @@ const makeWsRpcLayer = (
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const gitVcsDriver = yield* GitVcsDriver.GitVcsDriver;
-      const harnessProbePort = WorkjetHarnessAvailability.makeChildProcessHarnessProbePort(
-        yield* ChildProcessSpawner.ChildProcessSpawner,
-      );
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
       const vcsStatusBroadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
@@ -434,6 +431,17 @@ const makeWsRpcLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      // Read this server's current provider paths on each inspection.
+      const harnessProbePort = WorkjetHarnessAvailability.makeChildProcessHarnessProbePort(
+        yield* ChildProcessSpawner.ChildProcessSpawner,
+        (harness) =>
+          serverSettings.getSettings.pipe(
+            Effect.map((settings) =>
+              WorkjetHarnessAvailability.configuredHarnessExecutable(settings, harness),
+            ),
+            Effect.catch(() => Effect.succeed(undefined)),
+          ),
+      );
       const worktreeStorage = yield* Effect.serviceOption(WorktreeStorage.WorktreeStorage);
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;

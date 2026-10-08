@@ -290,6 +290,14 @@ const DecisionHubMcpClientLive = DecisionHubMcpClient.layer.pipe(
 const DecisionHubConnectionRegistryLive = DecisionHubConnectionRegistry.layer.pipe(
   Layer.provide(DecisionHubMcpClientLive),
 );
+// The binding factory reads the optional registry at construction. Always
+// construct this shared layer with that registry, including the native adapter
+// runtime; a memoized factory built without it would stay unbound in every
+// consumer, even when a later consumer supplied the registry.
+const CtoxThreadBindingSourceLayerLive = CtoxThreadBindingSourceLive.pipe(
+  Layer.provide(ProviderSessionDirectoryLayerLive),
+  Layer.provide(DecisionHubConnectionRegistryLive),
+);
 const DecisionHubEscalationServiceLive = DecisionHubEscalationService.layer.pipe(
   Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(DecisionHubMcpClientLive),
@@ -459,7 +467,7 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
     RemoteWorkerSourceOperationsLive.layer.pipe(
       Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
       Layer.provide(
-        CtoxThreadBindingSourceLive.pipe(Layer.provide(ProviderSessionDirectoryLayerLive)),
+        CtoxThreadBindingSourceLayerLive,
       ),
       Layer.provide(RemoteWorkerAuthorityStore.layer),
       Layer.provide(DecisionHubConnectionRegistryLive),
@@ -490,10 +498,7 @@ const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
 const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.pipe(
   Layer.provide(WorkerDispatchLayerLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
-  Layer.provide(CtoxThreadBindingSourceLive.pipe(
-    Layer.provide(ProviderSessionDirectoryLayerLive),
-    Layer.provide(DecisionHubConnectionRegistryLive),
-  )),
+  Layer.provide(CtoxThreadBindingSourceLayerLive),
   Layer.provide(DecisionHubConnectionRegistryLive),
 );
 
@@ -526,7 +531,7 @@ const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // instance unavailable rather than dragging the session-directory chain into
   // every registry construction site — so production has to supply them here,
   // where the registry is hydrated.
-  Layer.provideMerge(CtoxThreadBindingSourceLive),
+  Layer.provideMerge(CtoxThreadBindingSourceLayerLive),
   Layer.provideMerge(WorkjetCrossModeLinkStoreLive),
   Layer.provideMerge(CtoxNativeRequests.layer),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),

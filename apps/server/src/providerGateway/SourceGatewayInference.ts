@@ -13,6 +13,9 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+const samePermit = Schema.toEquivalence(WorkjetRemoteWorkerPermit);
+const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
 const failure = (reason: WorkjetGatewayInferenceError["reason"]) =>
   new WorkjetGatewayInferenceError({ reason });
 
@@ -146,12 +149,14 @@ export function makeSourceGatewayInference(dependencies: {
           : failure("native-admission-rejected"),
       ),
     );
-    const { renewalSequence: previousSequence, expiresAtMs: previousExpiry, ...previousAuthority } = input.permit;
-    const { renewalSequence, expiresAtMs, ...currentAuthority } = receipt;
+    const { renewalSequence: previousSequence, expiresAtMs: previousExpiry } = input.permit;
+    const { renewalSequence, expiresAtMs } = receipt;
     if (
-      JSON.stringify(currentAuthority) !== JSON.stringify(previousAuthority) ||
+      !samePermit(receipt, { ...input.permit, renewalSequence, expiresAtMs }) ||
       renewalSequence < previousSequence ||
-      (renewalSequence === previousSequence ? expiresAtMs !== previousExpiry : expiresAtMs <= previousExpiry) ||
+      (renewalSequence === previousSequence
+        ? expiresAtMs !== previousExpiry
+        : expiresAtMs <= previousExpiry) ||
       receipt.expiresAtMs <= (yield* dependencies.now)
     )
       return yield* failure("native-admission-rejected");
@@ -180,7 +185,7 @@ export function makeSourceGatewayInference(dependencies: {
     yield* Effect.try({
       try: () => {
         if (new TextEncoder().encode(input.requestJson).byteLength > 256 * 1024) throw new Error();
-        const body: unknown = JSON.parse(input.requestJson);
+        const body: unknown = decodeJson(input.requestJson);
         if (typeof body !== "object" || body === null || Array.isArray(body)) throw new Error();
         const request = body as Record<string, unknown>;
         if (

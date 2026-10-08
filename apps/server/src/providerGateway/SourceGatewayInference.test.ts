@@ -13,6 +13,7 @@ import {
   type WorkjetGatewayScopedCatalog,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import { makeSourceGatewayInference } from "./SourceGatewayInference.ts";
 import {
@@ -20,6 +21,7 @@ import {
   remoteWorkerRequestDigest,
 } from "../workjet/ctox/CtoxRemoteWorkerAdmission.ts";
 
+const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const environmentId = EnvironmentId.make("source");
 const target = {
   connectionId: WorkjetConnectionId.make("target-connection"),
@@ -104,7 +106,7 @@ const input: WorkjetGatewayInferenceInput = {
       capabilities: ["repository_read", "repository_write", "run_checks", "open_pull_request"],
     },
   },
-  requestJson: JSON.stringify({
+  requestJson: encodeJson({
     model: "exact-model",
     input: [{ role: "user", content: "Task" }],
     stream: false,
@@ -151,7 +153,7 @@ const fixture = () => {
         expect(request).toBe(input.requestJson);
         deadlines.push(deadline);
         afterForward();
-        return JSON.stringify({ output: [{ text: "result" }] });
+        return encodeJson({ output: [{ text: "result" }] });
       }),
     now: Effect.sync(() => now),
   });
@@ -177,7 +179,10 @@ const fixture = () => {
   };
 };
 const reason = async (request: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =>
-  (await Effect.runPromise(Effect.flip(request))).reason;
+  Effect.runPromise(Effect.match(request, {
+    onFailure: (error) => error.reason,
+    onSuccess: () => { throw new Error("Expected gateway admission to fail"); },
+  }));
 
 describe("source gateway inference", () => {
   it("distinguishes unavailable native authority from a malformed receipt", async () => {
@@ -298,7 +303,7 @@ describe("source gateway inference", () => {
   it("intersects fresh source grants with native revalidation before and after actual forwarding", async () => {
     const f = fixture();
     expect(await Effect.runPromise(f.consumer.infer(input))).toEqual({
-      requestJson: JSON.stringify({ output: [{ text: "result" }] }),
+      requestJson: encodeJson({ output: [{ text: "result" }] }),
     });
     expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
     expect(f.deadlines).toEqual([input.permit.expiresAtMs]);
@@ -311,7 +316,7 @@ describe("source gateway inference", () => {
     f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 600000 });
     f.afterForward(() => f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 900000 }));
     expect(await Effect.runPromise(f.consumer.infer(input))).toEqual({
-      requestJson: JSON.stringify({ output: [{ text: "result" }] }),
+      requestJson: encodeJson({ output: [{ text: "result" }] }),
     });
     expect(f.deadlines).toEqual([600000]);
     expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
@@ -327,14 +332,18 @@ describe("source gateway inference", () => {
       { binding: { ...input.permit.binding, projectId: "other-project" } },
     ]) {
       const f = fixture();
-      f.afterForward(() => f.native({
-        ...input.permit, renewalSequence: 1, expiresAtMs: 600000, ...mutation,
-      }));
+      f.afterForward(() =>
+        f.native({
+          ...input.permit,
+          renewalSequence: 1,
+          expiresAtMs: 600000,
+          ...mutation,
+        }),
+      );
       expect(await reason(f.consumer.infer(input))).toBe("native-admission-rejected");
     }
   });
   it("rejects a renewal sequence regression against the fresh pre-forward receipt", async () => {
-
     const f = fixture();
     f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 600000 });
     f.afterForward(() => f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 900000 }));
@@ -412,7 +421,7 @@ describe("source gateway inference", () => {
     { model: "exact-model", input: [], previous_response_id: "foreign" },
   ])("rejects alternate model and unbounded/cross-session request shapes", async (body) => {
     const f = fixture();
-    expect(await reason(f.consumer.infer({ ...input, requestJson: JSON.stringify(body) }))).toBe(
+    expect(await reason(f.consumer.infer({ ...input, requestJson: encodeJson(body) }))).toBe(
       "invalid-request",
     );
     expect(f.events).toEqual([]);

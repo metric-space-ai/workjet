@@ -191,15 +191,11 @@ describe("source gateway inference", () => {
     Effect.gen(function* () {
       const unavailable = fixture();
       unavailable.unavailable();
-      expect(yield* reason(unavailable.consumer.admit(input))).toBe(
-        "native-admission-unavailable",
-      );
+      expect(yield* reason(unavailable.consumer.admit(input))).toBe("native-admission-unavailable");
       expect(unavailable.events).not.toContain("forward");
       const malformed = fixture();
       malformed.native({ invalid: true });
-      expect(yield* reason(malformed.consumer.admit(input))).toBe(
-        "native-admission-rejected",
-      );
+      expect(yield* reason(malformed.consumer.admit(input))).toBe("native-admission-rejected");
       expect(malformed.events).not.toContain("forward");
     }),
   );

@@ -2614,7 +2614,7 @@ describe("CtoxGuestManager", () => {
         projectId: ProjectId.make("project-1"),
         meetingId: "meeting-1",
       };
-      const fixture = Schema.decodeUnknownSync(WorkjetJourFixeMeeting)(
+      const fixture = yield* Schema.decodeUnknownEffect(WorkjetJourFixeMeeting)(
         jourFixeFixture.valid_cases.find((item) => item.type === "Meeting")!.value,
       );
       const receipt = {

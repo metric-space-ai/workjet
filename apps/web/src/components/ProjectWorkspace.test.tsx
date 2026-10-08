@@ -81,6 +81,32 @@ function markup(threads: readonly EnvironmentThreadShell[]) {
   );
 }
 
+describe("project worker activity", () => {
+  it("renders the activity panel even when no worker has a turn yet", () => {
+    const html = markup([shell(source, "supervisor")]);
+    expect(html).toContain('data-workjet-overview-section="activity"');
+    expect(html).toContain("data-workjet-activity-hours");
+    expect(html).toContain("data-workjet-activity-heatmap");
+    expect(html).toContain("Based on each worker&#x27;s latest turn");
+  });
+});
+
+describe("project Jour fixe entry", () => {
+  it("offers joining from the overview even when no recurring time is configured", () => {
+    const html = renderToStaticMarkup(
+      <ProjectWorkspace
+        project={project}
+        threads={[shell(source, "supervisor")]}
+        onOpenChat={() => {}}
+        onOpenJourFixe={() => {}}
+        onAddParent={async () => true}
+      />,
+    );
+    expect(html).toContain("Join Jour fixe");
+    expect(html).toContain("No recurring time is set yet.");
+  });
+});
+
 describe("source project remote workers", () => {
   it("renders the target computer worker in the source project's Workers group", () => {
     const html = markup([shell(source, "supervisor"), shell(target, "worker")]);

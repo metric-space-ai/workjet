@@ -30,7 +30,13 @@ describe("essential KPI presentation", () => {
   it("shows a blocked snapshot with its missing prerequisite instead of an amount", () => {
     expect(
       essentialKpiPresentation({ status: "blocked", missing: "No sale price basis yet" }),
-    ).toEqual({ status: "blocked", value: "—", detail: "No sale price basis yet" });
+    ).toEqual({
+      status: "blocked",
+      value: "—",
+      detail: "No sale price basis yet",
+      changePercent: null,
+      range: null,
+    });
   });
 
   it("does not show a value before the supervisor has written a snapshot", () => {

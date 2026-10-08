@@ -31,7 +31,13 @@ export type EssentialKpiSnapshot =
     };
 
 export type EssentialKpiPresentation =
-  | { readonly status: "blocked"; readonly value: "—"; readonly detail: string }
+  | {
+      readonly status: "blocked";
+      readonly value: "—";
+      readonly detail: string;
+      readonly changePercent: null;
+      readonly range: null;
+    }
   | {
       readonly status: "ready" | "provisional";
       readonly value: string;
@@ -57,15 +63,19 @@ function isAmount(value: number): boolean {
   return Number.isFinite(value) && value >= 0;
 }
 
+function blocked(detail: string): EssentialKpiPresentation {
+  return { status: "blocked", value: "—", detail, changePercent: null, range: null };
+}
+
 /** Invalid snapshots are shown as blocked rather than as a number that cannot be explained. */
 export function essentialKpiPresentation(
   snapshot: EssentialKpiSnapshot | null | undefined,
 ): EssentialKpiPresentation {
   if (!snapshot) {
-    return { status: "blocked", value: "—", detail: "Set up by the supervisor at the next Jour fixe" };
+    return blocked("Set up by the supervisor at the next Jour fixe");
   }
   if (snapshot.status === "blocked") {
-    return { status: "blocked", value: "—", detail: snapshot.missing };
+    return blocked(snapshot.missing);
   }
   const { p10Eur, medianEur, p90Eur } = snapshot;
   const hasRange = p10Eur !== undefined || medianEur !== undefined || p90Eur !== undefined;
@@ -85,7 +95,7 @@ export function essentialKpiPresentation(
     (snapshot.conditionalSalePriceEur === null || isAmount(snapshot.conditionalSalePriceEur)) &&
     rangeValid;
   if (!valid) {
-    return { status: "blocked", value: "—", detail: "Snapshot failed validation" };
+    return blocked("Snapshot failed validation");
   }
   const previous = snapshot.previousExpectedSalePriceEur;
   const changePercent =

@@ -68,9 +68,9 @@ const excerptOf = (message: ProviderImportedMessage, maxChars: number): Imported
 
 /**
  * Builds the continuation prompt for imported history. When the full history
- * does not fit, the newest messages stay verbatim and older ones become
- * excerpts, so the turn is sent instead of refused. Returns undefined only when
- * the current request alone does not fit.
+ * does not fit, recent messages that fit stay verbatim and older ones become
+ * excerpts, so the turn is sent instead of refused. Returns undefined when
+ * the current request and required continuation framing do not fit.
  */
 export const buildImportedHistoryPrompt = (
   history: ReadonlyArray<ProviderImportedMessage>,
@@ -91,7 +91,9 @@ export const buildImportedHistoryPrompt = (
   const fullBudget = Math.floor(budget * IMPORTED_HISTORY_FULL_SHARE);
   while (recentStart > 0) {
     const sizes = [jsonChars(history[recentStart - 1]!), ...recentSizes];
-    if (arrayChars(sizes) > fullBudget) break;
+    const candidateChars = arrayChars(sizes);
+    // Preserve the latest message whole when it fits, even above the preferred share.
+    if (candidateChars > fullBudget && (recentSizes.length > 0 || candidateChars > budget)) break;
     recentSizes = sizes;
     recentStart--;
   }

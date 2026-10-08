@@ -49,7 +49,19 @@ describe("buildImportedHistoryPrompt", () => {
     expect(fit!.omittedCount).toBeGreaterThan(0);
   });
 
-  it("fails only when the current request alone does not fit", () => {
+  it("keeps a newest message intact when it exceeds the preferred share but fits the prompt", () => {
+    const latest = "latest-result " + "r".repeat(95_000);
+    const fit = buildImportedHistoryPrompt(
+      [message(0, "earlier-result " + "o".repeat(95_000)), message(1, latest)],
+      "Continue",
+    );
+    expect(fit).toBeDefined();
+    expect(fit!.prompt.length).toBeLessThanOrEqual(PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+    expect(fit!.prompt).toContain(latest);
+    expect(fit).toMatchObject({ fullCount: 1, excerptCount: 1, omittedCount: 0 });
+  });
+
+  it("fails when the current request exceeds the continuation budget", () => {
     const fit = buildImportedHistoryPrompt([message(0, "context")], "z".repeat(200), 100);
     expect(fit).toBeUndefined();
   });

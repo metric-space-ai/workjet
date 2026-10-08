@@ -195,6 +195,56 @@ describe("Jour fixe owner bridge", () => {
     ])
       expect(() => decodeRequest({ ...comment, ...change })).toThrow();
   });
+  it("confirms only the exact proposal and next native Core goal receipt", () => {
+    const intent = {
+      ...base,
+      action: "project.jour_fixe.todos.confirm",
+      proposalRevision: 2,
+      expectedGoalRevision: 3,
+    } as const;
+    const receipt = {
+      ...response,
+      action: intent.action,
+      goal: { goal_id: "core-goal-1", revision: 4 },
+      mutation: {
+        ...response.mutation,
+        state: "confirmed",
+        todos_revision: 2,
+        changed_id: "core-goal-1",
+      },
+    };
+    expect(decodeRequest(intent)).toEqual(intent);
+    expect(decodeResponse(receipt)).toEqual(receipt);
+    expect(isWorkjetJourFixeReceiptForRequest(intent, receipt)).toBe(true);
+    for (const goal of [
+      undefined,
+      { goal_id: "foreign", revision: 4 },
+      { goal_id: "core-goal-1", revision: 3 },
+    ])
+      expect(isWorkjetJourFixeReceiptForRequest(intent, { ...receipt, goal })).toBe(false);
+    for (const change of [
+      { state: "review" },
+      { todos_revision: 3 },
+      { changed_id: "foreign" },
+      { revision: 6 },
+    ])
+      expect(
+        isWorkjetJourFixeReceiptForRequest(intent, {
+          ...receipt,
+          mutation: { ...receipt.mutation, ...change },
+        }),
+      ).toBe(false);
+    for (const extra of [{ items: revise.items }, { owner: "forged" }, { goal: receipt.goal }])
+      expect(() => decodeRequest({ ...intent, ...extra })).toThrow();
+    expect(
+      isWorkjetJourFixeReceiptForRequest(
+        { ...intent, expectedGoalRevision: 0 },
+        { ...receipt, goal: { goal_id: "core-goal-1", revision: 1 } },
+      ),
+    ).toBe(true);
+    for (const expectedGoalRevision of [-1, 0.5, Number.MAX_SAFE_INTEGER])
+      expect(() => decodeRequest({ ...intent, expectedGoalRevision })).toThrow();
+  });
   it("leaves existing non-meeting project actions unchanged", () => {
     expect(isWorkjetJourFixeReceiptForRequest(null, response)).toBe(false);
     expect(isWorkjetJourFixeReceiptForRequest({}, response)).toBe(false);

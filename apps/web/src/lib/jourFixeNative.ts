@@ -17,6 +17,12 @@ type MutationRequest = Extract<
   { operationId: string; meetingId: string; expectedRevision: number }
 >;
 type Control = typeof requestWorkjetProjectControl;
+type PendingMutation = {
+  key: string;
+  request: MutationRequest;
+  acknowledgedRevision?: number;
+  confirmedGoal?: { readonly goal_id: string; readonly revision: number };
+};
 
 /** Metadata is mapped for display; an AudioRef never becomes a playable URL. */
 export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoomSnapshot {
@@ -28,7 +34,7 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
     state: meeting.state,
     scheduledAt: meeting.scheduled_at_ms,
     timezone: meeting.timezone,
-    ...(meeting.previous_goal ? { previousGoalRevision: meeting.previous_goal.revision } : {}),
+    previousGoalRevision: meeting.previous_goal?.revision ?? 0,
     slides: meeting.slides.map((slide) => ({
       id: slide.id,
       position: slide.position,
@@ -62,6 +68,7 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
               priority: todo.priority,
               evidenceIds: todo.evidence_ids,
               ...(todo.due_at_ms == null ? {} : { dueAt: todo.due_at_ms }),
+              ...(todo.owner == null ? {} : { owner: todo.owner }),
             })),
           },
         }
@@ -72,9 +79,7 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
 
 /** One visible room owns one immutable instance/project scope and uncertain intent. */
 export class JourFixeNativeSession {
-  private pending:
-    | { key: string; request: MutationRequest; acknowledgedRevision?: number }
-    | undefined;
+  private pending: PendingMutation | undefined;
   private closed = false;
   constructor(
     readonly instanceId: string,
@@ -121,8 +126,7 @@ export class JourFixeNativeSession {
     this.assertCurrent();
     if (this.pending && this.pending.key !== key)
       throw new Error("Retry the unconfirmed change before making another change.");
-    const pending: { key: string; request: MutationRequest; acknowledgedRevision?: number } = this
-      .pending ?? { key, request: build() };
+    const pending: PendingMutation = this.pending ?? { key, request: build() };
     this.pending = pending;
     if (pending.acknowledgedRevision === undefined) {
       const result = await this.control(this.instanceId, pending.request);
@@ -135,11 +139,28 @@ export class JourFixeNativeSession {
         throw new Error(
           "This change has not been confirmed. Retry preserves its operation identity.",
         );
+      if (pending.request.action === "project.jour_fixe.todos.confirm") {
+        if (!("goal" in result.response) || result.response.goal === undefined)
+          throw new Error("The confirmed project goal receipt is missing.");
+        pending.confirmedGoal = result.response.goal;
+      }
       pending.acknowledgedRevision = result.response.mutation.revision;
     }
     const fresh = await this.read(pending.request.meetingId);
     if (fresh.meeting === null || fresh.meeting.revision < pending.acknowledgedRevision)
       throw new Error("The confirmed meeting snapshot is still catching up.");
+    if (pending.request.action === "project.jour_fixe.todos.confirm") {
+      const goal = fresh.meeting.todos?.goal;
+      if (
+        fresh.meeting.state !== "confirmed" ||
+        fresh.meeting.todos?.status !== "confirmed" ||
+        fresh.meeting.todos.revision !== pending.request.proposalRevision ||
+        !goal ||
+        goal.goal_id !== pending.confirmedGoal?.goal_id ||
+        goal.revision !== pending.confirmedGoal.revision
+      )
+        throw new Error("The confirmed project goal snapshot is still catching up.");
+    }
     this.pending = undefined;
     return fresh;
   }
@@ -195,6 +216,22 @@ export class JourFixeNativeSession {
       text,
     }));
   }
+  confirm(
+    meetingId: string,
+    revision: number,
+    proposalRevision: number,
+    expectedGoalRevision: number,
+  ) {
+    return this.mutate(
+      JSON.stringify(["confirm", meetingId, revision, proposalRevision, expectedGoalRevision]),
+      () => ({
+        action: "project.jour_fixe.todos.confirm",
+        ...this.fields(meetingId, revision),
+        proposalRevision,
+        expectedGoalRevision,
+      }),
+    );
+  }
   revise(
     meetingId: string,
     revision: number,
@@ -212,6 +249,7 @@ export class JourFixeNativeSession {
         priority: todo.priority,
         evidence_ids: [...todo.evidenceIds],
         ...(todo.dueAt === undefined ? {} : { due_at_ms: todo.dueAt }),
+        ...(todo.owner === undefined ? {} : { owner: todo.owner }),
       })),
     }));
   }

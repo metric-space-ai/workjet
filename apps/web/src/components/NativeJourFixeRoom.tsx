@@ -156,6 +156,9 @@ function NativeJourFixeRoomContent({
         {...(["live", "review"].includes(meeting.state)
           ? { onComment: (draft, text) => accepted(() => session.comment(draft, text)) }
           : {})}
+        onConfirmTodos={(id, revision, proposal, goalRevision) =>
+          accepted(() => session.confirm(id, revision, proposal, goalRevision))
+        }
         onReviseTodos={(id, revision, proposal, items) =>
           accepted(() => session.revise(id, revision, proposal, items))
         }

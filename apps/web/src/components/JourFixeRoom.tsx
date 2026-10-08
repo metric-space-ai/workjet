@@ -115,13 +115,8 @@ function JourFixeRoomContent({
     revision: number;
     items: readonly JourFixeTodo[];
   } | null>(null);
-  const [emptyDecision, setEmptyDecision] = useState<{
-    meetingRevision: number;
-    proposalRevision: number;
-  } | null>(null);
-  const confirmEmpty =
-    emptyDecision?.meetingRevision === meeting.revision &&
-    emptyDecision?.proposalRevision === meeting.todos?.revision;
+  const proposalHasOwners = (items: readonly JourFixeTodo[]) =>
+    items.length > 0 && items.every((todo) => todo.owner?.trim());
   const hasTodoEdits = todoDraft !== null && todoDraft.revision === meeting.todos?.revision;
   const todos = hasTodoEdits && todoDraft ? todoDraft.items : (meeting.todos?.items ?? []);
   const comments = slide ? jourFixeCommentsForSlide(meeting, slide.id) : [];
@@ -163,9 +158,8 @@ function JourFixeRoomContent({
   function editTodos(items: readonly JourFixeTodo[]) {
     if (!canRevise || meeting.todos === undefined) return;
     setTodoDraft({ revision: meeting.todos.revision, items });
-    setEmptyDecision(null);
   }
-  function updateTodo(id: string, key: "title" | "acceptance", value: string) {
+  function updateTodo(id: string, key: "title" | "acceptance" | "owner", value: string) {
     editTodos(todos.map((todo) => (todo.id === id ? { ...todo, [key]: value } : todo)));
   }
   return (
@@ -291,6 +285,16 @@ function JourFixeRoomContent({
                       onChange={(event) => updateTodo(todo.id, "title", event.target.value)}
                     />
                     <label className="block text-xs text-muted-foreground">
+                      Owner
+                      <Input
+                        aria-label={`Todo ${number + 1} owner`}
+                        maxLength={256}
+                        value={todo.owner ?? ""}
+                        onChange={(event) => updateTodo(todo.id, "owner", event.target.value)}
+                        className="mt-1"
+                      />
+                    </label>
+                    <label className="block text-xs text-muted-foreground">
                       Acceptance
                       <textarea
                         className="mt-1 block min-h-16 w-full resize-y rounded-md border border-input bg-transparent p-2 text-sm text-foreground"
@@ -338,6 +342,7 @@ function JourFixeRoomContent({
                             id: randomUUID(),
                             title: "",
                             acceptance: "",
+                            owner: "",
                             priority: "P1",
                             evidenceIds: [],
                           },
@@ -369,25 +374,12 @@ function JourFixeRoomContent({
                       Save edits
                     </Button>
                   )}
-                  {!hasTodoEdits && todos.length === 0 && (
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={confirmEmpty}
-                        onChange={(event) =>
-                          setEmptyDecision(
-                            event.target.checked && meeting.todos
-                              ? {
-                                  meetingRevision: meeting.revision,
-                                  proposalRevision: meeting.todos.revision,
-                                }
-                              : null,
-                          )
-                        }
-                        disabled={busy}
-                      />
-                      Confirm no to-dos for this meeting
-                    </label>
+                  {onConfirmTodos && !proposalHasOwners(todos) && (
+                    <p role="status" className="mr-auto text-xs text-muted-foreground">
+                      {todos.length === 0
+                        ? "Add at least one to-do before confirming."
+                        : "Assign an owner to each to-do before confirming."}
+                    </p>
                   )}
                   {onConfirmTodos && (
                     <Button
@@ -395,7 +387,7 @@ function JourFixeRoomContent({
                         busy ||
                         hasTodoEdits ||
                         meeting.previousGoalRevision === undefined ||
-                        (todos.length === 0 && !confirmEmpty)
+                        !proposalHasOwners(todos)
                       }
                       onClick={() =>
                         void perform(() =>

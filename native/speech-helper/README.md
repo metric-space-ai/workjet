@@ -103,6 +103,15 @@ EPIPE, settles pending calls and bounds stderr. EOF cancels owned work and
 releases only locale reservations created by this helper. Normal end drains
 final+receipt; cancel discards final.
 
+## Missing German narration voice
+
+If status reports an empty germanVoices list, synthesis returns voice_missing.
+Install a German Enhanced/Premium voice in System Settings → Accessibility →
+Read & Speak → the information button beside System voice → German → download
+the enhanced/premium voice. Wait for the download to finish, then start a new
+helper and check status again. No provider login is needed.
+Apple's macOS26 instructions: https://support.apple.com/guide/mac-help/mchlp2290/26/mac/26.
+
 ## Measurement and installed acceptance
 
 helperMs is milliseconds since this child started, from monotonic DispatchTime

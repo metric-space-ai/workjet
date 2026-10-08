@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import { CommandId, ProjectId } from "@workjet/contracts";
-import jourFixeFixture from "../../../../packages/contracts/src/workjetJourFixeMeeting.fixture.json";
+import jourFixeFixture from "../../../../packages/contracts/src/workjetJourFixeMeeting.fixture.json" with { type: "json" };
 import * as NodeVM from "node:vm";
 import type { CtoxManagedDiscoveryResult, CtoxManagedInstance } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";

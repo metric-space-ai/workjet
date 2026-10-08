@@ -1898,7 +1898,10 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         const response = (raw as { readonly result?: unknown }).result;
         // Native Meeting snapshots have a 1 MiB metadata ceiling. Other
         // project actions retain their existing 256 KiB limit.
-        const responseLimit = request.action === "project.jour_fixe.meeting.read" ? 1024 * 1024 : MAX_PROJECT_CONTROL_RESPONSE_BYTES;
+        const responseLimit =
+          request.action === "project.jour_fixe.meeting.read"
+            ? 1024 * 1024
+            : MAX_PROJECT_CONTROL_RESPONSE_BYTES;
         const encodedLength = yield* Effect.try({
           try: () => Buffer.byteLength(encodeUnknownJson(response), "utf8"),
           catch: () => responseLimit + 1,

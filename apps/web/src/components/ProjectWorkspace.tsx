@@ -100,14 +100,30 @@ export function ProjectWorkspace({
     "Sunday",
   ];
   const roomKey = `${ctoxInstanceId}:${project.id}`;
-  const nativeRoom = project.native && ctoxInstanceId != null && project.configuration !== undefined;
-  const openJourFixe = onOpenJourFixe ?? (nativeRoom ? () => { setDismissedMeetingKey(null); setMeetingKey(roomKey); } : undefined);
-  if (nativeRoom && (meetingKey === roomKey || (openMeeting && dismissedMeetingKey !== roomKey))) return (
-    <SidebarInset className="min-h-0 overflow-auto">
-      <NativeJourFixeRoom instanceId={ctoxInstanceId} projectId={project.configuration!.id} projectTitle={project.title}
-        onBack={() => { setMeetingKey(null); setDismissedMeetingKey(roomKey); }} />
-    </SidebarInset>
-  );
+  const nativeRoom =
+    project.native && ctoxInstanceId != null && project.configuration !== undefined;
+  const openJourFixe =
+    onOpenJourFixe ??
+    (nativeRoom
+      ? () => {
+          setDismissedMeetingKey(null);
+          setMeetingKey(roomKey);
+        }
+      : undefined);
+  if (nativeRoom && (meetingKey === roomKey || (openMeeting && dismissedMeetingKey !== roomKey)))
+    return (
+      <SidebarInset className="min-h-0 overflow-auto">
+        <NativeJourFixeRoom
+          instanceId={ctoxInstanceId}
+          projectId={project.configuration!.id}
+          projectTitle={project.title}
+          onBack={() => {
+            setMeetingKey(null);
+            setDismissedMeetingKey(roomKey);
+          }}
+        />
+      </SidebarInset>
+    );
   return (
     <SidebarInset className="min-h-0 overflow-auto">
       <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-sm">

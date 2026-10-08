@@ -5,8 +5,16 @@ import {
   WorkjetJourFixeOwnerResponse,
 } from "./workjetJourFixeOwner.ts";
 export { isWorkjetJourFixeReceiptForRequest } from "./workjetJourFixeOwner.ts";
-import { WorkjetJourFixeReadRequest, WorkjetJourFixeReadResponse } from "./workjetJourFixeMeeting.ts";
-export { WorkjetJourFixeMeeting, WorkjetJourFixeReadRequest, WorkjetJourFixeReadResponse, isWorkjetJourFixeReadReceiptForRequest } from "./workjetJourFixeMeeting.ts";
+import {
+  WorkjetJourFixeReadRequest,
+  WorkjetJourFixeReadResponse,
+} from "./workjetJourFixeMeeting.ts";
+export {
+  WorkjetJourFixeMeeting,
+  WorkjetJourFixeReadRequest,
+  WorkjetJourFixeReadResponse,
+  isWorkjetJourFixeReadReceiptForRequest,
+} from "./workjetJourFixeMeeting.ts";
 
 import {
   CommandId,

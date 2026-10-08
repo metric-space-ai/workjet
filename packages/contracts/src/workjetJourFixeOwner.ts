@@ -120,7 +120,8 @@ export function isWorkjetJourFixeReceiptForRequest(request: unknown, response: u
     return false;
 
   if (!request.action.startsWith("project.jour_fixe.")) return true;
-  if (request.action === "project.jour_fixe.meeting.read") return isWorkjetJourFixeReadReceiptForRequest(request, response);
+  if (request.action === "project.jour_fixe.meeting.read")
+    return isWorkjetJourFixeReadReceiptForRequest(request, response);
 
   try {
     const intent = decodeRequest(request);

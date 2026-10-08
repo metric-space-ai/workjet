@@ -457,11 +457,18 @@ function IndexDraftLanding() {
                   return true;
                 }
               : undefined,
-          onOpenJourFixe: project.native ? () => {
-            if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId || activeCtoxInstanceId === null) return;
-            setMeetingProjectKey(project.key);
-            if (selectWorkjetProject(activeCtoxInstanceId, project.id)) selectProjectOverviewRef(activeCtoxInstanceId, null);
-          } : undefined,
+          onOpenJourFixe: project.native
+            ? () => {
+                if (
+                  readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId ||
+                  activeCtoxInstanceId === null
+                )
+                  return;
+                setMeetingProjectKey(project.key);
+                if (selectWorkjetProject(activeCtoxInstanceId, project.id))
+                  selectProjectOverviewRef(activeCtoxInstanceId, null);
+              }
+            : undefined,
           onOpen: () => {
             setMeetingProjectKey(null);
             if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return;

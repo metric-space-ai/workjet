@@ -1,4 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import * as Schema from "effect/Schema";
+import { WorkjetExitModelAssessment } from "@workjet/contracts";
+import ctoxAssessment from "../../../../packages/contracts/src/fixtures/ctox-exit-model-assessment.json" with { type: "json" };
 import { describe, expect, it } from "vite-plus/test";
 import { ProjectExitModelReport, ProjectExitModelSummary } from "./ProjectExitModel";
 import { ProjectOverviewCard } from "./ProjectOverviewCard";
@@ -7,6 +10,20 @@ import { exitModelFixture } from "../test/exitModelFixture";
 const projectId = "project-one";
 
 describe("project exit assessment display", () => {
+  it("renders the actual synthetic CTOX producer receipt without translating its financial fields", () => {
+    const assessment = Schema.decodeUnknownSync(WorkjetExitModelAssessment)(ctoxAssessment);
+    const markup = renderToStaticMarkup(
+      <ProjectExitModelReport projectId="project" assessment={assessment} />,
+    );
+    expect(markup).toContain("8.1k EUR");
+    expect(markup).toContain("Provisional");
+    expect(markup).toContain("100%");
+    expect(markup).toContain("Assessment history · 2");
+    expect(markup).toContain("Fictitious test values");
+    expect(markup).toContain("test fixture only; not a real project");
+    expect(markup).not.toContain("since previous calculated assessment");
+  });
+
   it("adds the fixed exit measure without replacing the three project KPI slots", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard

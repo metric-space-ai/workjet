@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
+import ctoxAssessment from "./fixtures/ctox-exit-model-assessment.json" with { type: "json" };
 import { CtoxWorkjetProjectControlRequest, CtoxWorkjetProjectControlResponse } from "./ctox.ts";
 import {
   WorkjetExitModelAssessment,
@@ -58,6 +59,18 @@ const assessment = {
 };
 
 describe("native five-year exit assessment contracts", () => {
+  it("strictly decodes a recorded CTOX producer receipt, including diagnostics and research history", () => {
+    const value = decode(ctoxAssessment);
+    expect(value.project_id).toBe("project");
+    expect(value.status).toBe("provisional");
+    expect(value.result?.expected_exit_equity_eur).toBe(8050);
+    expect(value.result?.expected_price_given_sale_eur).toBe(8050);
+    expect(value.history.map((run) => run.status)).toEqual(["provisional", "researching"]);
+    expect(value.history[0]?.run_id).toBe(value.run_id);
+    expect(value.resource_proposal?.monthly_budget_eur).toBe(300);
+    expect(value.diagnostics?.[1]?.excess_cash_eur).toBe(6100);
+  });
+
   it("retains source-backed, explicitly provisional inputs and exact computed amounts", () => {
     expect(decode(assessment)).toEqual(assessment);
     expect(Schema.encodeSync(WorkjetExitModelAssessment)(decode(assessment))).toEqual(assessment);

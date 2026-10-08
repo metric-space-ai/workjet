@@ -386,7 +386,7 @@ export function ProjectExitModelReport({
                 {current!.scenarios.map((scenario) => (
                   <tr key={scenario.state} className="border-t border-border tabular-nums">
                     <th scope="row" className="py-2 pr-3 font-normal">
-                      {scenario.state}
+                      {scenario.state.replaceAll("_", " ")}
                     </th>
                     <td className="px-2">{formatExitPercent(scenario.probability)}</td>
                     <td className="px-2">{formatExitPercent(scenario.sale_probability)}</td>
@@ -429,7 +429,7 @@ export function ProjectExitModelReport({
                 {current.diagnostics.map((item) => (
                   <tr key={item.state} className="border-t border-border tabular-nums">
                     <th scope="row" className="py-2 pr-3 font-normal">
-                      {item.state}
+                      {item.state.replaceAll("_", " ")}
                     </th>
                     <td className="px-2 whitespace-nowrap">{formatExitEur(item.ev_eur)}</td>
                     <td className="px-2 whitespace-nowrap">

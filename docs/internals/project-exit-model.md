@@ -80,6 +80,13 @@ presentation/routing tests, existing overview and project-control tests, and
 contracts/web/desktop type checks. Test values are synthetic and never seed real
 projects. Native verification and deployment are separate CTOX delivery steps.
 
+`packages/contracts/src/fixtures/ctox-exit-model-assessment.json` is the unmodified
+synthetic output of the CTOX producer tests at PR #483 source
+`860c967b252d33e8ad12f37bea8688a3ee007bcd` (8 October 2026). Contract tests decode
+all its fields strictly, and the report test renders its provisional EUR 8,050
+result and two history entries. It contains fictitious assumptions, not project
+measurements.
+
 Installed acceptance should exercise gallery → assessment, missing evidence,
 resource proposal → bounded research, dated results/history, reconnect and instance
 switching in an isolated profile. Source tests alone do not establish installed

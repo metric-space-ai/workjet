@@ -1,3 +1,6 @@
+import { makeCtoxCalendarRpc } from "./workjet/ctox/CtoxCalendarRpc.ts";
+import { WorkjetCalendarError } from "@workjet/contracts";
+import { HttpClient, FetchHttpClient } from "effect/unstable/http";
 import { RemoteWorkerComputerEnrollment } from "./workjet/RemoteWorkerComputerEnrollment.ts";
 import { RemoteWorkerDispatchError } from "@workjet/contracts";
 import { RemoteWorkerBroker } from "./workjet/RemoteWorkerBroker.ts";
@@ -520,6 +523,15 @@ const makeWsRpcLayer = (
       const decisionHubConnections = yield* Effect.serviceOption(
         DecisionHubConnectionRegistry.DecisionHubConnectionRegistry,
       );
+      const calendarHttpClient = yield* HttpClient.HttpClient.pipe(
+        Effect.provide(FetchHttpClient.layer),
+      );
+      const calendar = Option.isSome(decisionHubConnections)
+        ? makeCtoxCalendarRpc({
+            connections: decisionHubConnections.value,
+            httpClient: calendarHttpClient,
+          })
+        : null;
       const withDecisionHubConnections = <A>(
         use: (
           registry: DecisionHubConnectionRegistry.DecisionHubConnectionRegistryShape,
@@ -1874,6 +1886,20 @@ const makeWsRpcLayer = (
             {
               "rpc.aggregate": "server",
             },
+          ),
+        [WS_METHODS.workjetCalendarAccounts]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCalendarAccounts,
+            calendar?.accounts(input) ??
+              Effect.fail(new WorkjetCalendarError({ reason: "connection-unavailable" })),
+            { "rpc.aggregate": "calendar" },
+          ),
+        [WS_METHODS.workjetCalendarEvents]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workjetCalendarEvents,
+            calendar?.events(input) ??
+              Effect.fail(new WorkjetCalendarError({ reason: "connection-unavailable" })),
+            { "rpc.aggregate": "calendar" },
           ),
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(

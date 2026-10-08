@@ -31,12 +31,13 @@ export function ConnectedProjectCalendar(props: Pick<ComponentProps<typeof Proje
   const key = `${environment?.environmentId}:${target?.connectionId}:${target?.instanceId}:${range.from}:${range.to}:${generation}`;
   useEffect(() => {
     if (environment === null || target === null || accounts.data === null) return;
+    const authorizedAccounts = accounts.data.accounts;
     let disposed = false;
     setPages({ key, values: [] });
     // One provider request at a time. Leaving the calendar or switching its
     // instance fences late results and prevents further account reads.
     void (async () => {
-      for (const account of accounts.data.accounts) {
+      for (const account of authorizedAccounts) {
         if (disposed) return;
         if (!account.supported) continue;
         const result = await readEvents({ environmentId: environment.environmentId, input: {

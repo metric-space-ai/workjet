@@ -182,7 +182,9 @@ export function buildSessionEvents(
 export function buildAccountEvents(
   events: readonly WorkjetCalendarEvent[], from: DateKey, to: DateKey,
   displayZone: string, onOpen: (event: WorkjetCalendarEvent) => void,
+  projects: readonly CalendarProject[] = [],
 ): readonly CalendarEvent[] {
+  const projectKeys = new Map(projects.map((project) => [project.id, project.key]));
   return events.flatMap((event) => {
     const first = zonedReading(event.start_ms, displayZone).date;
     const last = zonedReading(event.end_ms - 1, displayZone).date;
@@ -192,7 +194,7 @@ export function buildAccountEvents(
       const endMs = Math.min(event.end_ms, instantOf(addDays(date, 1), 0, displayZone));
       rows.push({ id: `${event.id}:${date}`, calendarId: event.calendar_id, title: event.title,
         startMs, endMs, date, minutes: zonedReading(startMs, displayZone).minutes,
-        allDay: event.all_day, timeZone: displayZone, projectKey: event.project_id ?? "",
+        allDay: event.all_day, timeZone: displayZone, projectKey: projectKeys.get(event.project_id ?? "") ?? "",
         onOpen: () => onOpen(event) });
     }
     return rows;
@@ -529,7 +531,7 @@ export function ProjectCalendar({
     () => [...buildEvents(projects, windowFrom, windowTo, displayZone),
       ...buildSessionEvents(projects, sessions, displayZone)
         .filter((event) => event.date >= windowFrom && event.date <= windowTo),
-      ...buildAccountEvents(accountEvents, windowFrom, windowTo, displayZone, setSelectedEvent)],
+      ...buildAccountEvents(accountEvents, windowFrom, windowTo, displayZone, setSelectedEvent, projects)],
     [projects, sessions, accountEvents, windowFrom, windowTo, displayZone],
   );
   const visibleEvents = useMemo(

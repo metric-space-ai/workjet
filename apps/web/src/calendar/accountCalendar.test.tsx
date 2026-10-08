@@ -28,6 +28,14 @@ describe("connected account calendar", () => {
       expect(html).toContain("Partial sync");
     }
   });
+  it("binds provider project IDs to local project keys without admitting foreign projects", () => {
+    const projects = [{ id: "native-project", key: "instance:native-project", title: "Project", onOpen: () => {} }];
+    const rows = buildAccountEvents([
+      { ...event, project_id: "native-project" },
+      { ...event, id: "foreign-event", project_id: "foreign-project" },
+    ], "2026-10-08", "2026-10-08", "UTC", () => {}, projects);
+    expect(rows.map((row) => row.projectKey)).toEqual(["instance:native-project", ""]);
+  });
   it("keeps all-day occurrences in the all-day lane", () => {
     const html = renderToStaticMarkup(<ProjectCalendar projects={[]} initialDate="2026-10-09"
       initialView="day" accountEvents={[{ ...event, all_day: true }]} />);

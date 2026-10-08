@@ -61,7 +61,7 @@ export const WorkjetJourFixeComment = Schema.Struct({
   text: text(4096),
   author_user_id: text(256),
   created_at_ms: unsigned,
-  supervisor_event_id: Schema.optionalKey(text(128)),
+  supervisor_event_id: Schema.optionalKey(Schema.NullOr(text(128))),
   meeting_id: text(128),
 });
 

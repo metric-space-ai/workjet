@@ -8,3 +8,8 @@ swift test --package-path native/speech-helper --scratch-path "$task_speech_buil
   --security-path "$TMPDIR/speech-package-security" --jobs 2 \
   -Xswiftc -module-cache-path -Xswiftc "$TMPDIR/speech-module-cache"
 "$task_speech_build/debug/workjet-speech-helper" --version
+if [ "${1:-}" = "--probe" ]; then
+  /usr/bin/python3 native/speech-helper/probe.py \
+    --binary "$task_speech_build/debug/workjet-speech-helper" \
+    --output "$TMPDIR/speech-helper-probe.json"
+fi

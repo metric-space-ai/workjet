@@ -111,6 +111,14 @@ normal release path; this source acquires no signing identity and edits no live
 installation. Installed evidence (including failures):
 ~/.codex/task-evidence/teilziele/20-speech-*.json.
 
+The same gated check can append `--probe` for a bounded helper-only run. It
+synthesizes a known German sentence, then feeds its PCM at20ms intervals with
+600ms final silence; it records first PCM, partials before end, accuracy and
+end-to-candidate timings in the gate TMPDIR. Missing voices/assets are real
+failures. It never claims microphone, signing, room latency or native receipt
+acceptance. `probe.py --install-assets` explicitly allows OS-managed German
+STT asset setup; use it through the gate only, after confirming root capacity.
+
 Official API sources:
 - https://developer.apple.com/documentation/speech/speechanalyzer
 - https://developer.apple.com/documentation/speech/speechtranscriber

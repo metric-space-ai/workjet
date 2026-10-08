@@ -3132,6 +3132,7 @@ describe("CtoxGuestManager", () => {
       for (const asset of [
         `${officeRoot}/fonts/private`,
         `${officeRoot}/fonts/012/records`,
+        `${officeRoot}/fonts/012/`,
         `${officeRoot}/fonts/012.bin`,
         `${officeRoot}/sdkjs/common/Images/private.bin`,
         "/vendor/other/fonts/012",

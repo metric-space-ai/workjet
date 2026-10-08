@@ -647,6 +647,8 @@ export function isForbiddenCtoxDataRequest(
         return !(
           url.origin === new URL(launchOrigin).origin &&
           requestPath === url.pathname &&
+          !url.pathname.includes("//") &&
+          !url.pathname.endsWith("/") &&
           (normalizedMethod === "GET" || normalizedMethod === "HEAD")
         );
       } catch {

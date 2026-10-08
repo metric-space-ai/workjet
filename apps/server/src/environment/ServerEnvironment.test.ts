@@ -44,12 +44,14 @@ it.layer(NodeServices.layer)("server host identity", (it) => {
 
   it.effect("reads platform IDs independently of the Workjet state root", () =>
     Effect.gen(function* () {
-      const raw = "aabbccdd12345678abcd0123456789ab00";
+      const raw = "aabbccdd12345678abcd0123456789ab";
       const linux = yield* read("linux", `${raw}\n`);
       expect(linux).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
       expect(linux).not.toContain(raw);
       expect(yield* read("linux", raw.toUpperCase())).toBe(linux);
-      expect(yield* read("linux", "12345678abcd0123456789ab00aabbccdd")).not.toBe(linux);
+      const changed = yield* read("linux", "00112233445566778899aabbccddeeff");
+      expect(changed).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(changed).not.toBe(linux);
       const mac = yield* read("darwin", `"IOPlatformUUID" = "${guid}"`);
       expect(mac).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
       expect(yield* read("darwin", `"IOPlatformUUID" = "${guid.toLowerCase()}"`)).toBe(mac);
@@ -76,7 +78,7 @@ it.layer(NodeServices.layer)("server host identity", (it) => {
       };
       const readFailure = (platform: NodeJS.Platform) =>
         ServerEnvironment.readServerHostId(platform).pipe(
-          Effect.provide(FileSystem.layerNoop()),
+          Effect.provide(FileSystem.layerNoop({})),
           Effect.provideService(ProcessRunner.ProcessRunner, failing),
         );
       expect(yield* readFailure("linux")).toBeUndefined();
@@ -90,7 +92,7 @@ it.layer(NodeServices.layer)("server host identity", (it) => {
 
   it.effect("omits unavailable, uninitialized and malformed host identities", () =>
     Effect.gen(function* () {
-      for (const text of ["", "uninitialized", "not a machine ID", "0".repeat(32)]) {
+      for (const text of ["", "uninitialized", "not a machine ID", "0".repeat(32), "1".repeat(34)]) {
         expect(yield* read("linux", text)).toBeUndefined();
       }
       expect(yield* read("darwin", "other output")).toBeUndefined();

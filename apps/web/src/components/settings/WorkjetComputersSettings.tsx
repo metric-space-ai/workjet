@@ -136,7 +136,9 @@ export function includeSavedComputers(
   targets: ReadonlyArray<WorkjetEnvironmentTargetOption>,
   primaryEnvironmentId: EnvironmentId | null,
 ): WorkjetConfiguration {
-  let catalog = configuration;
+  const computers = [...configuration.computers];
+  const catalog = { ...configuration, computers };
+  let added = false;
   const primaryHostId = targets
     .find((target) => target.environmentId === primaryEnvironmentId)
     ?.hostId?.trim();
@@ -147,20 +149,17 @@ export function includeSavedComputers(
       findComputerForTarget(catalog, target, targets)
     )
       continue;
-    catalog = {
-      ...catalog,
-      computers: [
-        ...catalog.computers,
-        saveWorkjetComputerDraft(
-          createWorkjetComputerDraft({
-            environments: [target],
-            id: `connection-${target.environmentId}`,
-          }),
-        ),
-      ],
-    };
+    computers.push(
+      saveWorkjetComputerDraft(
+        createWorkjetComputerDraft({
+          environments: [target],
+          id: `connection-${target.environmentId}`,
+        }),
+      ),
+    );
+    added = true;
   }
-  return catalog;
+  return added ? catalog : configuration;
 }
 
 const OPERATIONAL_CAPABILITIES = [

@@ -2,7 +2,7 @@
 import {
   RemoteWorkerDispatchError, RemoteWorkerResult,
   type NativeSupervisorWorkerIntent, type OrchestrationThread,
-  type NativeSupervisorWorkerCompletion,
+  type NativeSupervisorWorkerCompletion, type RemoteWorkerResponse, type ThreadId,
 } from "@workjet/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -22,11 +22,28 @@ import { makeCtoxNativeSupervisorWorkers } from "./ctox/CtoxNativeSupervisorWork
 import { DecisionHubConnectionRegistry } from "./decisionHub/DecisionHubConnectionRegistry.ts";
 import { makeNativeSupervisorWorkerDispatch, type NativeSupervisorWorkerSource } from "./NativeSupervisorWorkerDispatch.ts";
 import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
-import { WorkerDispatch } from "./WorkerDispatch.ts";
+import { WorkerDispatch, type WorkerDispatchError } from "./WorkerDispatch.ts";
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const encodeResult = Schema.encodeEffect(RemoteWorkerResult);
 const decodeResult = Schema.decodeUnknownEffect(RemoteWorkerResult);
+
+export const reconcileNativeWorkerFailure = Effect.fn("NativeSupervisorWorkerDispatch.reconcileFailure")(function* (
+  read: (id: ThreadId) => Effect.Effect<Option.Option<{ readonly response: RemoteWorkerResponse | null }>, RemoteWorkerDispatchError>,
+  intentId: ThreadId,
+  error: Pick<WorkerDispatchError, "reason">,
+) {
+  if (error.reason === "remote-dispatch-pending") return Option.none<NativeSupervisorWorkerCompletion>();
+  const saved = yield* read(intentId);
+  if (Option.isSome(saved)) {
+    if (saved.value.response === null) return Option.none<NativeSupervisorWorkerCompletion>();
+    if (saved.value.response.outcome.status === "dispatched")
+      return Option.some<NativeSupervisorWorkerCompletion>(saved.value.response.outcome.result);
+  }
+  return Option.some<NativeSupervisorWorkerCompletion>({
+    schemaVersion: 1, status: "failed", reason: error.reason,
+  });
+});
 
 /** The native daemon owns the command queue and its execution lease. This
  * server-lifetime consumer derives source authority from the current projection,
@@ -102,18 +119,7 @@ export const make = Effect.gen(function* () {
           return encodeResult({ ...result, computerId: result.computerId }).pipe(
             Effect.flatMap(decodeResult), Effect.map(Option.some), Effect.mapError(failure));
         },
-        onFailure: (error) => Effect.gen(function* () {
-          // An unacknowledged target may already be executing. Preserve its
-          // native intent and exact request ID instead of reporting a false
-          // failure or dispatching another worker after restart.
-          if (error.reason === "remote-dispatch-pending") return Option.none<NativeSupervisorWorkerCompletion>();
-          const saved = yield* broker.read(intent.intentId);
-          if (Option.isSome(saved) && saved.value.response === null)
-            return Option.none<NativeSupervisorWorkerCompletion>();
-          return Option.some<NativeSupervisorWorkerCompletion>({
-            schemaVersion: 1, status: "failed", reason: error.reason,
-          });
-        }),
+        onFailure: (error) => reconcileNativeWorkerFailure(broker.read, intent.intentId, error),
       }));
     }),
     complete: (scope, registration, intent, result) => native.complete(scope, registration, intent, result),

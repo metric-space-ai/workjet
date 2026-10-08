@@ -2,6 +2,14 @@
 // Loads the vendored Excalidraw 0.18 browser closure that the host app serves as static files
 // (Workjet: `apps/web/public/vendor/excalidraw/`). Structural types keep the vendored React and
 // Excalidraw closure outside the app bundle: the app never imports `@excalidraw/excalidraw`.
+import { z } from "zod";
+
+// The Workjet renderer CSP has no 'unsafe-eval'. Zod probes `new Function` for its JIT parser when
+// the first object schema is constructed; under the CSP that only reports a violation and falls
+// back. This module is the first import of the canvas entry (`./index.ts`), so the engine schemas
+// it pulls in are constructed afterwards. A top-level call in a used module survives the package's
+// `sideEffects` tree shaking; a side-effect-only import would not.
+z.config({ jitless: true });
 
 export type CanvasRuntimeElement = {
   id: string;

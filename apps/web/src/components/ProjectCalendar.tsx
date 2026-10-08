@@ -1,94 +1,595 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { GalleryProject } from "../projectOverview";
-import { ArrowUpRightIcon } from "lucide-react";
+import {
+  addDays,
+  addMonths,
+  formatDateKey,
+  isSameMonth,
+  localTimeZone,
+  monthGrid,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+  weeklyOccurrences,
+  zonedReading,
+  type DateKey,
+} from "../calendar/calendarDates";
 import { Button } from "./ui/button";
 
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+type CalendarView = "day" | "week" | "month" | "year";
+
 type CalendarProject = GalleryProject & {
   readonly onOpen: () => void;
   readonly onOpenJourFixe?: (() => void) | undefined;
 };
 
-/** Weekly wall-clock meetings retain the native timezone; no inferred appointments. */
-export function ProjectCalendar({ projects }: { readonly projects: readonly CalendarProject[] }) {
-  const scheduled = projects.filter((project) => project.configuration?.jourFixe != null);
-  const unscheduled = projects.filter((project) => project.configuration?.jourFixe == null);
+/** One calendar event as the grid draws it. Times are instants; placement uses the display zone. */
+type CalendarEvent = {
+  readonly id: string;
+  readonly calendarId: string;
+  readonly title: string;
+  readonly startMs: number;
+  readonly endMs: number;
+  readonly date: DateKey;
+  readonly minutes: number;
+  readonly timeZone: string;
+  readonly projectKey: string;
+  readonly onOpen: () => void;
+};
+
+const PROJECT_CALENDAR_ID = "project-meetings";
+/** Regular meetings carry no duration, so every one is drawn as an hour. */
+const MEETING_MINUTES = 60;
+const HOUR_HEIGHT = 48;
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const VIEWS: readonly { readonly value: CalendarView; readonly label: string }[] = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "year", label: "Year" },
+];
+const WEEKDAY_OFFSETS = Array.from({ length: 7 }, (_, index) => index);
+
+function visibleRange(view: CalendarView, anchor: DateKey): { from: DateKey; to: DateKey } {
+  switch (view) {
+    case "day":
+      return { from: anchor, to: anchor };
+    case "week": {
+      const from = startOfWeek(anchor);
+      return { from, to: addDays(from, 6) };
+    }
+    case "month": {
+      const grid = monthGrid(anchor);
+      return { from: grid[0] ?? anchor, to: grid[grid.length - 1] ?? anchor };
+    }
+    case "year":
+      return { from: startOfYear(anchor), to: `${anchor.slice(0, 4)}-12-31` };
+  }
+}
+
+function shiftAnchor(view: CalendarView, anchor: DateKey, direction: 1 | -1): DateKey {
+  switch (view) {
+    case "day":
+      return addDays(anchor, direction);
+    case "week":
+      return addDays(anchor, 7 * direction);
+    case "month":
+      return addMonths(anchor, direction);
+    case "year":
+      return addMonths(anchor, 12 * direction);
+  }
+}
+
+function rangeTitle(view: CalendarView, anchor: DateKey): string {
+  switch (view) {
+    case "day":
+      return formatDateKey(anchor, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    case "week": {
+      const from = startOfWeek(anchor);
+      const to = addDays(from, 6);
+      return `${formatDateKey(from, { month: "short", day: "numeric" })} – ${formatDateKey(to, { month: "short", day: "numeric", year: "numeric" })}`;
+    }
+    case "month":
+      return formatDateKey(anchor, { month: "long", year: "numeric" });
+    case "year":
+      return anchor.slice(0, 4);
+  }
+}
+
+function formatTime(ms: number): string {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(ms);
+}
+
+function formatHour(hour: number): string {
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).format(new Date(2000, 0, 1, hour));
+}
+
+function buildEvents(
+  projects: readonly CalendarProject[],
+  from: DateKey,
+  to: DateKey,
+  displayZone: string,
+): readonly CalendarEvent[] {
+  return projects
+    .flatMap((project) => {
+      const meeting = project.configuration?.jourFixe;
+      if (meeting == null) return [];
+      return weeklyOccurrences(meeting, from, to, displayZone).map(
+        (occurrence): CalendarEvent => ({
+          id: `${project.key}:${occurrence.startMs}`,
+          calendarId: PROJECT_CALENDAR_ID,
+          title: project.title,
+          startMs: occurrence.startMs,
+          endMs: occurrence.startMs + MEETING_MINUTES * 60_000,
+          date: occurrence.date,
+          minutes: occurrence.minutes,
+          timeZone: meeting.timezone,
+          projectKey: project.key,
+          onOpen: project.onOpenJourFixe ?? project.onOpen,
+        }),
+      );
+    })
+    .toSorted((a, b) => a.startMs - b.startMs || a.title.localeCompare(b.title));
+}
+
+function groupByDate(
+  events: readonly CalendarEvent[],
+): ReadonlyMap<DateKey, readonly CalendarEvent[]> {
+  const groups = new Map<DateKey, CalendarEvent[]>();
+  for (const event of events) {
+    const group = groups.get(event.date);
+    if (group) group.push(event);
+    else groups.set(event.date, [event]);
+  }
+  return groups;
+}
+
+function EventButton({
+  event,
+  placement,
+}: {
+  readonly event: CalendarEvent;
+  readonly placement: "block" | "chip";
+}) {
+  const label = `${event.title}, ${formatTime(event.startMs)}`;
+  if (placement === "chip") {
+    return (
+      <button
+        type="button"
+        onClick={event.onOpen}
+        title={`${event.title} · ${event.timeZone}`}
+        aria-label={label}
+        data-workjet-action={`project.open.calendar:${event.projectKey}`}
+        className="block w-full truncate rounded-sm bg-primary/12 px-1.5 py-0.5 text-left text-xs text-foreground transition-colors hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        {formatTime(event.startMs)} {event.title}
+      </button>
+    );
+  }
   return (
-    <section aria-label="Weekly project calendar" data-workjet-project-calendar="">
-      <p className="mb-4 text-sm text-muted-foreground">
-        Regular meetings · times are shown in each project's timezone.
-      </p>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
-        {WEEKDAYS.map((day, index) => {
-          const meetings = scheduled
-            .filter((project) => project.configuration?.jourFixe?.weekday === index + 1)
-            .toSorted(
-              (a, b) =>
-                (a.configuration?.jourFixe?.time ?? "").localeCompare(
-                  b.configuration?.jourFixe?.time ?? "",
-                ) || a.title.localeCompare(b.title),
-            );
+    <button
+      type="button"
+      onClick={event.onOpen}
+      title={`${event.title} · ${event.timeZone}`}
+      aria-label={label}
+      data-workjet-action={`project.open.calendar:${event.projectKey}`}
+      className="absolute inset-x-0.5 overflow-hidden rounded-md border border-primary/30 bg-primary/12 px-2 py-1 text-left text-xs transition-colors hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
+      style={{
+        top: (event.minutes / 60) * HOUR_HEIGHT + 1,
+        height: Math.max((MEETING_MINUTES / 60) * HOUR_HEIGHT - 2, 20),
+      }}
+    >
+      <span className="block font-medium tabular-nums">{formatTime(event.startMs)}</span>
+      <span className="block truncate">{event.title}</span>
+    </button>
+  );
+}
+
+function MiniMonth({
+  monthKey,
+  today,
+  anchor,
+  eventDates,
+  onSelect,
+}: {
+  readonly monthKey: DateKey;
+  readonly today: DateKey;
+  readonly anchor: DateKey;
+  readonly eventDates: ReadonlySet<DateKey>;
+  readonly onSelect: (date: DateKey) => void;
+}) {
+  const title = formatDateKey(monthKey, { month: "long", year: "numeric" });
+  return (
+    <section aria-label={title} className="min-w-0">
+      <h3 className="mb-2 text-sm font-medium">{title}</h3>
+      <div className="grid grid-cols-7 gap-y-0.5 text-center text-[11px] text-muted-foreground">
+        {WEEKDAY_OFFSETS.map((index) => (
+          <span key={index} className="py-0.5">
+            {formatDateKey(addDays(startOfWeek(monthKey), index), { weekday: "narrow" })}
+          </span>
+        ))}
+        {monthGrid(monthKey).map((date) => {
+          const inMonth = isSameMonth(date, monthKey);
+          const isToday = date === today;
+          const isSelected = date === anchor;
           return (
-            <section key={day} aria-label={day} className="min-w-0 border-t border-border pt-3">
-              <h2 className="mb-3 text-sm font-medium">{day}</h2>
-              {meetings.length === 0 ? (
-                <p className="text-sm text-muted-foreground" aria-label="No regular meetings">
-                  —
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {meetings.map((project) => (
-                    <button
-                      key={project.key}
-                      type="button"
-                      onClick={project.onOpenJourFixe ?? project.onOpen}
-                      data-workjet-action={`project.open.calendar:${project.key}`}
-                      className="w-full rounded-md border border-border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                      aria-label={
-                        project.onOpenJourFixe
-                          ? `Open meeting for ${project.title}`
-                          : `Open ${project.title}`
-                      }
-                    >
-                      <div className="mb-2 text-sm font-semibold tabular-nums">
-                        {project.configuration?.jourFixe?.time}
-                      </div>
-                      <div className="break-words text-sm">{project.title}</div>
-                      <div className="mt-1 break-all text-xs text-muted-foreground">
-                        {project.configuration?.jourFixe?.timezone}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
+            <button
+              key={date}
+              type="button"
+              onClick={() => onSelect(date)}
+              aria-label={formatDateKey(date, {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+              aria-pressed={isSelected}
+              className={[
+                "relative mx-auto flex size-7 items-center justify-center rounded-full text-xs tabular-nums transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
+                inMonth ? "text-foreground" : "text-muted-foreground/50",
+                isToday
+                  ? "bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
+                  : "",
+                isSelected && !isToday ? "ring-1 ring-primary" : "",
+              ].join(" ")}
+            >
+              {Number(date.slice(8))}
+              {eventDates.has(date) && !isToday ? (
+                <span className="absolute bottom-0.5 size-1 rounded-full bg-primary" aria-hidden />
+              ) : null}
+            </button>
           );
         })}
       </div>
-      {unscheduled.length > 0 && (
-        <section
-          className="mt-7 border-t border-border pt-4"
-          aria-label="Projects without a regular meeting"
-        >
-          <h2 className="text-sm font-medium">No regular meeting configured</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Open a project to set its regular meeting in project settings.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1">
-            {unscheduled.map((project) => (
-              <Button
-                key={project.key}
-                size="sm"
-                variant="ghost"
-                onClick={project.onOpen}
-                data-workjet-action={`project.open.calendar:${project.key}`}
+    </section>
+  );
+}
+
+function TimeGrid({
+  days,
+  eventsByDate,
+  today,
+  nowMinutes,
+}: {
+  readonly days: readonly DateKey[];
+  readonly eventsByDate: ReadonlyMap<DateKey, readonly CalendarEvent[]>;
+  readonly today: DateKey;
+  readonly nowMinutes: number;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Open the grid at 07:00 so mornings are visible without scrolling.
+    if (scrollRef.current) scrollRef.current.scrollTop = 7 * HOUR_HEIGHT;
+  }, []);
+  const columns = `3.5rem repeat(${days.length}, minmax(0, 1fr))`;
+  return (
+    <div className="flex min-w-0 flex-col overflow-hidden rounded-md border border-border">
+      <div className="grid border-b border-border" style={{ gridTemplateColumns: columns }}>
+        <span aria-hidden />
+        {days.map((date) => {
+          const isToday = date === today;
+          return (
+            <div key={date} className="flex flex-col items-center py-2 text-xs">
+              <span className="text-muted-foreground">
+                {formatDateKey(date, { weekday: "short" })}
+              </span>
+              <span
+                className={[
+                  "mt-0.5 flex size-7 items-center justify-center rounded-full text-sm tabular-nums",
+                  isToday ? "bg-primary font-semibold text-primary-foreground" : "",
+                ].join(" ")}
               >
-                {project.title}
-                <ArrowUpRightIcon className="size-3" />
+                {Number(date.slice(8))}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div
+        className="grid border-b border-border py-1 text-xs"
+        style={{ gridTemplateColumns: columns }}
+        aria-label="All-day events"
+      >
+        <span className="px-1 text-right text-muted-foreground">all-day</span>
+        {days.map((date) => (
+          <div
+            key={date}
+            className="min-h-6 border-l border-border px-0.5"
+            data-calendar-allday={date}
+          />
+        ))}
+      </div>
+      <div ref={scrollRef} className="relative h-[min(70vh,44rem)] overflow-y-auto">
+        <div className="grid" style={{ gridTemplateColumns: columns, height: HOUR_HEIGHT * 24 }}>
+          <div className="relative text-right text-xs text-muted-foreground">
+            {HOURS.map((hour) => (
+              <span
+                key={hour}
+                className="absolute right-1.5 -translate-y-1/2 tabular-nums"
+                style={{ top: hour * HOUR_HEIGHT }}
+              >
+                {hour === 0 ? "" : formatHour(hour)}
+              </span>
+            ))}
+          </div>
+          {days.map((date) => (
+            <div key={date} className="relative border-l border-border" data-calendar-day={date}>
+              {HOURS.map((hour) => (
+                <div
+                  key={hour}
+                  className="absolute inset-x-0 border-t border-border/70"
+                  style={{ top: hour * HOUR_HEIGHT }}
+                />
+              ))}
+              {(eventsByDate.get(date) ?? []).map((event) => (
+                <EventButton key={event.id} event={event} placement="block" />
+              ))}
+              {date === today ? (
+                <div
+                  className="absolute inset-x-0 z-10 h-px bg-primary"
+                  style={{ top: (nowMinutes / 60) * HOUR_HEIGHT }}
+                  aria-hidden
+                />
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonthGrid({
+  anchor,
+  eventsByDate,
+  today,
+  onOpenDay,
+}: {
+  readonly anchor: DateKey;
+  readonly eventsByDate: ReadonlyMap<DateKey, readonly CalendarEvent[]>;
+  readonly today: DateKey;
+  readonly onOpenDay: (date: DateKey) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-md border border-border">
+      <div className="grid grid-cols-7 border-b border-border text-xs text-muted-foreground">
+        {WEEKDAY_OFFSETS.map((index) => (
+          <span key={index} className="px-2 py-1.5">
+            {formatDateKey(addDays(startOfWeek(anchor), index), { weekday: "short" })}
+          </span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7">
+        {monthGrid(anchor).map((date) => {
+          const dayEvents = eventsByDate.get(date) ?? [];
+          const inMonth = isSameMonth(date, anchor);
+          const isToday = date === today;
+          return (
+            <div
+              key={date}
+              className="flex min-h-24 min-w-0 flex-col gap-1 border-b border-l border-border p-1"
+              data-calendar-day={date}
+            >
+              <button
+                type="button"
+                onClick={() => onOpenDay(date)}
+                aria-label={formatDateKey(date, { weekday: "long", day: "numeric", month: "long" })}
+                className={[
+                  "self-start rounded-full px-1.5 text-xs tabular-nums hover:bg-accent",
+                  inMonth ? "text-foreground" : "text-muted-foreground/50",
+                  isToday
+                    ? "bg-primary font-semibold text-primary-foreground hover:bg-primary/90"
+                    : "",
+                ].join(" ")}
+              >
+                {Number(date.slice(8))}
+              </button>
+              {dayEvents.slice(0, 3).map((event) => (
+                <EventButton key={event.id} event={event} placement="chip" />
+              ))}
+              {dayEvents.length > 3 ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenDay(date)}
+                  className="px-1 text-left text-xs text-muted-foreground hover:text-foreground"
+                >
+                  {dayEvents.length - 3} more
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function ProjectCalendar({
+  projects,
+  initialDate,
+}: {
+  readonly projects: readonly CalendarProject[];
+  /** Anchor date (YYYY-MM-DD) shown at first render; defaults to today. */
+  readonly initialDate?: DateKey;
+}) {
+  const displayZone = useMemo(() => localTimeZone(), []);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    // Minute resolution is enough for the now line; a faster tick would repaint for nothing.
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const current = zonedReading(now, displayZone);
+  const today = current.date;
+
+  const [view, setView] = useState<CalendarView>("week");
+  const [anchor, setAnchor] = useState<DateKey>(() => initialDate ?? today);
+  const [hiddenCalendars, setHiddenCalendars] = useState<ReadonlySet<string>>(() => new Set());
+
+  const range = visibleRange(view, anchor);
+  // Mini months draw event dots for the whole month grid, so the event window spans it too.
+  const grid = monthGrid(anchor);
+  const windowFrom = range.from < grid[0]! ? range.from : grid[0]!;
+  const windowTo = range.to > grid[41]! ? range.to : grid[41]!;
+
+  const allEvents = useMemo(
+    () => buildEvents(projects, windowFrom, windowTo, displayZone),
+    [projects, windowFrom, windowTo, displayZone],
+  );
+  const visibleEvents = useMemo(
+    () => allEvents.filter((event) => !hiddenCalendars.has(event.calendarId)),
+    [allEvents, hiddenCalendars],
+  );
+  const eventsByDate = useMemo(() => groupByDate(visibleEvents), [visibleEvents]);
+  const eventDates = useMemo(
+    () => new Set(visibleEvents.map((event) => event.date)),
+    [visibleEvents],
+  );
+
+  const unscheduled = projects.filter((project) => project.configuration?.jourFixe == null);
+  const columnDays =
+    view === "week" ? WEEKDAY_OFFSETS.map((index) => addDays(range.from, index)) : [anchor];
+
+  return (
+    <section
+      aria-label="Project calendar"
+      data-workjet-project-calendar=""
+      className="grid gap-6 lg:grid-cols-[13rem_minmax(0,1fr)]"
+    >
+      <aside className="order-2 space-y-6 lg:order-1">
+        <MiniMonth
+          monthKey={startOfMonth(anchor)}
+          today={today}
+          anchor={anchor}
+          eventDates={eventDates}
+          onSelect={setAnchor}
+        />
+        <section aria-label="Calendars">
+          <h2 className="mb-2 text-sm font-medium">Calendars</h2>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
+              checked={!hiddenCalendars.has(PROJECT_CALENDAR_ID)}
+              onChange={(event) => {
+                setHiddenCalendars((previous) => {
+                  const next = new Set(previous);
+                  if (event.target.checked) next.delete(PROJECT_CALENDAR_ID);
+                  else next.add(PROJECT_CALENDAR_ID);
+                  return next;
+                });
+              }}
+            />
+            <span className="size-2.5 shrink-0 rounded-full bg-primary" aria-hidden />
+            <span className="min-w-0 break-words">Project meetings</span>
+          </label>
+        </section>
+        {unscheduled.length > 0 && (
+          <section aria-label="Projects without a regular meeting">
+            <h2 className="text-sm font-medium">No regular meeting</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Set a project's regular meeting in its settings.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {unscheduled.map((project) => (
+                <Button
+                  key={project.key}
+                  size="sm"
+                  variant="ghost"
+                  onClick={project.onOpen}
+                  data-workjet-action={`project.open.calendar:${project.key}`}
+                >
+                  {project.title}
+                  <ArrowUpRightIcon className="size-3" />
+                </Button>
+              ))}
+            </div>
+          </section>
+        )}
+      </aside>
+      <div className="order-1 min-w-0 lg:order-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
+            Today
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Previous"
+            onClick={() => setAnchor((previous) => shiftAnchor(view, previous, -1))}
+          >
+            <ChevronLeftIcon />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Next"
+            onClick={() => setAnchor((previous) => shiftAnchor(view, previous, 1))}
+          >
+            <ChevronRightIcon />
+          </Button>
+          <h2 className="min-w-0 flex-1 truncate text-base font-semibold" aria-live="polite">
+            {rangeTitle(view, anchor)}
+          </h2>
+          <div
+            role="group"
+            aria-label="Calendar view"
+            className="inline-flex gap-1 rounded-md border border-border p-1"
+          >
+            {VIEWS.map((option) => (
+              <Button
+                key={option.value}
+                size="sm"
+                variant={view === option.value ? "secondary" : "ghost"}
+                aria-pressed={view === option.value}
+                onClick={() => setView(option.value)}
+              >
+                {option.label}
               </Button>
             ))}
           </div>
-        </section>
-      )}
+        </div>
+        {view === "month" ? (
+          <MonthGrid
+            anchor={anchor}
+            eventsByDate={eventsByDate}
+            today={today}
+            onOpenDay={(date) => {
+              setAnchor(date);
+              setView("day");
+            }}
+          />
+        ) : view === "year" ? (
+          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
+            {Array.from({ length: 12 }, (_, index) => (
+              <MiniMonth
+                key={index}
+                monthKey={`${anchor.slice(0, 4)}-${String(index + 1).padStart(2, "0")}-01`}
+                today={today}
+                anchor={anchor}
+                eventDates={eventDates}
+                onSelect={(date) => {
+                  setAnchor(startOfMonth(date));
+                  setView("month");
+                }}
+              />
+            ))}
+          </div>
+        ) : (
+          <TimeGrid
+            days={columnDays}
+            eventsByDate={eventsByDate}
+            today={today}
+            nowMinutes={current.minutes}
+          />
+        )}
+      </div>
     </section>
   );
 }

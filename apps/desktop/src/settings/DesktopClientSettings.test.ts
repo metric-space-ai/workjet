@@ -44,6 +44,7 @@ const clientSettings: ClientSettings = {
   timestampFormat: "24-hour",
   wordWrap: true,
   workjetProductMode: "ctox",
+  workjetModesIntroSeen: false,
 };
 
 const decodeClientSettingsJson = Schema.decodeEffect(Schema.fromJsonString(ClientSettingsSchema));

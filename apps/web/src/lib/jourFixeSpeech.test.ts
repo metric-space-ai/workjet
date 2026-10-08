@@ -44,6 +44,20 @@ function fixture(kind: JourFixeSpeechProvider["kind"] = "ctox-gateway") {
 afterEach(() => vi.restoreAllMocks());
 
 describe("Jour fixe speech provider boundary", () => {
+  it("releases the microphone state after a bounded utterance and rejects late callbacks", async () => {
+    const f = fixture();
+    await f.session.toggleMicrophone();
+    const previous = f.listening();
+    previous.onCommitted();
+    previous.onStopped?.();
+    expect(previous.signal.aborted).toBe(true);
+    expect(f.events.onMicrophone).toHaveBeenLastCalledWith(false);
+    previous.onCommitted();
+    expect(f.events.onCommitted).toHaveBeenCalledOnce();
+    await f.session.toggleMicrophone();
+    expect(f.provider.startListening).toHaveBeenCalledTimes(2);
+    f.session.close();
+  });
   for (const kind of ["local-helper", "ctox-gateway"] as const) {
     it(`uses the same scoped microphone/narration contract for ${kind}`, async () => {
       const f = fixture(kind);

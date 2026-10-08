@@ -1,5 +1,9 @@
 import {
   BusinessOsInstanceId,
+  DEFAULT_SERVER_SETTINGS,
+  WS_METHODS,
+  type ServerConfig,
+  type ServerConfigStreamEvent,
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
   type OrchestrationShellSnapshot,
@@ -11,6 +15,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -50,6 +55,7 @@ import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 import { connectionStartupLayer } from "./layer.ts";
 import { PlatformConnectionSource } from "../platform/source.ts";
+import { startup as remoteWorkerStartup } from "./remoteWorkers.ts";
 import { makeEnvironmentShellState } from "../state/shell.ts";
 import { ShellSnapshotLoader } from "../state/shellSnapshotHttp.ts";
 
@@ -134,6 +140,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   initialProfiles: ReadonlyArray<ConnectionProfile> = [],
   initialCredentials: ReadonlyArray<readonly [string, ConnectionCredential]> = [],
   options?: {
+    readonly client?: RpcSession.RpcSession["client"];
     readonly beforeSessionConnect?: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly beforeRegistrationRegister?: (
       registration: ConnectionRegistration,
@@ -358,7 +365,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         yield* Ref.update(sessions, (current) => [...current, { closed }]);
         const session = yield* Effect.acquireRelease(
           Effect.succeed({
-            client: {} as RpcSession.RpcSession["client"],
+            client: options?.client ?? ({} as RpcSession.RpcSession["client"]),
             initialConfig: Effect.die(new Error("Config is not used by registry tests.")),
             ready: Effect.void,
             probe: Effect.void,
@@ -1353,4 +1360,54 @@ describe("EnvironmentRegistry", () => {
       }).pipe(Effect.provide(harness.layer));
     }),
   );
+});
+
+
+describe("registered remote worker startup", () => {
+  it.live("opens only enabled snapshots and retains the worker subscription across settings/provider deltas", () => Effect.gen(function* () {
+    const events = yield* Queue.unbounded<{ readonly event: ServerConfigStreamEvent; readonly consumed: Deferred.Deferred<void> }>();
+    const opened = yield* Deferred.make<void>();
+    const closed = yield* Deferred.make<void>();
+    const subscriptions = yield* Ref.make(0);
+    const releases = yield* Ref.make(0);
+    const configEvents = Stream.fromQueue(events).pipe(Stream.flatMap(({ event, consumed }) =>
+      Stream.concat(Stream.succeed(event), Stream.fromEffect(Deferred.succeed(consumed, undefined)).pipe(Stream.drain))));
+    const client = {
+      [WS_METHODS.subscribeServerConfig]: () => configEvents,
+      [WS_METHODS.workjetWorkerRequests]: () => Stream.fromEffect(
+        Ref.update(subscriptions, (count) => count + 1).pipe(Effect.andThen(Deferred.succeed(opened, undefined))),
+      ).pipe(Stream.drain, Stream.concat(Stream.never), Stream.ensuring(
+        Ref.update(releases, (count) => count + 1).pipe(Effect.andThen(Deferred.succeed(closed, undefined))),
+      )),
+    } as unknown as RpcSession.RpcSession["client"];
+    const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE], [], { client });
+    yield* Effect.gen(function* () {
+      const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+      yield* awaitConnectionState(registry, SSH_CONNECTION.environmentId, (state) => state.phase === "connected");
+      yield* remoteWorkerStartup;
+      const send = (event: ServerConfigStreamEvent) => Effect.gen(function* () {
+        const consumed = yield* Deferred.make<void>();
+        yield* Queue.offer(events, { event, consumed });
+        yield* Deferred.await(consumed);
+      });
+      // Only the capabilities are relevant to startup; the real registered
+      // session and stream event envelope are exercised rather than a relay port.
+      const snapshot = (enabled: boolean): ServerConfigStreamEvent => ({ version: 1, type: "snapshot",
+        config: { environment: { environmentId: SSH_CONNECTION.environmentId,
+          capabilities: { remoteWorkerDispatch: enabled } } } as unknown as ServerConfig });
+      yield* send(snapshot(false));
+      expect(yield* Ref.get(subscriptions)).toBe(0);
+      yield* send(snapshot(true));
+      yield* Deferred.await(opened);
+      expect(yield* Ref.get(subscriptions)).toBe(1);
+      yield* send({ version: 1, type: "settingsUpdated", payload: { settings: DEFAULT_SERVER_SETTINGS } });
+      yield* send({ version: 1, type: "providerStatuses", payload: { providers: [] } });
+      expect(yield* Ref.get(subscriptions)).toBe(1);
+      expect(yield* Ref.get(releases)).toBe(0);
+      yield* send(snapshot(false));
+      yield* Deferred.await(closed);
+      expect(yield* Ref.get(subscriptions)).toBe(1);
+      expect(yield* Ref.get(releases)).toBe(1);
+    }).pipe(Effect.provide(harness.layer), Effect.scoped);
+  }).pipe(Effect.scoped, Effect.timeout("5 seconds")));
 });

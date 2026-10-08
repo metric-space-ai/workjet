@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { canActivateCtoxInstance, useCtoxMode } from "./ctox/CtoxModeShell";
 import { ctoxInstanceDisplayTitle } from "./ctox/ctoxInstanceDisplayTitle";
 import { useActiveWorkjetScope } from "../activeWorkjetScope";
+import { cn } from "../lib/utils";
 
 type InstanceDiscovery = "loading" | CtoxDiscoveryResult;
 
@@ -116,7 +117,7 @@ export function ActiveCtoxInstanceSelector({
     <div
       className={
         placement === "header"
-          ? "no-drag relative min-w-0 w-40 shrink sm:w-48"
+          ? "no-drag relative min-w-0 max-w-48 shrink"
           : placement === "settings"
             ? "relative min-w-0 pl-6 pb-1"
             : "relative order-[-1] min-w-0 shrink-0 border-b border-sidebar-border px-[calc(var(--sidebar-content-inset)+0.5rem)] py-2"
@@ -139,7 +140,12 @@ export function ActiveCtoxInstanceSelector({
           render={
             <Button
               variant="ghost"
-              className="w-full min-w-0 justify-between gap-2 px-2 text-sm"
+              className={cn(
+                "min-w-0 px-2 text-sm",
+                placement === "header"
+                  ? "h-7 max-w-full justify-start gap-1 font-normal text-muted-foreground hover:text-foreground sm:h-7"
+                  : "w-full justify-between gap-2",
+              )}
               aria-label="Select CTOX instance"
             />
           }

@@ -317,6 +317,23 @@ export const make = Effect.gen(function* () {
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
+  const sendToRenderer = (window: Electron.BrowserWindow, channel: string, value: unknown) => {
+    if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+    try {
+      window.webContents.send(channel, value);
+    } catch (error) {
+      // The render-process-gone handler owns recovery; late native callbacks
+      // must not escape into Electron's uncaught-exception dialog.
+      const code =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : "RENDERER_IPC_SEND_FAILED";
+      runFork(logWindowWarning("renderer IPC send failed", { channel, code }));
+    }
+  };
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
 
   const dismissConnectingSplash = Effect.gen(function* () {
@@ -617,10 +634,10 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "darwin") {
       window.on("enter-full-screen", () => {
-        window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
+        sendToRenderer(window, WINDOW_FULLSCREEN_STATE_CHANNEL, true);
       });
       window.on("leave-full-screen", () => {
-        window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
+        sendToRenderer(window, WINDOW_FULLSCREEN_STATE_CHANNEL, false);
       });
     }
 
@@ -927,9 +944,9 @@ export const make = Effect.gen(function* () {
       const targetWindow = Option.isSome(existingWindow) ? existingWindow.value : yield* ensureMain;
 
       const send = () => {
-        if (targetWindow.isDestroyed()) return;
-        targetWindow.webContents.send(MENU_ACTION_CHANNEL, action);
-        void runPromise(electronWindow.reveal(targetWindow));
+        if (targetWindow.isDestroyed() || targetWindow.webContents.isDestroyed()) return;
+        sendToRenderer(targetWindow, MENU_ACTION_CHANNEL, action);
+        void runPromise(electronWindow.reveal(targetWindow).pipe(Effect.ignore));
       };
 
       if (targetWindow.webContents.isLoadingMainFrame()) {

@@ -90,13 +90,19 @@ export const captureJourFixeMicrophone: JourFixeMicrophoneCaptureFactory = async
         options.onFrame({ pcm: data.pcm, voiced: data.voiced });
         return;
       }
-      try { options.onError(new Error("Microphone audio processing failed.")); }
-      finally { stop(); }
+      try {
+        options.onError(new Error("Microphone audio processing failed."));
+      } finally {
+        stop();
+      }
     });
     node.port.start();
     node.addEventListener("processorerror", () => {
-      try { if (!closed) options.onError(new Error("Microphone audio processing failed.")); }
-      finally { stop(); }
+      try {
+        if (!closed) options.onError(new Error("Microphone audio processing failed."));
+      } finally {
+        stop();
+      }
     });
     source = context.createMediaStreamSource(media);
     source.connect(node);

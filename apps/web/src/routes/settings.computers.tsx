@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { SpeechRouteSettingsSection } from "../components/settings/SpeechRouteSettingsSection";
 import { WorkjetComputersSettings } from "../components/settings/WorkjetComputersSettings";
 
 /**
@@ -10,6 +11,15 @@ import { WorkjetComputersSettings } from "../components/settings/WorkjetComputer
  * "Computers", not "Workjet") and also hosts the remote-environment pairing
  * that used to live on Connections.
  */
+function ComputersSettingsPage() {
+  return (
+    <>
+      <WorkjetComputersSettings />
+      <SpeechRouteSettingsSection />
+    </>
+  );
+}
+
 export const Route = createFileRoute("/settings/computers")({
-  component: WorkjetComputersSettings,
+  component: ComputersSettingsPage,
 });

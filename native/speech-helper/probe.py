@@ -129,8 +129,8 @@ def run(binary, report, install_assets):
         if status.get("event") != "status":
             raise ProbeError("status_missing")
         report["capabilities"] = status.get("capabilities")
-        child.send("synthesize", "narration", text=SENTENCE, slideId="fixture-slide")
         synthesis_start = time.monotonic()
+        child.send("synthesize", "narration", text=SENTENCE, slideId="fixture-slide")
         audio = bytearray()
         sequence = 0
         deadline = synthesis_start + 65

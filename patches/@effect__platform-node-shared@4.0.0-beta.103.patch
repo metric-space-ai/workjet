@@ -37,7 +37,8 @@ diff --git a/dist/NodeSink.js b/dist/NodeSink.js
 +    });
    });
  }) : identity);
- //# sourceMappingURL=NodeSink.js.mapdiff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
+ //# sourceMappingURL=NodeSink.js.map
+diff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
 --- a/src/NodeChildProcessSpawner.ts
 +++ b/src/NodeChildProcessSpawner.ts
 @@ -202,6 +202,8 @@

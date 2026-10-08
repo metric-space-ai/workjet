@@ -70,6 +70,16 @@ describe("native meeting room session", () => {
     expect(snapshot.slides[0]).not.toHaveProperty("audio");
     expect(snapshot.todos!.items[0]!.evidenceIds).toEqual(["comment-1", "turn-1"]);
   });
+  it("omits optional null metadata from the display snapshot", () => {
+    const mapped = mapJourFixeMeeting({ ...native, previous_goal: null, error: null,
+      transcript: native.transcript.map(turn => ({ ...turn, stream_id: null })),
+      todos: { ...native.todos!, items: native.todos!.items.map(todo => ({ ...todo, due_at_ms: null })) },
+    });
+    expect(mapped).not.toHaveProperty("previousGoalRevision");
+    expect(mapped).not.toHaveProperty("error");
+    expect(mapped.transcript[0]).not.toHaveProperty("streamId");
+    expect(mapped.todos!.items[0]).not.toHaveProperty("dueAt");
+  });
   it("retries uncertain text using the same command, operation, turn and expected revision", async () => {
     const control = vi
       .fn<typeof requestWorkjetProjectControl>()

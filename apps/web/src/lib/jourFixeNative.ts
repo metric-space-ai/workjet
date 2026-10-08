@@ -61,7 +61,7 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
               acceptance: todo.acceptance,
               priority: todo.priority,
               evidenceIds: todo.evidence_ids,
-              ...(todo.due_at_ms === undefined ? {} : { dueAt: todo.due_at_ms }),
+              ...(todo.due_at_ms == null ? {} : { dueAt: todo.due_at_ms }),
             })),
           },
         }

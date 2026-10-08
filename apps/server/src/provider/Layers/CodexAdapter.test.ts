@@ -3,7 +3,7 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { createServer } from "node:http";
+import * as NodeHttp from "node:http";
 import {
   ApprovalRequestId,
   CodexSettings,
@@ -372,7 +372,7 @@ const withTargetEnvironment = <A, E, R>(effect: Effect.Effect<A, E, R>) => effec
 );
 const ownedForeignHarness = (requestId: string) => Effect.acquireRelease(
   Effect.promise(async () => {
-    const server = createServer((_req, res) => { res.setHeader("content-type", "application/json"); res.end("{}"); });
+    const server = NodeHttp.createServer((_req, res) => { res.setHeader("content-type", "application/json"); res.end("{}"); });
     await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Source fixture did not bind");
@@ -395,7 +395,7 @@ foreignWorkerLayer("CodexAdapter foreign worker source authority", (it) => {
     const adapter = yield* CodexAdapter;
     const result = yield* adapter.startSession(foreignWorkerStartInput("foreign-missing-route")).pipe(Effect.result);
     NodeAssert.equal(result._tag, "Failure");
-    if (result._tag === "Failure") NodeAssert.ok(result.failure instanceof ProviderAdapterValidationError);
+    if (result._tag === "Failure") NodeAssert.ok(Schema.is(ProviderAdapterValidationError)(result.failure));
     NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
     NodeAssert.equal(foreignWorkerRuntimeFactory.factory.mock.calls.length, 0);
   })));
@@ -407,7 +407,7 @@ foreignWorkerLayer("CodexAdapter foreign worker source authority", (it) => {
     const adapter = yield* CodexAdapter;
     const result = yield* adapter.startSession(foreignWorkerStartInput("foreign-revoked-route")).pipe(Effect.result);
     NodeAssert.equal(result._tag, "Failure");
-    if (result._tag === "Failure") NodeAssert.ok(result.failure instanceof ProviderAdapterValidationError);
+    if (result._tag === "Failure") NodeAssert.ok(Schema.is(ProviderAdapterValidationError)(result.failure));
     NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
     NodeAssert.equal(foreignWorkerRuntimeFactory.factory.mock.calls.length, 0);
   }))));

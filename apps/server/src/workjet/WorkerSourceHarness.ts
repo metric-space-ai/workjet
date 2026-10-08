@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetch:off -- Bounded Node loopback adapter for the external Codex process; source identity is schema validated and scoped by its owning Effect service.
-import { createServer, type Server } from "node:http";
-import { randomBytes } from "node:crypto";
+import * as NodeHttp from "node:http";
+import * as NodeCrypto from "node:crypto";
 import { Schema } from "effect";
 
 const Route = Schema.Struct({
@@ -75,7 +75,7 @@ export async function installWorkerSourceRoute(
     await existing.admit();
     return existing;
   }
-  const apiKey = randomBytes(32).toString("hex");
+  const apiKey = NodeCrypto.randomBytes(32).toString("hex");
   const active = new Set<AbortController>();
   let revoked = false;
   let busy = false;
@@ -100,7 +100,7 @@ export async function installWorkerSourceRoute(
     if (!response.ok) throw new Error("Source worker authority rejected request");
     return response.json() as Promise<unknown>;
   };
-  const server: Server = createServer(async (req, res) => {
+  const server: NodeHttp.Server = NodeHttp.createServer(async (req, res) => {
     if (revoked || req.headers.authorization !== `Bearer ${apiKey}`) {
       res.writeHead(403).end();
       return;

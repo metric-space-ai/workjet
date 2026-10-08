@@ -206,8 +206,9 @@ export const startup = Effect.gen(function* () {
             .followStream(
               source,
               subscribe(WS_METHODS.subscribeServerConfig, {}).pipe(
-                Stream.switchMap((config) =>
-                  config.environment.capabilities.remoteWorkerDispatch
+                Stream.filter((event) => event.type === "snapshot"),
+                Stream.switchMap((event) =>
+                  event.config.environment.capabilities.remoteWorkerDispatch
                     ? subscribe(WS_METHODS.workjetWorkerRequests, {})
                     : Stream.empty,
                 ),

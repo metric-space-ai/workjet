@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off -- Service-owned SSH bootstrap and loopback verification.
-import * as Crypto from "node:crypto";
-import * as Net from "node:net";
-import * as Fs from "node:fs/promises";
+import * as NodeCrypto from "node:crypto";
+import * as NodeNet from "node:net";
+import * as NodeFSP from "node:fs/promises";
 import {
   RemoteWorkerDispatchError,
   RemoteWorkerSourceRoute,
@@ -60,13 +60,13 @@ export class RemoteWorkerTargetHarnessSetup extends Context.Service<
 
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });
 const secretName = (kind: "profile" | "route", requestId: string) =>
-  `worker-source-${kind}-${Crypto.createHash("sha256").update(requestId).digest("hex")}`;
+  `worker-source-${kind}-${NodeCrypto.createHash("sha256").update(requestId).digest("hex")}`;
 const StoredWorkerRoute = Schema.Struct({
   requestDigest: Schema.String,
   expiresAt: Schema.String,
   route: RemoteWorkerSourceRoute,
 });
-const tokenDigest = (token: string) => Crypto.createHash("sha256").update(token).digest("hex");
+const tokenDigest = (token: string) => NodeCrypto.createHash("sha256").update(token).digest("hex");
 
 /** A reverse tunnel is accepted only when the target kernel reports exactly an
  * IPv4 loopback LISTEN and no wildcard/IPv6 listener at that port. This catches
@@ -88,7 +88,7 @@ export const verifyLinuxWorkerLoopback = (port: number, tcp: string, tcp6: strin
 };
 const reservePort = () =>
   new Promise<number>((resolve, reject) => {
-    const server = Net.createServer();
+    const server = NodeNet.createServer();
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
@@ -145,7 +145,7 @@ export const make = Effect.gen(function* () {
     if (reservations.size >= 128) return yield* failure();
     const remotePort = yield* Effect.tryPromise({ try: reservePort, catch: failure });
     const reservation: RemoteWorkerRouteReservation = {
-      bootstrapId: Crypto.randomBytes(32).toString("hex"),
+      bootstrapId: NodeCrypto.randomBytes(32).toString("hex"),
       targetEnvironmentId: environmentId,
       requestId: request.requestId,
       requestDigest,
@@ -319,8 +319,8 @@ export const make = Effect.gen(function* () {
     const verifyOnce = Effect.tryPromise({
       try: async () => {
         const [tcp, tcp6] = await Promise.all([
-          Fs.readFile("/proc/net/tcp", "utf8"),
-          Fs.readFile("/proc/net/tcp6", "utf8"),
+          NodeFSP.readFile("/proc/net/tcp", "utf8"),
+          NodeFSP.readFile("/proc/net/tcp6", "utf8"),
         ]);
         if (!verifyLinuxWorkerLoopback(route.port, tcp, tcp6)) throw new Error("not-loopback-only");
         // @effect-diagnostics-next-line globalFetch:off globalFetchInEffect:off -- Probe the real SSH-forwarded loopback socket rather than an Effect mock transport.

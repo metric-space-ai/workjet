@@ -25,6 +25,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import { FetchHttpClient, HttpClient } from "effect/unstable/http";
+import { DecisionHubConnectionRegistry } from "./decisionHub/DecisionHubConnectionRegistry.ts";
+import { makeCtoxLumaConfigurationClient } from "./ctox/CtoxLumaConfigurationClient.ts";
+import { makeCtoxLumaConfigurationRpc } from "./ctox/CtoxLumaConfigurationRpc.ts";
 import { resolveDelegatedCapabilities } from "@metric-space-ai/workjet-capabilities";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
@@ -195,6 +199,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const mailbox = yield* Effect.serviceOption(WorkjetMailboxStore);
   const rollback = yield* WorkerDispatchRollback;
   const settings = yield* Effect.serviceOption(ServerSettingsService);
+  const lumaConnections = yield* Effect.serviceOption(DecisionHubConnectionRegistry);
   const remoteBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
   const sourceGit = yield* Effect.serviceOption(GitVcsDriver);
 
@@ -259,6 +264,16 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         Effect.map((current) => current.workjet),
         Effect.mapError(() => failure("computer-unavailable")),
       );
+      if (invocation.ctoxBusinessOsBinding !== undefined) {
+        if (Option.isNone(lumaConnections)) return yield* failure("worker-profile-unavailable");
+        const httpClient = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
+        configuration = yield* makeCtoxLumaConfigurationRpc({
+          connections: lumaConnections.value,
+          client: makeCtoxLumaConfigurationClient(httpClient),
+        })
+          .resolveDispatch(invocation.ctoxBusinessOsBinding, configuration)
+          .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
+      }
       if (input.workerProfileId !== undefined) {
         const profiles = configuration.workerProfiles.filter(
           (profile) => profile.id === input.workerProfileId,

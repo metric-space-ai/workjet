@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as Schema from "effect/Schema";
-import { WorkjetJourFixeOwnerRequests, WorkjetJourFixeOwnerResponse } from "./workjetJourFixeOwner.ts";
+import {
+  WorkjetJourFixeOwnerRequests,
+  WorkjetJourFixeOwnerResponse,
+} from "./workjetJourFixeOwner.ts";
 export { isWorkjetJourFixeReceiptForRequest } from "./workjetJourFixeOwner.ts";
 
 import {

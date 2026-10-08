@@ -16,43 +16,88 @@ const base = {
 };
 const start = { ...base, action: "project.jour_fixe.meeting.start" } as const;
 const turn = {
-  id: "turn-1", meeting_id: base.meetingId, sequence: 1,
-  speaker: "owner", modality: "text", text: "Prioritize persistence.\nVerify the restart.",
-  started_at_ms: 1791450011000, ended_at_ms: 1791450012000,
+  id: "turn-1",
+  meeting_id: base.meetingId,
+  sequence: 1,
+  speaker: "owner",
+  modality: "text",
+  text: "Prioritize persistence.\nVerify the restart.",
+  started_at_ms: 1791450011000,
+  ended_at_ms: 1791450012000,
 } as const;
 const append = { ...base, action: "project.jour_fixe.transcript.append", turn } as const;
 const revise = {
-  ...base, action: "project.jour_fixe.todos.revise", proposalRevision: 2,
-  items: [{ id: "todo-1", title: "Verify restart", acceptance: "The project survives reopen.", priority: "P1", evidence_ids: [turn.id] }],
+  ...base,
+  action: "project.jour_fixe.todos.revise",
+  proposalRevision: 2,
+  items: [
+    {
+      id: "todo-1",
+      title: "Verify restart",
+      acceptance: "The project survives reopen.",
+      priority: "P1",
+      evidence_ids: [turn.id],
+    },
+  ],
 } as const;
 const response = {
-  action: start.action, commandId: base.commandId, projectId: base.projectId,
+  action: start.action,
+  commandId: base.commandId,
+  projectId: base.projectId,
   contract: "ctox.workjet.jour_fixe.v1",
-  mutation: { operation_id: base.operationId, meeting_id: base.meetingId, project_id: base.projectId, revision: 5, state: "live" },
+  mutation: {
+    operation_id: base.operationId,
+    meeting_id: base.meetingId,
+    project_id: base.projectId,
+    revision: 5,
+    state: "live",
+  },
 } as const;
-const decodeRequest = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, { onExcessProperty: "error" });
-const decodeResponse = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse, { onExcessProperty: "error" });
+const decodeRequest = Schema.decodeUnknownSync(CtoxWorkjetProjectControlRequest, {
+  onExcessProperty: "error",
+});
+const decodeResponse = Schema.decodeUnknownSync(CtoxWorkjetProjectControlResponse, {
+  onExcessProperty: "error",
+});
 
 describe("Jour fixe owner bridge", () => {
   it("carries all four native owner controls through the existing project control contract", () => {
-    for (const request of [start, { ...base, action: "project.jour_fixe.meeting.end" }, append, revise])
+    for (const request of [
+      start,
+      { ...base, action: "project.jour_fixe.meeting.end" },
+      append,
+      revise,
+    ])
       expect(decodeRequest(request)).toEqual(request);
     expect(decodeResponse(response)).toEqual(response);
     expect(isWorkjetJourFixeReceiptForRequest(start, response)).toBe(true);
   });
   it("does not allow owner text to claim a supervisor, speech, or another meeting", () => {
     for (const change of [
-      { speaker: "supervisor" }, { modality: "speech" }, { meeting_id: "foreign" },
-      { audio: {} }, { stream_id: "fabricated" }, { source_run_id: "fabricated" },
-      { sentence_end_latency_ms: 100 }, { ended_at_ms: turn.started_at_ms - 1 },
-    ]) expect(() => decodeRequest({ ...append, turn: { ...turn, ...change } })).toThrow();
+      { speaker: "supervisor" },
+      { modality: "speech" },
+      { meeting_id: "foreign" },
+      { audio: {} },
+      { stream_id: "fabricated" },
+      { source_run_id: "fabricated" },
+      { sentence_end_latency_ms: 100 },
+      { ended_at_ms: turn.started_at_ms - 1 },
+    ])
+      expect(() => decodeRequest({ ...append, turn: { ...turn, ...change } })).toThrow();
   });
   it("rejects unsafe revisions and unbounded text or proposals", () => {
     for (const expectedRevision of [-1, 0.5, Number.MAX_SAFE_INTEGER])
       expect(() => decodeRequest({ ...start, expectedRevision })).toThrow();
-    expect(() => decodeRequest({ ...append, turn: { ...turn, text: "a".repeat(16_385) } })).toThrow();
+    expect(() =>
+      decodeRequest({ ...append, turn: { ...turn, text: "a".repeat(16_385) } }),
+    ).toThrow();
     expect(() => decodeRequest({ ...revise, items: Array(101).fill(revise.items[0]) })).toThrow();
-    expect(() => decodeRequest({ ...revise, items: [{ ...revise.items[0], evidence_ids: Array(129).fill("turn-1") }] })).toThrow();
+    expect(() =>
+      decodeRequest({
+        ...revise,
+        items: [{ ...revise.items[0], evidence_ids: Array(129).fill("turn-1") }],
+      }),
+    ).toThrow();
   });
   it("rejects cross-project and cross-operation receipts even when their action matches", () => {
     for (const changed of [
@@ -64,25 +109,61 @@ describe("Jour fixe owner bridge", () => {
       { ...response, mutation: { ...response.mutation, revision: 4 } },
       { ...response, mutation: { ...response.mutation, revision: 6 } },
       { ...response, mutation: { ...response.mutation, state: "review" } },
-    ]) expect(isWorkjetJourFixeReceiptForRequest(start, changed)).toBe(false);
+    ])
+      expect(isWorkjetJourFixeReceiptForRequest(start, changed)).toBe(false);
   });
   it("requires the acknowledged text id and the exact proposal revision", () => {
-    const textReceipt = { ...response, action: append.action, mutation: { ...response.mutation, changed_id: turn.id } };
+    const textReceipt = {
+      ...response,
+      action: append.action,
+      mutation: { ...response.mutation, changed_id: turn.id },
+    };
     expect(isWorkjetJourFixeReceiptForRequest(append, textReceipt)).toBe(true);
     expect(isWorkjetJourFixeReceiptForRequest(append, response)).toBe(false);
-    expect(isWorkjetJourFixeReceiptForRequest(append, { ...textReceipt, mutation: { ...textReceipt.mutation, changed_id: "other-turn" } })).toBe(false);
-    const todoReceipt = { ...response, action: revise.action, mutation: { ...response.mutation, state: "review", todos_revision: 2 } };
+    expect(
+      isWorkjetJourFixeReceiptForRequest(append, {
+        ...textReceipt,
+        mutation: { ...textReceipt.mutation, changed_id: "other-turn" },
+      }),
+    ).toBe(false);
+    const todoReceipt = {
+      ...response,
+      action: revise.action,
+      mutation: { ...response.mutation, state: "review", todos_revision: 2 },
+    };
     expect(isWorkjetJourFixeReceiptForRequest(revise, todoReceipt)).toBe(true);
-    expect(isWorkjetJourFixeReceiptForRequest(revise, { ...todoReceipt, mutation: { ...todoReceipt.mutation, todos_revision: 3 } })).toBe(false);
-    expect(isWorkjetJourFixeReceiptForRequest(revise, { ...todoReceipt, mutation: { ...todoReceipt.mutation, state: "confirmed" } })).toBe(false);
+    expect(
+      isWorkjetJourFixeReceiptForRequest(revise, {
+        ...todoReceipt,
+        mutation: { ...todoReceipt.mutation, todos_revision: 3 },
+      }),
+    ).toBe(false);
+    expect(
+      isWorkjetJourFixeReceiptForRequest(revise, {
+        ...todoReceipt,
+        mutation: { ...todoReceipt.mutation, state: "confirmed" },
+      }),
+    ).toBe(false);
   });
   it("accepts an exact replay receipt without inventing a second mutation", () => {
     expect(isWorkjetJourFixeReceiptForRequest(start, response)).toBe(true);
-    expect(isWorkjetJourFixeReceiptForRequest({ ...start, expectedRevision: 5 }, response)).toBe(false);
+    expect(isWorkjetJourFixeReceiptForRequest({ ...start, expectedRevision: 5 }, response)).toBe(
+      false,
+    );
     const end = { ...base, action: "project.jour_fixe.meeting.end" } as const;
-    expect(isWorkjetJourFixeReceiptForRequest(end, { ...response, action: end.action, mutation: { ...response.mutation, state: "review" } })).toBe(true);
+    expect(
+      isWorkjetJourFixeReceiptForRequest(end, {
+        ...response,
+        action: end.action,
+        mutation: { ...response.mutation, state: "review" },
+      }),
+    ).toBe(true);
   });
   it("leaves existing non-meeting project actions unchanged", () => {
-    expect(isWorkjetJourFixeReceiptForRequest({ action: "project.list" }, { action: "project.list" })).toBe(true);
+    expect(isWorkjetJourFixeReceiptForRequest(null, response)).toBe(false);
+    expect(isWorkjetJourFixeReceiptForRequest({}, response)).toBe(false);
+    expect(
+      isWorkjetJourFixeReceiptForRequest({ action: "project.list" }, { action: "project.list" }),
+    ).toBe(true);
   });
 });

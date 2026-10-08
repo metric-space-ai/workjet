@@ -485,8 +485,11 @@ const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
 const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.pipe(
   Layer.provide(WorkerDispatchLayerLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
+  Layer.provide(CtoxThreadBindingSourceLive.pipe(
+    Layer.provide(ProviderSessionDirectoryLayerLive),
+    Layer.provide(DecisionHubConnectionRegistryLive),
+  )),
   Layer.provide(DecisionHubConnectionRegistryLive),
-  Layer.provide(CtoxThreadBindingSourceLive.pipe(Layer.provide(ProviderSessionDirectoryLayerLive))),
 );
 
 const RuntimeCoreFoundationLive = Layer.mergeAll(

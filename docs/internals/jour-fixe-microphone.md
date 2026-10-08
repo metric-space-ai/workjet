@@ -2,7 +2,7 @@
 
 The browser capture boundary uses a 16 kHz mono AudioContext and emits 20 ms PCM16LE packets. It must be started by the microphone action, with an AbortSignal tied to the selected instance, project, meeting and deck revision. Cancelling the scope releases tracks, worklet and context, including a permission request that completes late. No local recording is retained.
 
-Writes are serialized with at most eight queued packets. Overflow aborts capture and reports a reconnect error; it does not silently skip packets. The consumer must honor the supplied abort signal and cancel its authorized gateway stream.
+Writes are serialized with at most 32 queued 20 ms packets (640 ms of audio). Overflow aborts capture and reports a reconnect error; it does not silently skip packets. The consumer must honor the supplied abort signal and cancel its authorized gateway stream.
 
 The energy segmenter retains at most 200 ms of pre-roll, ends an utterance after 600 ms of silence and splits continuous speech at 14 s, below the native receiver's 15 s maximum. These boundaries do not identify a speaker or assert that speech was recognized. Partial text remains transient; only a verified final producer receipt may enter the native meeting transcript.
 

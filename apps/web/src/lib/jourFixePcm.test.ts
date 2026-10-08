@@ -6,7 +6,9 @@ function frame(value: number) {
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 describe("meeting microphone boundary", () => {
@@ -51,7 +53,10 @@ describe("meeting microphone boundary", () => {
       for (const event of vad.push(frame(0.1))) {
         if (event.type === "begin") begins++;
         if (event.type === "frame") frames++;
-        if (event.type === "finish") { finishes++; expect(event.reason).toBe("limit"); }
+        if (event.type === "finish") {
+          finishes++;
+          expect(event.reason).toBe("limit");
+        }
       }
     }
     expect({ begins, frames, finishes }).toEqual({ begins: 3, frames: 1401, finishes: 2 });
@@ -69,11 +74,16 @@ describe("meeting microphone boundary", () => {
     const first = deferred<void>();
     const second = deferred<void>();
     const written: number[] = [];
-    const drain = new JourFixeAudioDrain(async (pcm) => {
-      written.push(pcm[0]!);
-      if (written.length === 1) await first.promise;
-      else second.resolve();
-    }, (error) => { throw error; });
+    const drain = new JourFixeAudioDrain(
+      async (pcm) => {
+        written.push(pcm[0]!);
+        if (written.length === 1) await first.promise;
+        else second.resolve();
+      },
+      (error) => {
+        throw error;
+      },
+    );
     const packet = frame(0);
     packet[0] = 1;
     drain.push(packet);
@@ -90,8 +100,14 @@ describe("meeting microphone boundary", () => {
     const waiting = deferred<void>();
     const errors: Error[] = [];
     const signals: AbortSignal[] = [];
-    const drain = new JourFixeAudioDrain(async (_, signal) => { signals.push(signal); await waiting.promise; }, (error) => errors.push(error));
-    for (let index = 0; index < 10; index++) drain.push(frame(0.1));
+    const drain = new JourFixeAudioDrain(
+      async (_, signal) => {
+        signals.push(signal);
+        await waiting.promise;
+      },
+      (error) => errors.push(error),
+    );
+    for (let index = 0; index < 34; index++) drain.push(frame(0.1));
     expect(errors).toHaveLength(1);
     expect(errors[0]!.message).toContain("cannot keep up");
     expect(signals).toHaveLength(1);

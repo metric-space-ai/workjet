@@ -50,7 +50,8 @@ export async function startJourFixeMicrophone(options: {
     options.onError(error);
   }
   function checkActive() {
-    if (stopped || options.signal.aborted) throw new DOMException("Microphone cancelled.", "AbortError");
+    if (stopped || options.signal.aborted)
+      throw new DOMException("Microphone cancelled.", "AbortError");
   }
   options.signal.addEventListener("abort", stop, { once: true });
   try {
@@ -58,7 +59,12 @@ export async function startJourFixeMicrophone(options: {
     if (!navigator.mediaDevices?.getUserMedia || typeof AudioWorkletNode === "undefined")
       throw new Error("Microphone capture is unavailable in this client.");
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, sampleRate: JOUR_FIXE_SAMPLE_RATE, echoCancellation: true, noiseSuppression: true },
+      audio: {
+        channelCount: 1,
+        sampleRate: JOUR_FIXE_SAMPLE_RATE,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
       video: false,
     });
     // Permission may resolve after the user leaves. Release those tracks too.
@@ -98,7 +104,9 @@ export async function startJourFixeMicrophone(options: {
     worklet.port.onmessageerror = () => fail(new Error("Microphone capture connection failed."));
     worklet.onprocessorerror = () => fail(new Error("Microphone audio processor failed."));
     for (const track of stream.getAudioTracks())
-      track.addEventListener("ended", () => fail(new Error("Microphone disconnected.")), { once: true });
+      track.addEventListener("ended", () => fail(new Error("Microphone disconnected.")), {
+        once: true,
+      });
     await context.resume();
     checkActive();
     return stop;

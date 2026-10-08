@@ -3,15 +3,24 @@ import { startJourFixeMicrophone } from "./jourFixeMicrophone";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 function platform() {
   const track = { stop: vi.fn(), addEventListener: vi.fn() };
-  const stream = { getTracks: () => [track], getAudioTracks: () => [track] } as unknown as MediaStream;
+  const stream = {
+    getTracks: () => [track],
+    getAudioTracks: () => [track],
+  } as unknown as MediaStream;
   const permission = deferred<MediaStream>();
   const module = deferred<void>();
-  const port = { onmessage: null as ((event: MessageEvent<unknown>) => void) | null, onmessageerror: null as (() => void) | null, close: vi.fn() };
+  const port = {
+    onmessage: null as ((event: MessageEvent<unknown>) => void) | null,
+    onmessageerror: null as (() => void) | null,
+    close: vi.fn(),
+  };
   const source = { connect: vi.fn(), disconnect: vi.fn() };
   const mute = { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() };
   const close = vi.fn(async () => {});
@@ -38,15 +47,36 @@ function platform() {
   vi.stubGlobal("AudioWorkletNode", Worklet);
   const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:meeting-worklet");
   const revokeUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-  return { track, stream, permission, module, port, source, mute, close, resume, disconnect, addModule, createUrl, revokeUrl };
+  return {
+    track,
+    stream,
+    permission,
+    module,
+    port,
+    source,
+    mute,
+    close,
+    resume,
+    disconnect,
+    addModule,
+    createUrl,
+    revokeUrl,
+  };
 }
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 describe("meeting microphone lifetime", () => {
   it("releases a late permission result after the meeting scope was cancelled", async () => {
     const host = platform();
     const controller = new AbortController();
     const onError = vi.fn();
-    const capture = startJourFixeMicrophone({ signal: controller.signal, onFrame: async () => {}, onError });
+    const capture = startJourFixeMicrophone({
+      signal: controller.signal,
+      onFrame: async () => {},
+      onError,
+    });
     const rejected = expect(capture).rejects.toMatchObject({ name: "AbortError" });
     controller.abort();
     host.permission.resolve(host.stream);
@@ -58,7 +88,11 @@ describe("meeting microphone lifetime", () => {
   it("cleans up after an abort during worklet loading", async () => {
     const host = platform();
     const controller = new AbortController();
-    const capture = startJourFixeMicrophone({ signal: controller.signal, onFrame: async () => {}, onError: vi.fn() });
+    const capture = startJourFixeMicrophone({
+      signal: controller.signal,
+      onFrame: async () => {},
+      onError: vi.fn(),
+    });
     const rejected = expect(capture).rejects.toMatchObject({ name: "AbortError" });
     host.permission.resolve(host.stream);
     await host.permission.promise;
@@ -75,7 +109,13 @@ describe("meeting microphone lifetime", () => {
     const host = platform();
     const controller = new AbortController();
     const frames: Uint8Array[] = [];
-    const capture = startJourFixeMicrophone({ signal: controller.signal, onFrame: async (pcm) => { frames.push(pcm); }, onError: vi.fn() });
+    const capture = startJourFixeMicrophone({
+      signal: controller.signal,
+      onFrame: async (pcm) => {
+        frames.push(pcm);
+      },
+      onError: vi.fn(),
+    });
     host.permission.resolve(host.stream);
     host.module.resolve();
     const stop = await capture;

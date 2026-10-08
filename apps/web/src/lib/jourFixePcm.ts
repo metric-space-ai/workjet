@@ -46,7 +46,8 @@ export class JourFixeUtteranceSegmenter {
   private quietFrames = 0;
 
   push(pcm: Uint8Array): JourFixeUtteranceEvent[] {
-    if (pcm.byteLength !== JOUR_FIXE_FRAME_SAMPLES * 2) throw new Error("Invalid microphone frame.");
+    if (pcm.byteLength !== JOUR_FIXE_FRAME_SAMPLES * 2)
+      throw new Error("Invalid microphone frame.");
     const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
     let energy = 0;
     for (let index = 0; index < JOUR_FIXE_FRAME_SAMPLES; index++) {
@@ -63,7 +64,10 @@ export class JourFixeUtteranceSegmenter {
       }
       this.active = true;
       this.frames = this.preRoll.length;
-      events.push({ type: "begin" }, ...this.preRoll.map((frame) => ({ type: "frame" as const, pcm: frame })));
+      events.push(
+        { type: "begin" },
+        ...this.preRoll.map((frame) => ({ type: "frame" as const, pcm: frame })),
+      );
       this.preRoll = [];
     }
     events.push({ type: "frame", pcm });
@@ -78,7 +82,9 @@ export class JourFixeUtteranceSegmenter {
   }
 
   finish(): JourFixeUtteranceEvent[] {
-    const events: JourFixeUtteranceEvent[] = this.active ? [{ type: "finish", reason: "stopped" }] : [];
+    const events: JourFixeUtteranceEvent[] = this.active
+      ? [{ type: "finish", reason: "stopped" }]
+      : [];
     this.clear();
     return events;
   }
@@ -109,8 +115,10 @@ export class JourFixeAudioDrain {
       this.fail(new Error("Invalid microphone frame."));
       return;
     }
-    if (this.queue.length >= 8) {
-      this.fail(new Error("Audio connection cannot keep up. Microphone stopped; reconnect to continue."));
+    if (this.queue.length >= 32) {
+      this.fail(
+        new Error("Audio connection cannot keep up. Microphone stopped; reconnect to continue."),
+      );
       return;
     }
     this.queue.push(frame.slice());
@@ -138,7 +146,8 @@ export class JourFixeAudioDrain {
         await this.write(frame, this.controller.signal);
       }
     } catch (error) {
-      if (!this.stopped) this.fail(error instanceof Error ? error : new Error("Audio connection failed."));
+      if (!this.stopped)
+        this.fail(error instanceof Error ? error : new Error("Audio connection failed."));
     } finally {
       this.running = false;
     }

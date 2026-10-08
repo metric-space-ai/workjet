@@ -203,7 +203,8 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
                 management_endpoint.clone(),
                 antigravity_client,
                 config.codex_callback_port,
-            ).with_account_recovery(account_state),
+            )
+            .with_account_recovery(account_state),
         )),
     );
 

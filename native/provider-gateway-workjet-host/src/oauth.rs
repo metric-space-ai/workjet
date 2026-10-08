@@ -270,10 +270,13 @@ impl HostOAuthAuthority {
         state: &str,
         recovery: Option<&crate::account_policy::AccountState>,
     ) -> Result<Vec<ManagementClaimedCredential>, ManagementOAuthRouteError> {
-        let mut claims = self.claims
+        let mut claims = self
+            .claims
             .lock()
             .map_err(|_| ManagementOAuthRouteError::Unavailable)?;
-        let credentials = claims.get(state).ok_or(ManagementOAuthRouteError::NotClaimable)?;
+        let credentials = claims
+            .get(state)
+            .ok_or(ManagementOAuthRouteError::NotClaimable)?;
         if let Some(recovery) = recovery {
             for credential in credentials {
                 if let Some(token) = credential.secrets.get("access_token_secret") {
@@ -281,13 +284,16 @@ impl HostOAuthAuthority {
                         "anthropic" => "claude",
                         provider => provider,
                     };
-                    recovery.recover_oauth_claim(provider, token.as_bytes())
+                    recovery
+                        .recover_oauth_claim(provider, token.as_bytes())
                         .map_err(|_| ManagementOAuthRouteError::Unavailable)?;
                 }
             }
         }
         // A failed durable recovery retains the one-time claim for a retry.
-        claims.remove(state).ok_or(ManagementOAuthRouteError::NotClaimable)
+        claims
+            .remove(state)
+            .ok_or(ManagementOAuthRouteError::NotClaimable)
     }
 
     /// Drops any retained token material for `state` without handing it out.
@@ -829,7 +835,10 @@ impl HostOAuthSource {
     }
 
     #[must_use]
-    pub fn with_account_recovery(mut self, recovery: Arc<crate::account_policy::AccountState>) -> Self {
+    pub fn with_account_recovery(
+        mut self,
+        recovery: Arc<crate::account_policy::AccountState>,
+    ) -> Self {
         self.recovery = Some(recovery);
         self
     }
@@ -1099,15 +1108,20 @@ mod tests {
             crate::secret_store::WorkjetSecretStore::new(directory.path().to_owned()).unwrap(),
         );
         let recovery = crate::account_policy::AccountState::open(store).unwrap();
-        recovery.bind_oauth("codex", "account-1", ACCESS.as_bytes()).unwrap();
-        recovery.conductor().record(AccountExecutionResult {
-            provider: "codex".to_owned(),
-            auth_id: "account-1".to_owned(),
-            model: None,
-            status: 401,
-            retry_delay_ms: None,
-            observed_at_ms: 1000,
-        }).unwrap();
+        recovery
+            .bind_oauth("codex", "account-1", ACCESS.as_bytes())
+            .unwrap();
+        recovery
+            .conductor()
+            .record(AccountExecutionResult {
+                provider: "codex".to_owned(),
+                auth_id: "account-1".to_owned(),
+                model: None,
+                status: 401,
+                retry_delay_ms: None,
+                observed_at_ms: 1000,
+            })
+            .unwrap();
         let source = source().with_account_recovery(recovery.clone());
         let start = source.begin("codex", Some("claim-state")).unwrap();
         assert_eq!(start.provider, "codex");

@@ -126,7 +126,10 @@ impl AccountState {
         next.cooldowns.retain(|record| {
             !(identities.contains(&account_key(&record.provider, &record.auth_id))
                 && matches!(
-                    record.last_error.as_ref().and_then(|error| error.http_status),
+                    record
+                        .last_error
+                        .as_ref()
+                        .and_then(|error| error.http_status),
                     Some(401 | 403)
                 ))
         });
@@ -163,15 +166,22 @@ impl AccountState {
         }
         let mut next = state.clone();
         next.cooldowns.retain(|record| {
-            let selected = record.provider.eq_ignore_ascii_case(provider) && record.auth_id == account;
+            let selected =
+                record.provider.eq_ignore_ascii_case(provider) && record.auth_id == account;
             let auth_failure = matches!(
-                record.last_error.as_ref().and_then(|error| error.http_status),
+                record
+                    .last_error
+                    .as_ref()
+                    .and_then(|error| error.http_status),
                 Some(401 | 403)
             );
             !(selected && (!unchanged || auth_failure))
         });
         if !unchanged
-            || next.observations.get(&identity).is_some_and(|(status, _)| matches!(*status, 401 | 403))
+            || next
+                .observations
+                .get(&identity)
+                .is_some_and(|(status, _)| matches!(*status, 401 | 403))
         {
             next.observations.remove(&identity);
         }

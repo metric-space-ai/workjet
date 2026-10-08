@@ -35,7 +35,10 @@ fn verified_same_token_login_clears_only_its_auth_failure_and_preserves_session(
     assert_eq!(state.observation("xai", "b").unwrap().0, 403);
     assert_eq!(state.quotas("xai", "a")[0].remaining_percent, Some(50.0));
     assert_eq!(state.quotas("xai", "b")[0].remaining_percent, Some(30.0));
+    // A request already running in the old process may report after the claim.
+    state.outcome("xai", "a", "grok-4.7", 401, 1002);
     let restarted = open(dir.path());
+    restarted.bind_oauth("xai", "a", b"reused-access").unwrap();
     assert_eq!(restarted.select("xai", Some("grok-4.7"), 1002, &accounts, &[], body).unwrap().auth_id, "a");
     assert!(restarted.observation("xai", "a").is_none());
     assert_eq!(restarted.load().unwrap().len(), 3);

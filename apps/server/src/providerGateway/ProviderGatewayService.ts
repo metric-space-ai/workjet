@@ -1276,6 +1276,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         return { schemaVersion: 1, pending: false, failed: true, completedAccountIds: [] };
       }
       let claim: unknown;
+      // Stop old probes before the native one-time claim records auth recovery.
+      await modelChecks.cancel();
       try {
         claim = await platform.managementRequest(
           endpoint,
@@ -1294,8 +1296,6 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       const credentials = decodeClaim(claim);
       if (credentials.some((credential) => credential.provider !== target.provider))
         throw safeError("oauth-session-invalid");
-      // Old requests must finish cancellation before fresh secrets replace them.
-      await modelChecks.cancel();
       const createdIds = await persistClaimedAccounts(credentials, target.accountId);
       oauthTargets.delete(input.state);
       // Reload the gateway so the new account is served; a failed restart is

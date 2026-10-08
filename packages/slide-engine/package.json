@@ -1,0 +1,56 @@
+{
+  "name": "@learnordie/slide-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./excalidraw/canvas-schema": "./src/excalidraw/canvas-schema.ts",
+    "./excalidraw/scene": "./src/excalidraw/scene.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./components": {
+      "types": "./src/components/index.ts",
+      "default": "./src/components/index.ts"
+    },
+    "./editing": {
+      "types": "./src/editing.ts",
+      "default": "./src/editing.ts"
+    },
+    "./agent": {
+      "types": "./src/agent.ts",
+      "default": "./src/agent.ts"
+    },
+    "./fixtures": {
+      "types": "./src/fixtures.ts",
+      "default": "./src/fixtures.ts"
+    },
+    "./legacy": {
+      "types": "./src/legacy.ts",
+      "default": "./src/legacy.ts"
+    },
+    "./schema": {
+      "types": "./src/schema.ts",
+      "default": "./src/schema.ts"
+    },
+    "./standalone": {
+      "types": "./src/standalone.ts",
+      "default": "./src/standalone.ts"
+    },
+    "./styles/core.css": "./styles/core.css",
+    "./styles/themes/learnordie-north.css": "./styles/themes/learnordie-north.css",
+    "./styles/themes/learnordie-technical.css": "./styles/themes/learnordie-technical.css",
+    "./styles/themes/learnordie-dark-room.css": "./styles/themes/learnordie-dark-room.css"
+  },
+  "sideEffects": [
+    "./styles/**/*.css"
+  ],
+  "dependencies": {
+    "three": "0.140.0",
+    "zod": "^4.2.1"
+  },
+  "peerDependencies": {
+    "react": "^19.2.3"
+  }
+}

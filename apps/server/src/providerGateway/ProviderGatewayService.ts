@@ -60,8 +60,7 @@ import {
   type ProviderGatewayConfiguration,
 } from "./ProviderGatewayConfig.ts";
 import {
-  GATEWAY_MODEL_CHANNELS,
-  decodeModelDefinitions,
+
   decodeRuntimeConfigSummary,
   decodeRuntimeStatus,
   decodeAccountHealth,
@@ -72,6 +71,7 @@ import {
   USAGE_JOURNAL_MAX_BYTES,
 } from "./ProviderGatewayUsage.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
+import { decodeLiveProviderModels } from "./LiveProviderCatalog.ts";
 import {
   decodeGatewayGrants,
   emptyGatewayGrants,
@@ -112,6 +112,7 @@ export interface GatewayHostProcess {
 }
 
 export interface ProviderGatewayPlatform {
+  readonly publicModelCatalog?: () => Promise<unknown>;
   readonly discoverKimiConnection?: (
     apiKey: string,
     preferredBaseUrl?: string,
@@ -238,9 +239,8 @@ export interface ProviderGatewayServiceShape {
     input: WorkjetGatewayUsageInput,
   ) => Effect.Effect<WorkjetGatewayUsage, WorkjetGatewayOperationError>;
   /**
-   * Models the host's own catalog serves per provider, merged with the models
-   * recorded on the accounts. The host performs no upstream capability query,
-   * so every entry is labelled with where it came from.
+   * Live llm.ctox.dev suggestions plus separately labelled account configuration.
+   * Neither source proves this account's inference health.
    */
   readonly discoverModels: () => Effect.Effect<
     WorkjetGatewayModelDiscovery,
@@ -1587,55 +1587,23 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
     };
 
-    /**
-     * Asks the host which models it serves per provider.
-     *
-     * The host answers from `GET /v0/management/model-definitions/<channel>`,
-     * which is its own pinned catalog compiled into the binary. It makes NO
-     * upstream capability call for this — not at request time and not on the
-     * management surface — so every model is labelled `gateway-catalog` and the
-     * models recorded on the accounts are merged in as `account-configuration`.
-     * Neither label may be presented as a live provider answer. A provider the
-     * host has no channel for (zai, minimax) reports `catalogAvailable: false`
-     * and lists only its configured models.
-     */
+    /** Fresh llm.ctox.dev suggestions; account configuration is separate from live observations. */
     const runDiscoverModels = async (): Promise<WorkjetGatewayModelDiscovery> => {
-      const { endpoint, key } = requireManagement();
+      requireManagement();
       const configuration = await loadConfiguration();
       const observedAtMs = Math.max(0, Math.trunc(platform.now()));
+      let liveCatalog: unknown;
+      try { liveCatalog = await platform.publicModelCatalog?.(); }
+      catch { liveCatalog = undefined; }
       const providers: Array<WorkjetGatewayProviderModels> = [];
       for (const provider of GATEWAY_PROVIDERS) {
         const accounts = configuration.accounts.filter(
           (account) => account.provider === provider && account.enabled,
         );
         if (accounts.length === 0) continue;
-        // A coding-plan key has different IDs from the compiled Moonshot catalog.
-        const channel = provider === "kimi" ? null : GATEWAY_MODEL_CHANNELS[provider];
-        let catalog: ReadonlyArray<{ readonly id: string; readonly displayName: string }> = [];
-        let catalogAvailable = false;
-        if (channel !== null) {
-          try {
-            const response = await platform.managementGet(
-              endpoint,
-              `/v0/management/model-definitions/${encodeURIComponent(channel)}`,
-              key,
-              MANAGEMENT_MAX_BYTES,
-            );
-            const decoded = decodeModelDefinitions(response, channel);
-            if (decoded !== undefined) {
-              catalog = decoded;
-              catalogAvailable = true;
-            }
-          } catch {
-            // A channel the host refuses is reported as unavailable for this
-            // provider; it must not fail the whole discovery.
-            catalogAvailable = false;
-          }
-        }
-        const models: Array<WorkjetGatewayDiscoveredModel> = catalog.map((model) => ({
-          id: model.id,
-          displayName: model.displayName,
-          source: "gateway-catalog" as const,
+        const liveModels = decodeLiveProviderModels(liveCatalog, provider, platform.now());
+        const models: Array<WorkjetGatewayDiscoveredModel> = (liveModels ?? []).map((id) => ({
+          id, displayName: id, source: "gateway-catalog" as const,
         }));
         const known = new Set(models.map((model) => model.id));
         for (const account of accounts) {
@@ -1646,9 +1614,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           }
         }
         providers.push({
-          provider,
-          channel,
-          catalogAvailable,
+          provider, channel: null, catalogAvailable: liveModels !== undefined,
           models: models.slice(0, 256),
         });
       }

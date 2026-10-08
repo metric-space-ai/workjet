@@ -49,6 +49,12 @@ permission/capture/VAD; helper receives PCM and never opens a capture device.
 
 Each valid event echoes all scope/request fields above plus helperMs.
 Main rejects another child, scope, generation or retired request.
+Crew's local-candidate receipt proves authenticated Owner persistence in that
+exact live room/deck/request, with provider_verified:false. Main separately
+validates the signed helper. The existing gateway-only VerifiedTranscriptFinal
+cannot be minted from helper JSON; text append is also insufficient because it
+lacks the local request/deck binding. Wait for Crew's actual local-candidate
+command/DTO; never invent a gateway execution attestation.
 
 | Event | Payload |
 | --- | --- |

@@ -448,43 +448,54 @@ export function WorkjetCapabilityDetail(
                 {selectedConnection.reason ? `: ${selectedConnection.reason}` : ""}
               </p>
             ) : null}
-            {capability.id === "ctox-business-os" && enabled ? (
-              <div className="px-2 pb-2">
-                <Select
-                  value={props.ctoxBusinessOsConnectionId ?? ""}
-                  disabled={
-                    props.disabled === true || props.busy || props.ctoxBusinessOsConnectionLocked
-                  }
-                  onValueChange={(value) => {
-                    if (value !== null) props.onCtoxBusinessOsConnectionChange?.(value);
-                  }}
-                >
-                  <SelectTrigger aria-label="CTOX Business OS connection">
-                    <SelectValue placeholder="Connect selected instance" />
-                  </SelectTrigger>
-                  <SelectPopup>
-                    {(props.ctoxBusinessOsConnections ?? []).map((connection) => (
-                      <SelectItem
-                        key={connection.connectionId}
-                        value={connection.connectionId}
-                        disabled={connection.status !== "ready"}
-                      >
-                        {connection.displayName} · {connection.status}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-                {props.ctoxBusinessOsConnectionLocked ? (
-                  <p className="pt-1 text-xs text-muted-foreground">
-                    This thread keeps its original instance.
-                  </p>
-                ) : null}
-                {(props.ctoxBusinessOsConnections ?? []).length === 0 ? (
-                  <p role="alert" className="pt-1 text-xs text-amber-500">
-                    No MCP connection for the selected instance is available on this computer.
-                  </p>
-                ) : null}
-              </div>
+          </div>
+        )
+      ) : null}
+      {props.settingId === "ctox-business-os" ? (
+        !enabled ? (
+          <p className="text-sm text-muted-foreground">
+            Enable CTOX Business OS to choose a connection.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">CTOX instance</p>
+            <Select
+              value={props.ctoxBusinessOsConnectionId ?? ""}
+              disabled={
+                props.disabled === true ||
+                props.busy ||
+                props.ctoxBusinessOsConnectionLocked ||
+                props.onCtoxBusinessOsConnectionChange === undefined ||
+                (props.ctoxBusinessOsConnections ?? []).length === 0
+              }
+              onValueChange={(value) => {
+                if (value !== null) props.onCtoxBusinessOsConnectionChange?.(value);
+              }}
+            >
+              <SelectTrigger aria-label="CTOX Business OS connection">
+                <SelectValue placeholder="Connect selected instance" />
+              </SelectTrigger>
+              <SelectPopup>
+                {(props.ctoxBusinessOsConnections ?? []).map((connection) => (
+                  <SelectItem
+                    key={connection.connectionId}
+                    value={connection.connectionId}
+                    disabled={connection.status !== "ready"}
+                  >
+                    {connection.displayName} · {connection.status}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+            {props.ctoxBusinessOsConnectionLocked ? (
+              <p className="text-xs text-muted-foreground">
+                This thread keeps its original instance.
+              </p>
+            ) : null}
+            {(props.ctoxBusinessOsConnections ?? []).length === 0 ? (
+              <p role="alert" className="text-xs text-amber-500">
+                No MCP connection for the selected instance is available on this computer.
+              </p>
             ) : null}
           </div>
         )

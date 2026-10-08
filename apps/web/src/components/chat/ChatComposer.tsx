@@ -31,6 +31,7 @@ import {
   useWorkjetProjectRegistry,
 } from "../../workjetProjectRegistry";
 import { bindWorkjetPrivateChat } from "../../workjetPrivateChat";
+import { ctoxConnectionMatchesSelectedInstance } from "../../workjetCtoxConnections";
 import { resolvePrivateChatDraftProject } from "../../workjetPrivateChatScope";
 import { NativePrivateChatControl } from "./NativePrivateChatControl";
 import { serializeComposerFileLink } from "@workjet/shared/composerTrigger";
@@ -1435,8 +1436,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const ctoxBusinessOsConnections = decisionHubConnections.filter(
     (connection) =>
       connection.connectionId === ctoxBinding?.target.connectionId ||
-      activeWorkjetScope.selectedInstanceId === null ||
-      connection.instanceId === activeWorkjetScope.selectedInstanceId,
+      ctoxConnectionMatchesSelectedInstance(connection, activeWorkjetScope.selectedInstanceId),
   );
   const ctoxBusinessOsConnectionLocked = composerTargetIsThread && ctoxBinding !== undefined;
   const handleCtoxBusinessOsConnectionChange = (connectionId: string) => {
@@ -1474,7 +1474,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [nativeChatConnectionId, setNativeChatConnectionId] = useState<string | null>(null);
   const nativeChatConnections = decisionHubConnections.filter(
     (connection) =>
-      connection.instanceId === activeWorkjetScope.selectedInstanceId &&
+      ctoxConnectionMatchesSelectedInstance(connection, activeWorkjetScope.selectedInstanceId) &&
       connection.status === "ready",
   );
   const nativeChatConnection = nativeChatConnections.find(

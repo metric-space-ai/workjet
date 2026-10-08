@@ -1,7 +1,7 @@
 import type { ReactElement, ReactNode } from "react";
 import { isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EnvironmentId, ThreadId, type WorkjetThreadConfig } from "@workjet/contracts";
+import { EnvironmentId, ThreadId, WorkjetConnectionId, type WorkjetThreadConfig } from "@workjet/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -242,6 +242,57 @@ describe("WorkjetCapabilityMenu", () => {
     expect(missing).toContain("No MCP-capable CTOX connection");
     expect(missing).toContain("disabled");
     expect(props.onDecisionHubConnectionChange).not.toHaveBeenCalled();
+  });
+  it("offers the CTOX selector in its own detail instead of Decision Hub", () => {
+    const props = {
+      ...baseMenuProps,
+      onCapabilityEnabledChange: vi.fn(),
+      onCtoxBusinessOsConnectionChange: vi.fn(),
+      settingId: "ctox-business-os",
+    };
+    const disabled = renderToStaticMarkup(
+      <WorkjetCapabilityDetail {...props} enabledCapabilityIds={[]} />,
+    );
+    expect(disabled).toContain("Enable CTOX Business OS");
+    expect(disabled).not.toContain('aria-label="CTOX Business OS connection"');
+    const enabled = renderToStaticMarkup(
+      <WorkjetCapabilityDetail
+        {...props}
+        enabledCapabilityIds={["ctox-business-os"]}
+        ctoxBusinessOsConnections={[
+          {
+            connectionId: WorkjetConnectionId.make("ctox-dev:tenant-source"),
+            instanceId: "source.ctox.dev",
+            displayName: "Source instance",
+            source: "ctox_dev",
+            status: "ready",
+            reason: null,
+          },
+        ]}
+      />,
+    );
+    expect(enabled).toContain('aria-label="CTOX Business OS connection"');
+    expect(enabled).not.toContain('aria-label="Decision Hub CTOX connection"');
+    expect(enabled).not.toContain("No MCP connection");
+    expect(props.onCtoxBusinessOsConnectionChange).not.toHaveBeenCalled();
+  });
+
+  it("shows a missing source and preserves a locked thread connection", () => {
+    const props = {
+      ...baseMenuProps,
+      onCapabilityEnabledChange: vi.fn(),
+      onCtoxBusinessOsConnectionChange: vi.fn(),
+      settingId: "ctox-business-os",
+      enabledCapabilityIds: ["ctox-business-os"] as const,
+    };
+    const missing = renderToStaticMarkup(<WorkjetCapabilityDetail {...props} />);
+    expect(missing).toContain("No MCP connection for the selected instance");
+    expect(missing).toContain("disabled");
+    const locked = renderToStaticMarkup(
+      <WorkjetCapabilityDetail {...props} ctoxBusinessOsConnectionLocked />,
+    );
+    expect(locked).toContain("This thread keeps its original instance.");
+    expect(locked).toContain("disabled");
   });
 });
 

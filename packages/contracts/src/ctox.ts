@@ -102,6 +102,7 @@ export type CtoxDecisionHubAvailability = typeof CtoxDecisionHubAvailability.Typ
 
 export const CtoxDecisionHubProvisionInput = Schema.Struct({
   environmentId: EnvironmentId,
+  purpose: Schema.optionalKey(Schema.Literals(["decision_hub", "worker_source"])),
   target: Schema.Union([
     Schema.TaggedStruct("ctox_dev", {
       tenantId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),

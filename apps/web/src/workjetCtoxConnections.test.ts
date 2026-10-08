@@ -34,4 +34,14 @@ describe("CTOX connection selection", () => {
     expect(ctoxConnectionMatchesSelectedInstance(source, null)).toBe(false);
     expect(ctoxConnectionMatchesSelectedInstance(source, null, true)).toBe(true);
   });
+
+  it("accepts a new worker client only for its exact selected managed tenant", () => {
+    const worker = { ...source,
+      connectionId: WorkjetConnectionId.make("ctox-dev-worker-source:tenant-source:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") };
+    expect(ctoxConnectionMatchesSelectedInstance(worker, "managed:tenant-source")).toBe(true);
+    expect(ctoxConnectionMatchesSelectedInstance(worker, "managed:tenant")).toBe(false);
+    expect(ctoxConnectionMatchesSelectedInstance(worker, "managed:tenant-other")).toBe(false);
+    expect(ctoxConnectionMatchesSelectedInstance({ ...worker, connectionId: WorkjetConnectionId.make(worker.connectionId + ":foreign") }, "managed:tenant-source")).toBe(false);
+    expect(ctoxConnectionMatchesSelectedInstance(worker, null)).toBe(false);
+  });
 });

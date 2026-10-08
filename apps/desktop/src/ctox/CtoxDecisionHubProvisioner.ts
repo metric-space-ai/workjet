@@ -33,6 +33,12 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as CtoxElectronSessions from "./CtoxElectronSessions.ts";
 import * as CtoxInstanceRegistry from "./CtoxInstanceRegistry.ts";
 import { resolveCtoxBinary } from "./CtoxLocalDaemonLaunch.ts";
+import {
+  issueWorkjetWorkerSourceGrant,
+  revokeWorkjetWorkerSourceGrant,
+  WorkerSourceGrantError,
+  workerSourceGrantIdentity,
+} from "./CtoxWorkerSourceGrant.ts";
 
 const decodeCatalog = Schema.decodeUnknownEffect(Schema.fromJsonString(ConnectionCatalogDocument));
 const GrantResponse = Schema.Struct({
@@ -94,7 +100,7 @@ const make = Effect.gen(function* () {
   const instanceRegistry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const issuedGrants = yield* Ref.make<
-    ReadonlyArray<{ connectionId: WorkjetConnectionId; tenantId: string; tokenId: string }>
+    ReadonlyArray<{ connectionId: WorkjetConnectionId; tenantId: string; tokenId: string; purpose?: "worker_source" }>
   >([]);
 
   const resolveEnvironment = (environmentId: string) =>
@@ -148,9 +154,16 @@ const make = Effect.gen(function* () {
       return yield* Effect.fail("environment_unavailable" as const);
     }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
 
-  const revokeGrant = (grant: { readonly tenantId: string; readonly tokenId: string }) =>
+  const revokeGrant = (grant: { readonly tenantId: string; readonly tokenId: string; readonly purpose?: "worker_source" }) =>
     Effect.gen(function* () {
       const account = yield* sessions.account;
+      if (grant.purpose === "worker_source") {
+        yield* Effect.tryPromise({
+          try: () => revokeWorkjetWorkerSourceGrant(account.fetch.bind(account), grant),
+          catch: () => "grant_revoke_unavailable" as const,
+        });
+        return;
+      }
       yield* Effect.promise(() =>
         account.fetch("https://ctox.dev/api/desktop/decision-hub-grant", {
           method: "DELETE",
@@ -171,12 +184,34 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const environment = yield* resolveEnvironment(input.environmentId);
         const target = input.target;
+        if (input.purpose === "worker_source" && target._tag !== "ctox_dev")
+          return yield* Effect.fail("grant_unavailable" as const);
         const managedTenantId = target._tag === "ctox_dev" ? target.tenantId : undefined;
         const localInstanceId = target._tag === "local_ctox" ? target.instanceId : undefined;
         const provisionTarget =
           managedTenantId !== undefined
             ? yield* Effect.gen(function* () {
                 const account = yield* sessions.account;
+                if (input.purpose === "worker_source") {
+                  const grant = yield* Effect.tryPromise({
+                    try: () => issueWorkjetWorkerSourceGrant(account.fetch.bind(account), managedTenantId),
+                    catch: (error) => error instanceof WorkerSourceGrantError ? error.code : "grant_unavailable" as const,
+                  });
+                  const issued = { connectionId: grant.connectionId, tenantId: grant.tenantId,
+                    tokenId: grant.tokenId, purpose: "worker_source" as const };
+                  yield* Ref.update(issuedGrants, (current) => [...current, issued]);
+                  let committed = false;
+                  yield* Effect.addFinalizer(() => committed ? Effect.void : revokeGrant(issued).pipe(
+                    Effect.andThen(Ref.update(issuedGrants, (current) =>
+                      current.filter((candidate) => candidate.tokenId !== issued.tokenId))),
+                  ));
+                  return {
+                    connectionId: grant.connectionId, instanceId: grant.instanceId,
+                    displayName: grant.displayName, source: grant.source,
+                    endpoint: grant.endpoint, token: grant.token,
+                    commit: () => { committed = true; },
+                  };
+                }
                 const response = yield* Effect.promise(() =>
                   account.fetch("https://ctox.dev/api/desktop/decision-hub-grant", {
                     method: "POST",
@@ -269,8 +304,11 @@ const make = Effect.gen(function* () {
         const rpc = yield* rpcFactory.connect(connection);
         yield* rpc.ready;
         const result = yield* rpc.client[WS_METHODS.workjetDecisionHubProvisionConnection]({
-          ...provisionTarget,
+          connectionId: provisionTarget.connectionId, instanceId: provisionTarget.instanceId,
+          displayName: provisionTarget.displayName, source: provisionTarget.source,
+          endpoint: provisionTarget.endpoint, token: provisionTarget.token,
         });
+        if ("commit" in provisionTarget) provisionTarget.commit();
         return { _tag: "completed", connection: result.connection } as const;
       }).pipe(
         Effect.catch((cause) =>
@@ -320,6 +358,10 @@ const make = Effect.gen(function* () {
           current.filter((candidate) => candidate.connectionId !== input.connectionId),
         ]);
         if (grant !== undefined) yield* revokeGrant(grant);
+        else {
+          const identity = workerSourceGrantIdentity(input.connectionId);
+          if (identity !== undefined) yield* revokeGrant({ ...identity, purpose: "worker_source" });
+        }
         return { _tag: "completed" } as const;
       }).pipe(
         Effect.catch((cause) =>

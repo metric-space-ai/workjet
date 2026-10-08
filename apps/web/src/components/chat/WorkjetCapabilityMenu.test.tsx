@@ -422,3 +422,32 @@ describe("Extras: every capability the host can activate", () => {
     expect(text).not.toContain("Web Search");
   });
 });
+
+describe("worker source connection action", () => {
+  const props = { ...baseMenuProps, settingId: "ctox-business-os",
+    enabledCapabilityIds: ["ctox-business-os"], onCapabilityEnabledChange: vi.fn() };
+
+  it("offers the normal product connect action when no connection exists", () => {
+    const onConnect = vi.fn();
+    const detail = WorkjetCapabilityDetail({ ...props, onCtoxBusinessOsConnect: onConnect });
+    const action = findByLabel(detail, "Connect selected Business OS for workers");
+    expect(action.props.disabled).toBeFalsy();
+    (action.props.onClick as () => void)();
+    expect(onConnect).toHaveBeenCalledOnce();
+  });
+
+  it("disables duplicate connection attempts and exposes a safe failure", () => {
+    const detail = WorkjetCapabilityDetail({ ...props, onCtoxBusinessOsConnect: vi.fn(),
+      ctoxBusinessOsConnecting: true, ctoxBusinessOsConnectError: "Check account permissions." });
+    expect(findByLabel(detail, "Connect selected Business OS for workers").props.disabled).toBe(true);
+    expect(textContent(detail)).toContain("Connecting");
+    expect(textContent(detail)).toContain("Check account permissions.");
+  });
+
+  it("does not offer a replacement grant for a pinned thread or an unavailable desktop bridge", () => {
+    const pinned = WorkjetCapabilityDetail({ ...props, onCtoxBusinessOsConnect: vi.fn(),
+      ctoxBusinessOsConnectionLocked: true });
+    expect(() => findByLabel(pinned, "Connect selected Business OS for workers")).toThrow();
+    expect(() => findByLabel(WorkjetCapabilityDetail(props), "Connect selected Business OS for workers")).toThrow();
+  });
+});

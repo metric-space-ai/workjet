@@ -11,7 +11,7 @@ async function fixture(size = 50) {
   const bytes = Uint8Array.from({ length: size }, (_, index) => index % 251);
   const audio = { file_id: "retained", generation_id: "generation", sha256: await hash(bytes),
     narration_text_sha256: "a".repeat(64), mime_type: "audio/wav" as const, format: "wav" as const,
-    duration_ms: 1000, source_run_id: "run", model: "stored-local-model", synthesis_duration_ms: 123,
+    duration_ms: 1000, source_run_id: "run", model: "grok-4.7", synthesis_duration_ms: 123,
     provenance: "native_gateway" as const };
   const requests: { offset: number; length: number }[] = [];
   let change = (response: WorkjetJourFixeNarrationReadResponse) => response;

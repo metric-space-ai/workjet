@@ -231,8 +231,8 @@ export function SlideCanvas({
         files: source.files,
         appState: {
           viewBackgroundColor: source.backgroundColor,
-          // New text uses the handwriting font; migrated text keeps its own family.
-          currentItemFontFamily: 5,
+          // New text uses the handwriting font family 1 (Virgil), like migrated slides.
+          currentItemFontFamily: 1,
           currentItemStrokeColor: "#243f43",
           currentItemRoughness: 1,
           gridSize: null,

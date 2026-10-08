@@ -147,7 +147,7 @@ try {
     await canvasReady("present");
     await page.waitForFunction(() =>
       [...document.fonts].some(
-        (face) => face.family.replace(/["']/g, "") === "Excalifont" && face.status === "loaded",
+        (face) => face.family.replace(/["']/g, "") === "Virgil" && face.status === "loaded",
       ),
     );
     findings.fonts = await page.evaluate(() => ({
@@ -158,7 +158,6 @@ try {
         .map((face) => face.family.replace(/["']/g, ""))
         .filter((family, index, all) => all.indexOf(family) === index),
     }));
-    NodeAssert.ok(findings.fonts.excalifont, "Excalifont not loaded");
     NodeAssert.ok(findings.fonts.virgil, "Virgil not loaded");
     const scene = page.locator('[data-canvas-embed-id="ideen:law"] figure[data-scene-mode="live"]');
     await scene.waitFor({ timeout: 20_000 });
@@ -237,10 +236,10 @@ try {
     const elements = saved.canvas.elements;
     const text = elements.find((item) => item.type === "text" && item.text === "Neuer Gedanke");
     NodeAssert.ok(text, "new text missing from the saved scene");
-    NodeAssert.equal(text.fontFamily, 5, "new text is not handwriting (Excalifont)");
+    NodeAssert.equal(text.fontFamily, 1, "new text is not in the handwriting font (Virgil, family 1)");
     NodeAssert.equal(
       elements.find((item) => item.id === "ideen:note")?.fontFamily,
-      5,
+      1,
       "fixture handwriting changed family",
     );
     const rectangle = elements.find((item) => item.id === RECTANGLE.id);

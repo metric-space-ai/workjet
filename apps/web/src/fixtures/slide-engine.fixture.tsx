@@ -75,7 +75,7 @@ function element(
   } as CanvasElement;
 }
 
-/** Handwritten text (Excalifont, family 5). */
+/** Handwritten text (Virgil, family 1). */
 function handwriting(
   id: string,
   text: string,
@@ -96,7 +96,7 @@ function handwriting(
       text,
       originalText: text,
       fontSize,
-      fontFamily: 5,
+      fontFamily: 1,
       textAlign: "left",
       verticalAlign: "top",
       containerId: null,

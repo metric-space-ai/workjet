@@ -1,3 +1,4 @@
+import * as NodeUtil from "node:util";
 import {
   CommandId,
   MessageId,
@@ -5,12 +6,15 @@ import {
   WorkjetDelegationId,
   WorkjetEnvelopeId,
   WorkjetRepositoryPath,
+  RemoteWorkerRequest,
   type WorkjetDelegation,
   type EnvironmentId,
-  type ModelSelection,
+  ModelSelection,
   type OrchestrationCommand,
   type WorkjetCapabilityId,
   type WorkjetComputerId,
+  type WorkjetWorkerProfileId,
+  type WorkjetConfiguration,
   type WorkjetParentThreadReference,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -24,6 +28,8 @@ import { resolveDelegatedCapabilities } from "@metric-space-ai/workjet-capabilit
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
+import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
+import { RemoteWorkerBroker } from "./RemoteWorkerBroker.ts";
 import type { McpInvocationScope } from "../mcp/McpInvocationContext.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -36,6 +42,9 @@ import type { OrchestrationDispatchOptions } from "../orchestration/Services/Orc
 
 export interface WorkerDispatchInput {
   readonly task: string;
+  readonly workerProfileId?: WorkjetWorkerProfileId;
+  /** Retry only this saved remote request after a lost acknowledgement. */
+  readonly remoteRequestId?: ThreadId;
   readonly computerId?: WorkjetComputerId;
   readonly title?: string;
   readonly enabledCapabilityIds?: ReadonlyArray<WorkjetCapabilityId>;
@@ -62,7 +71,10 @@ export type WorkerDispatchFailureReason =
   | "duplicate-capabilities"
   | "capability-escalation"
   | "computer-unavailable"
+  | "worker-profile-unavailable"
   | "remote-dispatch-unavailable"
+  | "remote-dispatch-pending"
+  | "remote-dispatch-failed"
   | "worktree-failed"
   | "create-failed"
   | "turn-start-failed"
@@ -78,12 +90,17 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
       "duplicate-capabilities",
       "capability-escalation",
       "computer-unavailable",
+      "worker-profile-unavailable",
       "remote-dispatch-unavailable",
+      "remote-dispatch-pending",
+      "remote-dispatch-failed",
       "worktree-failed",
       "create-failed",
       "turn-start-failed",
       "rollback-failed",
     ]),
+    remoteRequestId: Schema.optional(ThreadId),
+    targetEnvironmentId: Schema.optional(Schema.String),
     recoveryWorktreePath: Schema.optional(Schema.String),
     recoveryAdminPath: Schema.optional(Schema.String),
     originalWorktreePath: Schema.optional(Schema.String),
@@ -105,8 +122,14 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
         return "The requested worker capabilities exceed the parent grants.";
       case "computer-unavailable":
         return "The selected worker computer is unavailable in native settings.";
+      case "worker-profile-unavailable":
+        return "Select one configured Codex worker profile for the target computer with an explicit model and account route.";
       case "remote-dispatch-unavailable":
-        return "Fresh worker dispatch to another computer environment is not available yet.";
+        return "The registered remote environment connection is unavailable.";
+      case "remote-dispatch-pending":
+        return "Remote worker dispatch is saved and pending. Retry with remoteRequestId to reconcile this worker.";
+      case "remote-dispatch-failed":
+        return "The remote worker request was rejected. Its saved receipt contains the outcome.";
       case "worktree-failed":
         return "The isolated worker worktree could not be created.";
       case "create-failed":
@@ -165,6 +188,8 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const mailbox = yield* Effect.serviceOption(WorkjetMailboxStore);
   const rollback = yield* WorkerDispatchRollback;
   const settings = yield* Effect.serviceOption(ServerSettingsService);
+  const remoteBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
+  const sourceGit = yield* Effect.serviceOption(GitVcsDriver);
 
   const dispatch: WorkerDispatchShape["dispatch"] = Effect.fn("WorkerDispatch.dispatch")(
     function* (invocation, input) {
@@ -196,7 +221,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         ...(requestedCapabilityIds ? { requestedCapabilityIds } : {}),
         targetRole: "worker",
       });
-      const enabledCapabilityIds = [...delegated.capabilityIds] as WorkjetCapabilityId[];
+      let enabledCapabilityIds = [...delegated.capabilityIds] as WorkjetCapabilityId[];
       if (requestedCapabilityIds !== undefined) {
         if (new Set(requestedCapabilityIds).size !== requestedCapabilityIds.length) {
           return yield* failure("duplicate-capabilities");
@@ -211,14 +236,27 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
       }
 
       // A computer ID is an explicit catalog binding, never a hostname or an
-      // inferred transport. Until the target host can verify a fresh foreign
-      // parent, this native entry must not silently run a remote selection here.
+      // inferred transport. A foreign selection is relayed to that registered
+      // environment; it never creates a worker on the source computer.
       let computerId = input.computerId;
+      let configuration: WorkjetConfiguration | undefined;
+      let targetEnvironmentId = invocation.environmentId;
       if (Option.isSome(settings)) {
-        const configuration = yield* settings.value.getSettings.pipe(
+        configuration = yield* settings.value.getSettings.pipe(
           Effect.map((current) => current.workjet),
           Effect.mapError(() => failure("computer-unavailable")),
         );
+        if (input.workerProfileId !== undefined) {
+          const profiles = configuration.workerProfiles.filter(
+            (profile) => profile.id === input.workerProfileId,
+          );
+          if (
+            profiles.length !== 1 ||
+            (computerId !== undefined && profiles[0]!.computerId !== computerId)
+          )
+            return yield* failure("worker-profile-unavailable");
+          computerId = profiles[0]!.computerId;
+        }
         computerId ??= configuration.selectedComputerId ?? undefined;
         if (computerId === undefined) {
           const localComputers = configuration.computers.filter(
@@ -229,15 +267,186 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         if (computerId !== undefined) {
           const matches = configuration.computers.filter((computer) => computer.id === computerId);
           if (matches.length !== 1) return yield* failure("computer-unavailable");
-          if (matches[0]?.environmentId !== invocation.environmentId) {
-            return yield* failure("remote-dispatch-unavailable");
-          }
+          targetEnvironmentId = matches[0]!.environmentId;
         }
       } else if (computerId !== undefined) {
         return yield* failure("computer-unavailable");
       }
 
-      const modelSelection = input.modelSelection ?? parent.modelSelection;
+      let modelSelection = input.modelSelection ?? parent.modelSelection;
+      if (targetEnvironmentId !== invocation.environmentId) {
+        const profiles =
+          configuration?.workerProfiles.filter(
+            (profile) =>
+              profile.computerId === computerId &&
+              profile.harness === "codex-cli" &&
+              (input.workerProfileId === undefined || profile.id === input.workerProfileId),
+          ) ?? [];
+        const profile = profiles.length === 1 ? profiles[0] : undefined;
+        if (
+          !profile ||
+          !configuration?.llmRoutes.some((route) => route.id === profile.llmRouteId) ||
+          (input.modelSelection !== undefined && input.modelSelection.model !== profile.modelId)
+        )
+          return yield* failure("worker-profile-unavailable");
+        if (input.enabledCapabilityIds === undefined) {
+          const selected = resolveDelegatedCapabilities({
+            parentCapabilityIds: parent.workjetConfig.enabledCapabilityIds,
+            requestedCapabilityIds: profile.capabilityIds,
+            targetRole: "worker",
+          });
+          if (
+            selected.issues.length > 0 ||
+            profile.capabilityIds.some(
+              (id) => !parent.workjetConfig.enabledCapabilityIds.includes(id),
+            )
+          )
+            return yield* failure("capability-escalation");
+          enabledCapabilityIds = [...selected.capabilityIds] as WorkjetCapabilityId[];
+        } else if (enabledCapabilityIds.some((id) => !profile.capabilityIds.includes(id))) {
+          return yield* failure("capability-escalation");
+        }
+        modelSelection = {
+          instanceId: input.modelSelection?.instanceId ?? parent.modelSelection.instanceId,
+          model: profile.modelId,
+          ...(input.modelSelection?.options === undefined
+            ? {}
+            : { options: input.modelSelection.options }),
+        };
+        if (Option.isNone(remoteBroker) || Option.isNone(sourceGit) || computerId === undefined) {
+          return yield* failure("remote-dispatch-unavailable");
+        }
+        const broker = remoteBroker.value;
+        let request: RemoteWorkerRequest;
+        if (input.remoteRequestId) {
+          const saved = yield* broker
+            .read(input.remoteRequestId)
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          if (
+            Option.isNone(saved) ||
+            saved.value.request.parent.environmentId !== invocation.environmentId ||
+            saved.value.request.parent.threadId !== parent.id ||
+            saved.value.request.computerId !== computerId ||
+            saved.value.request.workerProfileId !== profile.id ||
+            saved.value.request.llmRouteId !== profile.llmRouteId ||
+            saved.value.request.modelSelection.model !== profile.modelId ||
+            saved.value.request.enabledCapabilityIds.some(
+              (id) => !profile.capabilityIds.includes(id),
+            ) ||
+            saved.value.request.targetEnvironmentId !== targetEnvironmentId ||
+            saved.value.request.task !== input.task ||
+            (input.title !== undefined &&
+              saved.value.request.title !==
+                (input.title.trim() || deriveWorkerTitle(input.task))) ||
+            (input.modelSelection !== undefined &&
+              !NodeUtil.isDeepStrictEqual(
+                yield* Schema.encodeEffect(ModelSelection)(saved.value.request.modelSelection).pipe(
+                  Effect.mapError(() => failure("remote-dispatch-failed")),
+                ),
+                yield* Schema.encodeEffect(ModelSelection)(input.modelSelection).pipe(
+                  Effect.mapError(() => failure("remote-dispatch-failed")),
+                ),
+              )) ||
+            (input.enabledCapabilityIds !== undefined &&
+              (saved.value.request.enabledCapabilityIds.length !== enabledCapabilityIds.length ||
+                saved.value.request.enabledCapabilityIds.some(
+                  (id) => !enabledCapabilityIds.includes(id),
+                )))
+          ) {
+            return yield* failure("remote-dispatch-failed");
+          }
+          request = saved.value.request;
+        } else {
+          const project = Option.getOrUndefined(
+            yield* query
+              .getProjectShellById(parent.projectId)
+              .pipe(Effect.mapError(() => failure("remote-dispatch-failed"))),
+          );
+          const cwd = parent.worktreePath ?? project?.workspaceRoot;
+          if (!project?.repositoryIdentity || !cwd) return yield* failure("remote-dispatch-failed");
+          const status = yield* gitWorkflow
+            .localStatus({ cwd })
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          // Do not silently discard unpublished source edits on another host.
+          if (!status.isRepo || status.hasWorkingTreeChanges)
+            return yield* failure("remote-dispatch-failed");
+          const revision = (yield* sourceGit.value
+            .execute({
+              operation: "WorkerDispatch.remoteSourceRevision",
+              cwd,
+              args: ["rev-parse", "HEAD"],
+              timeoutMs: 5000,
+              maxOutputBytes: 128,
+            })
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")))).stdout.trim();
+          const createdAt = yield* sources.nowIso;
+          const { rootPath: _sourcePath, ...repository } = project.repositoryIdentity;
+          const remoteUrl = repository.locator.remoteUrl.replace(
+            /^git@github\.com:/,
+            "https://github.com/",
+          );
+          request = yield* Schema.decodeUnknownEffect(RemoteWorkerRequest)({
+            schemaVersion: 1,
+            requestId: ThreadId.make(yield* sources.randomUUID),
+            targetEnvironmentId,
+            computerId,
+            workerProfileId: profile.id,
+            llmRouteId: profile.llmRouteId,
+            parent: { environmentId: invocation.environmentId, threadId: parent.id },
+            ...(parentTeam ? { parentTeamRole: parentTeam.role } : {}),
+            parentCapabilityIds: [...parent.workjetConfig.enabledCapabilityIds],
+            managedInstructions: [parent.workjetConfig.managedInstructions, profile.instructions]
+              .filter(Boolean)
+              .join("\n\n"),
+            project: {
+              id: project.id,
+              title: project.title,
+              repository: {
+                ...repository,
+                locator: { ...repository.locator, remoteUrl },
+              },
+            },
+            revision,
+            task: input.task,
+            title: input.title?.trim() || deriveWorkerTitle(input.task),
+            modelSelection,
+            runtimeMode: parent.runtimeMode,
+            interactionMode: parent.interactionMode,
+            enabledCapabilityIds,
+            createdAt,
+            expiresAt: DateTime.makeUnsafe(createdAt).pipe(
+              DateTime.add({ days: 7 }),
+              DateTime.formatIso,
+            ),
+          }).pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+          yield* broker
+            .enqueue(request)
+            .pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+        }
+        const response = yield* broker.awaitResponse(request.requestId).pipe(
+          Effect.timeout("4 minutes"),
+          Effect.mapError(
+            () =>
+              new WorkerDispatchError({
+                reason: "remote-dispatch-pending",
+                remoteRequestId: request.requestId,
+                targetEnvironmentId,
+              }),
+          ),
+        );
+        if (response.outcome.status === "failed")
+          return yield* new WorkerDispatchError({
+            reason:
+              response.outcome.reason === "rollback-failed"
+                ? "rollback-failed"
+                : "remote-dispatch-failed",
+            remoteRequestId: request.requestId,
+            targetEnvironmentId,
+          });
+        return response.outcome.result;
+      }
+      if (input.remoteRequestId) return yield* failure("remote-dispatch-failed");
+
       const parentReference = {
         environmentId: invocation.environmentId,
         threadId: invocation.threadId,

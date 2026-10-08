@@ -16,6 +16,7 @@ import type {
   WorkjetDelegation,
   WorkjetRoutingEnvelope,
   ThreadId,
+  RemoteWorkerRequest,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -28,6 +29,10 @@ import type { OrchestrationEventStoreError } from "../../persistence/Errors.ts";
  * OrchestrationEngineShape - Service API for orchestration command and event flow.
  */
 export interface OrchestrationDispatchOptions {
+  /** Native receiver only; never decoded from a renderer command. */
+  readonly remoteWorkerRequest?: RemoteWorkerRequest;
+  /** A target mirror retains the source supervisor rather than creating another. */
+  readonly remoteProjectMirror?: true;
   readonly deferWhileBusy?: true;
   /** Internal only: commit a prepared team-worker delegation with thread creation. */
   readonly workerDelegation?: {

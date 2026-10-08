@@ -6,6 +6,7 @@ import {
   TrimmedNonEmptyString,
   WorkjetCapabilityId,
   WorkjetComputerId,
+  WorkjetWorkerProfileId,
   WorkjetParentThreadReference,
 } from "@workjet/contracts";
 import * as Context from "effect/Context";
@@ -40,6 +41,8 @@ export const CanonicalWorkerModelSelection = Schema.Struct({
 
 export const WorkerDispatchInputSchema = Schema.Struct({
   task: NonBlankTask,
+  remoteRequestId: Schema.optional(ThreadId),
+  workerProfileId: Schema.optional(WorkjetWorkerProfileId),
   computerId: Schema.optional(WorkjetComputerId),
   title: Schema.optional(OptionalWorkerTitle),
   enabledCapabilityIds: Schema.optional(DelegatedCapabilityIds),
@@ -82,7 +85,7 @@ const enabledWhen = () => {
 
 export const WorkerDispatchMcpTool = Tool.make(WORKJET_DISPATCH_WORKER_TOOL_NAME, {
   description:
-    "Create an isolated Workjet worker in this native server environment and start its first turn. Select a saved computer with computerId, or use the native selected computer. Remote environments fail before creation until fresh remote-parent dispatch is available. Returns the actual computer binding, branch and worktree without waiting for completion.",
+    "Create one isolated Workjet worker on a registered computer and start its first turn. Remote worktrees and execution belong to that computer. Select workerProfileId when the computer has multiple worker profiles; the configured profile supplies its model and account route. Returns its actual computer, branch and worktree. If a remote acknowledgement is pending, preserve remoteRequestId and retry only that ID; never dispatch a second worker to recover the first.",
   parameters: WorkerDispatchInputSchema,
   success: WorkerDispatchResultSchema,
   dependencies: [McpInvocationContext.McpInvocationContext, WorkerDispatch.WorkerDispatch],
@@ -101,6 +104,8 @@ export const isWorkerDispatchToolVisible = (
 const failureResult = (
   reason: WorkerDispatch.WorkerDispatchFailureReason,
   recovery: {
+    readonly remoteRequestId?: ThreadId;
+    readonly targetEnvironmentId?: string;
     readonly recoveryWorktreePath?: string;
     readonly recoveryAdminPath?: string;
     readonly originalWorktreePath?: string;
@@ -114,6 +119,12 @@ const failureResult = (
       error: {
         _tag: "WorkjetWorkerDispatchError",
         reason,
+        ...(recovery.remoteRequestId
+          ? {
+              remoteRequestId: recovery.remoteRequestId,
+              targetEnvironmentId: recovery.targetEnvironmentId,
+            }
+          : {}),
         ...(recovery.recoveryWorktreePath || recovery.recoveryAdminPath
           ? {
               recovery: {
@@ -130,7 +141,9 @@ const failureResult = (
         text:
           recovery.recoveryWorktreePath || recovery.recoveryAdminPath
             ? "Workjet worker dispatch failed. Preserve recovery data before storage cleanup. For candidate locations, inspect originalAdminPath first; if absent, validate candidate receipts and paths against the recorded identities. Candidate directories may be absent or unrelated."
-            : "Workjet worker dispatch failed.",
+            : recovery.remoteRequestId
+              ? `Remote worker request ${recovery.remoteRequestId} is saved. Reconcile this request ID before dispatching another worker.`
+              : "Workjet worker dispatch failed.",
       },
     ],
   });
@@ -177,6 +190,7 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
             : undefined;
           const dispatchInput: WorkerDispatch.WorkerDispatchInput = {
             task: input.task,
+            ...(input.remoteRequestId ? { remoteRequestId: input.remoteRequestId } : {}),
             ...(input.computerId !== undefined ? { computerId: input.computerId } : {}),
             ...(input.title !== undefined ? { title: input.title } : {}),
             ...(input.enabledCapabilityIds !== undefined
@@ -199,6 +213,14 @@ const registerWorkerDispatch = Effect.fn("McpHttpServer.registerWorkerDispatch")
             WorkerDispatchError: (error) =>
               Effect.succeed(
                 failureResult(error.reason, {
+                  ...(error.remoteRequestId
+                    ? {
+                        remoteRequestId: error.remoteRequestId,
+                        ...(error.targetEnvironmentId
+                          ? { targetEnvironmentId: error.targetEnvironmentId }
+                          : {}),
+                      }
+                    : {}),
                   ...(error.originalWorktreePath
                     ? { originalWorktreePath: error.originalWorktreePath }
                     : {}),

@@ -8,6 +8,9 @@ on:
       version:
         type: string
         default: ""
+      include_darwin_x64:
+        type: boolean
+        default: true
 permissions:
   contents: read
 jobs:
@@ -21,6 +24,7 @@ jobs:
           - { runner: ubuntu-24.04-arm, platform: linux-arm64 }
           - { runner: macos-15-intel, platform: darwin-x64 }
           - { runner: macos-latest, platform: darwin-arm64 }
+    if: ${{ matrix.platform != 'darwin-x64' || inputs.include_darwin_x64 }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     steps:

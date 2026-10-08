@@ -35,6 +35,9 @@ concurrency:
 jobs:
   ssh-server:
     uses: ./.github/workflows/ssh-server-artifacts.yml
+    with:
+      # Michael's build needs arm64 only; the macos-15-intel queue blocks it.
+      include_darwin_x64: false
 
   macos-arm64:
     name: Standalone macOS ARM64 app

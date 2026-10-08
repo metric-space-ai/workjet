@@ -1,6 +1,10 @@
 import * as Schema from "effect/Schema";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { WorkjetConfigurationValue, WorkjetConnectionId, type WorkjetConfiguration } from "./workjet.ts";
+import {
+  WorkjetConfigurationValue,
+  WorkjetConnectionId,
+  type WorkjetConfiguration,
+} from "./workjet.ts";
 
 export const WorkjetLumaTarget = Schema.Struct({
   connectionId: WorkjetConnectionId,
@@ -35,7 +39,8 @@ export const WorkjetLumaUpdateResult = Schema.Struct({
   revision: Revision,
 });
 export class WorkjetLumaConfigurationError extends Schema.TaggedErrorClass<WorkjetLumaConfigurationError>()(
-  "WorkjetLumaConfigurationError", {
+  "WorkjetLumaConfigurationError",
+  {
     reason: Schema.Literals(["connection-unavailable", "remote-response-invalid"]),
   },
 ) {}

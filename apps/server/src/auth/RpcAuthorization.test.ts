@@ -27,7 +27,9 @@ import { RPC_REQUIRED_SCOPES, requiredScopeForRpcMethod } from "./RpcAuthorizati
 describe("RPC authorization scopes", () => {
   it("allows Luma reads for readers and reserves updates for operators", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.workjetLumaRead)).toBe(AuthOrchestrationReadScope);
-    expect(requiredScopeForRpcMethod(WS_METHODS.workjetLumaUpdate)).toBe(AuthOrchestrationOperateScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.workjetLumaUpdate)).toBe(
+      AuthOrchestrationOperateScope,
+    );
   });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));

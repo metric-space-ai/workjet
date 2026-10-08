@@ -800,10 +800,14 @@ export function createServerEnvironmentAtoms<R, E>(
   const updateLumaConfiguration = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:luma:update",
     tag: WS_METHODS.workjetLumaUpdate,
-    concurrency: { mode: "singleFlight", key: ({ environmentId, input }) => `${environmentId}:${input.target.instanceId}` },
-    onSuccess: ({ environmentId, input }, registry) => Effect.sync(() => {
-      registry.refresh(lumaConfiguration({ environmentId, input: input.target }));
-    }),
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) => `${environmentId}:${input.target.instanceId}`,
+    },
+    onSuccess: ({ environmentId, input }, registry) =>
+      Effect.sync(() => {
+        registry.refresh(lumaConfiguration({ environmentId, input: input.target }));
+      }),
   });
   const installGreppyRuntime = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:greppy:install",

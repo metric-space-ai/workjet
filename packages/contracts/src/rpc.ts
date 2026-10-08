@@ -8,8 +8,13 @@ import {
   WorkjetCalendarEvents,
   WorkjetCalendarError,
 } from "./workjetCalendar.ts";
-import { WorkjetLumaTarget, WorkjetLumaSnapshot, WorkjetLumaUpdateInput,
-  WorkjetLumaUpdateResult, WorkjetLumaConfigurationError } from "./workjetLumaConfiguration.ts";
+import {
+  WorkjetLumaTarget,
+  WorkjetLumaSnapshot,
+  WorkjetLumaUpdateInput,
+  WorkjetLumaUpdateResult,
+  WorkjetLumaConfigurationError,
+} from "./workjetLumaConfiguration.ts";
 
 import {
   RemoteWorkerComputerEnrollmentInput,

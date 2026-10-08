@@ -270,9 +270,9 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
         configuration = yield* makeCtoxLumaConfigurationRpc({
           connections: lumaConnections.value,
           client: makeCtoxLumaConfigurationClient(httpClient),
-        }).resolveDispatch(invocation.ctoxBusinessOsBinding, configuration).pipe(
-          Effect.mapError(() => failure("worker-profile-unavailable")),
-        );
+        })
+          .resolveDispatch(invocation.ctoxBusinessOsBinding, configuration)
+          .pipe(Effect.mapError(() => failure("worker-profile-unavailable")));
       }
       if (input.workerProfileId !== undefined) {
         const profiles = configuration.workerProfiles.filter(

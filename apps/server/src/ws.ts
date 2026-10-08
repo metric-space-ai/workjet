@@ -536,10 +536,14 @@ const makeWsRpcLayer = (
             httpClient: calendarHttpClient,
           })
         : null;
-      const lumaHttpClient = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
+      const lumaHttpClient = yield* HttpClient.HttpClient.pipe(
+        Effect.provide(FetchHttpClient.layer),
+      );
       const lumaConfiguration = Option.isSome(decisionHubConnections)
-        ? makeCtoxLumaConfigurationRpc({ connections: decisionHubConnections.value,
-            client: makeCtoxLumaConfigurationClient(lumaHttpClient) })
+        ? makeCtoxLumaConfigurationRpc({
+            connections: decisionHubConnections.value,
+            client: makeCtoxLumaConfigurationClient(lumaHttpClient),
+          })
         : null;
       const withDecisionHubConnections = <A>(
         use: (
@@ -1911,9 +1915,11 @@ const makeWsRpcLayer = (
             { "rpc.aggregate": "calendar" },
           ),
         [WS_METHODS.workjetLumaRead]: (input) =>
-          lumaConfiguration?.read(input) ?? Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
+          lumaConfiguration?.read(input) ??
+          Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
         [WS_METHODS.workjetLumaUpdate]: (input) =>
-          lumaConfiguration?.update(input) ?? Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
+          lumaConfiguration?.update(input) ??
+          Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,

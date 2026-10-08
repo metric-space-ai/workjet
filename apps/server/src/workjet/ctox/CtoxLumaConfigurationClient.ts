@@ -24,7 +24,10 @@ export type CtoxLumaConfigurationSaveResult =
   | { readonly status: "saved"; readonly revision: number }
   | { readonly status: "conflict"; readonly revision: number };
 
-const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER));
+const Revision = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+);
 const ReadResult = Schema.Struct({
   ok: Schema.Literal(true),
   revision: Revision,

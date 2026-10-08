@@ -17,24 +17,36 @@ export function makeCtoxLumaConfigurationRpc(dependencies: {
   readonly client: ReturnType<typeof makeCtoxLumaConfigurationClient>;
 }) {
   const target = (scope: WorkjetLumaTarget) =>
-    dependencies.connections.resolveReadyTarget(scope.connectionId, scope.instanceId).pipe(
-      Effect.mapError(() => new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
-    );
+    dependencies.connections
+      .resolveReadyTarget(scope.connectionId, scope.instanceId)
+      .pipe(
+        Effect.mapError(
+          () => new WorkjetLumaConfigurationError({ reason: "connection-unavailable" }),
+        ),
+      );
   const invalid = () => new WorkjetLumaConfigurationError({ reason: "remote-response-invalid" });
   const remoteFailure = (error: { readonly reason: string }) =>
     new WorkjetLumaConfigurationError({
-      reason: error.reason === "connection-unavailable" ? "connection-unavailable" : "remote-response-invalid",
+      reason:
+        error.reason === "connection-unavailable"
+          ? "connection-unavailable"
+          : "remote-response-invalid",
     });
   const read = Effect.fn("CtoxLumaConfigurationRpc.read")(function* (scope: WorkjetLumaTarget) {
     const resolved = yield* target(scope);
     const result = yield* dependencies.client.read(resolved).pipe(Effect.mapError(remoteFailure));
-    return yield* Schema.decodeUnknownEffect(WorkjetLumaSnapshot)(result).pipe(Effect.mapError(invalid));
+    return yield* Schema.decodeUnknownEffect(WorkjetLumaSnapshot)(result).pipe(
+      Effect.mapError(invalid),
+    );
   });
   return {
     read,
-    update: Effect.fn("CtoxLumaConfigurationRpc.update")(function* (input: typeof WorkjetLumaUpdateInput.Type) {
+    update: Effect.fn("CtoxLumaConfigurationRpc.update")(function* (
+      input: typeof WorkjetLumaUpdateInput.Type,
+    ) {
       const resolved = yield* target(input.target);
-      return yield* dependencies.client.save(resolved, input.expectedRevision, input.configuration)
+      return yield* dependencies.client
+        .save(resolved, input.expectedRevision, input.configuration)
         .pipe(Effect.mapError(remoteFailure));
     }),
     /** Apply shared Luma definitions at dispatch time, while retaining this

@@ -12,7 +12,7 @@ import {
 import type { JourFixeSpeechScope } from "./jourFixeSpeech";
 
 const privateReceipts = new WeakSet<object>();
-const receiptBrand: unique symbol = Symbol("native meeting final");
+const receiptBrand: unique symbol = Symbol("ctox meeting final");
 export interface JourFixePrivateFinalReceipt {
   readonly [receiptBrand]: true;
   readonly scope: JourFixeSpeechScope;
@@ -36,7 +36,7 @@ class FinalReceipt implements JourFixePrivateFinalReceipt {
   toJSON(): never {
     // Never turn the private native receipt into a browser-supplied speech proof.
     void this.#handle;
-    throw new Error("Native speech final receipts are private.");
+    throw new Error("CTOX speech final receipts are private.");
   }
 }
 export function isJourFixePrivateFinalReceipt(
@@ -131,7 +131,7 @@ export class JourFixeGatewaySpeechStream {
       op: "open",
       requestId: randomUUID(),
     });
-    if (response.state !== "open") throw new Error("Native speech stream did not open.");
+    if (response.state !== "open") throw new Error("The CTOX speech stream did not open.");
     const stream = new JourFixeGatewaySpeechStream(response.streamId, frozen);
     if (options.signal.aborted) {
       await stream.cancel();
@@ -180,7 +180,7 @@ export class JourFixeGatewaySpeechStream {
     if (response.state === "failed") throw new Error(`Speech failed: ${response.error}`);
     if (response.state === "canceled") throw aborted();
     if (response.state === "committed") {
-      if (!this.finishing || !response.receipt) throw new Error("Unexpected native speech final.");
+      if (!this.finishing || !response.receipt) throw new Error("Unexpected CTOX speech final.");
       this.terminal ??= new FinalReceipt(
         this.scope,
         this.streamId,
@@ -226,7 +226,7 @@ export class JourFixeGatewaySpeechStream {
         pcmBase64: encoded,
       });
       this.assertOpen();
-      if (response.state !== "open") throw new Error("Native speech write was not accepted.");
+      if (response.state !== "open") throw new Error("The CTOX speech write was not accepted.");
     });
     this.chain = write.catch((error) => {
       this.fail(error);
@@ -247,7 +247,7 @@ export class JourFixeGatewaySpeechStream {
       const deadline = Date.now() + 16_000;
       while (!this.terminal) {
         this.assertOpen();
-        if (Date.now() > deadline) throw new Error("Native speech final was not confirmed.");
+        if (Date.now() > deadline) throw new Error("The CTOX speech final was not confirmed.");
         await pause(20, this.controller.signal);
       }
       await this.polling;

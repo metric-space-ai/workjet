@@ -7,6 +7,8 @@ import {
   exitSourceUrl,
   formatExitDate,
   formatExitEur,
+  formatExitFinding,
+  formatExitMissingInput,
   formatExitPercent,
 } from "../projectExitModel";
 import { useProjectExitModel } from "../hooks/useProjectExitModel";
@@ -318,7 +320,9 @@ export function ProjectExitModelReport({
           <h3 className="text-xs font-medium">Inputs needed</h3>
           <ul className="mt-1 list-disc space-y-1 pl-4 text-sm text-muted-foreground">
             {current!.missing_inputs.map((input, index) => (
-              <li key={index}>{input}</li>
+              <li key={index} className="break-words [overflow-wrap:anywhere]">
+                {formatExitMissingInput(input, current)}
+              </li>
             ))}
           </ul>
         </div>
@@ -326,7 +330,7 @@ export function ProjectExitModelReport({
       {current?.findings.length ? (
         <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
           {current.findings.map((finding, index) => (
-            <li key={index}>{finding.message}</li>
+            <li key={index}>{formatExitFinding(finding)}</li>
           ))}
         </ul>
       ) : null}

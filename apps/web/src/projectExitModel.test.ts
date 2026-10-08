@@ -4,6 +4,8 @@ import {
   exitModelPresentation,
   exitSourceUrl,
   formatExitEur,
+  formatExitMissingInput,
+  formatExitFinding,
   requestProjectExitModel,
 } from "./projectExitModel";
 import { exitModelFixture } from "./test/exitModelFixture";
@@ -99,6 +101,21 @@ describe("project exit assessment", () => {
       label: "Inputs needed",
       stale: false,
     });
+  });
+
+  it("explains missing inputs without exposing machine field names", () => {
+    expect(formatExitMissingInput("confirmed_60_month_resource_plan")).toBe(
+      "Owner-confirmed monthly plan for five years",
+    );
+    expect(formatExitMissingInput("current_source:fixture", exitModelFixture)).toBe(
+      "Current evidence: https://example.org/synthetic-evidence",
+    );
+    expect(
+      formatExitFinding({
+        code: "resource_or_supervisor_missing",
+        message: "raw implementation detail",
+      }),
+    ).toBe("Add a resource plan and connect this project to its supervisor.");
   });
 
   it("uses forecast precision and links only ordinary credential-free web sources", () => {

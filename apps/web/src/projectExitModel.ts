@@ -63,6 +63,52 @@ export const EXIT_MODEL_STATUS_LABELS: Record<WorkjetExitModelStatus, string> = 
   failed: "Assessment failed",
 };
 
+export function formatExitMissingInput(
+  input: string,
+  assessment?: WorkjetExitModelAssessment | null,
+): string {
+  const labels: Record<string, string> = {
+    resource_plan: "Resource plan",
+    resource_proposal: "Hours and budget available to this project",
+    confirmed_resource_plan: "Owner-confirmed resource plan",
+    confirmed_60_month_resource_plan: "Owner-confirmed monthly plan for five years",
+    supported_committed_plan: "Plan based on resources already committed",
+    research_inputs: "Researched operating and sale assumptions",
+    researched_inputs: "Researched operating and sale assumptions",
+    valid_source_backed_research_inputs: "Operating and sale assumptions supported by evidence",
+    sale_perimeter: "Defined equity sale scope",
+    transferable_rights: "Transferable ownership, IP and licence rights",
+    supported_adapter: "Valuation model suitable for this project's business",
+    "source:plan": "Evidence for the resource plan",
+    "source:sale_perimeter": "Evidence for ownership and sale scope",
+    "source:probabilities": "Evidence for scenario and sale probabilities",
+  };
+  if (labels[input]) return labels[input];
+  if (input.startsWith("current_source:")) {
+    const id = input.slice("current_source:".length);
+    const source = assessment?.sources.find((item) => item.id === id);
+    return "Current evidence: " + (source?.reference ?? id);
+  }
+  if (input.startsWith("source:")) return "Evidence reference: " + input.slice("source:".length);
+  return input.replaceAll("_", " ");
+}
+
+export function formatExitFinding(finding: {
+  readonly code: string;
+  readonly message: string;
+}): string {
+  const labels: Record<string, string> = {
+    resource_or_supervisor_missing:
+      "Add a resource plan and connect this project to its supervisor.",
+    required_inputs_missing: "Complete the missing inputs to calculate a forecast.",
+    research_admitted: "The project's supervisor is gathering inputs.",
+    research_did_not_supply_valid_inputs: "Research finished with missing or unverified inputs.",
+    evidence_not_independently_verified:
+      "The evidence and assumptions have not been independently reviewed.",
+  };
+  return labels[finding.code] ?? finding.message;
+}
+
 export function calendarDateToday(now: Date = new Date()): string {
   const year = String(now.getFullYear()).padStart(4, "0");
   const month = String(now.getMonth() + 1).padStart(2, "0");

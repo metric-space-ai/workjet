@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Isolated OS-process regression boundary.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeProcess from "node:process";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 // Keep an uncaught stream error in a disposable process, never the test runner.
 const fixture = `

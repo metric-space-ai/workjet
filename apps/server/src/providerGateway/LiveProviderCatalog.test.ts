@@ -42,11 +42,7 @@ describe("LiveProviderCatalog", () => {
   it("bounds list count and freshness without a static fallback", () => {
     const value = catalog();
     expect(
-      decodeLiveProviderModels(
-        { ...value, expiresAt: "1970-01-01T00:06:40.000Z" },
-        "kimi",
-        1_000,
-      ),
+      decodeLiveProviderModels({ ...value, expiresAt: "1970-01-01T00:06:40.000Z" }, "kimi", 1_000),
     ).toBeUndefined();
     expect(
       decodeLiveProviderModels(

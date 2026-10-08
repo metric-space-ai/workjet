@@ -184,20 +184,26 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
 };
 
 /** Probe the executable configured on this server, never a client's local override. */
-const configuredBinaryPath = Schema.decodeUnknownOption(
-  Schema.Struct({ binaryPath: Schema.Trim }),
-);
+const configuredBinaryPath = Schema.decodeUnknownOption(Schema.Struct({ binaryPath: Schema.Trim }));
 
 export function configuredHarnessExecutable(
   settings: Pick<ServerSettings, "providers"> & Partial<Pick<ServerSettings, "providerInstances">>,
   harness: WorkjetHarness,
 ): string | undefined {
-  const driver = harness === "codex-cli" ? "codex"
-    : harness === "claude-code" ? "claudeAgent"
-    : harness === "cursor-agent" ? "cursor"
-    : harness === "grok-cli" ? "grok"
-    : harness === "minimax-code" ? "minimax"
-    : harness === "opencode" || harness === "greppy" ? harness : undefined;
+  const driver =
+    harness === "codex-cli"
+      ? "codex"
+      : harness === "claude-code"
+        ? "claudeAgent"
+        : harness === "cursor-agent"
+          ? "cursor"
+          : harness === "grok-cli"
+            ? "grok"
+            : harness === "minimax-code"
+              ? "minimax"
+              : harness === "opencode" || harness === "greppy"
+                ? harness
+                : undefined;
   if (driver === undefined) return undefined;
   const instance = settings.providerInstances?.[ProviderInstanceId.make(driver)];
   if (instance?.driver === driver) {

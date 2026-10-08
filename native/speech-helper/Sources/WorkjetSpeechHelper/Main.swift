@@ -210,13 +210,17 @@ private struct TtsPacket: Sendable {
     }
     private func status(_ command: SpeechCommand) async {
         let supported = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: "de-DE"))
-        let installed = await SpeechTranscriber.installedLocales
+        let installed: Bool
+        if let locale = supported {
+            let transcriber = SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
+            installed = await AssetInventory.status(forModules: [transcriber]) == .installed
+        } else {
+            installed = false
+        }
         var event = Event(command, "status")
         event.capabilities = Capabilities(
             available: SpeechTranscriber.isAvailable, germanSupported: supported != nil,
-            germanInstalled: supported.map { wanted in
-                installed.contains { $0.identifier(.bcp47) == wanted.identifier(.bcp47) }
-            } ?? false,
+            germanInstalled: installed,
             germanVoices: germanVoices().map(voiceInfo), audioProcessedOnDevice: true)
         writeLine(event)
     }

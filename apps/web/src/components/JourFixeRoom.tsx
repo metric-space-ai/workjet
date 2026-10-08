@@ -45,6 +45,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
   const [draft, setDraft] = useState<JourFixeCommentDraft | null>(null);
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState("");
+  const [visibleTurns, setVisibleTurns] = useState(100);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,7 +148,8 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
           </nav>
           <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 @min-[900px]:max-h-[calc(100dvh-220px)]">
             {panel === "conversation" && <>
-              {[...meeting.transcript].sort((a, b) => a.sequence - b.sequence).map((turn) => <div key={turn.id}><p className="text-xs text-muted-foreground">{turn.speaker === "owner" ? "You" : "Supervisor"}</p><p className="mt-1 whitespace-pre-wrap text-sm">{turn.text}</p></div>)}
+              {meeting.transcript.length > visibleTurns && <Button size="sm" variant="ghost" onClick={() => setVisibleTurns((count) => count + 100)}>Show earlier messages</Button>}
+              {meeting.transcript.slice(-visibleTurns).map((turn) => <div key={turn.id}><p className="text-xs text-muted-foreground">{turn.speaker === "owner" ? "You" : "Supervisor"}</p><p className="mt-1 whitespace-pre-wrap text-sm">{turn.text}</p></div>)}
               {partial && <p role="status" className="text-sm italic text-muted-foreground">{partial}</p>}
             </>}
             {panel === "comments" && meeting.comments.map((item) => <div key={item.id} className="border-l-2 border-primary pl-3 text-sm"><p className="text-xs text-muted-foreground">{jourFixeEvidenceLabel(meeting, item.id)}{item.deckRevision !== meeting.deckRevision ? ` · Earlier deck ${item.deckRevision}` : ""}</p><p className="mt-1 whitespace-pre-wrap">{item.text}</p></div>)}

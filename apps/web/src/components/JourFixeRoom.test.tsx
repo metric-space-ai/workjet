@@ -32,6 +32,15 @@ describe("Jour fixe room states", () => {
     expect(html).not.toContain("javascript:");
     expect(html).not.toContain("foreign.invalid");
   });
+  it("keeps native transcript order across streams and initially bounds the rendered history", () => {
+    const transcript = Array.from({ length: 120 }, (_, index) => ({ id: `turn-${index}`, sequence: index % 2, speaker: "owner" as const, text: `Evidence turn ${index}.` }));
+    const html = renderToStaticMarkup(<JourFixeRoom {...props} meeting={{ ...meeting, state: "live", transcript }} />);
+    expect(html).toContain("Show earlier messages");
+    expect(html).not.toContain("Evidence turn 19.");
+    expect(html).toContain("Evidence turn 119.");
+    expect(html.indexOf("Evidence turn 21.")).toBeLessThan(html.indexOf("Evidence turn 22."));
+  });
+
   it("keeps cancelled and failed meetings read-only", () => {
     for (const state of ["cancelled", "failed"] as const) {
       const html = renderToStaticMarkup(<JourFixeRoom {...props} meeting={{ ...meeting, state }} onComment={async () => {}} onMessage={async () => {}} />);

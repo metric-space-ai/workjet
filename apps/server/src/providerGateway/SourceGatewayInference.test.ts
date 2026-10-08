@@ -181,185 +181,213 @@ const fixture = () => {
 const reason = (request: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =>
   Effect.match(request, {
     onFailure: (error) => error.reason,
-    onSuccess: () => { throw new Error("Expected gateway admission to fail"); },
+    onSuccess: () => {
+      throw new Error("Expected gateway admission to fail");
+    },
   });
 
 describe("source gateway inference", () => {
-  it.effect("distinguishes unavailable native authority from a malformed receipt", () => Effect.gen(function* () {
-    const unavailable = fixture();
-    unavailable.unavailable();
-    expect(yield* reason(unavailable.consumer.admit.effect(input))).toBe("native-admission-unavailable");
-    expect(unavailable.events).not.toContain("forward");
-    const malformed = fixture();
-    malformed.native({ invalid: true });
-    expect(yield* reason(malformed.consumer.admit.effect(input))).toBe("native-admission-rejected");
-    expect(malformed.events).not.toContain("forward");
-  }));
-  it.effect("provides current create/turn admission without performing model inference", () => Effect.gen(function* () {
-    const f = fixture();
-    expect(yield* (f.consumer.admit.effect(input))).toEqual({});
-    expect(f.events).toEqual(["catalog", "native"]);
-    f.scope({ ...catalog, accounts: [] });
-    expect(yield* reason(f.consumer.admit.effect(input))).toBe("grant-unavailable");
-    expect(f.events).not.toContain("forward");
-  }));
-
-  it.effect("uses the Instances admission client to verify the immutable worker request and source scope", () => Effect.gen(function* () {
-    const calls: unknown[] = [];
-    const digest = yield* (remoteWorkerRequestDigest(input.workerRequest));
-    const prepared = {
-      ...input,
-      permit: { ...input.permit, binding: { ...input.permit.binding, requestDigest: digest } },
-    };
-    const admission = makeCtoxRemoteWorkerAdmissionClient({
-      connections: {
-        resolveReadyTarget: (connectionId, instanceId) =>
-          Effect.sync(() => {
-            expect(connectionId).toBe(input.sourceConnectionId);
-            expect(instanceId).toBe(input.permit.binding.sourceInstanceId);
-            return { endpoint: "https://source.example/mcp", token: "source-only" };
-          }),
-      },
-      gateway: { scopedCatalog: () => Effect.succeed(catalog) },
-      transport: {
-        probe: () => Effect.void,
-        callTool: (target, tool, args) =>
-          Effect.sync(() => {
-            expect(target.token).toBe("source-only");
-            expect(tool).toBe("business_os.remote_worker_admission");
-            calls.push(args);
-            return { structuredContent: prepared.permit };
-          }),
-      },
-    });
-    const consumer = makeSourceGatewayInference({
-      environmentId: Effect.succeed(environmentId),
-      configuration: Effect.succeed(DEFAULT_WORKJET_CONFIGURATION),
-      requireSourceInstance: () => Effect.void,
-      scopedCatalog: () => Effect.succeed(catalog),
-      revalidate: (current) =>
-        admission
-          .execute(
-            {
-              connectionId: current.sourceConnectionId,
-              instanceId: current.permit.binding.sourceInstanceId,
-            },
-            current.workerRequest,
-            current.permit.binding,
-            "revalidate",
-            current.permit.permitId,
-            current.permit.executionId,
-          )
-          .pipe(
-            Effect.mapError(
-              () => new WorkjetGatewayInferenceError({ reason: "native-admission-rejected" }),
-            ),
-          ),
-      forward: () => Effect.succeed('{"output":[]}'),
-      now: Effect.succeed(1000),
-    });
-    expect(yield* (consumer.infer(prepared))).toEqual({
-      requestJson: '{"output":[]}',
-    });
-    expect(calls).toHaveLength(2);
-    const tampered = {
-      ...prepared,
-      workerRequest: { ...prepared.workerRequest, task: "Changed task" },
-    };
-    expect(yield* reason(consumer.infer(tampered))).toBe("native-admission-rejected");
-    expect(calls).toHaveLength(2);
-  }));
-
-  it.effect("resolves a real llmRoutes account into exact source references", () => Effect.gen(function* () {
-    const f = fixture();
-    expect(
-      yield* (
-        f.consumer.bindModel({
-          target,
-          routeId: WorkjetLlmRouteId.make("route"),
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "exact-model" },
-        })
-      ),
-    ).toEqual({ target, ...references });
-    expect(
-      yield* reason(
-        f.consumer.bindModel({
-          target,
-          routeId: WorkjetLlmRouteId.make("unknown"),
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "exact-model" },
-        })
-      ),
-    ).toBe("binding-mismatch");
-    expect(
-      yield* reason(
-        f.consumer.bindModel({
-          target,
-          routeId: WorkjetLlmRouteId.make("route"),
-          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "alias" },
-        })
-      ),
-    ).toBe("grant-unavailable");
-  }));
-  it.effect("intersects fresh source grants with native revalidation before and after actual forwarding", () => Effect.gen(function* () {
-    const f = fixture();
-    expect(yield* (f.consumer.infer(input))).toEqual({
-      requestJson: encodeJson({ output: [{ text: "result" }] }),
-    });
-    expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
-    expect(f.deadlines).toEqual([input.permit.expiresAtMs]);
-    f.scope({ ...catalog, accounts: [] });
-    expect(yield* reason(f.consumer.infer(input))).toBe("grant-unavailable");
-    expect(f.events.filter((e) => e === "forward")).toHaveLength(1);
-  }));
-  it.effect("accepts monotonic renewal of the same execution before and during inference", () => Effect.gen(function* () {
-    const f = fixture();
-    f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 600000 });
-    f.afterForward(() => f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 900000 }));
-    expect(yield* (f.consumer.infer(input))).toEqual({
-      requestJson: encodeJson({ output: [{ text: "result" }] }),
-    });
-    expect(f.deadlines).toEqual([600000]);
-    expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
-  }));
-  it.effect("withholds a renewed response if immutable native authority was substituted", () => Effect.gen(function* () {
-    for (const mutation of [
-      { ownerUserId: "other-owner" },
-      { authorityEpoch: 2 },
-      { authorityFingerprint: `sha256:${"b".repeat(64)}` },
-      { permitId: "other-permit" },
-      { executionId: "other-execution" },
-      { state: "revoked" },
-      { binding: { ...input.permit.binding, projectId: "other-project" } },
-    ]) {
-      const f = fixture();
-      f.afterForward(() =>
-        f.native({
-          ...input.permit,
-          renewalSequence: 1,
-          expiresAtMs: 600000,
-          ...mutation,
-        }),
+  it.effect("distinguishes unavailable native authority from a malformed receipt", () =>
+    Effect.gen(function* () {
+      const unavailable = fixture();
+      unavailable.unavailable();
+      expect(yield* reason(unavailable.consumer.admit(input))).toBe(
+        "native-admission-unavailable",
       );
+      expect(unavailable.events).not.toContain("forward");
+      const malformed = fixture();
+      malformed.native({ invalid: true });
+      expect(yield* reason(malformed.consumer.admit(input))).toBe(
+        "native-admission-rejected",
+      );
+      expect(malformed.events).not.toContain("forward");
+    }),
+  );
+  it.effect("provides current create/turn admission without performing model inference", () =>
+    Effect.gen(function* () {
+      const f = fixture();
+      expect(yield* f.consumer.admit(input)).toEqual({});
+      expect(f.events).toEqual(["catalog", "native"]);
+      f.scope({ ...catalog, accounts: [] });
+      expect(yield* reason(f.consumer.admit(input))).toBe("grant-unavailable");
+      expect(f.events).not.toContain("forward");
+    }),
+  );
+
+  it.effect(
+    "uses the Instances admission client to verify the immutable worker request and source scope",
+    () =>
+      Effect.gen(function* () {
+        const calls: unknown[] = [];
+        const digest = yield* remoteWorkerRequestDigest(input.workerRequest);
+        const prepared = {
+          ...input,
+          permit: { ...input.permit, binding: { ...input.permit.binding, requestDigest: digest } },
+        };
+        const admission = makeCtoxRemoteWorkerAdmissionClient({
+          connections: {
+            resolveReadyTarget: (connectionId, instanceId) =>
+              Effect.sync(() => {
+                expect(connectionId).toBe(input.sourceConnectionId);
+                expect(instanceId).toBe(input.permit.binding.sourceInstanceId);
+                return { endpoint: "https://source.example/mcp", token: "source-only" };
+              }),
+          },
+          gateway: { scopedCatalog: () => Effect.succeed(catalog) },
+          transport: {
+            probe: () => Effect.succeed(undefined),
+            callTool: (target, tool, args) =>
+              Effect.sync(() => {
+                expect(target.token).toBe("source-only");
+                expect(tool).toBe("business_os.remote_worker_admission");
+                calls.push(args);
+                return { structuredContent: prepared.permit };
+              }),
+          },
+        });
+        const consumer = makeSourceGatewayInference({
+          environmentId: Effect.succeed(environmentId),
+          configuration: Effect.succeed(DEFAULT_WORKJET_CONFIGURATION),
+          requireSourceInstance: () => Effect.void,
+          scopedCatalog: () => Effect.succeed(catalog),
+          revalidate: (current) =>
+            admission
+              .execute(
+                {
+                  connectionId: current.sourceConnectionId,
+                  instanceId: current.permit.binding.sourceInstanceId,
+                },
+                current.workerRequest,
+                current.permit.binding,
+                "revalidate",
+                current.permit.permitId,
+                current.permit.executionId,
+              )
+              .pipe(
+                Effect.mapError(
+                  () => new WorkjetGatewayInferenceError({ reason: "native-admission-rejected" }),
+                ),
+              ),
+          forward: () => Effect.succeed('{"output":[]}'),
+          now: Effect.succeed(1000),
+        });
+        expect(yield* consumer.infer(prepared)).toEqual({
+          requestJson: '{"output":[]}',
+        });
+        expect(calls).toHaveLength(2);
+        const tampered = {
+          ...prepared,
+          workerRequest: { ...prepared.workerRequest, task: "Changed task" },
+        };
+        expect(yield* reason(consumer.infer(tampered))).toBe("native-admission-rejected");
+        expect(calls).toHaveLength(2);
+      }),
+  );
+
+  it.effect("resolves a real llmRoutes account into exact source references", () =>
+    Effect.gen(function* () {
+      const f = fixture();
+      expect(
+        yield* f.consumer.bindModel({
+          target,
+          routeId: WorkjetLlmRouteId.make("route"),
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "exact-model" },
+        }),
+      ).toEqual({ target, ...references });
+      expect(
+        yield* reason(
+          f.consumer.bindModel({
+            target,
+            routeId: WorkjetLlmRouteId.make("unknown"),
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "exact-model" },
+          }),
+        ),
+      ).toBe("binding-mismatch");
+      expect(
+        yield* reason(
+          f.consumer.bindModel({
+            target,
+            routeId: WorkjetLlmRouteId.make("route"),
+            modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "alias" },
+          }),
+        ),
+      ).toBe("grant-unavailable");
+    }),
+  );
+  it.effect(
+    "intersects fresh source grants with native revalidation before and after actual forwarding",
+    () =>
+      Effect.gen(function* () {
+        const f = fixture();
+        expect(yield* f.consumer.infer(input)).toEqual({
+          requestJson: encodeJson({ output: [{ text: "result" }] }),
+        });
+        expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+        expect(f.deadlines).toEqual([input.permit.expiresAtMs]);
+        f.scope({ ...catalog, accounts: [] });
+        expect(yield* reason(f.consumer.infer(input))).toBe("grant-unavailable");
+        expect(f.events.filter((e) => e === "forward")).toHaveLength(1);
+      }),
+  );
+  it.effect("accepts monotonic renewal of the same execution before and during inference", () =>
+    Effect.gen(function* () {
+      const f = fixture();
+      f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 600000 });
+      f.afterForward(() => f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 900000 }));
+      expect(yield* f.consumer.infer(input)).toEqual({
+        requestJson: encodeJson({ output: [{ text: "result" }] }),
+      });
+      expect(f.deadlines).toEqual([600000]);
+      expect(f.events).toEqual(["catalog", "native", "forward", "catalog", "native"]);
+    }),
+  );
+  it.effect("withholds a renewed response if immutable native authority was substituted", () =>
+    Effect.gen(function* () {
+      for (const mutation of [
+        { ownerUserId: "other-owner" },
+        { authorityEpoch: 2 },
+        { authorityFingerprint: `sha256:${"b".repeat(64)}` },
+        { permitId: "other-permit" },
+        { executionId: "other-execution" },
+        { state: "revoked" },
+        { binding: { ...input.permit.binding, projectId: "other-project" } },
+      ]) {
+        const f = fixture();
+        f.afterForward(() =>
+          f.native({
+            ...input.permit,
+            renewalSequence: 1,
+            expiresAtMs: 600000,
+            ...mutation,
+          }),
+        );
+        expect(yield* reason(f.consumer.infer(input))).toBe("native-admission-rejected");
+      }
+    }),
+  );
+  it.effect("rejects a renewal sequence regression against the fresh pre-forward receipt", () =>
+    Effect.gen(function* () {
+      const f = fixture();
+      f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 600000 });
+      f.afterForward(() => f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 900000 }));
       expect(yield* reason(f.consumer.infer(input))).toBe("native-admission-rejected");
-    }
-  }));
-  it.effect("rejects a renewal sequence regression against the fresh pre-forward receipt", () => Effect.gen(function* () {
-    const f = fixture();
-    f.native({ ...input.permit, renewalSequence: 2, expiresAtMs: 600000 });
-    f.afterForward(() => f.native({ ...input.permit, renewalSequence: 1, expiresAtMs: 900000 }));
-    expect(yield* reason(f.consumer.infer(input))).toBe("native-admission-rejected");
-    expect(f.events).toContain("forward");
-  }));
-  it.effect("rejects expiry extension without native renewal and requires a full bounded turn lease", () => Effect.gen(function* () {
-    const unsequenced = fixture();
-    unsequenced.native({ ...input.permit, expiresAtMs: 600000 });
-    expect(yield* reason(unsequenced.consumer.infer(input))).toBe("native-admission-rejected");
-    const nearExpiry = fixture();
-    const short = { ...input, permit: { ...input.permit, expiresAtMs: 5000 } };
-    nearExpiry.native(short.permit);
-    expect(yield* reason(nearExpiry.consumer.infer(short))).toBe("native-admission-rejected");
-    expect(nearExpiry.events).not.toContain("forward");
-  }));
+      expect(f.events).toContain("forward");
+    }),
+  );
+  it.effect(
+    "rejects expiry extension without native renewal and requires a full bounded turn lease",
+    () =>
+      Effect.gen(function* () {
+        const unsequenced = fixture();
+        unsequenced.native({ ...input.permit, expiresAtMs: 600000 });
+        expect(yield* reason(unsequenced.consumer.infer(input))).toBe("native-admission-rejected");
+        const nearExpiry = fixture();
+        const short = { ...input, permit: { ...input.permit, expiresAtMs: 5000 } };
+        nearExpiry.native(short.permit);
+        expect(yield* reason(nearExpiry.consumer.infer(short))).toBe("native-admission-rejected");
+        expect(nearExpiry.events).not.toContain("forward");
+      }),
+  );
   it.effect.each([
     "ownerUserId",
 
@@ -368,62 +396,75 @@ describe("source gateway inference", () => {
     "permitId",
     "expiresAtMs",
     "renewalSequence",
-  ])("rejects changed native %s before forwarding", (field) => Effect.gen(function* () {
-    const f = fixture();
-    f.native({
-      ...input.permit,
-      [field]:
-        field === "authorityEpoch" || field === "expiresAtMs" || field === "renewalSequence"
-          ? 2
-          : "changed",
-    });
-    expect(yield* reason(f.consumer.infer(input))).toBe("native-admission-rejected");
-    expect(f.events).not.toContain("forward");
-  }));
-  it.effect("refuses foreign target, provider, model and source account references", () => Effect.gen(function* () {
-    for (const modified of [
-      { ...catalog, target: { ...target, instanceId: "foreign" } },
-      {
-        ...catalog,
-        accounts: [
-          { ...catalog.accounts[0]!, providerRef: { environmentId, provider: "claude" as const } },
-        ],
-      },
-      { ...catalog, accounts: [{ ...catalog.accounts[0]!, modelRefs: [] }] },
-      {
-        ...catalog,
-        accounts: [
-          {
-            ...catalog.accounts[0]!,
-            credentialRef: { environmentId, accountId: WorkjetGatewayAccountId.make("foreign") },
-          },
-        ],
-      },
-    ]) {
+  ])("rejects changed native %s before forwarding", (field) =>
+    Effect.gen(function* () {
       const f = fixture();
-      f.scope(modified);
-      expect(yield* reason(f.consumer.infer(input))).toMatch(/binding-mismatch|grant-unavailable/);
+      f.native({
+        ...input.permit,
+        [field]:
+          field === "authorityEpoch" || field === "expiresAtMs" || field === "renewalSequence"
+            ? 2
+            : "changed",
+      });
+      expect(yield* reason(f.consumer.infer(input))).toBe("native-admission-rejected");
       expect(f.events).not.toContain("forward");
-    }
-  }));
-  it.effect("withholds the response when grant revocation or expiry happens during inference", () => Effect.gen(function* () {
-    const revoked = fixture();
-    revoked.afterForward(() => revoked.scope({ ...catalog, accounts: [] }));
-    expect(yield* reason(revoked.consumer.infer(input))).toBe("grant-unavailable");
-    const expired = fixture();
-    expired.afterForward(expired.expire);
-    expect(yield* reason(expired.consumer.infer(input))).toBe("native-admission-rejected");
-  }));
+    }),
+  );
+  it.effect("refuses foreign target, provider, model and source account references", () =>
+    Effect.gen(function* () {
+      for (const modified of [
+        { ...catalog, target: { ...target, instanceId: "foreign" } },
+        {
+          ...catalog,
+          accounts: [
+            {
+              ...catalog.accounts[0]!,
+              providerRef: { environmentId, provider: "claude" as const },
+            },
+          ],
+        },
+        { ...catalog, accounts: [{ ...catalog.accounts[0]!, modelRefs: [] }] },
+        {
+          ...catalog,
+          accounts: [
+            {
+              ...catalog.accounts[0]!,
+              credentialRef: { environmentId, accountId: WorkjetGatewayAccountId.make("foreign") },
+            },
+          ],
+        },
+      ]) {
+        const f = fixture();
+        f.scope(modified);
+        expect(yield* reason(f.consumer.infer(input))).toMatch(
+          /binding-mismatch|grant-unavailable/,
+        );
+        expect(f.events).not.toContain("forward");
+      }
+    }),
+  );
+  it.effect("withholds the response when grant revocation or expiry happens during inference", () =>
+    Effect.gen(function* () {
+      const revoked = fixture();
+      revoked.afterForward(() => revoked.scope({ ...catalog, accounts: [] }));
+      expect(yield* reason(revoked.consumer.infer(input))).toBe("grant-unavailable");
+      const expired = fixture();
+      expired.afterForward(expired.expire);
+      expect(yield* reason(expired.consumer.infer(input))).toBe("native-admission-rejected");
+    }),
+  );
   it.effect.each([
     { model: "alias", input: [] },
     { model: "exact-model", input: [], stream: true },
     { model: "exact-model", input: [], background: true },
     { model: "exact-model", input: [], previous_response_id: "foreign" },
-  ])("rejects alternate model and unbounded/cross-session request shapes", (body) => Effect.gen(function* () {
-    const f = fixture();
-    expect(yield* reason(f.consumer.infer({ ...input, requestJson: encodeJson(body) }))).toBe(
-      "invalid-request",
-    );
-    expect(f.events).toEqual([]);
-  }));
+  ])("rejects alternate model and unbounded/cross-session request shapes", (body) =>
+    Effect.gen(function* () {
+      const f = fixture();
+      expect(yield* reason(f.consumer.infer({ ...input, requestJson: encodeJson(body) }))).toBe(
+        "invalid-request",
+      );
+      expect(f.events).toEqual([]);
+    }),
+  );
 });

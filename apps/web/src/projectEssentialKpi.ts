@@ -22,9 +22,10 @@ export type EssentialKpiSnapshot =
       readonly probabilityOfSale: number;
       /** Sale price if a sale happens, EUR. Null when the model has no sale outcome. */
       readonly conditionalSalePriceEur: number | null;
-      readonly p10Eur: number;
-      readonly medianEur: number;
-      readonly p90Eur: number;
+      /** Quantiles exist only once the model simulates; the contract v1 snapshot omits them. */
+      readonly p10Eur?: number;
+      readonly medianEur?: number;
+      readonly p90Eur?: number;
       /** E5 from the second-to-last regular Jour fixe. Null for the first snapshot. */
       readonly previousExpectedSalePriceEur: number | null;
     };
@@ -37,6 +38,8 @@ export type EssentialKpiPresentation =
       readonly detail: string;
       /** Change against the previous regular Jour fixe, in percent. Null without a usable baseline. */
       readonly changePercent: number | null;
+      /** Range text when all three quantiles are present, otherwise null. */
+      readonly range: string | null;
     };
 
 const MILLION = 1_000_000;
@@ -64,15 +67,23 @@ export function essentialKpiPresentation(
   if (snapshot.status === "blocked") {
     return { status: "blocked", value: "—", detail: snapshot.missing };
   }
+  const { p10Eur, medianEur, p90Eur } = snapshot;
+  const hasRange = p10Eur !== undefined || medianEur !== undefined || p90Eur !== undefined;
+  const rangeValid =
+    !hasRange ||
+    (p10Eur !== undefined &&
+      medianEur !== undefined &&
+      p90Eur !== undefined &&
+      isAmount(p10Eur) &&
+      isAmount(medianEur) &&
+      isAmount(p90Eur) &&
+      p10Eur <= medianEur &&
+      medianEur <= p90Eur);
   const valid =
     isAmount(snapshot.expectedSalePriceEur) &&
     isProbability(snapshot.probabilityOfSale) &&
     (snapshot.conditionalSalePriceEur === null || isAmount(snapshot.conditionalSalePriceEur)) &&
-    isAmount(snapshot.p10Eur) &&
-    isAmount(snapshot.medianEur) &&
-    isAmount(snapshot.p90Eur) &&
-    snapshot.p10Eur <= snapshot.medianEur &&
-    snapshot.medianEur <= snapshot.p90Eur;
+    rangeValid;
   if (!valid) {
     return { status: "blocked", value: "—", detail: "Snapshot failed validation" };
   }
@@ -87,5 +98,9 @@ export function essentialKpiPresentation(
     value: formatEssentialKpiEur(snapshot.expectedSalePriceEur),
     detail: chance,
     changePercent,
+    range:
+      p10Eur !== undefined && p90Eur !== undefined
+        ? `${formatEssentialKpiEur(p10Eur)} – ${formatEssentialKpiEur(p90Eur)}`
+        : null,
   };
 }

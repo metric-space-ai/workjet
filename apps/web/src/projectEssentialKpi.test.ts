@@ -46,6 +46,19 @@ describe("essential KPI presentation", () => {
     });
   });
 
+  it("shows no range for a contract v1 snapshot without quantiles", () => {
+    const { p10Eur, medianEur, p90Eur, ...v1 } = ready;
+    expect(essentialKpiPresentation(v1)).toMatchObject({ status: "ready", range: null });
+  });
+
+  it("shows the range only when all three quantiles are present", () => {
+    expect(essentialKpiPresentation(ready)).toMatchObject({
+      range: "0.0 Mio. EUR – 25.5 Mio. EUR",
+    });
+    const { p90Eur, ...partial } = ready;
+    expect(essentialKpiPresentation(partial)).toMatchObject({ status: "blocked" });
+  });
+
   it("formats whole amounts without scientific notation", () => {
     expect(formatEssentialKpiEur(0)).toBe("0.0 Mio. EUR");
     expect(formatEssentialKpiEur(25_468_218)).toBe("25.5 Mio. EUR");

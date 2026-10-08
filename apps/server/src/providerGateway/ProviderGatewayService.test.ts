@@ -109,6 +109,7 @@ const readyHarness = () => {
   };
   const platform: ProviderGatewayPlatform = {
     ...nodeProviderGatewayPlatform,
+    publicModelCatalog: async () => undefined,
     fingerprint: undefined,
     readText: async () => configuration,
     writePrivateText: async (_path, content) => {
@@ -1453,32 +1454,68 @@ describe("ProviderGatewayService pools, health, and models", () => {
     expect(failure).toBeInstanceOf(WorkjetGatewayOperationError);
   });
 
-  it("labels catalog models and configured models apart, and says when a provider has no catalog", async () => {
+  it("does not recover compiled suggestions when the live catalog is unavailable", async () => {
     const harness = poolHarness();
     const discovery = await runPools(harness, (gateway) => gateway.discoverModels());
-    const claude = discovery.providers.find((entry) => entry.provider === "claude");
-    expect(claude?.channel).toBe("claude");
-    expect(claude?.catalogAvailable).toBe(true);
-    expect(claude?.models).toEqual([
-      { id: "claude-opus-4", displayName: "Claude Opus 4", source: "gateway-catalog" },
-      { id: "claude-haiku-4-5", displayName: "claude-haiku-4-5", source: "gateway-catalog" },
+    expect(
+      discovery.providers.every(
+        (provider) => !provider.catalogAvailable && provider.channel === null,
+      ),
+    ).toBe(true);
+    expect(
+      discovery.providers
+        .flatMap((provider) => provider.models)
+        .every((model) => model.source === "account-configuration"),
+    ).toBe(true);
+    expect(harness.routes.some((route) => route.includes("model-definitions/"))).toBe(false);
+  });
+
+  it("discovers actual Kimi IDs from the fresh public catalog without reading compiled definitions", async () => {
+    const harness = readyHarness();
+    const configuration = JSON.stringify({
+      schemaVersion: 1,
+      defaultProvider: "kimi",
+      accounts: [
+        {
+          id: "kimi-observed",
+          label: "Kimi",
+          provider: "kimi",
+          models: [],
+          apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi.key" },
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+    const platform: ProviderGatewayPlatform = {
+      ...harness.platform,
+      now: () => 1_000,
+      readText: async () => configuration,
+      publicModelCatalog: async () => ({
+        schemaVersion: 1,
+        checkedAt: "1970-01-01T00:00:01.000Z",
+        expiresAt: "1970-01-01T00:01:01.000Z",
+        providers: [{ provider: "kimi", status: "observed", models: ["k3", "kimi-for-coding"] }],
+      }),
+    };
+    const discovery = await runGateway(platform, (gateway) =>
+      Effect.gen(function* () {
+        yield* gateway.start();
+        return yield* gateway.discoverModels();
+      }),
+    );
+    expect(discovery.providers).toEqual([
       {
-        id: "claude-configured-only",
-        displayName: "claude-configured-only",
-        source: "account-configuration",
+        provider: "kimi",
+        channel: null,
+        catalogAvailable: true,
+        models: ["k3", "kimi-for-coding"].map((id) => ({
+          id,
+          displayName: id,
+          source: "gateway-catalog",
+        })),
       },
     ]);
-
-    // The host has no zai channel, so the surface must say so rather than
-    // present the configured list as a gateway answer.
-    const zai = discovery.providers.find((entry) => entry.provider === "zai");
-    expect(zai?.channel).toBeNull();
-    expect(zai?.catalogAvailable).toBe(false);
-    expect(zai?.models).toEqual([
-      { id: "glm-5.3", displayName: "glm-5.3", source: "account-configuration" },
-    ]);
-    // A provider with no channel must not have been asked for one.
-    expect(harness.routes.some((route) => route.includes("model-definitions/zai"))).toBe(false);
   });
 
   it("persists legacy strategy and membership edits while projecting the fixed host policy", async () => {

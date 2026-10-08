@@ -838,9 +838,21 @@ export function WorkjetComputersSettings({
   );
   useEffect(() => {
     if (!pendingTarget || !pendingInspection.data) return;
-    const existing = settings.workjet.computers.find(
-      (computer) => computer.environmentId === pendingTarget.environmentId,
-    );
+    // The same machine can be reached through two connections. Reuse the entry that already
+    // stands for it, so one machine never gets two rows. Only a reported host id may merge.
+    const existing =
+      settings.workjet.computers.find(
+        (computer) => computer.environmentId === pendingTarget.environmentId,
+      ) ??
+      (pendingTarget.hostId === undefined
+        ? undefined
+        : settings.workjet.computers.find((computer) =>
+            targetOptions.some(
+              (option) =>
+                option.environmentId === computer.environmentId &&
+                option.hostId === pendingTarget.hostId,
+            ),
+          ));
     const draft = createWorkjetComputerDraft({ environments: [pendingTarget] });
     const computer =
       existing ??
@@ -875,6 +887,7 @@ export function WorkjetComputersSettings({
     pendingInspection.data,
     settings.workjet,
     setupOnly,
+    targetOptions,
     updateSettings,
   ]);
   const setupBusy = connections.busy || membership.pendingComputerId !== null;

@@ -27,6 +27,8 @@ export interface WorkjetEnvironmentTargetOption {
   readonly label: string;
   readonly presentationKind: WorkjetComputerPresentationKind;
   readonly detail: string;
+  /** The machine this connection reaches, when the server reports one. */
+  readonly hostId?: string;
 }
 
 export interface WorkjetComputerDraft {

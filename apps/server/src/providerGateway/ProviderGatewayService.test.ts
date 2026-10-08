@@ -1129,6 +1129,59 @@ describe("ProviderGatewayService · API-key accounts", () => {
     },
   );
 
+  it.each(["observed", "unavailable", "disabled", "other-account"] as const)(
+    "repairs Claude spelling on Check all only for its enabled live account (%s)",
+    async (mode) => {
+      const harness = apiKeyHarness();
+      const model = "claude-opus-5-5";
+      const legacy = model.replace(/-(\d+)$/, ".$1");
+      const account = {
+        id: "claude-existing",
+        provider: "claude",
+        label: "Existing account",
+        enabled: mode !== "disabled",
+        priority: 7,
+        weight: 1,
+        models: [legacy],
+        accessTokenSecret: { scope: "workjet-provider-gateway", name: "existing-access" },
+        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "existing-refresh" },
+      };
+      let document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
+      let discoveries = 0;
+      const writer = harness.platform.writePrivateText;
+      harness.platform = {
+        ...harness.platform,
+        discoverClaudeModels: async () => {
+          discoveries += 1;
+          return mode === "unavailable" ? undefined : [model];
+        },
+        readText: async (path) => {
+          if (path.endsWith("model-checks.json"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return document;
+        },
+        writePrivateText: async (path, value) => {
+          await writer(path, value);
+          if (path.endsWith("/provider-gateway.json")) document = value;
+        },
+      };
+      await runWithSecrets(harness, (gateway) =>
+        gateway.checkModels({
+          force: true,
+          ...(mode === "other-account"
+            ? { accountId: WorkjetGatewayAccountId.make("codex-primary") }
+            : {}),
+        }),
+      );
+      expect(JSON.parse(document).accounts).toEqual([
+        { ...account, models: [mode === "observed" ? model : legacy] },
+      ]);
+      expect(discoveries).toBe(mode === "disabled" || mode === "other-account" ? 0 : 1);
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(document).not.toContain("provider-secret");
+    },
+  );
+
   it("does not discover or change a disabled Kimi account during Check all", async () => {
     const harness = apiKeyHarness();
     let discoveries = 0;

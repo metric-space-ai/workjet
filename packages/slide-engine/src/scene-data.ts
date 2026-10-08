@@ -4,10 +4,13 @@ import {
   BUSINESS_SCENE_DATA_MAX_BYTES,
   businessSceneDataSchemas,
   isBusinessSceneId,
-  type BusinessSceneData
+  type BusinessSceneData,
 } from "./scenes/business-data";
 
-export type Scene3dDataIssueCode = "scene3d.missing_data" | "scene3d.invalid_data" | "scene3d.unexpected_data";
+export type Scene3dDataIssueCode =
+  | "scene3d.missing_data"
+  | "scene3d.invalid_data"
+  | "scene3d.unexpected_data";
 
 export type Scene3dDataIssue = {
   code: Scene3dDataIssueCode;
@@ -41,7 +44,7 @@ export function scene3dDataIssue(sceneId: string, data: unknown): Scene3dDataIss
       message: `Scene "${sceneId}" is a fixed learnordie scene and takes no data.`,
       expected: "no data",
       received: typeof data,
-      repairHint: "Remove data from this scene, or choose a business scene id that renders data."
+      repairHint: "Remove data from this scene, or choose a business scene id that renders data.",
     };
   }
   if (data === undefined) {
@@ -50,33 +53,37 @@ export function scene3dDataIssue(sceneId: string, data: unknown): Scene3dDataIss
       message: `Scene "${sceneId}" requires data.`,
       expected: `data for ${sceneId}`,
       received: "no data",
-      repairHint: `Add data matching the ${sceneId} contract (see businessSceneDataSchemas).`
+      repairHint: `Add data matching the ${sceneId} contract (see businessSceneDataSchemas).`,
     };
   }
   const bytes = serializedByteLength(data);
   if (bytes === undefined || bytes > BUSINESS_SCENE_DATA_MAX_BYTES) {
     return {
       code: "scene3d.invalid_data",
-      message: bytes === undefined
-        ? `Scene "${sceneId}" data is not JSON-serializable.`
-        : `Scene "${sceneId}" data has ${bytes} bytes; the limit is ${BUSINESS_SCENE_DATA_MAX_BYTES}.`,
+      message:
+        bytes === undefined
+          ? `Scene "${sceneId}" data is not JSON-serializable.`
+          : `Scene "${sceneId}" data has ${bytes} bytes; the limit is ${BUSINESS_SCENE_DATA_MAX_BYTES}.`,
       expected: `<= ${BUSINESS_SCENE_DATA_MAX_BYTES} bytes of JSON`,
       received: bytes === undefined ? "non-JSON value" : `${bytes} bytes`,
-      repairHint: "Keep scene data small: fewer items or shorter labels."
+      repairHint: "Keep scene data small: fewer items or shorter labels.",
     };
   }
   const parsed = businessSceneDataSchemas[sceneId].safeParse(data);
   if (parsed.success) return null;
   const details = parsed.error.issues
     .slice(0, 3)
-    .map((issue) => `${issue.path.length ? issue.path.map(String).join(".") : "data"}: ${issue.message}`)
+    .map(
+      (issue) =>
+        `${issue.path.length ? issue.path.map(String).join(".") : "data"}: ${issue.message}`,
+    )
     .join("; ");
   return {
     code: "scene3d.invalid_data",
     message: `Scene "${sceneId}" data does not match its contract: ${details}`,
     expected: `${sceneId} data`,
     received: "invalid data",
-    repairHint: `Repair data so it matches the ${sceneId} contract (see businessSceneDataSchemas).`
+    repairHint: `Repair data so it matches the ${sceneId} contract (see businessSceneDataSchemas).`,
   };
 }
 
@@ -84,14 +91,20 @@ export function scene3dDataIssue(sceneId: string, data: unknown): Scene3dDataIss
  * One plain line per scene, `KPI: label value (Δ ±x %)`, items joined with " · ".
  * Returns undefined for modell scenes and for data that does not parse.
  */
-export function businessSceneSummary(sceneId: string, data: unknown, language = "de"): string | undefined {
+export function businessSceneSummary(
+  sceneId: string,
+  data: unknown,
+  language = "de",
+): string | undefined {
   if (!isBusinessSceneId(sceneId)) return undefined;
   const parsed = businessSceneDataSchemas[sceneId].safeParse(data);
   if (!parsed.success) return undefined;
   if (sceneId === "business.kpi-bars") {
     const kpi = parsed.data as BusinessSceneData["business.kpi-bars"];
     return `KPI: ${kpi.items
-      .map((item) => kpiValueText(item.label, item.value, item.previous, item.unit ?? kpi.unit, language))
+      .map((item) =>
+        kpiValueText(item.label, item.value, item.previous, item.unit ?? kpi.unit, language),
+      )
       .join(" · ")}`;
   }
   const trend = parsed.data as BusinessSceneData["business.trend"];
@@ -102,7 +115,13 @@ export function businessSceneSummary(sceneId: string, data: unknown, language = 
 }
 
 /** `label value unit (Δ ±x %)`; the delta is omitted without a non-zero previous value. */
-export function kpiValueText(label: string, value: number, previous: number | undefined, unit: string | undefined, language = "de"): string {
+export function kpiValueText(
+  label: string,
+  value: number,
+  previous: number | undefined,
+  unit: string | undefined,
+  language = "de",
+): string {
   const amount = `${formatNumber(value, language)}${unit ? ` ${unit}` : ""}`;
   if (previous === undefined || previous === 0) return `${label} ${amount}`;
   const percent = ((value - previous) / Math.abs(previous)) * 100;
@@ -121,18 +140,29 @@ export function formatNumber(value: number, language = "de", maxFractionDigits =
 }
 
 const xml = (value: string) =>
-  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 
 /**
  * Static stand-in for a business scene in offline exports: the caption and one text line per
  * KPI on warm paper. Interactive rendering stays with the app's scene renderer.
  */
-export function businessSceneSnapshotDataUri(sceneId: string, data: unknown, caption: string, language = "de"): string {
+export function businessSceneSnapshotDataUri(
+  sceneId: string,
+  data: unknown,
+  caption: string,
+  language = "de",
+): string {
   const summary = businessSceneSummary(sceneId, data, language) ?? sceneId;
   const lines = [caption, ...summary.replace(/^KPI: /, "").split(" · ")].slice(0, 9);
   const text = lines
-    .map((line, index) =>
-      `<text x="32" y="${56 + index * 34}" font-size="${index === 0 ? 26 : 22}"${index === 0 ? ' font-weight="600"' : ""}>${xml(line.slice(0, 80))}</text>`)
+    .map(
+      (line, index) =>
+        `<text x="32" y="${56 + index * 34}" font-size="${index === 0 ? 26 : 22}"${index === 0 ? ' font-weight="600"' : ""}>${xml([...line].slice(0, 80).join(""))}</text>`,
+    )
     .join("");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="${xml(caption)}"><rect width="640" height="360" fill="#fffef8"/><g fill="#243a40" font-family="Excalifont, Virgil, sans-serif">${text}</g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

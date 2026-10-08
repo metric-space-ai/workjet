@@ -13,7 +13,7 @@ export const modellSceneIdValues = [
   "modell.runtime",
   "modell.learning",
   "modell.language",
-  "modell.transfer"
+  "modell.transfer",
 ] as const;
 
 /** Every scene id a scene3d block or canvas embed may name. */
@@ -30,7 +30,7 @@ const modellSceneKeyById = {
   "modell.runtime": "runtime",
   "modell.learning": "learning",
   "modell.language": "language",
-  "modell.transfer": "transfer"
+  "modell.transfer": "transfer",
 } as const satisfies Record<ModellSceneId, ModellSceneKey>;
 
 export function isModellSceneId(sceneId: string): sceneId is ModellSceneId {
@@ -39,6 +39,7 @@ export function isModellSceneId(sceneId: string): sceneId is ModellSceneId {
 
 /** Factory key of a learnordie scene for the modell host. Business ids are not modell scenes. */
 export function scene3dSceneKey(sceneId: ModellSceneId): ModellSceneKey {
-  if (!isModellSceneId(sceneId)) throw new Error(`Scene "${String(sceneId)}" is not a modell scene.`);
+  if (!isModellSceneId(sceneId))
+    throw new Error(`Scene "${String(sceneId)}" is not a modell scene.`);
   return modellSceneKeyById[sceneId];
 }

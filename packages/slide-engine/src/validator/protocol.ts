@@ -1,7 +1,11 @@
 // Workjet fork delta: the request/response protocol of the bundled slide-engine validator.
 // CTOX runs it as `node slide-engine-validator.mjs` (one JSON request on stdin, one JSON
 // response on stdout); Workjet can call `handleValidatorRequest` in process.
-import { AGENTIC_SLIDE_EDIT_CONTRACT, applySlideDocumentEdits, type SlideDocumentEditOperation } from "../editing";
+import {
+  AGENTIC_SLIDE_EDIT_CONTRACT,
+  applySlideDocumentEdits,
+  type SlideDocumentEditOperation,
+} from "../editing";
 import { canvasSceneForSlide, updateSlideCanvas } from "../excalidraw/scene";
 import { meetingSlides, slideDocumentOutline } from "../meeting";
 import {
@@ -9,14 +13,21 @@ import {
   SlideDocumentValidationError,
   validateSlideDocument,
   type SlideDocument,
-  type SlideDocumentValidationIssue
+  type SlideDocumentValidationIssue,
 } from "../schema";
 import type { CanvasScene } from "../excalidraw/canvas-schema";
 
 /** Requests larger than this many bytes are rejected before parsing. */
 export const VALIDATOR_MAX_INPUT_BYTES = 24 * 1024 * 1024;
 
-export const validatorOps = ["validate", "applyEdits", "updateCanvas", "canvasForSlide", "outline", "meetingSlides"] as const;
+export const validatorOps = [
+  "validate",
+  "applyEdits",
+  "updateCanvas",
+  "canvasForSlide",
+  "outline",
+  "meetingSlides",
+] as const;
 export type ValidatorOp = (typeof validatorOps)[number];
 
 export type ValidatorOutcome =
@@ -47,7 +58,16 @@ export function handleValidatorRequest(request: unknown): ValidatorOutcome {
   } catch (error) {
     return {
       exitCode: 0,
-      response: { ok: false, issues: [plainIssue("validator.internal_error", errorMessage(error), "Report this request; the validator failed unexpectedly.")] }
+      response: {
+        ok: false,
+        issues: [
+          plainIssue(
+            "validator.internal_error",
+            errorMessage(error),
+            "Report this request; the validator failed unexpectedly.",
+          ),
+        ],
+      },
     };
   }
 }
@@ -55,16 +75,19 @@ export function handleValidatorRequest(request: unknown): ValidatorOutcome {
 const isString = (value: unknown) => typeof value === "string";
 const isPresent = (value: unknown) => value !== undefined;
 
-const requiredFields: Record<ValidatorOp, Array<[name: string, check: (value: unknown) => boolean, expected: string]>> = {
+const requiredFields: Record<
+  ValidatorOp,
+  Array<[name: string, check: (value: unknown) => boolean, expected: string]>
+> = {
   validate: [],
   applyEdits: [["operations", Array.isArray, "an array of edit operations"]],
   updateCanvas: [
     ["slideId", isString, "a string"],
-    ["scene", isPresent, "a canvas scene"]
+    ["scene", isPresent, "a canvas scene"],
   ],
   canvasForSlide: [["slideId", isString, "a string"]],
   outline: [],
-  meetingSlides: []
+  meetingSlides: [],
 };
 
 function runOp(op: ValidatorOp, fields: Fields): Record<string, unknown> {
@@ -73,7 +96,7 @@ function runOp(op: ValidatorOp, fields: Fields): Record<string, unknown> {
     return {
       ok: result.ok,
       issues: result.issues.filter((issue) => issue.severity === "error"),
-      warnings: result.issues.filter((issue) => issue.severity === "warning")
+      warnings: result.issues.filter((issue) => issue.severity === "warning"),
     };
   }
   if (op === "applyEdits") return applyEdits(fields.document, fields.operations as unknown[]);
@@ -102,9 +125,15 @@ const knownOperationKinds = new Set<string>(AGENTIC_SLIDE_EDIT_CONTRACT.operatio
 function applyEdits(document: unknown, operations: unknown[]): Record<string, unknown> {
   // applySlideDocumentEdits trusts its operation types; reject what JSON can smuggle past them.
   for (const [index, operation] of operations.entries()) {
-    const kind = typeof operation === "object" && operation !== null && !Array.isArray(operation) ? (operation as Fields).kind : undefined;
+    const kind =
+      typeof operation === "object" && operation !== null && !Array.isArray(operation)
+        ? (operation as Fields).kind
+        : undefined;
     if (typeof kind === "string" && knownOperationKinds.has(kind)) continue;
-    const operationId = typeof (operation as Fields | null)?.operationId === "string" ? ((operation as Fields).operationId as string) : `operations[${index}]`;
+    const operationId =
+      typeof (operation as Fields | null)?.operationId === "string"
+        ? ((operation as Fields).operationId as string)
+        : `operations[${index}]`;
     return {
       ok: false,
       appliedOperations: [],
@@ -114,23 +143,37 @@ function applyEdits(document: unknown, operations: unknown[]): Record<string, un
           "edit.unknown_operation",
           `Operation ${index} has no known kind (received ${JSON.stringify(kind ?? null)}).`,
           `Use one of: ${AGENTIC_SLIDE_EDIT_CONTRACT.operationKinds.join(", ")}.`,
-          ["operations", index, "kind"]
-        )
-      ]
+          ["operations", index, "kind"],
+        ),
+      ],
     };
   }
   try {
-    return applySlideDocumentEdits(document as SlideDocument, operations as SlideDocumentEditOperation[]);
+    return applySlideDocumentEdits(
+      document as SlideDocument,
+      operations as SlideDocumentEditOperation[],
+    );
   } catch (error) {
     return {
       ok: false,
       appliedOperations: [],
-      issues: [plainIssue("edit.invalid_operation", errorMessage(error), "Check the fields of each operation against the edit contract.", ["operations"])]
+      issues: [
+        plainIssue(
+          "edit.invalid_operation",
+          errorMessage(error),
+          "Check the fields of each operation against the edit contract.",
+          ["operations"],
+        ),
+      ],
     };
   }
 }
 
-function updateCanvas(document: SlideDocument, slideId: string, scene: unknown): Record<string, unknown> {
+function updateCanvas(
+  document: SlideDocument,
+  slideId: string,
+  scene: unknown,
+): Record<string, unknown> {
   const slideIndex = document.slides.findIndex((slide) => slide.id === slideId);
   if (slideIndex < 0) return { ok: false, issues: [missingSlideIssue(slideId)] };
   try {
@@ -139,26 +182,76 @@ function updateCanvas(document: SlideDocument, slideId: string, scene: unknown):
   } catch (error) {
     if (error instanceof SlideDocumentValidationError) return { ok: false, issues: error.issues };
     if (isZodError(error)) {
-      return { ok: false, issues: repairIssuesFromZodIssues(error.issues, { code: "canvas.invalid", pathPrefix: ["slides", slideIndex, "canvas"], slideId }) };
+      return {
+        ok: false,
+        issues: repairIssuesFromZodIssues(error.issues, {
+          code: "canvas.invalid",
+          pathPrefix: ["slides", slideIndex, "canvas"],
+          slideId,
+        }),
+      };
     }
-    return { ok: false, issues: [{ ...plainIssue("canvas.invalid", errorMessage(error), "Send a complete learnordie.excalidraw.v1 scene.", ["slides", slideIndex, "canvas"]), slideId }] };
+    return {
+      ok: false,
+      issues: [
+        {
+          ...plainIssue(
+            "canvas.invalid",
+            errorMessage(error),
+            "Send a complete learnordie.excalidraw.v1 scene.",
+            ["slides", slideIndex, "canvas"],
+          ),
+          slideId,
+        },
+      ],
+    };
   }
 }
 
-function isZodError(error: unknown): error is { issues: Parameters<typeof repairIssuesFromZodIssues>[0] } {
-  return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "ZodError" && Array.isArray((error as { issues?: unknown }).issues);
+function isZodError(
+  error: unknown,
+): error is { issues: Parameters<typeof repairIssuesFromZodIssues>[0] } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "ZodError" &&
+    Array.isArray((error as { issues?: unknown }).issues)
+  );
 }
 
 function missingSlideIssue(slideId: string): SlideDocumentValidationIssue {
-  return { ...plainIssue("edit.slide_missing", `Slide "${slideId}" was not found.`, "Use a slideId that exists in the current SlideDocument.", ["slides"]), slideId };
+  return {
+    ...plainIssue(
+      "edit.slide_missing",
+      `Slide "${slideId}" was not found.`,
+      "Use a slideId that exists in the current SlideDocument.",
+      ["slides"],
+    ),
+    slideId,
+  };
 }
 
-function plainIssue(code: string, message: string, repairHint: string, pathSegments: Array<string | number> = []): SlideDocumentValidationIssue {
-  return { severity: "error", code, message, path: pathString(pathSegments), pathSegments, repairHint };
+function plainIssue(
+  code: string,
+  message: string,
+  repairHint: string,
+  pathSegments: Array<string | number> = [],
+): SlideDocumentValidationIssue {
+  return {
+    severity: "error",
+    code,
+    message,
+    path: pathString(pathSegments),
+    pathSegments,
+    repairHint,
+  };
 }
 
 function pathString(pathSegments: Array<string | number>): string {
-  return pathSegments.reduce<string>((path, segment) => (typeof segment === "number" ? `${path}[${segment}]` : `${path}.${segment}`), "$");
+  return pathSegments.reduce<string>(
+    (path, segment) => (typeof segment === "number" ? `${path}[${segment}]` : `${path}.${segment}`),
+    "$",
+  );
 }
 
 function errorMessage(error: unknown): string {

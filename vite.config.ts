@@ -52,6 +52,25 @@ export default defineConfig({
       "apps/web/src/lib/vendor/qrcodegen.ts",
       "apps/mobile/uniwind-types.d.ts",
       "*.icon/**",
+      // Vendored learnordie slide engine, kept diffable against upstream; see
+      // packages/slide-engine/UPSTREAM.md. Files Workjet adds to the package are formatted.
+      "packages/slide-engine/README.md",
+      "packages/slide-engine/NOTICE.md",
+      "packages/slide-engine/styles/**",
+      "packages/slide-engine/src/agent.ts",
+      "packages/slide-engine/src/editing.ts",
+      "packages/slide-engine/src/fixtures.ts",
+      "packages/slide-engine/src/index.ts",
+      "packages/slide-engine/src/legacy.ts",
+      "packages/slide-engine/src/schema.ts",
+      "packages/slide-engine/src/standalone.ts",
+      "packages/slide-engine/src/standalone-canvas.ts",
+      "packages/slide-engine/src/components/**",
+      "packages/slide-engine/src/excalidraw/**",
+      "packages/slide-engine/src/scenes/modell-*.ts",
+      "packages/slide-engine/src/scenes/oscillator-physics*.ts",
+      // Fixed business scene data contract, kept byte-identical in the vendored style.
+      "packages/slide-engine/src/scenes/business-data.ts",
     ],
     sortPackageJson: {},
     overrides: [

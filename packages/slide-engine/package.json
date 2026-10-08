@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./styles/**/*.css"
+  ],
   "exports": {
     "./excalidraw/canvas-schema": "./src/excalidraw/canvas-schema.ts",
     "./excalidraw/scene": "./src/excalidraw/scene.ts",
@@ -63,9 +66,6 @@
     "./styles/themes/learnordie-technical.css": "./styles/themes/learnordie-technical.css",
     "./styles/themes/learnordie-dark-room.css": "./styles/themes/learnordie-dark-room.css"
   },
-  "sideEffects": [
-    "./styles/**/*.css"
-  ],
   "scripts": {
     "build:validator": "node scripts/build-validator.mjs",
     "typecheck": "tsgo --noEmit",

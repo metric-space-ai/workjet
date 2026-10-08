@@ -164,10 +164,7 @@
         {
           "id": "exitwert-treiber",
           "type": "bulletList",
-          "items": [
-            "Ziel: 12 Mio € bis Jahresende",
-            "Treiber: wiederkehrender Umsatz und Marge"
-          ]
+          "items": ["Ziel: 12 Mio € bis Jahresende", "Treiber: wiederkehrender Umsatz und Marge"]
         }
       ],
       "sourceRefs": [
@@ -252,10 +249,7 @@
         {
           "id": "entscheidung-optionen",
           "type": "bulletList",
-          "items": [
-            "A: 49 € je Platz",
-            "B: 39 € je Platz mit Mindestabnahme"
-          ]
+          "items": ["A: 49 € je Platz", "B: 39 € je Platz mit Mindestabnahme"]
         }
       ],
       "canvas": {
@@ -286,9 +280,9 @@
             "type": "text",
             "x": 88,
             "y": 230,
-            "width": 660,
-            "height": 78,
-            "text": "Vorschlag: Team-Stufe für 49 € je Platz\nund Monat ab November.",
+            "width": 1100,
+            "height": 39,
+            "text": "Vorschlag: Team-Stufe für 49 € je Platz und Monat ab November.",
             "originalText": "Vorschlag: Team-Stufe für 49 € je Platz und Monat ab November.",
             "fontSize": 30,
             "fontFamily": 1,
@@ -299,14 +293,31 @@
             }
           },
           {
-            "id": "entscheidung-optionen:text",
+            "id": "entscheidung-optionen:a",
             "type": "text",
             "x": 88,
-            "y": 340,
+            "y": 300,
             "width": 660,
-            "height": 78,
-            "text": "• A: 49 € je Platz\n• B: 39 € je Platz mit Mindestabnahme",
-            "originalText": "• A: 49 € je Platz\n• B: 39 € je Platz mit Mindestabnahme",
+            "height": 39,
+            "text": "• A: 49 € je Platz",
+            "originalText": "• A: 49 € je Platz",
+            "fontSize": 30,
+            "fontFamily": 1,
+            "lineHeight": 1.3,
+            "strokeColor": "#243a40",
+            "customData": {
+              "sourceBlockId": "entscheidung-optionen"
+            }
+          },
+          {
+            "id": "entscheidung-optionen:b",
+            "type": "text",
+            "x": 88,
+            "y": 345,
+            "width": 660,
+            "height": 39,
+            "text": "• B: 39 € je Platz mit Mindestabnahme",
+            "originalText": "• B: 39 € je Platz mit Mindestabnahme",
             "fontSize": 30,
             "fontFamily": 1,
             "lineHeight": 1.3,
@@ -334,10 +345,10 @@
             "x": 104,
             "y": 494,
             "width": 632,
-            "height": 73,
-            "text": "Handnotiz: bevorzugt A, wenn der Pilot\nbis KW 44 zahlt.",
+            "height": 36,
+            "text": "Handnotiz: bevorzugt A, wenn der Pilot bis KW 44 zahlt.",
             "originalText": "Handnotiz: bevorzugt A, wenn der Pilot bis KW 44 zahlt.",
-            "fontSize": 28,
+            "fontSize": 24,
             "fontFamily": 5,
             "lineHeight": 1.3,
             "strokeColor": "#243a40"
@@ -350,14 +361,8 @@
             "width": 80,
             "height": 0,
             "points": [
-              [
-                0,
-                0
-              ],
-              [
-                80,
-                0
-              ]
+              [0, 0],
+              [80, 0]
             ],
             "strokeColor": "#197c70",
             "endArrowhead": "arrow"
@@ -366,9 +371,9 @@
             "id": "entscheidung-kpi",
             "type": "embeddable",
             "x": 850,
-            "y": 230,
+            "y": 400,
             "width": 660,
-            "height": 430,
+            "height": 330,
             "link": "https://learnordie.invalid/embed/entscheidung-kpi",
             "customData": {
               "learnordie": {

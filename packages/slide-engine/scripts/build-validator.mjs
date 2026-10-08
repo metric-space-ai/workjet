@@ -8,12 +8,17 @@ import * as NodeURL from "node:url";
 import * as esbuild from "esbuild";
 
 const ESBUILD_VERSION = "0.28.1";
-const packageRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
+const packageRoot = NodePath.resolve(
+  NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)),
+  "..",
+);
 const outfile = NodePath.join(packageRoot, "dist", "slide-engine-validator.mjs");
 const forbiddenPackage = /(?:^|\/)node_modules\/(?:react|react-dom|three)\//;
 
 if (esbuild.version !== ESBUILD_VERSION) {
-  console.error(`build-validator: esbuild ${esbuild.version} resolved; ${ESBUILD_VERSION} is required.`);
+  console.error(
+    `build-validator: esbuild ${esbuild.version} resolved; ${ESBUILD_VERSION} is required.`,
+  );
   process.exit(1);
 }
 
@@ -36,9 +41,13 @@ const result = await esbuild.build({
   },
 });
 
-const forbidden = Object.keys(result.metafile.inputs).filter((input) => forbiddenPackage.test(input));
+const forbidden = Object.keys(result.metafile.inputs).filter((input) =>
+  forbiddenPackage.test(input),
+);
 if (forbidden.length > 0) {
-  console.error(`build-validator: the bundle must not include react or three:\n${forbidden.join("\n")}`);
+  console.error(
+    `build-validator: the bundle must not include react or three:\n${forbidden.join("\n")}`,
+  );
   process.exit(1);
 }
 

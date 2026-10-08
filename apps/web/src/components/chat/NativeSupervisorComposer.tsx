@@ -21,12 +21,15 @@ import {
 } from "../../workjetSupervisorControl";
 import { requestWorkjetProjectControl } from "../../workjetProjectControl";
 import { readWorkjetSupervisorExecutionPage } from "../../workjetSupervisorExecution";
+import { requestLocalProjectRegistrationRetry } from "../../localProjectRegistration";
+import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
 import { NativeSupervisorExecutionDetails } from "./NativeSupervisorExecutionDetails";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 
 export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
   readonly config: WorkjetThreadConfig;
+  readonly instanceId: string | null;
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
 }) {
@@ -284,9 +287,24 @@ export function NativeSupervisorComposer(props: {
         </div>
       )}
       {disabled && (
-        <p role="status" className="mb-2 text-xs text-muted-foreground">
-          Projekt und CTOX-Verbindung müssen bestätigt sein.
-        </p>
+        <div
+          role="status"
+          className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+        >
+          <span>Projekt und CTOX-Verbindung müssen bestätigt sein.</span>
+          {props.instanceId !== null && (
+            <button
+              type="button"
+              className="underline underline-offset-2 hover:text-foreground"
+              onClick={() => {
+                refreshWorkjetProjectRegistry(props.instanceId);
+                requestLocalProjectRegistrationRetry();
+              }}
+            >
+              Erneut verbinden
+            </button>
+          )}
+        </div>
       )}
       {notice && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">

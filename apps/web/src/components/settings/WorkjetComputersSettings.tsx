@@ -123,8 +123,9 @@ export function findComputerForTarget(
   const hostId = target.hostId?.trim();
   if (!hostId) return undefined;
   return configuration.computers.find((computer) =>
-    targets.some((option) =>
-      option.environmentId === computer.environmentId && option.hostId?.trim() === hostId,
+    targets.some(
+      (option) =>
+        option.environmentId === computer.environmentId && option.hostId?.trim() === hostId,
     ),
   );
 }
@@ -136,19 +137,27 @@ export function includeSavedComputers(
   primaryEnvironmentId: EnvironmentId | null,
 ): WorkjetConfiguration {
   let catalog = configuration;
-  const primaryHostId = targets.find((target) => target.environmentId === primaryEnvironmentId)?.hostId?.trim();
+  const primaryHostId = targets
+    .find((target) => target.environmentId === primaryEnvironmentId)
+    ?.hostId?.trim();
   for (const target of targets) {
-    if (target.environmentId === primaryEnvironmentId ||
+    if (
+      target.environmentId === primaryEnvironmentId ||
       (primaryHostId && target.hostId?.trim() === primaryHostId) ||
-      findComputerForTarget(catalog, target, targets)) continue;
+      findComputerForTarget(catalog, target, targets)
+    )
+      continue;
     catalog = {
       ...catalog,
-      computers: [...catalog.computers, saveWorkjetComputerDraft(
-        createWorkjetComputerDraft({
-          environments: [target],
-          id: `connection-${target.environmentId}`,
-        }),
-      )],
+      computers: [
+        ...catalog.computers,
+        saveWorkjetComputerDraft(
+          createWorkjetComputerDraft({
+            environments: [target],
+            id: `connection-${target.environmentId}`,
+          }),
+        ),
+      ],
     };
   }
   return catalog;

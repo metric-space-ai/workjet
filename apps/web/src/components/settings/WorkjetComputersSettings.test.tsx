@@ -321,9 +321,16 @@ describe("unified computer catalog", () => {
   };
 
   it("reuses a configured computer reached through another connection", () => {
-    const alias = { ...remote, environmentId: EnvironmentId.make("environment-relay"), hostId: "same-host" };
+    const alias = {
+      ...remote,
+      environmentId: EnvironmentId.make("environment-relay"),
+      hostId: "same-host",
+    };
     const targets = [{ ...remote, hostId: "same-host" }, alias];
-    const original = { ...configurationWith(remoteComputer), selectedComputerId: remoteComputer.id };
+    const original = {
+      ...configurationWith(remoteComputer),
+      selectedComputerId: remoteComputer.id,
+    };
     expect(findComputerForTarget(original, alias, targets)).toBe(remoteComputer);
     expect(includeSavedComputers(original, targets, localEnvironmentId)).toBe(original);
   });
@@ -352,9 +359,17 @@ describe("unified computer catalog", () => {
     for (const hostId of [undefined, "", "different-host"]) {
       const targets = [
         { ...remote, hostId: "known-host" },
-        { ...remote, environmentId: EnvironmentId.make("another-environment"), ...(hostId === undefined ? {} : { hostId }) },
+        {
+          ...remote,
+          environmentId: EnvironmentId.make("another-environment"),
+          ...(hostId === undefined ? {} : { hostId }),
+        },
       ];
-      const merged = includeSavedComputers(configurationWith(remoteComputer), targets, localEnvironmentId);
+      const merged = includeSavedComputers(
+        configurationWith(remoteComputer),
+        targets,
+        localEnvironmentId,
+      );
       expect(merged.computers).toHaveLength(2);
       expect(merged.computers[0]).toBe(remoteComputer);
     }
@@ -362,9 +377,14 @@ describe("unified computer catalog", () => {
 
   it("keeps exact environment matches and existing configured rows intact", () => {
     const aliasComputer = computer("configured-alias", EnvironmentId.make("environment-relay"));
-    const targets = [{ ...remote, hostId: "same-host" }, {
-      ...remote, environmentId: aliasComputer.environmentId, hostId: "same-host",
-    }];
+    const targets = [
+      { ...remote, hostId: "same-host" },
+      {
+        ...remote,
+        environmentId: aliasComputer.environmentId,
+        hostId: "same-host",
+      },
+    ];
     const original = configurationWith(remoteComputer, aliasComputer);
     expect(findComputerForTarget(original, targets[1]!, targets)).toBe(aliasComputer);
     expect(includeSavedComputers(original, targets, localEnvironmentId)).toBe(original);

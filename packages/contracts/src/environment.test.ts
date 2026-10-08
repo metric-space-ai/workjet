@@ -16,8 +16,9 @@ const descriptor = {
 describe("ExecutionEnvironmentDescriptor", () => {
   it("allows older servers without a host ID and preserves reported host metadata", () => {
     expect(decodeDescriptor(descriptor).hostId).toBeUndefined();
-    expect(decodeDescriptor({ ...descriptor, hostId: "linux:reported-host" }).hostId)
-      .toBe("linux:reported-host");
+    expect(decodeDescriptor({ ...descriptor, hostId: "linux:reported-host" }).hostId).toBe(
+      "linux:reported-host",
+    );
     expect(() => decodeDescriptor({ ...descriptor, hostId: " " })).toThrow();
   });
 

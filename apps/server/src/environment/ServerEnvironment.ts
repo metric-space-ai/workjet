@@ -71,37 +71,56 @@ export const readServerHostId = Effect.fn("ServerEnvironment.readServerHostId")(
   const fileSystem = yield* FileSystem.FileSystem;
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const commandHostId = (command: string, args: readonly string[], pattern: RegExp) =>
-    processRunner.run({
-      command,
-      args,
-      timeout: "2 seconds",
-      maxOutputBytes: 16 * 1024,
-      timeoutBehavior: "timedOutResult",
-    }).pipe(
-      Effect.map((result) => result.code === 0 ? pattern.exec(result.stdout)?.[1]?.trim() : undefined),
-      Effect.catch(() => Effect.succeed(undefined)),
-    );
+    processRunner
+      .run({
+        command,
+        args,
+        timeout: "2 seconds",
+        maxOutputBytes: 16 * 1024,
+        timeoutBehavior: "timedOutResult",
+      })
+      .pipe(
+        Effect.map((result) =>
+          result.code === 0 ? pattern.exec(result.stdout)?.[1]?.trim() : undefined,
+        ),
+        Effect.catch(() => Effect.succeed(undefined)),
+      );
   const raw = yield* platform === "linux"
     ? fileSystem.readFileString("/etc/machine-id").pipe(
         Effect.map((value) => value.trim()),
         Effect.catch(() => Effect.succeed(undefined)),
       )
     : platform === "darwin"
-      ? commandHostId("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], /"IOPlatformUUID" = "([^"]+)"/)
+      ? commandHostId(
+          "ioreg",
+          ["-rd1", "-c", "IOPlatformExpertDevice"],
+          /"IOPlatformUUID" = "([^"]+)"/,
+        )
       : platform === "win32"
-        ? commandHostId("reg", ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"], /MachineGuid\s+REG_SZ\s+(\S+)/)
+        ? commandHostId(
+            "reg",
+            ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"],
+            /MachineGuid\s+REG_SZ\s+(\S+)/,
+          )
         : Effect.succeed(undefined);
   const normalized = raw?.toLowerCase();
-  if (!normalized || !/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(normalized) ||
-    /^0[-0]*$/.test(normalized)) return undefined;
+  if (
+    !normalized ||
+    !/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(normalized) ||
+    /^0[-0]*$/.test(normalized)
+  )
+    return undefined;
   const crypto = yield* Crypto.Crypto;
   // Keep the OS identity local; expose an app-scoped stable digest.
-  return yield* crypto.digest("SHA-256", new TextEncoder().encode(
-    `workjet:computer:v1:${platform}:${normalized}`,
-  )).pipe(
-    Effect.map((digest) => `workjet-host-v1:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`),
-    Effect.catch(() => Effect.succeed(undefined)),
-  );
+  return yield* crypto
+    .digest("SHA-256", new TextEncoder().encode(`workjet:computer:v1:${platform}:${normalized}`))
+    .pipe(
+      Effect.map(
+        (digest) =>
+          `workjet-host-v1:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`,
+      ),
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
 });
 
 export const make = Effect.gen(function* () {

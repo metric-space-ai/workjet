@@ -22,20 +22,23 @@ it.layer(NodeServices.layer)("server host identity", (it) => {
   const guid = "AABBCCDD-1234-5678-ABCD-0123456789AB";
   const read = (platform: NodeJS.Platform, text: string, code = 0) =>
     ServerEnvironment.readServerHostId(platform).pipe(
-      Effect.provide(FileSystem.layerNoop({
-        readFileString: () => Effect.succeed(text),
-      })),
-      Effect.provideService(ProcessRunner.ProcessRunner, {
-        run: () => Effect.succeed({
-          stdout: text,
-          stderr: "",
-          code: ChildProcessSpawner.ExitCode(code),
-          timedOut: false,
-          stdoutTruncated: false,
-          stderrTruncated: false,
-          stdoutInvalidUtf8: false,
-          stderrInvalidUtf8: false,
+      Effect.provide(
+        FileSystem.layerNoop({
+          readFileString: () => Effect.succeed(text),
         }),
+      ),
+      Effect.provideService(ProcessRunner.ProcessRunner, {
+        run: () =>
+          Effect.succeed({
+            stdout: text,
+            stderr: "",
+            code: ChildProcessSpawner.ExitCode(code),
+            timedOut: false,
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            stdoutInvalidUtf8: false,
+            stderrInvalidUtf8: false,
+          }),
       }),
     );
 
@@ -62,11 +65,13 @@ it.layer(NodeServices.layer)("server host identity", (it) => {
       const failing = {
         run: (input: ProcessRunner.ProcessRunInput) => {
           calls.push(input);
-          return Effect.fail(new ProcessRunner.ProcessTimeoutError({
-            command: input.command,
-            argumentCount: input.args.length,
-            timeoutMs: 2_000,
-          }));
+          return Effect.fail(
+            new ProcessRunner.ProcessTimeoutError({
+              command: input.command,
+              argumentCount: input.args.length,
+              timeoutMs: 2_000,
+            }),
+          );
         },
       };
       const readFailure = (platform: NodeJS.Platform) =>

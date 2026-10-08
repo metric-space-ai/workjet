@@ -21,7 +21,7 @@ import { prepareCtoxBusinessOsShell } from "./lib/ctox-business-os-shell.ts";
 import { prepareProviderGatewayHost } from "./lib/prepare-provider-gateway-host.ts";
 import { verifyBundledServerSource } from "./lib/bundled-server-source.ts";
 import { sshServerBuildArguments } from "./lib/ssh-server-build-arguments.ts";
-import { buildLinuxSshServer } from "./lib/build-linux-ssh-server.ts";
+import { buildLinuxSshServer, stagePrebuiltLinuxSshServer } from "./lib/build-linux-ssh-server.ts";
 import { preparePortableNode } from "./lib/prepare-portable-node.ts";
 import { prepareDiagnosticProviderGatewayHost } from "./lib/provider-gateway-host-diagnostic.ts";
 import {
@@ -167,6 +167,7 @@ interface BuildCliInput {
   readonly wslPrebuild: Option.Option<string>;
   readonly diagnosticProviderGatewayHost?: Option.Option<string>;
   readonly gpuBuildOwner?: Option.Option<string>;
+  readonly prebuiltLinuxSshServer?: Option.Option<string>;
 }
 
 function detectHostBuildPlatform(hostPlatform: string): typeof BuildPlatform.Type | undefined {
@@ -774,6 +775,7 @@ interface ResolvedBuildOptions {
   readonly wslPrebuild: string | undefined;
   readonly diagnosticProviderGatewayHost?: string;
   readonly gpuBuildOwner?: string;
+  readonly prebuiltLinuxSshServer?: string;
 }
 
 interface StagePackageJson {
@@ -1599,6 +1601,9 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     input.diagnosticProviderGatewayHost ?? Option.none(),
   );
   const gpuBuildOwner = Option.getOrUndefined(input.gpuBuildOwner ?? Option.none());
+  const prebuiltLinuxSshServer = Option.getOrUndefined(
+    input.prebuiltLinuxSshServer ?? Option.none(),
+  );
 
   return {
     platform,
@@ -1615,6 +1620,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     wslPrebuild,
     ...(diagnosticProviderGatewayHost === undefined ? {} : { diagnosticProviderGatewayHost }),
     ...(gpuBuildOwner === undefined ? {} : { gpuBuildOwner }),
+    ...(prebuiltLinuxSshServer === undefined ? {} : { prebuiltLinuxSshServer }),
   } satisfies ResolvedBuildOptions;
 });
 
@@ -2726,12 +2732,19 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   if (options.platform === "mac") {
     yield* Effect.tryPromise({
       try: () =>
-        buildLinuxSshServer({
-          repoRoot,
-          serverDist: distDirs.serverDist,
-          archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
-          owner: options.gpuBuildOwner,
-        }),
+        options.prebuiltLinuxSshServer === undefined
+          ? buildLinuxSshServer({
+              repoRoot,
+              serverDist: distDirs.serverDist,
+              archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+              owner: options.gpuBuildOwner,
+            })
+          : stagePrebuiltLinuxSshServer({
+              repoRoot,
+              directory: options.prebuiltLinuxSshServer,
+              archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+              owner: options.gpuBuildOwner,
+            }),
       catch: (cause) => new BundledServerSourceVerificationError({ cause }),
     });
   }
@@ -3143,6 +3156,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   ),
   gpuBuildOwner: Flag.string("gpu-build-owner").pipe(
     Flag.withDescription("Owning thread ID for the required gpu3 Linux SSH server build on Mac."),
+    Flag.optional,
+  ),
+  prebuiltLinuxSshServer: Flag.string("prebuilt-linux-ssh-server").pipe(
+    Flag.withDescription(
+      "Directory of an admitted Linux SSH server build and receipt, verified against this source and fresh server output.",
+    ),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(

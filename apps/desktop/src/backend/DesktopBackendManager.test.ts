@@ -278,7 +278,7 @@ describe("DesktopBackendManager", () => {
         assert.equal(yield* Queue.size(starts), 0);
         yield* TestClock.adjust(Duration.millis(1));
         assert.equal(yield* Queue.take(starts), 2);
-        yield* instance.stop;
+        yield* instance.stop();
         assert.equal((yield* instance.snapshot).restartScheduled, false);
       }).pipe(Effect.provide(TestClock.layer())),
     ),

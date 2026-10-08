@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 // Missing-provider cleanup must never signal the runner's own process group.
 // Exercise the installed dependency in a separate session, not the test runner.
@@ -37,14 +37,20 @@ describe("missing provider process cleanup", () => {
     });
     let output = "";
     let error = "";
-    child.stdout.on("data", (chunk) => { output += String(chunk); });
-    child.stderr.on("data", (chunk) => { error += String(chunk); });
+    child.stdout.on("data", (chunk) => {
+      output += String(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      error += String(chunk);
+    });
     const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
     try {
-      const result = await new Promise<{ code: number | null; signal: string | null }>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("close", (code, signal) => resolve({ code, signal }));
-      });
+      const result = await new Promise<{ code: number | null; signal: string | null }>(
+        (resolve, reject) => {
+          child.once("error", reject);
+          child.once("close", (code, signal) => resolve({ code, signal }));
+        },
+      );
       expect(error).toBe("");
       expect(result).toEqual({ code: 0, signal: null });
       expect(output).toBe("MISSING_PROVIDER_HOST_ALIVE");

@@ -1,5 +1,5 @@
 import * as NodeNet from "node:net";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as NetService from "./Net.ts";
 
@@ -12,8 +12,18 @@ vi.mock("node:net", async (importOriginal) => {
       const listen = server.listen.bind(server);
       server.listen = ((...args: Parameters<typeof server.listen>) => {
         const options = args[0];
-        if (typeof options === "object" && options !== null && "host" in options && options.host === "::1") {
-          queueMicrotask(() => server.emit("error", Object.assign(new Error("IPv6 disabled"), { code: "EAFNOSUPPORT" })));
+        if (
+          typeof options === "object" &&
+          options !== null &&
+          "host" in options &&
+          options.host === "::1"
+        ) {
+          queueMicrotask(() =>
+            server.emit(
+              "error",
+              Object.assign(new Error("IPv6 disabled"), { code: "EAFNOSUPPORT" }),
+            ),
+          );
           return server;
         }
         return Reflect.apply(listen, server, args);
@@ -36,10 +46,15 @@ describe("loopback ports without IPv6 support", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     try {
       const address = server.address();
-      if (address === null || typeof address === "string") throw new Error("Missing bound test port");
-      expect(await Effect.runPromise(NetService.make().isPortAvailableOnLoopback(address.port))).toBe(false);
+      if (address === null || typeof address === "string")
+        throw new Error("Missing bound test port");
+      expect(
+        await Effect.runPromise(NetService.make().isPortAvailableOnLoopback(address.port)),
+      ).toBe(false);
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
     }
   });
 });

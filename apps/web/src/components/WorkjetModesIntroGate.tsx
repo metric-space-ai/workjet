@@ -1,5 +1,9 @@
 import { isElectron } from "../env";
-import { useAllEnvironmentShellsBootstrapped, useProjects, useThreadShells } from "../state/entities";
+import {
+  useAllEnvironmentShellsBootstrapped,
+  useProjects,
+  useThreadShells,
+} from "../state/entities";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -23,7 +27,10 @@ export function WorkjetModesIntroGate() {
   return (
     <WorkjetModesIntroDialog
       open={resolveWorkjetModesIntroOpen({
-        isElectron, settingsHydrated, seen, workspaceHydrated,
+        isElectron,
+        settingsHydrated,
+        seen,
+        workspaceHydrated,
         hasExistingWork: projects.length > 0 || threads.length > 0,
       })}
       onDismiss={() => updateClientSettings({ workjetModesIntroSeen: true })}

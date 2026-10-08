@@ -27,15 +27,25 @@ describe("resolveWorkjetModesIntroOpen", () => {
     ).toBe(false);
   });
   it("does not interrupt an upgraded profile with existing projects or imported chats", () => {
-    expect(resolveWorkjetModesIntroOpen({
-      isElectron: true, settingsHydrated: true, seen: false,
-      workspaceHydrated: true, hasExistingWork: true,
-    })).toBe(false);
+    expect(
+      resolveWorkjetModesIntroOpen({
+        isElectron: true,
+        settingsHydrated: true,
+        seen: false,
+        workspaceHydrated: true,
+        hasExistingWork: true,
+      }),
+    ).toBe(false);
   });
   it("waits for workspace hydration before treating a profile as new", () => {
-    expect(resolveWorkjetModesIntroOpen({
-      isElectron: true, settingsHydrated: true, seen: false,
-      workspaceHydrated: false, hasExistingWork: false,
-    })).toBe(false);
+    expect(
+      resolveWorkjetModesIntroOpen({
+        isElectron: true,
+        settingsHydrated: true,
+        seen: false,
+        workspaceHydrated: false,
+        hasExistingWork: false,
+      }),
+    ).toBe(false);
   });
 });

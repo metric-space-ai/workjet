@@ -1821,11 +1821,7 @@ export function GeneralSettingsPanel() {
             title="Dev and Ops introduction"
             description="Explains the Dev and Ops modes and the CTOX engine under both, the same as on first start."
             control={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setModesIntroDialogOpen(true)}
-              >
+              <Button size="sm" variant="outline" onClick={() => setModesIntroDialogOpen(true)}>
                 Show again
               </Button>
             }

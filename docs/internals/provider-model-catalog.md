@@ -7,3 +7,5 @@ Existing account model configuration remains separately labelled account-configu
 The HTTP request has an eight-second deadline, rejects redirects and limits the body to128KiB. Public provider/model metadata uses the existing typed discovery contract across desktop/web/mobile. Antigravity has no current public catalog source and reports unavailable.
 
 Tests use exact Kimi IDs observed with the configured account on2026-10-08 (HTTP200 at the coding endpoint). Installed provider checks and account add/remove/reload acceptance remain separate from these source tests.
+
+Check all also repairs legacy dotted Claude IDs, using a complete authenticated GET /v1/models from the same account as evidence. Only IDs whose corrected spelling appears in that response are rewritten. Unknown IDs remain available for the exact-account Hi check to classify. Disabled accounts and other selected accounts are untouched; provider bodies and credentials do not leave the bounded metadata adapter. The repair preserves account identity, secrets, priority and grants, and reloads the existing gateway after the durable configuration write.

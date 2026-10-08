@@ -81,6 +81,7 @@ import {
 
 import { makeModelChecks } from "./ProviderGatewayModelChecks.ts";
 import type { KimiConnection } from "./KimiConnection.ts";
+import { repairClaudeModelIds } from "./ClaudeConnection.ts";
 
 const CONFIG_MAX_BYTES = 256 * 1024;
 const READINESS_MAX_BYTES = 4 * 1024;
@@ -112,6 +113,10 @@ export interface GatewayHostProcess {
 
 export interface ProviderGatewayPlatform {
   readonly publicModelCatalog?: () => Promise<unknown>;
+  readonly discoverClaudeModels?: (
+    accessToken: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
   readonly discoverKimiConnection?: (
     apiKey: string,
     preferredBaseUrl?: string,
@@ -1763,6 +1768,44 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       await startSingleFlight();
     };
 
+    /** A spelling repair is permitted only by this account's real provider list. */
+    const runRepairClaudeModels = async (accountId?: string): Promise<void> => {
+      if (platform.discoverClaudeModels === undefined) return;
+      const configuration = await loadConfiguration();
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(8_000);
+      let changed = false;
+      for (const [index, account] of accounts.entries()) {
+        if (
+          deadline.aborted ||
+          account.provider !== "claude" ||
+          !account.enabled ||
+          !("accessTokenSecret" in account) ||
+          (accountId !== undefined && account.id !== accountId) ||
+          !account.models.some((id) => id.startsWith("claude-") && /\.(?=\d)/.test(id))
+        ) continue;
+        const secret = await runPromise(secrets.get(secretStoreName(account.accessTokenSecret)))
+          .catch(() => Option.none<Uint8Array>());
+        if (Option.isNone(secret)) continue;
+        const token = new TextDecoder().decode(secret.value);
+        if (!isAcceptableApiKey(token)) continue;
+        const available = await platform.discoverClaudeModels(token.trim(), deadline);
+        if (available === undefined || deadline.aborted) continue;
+        const models = repairClaudeModelIds(account.models, available);
+        if (JSON.stringify(models) === JSON.stringify(account.models)) continue;
+        accounts[index] = { ...account, models };
+        changed = true;
+      }
+      if (!changed) return;
+      await modelChecks.cancel();
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+      );
+      await stopSingleFlight();
+      await startSingleFlight();
+    };
+
     const runOauthCancel = async (input: WorkjetGatewayOauthPollInput): Promise<void> => {
       oauthTargets.delete(input.state);
       const { endpoint, key } = requireManagement();
@@ -1800,6 +1843,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
             try: async () => {
+              await runRepairClaudeModels(input.accountId);
               await runRepairKimiConnections(input.accountId);
               return modelChecks.schedule(input);
             },

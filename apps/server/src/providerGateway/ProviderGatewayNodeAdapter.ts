@@ -8,6 +8,7 @@ import * as NodePath from "node:path";
 import type { WorkjetGatewayModelBinding } from "@workjet/contracts";
 import { discoverKimiConnection } from "./KimiConnection.ts";
 import { readPublicModelCatalog } from "./LiveProviderCatalog.ts";
+import { discoverClaudeModels } from "./ClaudeConnection.ts";
 
 import type {
   GatewayHostProcess,
@@ -119,6 +120,7 @@ export async function forwardSourceGatewayResponses(
 
 export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
   publicModelCatalog: readPublicModelCatalog,
+  discoverClaudeModels,
   discoverKimiConnection,
   fingerprint: (value) => NodeCrypto.createHash("sha256").update(value).digest("hex"),
   providerModelCheck: async (endpoint, provider, accountId, modelId, signal) => {

@@ -24,6 +24,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import { resolveDelegatedCapabilities } from "@metric-space-ai/workjet-capabilities";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
@@ -143,6 +144,12 @@ export class WorkerDispatchError extends Schema.TaggedErrorClass<WorkerDispatchE
 }
 
 export interface WorkerDispatchShape {
+  /** Internal source-service entrypoint; never exposed by the MCP input schema. */
+  readonly dispatchNativeIntent?: (
+    invocation: McpInvocationScope,
+    input: Omit<WorkerDispatchInput, "remoteRequestId">,
+    intentId: ThreadId,
+  ) => Effect.Effect<WorkerDispatchResult, WorkerDispatchError>;
   readonly dispatch: (
     invocation: McpInvocationScope,
     input: WorkerDispatchInput,
@@ -191,8 +198,13 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
   const remoteBroker = yield* Effect.serviceOption(RemoteWorkerBroker);
   const sourceGit = yield* Effect.serviceOption(GitVcsDriver);
 
-  const dispatch: WorkerDispatchShape["dispatch"] = Effect.fn("WorkerDispatch.dispatch")(
-    function* (invocation, input) {
+  const nativeMutex = yield* Semaphore.make(1);
+  const dispatch: (
+    invocation: McpInvocationScope,
+    input: WorkerDispatchInput,
+    trustedInitialRequestId?: ThreadId,
+  ) => Effect.Effect<WorkerDispatchResult, WorkerDispatchError> = Effect.fn("WorkerDispatch.dispatch")(
+    function* (invocation, input, trustedInitialRequestId) {
       if (invocation.workjetRole !== "orchestrator") {
         return yield* failure("role-not-authorized");
       }
@@ -387,7 +399,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           );
           request = yield* Schema.decodeUnknownEffect(RemoteWorkerRequest)({
             schemaVersion: 1,
-            requestId: ThreadId.make(yield* sources.randomUUID),
+            requestId: trustedInitialRequestId ?? ThreadId.make(yield* sources.randomUUID),
             targetEnvironmentId,
             computerId,
             workerProfileId: profile.id,
@@ -445,7 +457,7 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
           });
         return response.outcome.result;
       }
-      if (input.remoteRequestId) return yield* failure("remote-dispatch-failed");
+      if (input.remoteRequestId || trustedInitialRequestId) return yield* failure("remote-dispatch-failed");
 
       const parentReference = {
         environmentId: invocation.environmentId,
@@ -788,7 +800,21 @@ export const makeWorkerDispatchWithSources = Effect.fn("WorkerDispatch.makeWithS
     },
   );
 
-  return WorkerDispatch.of({ dispatch });
+  const dispatchNativeIntent = Effect.fn("WorkerDispatch.dispatchNativeIntent")(function* (
+    invocation: McpInvocationScope,
+    input: Omit<WorkerDispatchInput, "remoteRequestId">,
+    intentId: ThreadId,
+  ) {
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(intentId) || Option.isNone(remoteBroker))
+      return yield* failure("remote-dispatch-unavailable");
+    const saved = yield* remoteBroker.value.read(intentId).pipe(Effect.mapError(() => failure("remote-dispatch-failed")));
+    return yield* (Option.isSome(saved)
+      ? dispatch(invocation, { ...input, remoteRequestId: intentId })
+      : dispatch(invocation, input, intentId));
+  });
+  return WorkerDispatch.of({ dispatch, dispatchNativeIntent: (invocation, input, intentId) =>
+    dispatchNativeIntent(invocation, input, intentId).pipe(nativeMutex.withPermits(1)),
+  });
 });
 
 export const makeWorkerDispatch = Effect.fn("WorkerDispatch.make")(function* () {

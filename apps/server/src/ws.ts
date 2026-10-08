@@ -1,6 +1,6 @@
 import { makeCtoxCalendarRpc } from "./workjet/ctox/CtoxCalendarRpc.ts";
 import { WorkjetCalendarError } from "@workjet/contracts";
-import { HttpClient, FetchHttpClient } from "effect/unstable/http";
+
 import { RemoteWorkerComputerEnrollment } from "./workjet/RemoteWorkerComputerEnrollment.ts";
 import { RemoteWorkerDispatchError } from "@workjet/contracts";
 import { RemoteWorkerBroker } from "./workjet/RemoteWorkerBroker.ts";

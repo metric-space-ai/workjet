@@ -49,10 +49,7 @@
           "title": "Verify persistence",
           "acceptance": "Save survives Quit/Reopen",
           "priority": "P1",
-          "evidenceIds": [
-            "comment-1",
-            "turn-1"
-          ]
+          "evidenceIds": ["comment-1", "turn-1"]
         }
       ]
     }

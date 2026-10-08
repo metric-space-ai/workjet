@@ -282,7 +282,17 @@ export function ProjectWorkspace({
                   {weekdays[meeting.weekday]} · {meeting.time}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">{meeting.timezone}</p>
-                {onOpenJourFixe && <Button className="mt-3" size="sm" variant="outline" onClick={onOpenJourFixe} data-workjet-action="project.jour-fixe.open">Open meeting</Button>}
+                {onOpenJourFixe && (
+                  <Button
+                    className="mt-3"
+                    size="sm"
+                    variant="outline"
+                    onClick={onOpenJourFixe}
+                    data-workjet-action="project.jour-fixe.open"
+                  >
+                    Open meeting
+                  </Button>
+                )}
               </section>
             ) : null}
             {info?.goal ? (

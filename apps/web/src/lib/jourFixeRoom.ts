@@ -4,7 +4,15 @@ export interface JourFixeRoomSnapshot {
   readonly projectId: string;
   readonly revision: number;
   readonly deckRevision: number;
-  readonly state: "planned" | "preparing" | "ready" | "live" | "review" | "confirmed" | "cancelled" | "failed";
+  readonly state:
+    | "planned"
+    | "preparing"
+    | "ready"
+    | "live"
+    | "review"
+    | "confirmed"
+    | "cancelled"
+    | "failed";
   readonly scheduledAt: number;
   readonly timezone: string;
   /** Last goal revision supplied by the authority; unknown disables confirmation. */
@@ -60,16 +68,27 @@ export function jourFixeCommentAnchor(
   meeting: JourFixeRoomSnapshot,
   slideId: string,
   point: { readonly x: number; readonly y: number },
-  bounds: { readonly left: number; readonly top: number; readonly width: number; readonly height: number },
+  bounds: {
+    readonly left: number;
+    readonly top: number;
+    readonly width: number;
+    readonly height: number;
+  },
 ): JourFixeCommentDraft | null {
   if (
     !["ready", "live", "review"].includes(meeting.state) ||
     !meeting.slides.some((slide) => slide.id === slideId) ||
-    ![point.x, point.y, bounds.left, bounds.top, bounds.width, bounds.height].every(Number.isFinite) ||
-    bounds.width <= 0 || bounds.height <= 0 ||
-    point.x < bounds.left || point.x > bounds.left + bounds.width ||
-    point.y < bounds.top || point.y > bounds.top + bounds.height
-  ) return null;
+    ![point.x, point.y, bounds.left, bounds.top, bounds.width, bounds.height].every(
+      Number.isFinite,
+    ) ||
+    bounds.width <= 0 ||
+    bounds.height <= 0 ||
+    point.x < bounds.left ||
+    point.x > bounds.left + bounds.width ||
+    point.y < bounds.top ||
+    point.y > bounds.top + bounds.height
+  )
+    return null;
   return {
     meetingId: meeting.id,
     expectedRevision: meeting.revision,
@@ -84,15 +103,18 @@ export function jourFixeCommentIsCurrent(
   meeting: JourFixeRoomSnapshot,
   draft: JourFixeCommentDraft,
 ): boolean {
-  return meeting.id === draft.meetingId && meeting.revision === draft.expectedRevision &&
+  return (
+    meeting.id === draft.meetingId &&
+    meeting.revision === draft.expectedRevision &&
     meeting.deckRevision === draft.deckRevision &&
     ["ready", "live", "review"].includes(meeting.state) &&
-    meeting.slides.some((slide) => slide.id === draft.slideId);
+    meeting.slides.some((slide) => slide.id === draft.slideId)
+  );
 }
 
 export function jourFixeCommentsForSlide(meeting: JourFixeRoomSnapshot, slideId: string) {
-  return meeting.comments.filter((comment) =>
-    comment.slideId === slideId && comment.deckRevision === meeting.deckRevision,
+  return meeting.comments.filter(
+    (comment) => comment.slideId === slideId && comment.deckRevision === meeting.deckRevision,
   );
 }
 
@@ -103,7 +125,9 @@ export function jourFixeEvidenceLabel(meeting: JourFixeRoomSnapshot, evidenceId:
   const comment = meeting.comments.find((item) => item.id === evidenceId);
   if (comment) {
     const slideNumber = slides.findIndex((slide) => slide.id === comment.slideId) + 1;
-    const siblings = meeting.comments.filter((item) => item.slideId === comment.slideId && item.deckRevision === comment.deckRevision);
+    const siblings = meeting.comments.filter(
+      (item) => item.slideId === comment.slideId && item.deckRevision === comment.deckRevision,
+    );
     return `Comment ${siblings.findIndex((item) => item.id === comment.id) + 1}${comment.deckRevision !== meeting.deckRevision ? ` · Deck ${comment.deckRevision}` : slideNumber > 0 ? ` · Slide ${slideNumber}` : ""}`;
   }
   const turn = meeting.transcript.find((item) => item.id === evidenceId);
@@ -117,7 +141,16 @@ export interface JourFixePartialTranscript {
   readonly text: string;
 }
 
-export function jourFixeVisiblePartial(meeting: JourFixeRoomSnapshot, partial: JourFixePartialTranscript | undefined): string | undefined {
-  if (!partial || meeting.transcript.some((turn) => turn.streamId === partial.streamId && turn.sequence >= partial.sequence)) return undefined;
+export function jourFixeVisiblePartial(
+  meeting: JourFixeRoomSnapshot,
+  partial: JourFixePartialTranscript | undefined,
+): string | undefined {
+  if (
+    !partial ||
+    meeting.transcript.some(
+      (turn) => turn.streamId === partial.streamId && turn.sequence >= partial.sequence,
+    )
+  )
+    return undefined;
   return partial.text;
 }

@@ -42,7 +42,12 @@ describe("runWorkjetProjectCreation", () => {
       await expect(
         runWorkjetProjectCreation({ presentationInstanceId: instanceId, request }, { port }),
       ).resolves.toEqual({ _tag: "failed", code });
-      expect(port).toHaveBeenCalledExactlyOnceWith(instanceId, { action: "project.list" });
+      // Only an older shell's unsupported or guest failure retries the legacy list.
+      expect(port).toHaveBeenCalledTimes(code === "unsupported" ? 2 : 1);
+      expect(port).toHaveBeenNthCalledWith(1, instanceId, {
+        action: "project.list",
+        includeConfiguration: true,
+      });
     },
   );
   it("stops after a failed connection launch instead of starting another attempt", async () => {
@@ -84,7 +89,10 @@ describe("runWorkjetProjectCreation", () => {
       project,
     });
     expect(port).toHaveBeenCalledTimes(1);
-    expect(port).toHaveBeenCalledWith(instanceId, { action: "project.list" });
+    expect(port).toHaveBeenCalledWith(instanceId, {
+      action: "project.list",
+      includeConfiguration: true,
+    });
   });
 
   const incompleteCopies = [
@@ -178,7 +186,10 @@ describe("runWorkjetProjectCreation", () => {
         { port, onPhase: (phase) => phases.push(phase) },
       ),
     ).resolves.toEqual({ _tag: "visible", project });
-    expect(port).toHaveBeenNthCalledWith(1, instanceId, { action: "project.list" });
+    expect(port).toHaveBeenNthCalledWith(1, instanceId, {
+      action: "project.list",
+      includeConfiguration: true,
+    });
     expect(port).toHaveBeenNthCalledWith(2, instanceId, request);
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });
@@ -190,6 +201,10 @@ describe("runWorkjetProjectCreation", () => {
       .mockResolvedValueOnce({ _tag: "failed", code: "guest_failed" })
       .mockResolvedValueOnce({
         _tag: "completed",
+        response: { action: "project.list", projects: [], count: 0, truncated: false },
+      })
+      .mockResolvedValueOnce({
+        _tag: "completed",
         response: { action: "project.create", project },
       });
 
@@ -199,8 +214,12 @@ describe("runWorkjetProjectCreation", () => {
         { port, onPhase: (phase) => phases.push(phase) },
       ),
     ).resolves.toEqual({ _tag: "visible", project });
-    expect(port).toHaveBeenNthCalledWith(1, instanceId, { action: "project.list" });
-    expect(port).toHaveBeenNthCalledWith(2, instanceId, request);
+    expect(port).toHaveBeenNthCalledWith(1, instanceId, {
+      action: "project.list",
+      includeConfiguration: true,
+    });
+    expect(port).toHaveBeenNthCalledWith(2, instanceId, { action: "project.list" });
+    expect(port).toHaveBeenNthCalledWith(3, instanceId, request);
     expect(phases).toEqual(["checking", "creating", "visible"]);
   });
 

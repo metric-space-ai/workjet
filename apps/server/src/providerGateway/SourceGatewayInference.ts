@@ -13,6 +13,10 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+const isGatewayFailure = Schema.is(WorkjetGatewayInferenceError);
+const decodePermit = Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit);
+const decodeAdmission = Schema.decodeUnknownEffect(WorkjetGatewayAdmissionInput);
+const decodeInference = Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput);
 const samePermit = Schema.toEquivalence(WorkjetRemoteWorkerPermit);
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -139,12 +143,12 @@ export function makeSourceGatewayInference(dependencies: {
     yield* Effect.try({
       try: () => requireScopedGatewayModel(catalog, selected, environmentId),
       catch: (error) =>
-        Schema.is(WorkjetGatewayInferenceError)(error) ? error : failure("grant-unavailable"),
+        isGatewayFailure(error) ? error : failure("grant-unavailable"),
     });
     const receipt = yield* dependencies.revalidate(input).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(WorkjetRemoteWorkerPermit)),
+      Effect.flatMap(decodePermit),
       Effect.mapError((error) =>
-        Schema.is(WorkjetGatewayInferenceError)(error)
+        isGatewayFailure(error)
           ? error
           : failure("native-admission-rejected"),
       ),
@@ -166,7 +170,7 @@ export function makeSourceGatewayInference(dependencies: {
   const admit = Effect.fn("SourceGatewayInference.admit")(function* (
     raw: WorkjetGatewayAdmissionInput,
   ) {
-    const input = yield* Schema.decodeUnknownEffect(WorkjetGatewayAdmissionInput)(raw).pipe(
+    const input = yield* decodeAdmission(raw).pipe(
       Effect.mapError(() => failure("invalid-request")),
     );
     yield* requireAuthority(input);
@@ -177,7 +181,7 @@ export function makeSourceGatewayInference(dependencies: {
     raw: WorkjetGatewayInferenceInput,
   ) {
     // Snapshot all nested input before asynchronous authority calls.
-    const input = yield* Schema.decodeUnknownEffect(WorkjetGatewayInferenceInput)(raw).pipe(
+    const input = yield* decodeInference(raw).pipe(
       Effect.mapError(() => failure("invalid-request")),
     );
     const binding = input.permit.binding;

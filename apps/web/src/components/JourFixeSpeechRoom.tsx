@@ -21,7 +21,11 @@ export function JourFixeSpeechRoom({ speechProvider, ...props }: Props) {
   );
 }
 
-function SpeechRoom({ instanceId, provider, ...props }: Omit<Props, "speechProvider"> & {
+function SpeechRoom({
+  instanceId,
+  provider,
+  ...props
+}: Omit<Props, "speechProvider"> & {
   readonly provider: JourFixeSpeechProvider;
 }) {
   const { meeting } = props;
@@ -54,17 +58,30 @@ function SpeechRoom({ instanceId, provider, ...props }: Omit<Props, "speechProvi
     let active = true;
     function change(patch: Partial<Omit<typeof speech, "key">>) {
       if (active)
-        setSpeech((current) => ({ ...(current.key === scopeKey && current.provider === provider ? current : {}), key: scopeKey, provider, ...patch }));
+        setSpeech((current) => ({
+          ...(current.key === scopeKey && current.provider === provider ? current : {}),
+          key: scopeKey,
+          provider,
+          ...patch,
+        }));
     }
     const value = new JourFixeSpeechSession(
       provider,
-      { instanceId, projectId: meeting.projectId, meetingId: meeting.id, deckRevision: meeting.deckRevision },
       {
-        onMicrophone: (microphone) => change({ microphone, ...(microphone ? { error: undefined } : {}) }),
+        instanceId,
+        projectId: meeting.projectId,
+        meetingId: meeting.id,
+        deckRevision: meeting.deckRevision,
+      },
+      {
+        onMicrophone: (microphone) =>
+          change({ microphone, ...(microphone ? { error: undefined } : {}) }),
         onPartial: (partial) => change({ partial }),
         onAudio: (audio) => change({ audio }),
         onCommitted: () => {
-          void refresh.current?.().catch(() => change({ error: "Transcript refresh failed. Refresh the meeting." }));
+          void refresh
+            .current?.()
+            .catch(() => change({ error: "Transcript refresh failed. Refresh the meeting." }));
         },
         onError: (error) => change({ error: error.message }),
       },
@@ -83,14 +100,26 @@ function SpeechRoom({ instanceId, provider, ...props }: Omit<Props, "speechProvi
   const current = speech.key === scopeKey && speech.provider === provider ? speech : undefined;
   return (
     <>
-      {current?.error && <p role="alert" className="border-b border-destructive/30 px-4 py-2 text-sm text-destructive">{current.error}</p>}
+      {current?.error && (
+        <p
+          role="alert"
+          className="border-b border-destructive/30 px-4 py-2 text-sm text-destructive"
+        >
+          {current.error}
+        </p>
+      )}
       <JourFixeRoom
         {...props}
         {...(current?.audio ? { audio: current.audio } : {})}
         partialTranscript={current?.partial}
         microphoneActive={current?.microphone === true}
-        {...(meeting.state === "live" ? { onToggleMicrophone: () => void session.current?.toggleMicrophone() } : {})}
-        onSlideChange={(id) => { setSelectedSlide(id); props.onSlideChange?.(id); }}
+        {...(meeting.state === "live"
+          ? { onToggleMicrophone: () => void session.current?.toggleMicrophone() }
+          : {})}
+        onSlideChange={(id) => {
+          setSelectedSlide(id);
+          props.onSlideChange?.(id);
+        }}
       />
     </>
   );

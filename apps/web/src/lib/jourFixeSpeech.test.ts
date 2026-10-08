@@ -1,10 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { JourFixeSpeechSession, type JourFixeSpeechProvider, type JourFixeSpeechScope } from "./jourFixeSpeech";
+import {
+  JourFixeSpeechSession,
+  type JourFixeSpeechProvider,
+  type JourFixeSpeechScope,
+} from "./jourFixeSpeech";
 
-const scope: JourFixeSpeechScope = { instanceId: "instance-a", projectId: "project-a", meetingId: "meeting-a", deckRevision: 3 };
+const scope: JourFixeSpeechScope = {
+  instanceId: "instance-a",
+  projectId: "project-a",
+  meetingId: "meeting-a",
+  deckRevision: 3,
+};
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 function fixture(kind: JourFixeSpeechProvider["kind"] = "ctox-gateway") {
@@ -12,10 +23,19 @@ function fixture(kind: JourFixeSpeechProvider["kind"] = "ctox-gateway") {
   const stop = vi.fn(async () => {});
   const provider: JourFixeSpeechProvider = {
     kind,
-    startListening: vi.fn(async (options) => { listening = options; return { stop }; }),
+    startListening: vi.fn(async (options) => {
+      listening = options;
+      return { stop };
+    }),
     prepareNarration: vi.fn(async () => new Blob(["wav"], { type: "audio/wav" })),
   };
-  const events = { onMicrophone: vi.fn(), onPartial: vi.fn(), onCommitted: vi.fn(), onAudio: vi.fn(), onError: vi.fn() };
+  const events = {
+    onMicrophone: vi.fn(),
+    onPartial: vi.fn(),
+    onCommitted: vi.fn(),
+    onAudio: vi.fn(),
+    onError: vi.fn(),
+  };
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:narration");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   const session = new JourFixeSpeechSession(provider, scope, events);
@@ -31,13 +51,25 @@ describe("Jour fixe speech provider boundary", () => {
       expect(f.listening().scope).toEqual(scope);
       expect(Object.isFrozen(f.listening().scope)).toBe(true);
       f.listening().onPartial({ streamId: "stream", sequence: 1, text: "Draft" });
-      expect(f.events.onPartial).toHaveBeenLastCalledWith({ streamId: "stream", sequence: 1, text: "Draft" });
+      expect(f.events.onPartial).toHaveBeenLastCalledWith({
+        streamId: "stream",
+        sequence: 1,
+        text: "Draft",
+      });
       expect(f.events.onCommitted).not.toHaveBeenCalled();
       f.listening().onCommitted();
       expect(f.events.onCommitted).toHaveBeenCalledOnce();
       await f.session.prepareNarration("slide-a");
-      expect(f.provider.prepareNarration).toHaveBeenCalledWith({ scope, slideId: "slide-a", signal: expect.any(AbortSignal) });
-      expect(f.events.onAudio).toHaveBeenLastCalledWith({ ...scope, slideId: "slide-a", blobUrl: "blob:narration" });
+      expect(f.provider.prepareNarration).toHaveBeenCalledWith({
+        scope,
+        slideId: "slide-a",
+        signal: expect.any(AbortSignal),
+      });
+      expect(f.events.onAudio).toHaveBeenLastCalledWith({
+        ...scope,
+        slideId: "slide-a",
+        blobUrl: "blob:narration",
+      });
       f.session.close();
       expect(f.listening().signal.aborted).toBe(true);
       expect(f.stop).toHaveBeenCalledOnce();
@@ -48,7 +80,10 @@ describe("Jour fixe speech provider boundary", () => {
     const f = fixture();
     const pending = deferred<{ stop: () => Promise<void> }>();
     let options!: Parameters<JourFixeSpeechProvider["startListening"]>[0];
-    f.provider.startListening = vi.fn((value) => { options = value; return pending.promise; });
+    f.provider.startListening = vi.fn((value) => {
+      options = value;
+      return pending.promise;
+    });
     const start = f.session.toggleMicrophone();
     f.session.close();
     expect(options.signal.aborted).toBe(true);
@@ -66,7 +101,10 @@ describe("Jour fixe speech provider boundary", () => {
     const f = fixture();
     const pending = deferred<Blob>();
     let signal!: AbortSignal;
-    f.provider.prepareNarration = vi.fn((options) => { signal = options.signal; return pending.promise; });
+    f.provider.prepareNarration = vi.fn((options) => {
+      signal = options.signal;
+      return pending.promise;
+    });
     const prepare = f.session.prepareNarration("slide-a");
     f.session.close();
     expect(signal.aborted).toBe(true);
@@ -81,7 +119,9 @@ describe("Jour fixe speech provider boundary", () => {
     const oldSignals: AbortSignal[] = [];
     f.provider.prepareNarration = vi.fn((options) => {
       oldSignals.push(options.signal);
-      return options.slideId === "old" ? pending.promise : Promise.resolve(new Blob(["new"], { type: "audio/wav" }));
+      return options.slideId === "old"
+        ? pending.promise
+        : Promise.resolve(new Blob(["new"], { type: "audio/wav" }));
     });
     const old = f.session.prepareNarration("old");
     await f.session.prepareNarration("new");
@@ -89,7 +129,11 @@ describe("Jour fixe speech provider boundary", () => {
     await old;
     expect(oldSignals[0]!.aborted).toBe(true);
     expect(URL.createObjectURL).toHaveBeenCalledOnce();
-    expect(f.events.onAudio).toHaveBeenLastCalledWith({ ...scope, slideId: "new", blobUrl: "blob:narration" });
+    expect(f.events.onAudio).toHaveBeenLastCalledWith({
+      ...scope,
+      slideId: "new",
+      blobUrl: "blob:narration",
+    });
     f.session.close();
   });
   it("finishes a user stop before another stream can start, then clears partial text", async () => {
@@ -111,7 +155,9 @@ describe("Jour fixe speech provider boundary", () => {
   it("reports provider denial and capture failure without automatic provider fallback", async () => {
     const f = fixture("local-helper");
     const denial = new Error("Speech permission denied.");
-    f.provider.startListening = vi.fn(async () => { throw denial; });
+    f.provider.startListening = vi.fn(async () => {
+      throw denial;
+    });
     await f.session.toggleMicrophone();
     expect(f.events.onError).toHaveBeenCalledWith(denial);
     expect(f.events.onMicrophone).toHaveBeenLastCalledWith(false);

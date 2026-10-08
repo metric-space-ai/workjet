@@ -28,7 +28,7 @@ export function getMiniMaxManualModelCatalog(
         ? status?.enabled === false
           ? "MiniMax Code is disabled on this computer."
           : (status?.message ??
-            "MiniMax Code has not reported models on this computer. Check its native profile in Harness runtimes.")
+            "MiniMax Code has not reported models on this computer. Check its profile in Harness runtimes.")
         : null,
   };
 }

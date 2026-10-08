@@ -267,7 +267,7 @@ function DevicePairingDialog({
                         ))}
                       </div>
                       <div>
-                        <dt className="text-xs font-medium text-muted-foreground">Room</dt>
+                        <dt className="text-xs font-medium text-muted-foreground">Connection ID</dt>
                         <dd className="mt-1 flex items-center gap-2">
                           <code className="min-w-0 flex-1 break-all rounded-md bg-background px-2 py-1.5 text-xs">
                             {manualConnection.room}
@@ -275,7 +275,7 @@ function DevicePairingDialog({
                           <Button
                             size="icon-sm"
                             variant="ghost"
-                            aria-label="Copy room"
+                            aria-label="Copy connection ID"
                             onClick={() => void copyValue(manualConnection.room)}
                           >
                             <CopyIcon aria-hidden />

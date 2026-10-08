@@ -122,6 +122,7 @@ describe("native supervisor receipt display", () => {
     );
     expect(html).toContain('aria-label="Nachricht an Supervisor"');
     expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
+    expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
     expect(html).not.toContain("Erneut verbinden");
   });
   it("offers a direct way to re-check the connection when scope is missing", () => {

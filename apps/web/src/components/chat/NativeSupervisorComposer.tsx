@@ -331,7 +331,7 @@ export function NativeSupervisorComposer(props: {
           rows={2}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          disabled={disabled || busy || pending}
+          disabled={busy || pending}
           onKeyDown={(event) => {
             if (
               (event.metaKey || event.ctrlKey) &&

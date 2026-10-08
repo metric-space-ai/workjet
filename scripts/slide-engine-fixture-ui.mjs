@@ -236,7 +236,11 @@ try {
     const elements = saved.canvas.elements;
     const text = elements.find((item) => item.type === "text" && item.text === "Neuer Gedanke");
     NodeAssert.ok(text, "new text missing from the saved scene");
-    NodeAssert.equal(text.fontFamily, 1, "new text is not in the handwriting font (Virgil, family 1)");
+    NodeAssert.equal(
+      text.fontFamily,
+      1,
+      "new text is not in the handwriting font (Virgil, family 1)",
+    );
     NodeAssert.equal(
       elements.find((item) => item.id === "ideen:note")?.fontFamily,
       1,

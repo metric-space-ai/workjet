@@ -1028,12 +1028,13 @@ describe("ProviderGatewayService · API-key accounts", () => {
     expect(harness.writes.join("\n")).not.toContain(API_KEY);
   });
 
-  it("repairs a legacy Kimi origin on Check all without replacing its secret or identity", async () => {
+  it.each([undefined, "https://api.moonshot.ai/v1"])("repairs a legacy Kimi origin %s on Check all without replacing its secret or identity", async (upstreamBaseUrl) => {
     const harness = apiKeyHarness();
     const account = {
       id: "kimi-existing",
       provider: "kimi",
       label: "Existing coding plan",
+      upstreamBaseUrl,
       enabled: false,
       priority: 7,
       weight: 1,

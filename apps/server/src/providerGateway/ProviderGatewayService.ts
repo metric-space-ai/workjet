@@ -1734,7 +1734,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           deadline.aborted ||
           account.provider !== "kimi" ||
           !isApiKeyAccount(account) ||
-          account.upstreamBaseUrl !== undefined ||
+          (account.upstreamBaseUrl !== undefined &&
+            !["https://api.kimi.com/coding/v1", "https://api.moonshot.ai/v1"].includes(account.upstreamBaseUrl)) ||
           (accountId !== undefined && account.id !== accountId)
         ) continue;
         const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
@@ -1743,9 +1744,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         if (Option.isNone(secret)) continue;
         const apiKey = new TextDecoder().decode(secret.value);
         if (!isAcceptableApiKey(apiKey)) continue;
-        const connection = await platform.discoverKimiConnection(apiKey.trim(), undefined, deadline);
+        const connection = await platform.discoverKimiConnection(apiKey.trim(), account.upstreamBaseUrl, deadline);
         if (connection === undefined || deadline.aborted) continue;
-        accounts[index] = { ...account, ...connection };
+        const models =
+          account.upstreamBaseUrl === connection.upstreamBaseUrl
+            ? account.models.filter((model) => connection.models.includes(model))
+            : connection.models;
+        if (account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+            JSON.stringify(account.models) === JSON.stringify(models)) continue;
+        accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, models };
         changed = true;
       }
       if (!changed) return;

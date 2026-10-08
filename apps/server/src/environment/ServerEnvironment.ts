@@ -94,7 +94,14 @@ export const readServerHostId = Effect.fn("ServerEnvironment.readServerHostId")(
   const normalized = raw?.toLowerCase();
   if (!normalized || !/^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/.test(normalized) ||
     /^0[-0]*$/.test(normalized)) return undefined;
-  return `${platform}:${normalized}`;
+  const crypto = yield* Crypto.Crypto;
+  // Keep the OS identity local; expose an app-scoped stable digest.
+  return yield* crypto.digest("SHA-256", new TextEncoder().encode(
+    `workjet:computer:v1:${platform}:${normalized}`,
+  )).pipe(
+    Effect.map((digest) => `workjet-host-v1:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`),
+    Effect.catch(() => Effect.succeed(undefined)),
+  );
 });
 
 export const make = Effect.gen(function* () {

@@ -41,12 +41,18 @@ it.layer(NodeServices.layer)("server host identity", (it) => {
 
   it.effect("reads platform IDs independently of the Workjet state root", () =>
     Effect.gen(function* () {
-      expect(yield* read("linux", "aabbccdd12345678abcd0123456789ab00\n"))
-        .toBe("linux:aabbccdd12345678abcd0123456789ab00");
-      expect(yield* read("darwin", `"IOPlatformUUID" = "${guid}"`))
-        .toBe(`darwin:${guid.toLowerCase()}`);
-      expect(yield* read("win32", `MachineGuid    REG_SZ    ${guid}\n`))
-        .toBe(`win32:${guid.toLowerCase()}`);
+      const raw = "aabbccdd12345678abcd0123456789ab00";
+      const linux = yield* read("linux", `${raw}\n`);
+      expect(linux).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(linux).not.toContain(raw);
+      expect(yield* read("linux", raw.toUpperCase())).toBe(linux);
+      expect(yield* read("linux", "12345678abcd0123456789ab00aabbccdd")).not.toBe(linux);
+      const mac = yield* read("darwin", `"IOPlatformUUID" = "${guid}"`);
+      expect(mac).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(yield* read("darwin", `"IOPlatformUUID" = "${guid.toLowerCase()}"`)).toBe(mac);
+      const windows = yield* read("win32", `MachineGuid    REG_SZ    ${guid}\n`);
+      expect(windows).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(windows).not.toBe(mac);
     }),
   );
 

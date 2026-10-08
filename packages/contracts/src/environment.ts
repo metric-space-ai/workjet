@@ -91,7 +91,7 @@ export const ExecutionEnvironmentDescriptor = Schema.Struct({
       metadata, not an authentication credential or native execution fence.
       Absent on older servers. */
   runtimeInstanceId: Schema.optionalKey(TrimmedNonEmptyString),
-  /** Stable identity of the machine this server runs on, from the OS machine id.
+  /** App-scoped digest of the OS machine ID; the raw ID stays on the server.
       Two connections to one machine share it, so clients can avoid listing it twice.
       Absent when the OS exposes no machine id; clients must never merge on a missing value.
       Presentation metadata only, never an authentication credential or native execution fence. */

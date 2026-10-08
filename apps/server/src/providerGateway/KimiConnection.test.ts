@@ -11,7 +11,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe("Kimi key origin discovery", () => {
   it("uses the accepted coding plan, probing both official endpoints without redirects", async () => {
-    const requests: Array<{ url: string; redirect: RequestRedirect | undefined }> = [];
+    const requests: Array<{ url: string; redirect: RequestInit["redirect"] }> = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       requests.push({ url, redirect: init.redirect });
       expect(init.headers).toEqual({ authorization: "Bearer fixture-key", "User-Agent": "Workjet" });

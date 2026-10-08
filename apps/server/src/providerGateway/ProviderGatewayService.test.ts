@@ -947,12 +947,14 @@ describe("ProviderGatewayService · API-key accounts", () => {
       getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
       remove: () => Effect.void,
     });
-    return {
-      ...base,
-      platform: { ...base.platform, discoverKimiConnection: async () => ({ upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const, models: ["k3"] }) },
-      storedSecrets,
-      secrets,
+    const platform: ProviderGatewayPlatform = {
+      ...base.platform,
+      discoverKimiConnection: async () => ({
+        upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+        models: ["k3"],
+      }),
     };
+    return { ...base, platform, storedSecrets, secrets };
   };
 
   const runWithSecrets = <A, E>(

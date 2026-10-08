@@ -10,6 +10,7 @@ import {
   submitWorkjetSupervisorTurn,
 } from "./workjetSupervisorControl";
 import type { WorkjetProjectControlPort } from "./workjetProjectControl";
+import { canResumeSupervisorJournal } from "./nativeSupervisorComposer";
 
 const intent: WorkjetSupervisorTurnIntent = {
   instanceId: "managed:acceptance",
@@ -114,6 +115,15 @@ describe("durable native supervisor submission", () => {
       code: "timeout",
     });
     expect(state.saved).toEqual({ intent, turn: null, submission: "awaiting-receipt" });
+    expect(canResumeSupervisorJournal(state.saved, "timeout")).toBe(true);
+    expect(canResumeSupervisorJournal(state.saved, null)).toBe(true);
+    for (const refusal of [
+      "authentication_required",
+      "unsupported",
+      "guest_failed",
+      "local_failed",
+    ])
+      expect(canResumeSupervisorJournal(state.saved, refusal)).toBe(false);
     // A fresh UI/runtime uses only persisted intent; it has no in-memory send token.
     await resumeWorkjetSupervisorTurn(
       structuredClone(state.saved!),
@@ -131,6 +141,8 @@ describe("durable native supervisor submission", () => {
       port,
     );
     expect(observed).toEqual([turn.commandId]);
+    expect(canResumeSupervisorJournal(state.saved, null)).toBe(false);
+    expect(canResumeSupervisorJournal(state.saved, "timeout")).toBe(false);
     expect(state.saved?.turn).toMatchObject({
       taskId: turn.taskId,
       commandId: turn.commandId,
@@ -156,6 +168,8 @@ describe("durable native supervisor submission", () => {
     expect(result).toEqual({ _tag: "failed", code: "unsupported" });
     expect(observations.map((value) => value.submission)).toEqual(["prepared", "not-submitted"]);
     expect(observations.at(-1)?.submissionError).toBe("unsupported");
+    expect(canResumeSupervisorJournal(observations.at(-1)!, null)).toBe(false);
+    expect(canResumeSupervisorJournal(observations.at(-1)!, "timeout")).toBe(false);
   });
 
   it("does not dispatch if saving the intent fails", async () => {

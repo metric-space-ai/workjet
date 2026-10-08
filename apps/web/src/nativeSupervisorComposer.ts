@@ -115,3 +115,13 @@ export function nativeSupervisorResultText(result: unknown): string {
   if (typeof result === "string") return result;
   return JSON.stringify(result, null, 2) ?? "";
 }
+
+/** A lost receipt is recovered with its saved command; refusals need user action. */
+export function canResumeSupervisorJournal(
+  journal: WorkjetSupervisorJournal | null,
+  failureCode: string | null,
+): boolean {
+  if (journal === null || journal.submission === "not-submitted" || journal.turn?.terminal)
+    return false;
+  return failureCode === null || failureCode === "timeout" || failureCode === "not_active";
+}

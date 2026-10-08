@@ -76,8 +76,8 @@ export function extractLumaInstanceDocument(
 
 /**
  * Revision 0 means the instance holds no Luma document yet. The first
- * computer that opens the settings page then seeds it from its own local
- * configuration, so existing Lumas are not lost in the switch.
+ * computer that explicitly saves an edit seeds it from its own local
+ * configuration using revision-zero compare-and-swap. Opening settings never writes.
  */
 export function lumaInstanceNeedsSeed(revision: number): boolean {
   return revision === 0;

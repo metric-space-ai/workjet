@@ -51,7 +51,8 @@ export function ProjectOverviewEditor({
   const [draft, setDraft] = useState(() => overviewDraft(overview));
   const [state, setState] = useState({ pending: false, message: "" });
   const [info, setInfo] = useState(() => ({
-    description: configuration?.info?.description ?? "",
+    ...configuration?.info,
+    summary: configuration?.info?.summary ?? configuration?.info?.description ?? "",
     goal: configuration?.info?.goal ?? "",
     phase: configuration?.info?.phase ?? "",
     status: configuration?.info?.status ?? "",
@@ -73,7 +74,8 @@ export function ProjectOverviewEditor({
     if (onCancel) return onCancel();
     setDraft(overviewDraft(overview));
     setInfo({
-      description: configuration?.info?.description ?? "",
+      ...configuration?.info,
+      summary: configuration?.info?.summary ?? configuration?.info?.description ?? "",
       goal: configuration?.info?.goal ?? "",
       phase: configuration?.info?.phase ?? "",
       status: configuration?.info?.status ?? "",
@@ -250,10 +252,10 @@ export function ProjectOverviewEditor({
             <Input
               id={`${id}-description`}
               maxLength={4096}
-              value={info.description}
+              value={info.summary}
               disabled={state.pending}
               onChange={(event) =>
-                setInfo((current) => ({ ...current, description: event.target.value }))
+                setInfo((current) => ({ ...current, summary: event.target.value }))
               }
             />
             <details className="sm:col-start-2">

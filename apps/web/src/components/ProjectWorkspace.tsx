@@ -139,8 +139,10 @@ export function ProjectWorkspace({
         <header className="mb-5 flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-xl font-semibold">{project.title}</h1>
-            {info?.description ? (
-              <p className="mt-1 text-sm text-muted-foreground">{info.description}</p>
+            {(info?.summary ?? info?.description) ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                {info?.summary ?? info?.description}
+              </p>
             ) : null}
           </div>
           <Button variant="ghost" size="sm" onClick={() => setEditingParent(true)}>

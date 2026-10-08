@@ -1,3 +1,5 @@
+import * as DateTime from "effect/DateTime";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { CommandId, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
@@ -11,8 +13,8 @@ const probability = money.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
 
 export function isExitModelDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(value + "T00:00:00Z");
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  const date = DateTime.make(value + "T00:00:00Z");
+  return Option.isSome(date) && DateTime.formatIsoDateUtc(date.value) === value;
 }
 
 export const WorkjetExitModelDate = Schema.String.check(
@@ -21,13 +23,9 @@ export const WorkjetExitModelDate = Schema.String.check(
 
 export function exitModelHorizon(asOf: string): string | null {
   if (!isExitModelDate(asOf)) return null;
-  const [year, month, day] = asOf.split("-").map(Number);
-  if (year! > 9994) return null;
-  const monthEnd = new Date(0);
-  monthEnd.setUTCFullYear(year! + 5, month!, 0);
-  const horizon = new Date(0);
-  horizon.setUTCFullYear(year! + 5, month! - 1, Math.min(day!, monthEnd.getUTCDate()));
-  return horizon.toISOString().slice(0, 10);
+  if (Number(asOf.slice(0, 4)) > 9994) return null;
+  const horizon = DateTime.add(DateTime.makeUnsafe(asOf + "T00:00:00Z"), { months: 60 });
+  return DateTime.formatIsoDateUtc(horizon);
 }
 
 export const WorkjetExitModelStatus = Schema.Literals([

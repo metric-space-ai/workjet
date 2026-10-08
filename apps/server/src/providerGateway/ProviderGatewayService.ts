@@ -1056,19 +1056,6 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       });
     };
 
-    /**
-     * Models a fresh OAuth account serves, when the provider reported none.
-     * The wildcard patterns are the ones the operator's own configuration
-     * used; without them a new account is "In rotation" but serves nothing.
-     */
-    const DEFAULT_OAUTH_ACCOUNT_MODELS: Partial<
-      Record<WorkjetGatewayOauthProvider, ReadonlyArray<string>>
-    > = {
-      claude: ["claude-*"],
-      codex: ["gpt-*", "codex-*"],
-      xai: ["grok-*"],
-    };
-
     const persistClaimedAccounts = async (
       claimed: ReadonlyArray<ClaimedCredential>,
       targetAccountId?: string,
@@ -1145,10 +1132,9 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           enabled: true,
           priority: 0,
           weight: 1,
-          models:
-            credential.models.length > 0
-              ? credential.models
-              : (DEFAULT_OAUTH_ACCOUNT_MODELS[credential.provider] ?? []),
+          // OAuth identity alone does not report any concrete model IDs.
+          // Keep an absent list empty instead of inventing routing patterns.
+          models: credential.models,
         };
         if (credential.provider === "claude") {
           const accessTokenSecret = reference("access-token");

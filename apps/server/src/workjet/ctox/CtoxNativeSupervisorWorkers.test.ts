@@ -5,7 +5,7 @@ import type { makeCtoxMcpTransport } from "./CtoxMcpTransport.ts";
 import { makeCtoxNativeSupervisorWorkers } from "./CtoxNativeSupervisorWorkers.ts";
 const scope = { connectionId: WorkjetConnectionId.make("native"), instanceId: "managed:source" };
 const source = { sourceEnvironmentId: EnvironmentId.make("desktop"), sourceSupervisorThreadId: ThreadId.make("supervisor"), projectId: ProjectId.make("project") };
-const registration: NativeSupervisorSourceRegistration = { ...source, contract: NATIVE_SUPERVISOR_WORKER_CONTRACT, registrationId: "registration", revision: 3, ownerUserId: "owner" };
+const registration: NativeSupervisorSourceRegistration = { ...source, contract: NATIVE_SUPERVISOR_WORKER_CONTRACT, registrationId: "registration", revision: 3, ownerUserId: "owner", sourceInstanceId: scope.instanceId, authorityEpoch: 1, state: "active" };
 const intent: NativeSupervisorWorkerIntent = { ...source, intentId: ThreadId.make("00000000-0000-4000-8000-000000000001"), registrationId: registration.registrationId, registrationRevision: registration.revision, task: "One PR" };
 const dispatched: NativeSupervisorWorkerCompletion = { schemaVersion: 1, status: "dispatched", environmentId: EnvironmentId.make("gpu3"), workerThreadId: intent.intentId, computerId: WorkjetComputerId.make("native-computer"), branch: `workjet/worker/${intent.intentId}`, worktreePath: "/isolated/worker", parent: { environmentId: source.sourceEnvironmentId, threadId: source.sourceSupervisorThreadId }, modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" }, enabledCapabilityIds: [] };
 function fixture() {

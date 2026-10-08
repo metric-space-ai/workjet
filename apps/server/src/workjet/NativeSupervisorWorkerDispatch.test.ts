@@ -9,7 +9,7 @@ const source: NativeSupervisorWorkerSource = {
   source: { sourceEnvironmentId: EnvironmentId.make("desktop"), sourceSupervisorThreadId: ThreadId.make("supervisor"), projectId: ProjectId.make("project") },
   scope: { connectionId: WorkjetConnectionId.make("native"), instanceId: "managed:source" },
 };
-const registration: NativeSupervisorSourceRegistration = { ...source.source, contract: NATIVE_SUPERVISOR_WORKER_CONTRACT, registrationId: "registration", revision: 1, ownerUserId: "owner" };
+const registration: NativeSupervisorSourceRegistration = { ...source.source, contract: NATIVE_SUPERVISOR_WORKER_CONTRACT, registrationId: "registration", revision: 1, ownerUserId: "owner", sourceInstanceId: source.scope.instanceId, authorityEpoch: 1, state: "active" };
 const intent: NativeSupervisorWorkerIntent = { ...source.source, intentId: ThreadId.make("00000000-0000-4000-8000-000000000001"), registrationId: registration.registrationId, registrationRevision: 1, task: "Open exactly one PR" };
 const completed: NativeSupervisorWorkerCompletion = { schemaVersion: 1, status: "failed", reason: "computer-unavailable" };
 const failure = () => new RemoteWorkerDispatchError({ reason: "source-unavailable" });

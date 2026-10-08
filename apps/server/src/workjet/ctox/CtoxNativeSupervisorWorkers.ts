@@ -1,7 +1,7 @@
 import {
-  EnvironmentId, NativeSupervisorSourceRegistration, NativeSupervisorWorkerIntent,
+  type EnvironmentId, NativeSupervisorSourceRegistration, NativeSupervisorWorkerIntent,
   NATIVE_SUPERVISOR_WORKER_CONTRACT, RemoteWorkerDispatchError,
-  type NativeSupervisorSource, type NativeSupervisorWorkerCompletion,
+  type NativeSupervisorSource, NativeSupervisorWorkerCompletion,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -49,7 +49,7 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
       const receipt = yield* invoke(scope, { action: "register_source", source_environment_id: source.sourceEnvironmentId,
         source_supervisor_thread_id: source.sourceSupervisorThreadId, project_id: source.projectId }).pipe(
         Effect.flatMap(decodeRegistration), Effect.mapError(failure));
-      if (!sameSource(receipt, source)) return yield* failure();
+      if (!sameSource(receipt, source) || receipt.sourceInstanceId !== scope.instanceId) return yield* failure();
       return receipt;
     }),
     poll: Effect.fn("CtoxNativeSupervisorWorkers.poll")(function* (scope: RemoteWorkerNativeScope, sourceEnvironmentId: EnvironmentId) {
@@ -66,7 +66,8 @@ export function makeCtoxNativeSupervisorWorkers(dependencies: {
         result.parent.environmentId !== registration.sourceEnvironmentId || result.parent.threadId !== registration.sourceSupervisorThreadId))
         return yield* failure();
       const receipt = yield* invoke(scope, { action: "complete", registration_id: registration.registrationId,
-        revision: registration.revision, intent_id: intent.intentId, result }).pipe(
+        revision: registration.revision, intent_id: intent.intentId,
+        result: yield* Schema.encodeEffect(NativeSupervisorWorkerCompletion)(result).pipe(Effect.mapError(failure)) }).pipe(
         Effect.flatMap(decodeComplete), Effect.mapError(failure));
       if (receipt.registrationId !== registration.registrationId || receipt.revision !== registration.revision || receipt.intentId !== intent.intentId)
         return yield* failure();

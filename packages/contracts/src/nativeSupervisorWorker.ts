@@ -17,6 +17,9 @@ export const NativeSupervisorSourceRegistration = Schema.Struct({
   registrationId: TrimmedNonEmptyString,
   revision: Revision,
   ownerUserId: TrimmedNonEmptyString,
+  sourceInstanceId: TrimmedNonEmptyString,
+  authorityEpoch: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  state: Schema.Literal("active"),
   ...NativeSupervisorSource.fields,
 });
 export type NativeSupervisorSourceRegistration = typeof NativeSupervisorSourceRegistration.Type;

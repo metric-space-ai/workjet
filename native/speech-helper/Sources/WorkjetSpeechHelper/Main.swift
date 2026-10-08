@@ -6,7 +6,12 @@ import Speech
 import SpeechProtocol
 
 private let origin = DispatchTime.now().uptimeNanoseconds
-private func clockMs() -> Double { Double(DispatchTime.now().uptimeNanoseconds - origin) / 1_000_000 }
+private func clockMs() -> Double {
+    // Swift initializes globals lazily. Read the origin before sampling now,
+    // otherwise the first call can subtract a later origin and trap.
+    let baseline = origin
+    return Double(DispatchTime.now().uptimeNanoseconds - baseline) / 1_000_000
+}
 
 private struct VoiceInfo: Encodable {
     let identifier: String
@@ -81,6 +86,21 @@ private func writeLine<T: Encodable>(_ value: T) {
     var ready = false
     var analyzerSamples: Int64 = 0
     init(_ command: SpeechCommand) { self.command = command }
+}
+
+// AVAudioConverter marks its input callback Sendable. Transfer the initialized
+// buffer once under a lock; no caller mutates it after this box is created.
+private final class ConverterInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer: AVAudioPCMBuffer?
+    init(_ buffer: AVAudioPCMBuffer) { self.buffer = buffer }
+    func take() -> AVAudioPCMBuffer? {
+        lock.lock()
+        defer { lock.unlock() }
+        let next = buffer
+        buffer = nil
+        return next
+    }
 }
 
 private struct TtsPacket: Sendable {
@@ -287,11 +307,12 @@ private struct TtsPacket: Sendable {
         }
         let capacity = UInt32(ceil(Double(input.frameLength) * format.sampleRate / 16_000)) + 64
         guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { throw SpeechFailure.audioFormat }
-        var supplied = false
+        let source = ConverterInput(input)
         var error: NSError?
         let converted = converter.convert(to: output, error: &error) { _, status in
-            if supplied { status.pointee = .noDataNow; return nil }
-            supplied = true; status.pointee = .haveData; return input
+            guard let input = source.take() else { status.pointee = .noDataNow; return nil }
+            status.pointee = .haveData
+            return input
         }
         guard converted != .error, error == nil else { throw SpeechFailure.audioFormat }
         if output.frameLength > 0 {
@@ -466,6 +487,7 @@ private struct TtsPacket: Sendable {
 
 @main private struct SpeechHelper {
     @MainActor static func main() async {
+        _ = origin
         signal(SIGPIPE, SIG_IGN)
         if Array(CommandLine.arguments.dropFirst()) == ["--version"] {
             print("{\"protocolVersion\":1,\"helper\":\"workjet-speech-helper\",\"minimumMacOS\":\"26.0\"}")

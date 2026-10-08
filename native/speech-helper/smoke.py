@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bounded child-protocol checks; status does not run or download a speech model."""
 import json
+import math
 import pathlib
 import subprocess
 import sys
@@ -16,7 +17,7 @@ def line(value):
 
 def invoke(data):
     result = subprocess.run([str(binary)], input=data, capture_output=True, timeout=20)
-    assert result.returncode == 0, "child protocol failed"
+    assert result.returncode == 0, f"child protocol failed ({result.returncode})"
     assert len(result.stdout) <= 32768, "output bound"
     events = [json.loads(row) for row in result.stdout.splitlines()]
     assert all(len(row) <= 16384 for row in result.stdout.splitlines()), "line bound"
@@ -28,6 +29,8 @@ assert len(events) == 2 and events[0]["event"] == "status"
 assert events[0]["instanceId"] == scope["instanceId"]
 assert events[1]["event"] == "error" and events[1]["code"] == "scope_mismatch"
 assert events[1]["requestId"] == "wrong" and events[1]["instanceId"] == "foreign"
+assert all(math.isfinite(event["helperMs"]) and event["helperMs"] >= 0 for event in events)
+assert events[1]["helperMs"] >= events[0]["helperMs"], "helper clock must be monotonic from startup"
 caps = events[0]["capabilities"]
 assert all(isinstance(caps[name], bool) for name in ("available", "germanSupported", "germanInstalled"))
 assert caps["audioProcessedOnDevice"] is True

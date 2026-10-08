@@ -547,6 +547,7 @@ const projectInfoText = (maximum: number) =>
     ),
   );
 export const CtoxWorkjetProjectInfo = Schema.Struct({
+  summary: Schema.optionalKey(projectInfoText(4_096)),
   description: Schema.optionalKey(projectInfoText(4_096)),
   goal: Schema.optionalKey(projectInfoText(4_096)),
   phase: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(128), NoAsciiControlCharacters)),

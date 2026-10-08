@@ -14,7 +14,9 @@ const request = {
   repoUrl: "https://github.com/metric-space-ai/ctox",
   publicUrl: "https://ctox.dev",
   info: {
-    description: "Durable work daemon",
+    summary: "Durable work daemon",
+    description: "Retained legacy description",
+    status: "Active",
     goal: "All twelve projects usable\nWith real histories",
     phase: "delivery",
   },
@@ -52,8 +54,15 @@ describe("CTOX project configuration contract", () => {
     { ownerUserId: "foreign-owner" },
     { archived: false },
     { info: { goal: "bad\u0000control" } },
+    { info: { summary: "bad\u0000control" } },
+    { info: { summary: "x".repeat(4097) } },
   ])("rejects unsafe or unauthorized metadata %j", (invalid) => {
     expect(() => decode({ ...request, ...invalid })).toThrow();
+  });
+  it("accepts a bounded native summary without discarding legacy or unedited fields", () => {
+    expect(decode({ ...request, info: { ...request.info, summary: "x".repeat(4096) } })).toMatchObject({
+      info: { ...request.info, summary: "x".repeat(4096) },
+    });
   });
   it("keeps old native projections valid and carries confirmed metadata", () => {
     const project = { id: request.projectId, title: request.title, workingCopies: [] };

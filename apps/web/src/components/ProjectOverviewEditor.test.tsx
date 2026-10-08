@@ -4,6 +4,22 @@ import { ProjectId } from "@workjet/contracts";
 import { ProjectOverviewEditor } from "./ProjectOverviewEditor";
 
 describe("compact project configuration", () => {
+  it.each([
+    { info: { summary: "Canonical summary", description: "Legacy description" }, expected: "Canonical summary" },
+    { info: { description: "Legacy description" }, expected: "Legacy description" },
+    { info: { summary: "", description: "Legacy description" }, expected: "" },
+  ])("loads the native summary and falls back only when it is absent", ({ info, expected }) => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewEditor
+        overview={null}
+        configuration={{ id: ProjectId.make("project"), title: "Project", info }}
+        onSave={async () => true}
+        onSaveConfiguration={async () => true}
+      />,
+    );
+    expect(markup).toContain(`value="${expected}"`);
+    if (info.summary !== undefined) expect(markup).not.toContain('value="Legacy description"');
+  });
   it("shows one sentence per KPI without manual type, label or value controls", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewEditor

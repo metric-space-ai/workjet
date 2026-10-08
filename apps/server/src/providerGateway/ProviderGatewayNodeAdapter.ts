@@ -6,6 +6,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 import type { WorkjetGatewayModelBinding } from "@workjet/contracts";
+import { discoverKimiConnection } from "./KimiConnection.ts";
 
 import type {
   GatewayHostProcess,
@@ -116,6 +117,7 @@ export async function forwardSourceGatewayResponses(
 }
 
 export const nodeProviderGatewayPlatform: ProviderGatewayPlatform = {
+  discoverKimiConnection,
   fingerprint: (value) => NodeCrypto.createHash("sha256").update(value).digest("hex"),
   providerModelCheck: async (endpoint, provider, accountId, modelId, signal) => {
     const response = await fetch(new URL("/v1/responses", endpoint), {

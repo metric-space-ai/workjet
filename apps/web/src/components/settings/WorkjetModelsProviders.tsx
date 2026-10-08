@@ -292,7 +292,7 @@ function KeyForm({
 }) {
   const [key, setKey] = useState("");
   const [label, setLabel] = useState(account?.label ?? WORKJET_GATEWAY_PROVIDER_LABELS[provider]);
-  const [modelText, setModelText] = useState(models.join(", "));
+  const [modelText, setModelText] = useState(provider === "kimi" ? "" : models.join(", "));
   const [error, setError] = useState<string | null>(null);
   return (
     <form
@@ -305,9 +305,13 @@ function KeyForm({
           !key.trim() ||
           !label.trim() ||
           !parsed ||
-          (account === undefined && parsed.length === 0)
+          (account === undefined && provider !== "kimi" && parsed.length === 0)
         ) {
-          setError("Enter an account name, API key and at least one valid model name.");
+          setError(
+            provider === "kimi"
+              ? "Enter an account name and API key. Leave models empty to discover them."
+              : "Enter an account name, API key and at least one valid model name.",
+          );
           return;
         }
         const credential = key;
@@ -368,7 +372,11 @@ function KeyForm({
           Models
           <input
             aria-label={`Models for a new ${WORKJET_GATEWAY_PROVIDER_LABELS[provider]} account`}
-            placeholder="Model IDs, separated by commas"
+            placeholder={
+              provider === "kimi"
+                ? "Discovered after connecting; optional model IDs, separated by commas"
+                : "Model IDs, separated by commas"
+            }
             value={modelText}
             onChange={(event) => setModelText(event.target.value)}
             className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"

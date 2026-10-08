@@ -81,6 +81,7 @@ import {
 } from "./ProviderGatewayGrants.ts";
 
 import { makeModelChecks } from "./ProviderGatewayModelChecks.ts";
+import type { KimiConnection } from "./KimiConnection.ts";
 
 const CONFIG_MAX_BYTES = 256 * 1024;
 const READINESS_MAX_BYTES = 4 * 1024;
@@ -111,6 +112,11 @@ export interface GatewayHostProcess {
 }
 
 export interface ProviderGatewayPlatform {
+  readonly discoverKimiConnection?: (
+    apiKey: string,
+    preferredBaseUrl?: string,
+    signal?: AbortSignal,
+  ) => Promise<KimiConnection | undefined>;
   readonly fingerprint?: ((value: string) => string) | undefined;
   readonly providerModelCheck?: (
     endpoint: string,
@@ -544,6 +550,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         );
         if (account === undefined || !account.enabled)
           return { ...unavailable, unavailableReason: "account-unavailable" as const };
+        if (
+          account.provider === "kimi" &&
+          isApiKeyAccount(account) &&
+          account.upstreamBaseUrl === undefined
+        )
+          return { ...unavailable, unavailableReason: "unverified-response" as const };
         return platform.providerModelCheck(
           currentStatus.providerEndpoint,
           account.provider,
@@ -1325,6 +1337,24 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       }
       const apiReplacement =
         replacement !== undefined && isApiKeyAccount(replacement) ? replacement : undefined;
+      const kimiConnection =
+        input.provider === "kimi"
+          ? await platform.discoverKimiConnection?.(apiKey, apiReplacement?.upstreamBaseUrl)
+          : undefined;
+      if (input.provider === "kimi" && kimiConnection === undefined)
+        throw safeError("management-unavailable");
+      if (
+        kimiConnection !== undefined &&
+        input.models?.some((id) => !kimiConnection.models.includes(id))
+      )
+        throw safeError("invalid-configuration");
+      const retainedKimiModels =
+        kimiConnection !== undefined &&
+        apiReplacement?.upstreamBaseUrl === kimiConnection.upstreamBaseUrl
+          ? apiReplacement.models.filter((id) => kimiConnection.models.includes(id))
+          : [];
+      const discoveredKimiModels =
+        retainedKimiModels.length > 0 ? retainedKimiModels : kimiConnection?.models;
       const usedIds = new Set(accounts.map((account) => account.id));
       const base = `${input.provider}-${secretSlug(input.label)}`;
       let id = replacement?.id ?? base;
@@ -1346,14 +1376,18 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         priority: replacement?.priority ?? 0,
         weight: replacement?.weight ?? 1,
         models:
-          input.models ??
-          replacement?.models ??
-          accounts.find((account) => account.provider === input.provider)?.models ??
-          [],
+          input.models !== undefined && (input.provider !== "kimi" || input.models.length > 0)
+            ? input.models
+            : (discoveredKimiModels ??
+              replacement?.models ??
+              accounts.find((account) => account.provider === input.provider)?.models ??
+              []),
         apiKeySecret,
-        ...(apiReplacement?.upstreamBaseUrl
-          ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
-          : {}),
+        ...(kimiConnection !== undefined
+          ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl }
+          : apiReplacement?.upstreamBaseUrl
+            ? { upstreamBaseUrl: apiReplacement.upstreamBaseUrl }
+            : {}),
         ...(suffix ? { credentialSuffix: suffix } : {}),
       };
       if (replacement === undefined) accounts.push(nextAccount);
@@ -1575,7 +1609,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           (account) => account.provider === provider && account.enabled,
         );
         if (accounts.length === 0) continue;
-        const channel = GATEWAY_MODEL_CHANNELS[provider];
+        // A coding-plan key has different IDs from the compiled Moonshot catalog.
+        const channel = provider === "kimi" ? null : GATEWAY_MODEL_CHANNELS[provider];
         let catalog: ReadonlyArray<{ readonly id: string; readonly displayName: string }> = [];
         let catalogAvailable = false;
         if (channel !== null) {
@@ -1702,6 +1737,60 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       return { schemaVersion: 1, catalog: currentCatalog };
     };
 
+    /** Adopts legacy Kimi keys in place; no secret write, rotation or new account. */
+    const runRepairKimiConnections = async (accountId?: string): Promise<void> => {
+      if (platform.discoverKimiConnection === undefined) return;
+      const configuration = await loadConfiguration();
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(8_000);
+      let changed = false;
+      for (const [index, account] of accounts.entries()) {
+        if (
+          deadline.aborted ||
+          account.provider !== "kimi" ||
+          !account.enabled ||
+          !isApiKeyAccount(account) ||
+          (account.upstreamBaseUrl !== undefined &&
+            !["https://api.kimi.com/coding/v1", "https://api.moonshot.ai/v1"].includes(
+              account.upstreamBaseUrl,
+            )) ||
+          (accountId !== undefined && account.id !== accountId)
+        )
+          continue;
+        const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
+          () => Option.none<Uint8Array>(),
+        );
+        if (Option.isNone(secret)) continue;
+        const apiKey = new TextDecoder().decode(secret.value);
+        if (!isAcceptableApiKey(apiKey)) continue;
+        const connection = await platform.discoverKimiConnection(
+          apiKey.trim(),
+          account.upstreamBaseUrl,
+          deadline,
+        );
+        if (connection === undefined || deadline.aborted) continue;
+        const models =
+          account.upstreamBaseUrl === connection.upstreamBaseUrl
+            ? account.models.filter((model) => connection.models.includes(model))
+            : connection.models;
+        if (
+          account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+          JSON.stringify(account.models) === JSON.stringify(models)
+        )
+          continue;
+        accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, models };
+        changed = true;
+      }
+      if (!changed) return;
+      await modelChecks.cancel();
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+      );
+      await stopSingleFlight();
+      await startSingleFlight();
+    };
+
     const runOauthCancel = async (input: WorkjetGatewayOauthPollInput): Promise<void> => {
       oauthTargets.delete(input.state);
       const { endpoint, key } = requireManagement();
@@ -1736,10 +1825,15 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           catch: () => safeError("management-unavailable"),
         }),
       checkModels: (input) =>
-        Effect.tryPromise({
-          try: () => modelChecks.schedule(input),
-          catch: () => safeError("management-unavailable"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              await runRepairKimiConnections(input.accountId);
+              return modelChecks.schedule(input);
+            },
+            catch: () => safeError("management-unavailable"),
+          }),
+        ),
       status: () => Effect.sync(() => currentStatus),
       catalog: () =>
         Effect.tryPromise({
@@ -1835,17 +1929,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
         }),
       oauthPoll: (input) =>
-        Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runOauthPoll(input);
-            if (result.completedAccountIds.length > 0 && previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runOauthPoll(input);
+              if (result.completedAccountIds.length > 0 && previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
+          }),
+        ),
       oauthCancel: (input) =>
         Effect.tryPromise({
           try: () => runOauthCancel(input),
@@ -1853,17 +1949,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("oauth-session-invalid"),
         }),
       addApiKeyAccount: (input) =>
-        Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runAddApiKeyAccount(input);
-            if (previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runAddApiKeyAccount(input);
+              if (previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          }),
+        ),
       removeAccount: (input) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
@@ -1910,17 +2008,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("management-unavailable"),
         }),
       updateRouting: (input) =>
-        Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runUpdateRouting(input);
-            if (previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
-        }),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runUpdateRouting(input);
+              if (previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          }),
+        ),
     });
   });
 

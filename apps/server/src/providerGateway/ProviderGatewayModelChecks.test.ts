@@ -379,6 +379,7 @@ describe("real loopback model probe", () => {
         "failed-status",
         "wrapped-200",
         "wrapped-invalid",
+        "wrapped-legacy",
       ]) {
         const result = await probe(endpoint, "kimi", "chosen", model);
         expect(result.status, model).toBe("unavailable");
@@ -408,12 +409,7 @@ describe("real loopback model probe", () => {
           source: "upstream",
         });
       }
-      expect(await probe(endpoint, "kimi", "chosen", "wrapped-legacy")).toEqual({
-        status: "error",
-        errorClass: "auth",
-        httpStatus: null,
-        source: "upstream",
-      });
+
       await expect(probe(endpoint, "kimi", "chosen", "oversized")).rejects.toThrow("oversized");
       expect(requests[0]?.headers["x-ctox-provider"]).toBe("kimi");
       expect(requests[0]?.headers["x-ctox-account"]).toBe("chosen");

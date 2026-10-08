@@ -102,7 +102,7 @@ export function ProjectWorkspace({
   }));
   const now = Date.now();
   const intervals = activityIntervals(
-    members.map((thread) => ({
+    groups.workers.map((thread) => ({
       key: `${thread.environmentId}:${thread.id}`,
       latestTurn: thread.latestTurn,
     })),
@@ -210,14 +210,16 @@ export function ProjectWorkspace({
         </dl>
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-6">
-            <section
+            {intervals.length > 0 && <details
               aria-label="Worker activity"
               data-workjet-overview-section="activity"
-              className="rounded-lg border border-border p-4"
+              className="rounded-lg border border-border p-3"
             >
-              <h2 className="mb-1 text-xs font-medium text-muted-foreground">Worker activity</h2>
+              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                Worker activity · {summary.workers} · {formatMinutes(summary.totalMinutes)}
+              </summary>
               <p className="mb-4 text-xs text-muted-foreground">
-                Based on each worker&apos;s latest turn. Earlier turns are not counted yet.
+                Latest worker turns only.
               </p>
               <dl className="mb-4 flex flex-wrap gap-x-8 gap-y-2">
                 {[
@@ -275,7 +277,7 @@ export function ProjectWorkspace({
                   )),
                 )}
               </div>
-            </section>
+            </details>}
             {PROJECT_TEAM_SECTIONS.map(({ section, label }) => {
               const group = groups[section];
               if (group.length === 0) return null;

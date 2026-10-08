@@ -35,7 +35,6 @@ describe("project overview worker activity", () => {
     );
     expect(intervals).toEqual([
       { workerKey: "a", start: at(8, 9, 5), end: at(8, 10) },
-      { workerKey: "b", start: at(8, 11), end: now },
     ]);
   });
 

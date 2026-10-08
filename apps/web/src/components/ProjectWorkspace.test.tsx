@@ -82,12 +82,27 @@ function markup(threads: readonly EnvironmentThreadShell[]) {
 }
 
 describe("project worker activity", () => {
-  it("renders the activity panel even when no worker has a turn yet", () => {
+  it("omits an empty activity panel instead of showing unknown history as zero", () => {
     const html = markup([shell(source, "supervisor")]);
+    expect(html).not.toContain('data-workjet-overview-section="activity"');
+  });
+  it("counts actual worker turns without including supervisor work", () => {
+    const completed = (thread: EnvironmentThreadShell) => ({
+      ...thread,
+      latestTurn: {
+        requestedAt: new Date(Date.now() - 3600000).toISOString(),
+        startedAt: new Date(Date.now() - 3600000).toISOString(),
+        completedAt: new Date().toISOString(),
+      },
+    }) as unknown as EnvironmentThreadShell;
+    const html = markup([
+      completed(shell(source, "supervisor")),
+      completed(shell(target, "worker")),
+    ]);
     expect(html).toContain('data-workjet-overview-section="activity"');
-    expect(html).toContain("data-workjet-activity-hours");
-    expect(html).toContain("data-workjet-activity-heatmap");
-    expect(html).toContain("Based on each worker&#x27;s latest turn");
+    expect(html).toContain("Worker activity · 1 ·");
+    expect(html).toContain("Latest worker turns only.");
+    expect(html).not.toContain("Worker activity · 2 ·");
   });
 });
 

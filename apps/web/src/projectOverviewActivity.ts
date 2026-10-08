@@ -24,8 +24,8 @@ export function activityIntervals(
 ): ActivityInterval[] {
   return workers.flatMap((worker) => {
     const turn = worker.latestTurn;
-    if (!turn) return [];
-    const start = Date.parse(turn.startedAt ?? turn.requestedAt);
+    if (!turn?.startedAt) return [];
+    const start = Date.parse(turn.startedAt);
     if (!Number.isFinite(start)) return [];
     const parsedEnd = turn.completedAt === null ? now : Date.parse(turn.completedAt);
     const end = Math.min(Number.isFinite(parsedEnd) ? parsedEnd : now, now);

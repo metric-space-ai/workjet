@@ -56,10 +56,9 @@ it.effect(
         intentId,
         { reason: "worker-profile-unavailable" },
       );
-      assert.deepEqual(
-        result,
-        Option.some(response.outcome.status === "dispatched" ? response.outcome.result : undefined),
-      );
+      if (response.outcome.status !== "dispatched")
+        return yield* Effect.die("The success fixture must describe a dispatched worker");
+      assert.deepEqual(result, Option.some(response.outcome.result));
     }),
 );
 it.effect("never fabricates completion when the broker cannot establish the previous outcome", () =>

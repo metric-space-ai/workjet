@@ -22,9 +22,11 @@ import { Button } from "./ui/button";
 export type CalendarView = "day" | "week" | "month" | "year";
 
 export type AccountCalendarState = {
-  readonly id: string; readonly label: string;
+  readonly id: string;
+  readonly label: string;
   readonly status: "loading" | "ready" | "unavailable" | "unsupported";
-  readonly truncated: boolean; readonly syncedAtMs: number | null;
+  readonly truncated: boolean;
+  readonly syncedAtMs: number | null;
 };
 
 type CalendarProject = GalleryProject & {
@@ -161,27 +163,32 @@ export function buildSessionEvents(
     // must never be represented as a session start or fabricated duration.
     if (project === undefined || session.createdAtMs === undefined) return [];
     const local = zonedReading(session.createdAtMs, displayZone);
-    return [{
-      id: `session:${session.id}`,
-      calendarId: SESSION_CALENDAR_ID,
-      title: `${project.title} · Session (${session.runStatus})`,
-      startMs: session.createdAtMs,
-      endMs: session.createdAtMs,
-      point: true,
-      date: local.date,
-      minutes: local.minutes,
-      timeZone: displayZone,
-      projectKey: project.key,
-      onOpen: project.onOpen,
-    }];
+    return [
+      {
+        id: `session:${session.id}`,
+        calendarId: SESSION_CALENDAR_ID,
+        title: `${project.title} · Session (${session.runStatus})`,
+        startMs: session.createdAtMs,
+        endMs: session.createdAtMs,
+        point: true,
+        date: local.date,
+        minutes: local.minutes,
+        timeZone: displayZone,
+        projectKey: project.key,
+        onOpen: project.onOpen,
+      },
+    ];
   });
 }
 
 /** Split a provider occurrence across displayed dates; exclusive midnight ends
  * stay on the previous date. IDs retain occurrence identity plus date. */
 export function buildAccountEvents(
-  events: readonly WorkjetCalendarEvent[], from: DateKey, to: DateKey,
-  displayZone: string, onOpen: (event: WorkjetCalendarEvent) => void,
+  events: readonly WorkjetCalendarEvent[],
+  from: DateKey,
+  to: DateKey,
+  displayZone: string,
+  onOpen: (event: WorkjetCalendarEvent) => void,
   projects: readonly CalendarProject[] = [],
 ): readonly CalendarEvent[] {
   const projectKeys = new Map(projects.map((project) => [project.id, project.key]));
@@ -192,13 +199,26 @@ export function buildAccountEvents(
     const first = zonedReading(event.start_ms, eventZone).date;
     const last = zonedReading(event.end_ms - 1, eventZone).date;
     const rows: CalendarEvent[] = [];
-    for (let date = first < from ? from : first; date <= last && date <= to; date = addDays(date, 1)) {
+    for (
+      let date = first < from ? from : first;
+      date <= last && date <= to;
+      date = addDays(date, 1)
+    ) {
       const startMs = Math.max(event.start_ms, instantOf(date, 0, eventZone));
       const endMs = Math.min(event.end_ms, instantOf(addDays(date, 1), 0, eventZone));
-      rows.push({ id: `${event.id}:${date}`, calendarId: event.calendar_id, title: event.title,
-        startMs, endMs, date, minutes: zonedReading(startMs, eventZone).minutes,
-        allDay: event.all_day, timeZone: eventZone, projectKey: projectKeys.get(event.project_id ?? "") ?? "",
-        onOpen: () => onOpen(event) });
+      rows.push({
+        id: `${event.id}:${date}`,
+        calendarId: event.calendar_id,
+        title: event.title,
+        startMs,
+        endMs,
+        date,
+        minutes: zonedReading(startMs, eventZone).minutes,
+        allDay: event.all_day,
+        timeZone: eventZone,
+        projectKey: projectKeys.get(event.project_id ?? "") ?? "",
+        onOpen: () => onOpen(event),
+      });
     }
     return rows;
   });
@@ -248,8 +268,13 @@ function EventButton({
       className="absolute inset-x-0.5 overflow-hidden rounded-md border border-primary/30 bg-primary/12 px-2 py-1 text-left text-xs transition-colors hover:bg-primary/20 focus-visible:outline-2 focus-visible:outline-ring"
       style={{
         top: (event.minutes / 60) * HOUR_HEIGHT + 1,
-        height: Math.max(Math.min((event.endMs - event.startMs) / 3_600_000 * HOUR_HEIGHT - 2,
-          (1440 - event.minutes) / 60 * HOUR_HEIGHT - 2), 20),
+        height: Math.max(
+          Math.min(
+            ((event.endMs - event.startMs) / 3_600_000) * HOUR_HEIGHT - 2,
+            ((1440 - event.minutes) / 60) * HOUR_HEIGHT - 2,
+          ),
+          20,
+        ),
       }}
     >
       <span className="block font-medium tabular-nums">{formatTime(event.startMs)}</span>
@@ -338,80 +363,85 @@ function TimeGrid({
   return (
     <div className="min-w-0 overflow-x-auto rounded-md border border-border">
       <div className="flex flex-col" style={{ minWidth: days.length > 1 ? 700 : 0 }}>
-      <div className="grid border-b border-border" style={{ gridTemplateColumns: columns }}>
-        <span aria-hidden />
-        {days.map((date) => {
-          const isToday = date === today;
-          return (
-            <div key={date} className="flex flex-col items-center py-2 text-xs">
-              <span className="text-muted-foreground">
-                {formatDateKey(date, { weekday: "short" })}
-              </span>
-              <span
-                className={[
-                  "mt-0.5 flex size-7 items-center justify-center rounded-full text-sm tabular-nums",
-                  isToday ? "bg-primary font-semibold text-primary-foreground" : "",
-                ].join(" ")}
-              >
-                {Number(date.slice(8))}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div
-        className="grid border-b border-border py-1 text-xs"
-        style={{ gridTemplateColumns: columns }}
-        aria-label="All-day events"
-      >
-        <span className="px-1 text-right text-muted-foreground">all-day</span>
-        {days.map((date) => (
-          <div
-            key={date}
-            className="min-h-6 border-l border-border px-0.5"
-            data-calendar-allday={date}
-          >
-            {(eventsByDate.get(date) ?? []).filter((event) => event.allDay).map((event) =>
-              <EventButton key={event.id} event={event} placement="chip" />)}
-          </div>
-        ))}
-      </div>
-      <div ref={scrollRef} className="relative h-[min(70vh,44rem)] overflow-y-auto">
-        <div className="grid" style={{ gridTemplateColumns: columns, height: HOUR_HEIGHT * 24 }}>
-          <div className="relative text-right text-xs text-muted-foreground">
-            {HOURS.map((hour) => (
-              <span
-                key={hour}
-                className="absolute right-1.5 -translate-y-1/2 tabular-nums"
-                style={{ top: hour * HOUR_HEIGHT }}
-              >
-                {hour === 0 ? "" : formatHour(hour)}
-              </span>
-            ))}
-          </div>
+        <div className="grid border-b border-border" style={{ gridTemplateColumns: columns }}>
+          <span aria-hidden />
+          {days.map((date) => {
+            const isToday = date === today;
+            return (
+              <div key={date} className="flex flex-col items-center py-2 text-xs">
+                <span className="text-muted-foreground">
+                  {formatDateKey(date, { weekday: "short" })}
+                </span>
+                <span
+                  className={[
+                    "mt-0.5 flex size-7 items-center justify-center rounded-full text-sm tabular-nums",
+                    isToday ? "bg-primary font-semibold text-primary-foreground" : "",
+                  ].join(" ")}
+                >
+                  {Number(date.slice(8))}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div
+          className="grid border-b border-border py-1 text-xs"
+          style={{ gridTemplateColumns: columns }}
+          aria-label="All-day events"
+        >
+          <span className="px-1 text-right text-muted-foreground">all-day</span>
           {days.map((date) => (
-            <div key={date} className="relative border-l border-border" data-calendar-day={date}>
-              {HOURS.map((hour) => (
-                <div
-                  key={hour}
-                  className="absolute inset-x-0 border-t border-border/70"
-                  style={{ top: hour * HOUR_HEIGHT }}
-                />
-              ))}
-              {(eventsByDate.get(date) ?? []).filter((event) => !event.allDay).map((event) => (
-                <EventButton key={event.id} event={event} placement="block" />
-              ))}
-              {date === today ? (
-                <div
-                  className="absolute inset-x-0 z-10 h-px bg-primary"
-                  style={{ top: (nowMinutes / 60) * HOUR_HEIGHT }}
-                  aria-hidden
-                />
-              ) : null}
+            <div
+              key={date}
+              className="min-h-6 border-l border-border px-0.5"
+              data-calendar-allday={date}
+            >
+              {(eventsByDate.get(date) ?? [])
+                .filter((event) => event.allDay)
+                .map((event) => (
+                  <EventButton key={event.id} event={event} placement="chip" />
+                ))}
             </div>
           ))}
         </div>
-      </div>
+        <div ref={scrollRef} className="relative h-[min(70vh,44rem)] overflow-y-auto">
+          <div className="grid" style={{ gridTemplateColumns: columns, height: HOUR_HEIGHT * 24 }}>
+            <div className="relative text-right text-xs text-muted-foreground">
+              {HOURS.map((hour) => (
+                <span
+                  key={hour}
+                  className="absolute right-1.5 -translate-y-1/2 tabular-nums"
+                  style={{ top: hour * HOUR_HEIGHT }}
+                >
+                  {hour === 0 ? "" : formatHour(hour)}
+                </span>
+              ))}
+            </div>
+            {days.map((date) => (
+              <div key={date} className="relative border-l border-border" data-calendar-day={date}>
+                {HOURS.map((hour) => (
+                  <div
+                    key={hour}
+                    className="absolute inset-x-0 border-t border-border/70"
+                    style={{ top: hour * HOUR_HEIGHT }}
+                  />
+                ))}
+                {(eventsByDate.get(date) ?? [])
+                  .filter((event) => !event.allDay)
+                  .map((event) => (
+                    <EventButton key={event.id} event={event} placement="block" />
+                  ))}
+                {date === today ? (
+                  <div
+                    className="absolute inset-x-0 z-10 h-px bg-primary"
+                    style={{ top: (nowMinutes / 60) * HOUR_HEIGHT }}
+                    aria-hidden
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -489,8 +519,13 @@ export function ProjectCalendar({
   sessions = [],
   sessionsStatus,
   onRefreshSessions,
-  accountEvents = [], accountCalendars = [], accountsUnavailable = false,
-  accountsLoading = false, accountsTruncated = false, onRefreshAccounts, onWindowChanged,
+  accountEvents = [],
+  accountCalendars = [],
+  accountsUnavailable = false,
+  accountsLoading = false,
+  accountsTruncated = false,
+  onRefreshAccounts,
+  onWindowChanged,
 }: {
   readonly initialView?: CalendarView;
   readonly sessions?: readonly CtoxWorkjetSessionProjection[];
@@ -528,18 +563,34 @@ export function ProjectCalendar({
   const grid = monthGrid(anchor);
   const windowFrom = range.from < grid[0]! ? range.from : grid[0]!;
   const windowTo = range.to > grid[41]! ? range.to : grid[41]!;
-  useEffect(() => { onWindowChanged?.(windowFrom, windowTo); }, [windowFrom, windowTo, onWindowChanged]);
+  useEffect(() => {
+    onWindowChanged?.(windowFrom, windowTo);
+  }, [windowFrom, windowTo, onWindowChanged]);
 
   const allEvents = useMemo(
-    () => [...buildEvents(projects, windowFrom, windowTo, displayZone),
-      ...buildSessionEvents(projects, sessions, displayZone)
-        .filter((event) => event.date >= windowFrom && event.date <= windowTo),
-      ...buildAccountEvents(accountEvents, windowFrom, windowTo, displayZone, setSelectedEvent, projects)],
+    () => [
+      ...buildEvents(projects, windowFrom, windowTo, displayZone),
+      ...buildSessionEvents(projects, sessions, displayZone).filter(
+        (event) => event.date >= windowFrom && event.date <= windowTo,
+      ),
+      ...buildAccountEvents(
+        accountEvents,
+        windowFrom,
+        windowTo,
+        displayZone,
+        setSelectedEvent,
+        projects,
+      ),
+    ],
     [projects, sessions, accountEvents, windowFrom, windowTo, displayZone],
   );
   const visibleEvents = useMemo(
-    () => allEvents.filter((event) => !hiddenCalendars.has(event.calendarId)
-      && (projectKey === "all" || event.projectKey === projectKey)),
+    () =>
+      allEvents.filter(
+        (event) =>
+          !hiddenCalendars.has(event.calendarId) &&
+          (projectKey === "all" || event.projectKey === projectKey),
+      ),
     [allEvents, hiddenCalendars, projectKey],
   );
   const eventsByDate = useMemo(() => groupByDate(visibleEvents), [visibleEvents]);
@@ -561,10 +612,18 @@ export function ProjectCalendar({
       <aside className="order-2 space-y-6 lg:order-1">
         <label className="block text-sm">
           Project
-          <select aria-label="Calendar project" value={projectKey} onChange={(event) => setProjectKey(event.target.value)}
-            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2">
+          <select
+            aria-label="Calendar project"
+            value={projectKey}
+            onChange={(event) => setProjectKey(event.target.value)}
+            className="mt-1 w-full rounded-md border border-border bg-background px-2 py-2"
+          >
             <option value="all">All projects</option>
-            {projects.map((project) => <option key={project.key} value={project.key}>{project.title}</option>)}
+            {projects.map((project) => (
+              <option key={project.key} value={project.key}>
+                {project.title}
+              </option>
+            ))}
           </select>
         </label>
         <MiniMonth
@@ -594,47 +653,101 @@ export function ProjectCalendar({
             <span className="min-w-0 break-words">Project meetings</span>
           </label>
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
-            <input type="checkbox" className="size-4 accent-primary"
+            <input
+              type="checkbox"
+              className="size-4 accent-primary"
               checked={!hiddenCalendars.has(SESSION_CALENDAR_ID)}
-              onChange={(event) => setHiddenCalendars((previous) => {
-                const next = new Set(previous);
-                if (event.target.checked) next.delete(SESSION_CALENDAR_ID); else next.add(SESSION_CALENDAR_ID);
-                return next;
-              })} />
+              onChange={(event) =>
+                setHiddenCalendars((previous) => {
+                  const next = new Set(previous);
+                  if (event.target.checked) next.delete(SESSION_CALENDAR_ID);
+                  else next.add(SESSION_CALENDAR_ID);
+                  return next;
+                })
+              }
+            />
             Project sessions
           </label>
-          {sessionsStatus !== undefined && sessionsStatus !== "ready" &&
+          {sessionsStatus !== undefined && sessionsStatus !== "ready" && (
             <p role="status" className="mt-2 text-xs text-muted-foreground">
-              {sessionsStatus === "loading" ? "Loading sessions…" : "Sessions unavailable. Previously loaded sessions may be out of date."}
-            </p>}
-          {sessions.some((session) => session.createdAtMs === undefined) &&
-            <p role="status" className="mt-2 text-xs text-muted-foreground">Some sessions have no recorded start time.</p>}
-          {onRefreshSessions && <Button size="sm" variant="ghost" disabled={sessionsStatus === "loading"}
-            onClick={onRefreshSessions}>Refresh sessions</Button>}
-          <h3 className="mt-4 text-sm font-medium">Connected accounts</h3>
-          {accountsLoading && <p role="status" className="text-xs text-muted-foreground">Loading calendar accounts…</p>}
-          {accountsUnavailable && <p role="status" className="text-xs text-muted-foreground">Account calendars unavailable.</p>}
-          {!accountsLoading && !accountsUnavailable && accountCalendars.length === 0 &&
-            <p className="text-xs text-muted-foreground">No calendar accounts connected to this instance.</p>}
-          {accountCalendars.map((calendar) => <div key={calendar.id} className="mt-2 text-xs">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={!hiddenCalendars.has(calendar.id)}
-                onChange={(event) => setHiddenCalendars((previous) => {
-                  const next = new Set(previous);
-                  if (event.target.checked) next.delete(calendar.id); else next.add(calendar.id);
-                  return next;
-                })} />
-              <span className="min-w-0 break-words">{calendar.label}</span>
-            </label>
-            <p role="status" className="ml-6 text-muted-foreground">
-              {calendar.status === "ready" ? calendar.truncated ? "Partial sync · more events on the account" :
-                calendar.syncedAtMs === null ? "Synced" : `Synced ${new Date(calendar.syncedAtMs).toLocaleTimeString()}` :
-                calendar.status === "loading" ? "Syncing…" : calendar.status === "unsupported" ?
-                "Calendar connection not supported for this account" : "Sync failed"}
+              {sessionsStatus === "loading"
+                ? "Loading sessions…"
+                : "Sessions unavailable. Previously loaded sessions may be out of date."}
             </p>
-          </div>)}
-          {accountsTruncated && <p role="status" className="text-xs text-muted-foreground">The account list is incomplete.</p>}
-          {onRefreshAccounts && <Button size="sm" variant="ghost" onClick={onRefreshAccounts}>Sync accounts</Button>}
+          )}
+          {sessions.some((session) => session.createdAtMs === undefined) && (
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
+              Some sessions have no recorded start time.
+            </p>
+          )}
+          {onRefreshSessions && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={sessionsStatus === "loading"}
+              onClick={onRefreshSessions}
+            >
+              Refresh sessions
+            </Button>
+          )}
+          <h3 className="mt-4 text-sm font-medium">Connected accounts</h3>
+          {accountsLoading && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Loading calendar accounts…
+            </p>
+          )}
+          {accountsUnavailable && (
+            <p role="status" className="text-xs text-muted-foreground">
+              Account calendars unavailable.
+            </p>
+          )}
+          {!accountsLoading && !accountsUnavailable && accountCalendars.length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No calendar accounts connected to this instance.
+            </p>
+          )}
+          {accountCalendars.map((calendar) => (
+            <div key={calendar.id} className="mt-2 text-xs">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={!hiddenCalendars.has(calendar.id)}
+                  onChange={(event) =>
+                    setHiddenCalendars((previous) => {
+                      const next = new Set(previous);
+                      if (event.target.checked) next.delete(calendar.id);
+                      else next.add(calendar.id);
+                      return next;
+                    })
+                  }
+                />
+                <span className="min-w-0 break-words">{calendar.label}</span>
+              </label>
+              <p role="status" className="ml-6 text-muted-foreground">
+                {calendar.status === "ready"
+                  ? calendar.truncated
+                    ? "Partial sync · more events on the account"
+                    : calendar.syncedAtMs === null
+                      ? "Synced"
+                      : `Synced ${new Date(calendar.syncedAtMs).toLocaleTimeString()}`
+                  : calendar.status === "loading"
+                    ? "Syncing…"
+                    : calendar.status === "unsupported"
+                      ? "Calendar connection not supported for this account"
+                      : "Sync failed"}
+              </p>
+            </div>
+          ))}
+          {accountsTruncated && (
+            <p role="status" className="text-xs text-muted-foreground">
+              The account list is incomplete.
+            </p>
+          )}
+          {onRefreshAccounts && (
+            <Button size="sm" variant="ghost" onClick={onRefreshAccounts}>
+              Sync accounts
+            </Button>
+          )}
         </section>
         {unscheduled.length > 0 && (
           <section aria-label="Projects without a regular meeting">
@@ -660,16 +773,29 @@ export function ProjectCalendar({
         )}
       </aside>
       <div className="order-1 min-w-0 lg:order-2">
-        {selectedEvent !== null && <section role="dialog" aria-label="Calendar event details" className="mb-4 rounded-md border border-border p-4">
-          <div className="flex items-start justify-between gap-2">
-            <h2 className="font-semibold">{selectedEvent.title}</h2>
-            <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>Close</Button>
-          </div>
-          <p className="mt-2 text-sm">{new Date(selectedEvent.start_ms).toLocaleString()} – {new Date(selectedEvent.end_ms).toLocaleString()}</p>
-          {selectedEvent.location && <p className="mt-2 text-sm">{selectedEvent.location}</p>}
-          {selectedEvent.notes && <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>}
-          <p className="mt-2 text-xs text-muted-foreground">Synced account event · read only</p>
-        </section>}
+        {selectedEvent !== null && (
+          <section
+            role="dialog"
+            aria-label="Calendar event details"
+            className="mb-4 rounded-md border border-border p-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <h2 className="font-semibold">{selectedEvent.title}</h2>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>
+                Close
+              </Button>
+            </div>
+            <p className="mt-2 text-sm">
+              {new Date(selectedEvent.start_ms).toLocaleString()} –{" "}
+              {new Date(selectedEvent.end_ms).toLocaleString()}
+            </p>
+            {selectedEvent.location && <p className="mt-2 text-sm">{selectedEvent.location}</p>}
+            {selectedEvent.notes && (
+              <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">Synced account event · read only</p>
+          </section>
+        )}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
             Today

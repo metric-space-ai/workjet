@@ -47,7 +47,8 @@ const SaveResult = Schema.Union([
  * `expectedRevision` is stale comes back as `conflict` and changes nothing.
  */
 export function makeCtoxLumaConfigurationClient(httpClient: HttpClient.HttpClient) {
-  const transport = makeCtoxMcpTransport(httpClient);
+  // Native documents allow 1 MiB; reserve bounded JSON-RPC envelope overhead.
+  const transport = makeCtoxMcpTransport(httpClient, { maxResponseBytes: 1_280 * 1_024 });
 
   const structured = (
     target: CtoxMcpTarget,
@@ -89,6 +90,9 @@ export function makeCtoxLumaConfigurationClient(httpClient: HttpClient.HttpClien
     expectedRevision: number,
     configuration: Readonly<Record<string, unknown>>,
   ) {
+    if (new TextEncoder().encode(JSON.stringify(configuration)).byteLength > 1_024 * 1_024) {
+      return yield* new CtoxLumaConfigurationError({ reason: "remote-response-invalid" });
+    }
     const raw = yield* structured(target, CTOX_LUMA_UPDATE_TOOL, {
       expected_revision: expectedRevision,
       configuration,

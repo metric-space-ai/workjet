@@ -72,7 +72,14 @@ export const CtoxMcpToolResult = Schema.Struct({
 });
 
 /** Server-side transport only. Callers own tool schemas, authorization and run binding. */
-export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
+export function makeCtoxMcpTransport(
+  httpClient: HttpClient.HttpClient,
+  options?: { readonly maxResponseBytes: number },
+) {
+  const maxResponseBytes = options?.maxResponseBytes ?? MAX_RESPONSE_BYTES;
+  if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1 || maxResponseBytes > 2 * 1_024 * 1_024) {
+    throw new RangeError("Invalid MCP response budget.");
+  }
   let requestId = 0;
 
   const call = (
@@ -97,7 +104,7 @@ export function makeCtoxMcpTransport(httpClient: HttpClient.HttpClient) {
         return yield* failure("connection-unavailable");
       }
       const body = yield* response.text;
-      if (!isCtoxMcpResponseWithinLimit(body)) return yield* failure("remote-response-invalid");
+      if (new TextEncoder().encode(body).byteLength > maxResponseBytes) return yield* failure("remote-response-invalid");
       const envelope = yield* decodeEnvelope(body).pipe(Effect.option);
       if (
         Option.isNone(envelope) ||

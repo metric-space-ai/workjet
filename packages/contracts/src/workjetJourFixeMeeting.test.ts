@@ -21,16 +21,33 @@ describe("native Jour fixe meeting read", () => {
   });
   it("accepts explicit null only on optional wire metadata", () => {
     const native = decode(meeting);
-    const nullable = { ...native, previous_goal: null, error: null,
-      slides: native.slides.map(slide => ({ ...slide, audio: null })),
-      comments: native.comments.map(comment => ({ ...comment, supervisor_event_id: null })),
-      transcript: native.transcript.map(turn => ({ ...turn, source_run_id: null, audio: null,
-        stream_id: null, sentence_end_latency_ms: null })),
-      todos: native.todos ? { ...native.todos, goal: null, confirmed_by_user_id: null,
-        confirmed_at_ms: null, items: native.todos.items.map(todo => ({ ...todo, due_at_ms: null })) } : null,
+    const nullable = {
+      ...native,
+      previous_goal: null,
+      error: null,
+      slides: native.slides.map((slide) => ({ ...slide, audio: null })),
+      comments: native.comments.map((comment) => ({ ...comment, supervisor_event_id: null })),
+      transcript: native.transcript.map((turn) => ({
+        ...turn,
+        source_run_id: null,
+        audio: null,
+        stream_id: null,
+        sentence_end_latency_ms: null,
+      })),
+      todos: native.todos
+        ? {
+            ...native.todos,
+            goal: null,
+            confirmed_by_user_id: null,
+            confirmed_at_ms: null,
+            items: native.todos.items.map((todo) => ({ ...todo, due_at_ms: null })),
+          }
+        : null,
     };
     expect(() => decode(nullable)).not.toThrow();
-    expect(isWorkjetJourFixeReadReceiptForRequest(request, { ...response, meeting: nullable })).toBe(true);
+    expect(
+      isWorkjetJourFixeReadReceiptForRequest(request, { ...response, meeting: nullable }),
+    ).toBe(true);
     expect(() => decode({ ...nullable, owner_user_id: null })).toThrow();
     expect(() => decode({ ...nullable, supervisor: null })).toThrow();
   });

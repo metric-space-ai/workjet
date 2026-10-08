@@ -495,7 +495,11 @@ function JourFixeRoomContent({
                     >
                       <textarea
                         autoFocus
-                        aria-label={commentDelivery === "saved" ? "Slide comment text" : "Comment to supervisor"}
+                        aria-label={
+                          commentDelivery === "saved"
+                            ? "Slide comment text"
+                            : "Comment to supervisor"
+                        }
                         maxLength={4096}
                         value={comment}
                         onChange={(event) => setComment(event.target.value)}

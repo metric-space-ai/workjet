@@ -157,7 +157,9 @@ export function isWorkjetJourFixeReceiptForRequest(request: unknown, response: u
           ["live", "review"].includes(mutation.state) && mutation.changed_id === intent.turn.id
         );
       case "project.jour_fixe.comment.add":
-        return ["live", "review"].includes(mutation.state) && mutation.changed_id === intent.commentId;
+        return (
+          ["live", "review"].includes(mutation.state) && mutation.changed_id === intent.commentId
+        );
       case "project.jour_fixe.todos.revise":
         return mutation.state === "review" && mutation.todos_revision === intent.proposalRevision;
     }

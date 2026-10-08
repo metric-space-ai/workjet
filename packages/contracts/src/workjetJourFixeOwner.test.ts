@@ -43,8 +43,12 @@ const revise = {
 const comment = {
   ...base,
   action: "project.jour_fixe.comment.add",
-  commentId: "pin-1", slideId: "slide-1", deckRevision: 1,
-  x: 0.25, y: 0.75, text: "Check this assumption.",
+  commentId: "pin-1",
+  slideId: "slide-1",
+  deckRevision: 1,
+  x: 0.25,
+  y: 0.75,
+  text: "Check this assumption.",
 } as const;
 const response = {
   action: start.action,
@@ -167,19 +171,29 @@ describe("Jour fixe owner bridge", () => {
     ).toBe(true);
   });
   it("requires a matching persisted pin and rejects forged identity or invalid coordinates", () => {
-    const receipt = { ...response, action: comment.action,
-      mutation: { ...response.mutation, changed_id: comment.commentId } };
+    const receipt = {
+      ...response,
+      action: comment.action,
+      mutation: { ...response.mutation, changed_id: comment.commentId },
+    };
     expect(isWorkjetJourFixeReceiptForRequest(comment, receipt)).toBe(true);
     for (const mutation of [
       { ...receipt.mutation, changed_id: "another-pin" },
       { ...receipt.mutation, state: "ready" },
       { ...receipt.mutation, revision: 6 },
-    ]) expect(isWorkjetJourFixeReceiptForRequest(comment, { ...receipt, mutation })).toBe(false);
+    ])
+      expect(isWorkjetJourFixeReceiptForRequest(comment, { ...receipt, mutation })).toBe(false);
     for (const change of [
-      { x: -0.1 }, { y: 1.1 }, { x: Number.NaN }, { y: Infinity },
-      { deckRevision: 0.5 }, { text: "a".repeat(4097) },
-      { author_user_id: "forged" }, { supervisor_event_id: "forged" },
-    ]) expect(() => decodeRequest({ ...comment, ...change })).toThrow();
+      { x: -0.1 },
+      { y: 1.1 },
+      { x: Number.NaN },
+      { y: Infinity },
+      { deckRevision: 0.5 },
+      { text: "a".repeat(4097) },
+      { author_user_id: "forged" },
+      { supervisor_event_id: "forged" },
+    ])
+      expect(() => decodeRequest({ ...comment, ...change })).toThrow();
   });
   it("leaves existing non-meeting project actions unchanged", () => {
     expect(isWorkjetJourFixeReceiptForRequest(null, response)).toBe(false);

@@ -140,8 +140,9 @@ export function useWorkjetGatewaySection(
       return;
     const next = recoveryAccounts.find(
       (id) =>
-        (catalogQuery.data?.accounts ?? []).some((account) => account.id === id && account.enabled) &&
-        !checksQuery.data?.pending.some((pending) => pending.accountId === id),
+        (catalogQuery.data?.accounts ?? []).some(
+          (account) => account.id === id && account.enabled,
+        ) && !checksQuery.data?.pending.some((pending) => pending.accountId === id),
     );
     if (!next) return;
     setRecoveryAccounts((previous) => previous.filter((id) => id !== next));
@@ -149,8 +150,13 @@ export function useWorkjetGatewaySection(
     // results from the old credential after its pending checks have ended.
     void runChecks(next, true);
   }, [
-    environmentId, statusQuery.data?.phase, checksSubmitting, checksQuery.data,
-    catalogQuery.data, recoveryAccounts, runChecks,
+    environmentId,
+    statusQuery.data?.phase,
+    checksSubmitting,
+    checksQuery.data,
+    catalogQuery.data,
+    recoveryAccounts,
+    runChecks,
   ]);
   useEffect(() => {
     checksPollingDeadline.current = 0;
@@ -530,7 +536,11 @@ export function useWorkjetGatewaySection(
             });
             setChecksError(null);
             setRecoveryAccounts((previous) => [
-              ...new Set([...previous, ...(accountId ? [accountId] : []), ...polled.value.completedAccountIds]),
+              ...new Set([
+                ...previous,
+                ...(accountId ? [accountId] : []),
+                ...polled.value.completedAccountIds,
+              ]),
             ]);
             // The server persisted the account and reloaded the gateway, so the
             // new account only appears after a fresh catalog read.

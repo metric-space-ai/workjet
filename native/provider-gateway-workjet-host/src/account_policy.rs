@@ -51,7 +51,10 @@ pub fn balance_is_exhausted(balance: &AccountBalance, now: i64) -> bool {
 /// An unavailable model does not establish an account or credential outage.
 pub fn is_model_not_found_cooldown(record: &CooldownStateRecord) -> bool {
     record.reason == "not_found"
-        || record.last_error.as_ref().is_some_and(|error| error.http_status == Some(404))
+        || record
+            .last_error
+            .as_ref()
+            .is_some_and(|error| error.http_status == Some(404))
 }
 /// Only an explicitly applicable LLM bucket can affect inference selection.
 pub fn quota_applies(window: &QuotaWindow, model: &str) -> bool {

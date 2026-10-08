@@ -11,13 +11,14 @@ class JourFixeMicrophoneProcessor extends AudioWorkletProcessor {
   private ended = false;
   constructor() {
     super();
-    this.port.onmessage = (event: MessageEvent<unknown>) => {
+    this.port.addEventListener("message", (event: MessageEvent<unknown>) => {
       if (event.data !== "finish" || this.ended) return;
       this.ended = true;
       const tail = this.framer.flush();
       if (tail) this.emit(tail);
-      this.port.postMessage({ type: "ended" });
-    };
+      this.port.postMessage({ type: "ended" }, []);
+    });
+    this.port.start();
   }
   private emit(frame: JourFixePcmFrame) {
     this.port.postMessage({ type: "frame", ...frame }, [frame.pcm.buffer]);
@@ -30,12 +31,13 @@ class JourFixeMicrophoneProcessor extends AudioWorkletProcessor {
     if (!channels?.length || !channels[0]?.length) return true;
     const mono = new Float32Array(channels[0].length);
     for (const channel of channels)
-      for (let i = 0; i < mono.length; i++) mono[i] = mono[i]! + (channel[i] ?? 0) / channels.length;
+      for (let i = 0; i < mono.length; i++)
+        mono[i] = mono[i]! + (channel[i] ?? 0) / channels.length;
     try {
       for (const frame of this.framer.push(mono)) this.emit(frame);
     } catch {
       this.ended = true;
-      this.port.postMessage({ type: "failed" });
+      this.port.postMessage({ type: "failed" }, []);
     }
     return !this.ended;
   }

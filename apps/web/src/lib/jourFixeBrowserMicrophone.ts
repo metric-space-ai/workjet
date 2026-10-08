@@ -49,14 +49,18 @@ export const captureJourFixeMicrophone: JourFixeMicrophoneCaptureFactory = async
       video: false,
     });
     // getUserMedia cannot be canceled. A permission result after room-close owns no tracks.
-    void requested.then((value) => {
-      if (closed || options.signal.aborted)
-        for (const track of value.getTracks()) track.stop();
-    }, () => {});
+    void requested.then(
+      (value) => {
+        if (closed || options.signal.aborted) for (const track of value.getTracks()) track.stop();
+      },
+      () => {},
+    );
     media = await new Promise<MediaStream>((resolve, reject) => {
       const abort = () => reject(canceled());
       options.signal.addEventListener("abort", abort, { once: true });
-      requested.then(resolve, reject).finally(() => options.signal.removeEventListener("abort", abort));
+      requested
+        .then(resolve, reject)
+        .finally(() => options.signal.removeEventListener("abort", abort));
       if (options.signal.aborted) abort();
     });
     if (closed || options.signal.aborted) throw canceled();
@@ -64,38 +68,53 @@ export const captureJourFixeMicrophone: JourFixeMicrophoneCaptureFactory = async
     await context.audioWorklet.addModule(workletUrl);
     if (closed || options.signal.aborted) throw canceled();
     node = new AudioWorkletNode(context, "workjet-jour-fixe-pcm", {
-      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
     });
-    node.port.onmessage = (event: MessageEvent<unknown>) => {
+    node.port.addEventListener("message", (event: MessageEvent<unknown>) => {
       if (closed || options.signal.aborted) return;
       const data = event.data;
       if (!data || typeof data !== "object" || !("type" in data)) return;
-      if (data.type === "ended") { finishResolve?.(); return; }
-      if (data.type === "frame" && "pcm" in data && data.pcm instanceof Uint8Array &&
-          "voiced" in data && typeof data.voiced === "boolean") {
+      if (data.type === "ended") {
+        finishResolve?.();
+        return;
+      }
+      if (
+        data.type === "frame" &&
+        "pcm" in data &&
+        data.pcm instanceof Uint8Array &&
+        "voiced" in data &&
+        typeof data.voiced === "boolean"
+      ) {
         options.onFrame({ pcm: data.pcm, voiced: data.voiced });
         return;
       }
-      options.onError(new Error("Microphone audio processing failed."));
-      stop();
-    };
-    node.onprocessorerror = () => {
-      if (!closed) options.onError(new Error("Microphone audio processing failed."));
-      stop();
-    };
+      try { options.onError(new Error("Microphone audio processing failed.")); }
+      finally { stop(); }
+    });
+    node.port.start();
+    node.addEventListener("processorerror", () => {
+      try { if (!closed) options.onError(new Error("Microphone audio processing failed.")); }
+      finally { stop(); }
+    });
     source = context.createMediaStreamSource(media);
-    source.connect(node); node.connect(context.destination);
+    source.connect(node);
+    node.connect(context.destination);
     await context.resume();
     if (closed || options.signal.aborted) throw canceled();
     return {
       cancel: stop,
       finish() {
         finishPromise ??= new Promise<void>((resolve, reject) => {
-          if (closed) { reject(canceled()); return; }
+          if (closed) {
+            reject(canceled());
+            return;
+          }
           finishResolve = resolve;
           finishReject = reject;
           timer = setTimeout(() => reject(new Error("Microphone flush timed out.")), 500);
-          node!.port.postMessage("finish");
+          node!.port.postMessage("finish", []);
         }).finally(cleanup);
         return finishPromise;
       },

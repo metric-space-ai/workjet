@@ -1,5 +1,9 @@
 import { openJourFixeGatewaySpeech, isJourFixePrivateFinalReceipt } from "./jourFixeGatewaySpeech";
-import { captureJourFixeMicrophone, type JourFixeMicrophoneCapture, type JourFixeMicrophoneCaptureFactory } from "./jourFixeBrowserMicrophone";
+import {
+  captureJourFixeMicrophone,
+  type JourFixeMicrophoneCapture,
+  type JourFixeMicrophoneCaptureFactory,
+} from "./jourFixeBrowserMicrophone";
 import { JourFixeUtteranceActivity } from "./jourFixePcmCapture";
 import type { JourFixeSpeechProvider } from "./jourFixeSpeech";
 import type { WorkjetProjectControlPort } from "../workjetProjectControl";
@@ -37,14 +41,27 @@ export function createJourFixeGatewayMicrophoneProvider(dependencies: {
       };
       const fail = (reason: unknown) => {
         if (!current()) return;
-        cancel(); detach();
-        try { options.onError(reason instanceof Error ? reason : new Error("Microphone capture failed.")); }
-        catch { /* UI callbacks cannot keep recording alive. */ }
-        try { options.onStopped?.(); } catch { /* Capture is already canceled. */ }
+        cancel();
+        detach();
+        try {
+          options.onError(
+            reason instanceof Error ? reason : new Error("Microphone capture failed."),
+          );
+        } catch {
+          /* UI callbacks cannot keep recording alive. */
+        }
+        try {
+          options.onStopped?.();
+        } catch {
+          /* Capture is already canceled. */
+        }
       };
       options.signal.addEventListener("abort", cancel, { once: true });
       // Covers permission delay and capture; the native consumer has its own 40s fence.
-      const timer = setTimeout(() => fail(new Error("Microphone sentence exceeded its deadline.")), 35_000);
+      const timer = setTimeout(
+        () => fail(new Error("Microphone sentence exceeded its deadline.")),
+        35_000,
+      );
       let stream: Awaited<ReturnType<typeof openJourFixeGatewaySpeech>> | undefined;
       try {
         // Native authorization succeeds before any microphone permission or audio capture.
@@ -66,21 +83,29 @@ export function createJourFixeGatewayMicrophoneProvider(dependencies: {
             finishing = true;
             await capture?.finish();
             if (!current()) return;
-            if (!activity.hasVoice()) { await stream!.cancel(); return; }
+            if (!activity.hasVoice()) {
+              await stream!.cancel();
+              return;
+            }
             const receipt = await stream!.finish();
             if (!current()) return;
-            if (!isJourFixePrivateFinalReceipt(receipt) ||
-                receipt.scope.instanceId !== options.scope.instanceId ||
-                receipt.scope.projectId !== options.scope.projectId ||
-                receipt.scope.meetingId !== options.scope.meetingId ||
-                receipt.scope.deckRevision !== options.scope.deckRevision)
+            if (
+              !isJourFixePrivateFinalReceipt(receipt) ||
+              receipt.scope.instanceId !== options.scope.instanceId ||
+              receipt.scope.projectId !== options.scope.projectId ||
+              receipt.scope.meetingId !== options.scope.meetingId ||
+              receipt.scope.deckRevision !== options.scope.deckRevision
+            )
               throw new Error("Native microphone final belongs to another meeting.");
             options.onCommitted();
-          })().catch(fail).finally(() => {
-            const notify = current();
-            cancel(); detach();
-            if (notify) options.onStopped?.();
-          });
+          })()
+            .catch(fail)
+            .finally(() => {
+              const notify = current();
+              cancel();
+              detach();
+              if (notify) options.onStopped?.();
+            });
           return completion;
         };
         capture = await (dependencies.capture ?? captureJourFixeMicrophone)({
@@ -93,10 +118,16 @@ export function createJourFixeGatewayMicrophoneProvider(dependencies: {
             if (ended && !finishing) void finish();
           },
         });
-        if (!current()) { capture.cancel(); await stream.cancel(); detach(); return { stop: async () => {} }; }
+        if (!current()) {
+          capture.cancel();
+          await stream.cancel();
+          detach();
+          return { stop: async () => {} };
+        }
         return { stop: finish };
       } catch (error) {
-        cancel(); detach();
+        cancel();
+        detach();
         await stream?.cancel().catch(() => {});
         throw error;
       }

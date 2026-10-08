@@ -105,6 +105,7 @@ function IndexDraftLanding() {
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const openingNative = useRef(false);
+  const [meetingProjectKey, setMeetingProjectKey] = useState<string | null>(null);
   const automaticNativeAttempt = useRef<string | null>(null);
   const nativeAttempt = useRef<{
     key: string;
@@ -344,6 +345,8 @@ function IndexDraftLanding() {
       return (
         <ProjectWorkspace
           project={project}
+          ctoxInstanceId={activeCtoxInstanceId}
+          openMeeting={meetingProjectKey === project.key}
           threads={threads}
           onAddParent={async (domain, goal) => {
             if (
@@ -454,7 +457,13 @@ function IndexDraftLanding() {
                   return true;
                 }
               : undefined,
+          onOpenJourFixe: project.native ? () => {
+            if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId || activeCtoxInstanceId === null) return;
+            setMeetingProjectKey(project.key);
+            if (selectWorkjetProject(activeCtoxInstanceId, project.id)) selectProjectOverviewRef(activeCtoxInstanceId, null);
+          } : undefined,
           onOpen: () => {
+            setMeetingProjectKey(null);
             if (readActiveWorkjetScope().selectedInstanceId !== activeCtoxInstanceId) return;
             if (project.native && activeCtoxInstanceId !== null) {
               if (selectWorkjetProject(activeCtoxInstanceId, project.id))
@@ -533,6 +542,7 @@ function ProjectGallery({
   readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
     readonly onOpen: () => void;
+    readonly onOpenJourFixe?: (() => void) | undefined;
     readonly onSaveConfiguration?:
       | ((next: ProjectConfigurationValues) => Promise<boolean>)
       | undefined;

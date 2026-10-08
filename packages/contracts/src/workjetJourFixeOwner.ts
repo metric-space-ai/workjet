@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { CommandId, ProjectId } from "./baseSchemas.ts";
+import { isWorkjetJourFixeReadReceiptForRequest } from "./workjetJourFixeMeeting.ts";
 
 // Wire names and limits match ctox.workjet.jour_fixe.v1. Owner text cannot
 // impersonate a supervisor or assert speech provenance.
@@ -122,6 +123,7 @@ export function isWorkjetJourFixeReceiptForRequest(
     return false;
 
   if (!request.action.startsWith("project.jour_fixe.")) return true;
+  if (request.action === "project.jour_fixe.meeting.read") return isWorkjetJourFixeReadReceiptForRequest(request, response);
 
   try {
     const intent = decodeRequest(request);

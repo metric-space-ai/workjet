@@ -5,6 +5,8 @@ import {
   WorkjetJourFixeOwnerResponse,
 } from "./workjetJourFixeOwner.ts";
 export { isWorkjetJourFixeReceiptForRequest } from "./workjetJourFixeOwner.ts";
+import { WorkjetJourFixeReadRequest, WorkjetJourFixeReadResponse } from "./workjetJourFixeMeeting.ts";
+export { WorkjetJourFixeMeeting, WorkjetJourFixeReadRequest, WorkjetJourFixeReadResponse, isWorkjetJourFixeReadReceiptForRequest } from "./workjetJourFixeMeeting.ts";
 
 import {
   CommandId,
@@ -572,6 +574,7 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
+  WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
@@ -685,6 +688,7 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 );
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
+  WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),

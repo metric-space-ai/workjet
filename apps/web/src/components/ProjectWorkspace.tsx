@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NativeJourFixeRoom } from "./NativeJourFixeRoom";
 import { effectiveSnoozed } from "@workjet/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@workjet/client-runtime/state/models";
 import type { ScopedThreadRef } from "@workjet/contracts";
@@ -36,14 +37,20 @@ export function ProjectWorkspace({
   onOpenChat,
   onAddParent,
   onOpenJourFixe,
+  ctoxInstanceId,
+  openMeeting = false,
 }: {
   readonly project: GalleryProject;
   readonly threads: readonly EnvironmentThreadShell[];
   readonly onOpenChat: (thread: ScopedThreadRef) => void;
   readonly onOpenJourFixe?: () => void;
+  readonly ctoxInstanceId?: string | null;
+  readonly openMeeting?: boolean;
   readonly onAddParent: (domain: string, goal: string) => Promise<boolean>;
 }) {
   const [editingParent, setEditingParent] = useState(false);
+  const [meetingKey, setMeetingKey] = useState<string | null>(null);
+  const [dismissedMeetingKey, setDismissedMeetingKey] = useState<string | null>(null);
   const [domain, setDomain] = useState("");
   const [goal, setGoal] = useState("");
   const [saving, setSaving] = useState(false);
@@ -88,6 +95,15 @@ export function ProjectWorkspace({
     "Saturday",
     "Sunday",
   ];
+  const roomKey = `${ctoxInstanceId}:${project.id}`;
+  const nativeRoom = project.native && ctoxInstanceId != null && project.configuration !== undefined;
+  const openJourFixe = onOpenJourFixe ?? (nativeRoom ? () => { setDismissedMeetingKey(null); setMeetingKey(roomKey); } : undefined);
+  if (nativeRoom && (meetingKey === roomKey || (openMeeting && dismissedMeetingKey !== roomKey))) return (
+    <SidebarInset className="min-h-0 overflow-auto">
+      <NativeJourFixeRoom instanceId={ctoxInstanceId} projectId={project.configuration!.id} projectTitle={project.title}
+        onBack={() => { setMeetingKey(null); setDismissedMeetingKey(roomKey); }} />
+    </SidebarInset>
+  );
   return (
     <SidebarInset className="min-h-0 overflow-auto">
       <WorkjetHeaderContent className="flex min-w-0 items-center gap-2 text-sm">
@@ -282,12 +298,12 @@ export function ProjectWorkspace({
                   {weekdays[meeting.weekday]} · {meeting.time}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">{meeting.timezone}</p>
-                {onOpenJourFixe && (
+                {openJourFixe && (
                   <Button
                     className="mt-3"
                     size="sm"
                     variant="outline"
-                    onClick={onOpenJourFixe}
+                    onClick={openJourFixe}
                     data-workjet-action="project.jour-fixe.open"
                   >
                     Open meeting

@@ -1,0 +1,81 @@
+diff --git a/src/NodeSink.ts b/src/NodeSink.ts
+--- a/src/NodeSink.ts
++++ b/src/NodeSink.ts
+@@ -108,8 +108,15 @@
+           return Cause.done(_)
+         }
+         return Effect.callback<never, E | Cause.Done<unknown>>((resume) => {
+-          options.writable.once("finish", () => resume(Cause.done(_)))
++          const onFinish = () => resume(Cause.done(_))
++          const onError = (error: unknown) => resume(Effect.fail(options.onError(error)))
++          options.writable.once("finish", onFinish)
++          options.writable.once("error", onError)
+           options.writable.end()
++          return Effect.sync(() => {
++            options.writable.off("finish", onFinish)
++            options.writable.off("error", onError)
++          })
+         })
+       }) :
+       identity
+diff --git a/dist/NodeSink.js b/dist/NodeSink.js
+--- a/dist/NodeSink.js
++++ b/dist/NodeSink.js
+@@ -70,8 +70,15 @@
+     return Cause.done(_);
+   }
+   return Effect.callback(resume => {
+-    options.writable.once("finish", () => resume(Cause.done(_)));
++    const onFinish = () => resume(Cause.done(_));
++    const onError = error => resume(Effect.fail(options.onError(error)));
++    options.writable.once("finish", onFinish);
++    options.writable.once("error", onError);
+     options.writable.end();
++    return Effect.sync(() => {
++      options.writable.off("finish", onFinish);
++      options.writable.off("error", onError);
++    });
+   });
+ }) : identity);
+ //# sourceMappingURL=NodeSink.js.mapdiff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
+--- a/src/NodeChildProcessSpawner.ts
++++ b/src/NodeChildProcessSpawner.ts
+@@ -202,6 +202,8 @@
+           // Create a sink to write to for input file descriptors
+           let sink: Sink.Sink<void, Uint8Array, never, PlatformError.PlatformError> = Sink.drain
+           if (nodeStream && "write" in nodeStream) {
++            // Scoped sinks report live errors; a closing child can emit after cancellation.
++            nodeStream.on("error", () => {})
+             sink = NodeSink.fromWritable({
+               evaluate: () => nodeStream,
+               onError: (error) => toPlatformError(`fromWritable(fd${fd})`, toError(error), command)
+@@ -258,6 +260,8 @@
+       // sink that will attached to the process handle
+       let sink: Sink.Sink<void, unknown, never, PlatformError.PlatformError> = Sink.drain
+       if (Predicate.isNotNull(childProcess.stdin)) {
++        // Retain an input-pipe listener for the child's entire stream lifetime.
++        childProcess.stdin.on("error", () => {})
+         sink = NodeSink.fromWritable({
+           evaluate: () => childProcess.stdin!,
+           onError: (error) => toPlatformError("fromWritable(stdin)", toError(error), command),
+diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
+--- a/dist/NodeChildProcessSpawner.js
++++ b/dist/NodeChildProcessSpawner.js
+@@ -148,6 +148,8 @@
+             // Create a sink to write to for input file descriptors
+             let sink = Sink.drain;
+             if (nodeStream && "write" in nodeStream) {
++              // Scoped sinks report live errors; a closing child can emit after cancellation.
++              nodeStream.on("error", () => {});
+               sink = NodeSink.fromWritable({
+                 evaluate: () => nodeStream,
+                 onError: error => toPlatformError(`fromWritable(fd${fd})`, toError(error), command)
+@@ -192,6 +194,8 @@
+     // sink that will attached to the process handle
+     let sink = Sink.drain;
+     if (Predicate.isNotNull(childProcess.stdin)) {
++      // Retain an input-pipe listener for the child's entire stream lifetime.
++      childProcess.stdin.on("error", () => {});
+       sink = NodeSink.fromWritable({
+         evaluate: () => childProcess.stdin,
+         onError: error => toPlatformError("fromWritable(stdin)", toError(error), command),

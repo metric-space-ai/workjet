@@ -26,6 +26,8 @@
 import * as Brand from "effect/Brand";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
+import * as Deferred from "effect/Deferred";
+import * as Sink from "effect/Sink";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -212,10 +214,17 @@ export class BackendProcessExitStatusError extends Schema.TaggedErrorClass<Backe
   }
 }
 
+export class BackendProcessInputWriteError extends Schema.TaggedErrorClass<BackendProcessInputWriteError>()(
+  "BackendProcessInputWriteError", { ...backendProcessContextSchema, pid: Schema.Number, fd: Schema.Number, code: Schema.String },
+) {
+  override get message(): string { return `Desktop backend ${this.pid} input fd${this.fd} failed (${this.code}).`; }
+}
+
 export const BackendProcessError = Schema.Union([
   BackendProcessBootstrapEncodeError,
   BackendProcessSpawnError,
   BackendProcessExitStatusError,
+  BackendProcessInputWriteError,
 ]);
 export type BackendProcessError = typeof BackendProcessError.Type;
 
@@ -464,12 +473,10 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
   if (options.bootstrapDelivery === "fd3") {
     additionalFds.fd3 = {
       type: "input",
-      stream: bootstrapStream,
     };
     if (options.bootstrap.desktopTelemetryFd !== undefined) {
       additionalFds[`fd${options.bootstrap.desktopTelemetryFd}`] = {
         type: "input",
-        stream: options.desktopTelemetryStream,
       };
     }
     if (options.bootstrap.desktopTelemetryControlFd !== undefined) {
@@ -484,7 +491,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     extendEnv: options.extendEnv,
     // In Electron main, process.execPath points to the Electron binary.
     // Run the child in Node mode so this backend process does not become a GUI app instance.
-    stdin: options.bootstrapDelivery === "stdin" ? bootstrapStream : "ignore",
+    stdin: options.bootstrapDelivery === "stdin" ? "pipe" : "ignore",
     stdout: options.captureOutput ? "pipe" : "inherit",
     stderr: options.captureOutput ? "pipe" : "inherit",
     killSignal: "SIGTERM",
@@ -510,6 +517,24 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
   const outputFibers: Array<Fiber.Fiber<void, never>> = [];
 
   yield* options.onStarted?.(handle.pid) ?? Effect.void;
+  const inputFailure = yield* Deferred.make<never, BackendProcessInputWriteError>();
+  const writeInput = (fd: number, stream: Stream.Stream<Uint8Array>, sink: Sink.Sink<void, Uint8Array, never, PlatformError.PlatformError>) =>
+    Stream.run(stream, sink).pipe(Effect.catch((error) => Effect.gen(function* () {
+      const raw = error.reason.cause;
+      const code = typeof raw === "object" && raw !== null && "code" in raw && typeof raw.code === "string"
+        ? raw.code : error.reason._tag;
+      const failure = new BackendProcessInputWriteError({ executablePath: options.executablePath, entryPath: options.entryPath,
+        cwd: options.cwd, httpBaseUrl: options.httpBaseUrl, pid: Number(handle.pid), fd, code });
+      // Never record bootstrap bytes, tokens, command arguments or raw platform errors.
+      yield* logBackendProcessWarning("desktop child input pipe failed", { pid: Number(handle.pid), fd, code });
+      yield* Deferred.fail(inputFailure, failure);
+    })), Effect.forkScoped);
+  yield* writeInput(options.bootstrapDelivery === "stdin" ? 0 : 3, bootstrapStream,
+    options.bootstrapDelivery === "stdin" ? handle.stdin : handle.getInputFd(3));
+  if (options.bootstrapDelivery === "fd3" && options.bootstrap.desktopTelemetryFd !== undefined) {
+    yield* writeInput(options.bootstrap.desktopTelemetryFd, options.desktopTelemetryStream,
+      handle.getInputFd(options.bootstrap.desktopTelemetryFd));
+  }
   if (
     options.bootstrap.desktopTelemetryControlFd !== undefined &&
     options.onDesktopTelemetryControl !== undefined
@@ -618,6 +643,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
           cause,
         }),
     ),
+    Effect.raceFirst(Deferred.await(inputFailure)),
     Effect.exit,
   );
   yield* Fiber.interrupt(readinessFiber);

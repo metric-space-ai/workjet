@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ProjectExitModelPanel, ProjectExitModelSummary } from "./ProjectExitModel";
 import type { ProjectOverview } from "@workjet/contracts";
 import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
@@ -29,8 +30,10 @@ export function ProjectOverviewCard({
   onSaveConfiguration,
   kpis,
   onSaveKpis,
+  ctoxInstanceId = null,
 }: {
   readonly project: GalleryProject;
+  readonly ctoxInstanceId?: string | null;
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
   readonly onOpen: () => void;
@@ -42,6 +45,7 @@ export function ProjectOverviewCard({
   readonly statistics?: GalleryProjectStatistics | undefined;
 }) {
   const [editing, setEditing] = useState(false);
+  const [assessing, setAssessing] = useState(false);
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -222,6 +226,11 @@ export function ProjectOverviewCard({
           <ArrowUpRightIcon className="size-4" aria-hidden="true" />
         </Button>
       </div>
+      <ProjectExitModelSummary
+        projectId={project.id}
+        assessment={project.configuration?.exitModel}
+        onOpen={() => setAssessing(true)}
+      />
       <div className="border-t border-border px-3 py-3">
         <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
           {(["first", "second", "third"] as const).map((position, index) => {
@@ -306,6 +315,23 @@ export function ProjectOverviewCard({
                 onSaveKpis={onSaveKpis}
                 onArchive={canArchive ? changeArchive : undefined}
                 archived={archived}
+              />
+            )}
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
+      <Dialog open={assessing} onOpenChange={setAssessing}>
+        <DialogPopup className="w-[min(56rem,calc(100vw-2rem))] max-w-none">
+          <DialogHeader>
+            <DialogTitle>Five-year exit · {project.title}</DialogTitle>
+          </DialogHeader>
+          <DialogPanel>
+            {assessing && (
+              <ProjectExitModelPanel
+                key={project.key}
+                projectId={project.id}
+                instanceId={project.native ? ctoxInstanceId : null}
+                assessment={project.configuration?.exitModel}
               />
             )}
           </DialogPanel>

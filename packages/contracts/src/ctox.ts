@@ -6,6 +6,12 @@ import {
 } from "./workjetJourFixeNarration.ts";
 export * from "./workjetJourFixeNarration.ts";
 import {
+  WorkjetExitModelAssessment,
+  WorkjetExitModelReadRequest,
+  WorkjetExitModelRefreshRequest,
+  WorkjetExitModelResponse,
+} from "./workjetExitModel.ts";
+import {
   WorkjetJourFixeSpeechRequests,
   WorkjetJourFixeSpeechResponse,
 } from "./workjetJourFixeSpeech.ts";
@@ -594,6 +600,8 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   WorkjetJourFixeNarrationReadRequest,
+  WorkjetExitModelReadRequest,
+  WorkjetExitModelRefreshRequest,
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
   ...WorkjetJourFixeSpeechRequests,
@@ -686,14 +694,29 @@ export const CtoxWorkjetProjectMetadataProjection = Schema.Struct({
   id: ProjectId,
   title: CtoxProjectText(256),
   createdAt: Schema.optionalKey(IsoDateTime),
+  exitModel: Schema.optionalKey(Schema.NullOr(WorkjetExitModelAssessment)),
   ...CtoxWorkjetProjectConfiguration.fields,
-});
+}).check(
+  Schema.makeFilter(
+    (project) =>
+      project.exitModel == null ||
+      project.exitModel.project_id === project.id ||
+      "Exit assessment belongs to another project.",
+  ),
+);
 export type CtoxWorkjetProjectMetadataProjection = typeof CtoxWorkjetProjectMetadataProjection.Type;
 
 export const CtoxWorkjetProjectProjection = Schema.Struct({
   ...CtoxWorkjetProjectMetadataProjection.fields,
   workingCopies: Schema.Array(CtoxWorkjetWorkingCopyProjection).check(Schema.isMaxLength(500)),
-});
+}).check(
+  Schema.makeFilter(
+    (project) =>
+      project.exitModel == null ||
+      project.exitModel.project_id === project.id ||
+      "Exit assessment belongs to another project.",
+  ),
+);
 export type CtoxWorkjetProjectProjection = typeof CtoxWorkjetProjectProjection.Type;
 
 const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
@@ -710,6 +733,7 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetJourFixeNarrationReadResponse,
+  WorkjetExitModelResponse,
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
   WorkjetJourFixeSpeechResponse,

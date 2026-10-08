@@ -415,6 +415,7 @@ function IndexDraftLanding() {
   if (galleryProjects.length > 0)
     return (
       <ProjectGallery
+        ctoxInstanceId={activeCtoxInstanceId}
         onRefresh={
           activeCtoxInstanceId === null
             ? undefined
@@ -541,10 +542,12 @@ function IndexDraftLanding() {
 }
 
 function ProjectGallery({
+  ctoxInstanceId,
   projects,
   onRefresh,
   projectsUnavailable,
 }: {
+  readonly ctoxInstanceId: string | null;
   readonly onRefresh: (() => void) | undefined;
   readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
@@ -636,6 +639,7 @@ function ProjectGallery({
                 <ProjectOverviewCard
                   key={project.key}
                   project={project}
+                  ctoxInstanceId={ctoxInstanceId}
                   onOpen={project.onOpen}
                   onSave={project.onSave}
                   onSaveConfiguration={project.onSaveConfiguration}

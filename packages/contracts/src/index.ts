@@ -53,6 +53,7 @@ export * from "./workjetProjectFile.ts";
 export * from "./editor.ts";
 export * from "./project.ts";
 export * from "./projectOverview.ts";
+export * from "./workjetExitModel.ts";
 export * from "./filesystem.ts";
 export * from "./assets.ts";
 export * from "./review.ts";

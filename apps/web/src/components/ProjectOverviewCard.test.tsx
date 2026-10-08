@@ -22,7 +22,7 @@ describe("compact project gallery", () => {
     expect(markup).toContain("2026-10-07");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
-  it("opens the domain title as a website and shows the saved homepage preview when there is no snapshot", () => {
+  it("opens the domain title as a website and shows its saved homepage preview", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} />,
     );
@@ -40,6 +40,17 @@ describe("compact project gallery", () => {
     expect(markup).toContain("Users");
     expect(markup).toContain("Queries");
     expect(markup).toContain("Latency");
+    expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
+  });
+  it("uses the project logo for a domain without a saved preview", () => {
+    const markup = renderToStaticMarkup(
+      <ProjectOverviewCard project={{ ...project, title: "example.org" }} onOpen={() => {}} />,
+    );
+    expect(markup).toContain('href="https://example.org"');
+    expect(markup).toContain('aria-label="Project logo for example.org"');
+    expect(markup).toContain('aria-label="Open example.org"');
+    expect(markup).not.toContain("<img");
+    expect(markup).not.toContain("<iframe");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
   it("retains archived values and exposes its actions through the compact menu", () => {

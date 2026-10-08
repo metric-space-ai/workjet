@@ -20,6 +20,7 @@ import {
   CtoxWorkjetProjectControlResponse,
   CtoxWorkjetComputerControlResponse,
   isWorkjetSupervisorReceiptForRequest,
+  isWorkjetExitModelReceiptForRequest,
   isWorkjetJourFixeReceiptForRequest,
   CtoxWorkjetSessionControlResponse,
   WorkjetDeviceWebRtcResponseV1,
@@ -1953,6 +1954,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "guest_failed" };
         }
         if (!isWorkjetJourFixeReceiptForRequest(request, decoded.value)) {
+          return { _tag: "failed", code: "guest_failed" };
+        }
+        if (!isWorkjetExitModelReceiptForRequest(request, decoded.value)) {
           return { _tag: "failed", code: "guest_failed" };
         }
         if (

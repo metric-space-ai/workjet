@@ -96,7 +96,7 @@ export function createJourFixeGatewayMicrophoneProvider(dependencies: {
               receipt.scope.meetingId !== options.scope.meetingId ||
               receipt.scope.deckRevision !== options.scope.deckRevision
             )
-              throw new Error("Native microphone final belongs to another meeting.");
+              throw new Error("The CTOX microphone final belongs to another meeting.");
             options.onCommitted();
           })()
             .catch(fail)

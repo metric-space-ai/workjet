@@ -22,7 +22,7 @@ describe("compact project gallery", () => {
     expect(markup).toContain("2026-10-07");
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
   });
-  it("opens the domain title as a website and uses a project logo when there is no snapshot", () => {
+  it("opens the domain title as a website and shows the saved homepage preview when there is no snapshot", () => {
     const markup = renderToStaticMarkup(
       <ProjectOverviewCard project={project} onOpen={() => {}} />,
     );
@@ -30,7 +30,7 @@ describe("compact project gallery", () => {
     expect(markup).toMatch(
       /<h2[^>]*><a[^>]*href="https:\/\/greppy.xyz"[^>]*>greppy.xyz<\/a><\/h2>/,
     );
-    expect(markup).toContain('aria-label="Project logo for greppy.xyz"');
+    expect(markup).toContain('alt="Saved website preview for greppy.xyz"');
     expect(markup).toContain('aria-label="Open greppy.xyz"');
     expect(markup).not.toContain("<iframe");
     expect(markup).not.toContain("Hide preview");

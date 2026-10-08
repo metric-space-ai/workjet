@@ -13,13 +13,24 @@ const project = (id: string, native = true) => ({ key: `env:${id}`, id, native }
 
 function writerFixture() {
   let current: GalleryOrderState = { revision: 4, projectIds: ["a", "b"] };
-  const writes: { previous: GalleryOrderState; ids: readonly string[]; resolve: (order: GalleryOrderState | null) => void; reject: (error: Error) => void }[] = [];
+  const writes: {
+    previous: GalleryOrderState;
+    ids: readonly string[];
+    resolve: (order: GalleryOrderState | null) => void;
+    reject: (error: Error) => void;
+  }[] = [];
   const applied: GalleryOrderState[] = [];
   const pending: boolean[] = [];
   const writer = createGalleryOrderWriter({
     current: () => current,
-    persist: (previous, ids) => new Promise((resolve, reject) => { writes.push({ previous, ids, resolve, reject }); }),
-    apply: (order) => { current = order; applied.push(order); },
+    persist: (previous, ids) =>
+      new Promise((resolve, reject) => {
+        writes.push({ previous, ids, resolve, reject });
+      }),
+    apply: (order) => {
+      current = order;
+      applied.push(order);
+    },
     pending: (value) => pending.push(value),
   });
   return { writer, writes, applied, pending, current: () => current };

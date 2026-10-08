@@ -6,14 +6,19 @@ export interface GalleryOrderState {
 /** One scoped save at a time; disposal discards late receipts without undoing durable native work. */
 export function createGalleryOrderWriter(options: {
   readonly current: () => GalleryOrderState;
-  readonly persist: (previous: GalleryOrderState, projectIds: readonly string[]) => Promise<GalleryOrderState | null>;
+  readonly persist: (
+    previous: GalleryOrderState,
+    projectIds: readonly string[],
+  ) => Promise<GalleryOrderState | null>;
   readonly apply: (order: GalleryOrderState) => void;
   readonly pending: (pending: boolean) => void;
 }) {
   let active = true;
   let busy = false;
   return {
-    dispose() { active = false; },
+    dispose() {
+      active = false;
+    },
     async save(ids: readonly string[]): Promise<boolean> {
       if (!active || busy) return false;
       busy = true;

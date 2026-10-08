@@ -51,7 +51,11 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { rectSortingStrategy, SortableContext, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import {
+  rectSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -625,17 +629,26 @@ function ProjectGallery({
       current: () => galleryOrderRef.current,
       persist: async (previous, projectIds) => {
         const result = await saveWorkjetGalleryOrder(instanceId, {
-          commandId: newCommandId(), operationId: newCommandId(),
+          commandId: newCommandId(),
+          operationId: newCommandId(),
           expectedRevision: previous.revision,
           projectIds: projectIds.map((id) => ProjectId.make(id)),
         });
-        return result._tag === "completed" && "order" in result.response ? result.response.order : null;
+        return result._tag === "completed" && "order" in result.response
+          ? result.response.order
+          : null;
       },
-      apply: (next) => { galleryOrderRef.current = next; setGalleryOrder(next); },
+      apply: (next) => {
+        galleryOrderRef.current = next;
+        setGalleryOrder(next);
+      },
       pending: setSavingOrder,
     });
     orderWriter.current = writer;
-    return () => { writer.dispose(); if (orderWriter.current === writer) orderWriter.current = null; };
+    return () => {
+      writer.dispose();
+      if (orderWriter.current === writer) orderWriter.current = null;
+    };
   }, [instanceId]);
 
   useEffect(() => {
@@ -683,7 +696,14 @@ function ProjectGallery({
   const reorderProjects = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
-      if (instanceId === null || !orderLoaded || showArchived || over === null || active.id === over.id) return;
+      if (
+        instanceId === null ||
+        !orderLoaded ||
+        showArchived ||
+        over === null ||
+        active.id === over.id
+      )
+        return;
       const from = visibleProjects.findIndex((project) => project.key === active.id);
       const to = visibleProjects.findIndex((project) => project.key === over.id);
       if (from < 0 || to < 0) return;
@@ -772,25 +792,29 @@ function ProjectGallery({
               >
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
                   {visibleProjects.map((project) => (
-                    <SortableProjectTile key={project.key} id={project.key} label={project.title} disabled={!project.native || !orderLoaded || savingOrder || showArchived}>
+                    <SortableProjectTile
+                      key={project.key}
+                      id={project.key}
+                      label={project.title}
+                      disabled={!project.native || !orderLoaded || savingOrder || showArchived}
+                    >
                       {(reorderHandle) => (
-                      <ProjectOverviewCard
-                        project={project}
-                        onOpen={project.onOpen}
-                        onSave={project.onSave}
-                        onSaveConfiguration={project.onSaveConfiguration}
-                        canArchive={project.canArchive}
-                        statistics={project.statistics}
-                        kpis={kpisByProject[project.id]}
-                        reorderHandle={reorderHandle}
-                      />
+                        <ProjectOverviewCard
+                          project={project}
+                          onOpen={project.onOpen}
+                          onSave={project.onSave}
+                          onSaveConfiguration={project.onSaveConfiguration}
+                          canArchive={project.canArchive}
+                          statistics={project.statistics}
+                          kpis={kpisByProject[project.id]}
+                          reorderHandle={reorderHandle}
+                        />
                       )}
                     </SortableProjectTile>
                   ))}
                 </div>
               </SortableContext>
             </DndContext>
-
           )}
         </div>
       </main>

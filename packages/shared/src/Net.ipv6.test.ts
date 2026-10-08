@@ -1,5 +1,6 @@
 import * as NodeNet from "node:net";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as NetService from "./Net.ts";
 
@@ -34,27 +35,27 @@ vi.mock("node:net", async (importOriginal) => {
 });
 
 describe("loopback ports without IPv6 support", () => {
-  it("retains a free IPv4 port when the kernel rejects the IPv6 family", async () => {
+  it.effect("retains a free IPv4 port when the kernel rejects the IPv6 family", () => Effect.gen(function*() {
     const net = NetService.make();
-    const port = await Effect.runPromise(net.reserveLoopbackPort());
+    const port = yield* net.reserveLoopbackPort();
     expect(port).toBeGreaterThan(0);
-    expect(await Effect.runPromise(net.isPortAvailableOnLoopback(port))).toBe(true);
-    expect(await Effect.runPromise(net.findAvailablePort(port))).toBe(port);
-  });
-  it("still rejects an occupied IPv4 port", async () => {
+    expect(yield* net.isPortAvailableOnLoopback(port)).toBe(true);
+    expect(yield* net.findAvailablePort(port)).toBe(port);
+  }));
+  it.effect("still rejects an occupied IPv4 port", () => Effect.gen(function*() {
     const server = NodeNet.createServer();
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    yield* Effect.promise(() => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)));
     try {
       const address = server.address();
       if (address === null || typeof address === "string")
         throw new Error("Missing bound test port");
       expect(
-        await Effect.runPromise(NetService.make().isPortAvailableOnLoopback(address.port)),
+        yield* NetService.make().isPortAvailableOnLoopback(address.port),
       ).toBe(false);
     } finally {
-      await new Promise<void>((resolve, reject) =>
+      yield* Effect.promise(() => new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
-      );
+      ));
     }
-  });
+  }));
 });

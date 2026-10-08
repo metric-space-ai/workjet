@@ -1,6 +1,7 @@
 // Workjet fork delta: data contracts for the business scenes used in Jour fixe decks.
 // The learnordie scenes (`modell.*`) are fixed lecture visualisations and carry no data;
 // business scenes always render caller-supplied, bounded numbers.
+import "../zod-config";
 import { z } from "zod";
 
 export const businessSceneIdValues = ["business.kpi-bars", "business.trend"] as const;

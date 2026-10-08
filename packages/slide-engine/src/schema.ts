@@ -1,3 +1,4 @@
+import "./zod-config";
 import { z, type ZodIssue } from "zod";
 import { canvasSceneSchema } from "./excalidraw/canvas-schema";
 import { scene3dDataIssue } from "./scene-data";
@@ -428,8 +429,8 @@ export type SlideDocumentValidationIssue = {
   slideId?: string;
   blockId?: string;
   assetId?: string;
-  expected?: string;
-  received?: string;
+  expected?: string | undefined;
+  received?: string | undefined;
 };
 
 export type SlideDocumentValidationResult =
@@ -881,7 +882,7 @@ function validateCanvasEmbedSemantics(slide: SlideNode, slideIndex: number, issu
 }
 
 function validateComparisonSide(
-  side: { body?: string; items?: string[] },
+  side: { body?: string | undefined; items?: string[] | undefined },
   sideName: "left" | "right",
   slide: SlideNode,
   slideIndex: number,
@@ -1017,6 +1018,6 @@ function blockTextLength(block: SlideBlock): number {
   }
 }
 
-function comparisonSideTextLength(side: { title: string; body?: string; items?: string[] }): number {
+function comparisonSideTextLength(side: { title: string; body?: string | undefined; items?: string[] | undefined }): number {
   return side.title.length + (side.body?.length ?? 0) + (side.items?.join("").length ?? 0);
 }

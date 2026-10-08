@@ -7,20 +7,20 @@ import {
   type CanvasRuntime,
   type SlideCanvasMode,
   type SlideCanvasTheme,
-} from "../../../../packages/slide-engine/src/canvas";
+} from "@workjet/slide-engine/canvas";
 import {
   CANVAS_HEIGHT,
   CANVAS_VERSION,
   CANVAS_WIDTH,
   type CanvasElement,
   type CanvasScene,
-} from "../../../../packages/slide-engine/src/excalidraw/canvas-schema";
+} from "@workjet/slide-engine/excalidraw/canvas-schema";
 import {
   canvasSceneForSlide,
   updateSlideCanvas,
-} from "../../../../packages/slide-engine/src/excalidraw/scene";
-import type { SlideDocument, SlideNode } from "../../../../packages/slide-engine/src/schema";
-import "../../../../packages/slide-engine/styles/core.css";
+} from "@workjet/slide-engine/excalidraw/scene";
+import type { SlideDocument, SlideNode } from "@workjet/slide-engine/schema";
+import "@workjet/slide-engine/styles/core.css";
 import { Button } from "../components/ui/button";
 import "../index.css";
 

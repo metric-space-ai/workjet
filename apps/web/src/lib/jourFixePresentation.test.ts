@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type {
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
@@ -11,7 +11,7 @@ import { readJourFixePresentation, saveJourFixePresentationCanvas } from "./jour
 const projectId = "project" as ProjectId;
 const bytes = new TextEncoder().encode(JSON.stringify(jourFixeDeck));
 
-async function sha256Hex(value: Uint8Array) {
+async function sha256Hex(value: Uint8Array<ArrayBuffer>) {
   const digest = await crypto.subtle.digest("SHA-256", value);
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -41,7 +41,7 @@ async function manifest(): Promise<WorkjetPresentationManifest> {
   };
 }
 
-function control(stored: WorkjetPresentationManifest, served: Uint8Array = bytes) {
+function control(stored: WorkjetPresentationManifest, served: Uint8Array<ArrayBuffer> = bytes) {
   const calls: CtoxWorkjetProjectControlRequest[] = [];
   const port = async (
     _instance: string,

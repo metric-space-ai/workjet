@@ -614,6 +614,9 @@ importers:
       '@workjet/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@workjet/slide-engine':
+        specifier: workspace:*
+        version: link:../../packages/slide-engine
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -855,6 +858,9 @@ importers:
       react:
         specifier: ^19.2.3
         version: 19.2.6
+      react-dom:
+        specifier: ^19.2.3
+        version: 19.2.6(react@19.2.6)
       three:
         specifier: 0.140.0
         version: 0.140.0
@@ -868,6 +874,9 @@ importers:
       '@types/react':
         specifier: 19.2.16
         version: 19.2.16
+      '@types/react-dom':
+        specifier: ~19.2.3
+        version: 19.2.3(@types/react@19.2.16)
       '@types/three':
         specifier: 0.140.0
         version: 0.140.0

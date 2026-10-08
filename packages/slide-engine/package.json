@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "sideEffects": [
-    "./styles/**/*.css"
+    "./styles/**/*.css",
+    "./src/zod-config.ts"
   ],
   "exports": {
     "./excalidraw/canvas-schema": "./src/excalidraw/canvas-schema.ts",
@@ -82,11 +83,13 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/react": "19.2.16",
+    "@types/react-dom": "~19.2.3",
     "@types/three": "0.140.0",
     "esbuild": "0.28.1",
     "vite-plus": "catalog:"
   },
   "peerDependencies": {
-    "react": "^19.2.3"
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
   }
 }

@@ -1,3 +1,4 @@
+import "../zod-config";
 import { z } from "zod";
 import { scene3dSceneIdValues } from "../scenes/scene-ids";
 
@@ -64,12 +65,14 @@ export type CanvasElement = z.infer<typeof canvasElementSchema>;
 export function isSafeCanvasImage(dataURL: string, mimeType?: string): boolean {
   if (dataURL.length > 4 * 1024 * 1024) return false;
   const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataURL);
-  if (!match || (mimeType && match[1] !== mimeType) || match[2].length % 4 !== 0) return false;
+  const kind = match?.[1];
+  const payload = match?.[2];
+  if (!kind || !payload || (mimeType && kind !== mimeType) || payload.length % 4 !== 0) return false;
   try {
-    const bytes = atob(match[2].slice(0, 32));
-    if (match[1] === "image/png") return bytes.startsWith("\x89PNG\r\n\x1a\n");
-    if (match[1] === "image/jpeg") return bytes.startsWith("\xff\xd8\xff");
-    if (match[1] === "image/gif") return bytes.startsWith("GIF87a") || bytes.startsWith("GIF89a");
+    const bytes = atob(payload.slice(0, 32));
+    if (kind === "image/png") return bytes.startsWith("\x89PNG\r\n\x1a\n");
+    if (kind === "image/jpeg") return bytes.startsWith("\xff\xd8\xff");
+    if (kind === "image/gif") return bytes.startsWith("GIF87a") || bytes.startsWith("GIF89a");
     return bytes.startsWith("RIFF") && bytes.slice(8, 12) === "WEBP";
   } catch { return false; }
 }

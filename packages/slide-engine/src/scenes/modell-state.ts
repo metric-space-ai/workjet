@@ -92,14 +92,16 @@ export function trainModellStep(state: ModellSceneState, dt: number) {
   const count = Math.min(20, Math.floor(state.accumulator));
   state.accumulator -= count;
   for (let step = 0; step < count; step++) {
-    const grad = [0, 0, 0];
+    const grad: [number, number, number] = [0, 0, 0];
     for (const [x, y] of state.data) {
       const error = state.a[0] + state.a[1] * x + state.a[2] * x * x - y;
       grad[0] += error;
       grad[1] += error * x;
       grad[2] += error * x * x;
     }
-    for (let j = 0; j < 3; j++) state.a[j] -= (0.045 * 2 * grad[j]) / state.data.length;
+    state.a[0] -= (0.045 * 2 * grad[0]) / state.data.length;
+    state.a[1] -= (0.045 * 2 * grad[1]) / state.data.length;
+    state.a[2] -= (0.045 * 2 * grad[2]) / state.data.length;
     state.steps++;
     if (state.steps >= state.trainingLimit) {
       state.trainingRunning = false;

@@ -135,9 +135,9 @@ function blockElements(block: SlideBlock, x: number, y: number, width: number, f
       result.push({ ...base(id("axis"), "line", x, baseline, width, 0, block.id), points: [[0, 0], [width, 0]], lastCommittedPoint: null, startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: null });
       if (block.chartType === "line") result.push({ ...base(id("curve"), "line", x, y, width, 315, block.id), strokeColor: ACCENT, points, lastCommittedPoint: null, startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: null });
       numbers.forEach((value, i) => {
-        const valueY = y + points[i][1];
+        const valueY = y + (points[i]?.[1] ?? 0);
         if (block.chartType === "bar") result.push({ ...base(id(`bar${i}`), "rectangle", x + cellWidth * (i + 0.2), Math.min(valueY, baseline), cellWidth * 0.6, Math.abs(valueY - baseline), block.id), backgroundColor: "#c9e6df", fillStyle: "hachure" });
-        else result.push({ ...base(id(`point${i}`), "ellipse", x + points[i][0] - 5, valueY - 5, 10, 10, block.id), backgroundColor: ACCENT, fillStyle: "solid" });
+        else result.push({ ...base(id(`point${i}`), "ellipse", x + (points[i]?.[0] ?? 0) - 5, valueY - 5, 10, 10, block.id), backgroundColor: ACCENT, fillStyle: "solid" });
         result.push(textElement(id(`label${i}`), `${labels[i]}\n${value}`, x + cellWidth * i + 4, y + 335, cellWidth - 8, 22, block.id));
       });
       if (block.caption) result.push(textElement(id("caption"), block.caption, x, Math.max(...result.map((e) => e.y + e.height)) + 12, width, 22, block.id));
@@ -172,8 +172,9 @@ export function canvasSceneForSlide(slide: SlideNode, assets: SlideAssetRef[] = 
   if (slide.canvas) return canvasSceneSchema.parse(slide.canvas);
   const files: CanvasScene["files"] = {};
   const heading = slide.blocks.find((block) => block.type === "heading" && block.text === slide.title);
-  const elements = [textElement(`${slide.id}:title`, slide.title, 88, 80, 1424, 54, heading?.id)];
-  const bodyTop = Math.max(230, elements[0].y + elements[0].height + 70);
+  const titleElement = textElement(`${slide.id}:title`, slide.title, 88, 80, 1424, 54, heading?.id);
+  const elements = [titleElement];
+  const bodyTop = Math.max(230, titleElement.y + titleElement.height + 70);
   elements.push({ ...base(`${slide.id}:underline`, "line", 90, bodyTop - 50, 300, 0), strokeColor: ACCENT, points: [[0, 0], [300, 0]], lastCommittedPoint: null, startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: null });
   const content = slide.blocks.filter((block) => block !== heading);
   const visual = /figure_(right|left)/.test(slide.layout) ? content.find((block) => block.type === "figure" || block.type === "scene3d") : undefined;

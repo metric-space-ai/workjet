@@ -114,10 +114,20 @@ describe("project team row state", () => {
   });
 
   it("shows an imported history’s actual assistant preview without inventing live status", () => {
-    const imported = { ...idle, latestTurn: null, latestAssistantMessagePreview: "  Installed.\nVerification complete.  ", planProgress: { step: "Old plan" } };
+    const imported = {
+      ...idle,
+      latestTurn: null,
+      latestAssistantMessagePreview: "  Installed.\nVerification complete.  ",
+      planProgress: { step: "Old plan" },
+    };
     expect(projectTeamProgressPreview(imported)).toBe("Installed. Verification complete.");
     expect(projectTeamStatus(imported)).toEqual({ label: "Idle", dot: "bg-muted-foreground/50" });
-    expect(projectTeamProgressPreview({ ...imported, latestTurn: { assistantMessagePreview: "New reply" } })).toBe("New reply");
+    expect(
+      projectTeamProgressPreview({
+        ...imported,
+        latestTurn: { assistantMessagePreview: "New reply" },
+      }),
+    ).toBe("New reply");
     expect(projectTeamProgressPreview({ latestAssistantMessagePreview: "   " })).toBe("");
   });
 

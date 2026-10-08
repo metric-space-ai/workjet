@@ -71,15 +71,23 @@ export function SpeechRouteSettingsSection() {
   }, []);
 
   return (
-    <section>
-      <h2>Sprache</h2>
-      <p>
+    <section className="mt-8 space-y-4 border-t border-border pt-6">
+      <h2 className="text-sm font-semibold text-foreground">Sprache</h2>
+      <p className="text-xs text-muted-foreground">
         Lege fest, welcher Computer die Spracherkennung und die Sprachausgabe für den Regeltermin
         und für spontane Sprachsitzungen übernimmt. Ein Computer, der die Richtung nicht bestätigt,
         lässt die Sitzung scheitern. Auf einen anderen Computer wechselt sie nicht.
       </p>
-      {loadError ? <p role="alert">{loadError}</p> : null}
-      {saveError ? <p role="alert">{saveError}</p> : null}
+      {loadError ? (
+        <p role="alert" className="text-xs text-destructive">
+          {loadError}
+        </p>
+      ) : null}
+      {saveError ? (
+        <p role="alert" className="text-xs text-destructive">
+          {saveError}
+        </p>
+      ) : null}
       <SpeechRouteSettings
         routes={routes}
         computers={computers}

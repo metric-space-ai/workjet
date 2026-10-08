@@ -32,12 +32,14 @@ export function SpeechRouteSettings({
   onChange,
 }: SpeechRouteSettingsProps) {
   return (
-    <div>
+    <div className="space-y-4">
       {SPEECH_SESSION_KINDS.map((sessionKind) => {
         const route = routeFor(routes, sessionKind);
         return (
-          <fieldset key={sessionKind} disabled={disabled}>
-            <legend>{speechSessionKindLabel(sessionKind)}</legend>
+          <fieldset key={sessionKind} disabled={disabled} className="space-y-2">
+            <legend className="text-xs font-medium text-muted-foreground">
+              {speechSessionKindLabel(sessionKind)}
+            </legend>
             {(["stt", "tts"] as const).map((direction) => {
               const selected =
                 direction === "stt" ? route.sttEnvironmentId : route.ttsEnvironmentId;
@@ -46,9 +48,12 @@ export function SpeechRouteSettings({
               );
               const selectId = `speech-${sessionKind}-${direction}`;
               return (
-                <div key={direction}>
-                  <label htmlFor={selectId}>{DIRECTION_LABEL[direction]}</label>
+                <div key={direction} className="space-y-1">
+                  <label htmlFor={selectId} className="block text-xs text-muted-foreground">
+                    {DIRECTION_LABEL[direction]}
+                  </label>
                   <select
+                    className="w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
                     id={selectId}
                     value={selected ?? STANDARD_VALUE}
                     onChange={(event) => {
@@ -70,7 +75,7 @@ export function SpeechRouteSettings({
                     ))}
                   </select>
                   {selected !== null && !isSpeechComputerConfirmed(selectedComputer, direction) ? (
-                    <p role="status">
+                    <p role="status" className="text-xs text-warning">
                       Für diese Richtung ist auf dem gewählten Rechner noch keine Verfügbarkeit
                       bestätigt. Die Sitzung schlägt fehl, statt auf einen anderen Rechner
                       auszuweichen.

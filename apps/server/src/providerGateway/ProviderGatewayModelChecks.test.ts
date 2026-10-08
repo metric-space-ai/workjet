@@ -1,12 +1,13 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Real loopback transport regression.
 import * as NodeHttp from "node:http";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { WorkjetGatewayAccountId } from "@workjet/contracts";
 import {
   makeModelChecks,
   MODEL_CHECK_COOLDOWN_MS,
   MODEL_CHECK_BATCH_LIMIT,
   MODEL_CHECK_QUEUE_LIMIT,
+  MODEL_CHECK_TIMEOUT_MS,
   type ModelCheckTarget,
 } from "./ProviderGatewayModelChecks.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
@@ -51,6 +52,104 @@ const setup = () => {
   };
 };
 describe("bounded model checks", () => {
+  it("times out an uncooperative probe, advances the queue and rejects its late success", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    fixture.setTargets(
+      (await fixture.options.targets()).map((item) => ({ ...item, modelId: "grok-4.7" })),
+    );
+    let release!: (value: Awaited<ReturnType<typeof fixture.options.probe>>) => void;
+    let started!: () => void;
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let requestSignal!: AbortSignal;
+    const checks = makeModelChecks({
+      ...fixture.options,
+      probe: (item, signal) => {
+        if (item.accountId !== "one") return fixture.options.probe(item);
+        requestSignal = signal;
+        started();
+        return new Promise<Awaited<ReturnType<typeof fixture.options.probe>>>((resolve) => {
+          release = resolve;
+        });
+      },
+    });
+    try {
+      await checks.schedule({});
+      await began;
+      await vi.advanceTimersByTimeAsync(MODEL_CHECK_TIMEOUT_MS);
+      await checks.drain();
+      const result = await checks.list();
+      expect(result.pending).toEqual([]);
+      expect(requestSignal.aborted).toBe(true);
+      expect(result.checks.find((item) => item.accountId === "one")).toMatchObject({
+        status: "unavailable",
+        source: "gateway",
+        errorClass: null,
+        httpStatus: null,
+        unavailableReason: "timeout",
+      });
+      expect(result.checks.find((item) => item.accountId === "two")?.status).toBe("ok");
+      release({ status: "ok", source: "upstream", errorClass: null, httpStatus: 200 });
+      await Promise.resolve();
+      expect((await checks.list()).checks.find((item) => item.accountId === "one")?.status).toBe(
+        "unavailable",
+      );
+      expect(JSON.parse(fixture.persisted()!).entries[0].check.unavailableReason).toBe("timeout");
+    } finally {
+      await checks.shutdown();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.useRealTimers();
+    }
+  });
+  it("cancels an uncooperative probe immediately without persisting a result", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    fixture.setTargets([{ ...target(), modelId: "grok-4.7" }]);
+    let started!: () => void;
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let requestSignal!: AbortSignal;
+    const checks = makeModelChecks({
+      ...fixture.options,
+      probe: (_item, signal) => {
+        requestSignal = signal;
+        started();
+        return new Promise<Awaited<ReturnType<typeof fixture.options.probe>>>(() => undefined);
+      },
+    });
+    try {
+      await checks.schedule({});
+      await began;
+      await checks.cancel();
+      expect(requestSignal.aborted).toBe(true);
+      expect((await checks.list()).pending).toEqual([]);
+      expect((await checks.list()).checks).toEqual([]);
+      expect(fixture.persisted()).toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await checks.shutdown();
+      vi.useRealTimers();
+    }
+  });
+  it("clears only the reauthenticated account and rechecks even an unchanged revision", async () => {
+    const fixture = setup();
+    fixture.setTargets(
+      (await fixture.options.targets()).map((item) => ({ ...item, modelId: "grok-4.7" })),
+    );
+    const checks = makeModelChecks(fixture.options);
+    await checks.run({});
+    fixture.calls.length = 0;
+    const next = await checks.recheckAccounts(["one"]);
+    expect(next.checks.map((item) => item.accountId)).toEqual(["two"]);
+    expect(next.pending.map((item) => item.accountId)).toEqual(["one"]);
+    await checks.drain();
+    expect(fixture.calls).toEqual(["one"]);
+    expect((await checks.list()).checks).toHaveLength(2);
+    await checks.shutdown();
+  });
   it.each([1, 2])("discards legacy v%s checks and checks them afresh", async (schemaVersion) => {
     const fixture = setup();
     const legacy = JSON.stringify({

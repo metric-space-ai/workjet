@@ -1,3 +1,4 @@
+// @effect-diagnostics globalTimers:off -- The server owns this bounded probe timer and clears it on every outcome.
 import {
   WorkjetGatewayAccountId,
   WorkjetGatewayModelCheck,
@@ -9,6 +10,7 @@ import * as Schema from "effect/Schema";
 export const MODEL_CHECK_COOLDOWN_MS = 5 * 60_000;
 export const MODEL_CHECK_BATCH_LIMIT = 32;
 export const MODEL_CHECK_QUEUE_LIMIT = 64;
+export const MODEL_CHECK_TIMEOUT_MS = 20_000;
 const Persisted = Schema.Struct({
   schemaVersion: Schema.Literal(3),
   entries: Schema.Array(
@@ -108,6 +110,38 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
   };
   const captureRevisions = async () =>
     new Map((await reconcile()).map((target) => [key(target), target.revision]));
+  const boundedProbe = (target: ModelCheckTarget, cancellation: AbortSignal) =>
+    new Promise<Awaited<ReturnType<ModelChecksOptions["probe"]>>>((resolve) => {
+      const request = new AbortController();
+      let settled = false;
+      const unavailable = {
+        status: "unavailable" as const,
+        errorClass: null,
+        httpStatus: null,
+        source: "gateway" as const,
+      };
+      const finish = (result: Awaited<ReturnType<ModelChecksOptions["probe"]>>) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        cancellation.removeEventListener("abort", abort);
+        resolve(result);
+      };
+      const abort = () => {
+        request.abort();
+        finish({ ...unavailable, unavailableReason: "transport" });
+      };
+      const timer = setTimeout(() => {
+        request.abort();
+        finish({ ...unavailable, unavailableReason: "timeout" });
+      }, MODEL_CHECK_TIMEOUT_MS);
+      cancellation.addEventListener("abort", abort, { once: true });
+      if (cancellation.aborted) abort();
+      else
+        void Promise.resolve()
+          .then(() => options.probe(target, request.signal))
+          .then(finish, () => finish({ ...unavailable, unavailableReason: "transport" }));
+    });
   const processQueue = async () => {
     while (pending.size > 0) {
       if (closed) break;
@@ -125,13 +159,7 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
       active = { item, controller };
       item.status = "running";
       const startedAt = options.now();
-      const result = await options.probe(item.target, controller.signal).catch(() => ({
-        status: "unavailable" as const,
-        errorClass: null,
-        httpStatus: null,
-        source: "gateway" as const,
-        unavailableReason: "transport" as const,
-      }));
+      const result = await boundedProbe(item.target, controller.signal);
       await reconcile();
       // Shutdown and config replacement both discard results of the old request.
       if (!closed && !controller.signal.aborted && pending.get(id) === item) {
@@ -209,6 +237,22 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
       (await reconcile()).filter((target) => previous.get(key(target)) !== target.revision),
       false,
     );
+  // A completed login is new evidence even when the provider reuses the same token.
+  const recheckAccounts = async (accountIds: ReadonlyArray<string>) => {
+    const selected = new Set(accountIds);
+    const targets = await reconcile();
+    for (const [id, entry] of entries) {
+      if (selected.has(entry.check.accountId)) {
+        entries.delete(id);
+        admissions.delete(id);
+      }
+    }
+    await options.write(JSON.stringify({ schemaVersion: 3, entries: [...entries.values()] }));
+    return admit(
+      targets.filter((target) => selected.has(target.accountId)),
+      true,
+    );
+  };
   const drain = async () => {
     for (;;) {
       const current = pump;
@@ -230,5 +274,15 @@ export const makeModelChecks = (options: ModelChecksOptions) => {
     closed = true;
     await cancel();
   };
-  return { list, schedule, scheduleChanged, captureRevisions, drain, run, cancel, shutdown };
+  return {
+    list,
+    schedule,
+    scheduleChanged,
+    recheckAccounts,
+    captureRevisions,
+    drain,
+    run,
+    cancel,
+    shutdown,
+  };
 };

@@ -173,7 +173,7 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
         }
     };
     let account_health =
-        account_health::AccountHealthSource::new(account_state, store, &config.runtime);
+        account_health::AccountHealthSource::new(account_state.clone(), store, &config.runtime);
     let management_source = Arc::new(
         HostManagementSource::new(
             provider_endpoint.clone(),
@@ -198,11 +198,14 @@ pub async fn start(config: ValidatedHostConfig) -> Result<RunningHost, HostError
             management_source.clone(),
             management_source,
         )
-        .attach_oauth_source(Arc::new(HostOAuthSource::with_codex_callback_port(
-            management_endpoint.clone(),
-            antigravity_client,
-            config.codex_callback_port,
-        ))),
+        .attach_oauth_source(Arc::new(
+            HostOAuthSource::with_codex_callback_port(
+                management_endpoint.clone(),
+                antigravity_client,
+                config.codex_callback_port,
+            )
+            .with_account_recovery(account_state),
+        )),
     );
 
     let provider_task = tokio::spawn(async move {

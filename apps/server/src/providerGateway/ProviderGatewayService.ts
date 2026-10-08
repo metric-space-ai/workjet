@@ -1276,6 +1276,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         return { schemaVersion: 1, pending: false, failed: true, completedAccountIds: [] };
       }
       let claim: unknown;
+      // Stop old probes before the native one-time claim records auth recovery.
+      await modelChecks.cancel();
       try {
         claim = await platform.managementRequest(
           endpoint,
@@ -1950,10 +1952,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
             try: async () => {
-              const previous = await modelChecks.captureRevisions().catch(() => undefined);
               const result = await runOauthPoll(input);
-              if (result.completedAccountIds.length > 0 && previous !== undefined)
-                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              if (result.completedAccountIds.length > 0)
+                await modelChecks
+                  .recheckAccounts(result.completedAccountIds)
+                  .catch(() => undefined);
               return result;
             },
             catch: (error) =>

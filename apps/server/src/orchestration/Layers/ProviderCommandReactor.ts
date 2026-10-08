@@ -35,7 +35,11 @@ import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { ServerConfig } from "../../config.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
-import { IMPORTED_HISTORY_CONTEXT_NOTICE } from "../../provider/importedHistoryContext.ts";
+import {
+  buildImportedHistoryPrompt,
+  describeImportedHistoryFit,
+  IMPORTED_HISTORY_CONTEXT_NOTICE,
+} from "../../provider/importedHistoryContext.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -915,6 +919,8 @@ const make = Effect.gen(function* () {
       importedHistory.length > 0 &&
       (activeSession?.provider === "codex" || activeSession?.provider === "claudeAgent")
     ) {
+      const fit = buildImportedHistoryPrompt(importedHistory, normalizedInput);
+      const fitDetail = fit ? describeImportedHistoryFit(fit) : "";
       yield* orchestrationEngine.dispatch({
         type: "thread.activity.append",
         commandId: CommandId.make("imported-context:" + input.requestId),
@@ -924,7 +930,11 @@ const make = Effect.gen(function* () {
           tone: "info",
           kind: "provider.history.context",
           summary: "Imported-history continuation",
-          payload: { detail: IMPORTED_HISTORY_CONTEXT_NOTICE },
+          payload: {
+            detail: fitDetail
+              ? `${IMPORTED_HISTORY_CONTEXT_NOTICE} ${fitDetail}`
+              : IMPORTED_HISTORY_CONTEXT_NOTICE,
+          },
           turnId: null,
           createdAt: input.createdAt,
         },

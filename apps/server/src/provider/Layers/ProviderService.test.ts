@@ -17,6 +17,7 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
@@ -977,7 +978,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
-  it.effect("rejects oversized imported context without dropping earlier results", () =>
+  it.effect("condenses oversized imported context instead of refusing the turn", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       const threadId = asThreadId("oversized-imported-context");
@@ -988,22 +989,23 @@ routing.layer("ProviderServiceLive routing", (it) => {
         runtimeMode: "full-access",
       });
       routing.codex.sendTurn.mockClear();
-      const error = yield* Effect.flip(
-        provider.sendTurn({
-          threadId,
-          input: "Continue",
-          importedHistory: [
-            {
-              id: MessageId.make("source-large"),
-              role: "assistant",
-              text: "prior-result ".repeat(12_000),
-            },
-          ],
-        }),
-      );
-      assert.ok(Schema.is(ProviderAdapterRequestError)(error));
-      assert.ok(error.detail.includes("No messages were omitted and no turn was sent"));
-      assert.equal(routing.codex.sendTurn.mock.calls.length, 0);
+      yield* provider.sendTurn({
+        threadId,
+        input: "Continue",
+        importedHistory: [
+          {
+            id: MessageId.make("source-large"),
+            role: "assistant",
+            text: "prior-result ".repeat(12_000),
+          },
+        ],
+      });
+      assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+      const sent = routing.codex.sendTurn.mock.calls[0]?.[0];
+      assert.ok(sent?.input?.includes("condensed to fit"));
+      assert.ok(sent?.input?.endsWith("Continue"));
+      assert.ok((sent?.input?.length ?? Infinity) <= PROVIDER_SEND_TURN_MAX_INPUT_CHARS);
+      routing.codex.sendTurn.mockClear();
       yield* provider.stopSession({ threadId });
     }),
   );

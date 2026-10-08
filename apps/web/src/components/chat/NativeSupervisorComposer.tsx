@@ -188,15 +188,11 @@ export function NativeSupervisorComposer(props: {
             );
           }
         } catch {
-          setExecutionError(
-            "Could not save execution history. Refresh to retry.",
-          );
+          setExecutionError("Could not save execution history. Refresh to retry.");
         }
       }
     } catch (failure) {
-      setError(
-        failure instanceof Error ? failure.message : "Could not confirm the CTOX task.",
-      );
+      setError(failure instanceof Error ? failure.message : "Could not confirm the CTOX task.");
     } finally {
       inFlight.current = false;
       setBusy(false);

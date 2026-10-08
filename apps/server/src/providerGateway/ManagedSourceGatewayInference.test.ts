@@ -115,7 +115,10 @@ const fixture = () => {
   };
 };
 const reason = async (effect: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =>
-  (await Effect.runPromise(Effect.flip(effect))).reason;
+  Effect.runPromise(Effect.match(effect, {
+    onFailure: (error) => error.reason,
+    onSuccess: () => { throw new Error("Expected gateway binding to fail"); },
+  }));
 
 describe("managed source gateway binding", () => {
   it("binds an enabled native source to the explicit worker route/model without source CLI routing", async () => {

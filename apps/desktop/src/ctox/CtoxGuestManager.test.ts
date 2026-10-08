@@ -3093,6 +3093,66 @@ describe("CtoxGuestManager", () => {
   });
 
   it("allows shell/control resources but blocks Business OS HTTP data routes", () => {
+    const officeRoot = "/vendor/ctox-office/upstream";
+    const officeAssets = [
+      ...["009", "010", "011", "012", "030", "031", "032", "033", "155", "158"].map(
+        (font) => `${officeRoot}/fonts/${font}`,
+      ),
+      `${officeRoot}/sdkjs/common/Images/fonts_thumbnail@2x.png.bin`,
+    ];
+    for (const prefix of [
+      "/business-os",
+      "/business-os/_shell/0.1.46-beta.83",
+      "/_shell/0.1.46-beta.83",
+    ]) {
+      for (const asset of officeAssets) {
+        const url = `https://welsch.ctox.dev${prefix}${asset}?v=signed83`;
+        for (const resource of ["xhr", "fetch", "image"]) {
+          for (const method of ["GET", "HEAD"]) {
+            expect(
+              CtoxGuestManager.isForbiddenCtoxDataRequest(
+                url, resource, "https://welsch.ctox.dev", method,
+              ),
+            ).toBe(false);
+          }
+          for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+            expect(
+              CtoxGuestManager.isForbiddenCtoxDataRequest(
+                url, resource, "https://welsch.ctox.dev", method,
+              ),
+            ).toBe(true);
+          }
+          for (const origin of ["https://foreign.example", "http://welsch.ctox.dev"]) {
+            expect(
+              CtoxGuestManager.isForbiddenCtoxDataRequest(url, resource, origin),
+            ).toBe(true);
+          }
+        }
+      }
+      for (const asset of [
+        `${officeRoot}/fonts/private`,
+        `${officeRoot}/fonts/012/records`,
+        `${officeRoot}/fonts/012.bin`,
+        `${officeRoot}/sdkjs/common/Images/private.bin`,
+        "/vendor/other/fonts/012",
+        "/files/012",
+        "/api/business-os/records",
+        "/commands/012",
+        "/rxdb/private",
+        `${officeRoot}/fonts/private/../012`,
+        `${officeRoot}/fonts/private/%2e%2e/012`,
+        `${officeRoot}/fonts/%30%31%32`,
+        `${officeRoot}//fonts/012`,
+        `${officeRoot}/fonts/../fonts/012`,
+        `${officeRoot}/sdkjs/common/Images/private/../fonts_thumbnail@2x.png.bin`,
+      ]) {
+        expect(
+          CtoxGuestManager.isForbiddenCtoxDataRequest(
+            `https://welsch.ctox.dev${prefix}${asset}`, "xhr", "https://welsch.ctox.dev",
+          ),
+        ).toBe(true);
+      }
+    }
     for (const prefix of [
       "",
       "/business-os",

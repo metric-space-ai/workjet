@@ -81,6 +81,16 @@ function markup(threads: readonly EnvironmentThreadShell[]) {
   );
 }
 
+describe("project worker activity", () => {
+  it("renders the activity panel even when no worker has a turn yet", () => {
+    const html = markup([shell(source, "supervisor")]);
+    expect(html).toContain('data-workjet-overview-section="activity"');
+    expect(html).toContain("data-workjet-activity-hours");
+    expect(html).toContain("data-workjet-activity-heatmap");
+    expect(html).toContain("Based on each worker&#x27;s latest turn");
+  });
+});
+
 describe("source project remote workers", () => {
   it("renders the target computer worker in the source project's Workers group", () => {
     const html = markup([shell(source, "supervisor"), shell(target, "worker")]);

@@ -14,6 +14,7 @@ const Catalog = Schema.Struct({
     }),
   ),
 });
+const decodeCatalog = Schema.decodeUnknownSync(Catalog);
 const PROVIDERS: Readonly<Partial<Record<WorkjetGatewayProvider, string>>> = {
   codex: "openai",
   claude: "anthropic",
@@ -29,7 +30,7 @@ export function decodeLiveProviderModels(
   nowMs: number,
 ): ReadonlyArray<string> | undefined {
   try {
-    const catalog = Schema.decodeUnknownSync(Catalog)(value);
+    const catalog = decodeCatalog(value);
     const checked = Date.parse(catalog.checkedAt);
     const expires = Date.parse(catalog.expiresAt);
     if (

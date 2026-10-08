@@ -550,7 +550,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         );
         if (account === undefined || !account.enabled)
           return { ...unavailable, unavailableReason: "account-unavailable" as const };
-        if (account.provider === "kimi" && isApiKeyAccount(account) && account.upstreamBaseUrl === undefined)
+        if (
+          account.provider === "kimi" &&
+          isApiKeyAccount(account) &&
+          account.upstreamBaseUrl === undefined
+        )
           return { ...unavailable, unavailableReason: "unverified-response" as const };
         return platform.providerModelCheck(
           currentStatus.providerEndpoint,
@@ -1339,7 +1343,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           : undefined;
       if (input.provider === "kimi" && kimiConnection === undefined)
         throw safeError("management-unavailable");
-      if (kimiConnection !== undefined && input.models?.some((id) => !kimiConnection.models.includes(id)))
+      if (
+        kimiConnection !== undefined &&
+        input.models?.some((id) => !kimiConnection.models.includes(id))
+      )
         throw safeError("invalid-configuration");
       const usedIds = new Set(accounts.map((account) => account.id));
       const base = `${input.provider}-${secretSlug(input.label)}`;
@@ -1736,23 +1743,33 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           !account.enabled ||
           !isApiKeyAccount(account) ||
           (account.upstreamBaseUrl !== undefined &&
-            !["https://api.kimi.com/coding/v1", "https://api.moonshot.ai/v1"].includes(account.upstreamBaseUrl)) ||
+            !["https://api.kimi.com/coding/v1", "https://api.moonshot.ai/v1"].includes(
+              account.upstreamBaseUrl,
+            )) ||
           (accountId !== undefined && account.id !== accountId)
-        ) continue;
+        )
+          continue;
         const secret = await runPromise(secrets.get(secretStoreName(account.apiKeySecret))).catch(
           () => Option.none<Uint8Array>(),
         );
         if (Option.isNone(secret)) continue;
         const apiKey = new TextDecoder().decode(secret.value);
         if (!isAcceptableApiKey(apiKey)) continue;
-        const connection = await platform.discoverKimiConnection(apiKey.trim(), account.upstreamBaseUrl, deadline);
+        const connection = await platform.discoverKimiConnection(
+          apiKey.trim(),
+          account.upstreamBaseUrl,
+          deadline,
+        );
         if (connection === undefined || deadline.aborted) continue;
         const models =
           account.upstreamBaseUrl === connection.upstreamBaseUrl
             ? account.models.filter((model) => connection.models.includes(model))
             : connection.models;
-        if (account.upstreamBaseUrl === connection.upstreamBaseUrl &&
-            JSON.stringify(account.models) === JSON.stringify(models)) continue;
+        if (
+          account.upstreamBaseUrl === connection.upstreamBaseUrl &&
+          JSON.stringify(account.models) === JSON.stringify(models)
+        )
+          continue;
         accounts[index] = { ...account, upstreamBaseUrl: connection.upstreamBaseUrl, models };
         changed = true;
       }
@@ -1904,17 +1921,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
         }),
       oauthPoll: (input) =>
-        grantsMutex.withPermits(1)(Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runOauthPoll(input);
-            if (result.completedAccountIds.length > 0 && previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
-        })),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runOauthPoll(input);
+              if (result.completedAccountIds.length > 0 && previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("oauth-unavailable"),
+          }),
+        ),
       oauthCancel: (input) =>
         Effect.tryPromise({
           try: () => runOauthCancel(input),
@@ -1922,17 +1941,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("oauth-session-invalid"),
         }),
       addApiKeyAccount: (input) =>
-        grantsMutex.withPermits(1)(Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runAddApiKeyAccount(input);
-            if (previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
-        })),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runAddApiKeyAccount(input);
+              if (previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          }),
+        ),
       removeAccount: (input) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
@@ -1979,17 +2000,19 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
             isGatewayOperationError(error) ? error : safeError("management-unavailable"),
         }),
       updateRouting: (input) =>
-        grantsMutex.withPermits(1)(Effect.tryPromise({
-          try: async () => {
-            const previous = await modelChecks.captureRevisions().catch(() => undefined);
-            const result = await runUpdateRouting(input);
-            if (previous !== undefined)
-              await modelChecks.scheduleChanged(previous).catch(() => undefined);
-            return result;
-          },
-          catch: (error) =>
-            isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
-        })),
+        grantsMutex.withPermits(1)(
+          Effect.tryPromise({
+            try: async () => {
+              const previous = await modelChecks.captureRevisions().catch(() => undefined);
+              const result = await runUpdateRouting(input);
+              if (previous !== undefined)
+                await modelChecks.scheduleChanged(previous).catch(() => undefined);
+              return result;
+            },
+            catch: (error) =>
+              isGatewayOperationError(error) ? error : safeError("invalid-configuration"),
+          }),
+        ),
     });
   });
 

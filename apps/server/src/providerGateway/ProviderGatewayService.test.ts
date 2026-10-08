@@ -1023,62 +1023,78 @@ describe("ProviderGatewayService · API-key accounts", () => {
       gateway.addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY }),
     );
     const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
-    expect(stored.accounts.find((account: { provider: string }) => account.provider === "kimi")).toMatchObject({
+    expect(
+      stored.accounts.find((account: { provider: string }) => account.provider === "kimi"),
+    ).toMatchObject({
       upstreamBaseUrl: "https://api.kimi.com/coding/v1",
       models: ["k3"],
     });
     expect(harness.writes.join("\n")).not.toContain(API_KEY);
   });
 
-  it.each([undefined, "https://api.moonshot.ai/v1"])("repairs a legacy Kimi origin %s on Check all without replacing its secret or identity", async (upstreamBaseUrl) => {
-    const harness = apiKeyHarness();
-    const account = {
-      id: "kimi-existing",
-      provider: "kimi",
-      label: "Existing coding plan",
-      upstreamBaseUrl,
-      enabled: true,
-      priority: 7,
-      weight: 1,
-      models: ["kimi-for-coding"],
-      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
-      credentialSuffix: "old1",
-    };
-    let document = JSON.stringify({
-      ...JSON.parse(configuration),
-      accounts: [...JSON.parse(configuration).accounts, account],
-    });
-    const writer = harness.platform.writePrivateText;
-    harness.platform = {
-      ...harness.platform,
-      readText: async (path) => {
-        if (path.endsWith("model-checks.json"))
-          throw Object.assign(new Error("missing"), { code: "ENOENT" });
-        return document;
-      },
-      writePrivateText: async (path, value) => {
-        await writer(path, value);
-        if (path.endsWith("/provider-gateway.json")) document = value;
-      },
-    };
-    await runWithSecrets(harness, (gateway) => gateway.checkModels({ force: true }));
-    expect(JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id)).toEqual({
-      ...account, upstreamBaseUrl: "https://api.kimi.com/coding/v1", models: ["k3"],
-    });
-    expect(harness.storedSecrets.size).toBe(0);
-    expect(document).not.toContain("provider-secret");
-  });
+  it.each([undefined, "https://api.moonshot.ai/v1"])(
+    "repairs a legacy Kimi origin %s on Check all without replacing its secret or identity",
+    async (upstreamBaseUrl) => {
+      const harness = apiKeyHarness();
+      const account = {
+        id: "kimi-existing",
+        provider: "kimi",
+        label: "Existing coding plan",
+        upstreamBaseUrl,
+        enabled: true,
+        priority: 7,
+        weight: 1,
+        models: ["kimi-for-coding"],
+        apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+        credentialSuffix: "old1",
+      };
+      let document = JSON.stringify({
+        ...JSON.parse(configuration),
+        accounts: [...JSON.parse(configuration).accounts, account],
+      });
+      const writer = harness.platform.writePrivateText;
+      harness.platform = {
+        ...harness.platform,
+        readText: async (path) => {
+          if (path.endsWith("model-checks.json"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return document;
+        },
+        writePrivateText: async (path, value) => {
+          await writer(path, value);
+          if (path.endsWith("/provider-gateway.json")) document = value;
+        },
+      };
+      await runWithSecrets(harness, (gateway) => gateway.checkModels({ force: true }));
+      expect(
+        JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id),
+      ).toEqual({
+        ...account,
+        upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+        models: ["k3"],
+      });
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(document).not.toContain("provider-secret");
+    },
+  );
 
   it("does not discover or change a disabled Kimi account during Check all", async () => {
     const harness = apiKeyHarness();
     let discoveries = 0;
     const document = JSON.stringify({
       ...JSON.parse(configuration),
-      accounts: [{
-        id: "kimi-disabled", provider: "kimi", label: "Disabled", enabled: false,
-        priority: 0, weight: 1, models: ["k3"],
-        apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
-      }],
+      accounts: [
+        {
+          id: "kimi-disabled",
+          provider: "kimi",
+          label: "Disabled",
+          enabled: false,
+          priority: 0,
+          weight: 1,
+          models: ["k3"],
+          apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+        },
+      ],
     });
     harness.platform = {
       ...harness.platform,
@@ -1087,7 +1103,10 @@ describe("ProviderGatewayService · API-key accounts", () => {
           throw Object.assign(new Error("missing"), { code: "ENOENT" });
         return document;
       },
-      discoverKimiConnection: async () => { discoveries += 1; return undefined; },
+      discoverKimiConnection: async () => {
+        discoveries += 1;
+        return undefined;
+      },
     };
     const result = await runWithSecrets(harness, (gateway) => gateway.checkModels({ force: true }));
     expect(result.pending).toEqual([]);
@@ -1100,7 +1119,9 @@ describe("ProviderGatewayService · API-key accounts", () => {
     const harness = apiKeyHarness();
     harness.platform = { ...harness.platform, discoverKimiConnection: async () => undefined };
     const error = await runWithSecrets(harness, (gateway) =>
-      gateway.addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY }).pipe(Effect.flip),
+      gateway
+        .addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY })
+        .pipe(Effect.flip),
     );
     expect(error.reason).toBe("management-unavailable");
     expect(harness.storedSecrets.size).toBe(0);

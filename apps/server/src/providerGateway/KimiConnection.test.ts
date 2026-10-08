@@ -14,23 +14,33 @@ describe("Kimi key origin discovery", () => {
     const requests: Array<{ url: string; redirect: RequestInit["redirect"] }> = [];
     vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       requests.push({ url, redirect: init.redirect });
-      expect(init.headers).toEqual({ authorization: "Bearer fixture-key", "User-Agent": "Workjet" });
+      expect(init.headers).toEqual({
+        authorization: "Bearer fixture-key",
+        "User-Agent": "Workjet",
+      });
       return url.startsWith(KIMI_BASE_URLS[0]) ? list() : new Response("", { status: 401 });
     });
     expect(await discoverKimiConnection("fixture-key")).toEqual({
-      upstreamBaseUrl: KIMI_BASE_URLS[0], models: liveModels,
+      upstreamBaseUrl: KIMI_BASE_URLS[0],
+      models: liveModels,
     });
-    expect(requests.map((request) => request.url)).toEqual(KIMI_BASE_URLS.map((url) => `${url}/models`));
+    expect(requests.map((request) => request.url)).toEqual(
+      KIMI_BASE_URLS.map((url) => `${url}/models`),
+    );
     expect(requests.every((request) => request.redirect === "error")).toBe(true);
   });
 
   it("retains an explicitly configured, accepted origin when both lists work", async () => {
     vi.stubGlobal("fetch", list);
-    expect((await discoverKimiConnection("fixture-key", KIMI_BASE_URLS[1]))?.upstreamBaseUrl).toBe(KIMI_BASE_URLS[1]);
+    expect((await discoverKimiConnection("fixture-key", KIMI_BASE_URLS[1]))?.upstreamBaseUrl).toBe(
+      KIMI_BASE_URLS[1],
+    );
   });
 
   it("chooses the platform only when its authenticated list succeeds", async () => {
-    vi.stubGlobal("fetch", (url: string) => url.startsWith(KIMI_BASE_URLS[1]) ? list() : new Response("", { status: 403 }));
+    vi.stubGlobal("fetch", (url: string) =>
+      url.startsWith(KIMI_BASE_URLS[1]) ? list() : new Response("", { status: 403 }),
+    );
     expect((await discoverKimiConnection("fixture-key"))?.upstreamBaseUrl).toBe(KIMI_BASE_URLS[1]);
   });
 
@@ -62,6 +72,8 @@ describe("Kimi key origin discovery", () => {
       expect(init.signal?.aborted).toBe(true);
       throw new Error("private fetch failure");
     });
-    expect(await discoverKimiConnection("fixture-key", undefined, controller.signal)).toBeUndefined();
+    expect(
+      await discoverKimiConnection("fixture-key", undefined, controller.signal),
+    ).toBeUndefined();
   });
 });

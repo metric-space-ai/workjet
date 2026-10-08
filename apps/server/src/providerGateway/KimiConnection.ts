@@ -69,7 +69,8 @@ export const discoverKimiConnection = async (
               const code = character.codePointAt(0) ?? 0;
               return code < 0x20 || code === 0x7f;
             })
-          ) return undefined;
+          )
+            return undefined;
           models.push(id);
         }
         return { upstreamBaseUrl, models: [...new Set(models)] };

@@ -128,7 +128,14 @@ export function useWorkjetGatewaySection(
         }
       }
     },
-    [environmentId, checkModels, checksQuery.refresh, checksQuery.data, catalogQuery.data, catalogQuery.refresh],
+    [
+      environmentId,
+      checkModels,
+      checksQuery.refresh,
+      checksQuery.data,
+      catalogQuery.data,
+      catalogQuery.refresh,
+    ],
   );
   const checksBusy = checksSubmitting || (checksQuery.data?.pending.length ?? 0) > 0;
   useEffect(() => {

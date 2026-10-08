@@ -56,7 +56,9 @@ export function decodeLiveProviderModels(
   }
 }
 
-export async function readPublicModelCatalog(request: (url: string, init: RequestInit) => Promise<Response> = fetch): Promise<unknown> {
+export async function readPublicModelCatalog(
+  request: (url: string, init: RequestInit) => Promise<Response> = fetch,
+): Promise<unknown> {
   const signal = AbortSignal.timeout(8_000);
   const response = await request("https://llm.ctox.dev/catalog", {
     headers: { Accept: "application/json", "User-Agent": "Workjet-Model-Catalog" },

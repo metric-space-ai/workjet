@@ -3,6 +3,7 @@
 import json
 import math
 import pathlib
+import select
 import subprocess
 import sys
 
@@ -43,6 +44,31 @@ events = invoke(b"x" * 16385)
 assert len(events) == 1 and events[0]["code"] == "overflow"
 events = invoke(json.dumps(scope).encode())  # EOF before newline cannot execute a command.
 assert len(events) == 1 and events[0]["event"] == "protocol_error"
+
+child = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.DEVNULL)
+try:
+    # The real desktop waits for a response before sending the next frame.
+    # Do not close stdin: batch-only reads would deadlock this exchange.
+    for request in ("interactive-first", "interactive-next"):
+        child.stdin.write(line(dict(scope, requestId=request)))
+        child.stdin.flush()
+        assert select.select([child.stdout], [], [], 20)[0], "response must arrive while stdin is open"
+        raw = child.stdout.readline(16386)
+        assert raw.endswith(b"\n") and len(raw) <= 16385, "interactive response line bound"
+        event = json.loads(raw)
+        assert event["event"] == "status" and event["requestId"] == request
+        assert event["instanceId"] == scope["instanceId"]
+    child.stdin.close()
+    assert child.wait(timeout=5) == 0, "interactive helper must exit cleanly"
+finally:
+    if child.poll() is None:
+        child.terminate()
+        try:
+            child.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=3)
 
 child = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL)

@@ -70,6 +70,23 @@ private func writeLine<T: Encodable>(_ value: T) {
     }
 }
 
+// A room keeps stdin open while waiting for replies. Foundation's counted read
+// can wait for the entire buffer; one POSIX read admits each available frame.
+private func readPipeChunk() throws -> Data? {
+    var bytes = [UInt8](repeating: 0, count: 4_096)
+    while true {
+        let count = bytes.withUnsafeMutableBytes {
+            Darwin.read(STDIN_FILENO, $0.baseAddress, $0.count)
+        }
+        if count < 0 {
+            if errno == EINTR { continue }
+            throw SpeechFailure.pipeClosed
+        }
+        if count == 0 { return nil }
+        return Data(bytes.prefix(count))
+    }
+}
+
 @MainActor private final class Capture {
     let command: SpeechCommand
     var analyzer: SpeechAnalyzer?
@@ -499,7 +516,7 @@ private struct TtsPacket: Sendable {
         let reader = Task.detached {
             var framer = LineFramer()
             do {
-                while let bytes = try FileHandle.standardInput.read(upToCount: 4_096), !bytes.isEmpty {
+                while let bytes = try readPipeChunk() {
                     for line in try framer.append(bytes) {
                         switch continuation.yield(line) {
                         case .enqueued: break

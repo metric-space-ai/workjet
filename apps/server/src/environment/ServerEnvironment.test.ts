@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import {
@@ -14,7 +15,98 @@ import {
   RELAY_URL_SECRET,
 } from "../cloud/config.ts";
 import * as ServerConfig from "../config.ts";
+import * as ProcessRunner from "../processRunner.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
+
+it.layer(NodeServices.layer)("server host identity", (it) => {
+  const guid = "AABBCCDD-1234-5678-ABCD-0123456789AB";
+  const read = (platform: NodeJS.Platform, text: string, code = 0) =>
+    ServerEnvironment.readServerHostId(platform).pipe(
+      Effect.provide(
+        FileSystem.layerNoop({
+          readFileString: () => Effect.succeed(text),
+        }),
+      ),
+      Effect.provideService(ProcessRunner.ProcessRunner, {
+        run: () =>
+          Effect.succeed({
+            stdout: text,
+            stderr: "",
+            code: ChildProcessSpawner.ExitCode(code),
+            timedOut: false,
+            stdoutTruncated: false,
+            stderrTruncated: false,
+            stdoutInvalidUtf8: false,
+            stderrInvalidUtf8: false,
+          }),
+      }),
+    );
+
+  it.effect("reads platform IDs independently of the Workjet state root", () =>
+    Effect.gen(function* () {
+      const raw = "aabbccdd12345678abcd0123456789ab";
+      const linux = yield* read("linux", `${raw}\n`);
+      expect(linux).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(linux).not.toContain(raw);
+      expect(yield* read("linux", raw.toUpperCase())).toBe(linux);
+      const changed = yield* read("linux", "00112233445566778899aabbccddeeff");
+      expect(changed).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(changed).not.toBe(linux);
+      const mac = yield* read("darwin", `"IOPlatformUUID" = "${guid}"`);
+      expect(mac).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(yield* read("darwin", `"IOPlatformUUID" = "${guid.toLowerCase()}"`)).toBe(mac);
+      const windows = yield* read("win32", `MachineGuid    REG_SZ    ${guid}\n`);
+      expect(windows).toMatch(/^workjet-host-v1:[a-f0-9]{64}$/);
+      expect(windows).not.toBe(mac);
+    }),
+  );
+
+  it.effect("bounds commands and ignores optional filesystem and command failures", () =>
+    Effect.gen(function* () {
+      const calls: ProcessRunner.ProcessRunInput[] = [];
+      const failing = {
+        run: (input: ProcessRunner.ProcessRunInput) => {
+          calls.push(input);
+          return Effect.fail(
+            new ProcessRunner.ProcessTimeoutError({
+              command: input.command,
+              argumentCount: input.args.length,
+              timeoutMs: 2_000,
+            }),
+          );
+        },
+      };
+      const readFailure = (platform: NodeJS.Platform) =>
+        ServerEnvironment.readServerHostId(platform).pipe(
+          Effect.provide(FileSystem.layerNoop({})),
+          Effect.provideService(ProcessRunner.ProcessRunner, failing),
+        );
+      expect(yield* readFailure("linux")).toBeUndefined();
+      expect(yield* readFailure("darwin")).toBeUndefined();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]?.timeout).toBe("2 seconds");
+      expect(calls[0]?.maxOutputBytes).toBe(16 * 1024);
+      expect(calls[0]?.timeoutBehavior).toBe("timedOutResult");
+    }),
+  );
+
+  it.effect("omits unavailable, uninitialized and malformed host identities", () =>
+    Effect.gen(function* () {
+      for (const text of [
+        "",
+        "uninitialized",
+        "not a machine ID",
+        "0".repeat(32),
+        "1".repeat(34),
+      ]) {
+        expect(yield* read("linux", text)).toBeUndefined();
+      }
+      expect(yield* read("darwin", "other output")).toBeUndefined();
+      expect(yield* read("win32", `MachineGuid REG_SZ ${guid}`, 1)).toBeUndefined();
+      expect(yield* read("freebsd", guid)).toBeUndefined();
+    }),
+  );
+});
 
 const isServerEnvironmentIdPersistenceError = Schema.is(
   ServerEnvironment.ServerEnvironmentIdPersistenceError,

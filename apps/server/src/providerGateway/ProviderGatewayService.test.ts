@@ -698,6 +698,90 @@ describe("ProviderGatewayService", () => {
     },
   );
 
+  it("rechecks xAI immediately after same-token re-login and reloads the old cooldown away", async () => {
+    const accountId = WorkjetGatewayAccountId.make("xai-primary");
+    const config = JSON.stringify({
+      schemaVersion: 1, defaultProvider: "xai",
+      accounts: [{
+        id: accountId, provider: "xai", label: "Xai account", enabled: true,
+        models: ["grok-4.7"], priority: 3, weight: 1,
+        accessTokenSecret: { scope: "workjet-provider-gateway", name: "xai.access" },
+        refreshTokenSecret: { scope: "workjet-provider-gateway", name: "xai.refresh" },
+      }], pools: [], routes: [],
+    });
+    const files = new Map<string, string>([["/state/provider-gateway.json", config]]);
+    let spawnCount = 0;
+    let checks = 0;
+    let firstRecorded!: () => void;
+    let freshRecorded!: () => void;
+    const first = new Promise<void>(resolve => { firstRecorded = resolve; });
+    const fresh = new Promise<void>(resolve => { freshRecorded = resolve; });
+    const platform: ProviderGatewayPlatform = {
+      ...nodeProviderGatewayPlatform,
+      readText: async path => {
+        const value = files.get(path);
+        if (value === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return value;
+      },
+      writePrivateText: async (path, content) => {
+        files.set(path, content);
+        if (path.endsWith("provider-gateway-model-checks.json")) {
+          const entry = JSON.parse(content).entries.find((item: { check: { accountId: string } }) => item.check.accountId === accountId);
+          if (entry?.check.status === "error") firstRecorded();
+          if (entry?.check.status === "ok") freshRecorded();
+        }
+      },
+      remove: async path => { files.delete(path); },
+      spawn: () => {
+        spawnCount++;
+        const exit = deferredExit();
+        return {
+          pid: 321,
+          stdout: iterable(['{"schema":"workjet.provider-gateway-host.readiness.v1","pid":321,"providerEndpoint":"http://127.0.0.1:41000/","managementEndpoint":"http://127.0.0.1:41001/","phase":"ready"}\n']),
+          stderr: iterable([]), exit: exit.promise,
+          kill: signal => { exit.resolve({ code: null, signal }); return true; },
+        };
+      },
+      managementGet: async (_endpoint, route) => {
+        if (route.endsWith("xai-auth-url")) return { provider: "xai", state: "xai-login", authorization_url: "https://auth.x.ai/device" };
+        if (route.startsWith("/v0/management/oauth/status")) return { pending: false, error: null, credentials: [{ id: accountId, provider: "xai", label: "Xai account" }] };
+        return route.endsWith("runtime-status")
+          ? { schema: "workjet.provider-gateway.runtime-status.v1", features: { account_selection: true } }
+          : { schema: "workjet.provider-gateway.runtime-summary.v1" };
+      },
+      managementRequest: async () => ({
+        credentials: [{
+          account: { id: accountId, auth_index: "xai", label: "Xai account", provider: "xai", disabled: false, models: ["grok-4.7"] },
+          // The provider may return the same token; login success must still bypass old checks.
+          secrets: { access_token_secret: "provider-secret", refresh_token_secret: "provider-secret" },
+        }],
+      }),
+      providerModelCheck: async (_endpoint, provider, selectedAccountId, modelId) => {
+        expect(provider).toBe("xai"); expect(selectedAccountId).toBe(accountId); expect(modelId).toBe("grok-4.7");
+        checks++;
+        return spawnCount === 1
+          ? { status: "error", source: "upstream", errorClass: "auth", httpStatus: 401 }
+          : { status: "ok", source: "upstream", errorClass: null, httpStatus: 200 };
+      },
+    };
+    await runGateway(platform, gateway => Effect.gen(function* () {
+      yield* gateway.start();
+      yield* gateway.checkModels({ accountId, force: true });
+      yield* Effect.promise(() => first);
+      expect((yield* gateway.modelChecks()).checks[0]?.errorClass).toBe("auth");
+      const session = yield* gateway.oauthStart({ provider: "xai", accountId });
+      const result = yield* gateway.oauthPoll({ state: session.state });
+      expect(result.completedAccountIds).toEqual([accountId]);
+      yield* Effect.promise(() => fresh);
+      expect((yield* gateway.modelChecks()).checks[0]).toMatchObject({ status: "ok", errorClass: null });
+      const saved = JSON.parse(files.get("/state/provider-gateway.json")!);
+      expect(saved.accounts).toHaveLength(1);
+      expect(saved.accounts[0]).toMatchObject({ id: accountId, priority: 3, models: ["grok-4.7"] });
+    }));
+    expect(spawnCount).toBe(2);
+    expect(checks).toBe(2);
+  });
+
   it("reports a failed login without claiming credentials", async () => {
     const harness = readyHarness();
     const platform: ProviderGatewayPlatform = {

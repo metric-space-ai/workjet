@@ -19,6 +19,7 @@ const UNAVAILABLE_LABELS: Readonly<Record<string, string>> = {
   "exact-account-unavailable": "Not checked · the gateway could not select this exact account",
   "account-unavailable": "Not checked · this account is disabled or unavailable",
   transport: "Not checked · the gateway request could not finish",
+  timeout: "Check timed out · retry this model",
   "unverified-response": "Not checked · the gateway did not confirm an upstream result",
 };
 
@@ -195,6 +196,14 @@ function ModelField({
       {error && (
         <span role="alert" className="block text-[11px] text-destructive">
           {error}
+        </span>
+      )}
+      {!pending && (check?.unavailableReason === "timeout" || check?.unavailableReason === "transport") && (
+        <span role="alert" className="block text-[11px] text-muted-foreground">
+          {check?.unavailableReason === "timeout" ? "Check timed out" : "Check could not finish"} ·{" "}
+          <button type="button" className="underline" onClick={() => state.onCheckModels?.(account.id)}>
+            Retry
+          </button>
         </span>
       )}
     </span>

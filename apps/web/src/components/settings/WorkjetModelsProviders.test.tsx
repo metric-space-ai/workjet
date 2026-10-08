@@ -24,7 +24,7 @@ const second: WorkjetGatewayAccountSummary = {
   ...first,
   id: WorkjetGatewayAccountId.make("account-b"),
   label: "backup@example.test",
-  modelIds: ["grok-4.6-exact"],
+  modelIds: ["grok-4.6"],
 };
 const check: ModelsModelCheck = {
   accountId: first.id,
@@ -87,6 +87,19 @@ function html(overrides: Partial<typeof state> = {}) {
   return renderToStaticMarkup(<WorkjetModelsProviders {...state} {...overrides} />);
 }
 describe("Provider account table", () => {
+  it("shows a timeout with a direct retry and no false authentication failure", () => {
+    const timeout: ModelsModelCheck = {
+      ...check, status: "unavailable", source: "gateway", errorClass: null,
+      httpStatus: null, unavailableReason: "timeout", latencyMs: 20000,
+    };
+    const rendered = html({ modelChecks: [timeout] });
+    expect(rendered).toContain('data-model-check="unavailable"');
+    expect(rendered).toContain("Check timed out");
+    expect(rendered).toContain(">Retry</button>");
+    expect(rendered).not.toContain("Re-login");
+    expect(rendered).not.toContain('data-model-check="running"');
+    expect(modelCheckDescription(timeout, false)).toContain("Check timed out");
+  });
   it("shows stacked accounts with their own editable models and only their own check result", () => {
     const rendered = html();
     expect(rendered).toContain('role="table"');
@@ -94,7 +107,7 @@ describe("Provider account table", () => {
     expect(rendered).toContain('value="work@example.test"');
     expect(rendered).toContain('value="backup@example.test"');
     expect(rendered).toContain('value="grok-4.7"');
-    expect(rendered).toContain('value="grok-4.6-exact"');
+    expect(rendered).toContain('value="grok-4.6"');
     expect(rendered.match(/data-model-check="ok"/g)).toHaveLength(1);
     expect(rendered.match(/data-model-check="unchecked"/g)).toHaveLength(1);
     expect(rendered).not.toContain("Gateway pools");

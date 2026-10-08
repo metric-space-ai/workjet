@@ -1751,6 +1751,7 @@ export const WorkjetGatewayModelCheck = Schema.Struct({
       "exact-account-unavailable",
       "account-unavailable",
       "transport",
+      "timeout",
       "unverified-response",
     ]),
   ),

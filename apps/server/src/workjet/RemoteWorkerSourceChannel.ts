@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off -- Node HTTP listener boundary owns socket deadlines and worker capability expiry outside Effect fibers.
-import * as Crypto from "node:crypto";
-import * as Http from "node:http";
+import * as NodeCrypto from "node:crypto";
+import * as NodeHttp from "node:http";
 
 export type WorkerSourceOperation = "admit" | "bindModel" | "infer" | "retire";
 export interface WorkerSourceIdentity {
@@ -58,7 +58,7 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
     revoked.add(requestId);
     for (const controller of session?.active ?? []) controller.abort();
   };
-  const server = Http.createServer((req, res) => {
+  const server = NodeHttp.createServer((req, res) => {
     const reject = (status: number) => {
       res.writeHead(status);
       res.end();
@@ -69,7 +69,7 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
     const session = [...sessions.values()].find((candidate) => {
       const supplied = Buffer.from(authorization ?? "");
       const expected = Buffer.from(`Bearer ${candidate.capability}`);
-      return supplied.length === expected.length && Crypto.timingSafeEqual(supplied, expected);
+      return supplied.length === expected.length && NodeCrypto.timingSafeEqual(supplied, expected);
     });
     if (!session || session.expiresAtMs <= Date.now()) {
       if (session) revoke(session.requestId);
@@ -213,7 +213,7 @@ export async function openWorkerSourceChannel(): Promise<WorkerSourceChannel> {
         };
       }
       if (sessions.size + revoked.size >= 128) throw new Error("Worker channel capacity");
-      const capability = Crypto.randomBytes(32).toString("base64url");
+      const capability = NodeCrypto.randomBytes(32).toString("base64url");
       sessions.set(input.requestId, { ...input, capability, active: new Set() });
       return {
         sourceEnvironmentId: input.sourceEnvironmentId,

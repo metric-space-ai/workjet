@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 // @effect-diagnostics nodeBuiltinImport:off -- Opaque secret-store key hashing, no network endpoint selection.
-import * as Crypto from "node:crypto";
+import * as NodeCrypto from "node:crypto";
 import {
   RemoteWorkerDispatchError,
   WorkjetComputerId,
@@ -47,7 +47,7 @@ const RegisteredProfile = Schema.Struct({
 });
 const ProfileJson = Schema.fromJsonString(RegisteredProfile);
 const profileKey = (computerId: WorkjetComputerId) =>
-  `worker-registered-profile-${Crypto.createHash("sha256").update(computerId).digest("hex")}`;
+  `worker-registered-profile-${NodeCrypto.createHash("sha256").update(computerId).digest("hex")}`;
 
 /** Preserve references when native replaces a local draft ID with its issued ID. */
 export const retainNativeComputerId = (

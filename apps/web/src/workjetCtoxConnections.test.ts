@@ -31,6 +31,7 @@ describe("CTOX connection selection", () => {
     expect(
       ctoxConnectionMatchesSelectedInstance({ ...source, source: "local_ctox" }, "source.ctox.dev"),
     ).toBe(true);
-    expect(ctoxConnectionMatchesSelectedInstance(source, null)).toBe(true);
+    expect(ctoxConnectionMatchesSelectedInstance(source, null)).toBe(false);
+    expect(ctoxConnectionMatchesSelectedInstance(source, null, true)).toBe(true);
   });
 });

@@ -324,8 +324,13 @@ export const make = Effect.gen(function* () {
     } catch (error) {
       // The render-process-gone handler owns recovery; late native callbacks
       // must not escape into Electron's uncaught-exception dialog.
-      const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
-        ? error.code : "RENDERER_IPC_SEND_FAILED";
+      const code =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? error.code
+          : "RENDERER_IPC_SEND_FAILED";
       runFork(logWindowWarning("renderer IPC send failed", { channel, code }));
     }
   };

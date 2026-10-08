@@ -192,53 +192,96 @@ function makeTestInstance(input: MakeInstanceInput) {
 }
 
 describe("DesktopBackendManager", () => {
-  for (const [fd, code] of [[0, "EPIPE"], [3, "ECONNRESET"], [4, "EPIPE"]] as const) {
+  for (const [fd, code] of [
+    [0, "EPIPE"],
+    [3, "ECONNRESET"],
+    [4, "EPIPE"],
+  ] as const) {
     it.effect(`returns a supervised failure when child input fd${fd} closes (${code})`, () =>
-      Effect.scoped(Effect.gen(function* () {
-        const pipeError = PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "write",
-          cause: Object.assign(new Error("closed"), { code }) });
-        const failingSink = Sink.fail(pipeError);
-        const spawner = ChildProcessSpawner.make(() => Effect.succeed(makeProcess({
-          exitCode: Effect.never,
-          stdin: fd === 0 ? failingSink : Sink.drain,
-          getInputFd: (inputFd) => inputFd === fd ? failingSink : Sink.drain,
-        })));
-        const failure = yield* DesktopBackendManager.runBackendProcess({ ...baseConfig,
-          bootstrapDelivery: fd === 0 ? "stdin" : "fd3",
-          desktopTelemetryStream: Stream.make(new Uint8Array([1])),
-        }).pipe(Effect.provide(Layer.merge(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner), healthyHttpClientLayer)), Effect.flip);
-        assert.equal(failure._tag, "BackendProcessInputWriteError");
-        if (failure._tag !== "BackendProcessInputWriteError") return assert.fail("Expected input pipe failure");
-        assert.equal(failure.pid, 123); assert.equal(failure.fd, fd); assert.equal(failure.code, code);
-        assert.notInclude(failure.message, "token");
-      })),
+      Effect.scoped(
+        Effect.gen(function* () {
+          const pipeError = PlatformError.systemError({
+            _tag: "Unknown",
+            module: "ChildProcess",
+            method: "write",
+            cause: Object.assign(new Error("closed"), { code }),
+          });
+          const failingSink = Sink.fail(pipeError);
+          const spawner = ChildProcessSpawner.make(() =>
+            Effect.succeed(
+              makeProcess({
+                exitCode: Effect.never,
+                stdin: fd === 0 ? failingSink : Sink.drain,
+                getInputFd: (inputFd) => (inputFd === fd ? failingSink : Sink.drain),
+              }),
+            ),
+          );
+          const failure = yield* DesktopBackendManager.runBackendProcess({
+            ...baseConfig,
+            bootstrapDelivery: fd === 0 ? "stdin" : "fd3",
+            desktopTelemetryStream: Stream.make(new Uint8Array([1])),
+          }).pipe(
+            Effect.provide(
+              Layer.merge(
+                Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                healthyHttpClientLayer,
+              ),
+            ),
+            Effect.flip,
+          );
+          assert.equal(failure._tag, "BackendProcessInputWriteError");
+          if (failure._tag !== "BackendProcessInputWriteError")
+            return assert.fail("Expected input pipe failure");
+          assert.equal(failure.pid, 123);
+          assert.equal(failure.fd, fd);
+          assert.equal(failure.code, code);
+          assert.notInclude(failure.message, "token");
+        }),
+      ),
     );
   }
   it.effect("restarts a backend after its bootstrap pipe fails, without overlapping cleanup", () =>
-    Effect.scoped(Effect.gen(function* () {
-      const starts = yield* Queue.unbounded<number>();
-      const failures = yield* Queue.unbounded<string>();
-      let count = 0;
-      const pipeError = PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "write",
-        cause: Object.assign(new Error("closed"), { code: "EPIPE" }) });
-      const instance = yield* makeTestInstance({
-        spawnerLayer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(() => Effect.gen(function* () {
-          count++; yield* Queue.offer(starts, count);
-          return makeProcess({ exitCode: Effect.never, getInputFd: () => count === 1 ? Sink.fail(pipeError) : Sink.drain });
-        }))),
-        httpClientLayer: httpClientLayer(() => Effect.never),
-        backendOutputLog: { persistFailure: ({ details }) => Queue.offer(failures, details).pipe(Effect.asVoid) },
-      });
-      yield* instance.start;
-      assert.equal(yield* Queue.take(starts), 1);
-      assert.include(yield* Queue.take(failures), "EPIPE");
-      yield* TestClock.adjust(Duration.millis(499));
-      assert.equal(yield* Queue.size(starts), 0);
-      yield* TestClock.adjust(Duration.millis(1));
-      assert.equal(yield* Queue.take(starts), 2);
-      yield* instance.stop;
-      assert.equal((yield* instance.snapshot).restartScheduled, false);
-    }).pipe(Effect.provide(TestClock.layer()))),
+    Effect.scoped(
+      Effect.gen(function* () {
+        const starts = yield* Queue.unbounded<number>();
+        const failures = yield* Queue.unbounded<string>();
+        let count = 0;
+        const pipeError = PlatformError.systemError({
+          _tag: "Unknown",
+          module: "ChildProcess",
+          method: "write",
+          cause: Object.assign(new Error("closed"), { code: "EPIPE" }),
+        });
+        const instance = yield* makeTestInstance({
+          spawnerLayer: Layer.succeed(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() =>
+              Effect.gen(function* () {
+                count++;
+                yield* Queue.offer(starts, count);
+                return makeProcess({
+                  exitCode: Effect.never,
+                  getInputFd: () => (count === 1 ? Sink.fail(pipeError) : Sink.drain),
+                });
+              }),
+            ),
+          ),
+          httpClientLayer: httpClientLayer(() => Effect.never),
+          backendOutputLog: {
+            persistFailure: ({ details }) => Queue.offer(failures, details).pipe(Effect.asVoid),
+          },
+        });
+        yield* instance.start;
+        assert.equal(yield* Queue.take(starts), 1);
+        assert.include(yield* Queue.take(failures), "EPIPE");
+        yield* TestClock.adjust(Duration.millis(499));
+        assert.equal(yield* Queue.size(starts), 0);
+        yield* TestClock.adjust(Duration.millis(1));
+        assert.equal(yield* Queue.take(starts), 2);
+        yield* instance.stop;
+        assert.equal((yield* instance.snapshot).restartScheduled, false);
+      }).pipe(Effect.provide(TestClock.layer())),
+    ),
   );
   it.effect(
     "stops a ready service attachment even when closing its scope does not signal disconnection",
@@ -449,11 +492,14 @@ describe("DesktopBackendManager", () => {
               spawnedCommand = command;
               return makeProcess({
                 exitCode: Deferred.await(ready).pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
-                getInputFd: (fd) => Sink.forEach((chunk: Uint8Array) => Effect.sync(() => {
-                  const text = new TextDecoder().decode(chunk);
-                  if (fd === 3) bootstrapJson += text;
-                  if (fd === 4) telemetryJson += text;
-                })),
+                getInputFd: (fd) =>
+                  Sink.forEach((chunk: Uint8Array) =>
+                    Effect.sync(() => {
+                      const text = new TextDecoder().decode(chunk);
+                      if (fd === 3) bootstrapJson += text;
+                      if (fd === 4) telemetryJson += text;
+                    }),
+                  ),
               });
             }),
           ),

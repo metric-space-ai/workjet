@@ -25,22 +25,47 @@ import {
 } from "./NativeTelemetryClient.ts";
 
 describe("resource monitor command pipe", () => {
-  it.effect("ends only the failing owned sidecar so its supervisor can restart", () => Effect.gen(function* () {
-    const failure = PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "write",
-      cause: Object.assign(new Error("private payload must not be logged"), { code: "EPIPE" }) });
-    let killed = 0;
-    const result = yield* writeToNativeTelemetryPipe({ pid: ChildProcessSpawner.ProcessId(321),
-      stdin: Sink.fail(failure), kill: () => Effect.sync(() => { killed++; }),
-    }, new Uint8Array([42])).pipe(Effect.flip);
-    expect(result).toBe(failure); expect(killed).toBe(1);
-  }));
-  it.effect("does not restart a sidecar after a successful command", () => Effect.gen(function* () {
-    let killed = 0;
-    yield* writeToNativeTelemetryPipe({ pid: ChildProcessSpawner.ProcessId(321), stdin: Sink.drain,
-      kill: () => Effect.sync(() => { killed++; }),
-    }, new Uint8Array([42]));
-    expect(killed).toBe(0);
-  }));
+  it.effect("ends only the failing owned sidecar so its supervisor can restart", () =>
+    Effect.gen(function* () {
+      const failure = PlatformError.systemError({
+        _tag: "Unknown",
+        module: "ChildProcess",
+        method: "write",
+        cause: Object.assign(new Error("private payload must not be logged"), { code: "EPIPE" }),
+      });
+      let killed = 0;
+      const result = yield* writeToNativeTelemetryPipe(
+        {
+          pid: ChildProcessSpawner.ProcessId(321),
+          stdin: Sink.fail(failure),
+          kill: () =>
+            Effect.sync(() => {
+              killed++;
+            }),
+        },
+        new Uint8Array([42]),
+      ).pipe(Effect.flip);
+      expect(result).toBe(failure);
+      expect(killed).toBe(1);
+    }),
+  );
+  it.effect("does not restart a sidecar after a successful command", () =>
+    Effect.gen(function* () {
+      let killed = 0;
+      yield* writeToNativeTelemetryPipe(
+        {
+          pid: ChildProcessSpawner.ProcessId(321),
+          stdin: Sink.drain,
+          kill: () =>
+            Effect.sync(() => {
+              killed++;
+            }),
+        },
+        new Uint8Array([42]),
+      );
+      expect(killed).toBe(0);
+    }),
+  );
 });
 
 const basePower: HostPowerSnapshot = {

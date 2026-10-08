@@ -42,21 +42,37 @@ console.log('parent survived '+code);
 `;
 
 const exitingChildFixture = fixture
-  .replace("require('node:fs').closeSync(0); process.stdout.write('closed'); setInterval(() => {}, 1000)",
-    "process.stdout.write('closed'); setTimeout(() => process.exit(0), 5)")
+  .replace(
+    "require('node:fs').closeSync(0); process.stdout.write('closed'); setInterval(() => {}, 1000)",
+    "process.stdout.write('closed'); setTimeout(() => process.exit(0), 5)",
+  )
   .replace("new Uint8Array([42])", "new Uint8Array(8 * 1024 * 1024)");
 
 describe("closed child input pipe", () => {
-  it.each([["closed input", fixture], ["exit during write", exitingChildFixture], ["error during end", finalizationFixture]])(
-    "survives %s without an uncaught exception in the parent", async (_name, program) => {
-    const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const parent = NodeChildProcess.spawn(NodeProcess.execPath, ["--input-type=module", "-e", program], { stdio: ["ignore", "pipe", "pipe"] });
-      let stdout = ""; let stderr = "";
-      parent.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-      parent.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-      parent.on("error", reject);
-      parent.on("close", (code) => resolve({ code, stdout, stderr }));
-    });
+  it.each([
+    ["closed input", fixture],
+    ["exit during write", exitingChildFixture],
+    ["error during end", finalizationFixture],
+  ])("survives %s without an uncaught exception in the parent", async (_name, program) => {
+    const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
+      (resolve, reject) => {
+        const parent = NodeChildProcess.spawn(
+          NodeProcess.execPath,
+          ["--input-type=module", "-e", program],
+          { stdio: ["ignore", "pipe", "pipe"] },
+        );
+        let stdout = "";
+        let stderr = "";
+        parent.stdout.on("data", (chunk: Buffer) => {
+          stdout += chunk.toString();
+        });
+        parent.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString();
+        });
+        parent.on("error", reject);
+        parent.on("close", (code) => resolve({ code, stdout, stderr }));
+      },
+    );
     expect(result.stderr).toBe("");
     expect(result.code).toBe(0);
     expect(result.stdout).toMatch(/parent survived (EPIPE|ECONNRESET)/);

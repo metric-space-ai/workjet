@@ -1010,7 +1010,8 @@ describe("DesktopWindow", () => {
         });
         const enterFullscreen = fakeWindow.windowListeners.get("enter-full-screen");
         const leaveFullscreen = fakeWindow.windowListeners.get("leave-full-screen");
-        if (!enterFullscreen || !leaveFullscreen) return yield* Effect.die("missing fullscreen listeners");
+        if (!enterFullscreen || !leaveFullscreen)
+          return yield* Effect.die("missing fullscreen listeners");
         assert.doesNotThrow(() => enterFullscreen());
         assert.doesNotThrow(() => leaveFullscreen());
         fakeWindow.window.webContents.isLoadingMainFrame = () => true;

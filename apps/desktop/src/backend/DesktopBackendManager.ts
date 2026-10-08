@@ -215,9 +215,12 @@ export class BackendProcessExitStatusError extends Schema.TaggedErrorClass<Backe
 }
 
 export class BackendProcessInputWriteError extends Schema.TaggedErrorClass<BackendProcessInputWriteError>()(
-  "BackendProcessInputWriteError", { ...backendProcessContextSchema, pid: Schema.Number, fd: Schema.Number, code: Schema.String },
+  "BackendProcessInputWriteError",
+  { ...backendProcessContextSchema, pid: Schema.Number, fd: Schema.Number, code: Schema.String },
 ) {
-  override get message(): string { return `Desktop backend ${this.pid} input fd${this.fd} failed (${this.code}).`; }
+  override get message(): string {
+    return `Desktop backend ${this.pid} input fd${this.fd} failed (${this.code}).`;
+  }
 }
 
 export const BackendProcessError = Schema.Union([
@@ -518,22 +521,50 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
 
   yield* options.onStarted?.(handle.pid) ?? Effect.void;
   const inputFailure = yield* Deferred.make<never, BackendProcessInputWriteError>();
-  const writeInput = (fd: number, stream: Stream.Stream<Uint8Array>, sink: Sink.Sink<void, Uint8Array, never, PlatformError.PlatformError>) =>
-    Stream.run(stream, sink).pipe(Effect.catch((error) => Effect.gen(function* () {
-      const raw = error.reason.cause;
-      const code = typeof raw === "object" && raw !== null && "code" in raw && typeof raw.code === "string"
-        ? raw.code : error.reason._tag;
-      const failure = new BackendProcessInputWriteError({ executablePath: options.executablePath, entryPath: options.entryPath,
-        cwd: options.cwd, httpBaseUrl: options.httpBaseUrl, pid: Number(handle.pid), fd, code });
-      // Never record bootstrap bytes, tokens, command arguments or raw platform errors.
-      yield* logBackendProcessWarning("desktop child input pipe failed", { pid: Number(handle.pid), fd, code });
-      yield* Deferred.fail(inputFailure, failure);
-    })), Effect.forkScoped);
-  yield* writeInput(options.bootstrapDelivery === "stdin" ? 0 : 3, bootstrapStream,
-    options.bootstrapDelivery === "stdin" ? handle.stdin : handle.getInputFd(3));
+  const writeInput = (
+    fd: number,
+    stream: Stream.Stream<Uint8Array>,
+    sink: Sink.Sink<void, Uint8Array, never, PlatformError.PlatformError>,
+  ) =>
+    Stream.run(stream, sink).pipe(
+      Effect.catch((error) =>
+        Effect.gen(function* () {
+          const raw = error.reason.cause;
+          const code =
+            typeof raw === "object" && raw !== null && "code" in raw && typeof raw.code === "string"
+              ? raw.code
+              : error.reason._tag;
+          const failure = new BackendProcessInputWriteError({
+            executablePath: options.executablePath,
+            entryPath: options.entryPath,
+            cwd: options.cwd,
+            httpBaseUrl: options.httpBaseUrl,
+            pid: Number(handle.pid),
+            fd,
+            code,
+          });
+          // Never record bootstrap bytes, tokens, command arguments or raw platform errors.
+          yield* logBackendProcessWarning("desktop child input pipe failed", {
+            pid: Number(handle.pid),
+            fd,
+            code,
+          });
+          yield* Deferred.fail(inputFailure, failure);
+        }),
+      ),
+      Effect.forkScoped,
+    );
+  yield* writeInput(
+    options.bootstrapDelivery === "stdin" ? 0 : 3,
+    bootstrapStream,
+    options.bootstrapDelivery === "stdin" ? handle.stdin : handle.getInputFd(3),
+  );
   if (options.bootstrapDelivery === "fd3" && options.bootstrap.desktopTelemetryFd !== undefined) {
-    yield* writeInput(options.bootstrap.desktopTelemetryFd, options.desktopTelemetryStream,
-      handle.getInputFd(options.bootstrap.desktopTelemetryFd));
+    yield* writeInput(
+      options.bootstrap.desktopTelemetryFd,
+      options.desktopTelemetryStream,
+      handle.getInputFd(options.bootstrap.desktopTelemetryFd),
+    );
   }
   if (
     options.bootstrap.desktopTelemetryControlFd !== undefined &&

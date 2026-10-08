@@ -63,7 +63,7 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Actual native result");
-    expect(html).toContain("Versuch 2");
+    expect(html).toContain("Attempt 2");
     expect(html).toContain("native-task");
     expect(html).not.toContain("Codex CLI");
     expect(html).not.toContain("gpt-6");
@@ -74,15 +74,15 @@ describe("native supervisor receipt display", () => {
         scope={{ ...scope, instanceId: "managed:foreign" }}
         config={config}
         instanceId="managed:foreign"
-        blockReason="Dieses Projekt ist auf diesem Rechner keinem CTOX-Projekt zugeordnet."
+        blockReason="This project has no confirmed CTOX binding on this computer."
         unavailable={false}
         saveConfig={saveConfig}
       />,
     );
     expect(html).not.toContain("Actual native result");
     expect(html).not.toContain("Real requested change");
-    expect(html).toContain("Verbindung müssen bestätigt sein");
-    expect(html).toContain("Erneut verbinden");
+    expect(html).toContain("no confirmed CTOX binding");
+    expect(html).toContain("Retry connection");
   });
   it("shows a definitive pre-submit refusal and lets the user edit a new prompt", () => {
     const rejectedConfig: WorkjetThreadConfig = {
@@ -105,7 +105,7 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Nicht gesendet");
+    expect(html).toContain("Not sent");
     expect(html).toContain("authentication_required");
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
   });
@@ -120,10 +120,10 @@ describe("native supervisor receipt display", () => {
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain('aria-label="Nachricht an Supervisor"');
-    expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
+    expect(html).toContain('aria-label="Message to Supervisor"');
+    expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
-    expect(html).not.toContain("Erneut verbinden");
+    expect(html).not.toContain("Retry connection");
   });
   it("offers a direct way to re-check the connection when scope is missing", () => {
     const html = renderToStaticMarkup(
@@ -131,13 +131,13 @@ describe("native supervisor receipt display", () => {
         scope={null}
         config={DEFAULT_WORKJET_THREAD_CONFIG}
         instanceId="managed:acceptance"
-        blockReason="Die Projektliste von CTOX konnte nicht gelesen werden."
+        blockReason="Could not read the CTOX project list."
         unavailable={false}
         saveConfig={saveConfig}
       />,
     );
-    expect(html).toContain("Projekt und CTOX-Verbindung müssen bestätigt sein.");
-    expect(html).toContain("Die Projektliste von CTOX konnte nicht gelesen werden.");
-    expect(html).toContain("Erneut verbinden");
+    expect(html).not.toContain("Confirm the project and CTOX connection to send.");
+    expect(html).toContain("Could not read the CTOX project list.");
+    expect(html).toContain("Retry connection");
   });
 });

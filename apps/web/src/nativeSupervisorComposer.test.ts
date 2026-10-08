@@ -136,7 +136,7 @@ describe("nativeSupervisorBlockReason", () => {
   it("names a failed project list before anything else", () => {
     expect(
       nativeSupervisorBlockReason({ project: null, registry: { ...ready, refreshFailed: true } }),
-    ).toContain("konnte nicht gelesen");
+    ).toContain("Could not read");
   });
   it("names a project still waiting for CTOX confirmation", () => {
     const project = {
@@ -145,12 +145,12 @@ describe("nativeSupervisorBlockReason", () => {
       ctoxRegistration: { instanceId: "managed:acceptance", commandId: "c", status: "pending" },
     } as never;
     expect(nativeSupervisorBlockReason({ project, registry: ready })).toContain(
-      "wartet noch auf die Bestätigung",
+      "waiting for confirmation",
     );
   });
   it("names the missing mapping when the project is confirmed but not bound", () => {
     expect(nativeSupervisorBlockReason({ project: null, registry: ready })).toContain(
-      "keinem CTOX-Projekt zugeordnet",
+      "no confirmed CTOX binding",
     );
   });
 });

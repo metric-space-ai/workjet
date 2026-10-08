@@ -71,12 +71,12 @@ export function nativeSupervisorBlockReason(input: {
   readonly project: ProjectHistoryIdentity | null;
   readonly registry: WorkjetProjectRegistrySnapshot;
 }): string {
-  if (input.registry.refreshFailed) return "Die Projektliste von CTOX konnte nicht gelesen werden.";
-  if (input.registry.phase !== "ready") return "Die Projektliste von CTOX wird noch geladen.";
+  if (input.registry.refreshFailed) return "Could not read the CTOX project list.";
+  if (input.registry.phase !== "ready") return "The CTOX project list is still loading.";
   const registration = input.project?.ctoxRegistration;
   if (registration != null && registration.status !== "confirmed")
-    return "Das Projekt wartet noch auf die Bestätigung durch CTOX.";
-  return "Dieses Projekt ist auf diesem Rechner keinem CTOX-Projekt zugeordnet.";
+    return "This project is waiting for confirmation from CTOX.";
+  return "This project has no confirmed CTOX binding on this computer.";
 }
 
 export function supervisorJournalMatchesScope(

@@ -81,6 +81,48 @@ function markup(threads: readonly EnvironmentThreadShell[]) {
   );
 }
 
+describe("project worker activity", () => {
+  it("omits an empty activity panel instead of showing unknown history as zero", () => {
+    const html = markup([shell(source, "supervisor")]);
+    expect(html).not.toContain('data-workjet-overview-section="activity"');
+  });
+  it("counts actual worker turns without including supervisor work", () => {
+    const completed = (thread: EnvironmentThreadShell) =>
+      ({
+        ...thread,
+        latestTurn: {
+          requestedAt: new Date(Date.now() - 3600000).toISOString(),
+          startedAt: new Date(Date.now() - 3600000).toISOString(),
+          completedAt: new Date().toISOString(),
+        },
+      }) as unknown as EnvironmentThreadShell;
+    const html = markup([
+      completed(shell(source, "supervisor")),
+      completed(shell(target, "worker")),
+    ]);
+    expect(html).toContain('data-workjet-overview-section="activity"');
+    expect(html).toContain("Worker activity · 1 ·");
+    expect(html).toContain("Latest worker turns only.");
+    expect(html).not.toContain("Worker activity · 2 ·");
+  });
+});
+
+describe("project Jour fixe entry", () => {
+  it("offers joining from the overview even when no recurring time is configured", () => {
+    const html = renderToStaticMarkup(
+      <ProjectWorkspace
+        project={project}
+        threads={[shell(source, "supervisor")]}
+        onOpenChat={() => {}}
+        onOpenJourFixe={() => {}}
+        onAddParent={async () => true}
+      />,
+    );
+    expect(html).toContain("Join Jour fixe");
+    expect(html).toContain("No recurring time is set yet.");
+  });
+});
+
 describe("source project remote workers", () => {
   it("renders the target computer worker in the source project's Workers group", () => {
     const html = markup([shell(source, "supervisor"), shell(target, "worker")]);

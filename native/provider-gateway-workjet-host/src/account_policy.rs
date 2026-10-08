@@ -100,6 +100,47 @@ pub struct AccountState {
     conductor: Arc<CooldownConductor>,
 }
 impl AccountState {
+    /// A verified OAuth claim can reuse the current token. Clear only stale
+    /// authentication failures belonging to that provider/token identity.
+    /// Quota, balance, model failures and session affinity remain authoritative.
+    pub fn recover_oauth_claim(
+        &self,
+        provider: &str,
+        token: &[u8],
+    ) -> Result<(), CooldownStoreError> {
+        let fingerprint = format!("{:x}", Sha256::digest(token));
+        let prefix = format!("{}:", provider.trim().to_ascii_lowercase());
+        let mut state = self.state.lock().map_err(|_| CooldownStoreError::Write)?;
+        let identities: std::collections::BTreeSet<_> = state
+            .oauth_fingerprints
+            .iter()
+            .filter(|(identity, saved)| identity.starts_with(&prefix) && **saved == fingerprint)
+            .map(|(identity, _)| identity.clone())
+            .collect();
+        if identities.is_empty() {
+            return Ok(());
+        }
+        let mut next = state.clone();
+        next.cooldowns.retain(|record| {
+            !(identities.contains(&account_key(&record.provider, &record.auth_id))
+                && matches!(
+                    record.last_error.as_ref().and_then(|error| error.http_status),
+                    Some(401 | 403)
+                ))
+        });
+        next.observations.retain(|identity, (status, _)| {
+            !(identities.contains(identity) && matches!(*status, 401 | 403))
+        });
+        if next.cooldowns.len() == state.cooldowns.len()
+            && next.observations.len() == state.observations.len()
+        {
+            return Ok(());
+        }
+        self.persist(&next)?;
+        *state = next;
+        Ok(())
+    }
+
     /// OAuth token replacement keeps the stable account's quota and session affinity.
     /// Only a one-way token fingerprint is stored; old authentication outcomes expire.
     pub fn bind_oauth(

@@ -268,12 +268,26 @@ impl HostOAuthAuthority {
     fn take_claim(
         &self,
         state: &str,
+        recovery: Option<&crate::account_policy::AccountState>,
     ) -> Result<Vec<ManagementClaimedCredential>, ManagementOAuthRouteError> {
-        self.claims
+        let mut claims = self.claims
             .lock()
-            .map_err(|_| ManagementOAuthRouteError::Unavailable)?
-            .remove(state)
-            .ok_or(ManagementOAuthRouteError::NotClaimable)
+            .map_err(|_| ManagementOAuthRouteError::Unavailable)?;
+        let credentials = claims.get(state).ok_or(ManagementOAuthRouteError::NotClaimable)?;
+        if let Some(recovery) = recovery {
+            for credential in credentials {
+                if let Some(token) = credential.secrets.get("access_token_secret") {
+                    let provider = match credential.account.provider.as_str() {
+                        "anthropic" => "claude",
+                        provider => provider,
+                    };
+                    recovery.recover_oauth_claim(provider, token.as_bytes())
+                        .map_err(|_| ManagementOAuthRouteError::Unavailable)?;
+                }
+            }
+        }
+        // A failed durable recovery retains the one-time claim for a retry.
+        claims.remove(state).ok_or(ManagementOAuthRouteError::NotClaimable)
     }
 
     /// Drops any retained token material for `state` without handing it out.
@@ -764,6 +778,7 @@ pub struct HostOAuthSource {
     sessions: Arc<ManagementOAuthSessions>,
     provider_oauth: Arc<ManagementProviderOAuth>,
     authority: Arc<HostOAuthAuthority>,
+    recovery: Option<Arc<crate::account_policy::AccountState>>,
 }
 
 impl std::fmt::Debug for HostOAuthSource {
@@ -809,7 +824,14 @@ impl HostOAuthSource {
             sessions,
             provider_oauth,
             authority,
+            recovery: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_account_recovery(mut self, recovery: Arc<crate::account_policy::AccountState>) -> Self {
+        self.recovery = Some(recovery);
+        self
     }
 
     fn provider_for_state(&self, state: &str) -> Result<String, ManagementOAuthRouteError> {
@@ -868,7 +890,7 @@ impl ManagementOAuthSource for HostOAuthSource {
         if !session.completed {
             return Err(ManagementOAuthRouteError::NotClaimable);
         }
-        self.authority.take_claim(state)
+        self.authority.take_claim(state, self.recovery.as_deref())
     }
 
     fn callback(
@@ -1069,7 +1091,24 @@ mod tests {
 
     #[tokio::test]
     async fn claims_the_canonical_provider_payload_exactly_once() {
-        let source = source();
+        use workjet_provider_gateway::sdk::cliproxy::auth::{
+            AccountExecutionResult, CooldownStateStore,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            crate::secret_store::WorkjetSecretStore::new(directory.path().to_owned()).unwrap(),
+        );
+        let recovery = crate::account_policy::AccountState::open(store).unwrap();
+        recovery.bind_oauth("codex", "account-1", ACCESS.as_bytes()).unwrap();
+        recovery.conductor().record(AccountExecutionResult {
+            provider: "codex".to_owned(),
+            auth_id: "account-1".to_owned(),
+            model: None,
+            status: 401,
+            retry_delay_ms: None,
+            observed_at_ms: 1000,
+        }).unwrap();
+        let source = source().with_account_recovery(recovery.clone());
         let start = source.begin("codex", Some("claim-state")).unwrap();
         assert_eq!(start.provider, "codex");
 
@@ -1078,6 +1117,7 @@ mod tests {
             source.claim("claim-state").unwrap_err(),
             ManagementOAuthRouteError::NotClaimable
         );
+        assert_eq!(recovery.load().unwrap().len(), 1);
 
         source
             .authority
@@ -1096,6 +1136,8 @@ mod tests {
         assert!(!rendered.contains(ACCESS), "{rendered}");
 
         let claimed = source.claim("claim-state").unwrap();
+        assert!(recovery.load().unwrap().is_empty());
+        assert!(recovery.observation("codex", "account-1").is_none());
         assert_eq!(claimed.len(), 1);
         assert_eq!(claimed[0].account.provider, "codex");
         assert_eq!(claimed[0].secrets["access_token_secret"], ACCESS);

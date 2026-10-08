@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRightIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { GalleryProject } from "../projectOverview";
-import type { CtoxWorkjetSessionProjection } from "@workjet/contracts";
+import type { CtoxWorkjetSessionProjection, WorkjetCalendarEvent } from "@workjet/contracts";
 import {
   addDays,
   addMonths,
@@ -14,11 +14,18 @@ import {
   startOfYear,
   weeklyOccurrences,
   zonedReading,
+  instantOf,
   type DateKey,
 } from "../calendar/calendarDates";
 import { Button } from "./ui/button";
 
 export type CalendarView = "day" | "week" | "month" | "year";
+
+export type AccountCalendarState = {
+  readonly id: string; readonly label: string;
+  readonly status: "loading" | "ready" | "unavailable" | "unsupported";
+  readonly truncated: boolean; readonly syncedAtMs: number | null;
+};
 
 type CalendarProject = GalleryProject & {
   readonly onOpen: () => void;
@@ -167,6 +174,28 @@ export function buildSessionEvents(
       projectKey: project.key,
       onOpen: project.onOpen,
     }];
+  });
+}
+
+/** Split a provider occurrence across displayed dates; exclusive midnight ends
+ * stay on the previous date. IDs retain occurrence identity plus date. */
+export function buildAccountEvents(
+  events: readonly WorkjetCalendarEvent[], from: DateKey, to: DateKey,
+  displayZone: string, onOpen: (event: WorkjetCalendarEvent) => void,
+): readonly CalendarEvent[] {
+  return events.flatMap((event) => {
+    const first = zonedReading(event.start_ms, displayZone).date;
+    const last = zonedReading(event.end_ms - 1, displayZone).date;
+    const rows: CalendarEvent[] = [];
+    for (let date = first < from ? from : first; date <= last && date <= to; date = addDays(date, 1)) {
+      const startMs = Math.max(event.start_ms, instantOf(date, 0, displayZone));
+      const endMs = Math.min(event.end_ms, instantOf(addDays(date, 1), 0, displayZone));
+      rows.push({ id: `${event.id}:${date}`, calendarId: event.calendar_id, title: event.title,
+        startMs, endMs, date, minutes: zonedReading(startMs, displayZone).minutes,
+        allDay: event.all_day, timeZone: displayZone, projectKey: event.project_id ?? "",
+        onOpen: () => onOpen(event) });
+    }
+    return rows;
   });
 }
 
@@ -455,11 +484,20 @@ export function ProjectCalendar({
   sessions = [],
   sessionsStatus,
   onRefreshSessions,
+  accountEvents = [], accountCalendars = [], accountsUnavailable = false,
+  accountsLoading = false, accountsTruncated = false, onRefreshAccounts, onWindowChanged,
 }: {
   readonly initialView?: CalendarView;
   readonly sessions?: readonly CtoxWorkjetSessionProjection[];
   readonly sessionsStatus?: "loading" | "ready" | "unavailable";
   readonly onRefreshSessions?: () => void;
+  readonly accountEvents?: readonly WorkjetCalendarEvent[];
+  readonly accountCalendars?: readonly AccountCalendarState[];
+  readonly accountsUnavailable?: boolean;
+  readonly accountsLoading?: boolean;
+  readonly accountsTruncated?: boolean;
+  readonly onRefreshAccounts?: () => void;
+  readonly onWindowChanged?: (from: DateKey, to: DateKey) => void;
   readonly projects: readonly CalendarProject[];
   /** Anchor date (YYYY-MM-DD) shown at first render; defaults to today. */
   readonly initialDate?: DateKey;
@@ -474,6 +512,7 @@ export function ProjectCalendar({
   const current = zonedReading(now, displayZone);
   const today = current.date;
 
+  const [selectedEvent, setSelectedEvent] = useState<WorkjetCalendarEvent | null>(null);
   const [view, setView] = useState<CalendarView>(initialView);
   const [projectKey, setProjectKey] = useState("all");
   const [anchor, setAnchor] = useState<DateKey>(() => initialDate ?? today);
@@ -484,12 +523,14 @@ export function ProjectCalendar({
   const grid = monthGrid(anchor);
   const windowFrom = range.from < grid[0]! ? range.from : grid[0]!;
   const windowTo = range.to > grid[41]! ? range.to : grid[41]!;
+  useEffect(() => { onWindowChanged?.(windowFrom, windowTo); }, [windowFrom, windowTo, onWindowChanged]);
 
   const allEvents = useMemo(
     () => [...buildEvents(projects, windowFrom, windowTo, displayZone),
       ...buildSessionEvents(projects, sessions, displayZone)
-        .filter((event) => event.date >= windowFrom && event.date <= windowTo)],
-    [projects, sessions, windowFrom, windowTo, displayZone],
+        .filter((event) => event.date >= windowFrom && event.date <= windowTo),
+      ...buildAccountEvents(accountEvents, windowFrom, windowTo, displayZone, setSelectedEvent)],
+    [projects, sessions, accountEvents, windowFrom, windowTo, displayZone],
   );
   const visibleEvents = useMemo(
     () => allEvents.filter((event) => !hiddenCalendars.has(event.calendarId)
@@ -565,6 +606,30 @@ export function ProjectCalendar({
             <p role="status" className="mt-2 text-xs text-muted-foreground">Some sessions have no recorded start time.</p>}
           {onRefreshSessions && <Button size="sm" variant="ghost" disabled={sessionsStatus === "loading"}
             onClick={onRefreshSessions}>Refresh sessions</Button>}
+          <h3 className="mt-4 text-sm font-medium">Connected accounts</h3>
+          {accountsLoading && <p role="status" className="text-xs text-muted-foreground">Loading calendar accounts…</p>}
+          {accountsUnavailable && <p role="status" className="text-xs text-muted-foreground">Account calendars unavailable.</p>}
+          {!accountsLoading && !accountsUnavailable && accountCalendars.length === 0 &&
+            <p className="text-xs text-muted-foreground">No calendar accounts connected to this instance.</p>}
+          {accountCalendars.map((calendar) => <div key={calendar.id} className="mt-2 text-xs">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={!hiddenCalendars.has(calendar.id)}
+                onChange={(event) => setHiddenCalendars((previous) => {
+                  const next = new Set(previous);
+                  if (event.target.checked) next.delete(calendar.id); else next.add(calendar.id);
+                  return next;
+                })} />
+              <span className="min-w-0 break-words">{calendar.label}</span>
+            </label>
+            <p role="status" className="ml-6 text-muted-foreground">
+              {calendar.status === "ready" ? calendar.truncated ? "Partial sync · more events on the account" :
+                calendar.syncedAtMs === null ? "Synced" : `Synced ${new Date(calendar.syncedAtMs).toLocaleTimeString()}` :
+                calendar.status === "loading" ? "Syncing…" : calendar.status === "unsupported" ?
+                "Calendar connection not supported for this account" : "Sync failed"}
+            </p>
+          </div>)}
+          {accountsTruncated && <p role="status" className="text-xs text-muted-foreground">The account list is incomplete.</p>}
+          {onRefreshAccounts && <Button size="sm" variant="ghost" onClick={onRefreshAccounts}>Sync accounts</Button>}
         </section>
         {unscheduled.length > 0 && (
           <section aria-label="Projects without a regular meeting">
@@ -590,6 +655,16 @@ export function ProjectCalendar({
         )}
       </aside>
       <div className="order-1 min-w-0 lg:order-2">
+        {selectedEvent !== null && <section role="dialog" aria-label="Calendar event details" className="mb-4 rounded-md border border-border p-4">
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="font-semibold">{selectedEvent.title}</h2>
+            <Button size="sm" variant="ghost" onClick={() => setSelectedEvent(null)}>Close</Button>
+          </div>
+          <p className="mt-2 text-sm">{new Date(selectedEvent.start_ms).toLocaleString()} – {new Date(selectedEvent.end_ms).toLocaleString()}</p>
+          {selectedEvent.location && <p className="mt-2 text-sm">{selectedEvent.location}</p>}
+          {selectedEvent.notes && <p className="mt-2 whitespace-pre-wrap text-sm">{selectedEvent.notes}</p>}
+          <p className="mt-2 text-xs text-muted-foreground">Synced account event · read only</p>
+        </section>}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setAnchor(today)}>
             Today

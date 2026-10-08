@@ -21,6 +21,7 @@ export * from "./sourceControl.ts";
 export * from "./pullRequest.ts";
 export * from "./orchestration.ts";
 export * from "./workjet.ts";
+export * from "./workjetCalendar.ts";
 export * from "./workjetProjectTeam.ts";
 export * from "./remoteWorker.ts";
 export * from "./nativeSupervisorWorker.ts";

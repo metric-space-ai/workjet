@@ -23,6 +23,8 @@ Each Parent row shows its latest assistant message, falling back to its current
 plan step when no message is available. Equal conversation titles retain their
 names and show the harness beside them in both the overview and sidebar.
 
+If no CTOX instance is connected, **All projects** explains that nothing can load yet and offers **Connect an instance**. It no longer shows an empty page.
+
 On **All projects**, choose **Calendar** to open a calendar with **Day**, **Week**,
 **Month** and **Year** views. Use the arrows and **Today** to move through time,
 and select a date in the mini calendar to jump to it.

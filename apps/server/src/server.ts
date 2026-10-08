@@ -294,7 +294,7 @@ const DecisionHubConnectionRegistryLive = DecisionHubConnectionRegistry.layer.pi
 // construct this shared layer with that registry, including the native adapter
 // runtime; a memoized factory built without it would stay unbound in every
 // consumer, even when a later consumer supplied the registry.
-const CtoxThreadBindingSourceLayerLive = CtoxThreadBindingSourceLive.pipe(
+export const CtoxThreadBindingSourceLayerLive = CtoxThreadBindingSourceLive.pipe(
   Layer.provide(ProviderSessionDirectoryLayerLive),
   Layer.provide(DecisionHubConnectionRegistryLive),
 );

@@ -75,7 +75,7 @@ export function ProjectOverviewEditor({
     setDraft(overviewDraft(overview));
     setInfo({
       ...configuration?.info,
-    summary: configuration?.info?.summary ?? configuration?.info?.description ?? "",
+      summary: configuration?.info?.summary ?? configuration?.info?.description ?? "",
       goal: configuration?.info?.goal ?? "",
       phase: configuration?.info?.phase ?? "",
       status: configuration?.info?.status ?? "",

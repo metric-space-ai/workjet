@@ -5,7 +5,10 @@ import { ProjectOverviewEditor } from "./ProjectOverviewEditor";
 
 describe("compact project configuration", () => {
   it.each([
-    { info: { summary: "Canonical summary", description: "Legacy description" }, expected: "Canonical summary" },
+    {
+      info: { summary: "Canonical summary", description: "Legacy description" },
+      expected: "Canonical summary",
+    },
     { info: { description: "Legacy description" }, expected: "Legacy description" },
     { info: { summary: "", description: "Legacy description" }, expected: "" },
   ])("loads the native summary and falls back only when it is absent", ({ info, expected }) => {

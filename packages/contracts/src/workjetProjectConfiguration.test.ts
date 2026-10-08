@@ -60,7 +60,9 @@ describe("CTOX project configuration contract", () => {
     expect(() => decode({ ...request, ...invalid })).toThrow();
   });
   it("accepts a bounded native summary without discarding legacy or unedited fields", () => {
-    expect(decode({ ...request, info: { ...request.info, summary: "x".repeat(4096) } })).toMatchObject({
+    expect(
+      decode({ ...request, info: { ...request.info, summary: "x".repeat(4096) } }),
+    ).toMatchObject({
       info: { ...request.info, summary: "x".repeat(4096) },
     });
   });

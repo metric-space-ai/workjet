@@ -140,7 +140,9 @@ export function ProjectWorkspace({
           <div className="min-w-0">
             <h1 className="text-xl font-semibold">{project.title}</h1>
             {(info?.summary ?? info?.description) ? (
-              <p className="mt-1 text-sm text-muted-foreground">{info?.summary ?? info?.description}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {info?.summary ?? info?.description}
+              </p>
             ) : null}
           </div>
           <Button variant="ghost" size="sm" onClick={() => setEditingParent(true)}>

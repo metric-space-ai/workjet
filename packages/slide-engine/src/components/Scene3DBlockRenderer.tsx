@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useReducer, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type RefObject } from "react";
 
+import { businessPalette, kpiBarsLayout, parseBusinessSceneData } from "../scenes/business-common";
+import { isBusinessSceneId, type BusinessSceneId, type KpiBarsData, type TrendData } from "../scenes/business-data";
+import { businessFallbackDataUri } from "../scenes/business-fallback";
+import type { BusinessSceneHost, BusinessSceneOptions } from "../scenes/business-host";
 import type { ModellSceneHost } from "../scenes/modell-host";
 import {
   createModellSceneState,
@@ -29,24 +33,20 @@ const MIN_INTERACTIVE_WIDTH = 280;
 
 type SceneMode = "fallback" | "live";
 
-export function Scene3DBlockRenderer({ block }: { block: Scene3DBlock }) {
-  const sceneKey = scene3dSceneKey(block.sceneId);
-  const [dark, setDark] = useState(false);
-  const palette = modellTheme(dark);
-  const accent = palette.accent;
-  const rootRef = useRef<HTMLElement | null>(null);
-  const portRef = useRef<HTMLDivElement | null>(null);
-  const labelsRef = useRef<HTMLDivElement | null>(null);
-  const hostRef = useRef<ModellSceneHost | null>(null);
-  // Animationen starten bei "Bewegung reduzieren" pausiert, wie in der Vorlage.
-  const [state] = useState<ModellSceneState>(() => createModellSceneState(!prefersReducedMotion()));
-  const [, rerender] = useReducer((count: number) => count + 1, 0);
-  const [inView, setInView] = useState(false);
-  const [wide, setWide] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [mode, setMode] = useState<SceneMode>("fallback");
-  const interactive = inView && wide && !failed;
+/**
+ * Block shape accepted by the renderer. Business scenes (`business.*`) carry `data`; until the
+ * schema lists those ids the type is widened locally (Workjet fork delta).
+ */
+export type Scene3DRendererBlock = Omit<Scene3DBlock, "sceneId"> & { sceneId: string; data?: unknown };
 
+export function Scene3DBlockRenderer({ block }: { block: Scene3DRendererBlock }) {
+  if (isBusinessSceneId(block.sceneId)) return <BusinessScene3DBlock block={block} sceneId={block.sceneId} />;
+  return <ModellScene3DBlock block={block as Scene3DBlock} />;
+}
+
+/** Follows `data-theme` on <html>, else the system colour scheme. */
+function useSceneDarkTheme() {
+  const [dark, setDark] = useState(false);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const sync = () => {
@@ -59,7 +59,13 @@ export function Scene3DBlockRenderer({ block }: { block: Scene3DBlock }) {
     sync();
     return () => { observer.disconnect(); media.removeEventListener("change", sync); };
   }, []);
+  return dark;
+}
 
+/** Whether the figure is near the viewport and wide enough for a WebGL scene. */
+function useSceneViewport(rootRef: RefObject<HTMLElement | null>) {
+  const [inView, setInView] = useState(false);
+  const [wide, setWide] = useState(false);
   useEffect(() => {
     const element = rootRef.current;
     if (!element) return;
@@ -75,7 +81,10 @@ export function Scene3DBlockRenderer({ block }: { block: Scene3DBlock }) {
       resize.disconnect();
     };
   }, []);
+  return { inView, wide };
+}
 
+function useSceneControlKeys(rootRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const element = rootRef.current;
     if (!element) return;
@@ -94,6 +103,32 @@ export function Scene3DBlockRenderer({ block }: { block: Scene3DBlock }) {
     element.addEventListener("keydown", keepControlKeys);
     return () => element.removeEventListener("keydown", keepControlKeys);
   }, []);
+}
+
+// Nach Mausbedienung geht der Fokus zurueck an die Folie, damit Leertaste (Quiz)
+// und Pfeiltasten (Navigation) sofort wieder greifen. Tastaturnutzer behalten den Fokus.
+function releasePointerFocus(event: PointerEvent<HTMLDivElement>) {
+  const control = (event.target as HTMLElement).closest("button, input");
+  if (control instanceof HTMLElement) requestAnimationFrame(() => control.blur());
+}
+
+function ModellScene3DBlock({ block }: { block: Scene3DBlock }) {
+  const sceneKey = scene3dSceneKey(block.sceneId);
+  const dark = useSceneDarkTheme();
+  const palette = modellTheme(dark);
+  const accent = palette.accent;
+  const rootRef = useRef<HTMLElement | null>(null);
+  const portRef = useRef<HTMLDivElement | null>(null);
+  const labelsRef = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<ModellSceneHost | null>(null);
+  // Animationen starten bei "Bewegung reduzieren" pausiert, wie in der Vorlage.
+  const [state] = useState<ModellSceneState>(() => createModellSceneState(!prefersReducedMotion()));
+  const [, rerender] = useReducer((count: number) => count + 1, 0);
+  const { inView, wide } = useSceneViewport(rootRef);
+  const [failed, setFailed] = useState(false);
+  const [mode, setMode] = useState<SceneMode>("fallback");
+  const interactive = inView && wide && !failed;
+  useSceneControlKeys(rootRef);
 
   useEffect(() => {
     if (!interactive) return;
@@ -161,13 +196,6 @@ export function Scene3DBlockRenderer({ block }: { block: Scene3DBlock }) {
   const update = (mutate: (next: ModellSceneState) => void) => {
     mutate(state);
     rerender();
-  };
-
-  // Nach Mausbedienung geht der Fokus zurueck an die Folie, damit Leertaste (Quiz)
-  // und Pfeiltasten (Navigation) sofort wieder greifen. Tastaturnutzer behalten den Fokus.
-  const releasePointerFocus = (event: PointerEvent<HTMLDivElement>) => {
-    const control = (event.target as HTMLElement).closest("button, input");
-    if (control instanceof HTMLElement) requestAnimationFrame(() => control.blur());
   };
 
   const rootStyle = {
@@ -239,6 +267,179 @@ export function Scene3DBlockRenderer({ block }: { block: Scene3DBlock }) {
       {block.caption ? <figcaption className="lb-scene3d-caption lb-scene3d-accessible-description">{block.caption}</figcaption> : null}
     </figure>
   );
+}
+
+const BUSINESS_RESET_ICON = "M4 10a8 8 0 1 1 1 8M4 4v6h6";
+
+/** Workjet fork delta: data-driven Jour fixe scenes (`business.*`), rendered on demand. */
+function BusinessScene3DBlock({ block, sceneId }: { block: Scene3DRendererBlock; sceneId: BusinessSceneId }) {
+  const dark = useSceneDarkTheme();
+  const rootRef = useRef<HTMLElement | null>(null);
+  const portRef = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<BusinessSceneHost | null>(null);
+  const { inView, wide } = useSceneViewport(rootRef);
+  useSceneControlKeys(rootRef);
+  const dataKey = dataIdentity(block.data);
+  const parsed = useMemo(() => parseBusinessSceneData(sceneId, block.data), [sceneId, dataKey]);
+  const palette = businessPalette(dark, block.accent);
+  const [options, setOptions] = useState<BusinessSceneOptions>({ showPrevious: true, showTarget: true });
+  const [failed, setFailed] = useState(false);
+  const [mode, setMode] = useState<SceneMode>("fallback");
+  const latest = useRef({ parsed, palette, options });
+  latest.current = { parsed, palette, options };
+  const interactive = parsed.ok && inView && wide && !failed;
+
+  useEffect(() => {
+    if (!interactive) return;
+    let cancelled = false;
+    let host: BusinessSceneHost | null = null;
+    Promise.all([import("three"), import("../scenes/business-host")])
+      .then(([three, { BusinessSceneHost: Host }]) => {
+        const port = portRef.current;
+        const current = latest.current;
+        if (cancelled || !port || !current.parsed.ok) return;
+        host = new Host(three, {
+          port,
+          sceneId,
+          data: current.parsed.data,
+          palette: current.palette,
+          options: current.options,
+          ariaLabel: block.altText,
+          reducedMotion: prefersReducedMotion(),
+          onReady: () => { if (!cancelled) setMode("live"); },
+          onFail: () => setFailed(true)
+        });
+        if (host.failed) return;
+        hostRef.current = host;
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+      host?.destroy();
+      hostRef.current = null;
+      setMode("fallback");
+    };
+  }, [block.altText, interactive, sceneId]);
+
+  useEffect(() => {
+    if (parsed.ok) hostRef.current?.setData(parsed.data);
+  }, [dataKey]);
+
+  useEffect(() => {
+    hostRef.current?.setPalette(latest.current.palette);
+  }, [dark, block.accent]);
+
+  useEffect(() => {
+    hostRef.current?.setOptions(options);
+  }, [options]);
+
+  const fallbackSrc = useMemo(
+    () => (parsed.ok
+      ? businessFallbackDataUri(sceneId, parsed.data, { dark, accent: block.accent, label: block.altText, transparent: true, ...options })
+      : ""),
+    [block.accent, block.altText, dark, options, parsed, sceneId]
+  );
+
+  const rootStyle = {
+    "--lb-scene-ground": palette.paper,
+    "--lb-scene-panel": palette.panel,
+    "--lb-scene-ink": palette.ink,
+    "--lb-scene-muted": palette.muted,
+    "--lb-scene-line": palette.line,
+    "--lb-scene-fill": palette.fill,
+    "--lb-scene-secondary": palette.secondary,
+    "--lb-scene-accent": palette.accentInk,
+    "--lb-scene-rgb": hexToRgb(palette.accentInk)
+  } as CSSProperties;
+  const caption = block.caption ? <figcaption className="lb-scene3d-caption lb-scene3d-accessible-description">{block.caption}</figcaption> : null;
+
+  if (!parsed.ok) {
+    return (
+      <figure
+        className="lb-scene3d"
+        data-block-id={block.id}
+        data-block-type={block.type}
+        data-scene-family="business"
+        data-scene-id={block.sceneId}
+        data-scene-mode="invalid-data"
+        data-scene-theme={dark ? "dark" : "light"}
+        ref={rootRef}
+        style={rootStyle}
+      >
+        <div className="lb-scene3d-stage">
+          <p className="lb-scene3d-business-message">{parsed.message}</p>
+        </div>
+        {caption}
+      </figure>
+    );
+  }
+
+  const toggle = businessSceneToggle(sceneId, parsed.data);
+  return (
+    <figure
+      className="lb-scene3d"
+      data-block-id={block.id}
+      data-block-type={block.type}
+      data-scene-family="business"
+      data-scene-id={block.sceneId}
+      data-scene-mode={failed ? "no-webgl" : mode}
+      data-scene-theme={dark ? "dark" : "light"}
+      ref={rootRef}
+      style={rootStyle}
+    >
+      <div className="lb-scene3d-stage">
+        {mode === "live" ? null : (
+          // eslint-disable-next-line @next/next/no-img-element -- lokal erzeugte SVG-Ersatzansicht als data-URI
+          <img alt={block.altText} className="lb-scene3d-fallback" src={fallbackSrc} />
+        )}
+        {/* Unsichtbar statt verborgen, damit der Host schon vor dem ersten Bild messen kann. */}
+        <div className="lb-scene3d-port" ref={portRef} style={{ visibility: mode === "live" ? "visible" : "hidden" }} />
+        {mode === "live" ? (
+          <div className="lb-scene3d-tools" onPointerUp={releasePointerFocus}>
+            <button aria-label="3D-Blick zurücksetzen" className="lb-scene3d-tool" type="button" onClick={() => hostRef.current?.reset()}>
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d={BUSINESS_RESET_ICON} /></svg>
+            </button>
+          </div>
+        ) : null}
+        {failed ? <span className="lb-scene3d-note">WebGL ist nicht verfügbar. Die Inhalte bleiben als 2D-Ersatzansicht zugänglich.</span> : null}
+      </div>
+      {wide && toggle ? (
+        <div aria-label="Steuerung der Szene" className="lb-scene3d-controls" role="group" onPointerUp={releasePointerFocus}>
+          <div className="lb-scene3d-row">
+            <button
+              aria-pressed={options[toggle.option]}
+              className="lb-scene3d-button"
+              data-control={toggle.option}
+              type="button"
+              onClick={() => setOptions((current) => ({ ...current, [toggle.option]: !current[toggle.option] }))}
+            >
+              {toggle.label}
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {caption}
+    </figure>
+  );
+}
+
+/** The one control per business scene, or none when the data has nothing to toggle. */
+function businessSceneToggle(sceneId: BusinessSceneId, data: KpiBarsData | TrendData) {
+  if (sceneId === "business.kpi-bars") {
+    return kpiBarsLayout(data as KpiBarsData).hasPrevious ? { option: "showPrevious" as const, label: "Vorwert zeigen" } : null;
+  }
+  return (data as TrendData).target === undefined ? null : { option: "showTarget" as const, label: "Ziel zeigen" };
+}
+
+/** Stable identity for caller data that may be re-created on every render (canvas embeds). */
+function dataIdentity(data: unknown) {
+  try {
+    return JSON.stringify(data) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 type ControlsProps = {

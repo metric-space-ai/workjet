@@ -13,7 +13,7 @@ import {
   trendAxisLabelIndices,
   trendDomain,
   trendLayout,
-  wrapText
+  wrapText,
 } from "./business-common";
 import type { KpiBarsData, TrendData } from "./business-data";
 
@@ -22,8 +22,8 @@ const jourFixeKpis: KpiBarsData = {
     { label: "Umsatz MRR", value: 18400, previous: 16900, unit: "€" },
     { label: "Aktive Nutzer", value: 1240, previous: 1310 },
     { label: "Gemergte PRs", value: 23, previous: 17 },
-    { label: "Offene Bugs", value: 9, previous: 14, better: "lower" }
-  ]
+    { label: "Offene Bugs", value: 9, previous: 14, better: "lower" },
+  ],
 };
 
 const exitValue: TrendData = {
@@ -36,8 +36,8 @@ const exitValue: TrendData = {
     { label: "28.08.", value: 3.2 },
     { label: "04.09.", value: 3.9 },
     { label: "11.09.", value: 4.4 },
-    { label: "18.09.", value: 4.8 }
-  ]
+    { label: "18.09.", value: 4.8 },
+  ],
 };
 
 describe("formatBusinessNumber", () => {
@@ -67,7 +67,11 @@ describe("kpiDelta", () => {
 
   it("stays neutral without change and falls back to the absolute change after zero", () => {
     expect(kpiDelta(5, 5)).toMatchObject({ tone: "neutral", text: "±0,0 %" });
-    expect(kpiDelta(3, 0, "higher", "PRs")).toMatchObject({ percent: null, text: "+3 PRs", tone: "better" });
+    expect(kpiDelta(3, 0, "higher", "PRs")).toMatchObject({
+      percent: null,
+      text: "+3 PRs",
+      tone: "better",
+    });
   });
 
   it("measures change against the magnitude of a negative previous value", () => {
@@ -95,7 +99,13 @@ describe("kpiBarsLayout", () => {
   });
 
   it("shares one scale when units match and magnitudes are comparable", () => {
-    const layout = kpiBarsLayout({ unit: "h", items: [{ label: "Support", value: 40 }, { label: "Entwicklung", value: 120, previous: 100 }] });
+    const layout = kpiBarsLayout({
+      unit: "h",
+      items: [
+        { label: "Support", value: 40 },
+        { label: "Entwicklung", value: 120, previous: 100 },
+      ],
+    });
     expect(layout.scale).toBe("shared");
     expect(layout.items[0]?.height).toBeCloseTo(40 / 120);
     expect(layout.items[1]?.height).toBe(1);
@@ -103,12 +113,22 @@ describe("kpiBarsLayout", () => {
   });
 
   it("falls back to per-item scaling when one KPI would shrink to a sliver", () => {
-    const layout = kpiBarsLayout({ items: [{ label: "Nutzer", value: 1240 }, { label: "PRs", value: 23 }] });
+    const layout = kpiBarsLayout({
+      items: [
+        { label: "Nutzer", value: 1240 },
+        { label: "PRs", value: 23 },
+      ],
+    });
     expect(layout.scale).toBe("per-item");
   });
 
   it("centres the slots and reserves room for negative values", () => {
-    const layout = kpiBarsLayout({ items: [{ label: "Cashflow", value: -20, previous: 10, unit: "T€" }, { label: "Marge", value: 30, unit: "T€" }] });
+    const layout = kpiBarsLayout({
+      items: [
+        { label: "Cashflow", value: -20, previous: 10, unit: "T€" },
+        { label: "Marge", value: 30, unit: "T€" },
+      ],
+    });
     expect(layout.items.map((item) => item.x)).toEqual([-0.9, 0.9]);
     expect(layout.scale).toBe("shared");
     expect(layout.items[0]?.height).toBeCloseTo(-20 / 30);
@@ -148,11 +168,19 @@ describe("trendLayout", () => {
   });
 
   it("labels first, minimum and maximum but leaves the last value to the large number", () => {
-    const layout = trendLayout({ label: "Burn", points: [{ label: "A", value: 4 }, { label: "B", value: 9 }, { label: "C", value: 1 }, { label: "D", value: 5 }] });
+    const layout = trendLayout({
+      label: "Burn",
+      points: [
+        { label: "A", value: 4 },
+        { label: "B", value: 9 },
+        { label: "C", value: 1 },
+        { label: "D", value: 5 },
+      ],
+    });
     expect(layout.valueLabels).toEqual([
       { index: 1, placement: "above" },
       { index: 2, placement: "below" },
-      { index: 0, placement: "above" }
+      { index: 0, placement: "above" },
     ]);
     const rising = trendLayout(exitValue);
     expect(rising.valueLabels).toEqual([{ index: 0, placement: "below" }]);
@@ -170,27 +198,57 @@ describe("trendLayout", () => {
 describe("label placement helpers", () => {
   it("drops colliding value labels, keeping the earlier ones", () => {
     const kept = dropOverlappingLabels(
-      [{ index: 0, placement: "above" }, { index: 1, placement: "above" }, { index: 4, placement: "above" }],
+      [
+        { index: 0, placement: "above" },
+        { index: 1, placement: "above" },
+        { index: 4, placement: "above" },
+      ],
       (index) => index,
       () => 0,
       () => 1.5,
-      0.3
+      0.3,
     );
     expect(kept.map((label) => label.index)).toEqual([0, 4]);
   });
 
   it("spreads stacked annotations apart in order", () => {
-    expect(spreadVertically([{ center: 10, height: 4 }, { center: 11, height: 2 }], 1)).toEqual([10, 14]);
-    expect(spreadVertically([{ center: 30, height: 4 }, { center: 10, height: 2 }])).toEqual([30, 10]);
+    expect(
+      spreadVertically(
+        [
+          { center: 10, height: 4 },
+          { center: 11, height: 2 },
+        ],
+        1,
+      ),
+    ).toEqual([10, 14]);
+    expect(
+      spreadVertically([
+        { center: 30, height: 4 },
+        { center: 10, height: 2 },
+      ]),
+    ).toEqual([30, 10]);
   });
 
   it("wraps long labels into two lines with an ellipsis", () => {
     const measure = (value: string) => estimateTextWidth(value, 10);
-    const lines = wrapText("Durchschnittliche Bearbeitungszeit offener Kundentickets im Support", 80, 2, measure);
+    const lines = wrapText(
+      "Durchschnittliche Bearbeitungszeit offener Kundentickets im Support",
+      80,
+      2,
+      measure,
+    );
     expect(lines).toHaveLength(2);
     expect(lines.every((line) => measure(line) <= 80)).toBe(true);
     expect(lines[1]?.endsWith("…")).toBe(true);
     expect(wrapText("Umsatz MRR", 80, 2, measure)).toEqual(["Umsatz MRR"]);
+    expect(wrapText("Ø Bearbeitungszeit offener Tickets", 100, 3, measure)).toEqual([
+      "Ø Bearbeitungs-",
+      "zeit offener",
+      "Tickets",
+    ]);
+    const compound = wrapText("Kundenzufriedenheitsindex", 80, 2, measure);
+    expect(compound[0]?.endsWith("-")).toBe(true);
+    expect(compound.every((line) => measure(line) <= 80)).toBe(true);
   });
 });
 
@@ -212,17 +270,24 @@ describe("parseBusinessSceneData", () => {
 
   it("explains missing data in German", () => {
     const result = parseBusinessSceneData("business.trend", undefined);
-    expect(result).toEqual({ ok: false, message: "Die Verlaufs-Szene „business.trend“ kann nicht angezeigt werden: Die Daten fehlen." });
+    expect(result).toEqual({
+      ok: false,
+      message: "Die Verlaufs-Szene „business.trend“ kann nicht angezeigt werden: Die Daten fehlen.",
+    });
   });
 
   it("names the offending field for invalid data", () => {
-    const result = parseBusinessSceneData("business.kpi-bars", { items: [{ label: "Umsatz", value: "viel" }] });
+    const result = parseBusinessSceneData("business.kpi-bars", {
+      items: [{ label: "Umsatz", value: "viel" }],
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.message).toContain("Die Daten sind ungültig");
       expect(result.message).toContain("items.0.value");
     }
-    const tooMany = parseBusinessSceneData("business.kpi-bars", { items: Array.from({ length: 9 }, (_, index) => ({ label: `K${index}`, value: index })) });
+    const tooMany = parseBusinessSceneData("business.kpi-bars", {
+      items: Array.from({ length: 9 }, (_, index) => ({ label: `K${index}`, value: index })),
+    });
     expect(tooMany.ok).toBe(false);
   });
 });

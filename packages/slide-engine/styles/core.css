@@ -594,6 +594,23 @@
   font-size: 0.85em;
 }
 
+/* Workjet fork delta: a business scene without usable data explains why instead of rendering. */
+.lb-scene3d-business-message {
+  position: absolute;
+  inset: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 1em 1.4em;
+  border: 1.5px dashed var(--lb-scene-line);
+  border-radius: 6px;
+  color: var(--lb-scene-muted);
+  line-height: 1.45;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
 /* Controls are annotations on the drawing, not another application panel.
    Native button/range semantics preserve keyboard and assistive-tech access. */
 .lb-scene3d-controls { border: 0; background: transparent; }

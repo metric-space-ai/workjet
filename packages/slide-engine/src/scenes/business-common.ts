@@ -5,7 +5,7 @@ import {
   type BusinessSceneData,
   type BusinessSceneId,
   type KpiBarsData,
-  type TrendData
+  type TrendData,
 } from "./business-data";
 import { modellTheme, type ModellTheme } from "./modell-theme";
 
@@ -16,6 +16,8 @@ export type BusinessPalette = ModellTheme & {
   accentFill: string;
   /** Accent adjusted to at least 3:1 against the paper, for strokes and text. */
   accentInk: string;
+  /** Pale tint of the accent for previous-value ghosts. */
+  ghost: string;
   better: string;
   worse: string;
   neutral: string;
@@ -33,9 +35,10 @@ export function businessPalette(dark = false, accent?: string): BusinessPalette 
     accent: fill,
     accentFill: fill,
     accentInk: ensureContrast(fill, base.paper, 3),
+    ghost: mix(fill, base.paper, dark ? 0.72 : 0.82),
     better: dark ? "#8ce99a" : "#2b8a3e",
     worse: dark ? "#ffa8a8" : "#c92a2a",
-    neutral: base.muted
+    neutral: base.muted,
   };
 }
 
@@ -51,7 +54,13 @@ function channels(hex: string): [number, number, number] {
 }
 
 function toHex([r, g, b]: [number, number, number]) {
-  return `#${[r, g, b].map((part) => Math.round(Math.min(255, Math.max(0, part))).toString(16).padStart(2, "0")).join("")}`;
+  return `#${[r, g, b]
+    .map((part) =>
+      Math.round(Math.min(255, Math.max(0, part)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
 }
 
 export function relativeLuminance(hex: string) {
@@ -71,7 +80,11 @@ export function contrastRatio(a: string, b: string) {
 function mix(a: string, b: string, t: number) {
   const ca = channels(a);
   const cb = channels(b);
-  return toHex([ca[0] + (cb[0] - ca[0]) * t, ca[1] + (cb[1] - ca[1]) * t, ca[2] + (cb[2] - ca[2]) * t]);
+  return toHex([
+    ca[0] + (cb[0] - ca[0]) * t,
+    ca[1] + (cb[1] - ca[1]) * t,
+    ca[2] + (cb[2] - ca[2]) * t,
+  ]);
 }
 
 /** Moves `color` towards black or white (whichever is farther from `background`) until it reaches `ratio`. */
@@ -92,7 +105,10 @@ function numberFormat(minimum: number, maximum: number) {
   const key = `${minimum}:${maximum}`;
   let formatter = formatters.get(key);
   if (!formatter) {
-    formatter = new Intl.NumberFormat("de-DE", { minimumFractionDigits: minimum, maximumFractionDigits: maximum });
+    formatter = new Intl.NumberFormat("de-DE", {
+      minimumFractionDigits: minimum,
+      maximumFractionDigits: maximum,
+    });
     formatters.set(key, formatter);
   }
   return formatter;
@@ -126,15 +142,21 @@ export type KpiDelta = {
 };
 
 /** Change against the previous Regeltermin, coloured by whether it is an improvement. */
-export function kpiDelta(value: number, previous: number, better: "higher" | "lower" = "higher", unit?: string): KpiDelta {
+export function kpiDelta(
+  value: number,
+  previous: number,
+  better: "higher" | "lower" = "higher",
+  unit?: string,
+): KpiDelta {
   const difference = value - previous;
   const percent = previous === 0 ? null : (difference / Math.abs(previous)) * 100;
   const sign = difference > 0 ? "+" : difference < 0 ? "−" : "±";
   const improved = better === "lower" ? difference < 0 : difference > 0;
   const tone: BusinessTone = difference === 0 ? "neutral" : improved ? "better" : "worse";
-  const text = percent === null
-    ? `${sign}${formatBusinessNumber(Math.abs(difference), unit)}`
-    : `${sign}${formatPercent(percent)}`;
+  const text =
+    percent === null
+      ? `${sign}${formatBusinessNumber(Math.abs(difference), unit)}`
+      : `${sign}${formatPercent(percent)}`;
   return { difference, percent, tone, text };
 }
 
@@ -173,10 +195,13 @@ export const KPI_SHARED_SCALE_MAX_SPREAD = 20;
 
 export function kpiBarsLayout(data: KpiBarsData, pitch = KPI_SLOT_PITCH): KpiBarsLayout {
   const units = data.items.map((item) => item.unit ?? data.unit ?? "");
-  const magnitudes = data.items.map((item) => Math.max(Math.abs(item.value), Math.abs(item.previous ?? 0)));
+  const magnitudes = data.items.map((item) =>
+    Math.max(Math.abs(item.value), Math.abs(item.previous ?? 0)),
+  );
   const nonZero = magnitudes.filter((magnitude) => magnitude > 0);
   const spread = nonZero.length ? Math.max(...nonZero) / Math.min(...nonZero) : 1;
-  const scale = new Set(units).size === 1 && spread <= KPI_SHARED_SCALE_MAX_SPREAD ? "shared" : "per-item";
+  const scale =
+    new Set(units).size === 1 && spread <= KPI_SHARED_SCALE_MAX_SPREAD ? "shared" : "per-item";
   const sharedMax = Math.max(0, ...magnitudes);
   const count = data.items.length;
 
@@ -194,13 +219,17 @@ export function kpiBarsLayout(data: KpiBarsData, pitch = KPI_SLOT_PITCH): KpiBar
       height: normalise(item.value),
       previousHeight: item.previous === undefined ? undefined : normalise(item.previous),
       valueText: formatBusinessNumber(item.value, unit),
-      previousText: item.previous === undefined ? undefined : formatBusinessNumber(item.previous, unit),
-      delta: item.previous === undefined ? undefined : kpiDelta(item.value, item.previous, better, unit),
-      x: (index - (count - 1) / 2) * pitch
+      previousText:
+        item.previous === undefined ? undefined : formatBusinessNumber(item.previous, unit),
+      delta:
+        item.previous === undefined ? undefined : kpiDelta(item.value, item.previous, better, unit),
+      x: (index - (count - 1) / 2) * pitch,
     };
   });
 
-  const heights = items.flatMap((item) => (item.previousHeight === undefined ? [item.height] : [item.height, item.previousHeight]));
+  const heights = items.flatMap((item) =>
+    item.previousHeight === undefined ? [item.height] : [item.height, item.previousHeight],
+  );
   const positiveExtent = Math.max(0, ...heights);
   const negativeExtent = Math.max(0, ...heights.map((height) => -height));
   return {
@@ -210,7 +239,7 @@ export function kpiBarsLayout(data: KpiBarsData, pitch = KPI_SLOT_PITCH): KpiBar
     width: count * pitch,
     positiveExtent: positiveExtent === 0 && negativeExtent === 0 ? 1 : positiveExtent,
     negativeExtent,
-    hasPrevious: items.some((item) => item.previous !== undefined)
+    hasPrevious: items.some((item) => item.previous !== undefined),
   };
 }
 
@@ -272,13 +301,15 @@ export function trendLayout(data: TrendData): TrendLayout {
   const [lo, hi] = domain;
   const toY = (value: number) => (value - lo) / (hi - lo);
   const count = data.points.length;
-  const points = data.points.map((point, index): TrendPointLayout => ({
-    label: point.label,
-    value: point.value,
-    t: count > 1 ? index / (count - 1) : 0,
-    y: toY(point.value),
-    valueText: formatBusinessNumber(point.value, data.unit)
-  }));
+  const points = data.points.map(
+    (point, index): TrendPointLayout => ({
+      label: point.label,
+      value: point.value,
+      t: count > 1 ? index / (count - 1) : 0,
+      y: toY(point.value),
+      valueText: formatBusinessNumber(point.value, data.unit),
+    }),
+  );
   const maxIndex = values.indexOf(Math.max(...values));
   const minIndex = values.indexOf(Math.min(...values));
   const last = values[count - 1] ?? 0;
@@ -302,15 +333,20 @@ export function trendLayout(data: TrendData): TrendLayout {
     unit: data.unit,
     points,
     domain,
-    target: data.target === undefined
-      ? undefined
-      : { value: data.target, y: toY(data.target), text: `Ziel ${formatBusinessNumber(data.target, data.unit)}` },
+    target:
+      data.target === undefined
+        ? undefined
+        : {
+            value: data.target,
+            y: toY(data.target),
+            text: `Ziel ${formatBusinessNumber(data.target, data.unit)}`,
+          },
     maxIndex,
     minIndex,
     lastText: formatBusinessNumber(last, data.unit),
     changeText: `${change.text} ggü. Vorwert`,
     valueLabels,
-    axisLabels: trendAxisLabelIndices(count)
+    axisLabels: trendAxisLabelIndices(count),
   };
 }
 
@@ -323,13 +359,14 @@ export function dropOverlappingLabels(
   x: (index: number) => number,
   y: (label: TrendValueLabel) => number,
   width: (index: number) => number,
-  height: number
+  height: number,
 ) {
   const kept: TrendValueLabel[] = [];
   for (const label of labels) {
-    const collides = kept.some((other) =>
-      Math.abs(x(label.index) - x(other.index)) < (width(label.index) + width(other.index)) / 2
-      && Math.abs(y(label) - y(other)) < height
+    const collides = kept.some(
+      (other) =>
+        Math.abs(x(label.index) - x(other.index)) < (width(label.index) + width(other.index)) / 2 &&
+        Math.abs(y(label) - y(other)) < height,
     );
     if (!collides) kept.push(label);
   }
@@ -341,14 +378,16 @@ export function dropOverlappingLabels(
  * overlap, keeping their order. Returns the adjusted centres.
  */
 export function spreadVertically(items: Array<{ center: number; height: number }>, gap = 0) {
-  const order = items.map((item, index) => ({ ...item, index })).sort((a, b) => a.center - b.center);
+  const order = items
+    .map((item, index) => ({ ...item, index }))
+    .sort((a, b) => a.center - b.center);
   for (let i = 1; i < order.length; i++) {
     const below = order[i - 1]!;
     const current = order[i]!;
     const minimum = below.center + (below.height + current.height) / 2 + gap;
     if (current.center < minimum) current.center = minimum;
   }
-  const centers = new Array<number>(items.length);
+  const centers = Array.from({ length: items.length }, () => 0);
   for (const item of order) centers[item.index] = item.center;
   return centers;
 }
@@ -356,21 +395,33 @@ export function spreadVertically(items: Array<{ center: number; height: number }
 // --- text ----------------------------------------------------------------------------------
 
 /**
- * Greedy word wrap into at most `maxLines` lines no wider than `maxWidth`; the last line is
- * shortened with an ellipsis. `measure` returns the width of a string in the same unit.
+ * Greedy word wrap into at most `maxLines` lines no wider than `maxWidth`; words longer than a
+ * line are hyphenated, the last line is shortened with an ellipsis. `measure` returns the width
+ * of a string in the same unit.
  */
-export function wrapText(text: string, maxWidth: number, maxLines: number, measure: (value: string) => number) {
-  const words = text.trim().split(/\s+/u).filter(Boolean);
+export function wrapText(
+  text: string,
+  maxWidth: number,
+  maxLines: number,
+  measure: (value: string) => number,
+) {
+  const words = glueShortWords(text.trim().split(/\s+/u).filter(Boolean));
   const lines: string[] = [];
   let current = "";
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
-    if (!current || measure(candidate) <= maxWidth) {
+    if (measure(candidate) <= maxWidth) {
       current = candidate;
       continue;
     }
-    lines.push(current);
-    current = word;
+    if (current) lines.push(current);
+    let rest = word;
+    while (measure(rest) > maxWidth && rest.length > 3) {
+      const cut = hyphenationPoint(rest, maxWidth, measure);
+      lines.push(`${rest.slice(0, cut)}-`);
+      rest = rest.slice(cut);
+    }
+    current = rest;
   }
   if (current) lines.push(current);
   if (lines.length > maxLines) {
@@ -378,7 +429,39 @@ export function wrapText(text: string, maxWidth: number, maxLines: number, measu
     kept[maxLines - 1] = `${kept[maxLines - 1]} ${lines.slice(maxLines).join(" ")}`;
     lines.splice(0, lines.length, ...kept);
   }
-  return lines.map((line) => fitLine(line, maxWidth, measure));
+  // Glue is a layout decision only; hand back ordinary spaces unless the caller used no-break spaces.
+  const restore = text.includes("\u00a0")
+    ? (line: string) => line
+    : (line: string) => line.replaceAll("\u00a0", " ");
+  return lines.map((line) => restore(fitLine(line, maxWidth, measure)));
+}
+
+/** Keeps one- and two-letter tokens ("Ø", "im", "&") on the line of the following word. */
+function glueShortWords(words: string[]) {
+  const glued: string[] = [];
+  let pending = "";
+  words.forEach((word, index) => {
+    if ([...word].length <= 2 && index < words.length - 1) {
+      pending += `${word}\u00a0`;
+      return;
+    }
+    glued.push(pending + word);
+    pending = "";
+  });
+  return glued;
+}
+
+/**
+ * Where to break an over-long word: the widest prefix that fits with a hyphen, moved back to a
+ * typical German compound joint ("Bearbeitungs-zeit", "Kunden-zufriedenheit") when one is near.
+ */
+function hyphenationPoint(word: string, maxWidth: number, measure: (value: string) => number) {
+  let end = word.length - 1;
+  while (end > 2 && measure(`${word.slice(0, end)}-`) > maxWidth) end--;
+  for (let cut = Math.min(end, word.length - 3); cut >= Math.max(4, end - 8); cut--) {
+    if (/(?:ungs|heits|keits|ions|ens|ers|en|er)$/u.test(word.slice(0, cut))) return cut;
+  }
+  return end;
 }
 
 function fitLine(line: string, maxWidth: number, measure: (value: string) => number) {
@@ -401,14 +484,20 @@ export type BusinessSceneDataResult<Id extends BusinessSceneId = BusinessSceneId
 
 const sceneNames: Record<BusinessSceneId, string> = {
   "business.kpi-bars": "Kennzahlen-Szene",
-  "business.trend": "Verlaufs-Szene"
+  "business.trend": "Verlaufs-Szene",
 };
 
 /** Parses scene data with the fixed contract and explains failures in one German sentence. */
-export function parseBusinessSceneData<Id extends BusinessSceneId>(sceneId: Id, data: unknown): BusinessSceneDataResult<Id> {
+export function parseBusinessSceneData<Id extends BusinessSceneId>(
+  sceneId: Id,
+  data: unknown,
+): BusinessSceneDataResult<Id> {
   const name = sceneNames[sceneId];
   if (data === undefined || data === null) {
-    return { ok: false, message: `Die ${name} „${sceneId}“ kann nicht angezeigt werden: Die Daten fehlen.` };
+    return {
+      ok: false,
+      message: `Die ${name} „${sceneId}“ kann nicht angezeigt werden: Die Daten fehlen.`,
+    };
   }
   const result = businessSceneDataSchemas[sceneId].safeParse(data);
   if (result.success) return { ok: true, data: result.data as BusinessSceneData[Id] };
@@ -416,17 +505,21 @@ export function parseBusinessSceneData<Id extends BusinessSceneId>(sceneId: Id, 
   const path = issue?.path.length ? `${issue.path.map(String).join(".")}: ` : "";
   return {
     ok: false,
-    message: `Die ${name} „${sceneId}“ kann nicht angezeigt werden: Die Daten sind ungültig (${path}${issue?.message ?? "unbekannter Fehler"}).`
+    message: `Die ${name} „${sceneId}“ kann nicht angezeigt werden: Die Daten sind ungültig (${path}${issue?.message ?? "unbekannter Fehler"}).`,
   };
 }
 
 export function escapeXml(value: string) {
-  return value.replace(/[&<>"']/gu, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char);
+  return value.replace(
+    /[&<>"']/gu,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char] ?? char,
+  );
 }
 
 /** Small deterministic pseudo-random sequence for hand-drawn wobble (no Math.random). */
 export function sketchJitter(seed: number) {
-  let state = (Math.imul(seed + 1, 2654435761) >>> 0) || 1;
+  let state = Math.imul(seed + 1, 2654435761) >>> 0 || 1;
   return () => {
     state ^= state << 13;
     state ^= state >>> 17;

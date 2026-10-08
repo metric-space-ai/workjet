@@ -21,6 +21,10 @@ import {
   type ProviderGatewayServiceShape,
 } from "./ProviderGatewayService.ts";
 
+const decodeStoredAccounts = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ accounts: Schema.Array(Schema.Unknown) })),
+);
+
 const configuration = `{
   "schemaVersion": 1,
   "defaultProvider": "codex",
@@ -830,9 +834,7 @@ describe("ProviderGatewayService", () => {
           status: "ok",
           errorClass: null,
         });
-        const saved = yield* Schema.decodeUnknownEffect(
-          Schema.fromJsonString(Schema.Struct({ accounts: Schema.Array(Schema.Unknown) })),
-        )(files.get("/state/provider-gateway.json")!);
+        const saved = yield* decodeStoredAccounts(files.get("/state/provider-gateway.json")!);
         expect(saved.accounts).toHaveLength(1);
         expect(saved.accounts[0]).toMatchObject({
           id: accountId,

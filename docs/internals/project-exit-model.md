@@ -1,9 +1,15 @@
 # Project exit assessments
 
-Every native project has an additional five-year exit measure in its gallery
-card and project overview. The existing three prompted KPI slots remain
-independent. The gallery opens the assessment directly, including for projects
-whose chat history has not been imported.
+Every native project has a five-year exit value stamped across its gallery
+website preview, with only the amount visible. The existing three prompted KPI
+slots remain independent. The stamp opens the assessment directly, including for
+projects whose chat history has not been imported. Status, date and change are
+presented in the detailed report; the stamp retains an accessible description.
+
+The gallery uses an intrinsic grid with an 18rem preferred minimum card width,
+capped to its container width. It fits fewer columns when the sidebar consumes
+space rather than relying on window breakpoints. Below the small viewport
+breakpoint it explicitly uses one column. The stamp's font size remains stable.
 
 This integration targets the shared web renderer and Electron project overview.
 The separate React Native project route currently goes directly to its supervisor
@@ -65,7 +71,7 @@ because v1 has no independent evidence or calibration review adapter. Evidence
 references are pointers, not proof that their contents have been independently
 verified.
 
-PR #204's guarded percentage change is integrated into the summary and report.
+PR #204's guarded percentage change is integrated into the report.
 It uses the nearest earlier calculated history entry (authority order is newest
 first), excludes the current run, and requires a positive baseline and a dated
 current result. It is labelled a previous calculated assessment: v1 history has

@@ -225,12 +225,12 @@ export function ProjectOverviewCard({
         >
           <ArrowUpRightIcon className="size-4" aria-hidden="true" />
         </Button>
+        <ProjectExitModelSummary
+          projectId={project.id}
+          assessment={project.configuration?.exitModel}
+          onOpen={() => setAssessing(true)}
+        />
       </div>
-      <ProjectExitModelSummary
-        projectId={project.id}
-        assessment={project.configuration?.exitModel}
-        onOpen={() => setAssessing(true)}
-      />
       <div className="border-t border-border px-3 py-3">
         <dl className="grid min-w-0 grid-cols-3 gap-2" data-workjet-project-card-slots="">
           {(["first", "second", "third"] as const).map((position, index) => {

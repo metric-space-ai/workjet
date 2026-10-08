@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import type { WorkjetExitModelAssessment, WorkjetExitModelResources } from "@workjet/contracts";
-import { ArrowUpRightIcon, RotateCcwIcon } from "lucide-react";
+import { RotateCcwIcon } from "lucide-react";
 import {
   EXIT_MODEL_STATUS_LABELS,
   exitModelPresentation,
@@ -31,31 +31,19 @@ export function ProjectExitModelSummary({
       type="button"
       onClick={onOpen}
       aria-label="View five-year exit assessment"
+      aria-description={view.value + " · " + view.label}
+      title={
+        view.value +
+        " · " +
+        view.label +
+        (view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : "")
+      }
       data-workjet-action={"project.exit_model.open:" + projectId}
-      className="flex w-full min-w-0 items-start justify-between gap-2 border-t border-border px-3 py-3 text-left hover:bg-muted/30 focus-visible:outline focus-visible:outline-ring"
+      className="absolute top-1/2 left-1/2 z-10 max-w-[85%] -translate-x-1/2 -translate-y-1/2 -rotate-6 rounded-sm border-4 border-double border-foreground/70 bg-background/90 px-4 py-2 text-center text-3xl leading-none font-bold tracking-tight whitespace-nowrap text-foreground tabular-nums shadow-sm hover:bg-background focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
       data-workjet-exit-model-status={view.status}
+      data-workjet-exit-model-stamp=""
     >
-      <span className="min-w-0">
-        <span className="block text-[11px] text-muted-foreground">
-          Essential KPI · Exit in 5 years
-        </span>
-        <span className="mt-0.5 block break-words text-xl font-semibold tracking-tight tabular-nums">
-          {view.value}
-        </span>
-        <span className="mt-1 block text-[11px] text-muted-foreground">
-          {view.label}
-          {view.assessment?.as_of ? " · " + formatExitDate(view.assessment.as_of) : ""}
-        </span>
-        {view.change && (
-          <span className="mt-1 block text-[11px] text-muted-foreground">
-            {formatExitChange(view.change.percent)} since previous calculated assessment
-          </span>
-        )}
-      </span>
-      <ArrowUpRightIcon
-        className="mt-1 size-3.5 shrink-0 text-muted-foreground"
-        aria-hidden="true"
-      />
+      {view.value}
     </button>
   );
 }

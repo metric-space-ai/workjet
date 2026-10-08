@@ -47,6 +47,10 @@ describe("project exit assessment display", () => {
     expect(markup.match(/data-workjet-project-card-slot="/g)).toHaveLength(3);
     expect(markup).toContain("800k EUR");
     expect(markup).toContain('aria-label="View five-year exit assessment"');
+    const stamp = markup.match(
+      /<button[^>]*data-workjet-exit-model-stamp=""[^>]*>([\s\S]*?)<\/button>/,
+    );
+    expect(stamp?.[1]).toBe("800k EUR");
   });
 
   it("distinguishes proceeds, sale probability, conditional price and financing", () => {

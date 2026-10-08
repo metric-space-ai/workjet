@@ -1,6 +1,9 @@
 import * as Schema from "effect/Schema";
 import { CommandId, ProjectId } from "./baseSchemas.ts";
-import { isWorkjetJourFixeReadReceiptForRequest } from "./workjetJourFixeMeeting.ts";
+import {
+  isWorkjetJourFixeReadReceiptForRequest,
+  WorkjetJourFixeGoalRef,
+} from "./workjetJourFixeMeeting.ts";
 
 // Wire names and limits match ctox.workjet.jour_fixe.v1. Owner text cannot
 // impersonate a supervisor or assert speech provenance.
@@ -66,6 +69,14 @@ export const WorkjetJourFixeOwnerRequests = [
     text: text(4_096),
   }),
   Schema.Struct({
+    action: Schema.Literal("project.jour_fixe.todos.confirm"),
+    ...meetingFields,
+    proposalRevision: unsigned,
+    expectedGoalRevision: Schema.Int.check(
+      Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER - 1 }),
+    ),
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.jour_fixe.todos.revise"),
     ...meetingFields,
     proposalRevision: unsigned,
@@ -81,11 +92,13 @@ export const WorkjetJourFixeOwnerResponse = Schema.Struct({
     "project.jour_fixe.meeting.end",
     "project.jour_fixe.transcript.append",
     "project.jour_fixe.todos.revise",
+    "project.jour_fixe.todos.confirm",
     "project.jour_fixe.comment.add",
   ]),
   commandId: CommandId,
   projectId: ProjectId,
   contract: Schema.Literal("ctox.workjet.jour_fixe.v1"),
+  goal: Schema.optionalKey(WorkjetJourFixeGoalRef),
   mutation: Schema.Struct({
     operation_id: id,
     meeting_id: id,
@@ -159,6 +172,14 @@ export function isWorkjetJourFixeReceiptForRequest(request: unknown, response: u
       case "project.jour_fixe.comment.add":
         return (
           ["live", "review"].includes(mutation.state) && mutation.changed_id === intent.commentId
+        );
+      case "project.jour_fixe.todos.confirm":
+        return (
+          mutation.state === "confirmed" &&
+          mutation.todos_revision === intent.proposalRevision &&
+          receipt.goal !== undefined &&
+          receipt.goal.revision === intent.expectedGoalRevision + 1 &&
+          mutation.changed_id === receipt.goal.goal_id
         );
       case "project.jour_fixe.todos.revise":
         return mutation.state === "review" && mutation.todos_revision === intent.proposalRevision;

@@ -81,7 +81,7 @@ describe("native meeting room session", () => {
         items: native.todos!.items.map((todo) => ({ ...todo, due_at_ms: null })),
       },
     });
-    expect(mapped).not.toHaveProperty("previousGoalRevision");
+    expect(mapped.previousGoalRevision).toBe(0);
     expect(mapped).not.toHaveProperty("error");
     expect(mapped.transcript[0]).not.toHaveProperty("streamId");
     expect(mapped.todos!.items[0]).not.toHaveProperty("dueAt");
@@ -170,6 +170,54 @@ describe("native meeting room session", () => {
       proposalRevision: 2,
       items: [{ evidence_ids: ["comment-1", "turn-1"] }],
     });
+  });
+  it("submits the displayed three revisions without inventing items or a goal", async () => {
+    const goal = { goal_id: "core-goal-1", revision: 3 };
+    const control = vi.fn<typeof requestWorkjetProjectControl>().mockImplementation(async (_, request) => {
+      if (request.action === "project.jour_fixe.todos.confirm")
+        return { _tag: "completed", response: {
+          action: request.action, commandId: request.commandId, projectId: request.projectId,
+          contract: "ctox.workjet.jour_fixe.v1", goal,
+          mutation: { operation_id: request.operationId, meeting_id: request.meetingId, project_id: request.projectId,
+            revision: request.expectedRevision + 1, state: "confirmed", todos_revision: request.proposalRevision, changed_id: goal.goal_id },
+        }};
+      const result = reply(request);
+      if (result._tag === "completed" && result.response.action === "project.jour_fixe.meeting.read")
+        return { ...result, response: { ...result.response, meeting: { ...native, revision: 4, state: "confirmed", todos: { ...native.todos!, status: "confirmed", goal } } } };
+      return result;
+    });
+    const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+    const result = await session.confirm(native.id, 3, native.todos!.revision, 2);
+    expect(control.mock.calls[0]![1]).toMatchObject({ action: "project.jour_fixe.todos.confirm", expectedRevision: 3, proposalRevision: native.todos!.revision, expectedGoalRevision: 2 });
+    expect(control.mock.calls[0]![1]).not.toHaveProperty("items");
+    expect(control.mock.calls[0]![1]).not.toHaveProperty("goal");
+    expect(result.meeting?.todos?.goal).toEqual(goal);
+    expect(session.hasPendingChange()).toBe(false);
+  });
+  it("retains an acknowledged confirmation until the exact persisted goal catches up without writing twice", async () => {
+    const goal = { goal_id: "first-core-goal", revision: 1 };
+    let reads = 0;
+    const control = vi.fn<typeof requestWorkjetProjectControl>().mockImplementation(async (_, request) => {
+      if (request.action === "project.jour_fixe.todos.confirm")
+        return { _tag: "completed", response: {
+          action: request.action, commandId: request.commandId, projectId: request.projectId,
+          contract: "ctox.workjet.jour_fixe.v1", goal,
+          mutation: { operation_id: request.operationId, meeting_id: request.meetingId, project_id: request.projectId,
+            revision: request.expectedRevision + 1, state: "confirmed", todos_revision: request.proposalRevision, changed_id: goal.goal_id },
+        }};
+      const result = reply(request);
+      if (result._tag === "completed" && result.response.action === "project.jour_fixe.meeting.read") {
+        reads++;
+        return { ...result, response: { ...result.response, meeting: { ...native, revision: 4, state: "confirmed", todos: { ...native.todos!, status: "confirmed", goal: reads === 1 ? { ...goal, goal_id: "wrong-goal" } : goal } } } };
+      }
+      return result;
+    });
+    const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+    await expect(session.confirm(native.id, 3, native.todos!.revision, 0)).rejects.toThrow("goal snapshot");
+    expect(session.hasPendingChange()).toBe(true);
+    await session.retryPending();
+    expect(control.mock.calls.map((call) => call[1].action)).toEqual(["project.jour_fixe.todos.confirm", "project.jour_fixe.meeting.read", "project.jour_fixe.meeting.read"]);
+    expect(session.hasPendingChange()).toBe(false);
   });
   it("rejects late reads after an instance switch, before the UI can consume them", async () => {
     let current = true;

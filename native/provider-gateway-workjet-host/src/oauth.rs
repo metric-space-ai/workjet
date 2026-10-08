@@ -1107,7 +1107,11 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(
+                directory.path(),
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
         }
         let store = Arc::new(
             crate::secret_store::WorkjetSecretStore::new(directory.path().to_owned()).unwrap(),

@@ -114,7 +114,7 @@ describe("worker source credential custody", () => {
       const fiber = yield* Effect.forkChild(Effect.scoped(Effect.gen(function* () {
         yield* acquireWorkjetWorkerSourceGrant(fetch, tenant);
         yield* Deferred.succeed(acquired, undefined);
-        yield* Effect.never;
+        return yield* Effect.never;
       })));
       yield* Deferred.await(acquired);
       yield* Fiber.interrupt(fiber);

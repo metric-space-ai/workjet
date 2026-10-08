@@ -1,3 +1,56 @@
+it.effect(
+  "uses the native intent as the first remote worker ID and reconciles it after source restart",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ remoteSource: true, remoteReplyLost: true });
+      const input = { task: "Fix documentation", computerId: remoteComputer.id };
+      const intentId = ThreadId.make(ids[4]);
+      const first = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
+      expect(
+        (yield* Effect.flip(first.dispatch(invocation, { ...input, remoteRequestId: intentId })))
+          .reason,
+      ).toBe("remote-dispatch-failed");
+      expect(harness.remoteRequests).toHaveLength(0);
+      const pending = yield* Effect.flip(first.dispatchNativeIntent!(invocation, input, intentId));
+      expect(pending.reason).toBe("remote-dispatch-pending");
+      expect(pending.remoteRequestId).toBe(intentId);
+      const restarted = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
+      const result = yield* restarted.dispatchNativeIntent!(invocation, input, intentId);
+      expect(result.workerThreadId).toBe(intentId);
+      expect(result.branch).toBe(`workjet/worker/${intentId}`);
+      expect(harness.remoteRequests).toHaveLength(1);
+      expect(harness.remoteRequests[0]?.requestId).toBe(intentId);
+      expect(harness.commands).toEqual([]);
+      expect(harness.worktreeCreates).toEqual([]);
+      expect(
+        (yield* Effect.flip(
+          restarted.dispatchNativeIntent!(invocation, { ...input, task: "Substituted" }, intentId),
+        )).reason,
+      ).toBe("remote-dispatch-failed");
+      expect(harness.remoteRequests).toHaveLength(1);
+    }),
+);
+
+it.effect("refuses local placement for a native remote intent without creating a checkout", () =>
+  Effect.gen(function* () {
+    const harness = makeHarness({ remoteSource: true });
+    const service = yield* harness.service.pipe(Effect.provide(computerCatalogLayer));
+    const error = yield* Effect.flip(
+      service.dispatchNativeIntent!(
+        invocation,
+        {
+          task: "Fix documentation",
+          computerId: localComputer.id,
+        },
+        ThreadId.make(ids[4]),
+      ),
+    );
+    expect(error.reason).toBe("remote-dispatch-failed");
+    expect(harness.commands).toEqual([]);
+    expect(harness.worktreeCreates).toEqual([]);
+    expect(harness.remoteRequests).toEqual([]);
+  }),
+);
 it.effect("requires one explicit configured remote worker profile", () =>
   Effect.gen(function* () {
     for (const profiles of [

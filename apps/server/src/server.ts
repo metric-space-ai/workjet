@@ -53,6 +53,7 @@ import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as GreppyRuntime from "./mcp/toolkits/workjet/GreppyRuntime.ts";
 import * as ProviderGateway from "./providerGateway/ProviderGatewayService.ts";
 import * as WorkerDispatch from "./workjet/WorkerDispatch.ts";
+import * as NativeSupervisorWorkerDispatch from "./workjet/NativeSupervisorWorkerDispatchLive.ts";
 import * as RemoteWorkerBroker from "./workjet/RemoteWorkerBroker.ts";
 import * as RemoteWorkerReceiver from "./workjet/RemoteWorkerReceiver.ts";
 import * as RemoteWorkerConnectionBootstrap from "./workjet/RemoteWorkerConnectionBootstrap.ts";
@@ -289,6 +290,14 @@ const DecisionHubMcpClientLive = DecisionHubMcpClient.layer.pipe(
 const DecisionHubConnectionRegistryLive = DecisionHubConnectionRegistry.layer.pipe(
   Layer.provide(DecisionHubMcpClientLive),
 );
+// The binding factory reads the optional registry at construction. Always
+// construct this shared layer with that registry, including the native adapter
+// runtime; a memoized factory built without it would stay unbound in every
+// consumer, even when a later consumer supplied the registry.
+export const CtoxThreadBindingSourceLayerLive = CtoxThreadBindingSourceLive.pipe(
+  Layer.provide(ProviderSessionDirectoryLayerLive),
+  Layer.provide(DecisionHubConnectionRegistryLive),
+);
 const DecisionHubEscalationServiceLive = DecisionHubEscalationService.layer.pipe(
   Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(DecisionHubMcpClientLive),
@@ -457,9 +466,7 @@ const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.laye
   Layer.provide(
     RemoteWorkerSourceOperationsLive.layer.pipe(
       Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
-      Layer.provide(
-        CtoxThreadBindingSourceLive.pipe(Layer.provide(ProviderSessionDirectoryLayerLive)),
-      ),
+      Layer.provide(CtoxThreadBindingSourceLayerLive),
       Layer.provide(RemoteWorkerAuthorityStore.layer),
       Layer.provide(DecisionHubConnectionRegistryLive),
     ),
@@ -474,6 +481,23 @@ const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
   Layer.provide(WorktreeStorageLayerLive),
   Layer.provide(OrchestrationCommandReceiptRepositoryLive),
   Layer.provide(WorkerDispatchRollbackLayerLive),
+);
+
+// A single service instance owns the stable native intent IDs and the normal
+// MCP dispatch path. Both entries share its durable broker and first-use lock.
+const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
+  Layer.provide(RemoteWorkerBrokerLayerLive),
+  Layer.provide(WorkerDispatchRollbackLayerLive),
+  Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+  Layer.provide(WorkjetMailboxStoreLive),
+  Layer.provide(WorkjetMeshIdentity.layer),
+  Layer.provide(WorkjetSnapshotStoreLive),
+);
+const NativeSupervisorWorkerDispatchLive = NativeSupervisorWorkerDispatch.layer.pipe(
+  Layer.provide(WorkerDispatchLayerLive),
+  Layer.provide(RemoteWorkerBrokerLayerLive),
+  Layer.provide(CtoxThreadBindingSourceLayerLive),
+  Layer.provide(DecisionHubConnectionRegistryLive),
 );
 
 const RuntimeCoreFoundationLive = Layer.mergeAll(
@@ -505,7 +529,7 @@ const RuntimeCoreDependenciesLive = RuntimeCoreFoundationLive.pipe(
   // instance unavailable rather than dragging the session-directory chain into
   // every registry construction site — so production has to supply them here,
   // where the registry is hydrated.
-  Layer.provideMerge(CtoxThreadBindingSourceLive),
+  Layer.provideMerge(CtoxThreadBindingSourceLayerLive),
   Layer.provideMerge(WorkjetCrossModeLinkStoreLive),
   Layer.provideMerge(CtoxNativeRequests.layer),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
@@ -638,24 +662,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     Layer.provide(DecisionHubConnectionRegistryLive),
     Layer.provide(DecisionHubEscalationServiceLive),
     Layer.provide(McpSessionRegistry.layer),
-    Layer.provide(
-      WorkerDispatch.layer.pipe(
-        Layer.provide(RemoteWorkerBrokerLayerLive),
-        Layer.provide(
-          WorkerDispatchRollback.layer.pipe(
-            Layer.provide(
-              NativeWorkerWorktreeRemover.layer.pipe(Layer.provide(ResourceMonitorBinary.layer)),
-            ),
-          ),
-        ),
-        // Resolve a lost creation acknowledgement against the same durable
-        // command-receipt store used by the orchestration engine.
-        Layer.provide(OrchestrationCommandReceiptRepositoryLive),
-        Layer.provide(WorkjetMailboxStoreLive),
-        Layer.provide(WorkjetMeshIdentity.layer),
-        Layer.provide(WorkjetSnapshotStoreLive),
-      ),
-    ),
+    Layer.provide(WorkerDispatchLayerLive),
     // The durable Workjet mailbox is provided exactly where worker dispatch is:
     // the store resolves the ambient `SqlClient` from `PersistenceLayerLive`,
     // and the delivery service resolves the orchestration engine and projection
@@ -695,6 +702,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   // transport for the same reason — it is a background loop, not a
   // request-scoped dependency.
   WorkjetDelegationExecutorLive,
+  NativeSupervisorWorkerDispatchLive,
   DecisionHubReconcilerLive,
 ).pipe(
   // One shared, server-lifetime redacted mailbox audit emitter. It is provided

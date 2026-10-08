@@ -23,10 +23,16 @@ try {
 } finally { child.kill('SIGTERM'); await exited; }
 `;
 
+const exitingChildFixture = fixture
+  .replace("require('node:fs').closeSync(0); process.stdout.write('closed'); setInterval(() => {}, 1000)",
+    "process.stdout.write('closed'); setTimeout(() => process.exit(0), 5)")
+  .replace("new Uint8Array([42])", "new Uint8Array(8 * 1024 * 1024)");
+
 describe("closed child input pipe", () => {
-  it("reports the delayed write error without an uncaught exception in the parent", async () => {
+  it.each([["closed input", fixture], ["exit during write", exitingChildFixture]])(
+    "survives %s without an uncaught exception in the parent", async (_name, program) => {
     const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const parent = NodeChildProcess.spawn(NodeProcess.execPath, ["--input-type=module", "-e", fixture], { stdio: ["ignore", "pipe", "pipe"] });
+      const parent = NodeChildProcess.spawn(NodeProcess.execPath, ["--input-type=module", "-e", program], { stdio: ["ignore", "pipe", "pipe"] });
       let stdout = ""; let stderr = "";
       parent.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
       parent.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });

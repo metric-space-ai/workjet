@@ -1035,7 +1035,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
       provider: "kimi",
       label: "Existing coding plan",
       upstreamBaseUrl,
-      enabled: false,
+      enabled: true,
       priority: 7,
       weight: 1,
       models: ["kimi-for-coding"],
@@ -1065,6 +1065,33 @@ describe("ProviderGatewayService · API-key accounts", () => {
     });
     expect(harness.storedSecrets.size).toBe(0);
     expect(document).not.toContain("provider-secret");
+  });
+
+  it("does not discover or change a disabled Kimi account during Check all", async () => {
+    const harness = apiKeyHarness();
+    let discoveries = 0;
+    const document = JSON.stringify({
+      ...JSON.parse(configuration),
+      accounts: [{
+        id: "kimi-disabled", provider: "kimi", label: "Disabled", enabled: false,
+        priority: 0, weight: 1, models: ["k3"],
+        apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      }],
+    });
+    harness.platform = {
+      ...harness.platform,
+      readText: async (path) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return document;
+      },
+      discoverKimiConnection: async () => { discoveries += 1; return undefined; },
+    };
+    const result = await runWithSecrets(harness, (gateway) => gateway.checkModels({ force: true }));
+    expect(result.pending).toEqual([]);
+    expect(discoveries).toBe(0);
+    expect(harness.writes).toEqual([]);
+    expect(harness.storedSecrets.size).toBe(0);
   });
 
   it("does not persist a Kimi key when neither endpoint returns a live list", async () => {

@@ -1733,6 +1733,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         if (
           deadline.aborted ||
           account.provider !== "kimi" ||
+          !account.enabled ||
           !isApiKeyAccount(account) ||
           (account.upstreamBaseUrl !== undefined &&
             !["https://api.kimi.com/coding/v1", "https://api.moonshot.ai/v1"].includes(account.upstreamBaseUrl)) ||

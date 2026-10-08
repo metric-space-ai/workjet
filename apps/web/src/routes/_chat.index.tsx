@@ -66,6 +66,7 @@ import { openCommandPalette } from "../commandPaletteBus";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
+import { NoInstanceHero } from "../components/NoInstanceHero";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkjetHeaderContent } from "../components/WorkjetHeaderSlots";
 import { usePrimarySettings } from "../hooks/useSettings";
@@ -546,6 +547,7 @@ function IndexDraftLanding() {
         }))}
       />
     );
+  if (activeCtoxInstanceId === null && bootstrapped) return <NoInstanceHero />;
   if ((!bootstrapped && registry.phase !== "ready") || registry.phase === "loading") return null;
   if (registry.phase === "blocked")
     return (

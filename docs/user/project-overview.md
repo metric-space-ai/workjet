@@ -23,6 +23,8 @@ Each Parent row shows its latest assistant message, falling back to its current
 plan step when no message is available. Equal conversation titles retain their
 names and show the harness beside them in both the overview and sidebar.
 
+If no CTOX instance is connected, **All projects** explains that nothing can load yet and offers **Connect an instance**. It no longer shows an empty page.
+
 On **All projects**, choose **Calendar** to see the weekly regular meetings.
 The calendar reads each project's saved Jour fixe: weekday, time and timezone.
 Times use the timezone written next to the project; they are not silently

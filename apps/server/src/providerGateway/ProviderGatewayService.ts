@@ -1594,7 +1594,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           (account) => account.provider === provider && account.enabled,
         );
         if (accounts.length === 0) continue;
-        const channel = GATEWAY_MODEL_CHANNELS[provider];
+        // A coding-plan key has different IDs from the compiled Moonshot catalog.
+        const channel = provider === "kimi" ? null : GATEWAY_MODEL_CHANNELS[provider];
         let catalog: ReadonlyArray<{ readonly id: string; readonly displayName: string }> = [];
         let catalogAvailable = false;
         if (channel !== null) {

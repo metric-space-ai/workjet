@@ -118,6 +118,8 @@ export function useWorkjetGatewaySection(
         if (checksFlight.current !== flight) return;
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result))
           setChecksError("Model checks could not finish. Check the provider connection and retry.");
+        // Check all may adopt a legacy key origin and its verified live IDs.
+        if (!continuation) catalogQuery.refresh();
         checksQuery.refresh();
       } finally {
         if (checksFlight.current === flight) {
@@ -126,7 +128,7 @@ export function useWorkjetGatewaySection(
         }
       }
     },
-    [environmentId, checkModels, checksQuery.refresh, checksQuery.data, catalogQuery.data],
+    [environmentId, checkModels, checksQuery.refresh, checksQuery.data, catalogQuery.data, catalogQuery.refresh],
   );
   const checksBusy = checksSubmitting || (checksQuery.data?.pending.length ?? 0) > 0;
   useEffect(() => {

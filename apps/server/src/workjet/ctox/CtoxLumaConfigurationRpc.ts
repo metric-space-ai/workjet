@@ -1,4 +1,4 @@
-import type { WorkjetConfigurationValue, WorkjetLumaTarget } from "@workjet/contracts";
+import type { WorkjetConfiguration, WorkjetLumaTarget } from "@workjet/contracts";
 import {
   WorkjetLumaConfigurationError,
   WorkjetLumaInstanceConfiguration,
@@ -42,7 +42,7 @@ export function makeCtoxLumaConfigurationRpc(dependencies: {
      * machine settings file or fall back to another instance on a read error. */
     resolveDispatch: Effect.fn("CtoxLumaConfigurationRpc.resolveDispatch")(function* (
       scope: WorkjetLumaTarget,
-      local: WorkjetConfigurationValue,
+      local: WorkjetConfiguration,
     ) {
       const snapshot = yield* read(scope);
       if (snapshot.revision === 0 && snapshot.configuration === null) return local;

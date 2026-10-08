@@ -170,6 +170,9 @@ export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
       if (activeElement instanceof HTMLElement) {
         activeElement.blur();
       }
+      // Same rule as the settings shell: an open inline editor keeps its own
+      // Cancel button, so Escape only leaves a form-free view.
+      if (document.querySelector("[data-settings-inline-editor]") !== null) return;
       navigateBackWithinApp();
     };
     window.addEventListener("keydown", onKeyDown);
@@ -233,7 +236,15 @@ function ProjectSettingsBreadcrumb({ projectKey }: { projectKey: string }) {
 
   return (
     <WorkspaceBreadcrumb ariaLabel="Project settings breadcrumb">
-      <WorkspaceBreadcrumbItem>Projects</WorkspaceBreadcrumbItem>
+      <WorkspaceBreadcrumbItem>
+        <button
+          type="button"
+          onClick={() => void navigate({ to: "/" })}
+          className="cursor-pointer rounded-sm text-left hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Projects
+        </button>
+      </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />
       <WorkspaceBreadcrumbItem current>
         {selected ? (

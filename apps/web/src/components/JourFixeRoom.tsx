@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ArrowLeftIcon, CheckIcon, MicIcon, PlusIcon, SendIcon, Trash2Icon, XIcon } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -9,6 +9,8 @@ import { JourFixePlayer } from "./JourFixePlayer";
 import { WorkjetHeaderContent } from "./WorkjetHeaderSlots";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSeparator } from "./WorkspaceBreadcrumb";
 import { jourFixeCommentAnchor, jourFixeCommentIsCurrent, jourFixeCommentsForSlide, jourFixeEvidenceLabel, jourFixeVisiblePartial, type JourFixePartialTranscript, type JourFixeCommentDraft, type JourFixeRoomSnapshot, type JourFixeTodo } from "../lib/jourFixeRoom";
+
+const MEETING_MARKDOWN_COMPONENTS: Components = { img: () => null, a: ({ children }) => <span className="underline">{children}</span> };
 
 export interface JourFixeRoomProps {
   readonly projectTitle: string;
@@ -122,7 +124,7 @@ function JourFixeRoomContent({ projectTitle, meeting, onBack, onComment, onMessa
                 <p className="mb-2 text-[clamp(10px,1vw,13px)] tracking-wide text-[#71717a]">{index + 1} / {slides.length}</p>
                 <h2 className="mb-5 text-[clamp(18px,2.5vw,32px)] leading-tight font-semibold tracking-tight">{slide.title}</h2>
                 <div className="text-[clamp(11px,1.15vw,16px)] leading-relaxed [&_h2]:mt-3 [&_h2]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-3 [&_table]:w-full [&_td]:p-2 [&_th]:p-2 [&_th]:text-left">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{ img: () => null, a: ({ children }) => <span className="underline">{children}</span> }}>{slide.markdown}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={MEETING_MARKDOWN_COMPONENTS}>{slide.markdown}</ReactMarkdown>
                 </div>
               </article>
               {onComment && editable && <button type="button" aria-label="Place a comment on the slide" className="absolute inset-0 cursor-crosshair focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-primary" onClick={(event) => { const bounds = event.currentTarget.getBoundingClientRect(); const point = event.detail === 0 ? { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 } : { x: event.clientX, y: event.clientY }; const anchor = jourFixeCommentAnchor(meeting, slide.id, point, bounds); if (anchor) setDraft(anchor); }} disabled={busy} />}

@@ -1,3 +1,22 @@
+describe("resource monitor command pipe", () => {
+  it.effect("ends only the failing owned sidecar so its supervisor can restart", () => Effect.gen(function* () {
+    const failure = PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "write",
+      cause: Object.assign(new Error("private payload must not be logged"), { code: "EPIPE" }) });
+    let killed = 0;
+    const result = yield* writeToNativeTelemetryPipe({ pid: ChildProcessSpawner.ProcessId(321),
+      stdin: Sink.fail(failure), kill: () => Effect.sync(() => { killed++; }),
+    }, new Uint8Array([42])).pipe(Effect.flip);
+    expect(result).toBe(failure); expect(killed).toBe(1);
+  }));
+  it.effect("does not restart a sidecar after a successful command", () => Effect.gen(function* () {
+    let killed = 0;
+    yield* writeToNativeTelemetryPipe({ pid: ChildProcessSpawner.ProcessId(321), stdin: Sink.drain,
+      kill: () => Effect.sync(() => { killed++; }),
+    }, new Uint8Array([42]));
+    expect(killed).toBe(0);
+  }));
+});
+
 import type { HostPowerSnapshot } from "@workjet/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
@@ -7,6 +26,9 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
+import * as Sink from "effect/Sink";
+import * as PlatformError from "effect/PlatformError";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import {
   NativeTelemetryRequestTimedOut,
@@ -18,6 +40,7 @@ import {
   retainRecentNativeTelemetryFailures,
   resolveNativeSampleIntervalMs,
   synchronizeCollectionControlOnStart,
+  writeToNativeTelemetryPipe,
 } from "./NativeTelemetryClient.ts";
 
 const basePower: HostPowerSnapshot = {

@@ -1,3 +1,16 @@
+/** A broken command pipe invalidates only this owned sidecar; its supervisor restarts it. */
+export const writeToNativeTelemetryPipe = Effect.fn("writeToNativeTelemetryPipe")(function* (
+  handle: Pick<ChildProcessSpawner.ChildProcessHandle, "pid" | "stdin" | "kill">,
+  bytes: Uint8Array,
+) {
+  return yield* Stream.run(Stream.make(bytes), handle.stdin).pipe(Effect.tapError((error) => Effect.gen(function* () {
+    const raw = error.reason.cause;
+    const code = typeof raw === "object" && raw !== null && "code" in raw && typeof raw.code === "string" ? raw.code : error.reason._tag;
+    yield* Effect.logWarning("resource monitor input pipe failed", { pid: Number(handle.pid), fd: 0, code });
+    yield* handle.kill().pipe(Effect.ignore);
+  })));
+});
+
 import type {
   HostPowerSnapshot,
   ResourceMonitorCapabilities,
@@ -429,7 +442,7 @@ export const make = Effect.fn("resourceTelemetry.nativeTelemetryClient.make")(fu
             }),
         ),
         Effect.flatMap((encoded) =>
-          Stream.run(Stream.encodeText(Stream.make(encoded)), handle.stdin),
+          writeToNativeTelemetryPipe(handle, new TextEncoder().encode(encoded)),
         ),
         Effect.mapError(
           (cause) =>

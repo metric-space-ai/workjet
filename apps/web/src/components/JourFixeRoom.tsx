@@ -43,6 +43,7 @@ export interface JourFixeRoomProps {
   readonly onBack: () => void;
   /** Resolve only after a native receipt. The adapter retains uncertain operation IDs. */
   readonly onComment?: (draft: JourFixeCommentDraft, text: string) => Promise<void>;
+  readonly commentDelivery?: "saved" | "supervisor";
   readonly onMessage?: (meetingId: string, expectedRevision: number, text: string) => Promise<void>;
   readonly onReviseTodos?: (
     meetingId: string,
@@ -82,6 +83,7 @@ function JourFixeRoomContent({
   meeting,
   onBack,
   onComment,
+  commentDelivery = "supervisor",
   onMessage,
   onReviseTodos,
   onConfirmTodos,
@@ -493,7 +495,11 @@ function JourFixeRoomContent({
                     >
                       <textarea
                         autoFocus
-                        aria-label="Comment to supervisor"
+                        aria-label={
+                          commentDelivery === "saved"
+                            ? "Slide comment text"
+                            : "Comment to supervisor"
+                        }
                         maxLength={4096}
                         value={comment}
                         onChange={(event) => setComment(event.target.value)}
@@ -514,7 +520,7 @@ function JourFixeRoomContent({
                           Cancel
                         </Button>
                         <Button size="sm" type="submit" disabled={busy || !comment.trim()}>
-                          To supervisor
+                          {commentDelivery === "saved" ? "Save comment" : "To supervisor"}
                         </Button>
                       </div>
                     </form>

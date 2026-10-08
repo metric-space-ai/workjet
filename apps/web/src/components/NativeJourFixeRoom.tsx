@@ -145,6 +145,7 @@ function NativeJourFixeRoomContent({
         speechProvider={speechProvider}
         projectTitle={projectTitle}
         meeting={meeting}
+        commentDelivery="saved"
         onBack={onBack}
         onRefresh={refresh}
         onStartMeeting={(id, revision) => accepted(() => session.start(id, revision))}
@@ -152,6 +153,9 @@ function NativeJourFixeRoomContent({
         onMessage={(_, revision, text) =>
           accepted(() => session.text({ ...meeting, revision }, text))
         }
+        {...(["live", "review"].includes(meeting.state)
+          ? { onComment: (draft, text) => accepted(() => session.comment(draft, text)) }
+          : {})}
         onReviseTodos={(id, revision, proposal, items) =>
           accepted(() => session.revise(id, revision, proposal, items))
         }

@@ -48,7 +48,7 @@ export const WorkjetJourFixeSlide = Schema.Struct({
   position: unsigned,
   title: text(256),
   body_markdown: text(16384),
-  audio: Schema.optionalKey(WorkjetJourFixeAudioRef),
+  audio: Schema.optionalKey(Schema.NullOr(WorkjetJourFixeAudioRef)),
   meeting_id: text(128),
 });
 
@@ -61,7 +61,7 @@ export const WorkjetJourFixeComment = Schema.Struct({
   text: text(4096),
   author_user_id: text(256),
   created_at_ms: unsigned,
-  supervisor_event_id: Schema.optionalKey(text(128)),
+  supervisor_event_id: Schema.optionalKey(Schema.NullOr(text(128))),
   meeting_id: text(128),
 });
 
@@ -77,10 +77,10 @@ export const WorkjetJourFixeTranscriptTurn = Schema.Struct({
   text: text(16384),
   started_at_ms: unsigned,
   ended_at_ms: unsigned,
-  source_run_id: Schema.optionalKey(text(128)),
-  audio: Schema.optionalKey(WorkjetJourFixeAudioRef),
-  stream_id: Schema.optionalKey(text(128)),
-  sentence_end_latency_ms: Schema.optionalKey(unsigned),
+  source_run_id: Schema.optionalKey(Schema.NullOr(text(128))),
+  audio: Schema.optionalKey(Schema.NullOr(WorkjetJourFixeAudioRef)),
+  stream_id: Schema.optionalKey(Schema.NullOr(text(128))),
+  sentence_end_latency_ms: Schema.optionalKey(Schema.NullOr(unsigned)),
   meeting_id: text(128),
 });
 
@@ -94,16 +94,16 @@ export const WorkjetJourFixeTodo = Schema.Struct({
   acceptance: text(4096),
   priority: WorkjetJourFixePriority,
   evidence_ids: Schema.Array(text(128)).check(Schema.isMaxLength(128)),
-  due_at_ms: Schema.optionalKey(unsigned),
+  due_at_ms: Schema.optionalKey(Schema.NullOr(unsigned)),
 });
 
 export const WorkjetJourFixeTodoList = Schema.Struct({
   revision: unsigned,
   status: WorkjetJourFixeTodoState,
   items: Schema.Array(WorkjetJourFixeTodo).check(Schema.isMaxLength(100)),
-  confirmed_by_user_id: Schema.optionalKey(text(256)),
-  confirmed_at_ms: Schema.optionalKey(unsigned),
-  goal: Schema.optionalKey(WorkjetJourFixeGoalRef),
+  confirmed_by_user_id: Schema.optionalKey(Schema.NullOr(text(256))),
+  confirmed_at_ms: Schema.optionalKey(Schema.NullOr(unsigned)),
+  goal: Schema.optionalKey(Schema.NullOr(WorkjetJourFixeGoalRef)),
   meeting_id: text(128),
 });
 
@@ -118,12 +118,12 @@ export const WorkjetJourFixeMeeting = Schema.Struct({
   state: WorkjetJourFixeMeetingState,
   revision: unsigned,
   deck_revision: unsigned,
-  previous_goal: Schema.optionalKey(WorkjetJourFixeGoalRef),
+  previous_goal: Schema.optionalKey(Schema.NullOr(WorkjetJourFixeGoalRef)),
   slides: Schema.Array(WorkjetJourFixeSlide).check(Schema.isMaxLength(100)),
   comments: Schema.Array(WorkjetJourFixeComment).check(Schema.isMaxLength(1000)),
   transcript: Schema.Array(WorkjetJourFixeTranscriptTurn).check(Schema.isMaxLength(10000)),
-  todos: Schema.optionalKey(WorkjetJourFixeTodoList),
-  error: Schema.optionalKey(text(4096)),
+  todos: Schema.optionalKey(Schema.NullOr(WorkjetJourFixeTodoList)),
+  error: Schema.optionalKey(Schema.NullOr(text(4096))),
 });
 
 export type WorkjetJourFixeMeeting = typeof WorkjetJourFixeMeeting.Type;

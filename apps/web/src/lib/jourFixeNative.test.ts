@@ -46,6 +46,9 @@ function reply(
           ...(request.action === "project.jour_fixe.transcript.append"
             ? { changed_id: request.turn.id }
             : {}),
+          ...(request.action === "project.jour_fixe.comment.add"
+            ? { changed_id: request.commentId, todos_revision: null }
+            : {}),
           ...(request.action === "project.jour_fixe.todos.revise"
             ? { todos_revision: request.proposalRevision }
             : {}),
@@ -66,6 +69,22 @@ describe("native meeting room session", () => {
     expect(snapshot.slides[0]).toMatchObject({ markdown: native.slides[0]!.body_markdown });
     expect(snapshot.slides[0]).not.toHaveProperty("audio");
     expect(snapshot.todos!.items[0]!.evidenceIds).toEqual(["comment-1", "turn-1"]);
+  });
+  it("omits optional null metadata from the display snapshot", () => {
+    const mapped = mapJourFixeMeeting({
+      ...native,
+      previous_goal: null,
+      error: null,
+      transcript: native.transcript.map((turn) => ({ ...turn, stream_id: null })),
+      todos: {
+        ...native.todos!,
+        items: native.todos!.items.map((todo) => ({ ...todo, due_at_ms: null })),
+      },
+    });
+    expect(mapped).not.toHaveProperty("previousGoalRevision");
+    expect(mapped).not.toHaveProperty("error");
+    expect(mapped.transcript[0]).not.toHaveProperty("streamId");
+    expect(mapped.todos!.items[0]).not.toHaveProperty("dueAt");
   });
   it("retries uncertain text using the same command, operation, turn and expected revision", async () => {
     const control = vi
@@ -108,6 +127,37 @@ describe("native meeting room session", () => {
     await expect(session.end(native.id, 3)).rejects.toThrow();
     await expect(session.text(snapshot, "different")).rejects.toThrow("Retry the unconfirmed");
     expect(control).toHaveBeenCalledTimes(1);
+  });
+  it("keeps a pin's native operation, comment ID and deck anchor when retrying uncertain delivery", async () => {
+    const control = vi
+      .fn<typeof requestWorkjetProjectControl>()
+      .mockResolvedValueOnce({ _tag: "failed", code: "timeout" })
+      .mockImplementation(async (_, request) => reply(request));
+    const session = new JourFixeNativeSession("instance-1", project, () => true, control);
+    const draft = {
+      meetingId: native.id,
+      expectedRevision: 3,
+      deckRevision: 1,
+      slideId: native.slides[0]!.id,
+      x: 0.25,
+      y: 0.75,
+    };
+    await expect(session.comment(draft, "Inspect this claim")).rejects.toThrow(
+      "not been confirmed",
+    );
+    await session.retryPending();
+    expect(control.mock.calls[1]![1]).toEqual(control.mock.calls[0]![1]);
+    expect(control.mock.calls[0]![1]).toMatchObject({
+      action: "project.jour_fixe.comment.add",
+      meetingId: native.id,
+      expectedRevision: 3,
+      deckRevision: 1,
+      slideId: draft.slideId,
+      x: 0.25,
+      y: 0.75,
+      text: "Inspect this claim",
+    });
+    expect(session.hasPendingChange()).toBe(false);
   });
   it("submits the next proposal revision and keeps source evidence", async () => {
     const control = vi

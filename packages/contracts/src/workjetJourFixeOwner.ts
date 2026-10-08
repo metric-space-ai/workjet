@@ -56,6 +56,16 @@ export const WorkjetJourFixeOwnerRequests = [
     ),
   ),
   Schema.Struct({
+    action: Schema.Literal("project.jour_fixe.comment.add"),
+    ...meetingFields,
+    commentId: id,
+    slideId: id,
+    deckRevision: unsigned,
+    x: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    y: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    text: text(4_096),
+  }),
+  Schema.Struct({
     action: Schema.Literal("project.jour_fixe.todos.revise"),
     ...meetingFields,
     proposalRevision: unsigned,
@@ -71,6 +81,7 @@ export const WorkjetJourFixeOwnerResponse = Schema.Struct({
     "project.jour_fixe.meeting.end",
     "project.jour_fixe.transcript.append",
     "project.jour_fixe.todos.revise",
+    "project.jour_fixe.comment.add",
   ]),
   commandId: CommandId,
   projectId: ProjectId,
@@ -90,8 +101,8 @@ export const WorkjetJourFixeOwnerResponse = Schema.Struct({
       "cancelled",
       "failed",
     ]),
-    changed_id: Schema.optionalKey(id),
-    todos_revision: Schema.optionalKey(unsigned),
+    changed_id: Schema.optionalKey(Schema.NullOr(id)),
+    todos_revision: Schema.optionalKey(Schema.NullOr(unsigned)),
   }),
 }).check(
   Schema.makeFilter(
@@ -144,6 +155,10 @@ export function isWorkjetJourFixeReceiptForRequest(request: unknown, response: u
       case "project.jour_fixe.transcript.append":
         return (
           ["live", "review"].includes(mutation.state) && mutation.changed_id === intent.turn.id
+        );
+      case "project.jour_fixe.comment.add":
+        return (
+          ["live", "review"].includes(mutation.state) && mutation.changed_id === intent.commentId
         );
       case "project.jour_fixe.todos.revise":
         return mutation.state === "review" && mutation.todos_revision === intent.proposalRevision;

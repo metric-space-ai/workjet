@@ -10,7 +10,7 @@ import {
 } from "@workjet/contracts";
 import { requestWorkjetProjectControl } from "../workjetProjectControl";
 import { newCommandId, randomUUID } from "./utils";
-import type { JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
+import type { JourFixeCommentDraft, JourFixeRoomSnapshot, JourFixeTodo } from "./jourFixeRoom";
 
 type MutationRequest = Extract<
   CtoxWorkjetProjectControlRequest,
@@ -61,7 +61,7 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
               acceptance: todo.acceptance,
               priority: todo.priority,
               evidenceIds: todo.evidence_ids,
-              ...(todo.due_at_ms === undefined ? {} : { dueAt: todo.due_at_ms }),
+              ...(todo.due_at_ms == null ? {} : { dueAt: todo.due_at_ms }),
             })),
           },
         }
@@ -182,6 +182,18 @@ export class JourFixeNativeSession {
         },
       };
     });
+  }
+  comment(draft: JourFixeCommentDraft, text: string) {
+    return this.mutate(JSON.stringify(["comment", draft, text]), () => ({
+      action: "project.jour_fixe.comment.add",
+      ...this.fields(draft.meetingId, draft.expectedRevision),
+      commentId: randomUUID(),
+      slideId: draft.slideId,
+      deckRevision: draft.deckRevision,
+      x: draft.x,
+      y: draft.y,
+      text,
+    }));
   }
   revise(
     meetingId: string,

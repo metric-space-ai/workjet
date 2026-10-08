@@ -1348,6 +1348,13 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         input.models?.some((id) => !kimiConnection.models.includes(id))
       )
         throw safeError("invalid-configuration");
+      const retainedKimiModels =
+        kimiConnection !== undefined &&
+        apiReplacement?.upstreamBaseUrl === kimiConnection.upstreamBaseUrl
+          ? apiReplacement.models.filter((id) => kimiConnection.models.includes(id))
+          : [];
+      const discoveredKimiModels =
+        retainedKimiModels.length > 0 ? retainedKimiModels : kimiConnection?.models;
       const usedIds = new Set(accounts.map((account) => account.id));
       const base = `${input.provider}-${secretSlug(input.label)}`;
       let id = replacement?.id ?? base;
@@ -1369,11 +1376,12 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         priority: replacement?.priority ?? 0,
         weight: replacement?.weight ?? 1,
         models:
-          input.models ??
-          kimiConnection?.models ??
-          replacement?.models ??
-          accounts.find((account) => account.provider === input.provider)?.models ??
-          [],
+          input.models !== undefined && (input.provider !== "kimi" || input.models.length > 0)
+            ? input.models
+            : discoveredKimiModels ??
+              replacement?.models ??
+              accounts.find((account) => account.provider === input.provider)?.models ??
+              [],
         apiKeySecret,
         ...(kimiConnection !== undefined
           ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl }

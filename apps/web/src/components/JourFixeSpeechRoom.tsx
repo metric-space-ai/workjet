@@ -113,7 +113,7 @@ function SpeechRoom({
         {...(current?.audio ? { audio: current.audio } : {})}
         partialTranscript={current?.partial}
         microphoneActive={current?.microphone === true}
-        {...(meeting.state === "live"
+        {...(meeting.state === "live" && provider.microphoneAvailable !== false
           ? { onToggleMicrophone: () => void session.current?.toggleMicrophone() }
           : {})}
         onSlideChange={(id) => {

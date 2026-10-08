@@ -4,6 +4,7 @@ import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
 import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
+import { nativeJourFixeNarrationProvider } from "../lib/nativeJourFixeNarrationProvider";
 import { Button } from "./ui/button";
 
 export function NativeJourFixeRoom(props: {
@@ -142,7 +143,7 @@ function NativeJourFixeRoomContent({
       )}
       <JourFixeSpeechRoom
         instanceId={instanceId}
-        speechProvider={speechProvider}
+        speechProvider={speechProvider ?? nativeJourFixeNarrationProvider}
         projectTitle={projectTitle}
         meeting={meeting}
         commentDelivery="saved"

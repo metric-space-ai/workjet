@@ -92,7 +92,10 @@ export function makeCtoxLumaConfigurationClient(httpClient: HttpClient.HttpClien
     expectedRevision: number,
     configuration: Readonly<Record<string, unknown>>,
   ) {
-    if (new TextEncoder().encode(JSON.stringify(configuration)).byteLength > 1_024 * 1_024) {
+    const encoded = yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(configuration).pipe(
+      Effect.mapError(() => new CtoxLumaConfigurationError({ reason: "remote-response-invalid" })),
+    );
+    if (new TextEncoder().encode(encoded).byteLength > 1_024 * 1_024) {
       return yield* new CtoxLumaConfigurationError({ reason: "remote-response-invalid" });
     }
     const raw = yield* structured(target, CTOX_LUMA_UPDATE_TOOL, {

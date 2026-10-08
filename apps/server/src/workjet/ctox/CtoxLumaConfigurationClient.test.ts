@@ -1,14 +1,15 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import { makeCtoxLumaConfigurationClient } from "./CtoxLumaConfigurationClient.ts";
 
 const target = { endpoint: "https://native.invalid/mcp/instance-a", token: "synthetic-token" };
 function transport(answer: unknown) {
   const requests: Array<{ url: string; authorization: string | undefined; params: unknown }> = [];
-  const http = HttpClient.make((request) => Effect.sync(() => {
+  const http = HttpClient.make((request) => Effect.gen(function* () {
     if (request.body._tag !== "Uint8Array") throw new Error("Expected a JSON body.");
-    const body = JSON.parse(new TextDecoder().decode(request.body.body)) as { params: unknown };
+    const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ params: Schema.Unknown })))(new TextDecoder().decode(request.body.body)).pipe(Effect.orDie);
     requests.push({ url: request.url, authorization: request.headers.authorization, params: body.params });
     return HttpClientResponse.fromWeb(request, Response.json({
       jsonrpc: "2.0", result: { content: [{ type: "text", text: "Receipt" }], structuredContent: answer },

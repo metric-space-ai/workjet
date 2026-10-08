@@ -117,25 +117,32 @@ const fixture = () => {
 const reason = (effect: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =>
   Effect.match(effect, {
     onFailure: (error) => error.reason,
-    onSuccess: () => { throw new Error("Expected gateway binding to fail"); },
+    onSuccess: () => {
+      throw new Error("Expected gateway binding to fail");
+    },
   });
 
 describe("managed source gateway binding", () => {
-  it.effect("binds an enabled native source to the explicit worker route/model without source CLI routing", () => Effect.gen(function* () {
-    const f = fixture();
-    expect(yield* (f.consumer.bindModel(bindInput))).toEqual({
-      target,
-      ...references,
-    });
-  }));
+  it.effect(
+    "binds an enabled native source to the explicit worker route/model without source CLI routing",
+    () =>
+      Effect.gen(function* () {
+        const f = fixture();
+        expect(yield* f.consumer.bindModel(bindInput)).toEqual({
+          target,
+          ...references,
+        });
+      }),
+  );
   it.effect.each(["disable", "remove"] as const)(
     "refuses a currently %s source instance",
-    (action) => Effect.gen(function* () {
-      const f = fixture();
-      yield* (f.consumer.bindModel(bindInput));
-      f[action]();
-      expect(yield* reason(f.consumer.bindModel(bindInput))).toBe("binding-mismatch");
-    }),
+    (action) =>
+      Effect.gen(function* () {
+        const f = fixture();
+        yield* f.consumer.bindModel(bindInput);
+        f[action]();
+        expect(yield* reason(f.consumer.bindModel(bindInput))).toBe("binding-mismatch");
+      }),
   );
   it.effect.each([
     {
@@ -153,12 +160,18 @@ describe("managed source gateway binding", () => {
       input: { ...bindInput, routeId: WorkjetLlmRouteId.make("missing-route") },
       reason: "binding-mismatch",
     },
-  ])("refuses a mismatched explicit worker model or route", (test) => Effect.gen(function* () {
-    expect(yield* reason(fixture().consumer.bindModel(test.input))).toBe(test.reason);
-  }));
-  it.effect("requires the current exact target grant even when the profile route remains configured", () => Effect.gen(function* () {
-    const f = fixture();
-    f.revokeGrant();
-    expect(yield* reason(f.consumer.bindModel(bindInput))).toBe("grant-unavailable");
-  }));
+  ])("refuses a mismatched explicit worker model or route", (test) =>
+    Effect.gen(function* () {
+      expect(yield* reason(fixture().consumer.bindModel(test.input))).toBe(test.reason);
+    }),
+  );
+  it.effect(
+    "requires the current exact target grant even when the profile route remains configured",
+    () =>
+      Effect.gen(function* () {
+        const f = fixture();
+        f.revokeGrant();
+        expect(yield* reason(f.consumer.bindModel(bindInput))).toBe("grant-unavailable");
+      }),
+  );
 });

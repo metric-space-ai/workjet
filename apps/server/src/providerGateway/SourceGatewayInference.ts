@@ -142,15 +142,12 @@ export function makeSourceGatewayInference(dependencies: {
     const catalog = yield* dependencies.scopedCatalog(selected.target, environmentId);
     yield* Effect.try({
       try: () => requireScopedGatewayModel(catalog, selected, environmentId),
-      catch: (error) =>
-        isGatewayFailure(error) ? error : failure("grant-unavailable"),
+      catch: (error) => (isGatewayFailure(error) ? error : failure("grant-unavailable")),
     });
     const receipt = yield* dependencies.revalidate(input).pipe(
       Effect.flatMap(decodePermit),
       Effect.mapError((error) =>
-        isGatewayFailure(error)
-          ? error
-          : failure("native-admission-rejected"),
+        isGatewayFailure(error) ? error : failure("native-admission-rejected"),
       ),
     );
     const { renewalSequence: previousSequence, expiresAtMs: previousExpiry } = input.permit;

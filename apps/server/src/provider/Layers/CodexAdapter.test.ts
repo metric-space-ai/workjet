@@ -341,12 +341,17 @@ validationLayer("CodexAdapterLive validation", (it) => {
 });
 
 const foreignWorkerRuntimeFactory = makeRuntimeFactory();
-const targetEnvironmentResolver = vi.fn(() => Effect.succeed({ OPENAI_API_KEY: "target-only-secret" }));
+const targetEnvironmentResolver = vi.fn(() =>
+  Effect.succeed({ OPENAI_API_KEY: "target-only-secret" }),
+);
 const foreignWorkerLayer = it.layer(
-  Layer.effect(CodexAdapter, makeCodexAdapter(decodeCodexSettings({}), {
-    makeRuntime: foreignWorkerRuntimeFactory.factory,
-    resolveSessionEnvironment: targetEnvironmentResolver,
-  })).pipe(
+  Layer.effect(
+    CodexAdapter,
+    makeCodexAdapter(decodeCodexSettings({}), {
+      makeRuntime: foreignWorkerRuntimeFactory.factory,
+      resolveSessionEnvironment: targetEnvironmentResolver,
+    }),
+  ).pipe(
     Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
     Layer.provideMerge(ServerSettingsService.layerTest()),
     Layer.provideMerge(providerSessionDirectoryTestLayer),
@@ -361,74 +366,131 @@ const foreignWorkerStartInput = (id: string) => ({
   workjetConfig: {
     ...DEFAULT_WORKJET_THREAD_CONFIG,
     role: "worker" as const,
-    parent: { environmentId: EnvironmentId.make("foreign-source"), threadId: asThreadId("source-supervisor") },
+    parent: {
+      environmentId: EnvironmentId.make("foreign-source"),
+      threadId: asThreadId("source-supervisor"),
+    },
   },
 });
-const withTargetEnvironment = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(
-  Effect.provideService(ServerEnvironment, {
-    getEnvironmentId: Effect.succeed(EnvironmentId.make("target-environment")),
-    getDescriptor: Effect.die("Descriptor is unused by the Codex startup seam"),
-  }),
-);
-const ownedForeignHarness = (requestId: string) => Effect.acquireRelease(
-  Effect.promise(async () => {
-    const server = NodeHttp.createServer((_req, res) => { res.setHeader("content-type", "application/json"); res.end("{}"); });
-    await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("Source fixture did not bind");
-    const harness = await installWorkerSourceRoute(requestId, {
-      sourceEnvironmentId: "foreign-source", targetEnvironmentId: "target-environment",
-      requestId, requestDigest: "pinned-request", capability: "worker-scoped-source-capability", port: address.port,
-    }, { targetEnvironmentId: "target-environment", requestDigest: "pinned-request", modelId: "gpt-6.1-sol" });
-    return { server, harness };
-  }),
-  ({ server, harness }) => Effect.promise(async () => {
-    await harness.revoke();
-    server.closeAllConnections();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  }),
-);
+const withTargetEnvironment = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.provideService(ServerEnvironment, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("target-environment")),
+      getDescriptor: Effect.die("Descriptor is unused by the Codex startup seam"),
+    }),
+  );
+const ownedForeignHarness = (requestId: string) =>
+  Effect.acquireRelease(
+    Effect.promise(async () => {
+      const server = NodeHttp.createServer((_req, res) => {
+        res.setHeader("content-type", "application/json");
+        res.end("{}");
+      });
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Source fixture did not bind");
+      const harness = await installWorkerSourceRoute(
+        requestId,
+        {
+          sourceEnvironmentId: "foreign-source",
+          targetEnvironmentId: "target-environment",
+          requestId,
+          requestDigest: "pinned-request",
+          capability: "worker-scoped-source-capability",
+          port: address.port,
+        },
+        {
+          targetEnvironmentId: "target-environment",
+          requestDigest: "pinned-request",
+          modelId: "gpt-6.1-sol",
+        },
+      );
+      return { server, harness };
+    }),
+    ({ server, harness }) =>
+      Effect.promise(async () => {
+        await harness.revoke();
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }),
+  );
 foreignWorkerLayer("CodexAdapter foreign worker source authority", (it) => {
-  it.effect("refuses a foreign worker after route loss without consulting target auth", () => withTargetEnvironment(Effect.gen(function* () {
-    foreignWorkerRuntimeFactory.factory.mockClear();
-    targetEnvironmentResolver.mockClear();
-    const adapter = yield* CodexAdapter;
-    const result = yield* adapter.startSession(foreignWorkerStartInput("foreign-missing-route")).pipe(Effect.result);
-    NodeAssert.equal(result._tag, "Failure");
-    if (result._tag === "Failure") NodeAssert.ok(Schema.is(ProviderAdapterValidationError)(result.failure));
-    NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
-    NodeAssert.equal(foreignWorkerRuntimeFactory.factory.mock.calls.length, 0);
-  })));
-  it.effect("refuses a revoked foreign worker route without target auth fallback", () => withTargetEnvironment(Effect.scoped(Effect.gen(function* () {
-    foreignWorkerRuntimeFactory.factory.mockClear();
-    targetEnvironmentResolver.mockClear();
-    const { harness } = yield* ownedForeignHarness("foreign-revoked-route");
-    yield* Effect.promise(() => harness.revoke());
-    const adapter = yield* CodexAdapter;
-    const result = yield* adapter.startSession(foreignWorkerStartInput("foreign-revoked-route")).pipe(Effect.result);
-    NodeAssert.equal(result._tag, "Failure");
-    if (result._tag === "Failure") NodeAssert.ok(Schema.is(ProviderAdapterValidationError)(result.failure));
-    NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
-    NodeAssert.equal(foreignWorkerRuntimeFactory.factory.mock.calls.length, 0);
-  }))));
-  it.effect("starts the installed source model with a worker-only provider environment", () => withTargetEnvironment(Effect.scoped(Effect.gen(function* () {
-    foreignWorkerRuntimeFactory.factory.mockClear();
-    targetEnvironmentResolver.mockClear();
-    const { harness } = yield* ownedForeignHarness("foreign-installed-route");
-    const adapter = yield* CodexAdapter;
-    yield* adapter.startSession(foreignWorkerStartInput("foreign-installed-route"));
-    const options = foreignWorkerRuntimeFactory.lastRuntime?.options;
-    NodeAssert.ok(options);
-    NodeAssert.equal(options.model, harness.model);
-    NodeAssert.equal(options.environment?.WORKJET_WORKER_SOURCE_KEY, harness.apiKey);
-    NodeAssert.deepStrictEqual(Object.keys(options.environment ?? {}).sort(), ["HOME", "LANG", "PATH", "TMPDIR", "WORKJET_WORKER_SOURCE_KEY"].sort());
-    NodeAssert.equal(options.environment?.OPENAI_API_KEY, undefined);
-    NodeAssert.equal(options.launchArgs, "");
-    NodeAssert.ok(options.appServerArgs?.includes(`model_providers.workjet_worker_source.base_url=${harness.baseUrl}`));
-    NodeAssert.ok(options.appServerArgs?.includes("model_providers.workjet_worker_source.requires_openai_auth=false"));
-    NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
-    yield* adapter.stopSession(asThreadId("foreign-installed-route"));
-  }))));
+  it.effect("refuses a foreign worker after route loss without consulting target auth", () =>
+    withTargetEnvironment(
+      Effect.gen(function* () {
+        foreignWorkerRuntimeFactory.factory.mockClear();
+        targetEnvironmentResolver.mockClear();
+        const adapter = yield* CodexAdapter;
+        const result = yield* adapter
+          .startSession(foreignWorkerStartInput("foreign-missing-route"))
+          .pipe(Effect.result);
+        NodeAssert.equal(result._tag, "Failure");
+        if (result._tag === "Failure")
+          NodeAssert.ok(Schema.is(ProviderAdapterValidationError)(result.failure));
+        NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
+        NodeAssert.equal(foreignWorkerRuntimeFactory.factory.mock.calls.length, 0);
+      }),
+    ),
+  );
+  it.effect("refuses a revoked foreign worker route without target auth fallback", () =>
+    withTargetEnvironment(
+      Effect.scoped(
+        Effect.gen(function* () {
+          foreignWorkerRuntimeFactory.factory.mockClear();
+          targetEnvironmentResolver.mockClear();
+          const { harness } = yield* ownedForeignHarness("foreign-revoked-route");
+          yield* Effect.promise(() => harness.revoke());
+          const adapter = yield* CodexAdapter;
+          const result = yield* adapter
+            .startSession(foreignWorkerStartInput("foreign-revoked-route"))
+            .pipe(Effect.result);
+          NodeAssert.equal(result._tag, "Failure");
+          if (result._tag === "Failure")
+            NodeAssert.ok(Schema.is(ProviderAdapterValidationError)(result.failure));
+          NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
+          NodeAssert.equal(foreignWorkerRuntimeFactory.factory.mock.calls.length, 0);
+        }),
+      ),
+    ),
+  );
+  it.effect("starts the installed source model with a worker-only provider environment", () =>
+    withTargetEnvironment(
+      Effect.scoped(
+        Effect.gen(function* () {
+          foreignWorkerRuntimeFactory.factory.mockClear();
+          targetEnvironmentResolver.mockClear();
+          const { harness } = yield* ownedForeignHarness("foreign-installed-route");
+          const adapter = yield* CodexAdapter;
+          yield* adapter.startSession(foreignWorkerStartInput("foreign-installed-route"));
+          const options = foreignWorkerRuntimeFactory.lastRuntime?.options;
+          NodeAssert.ok(options);
+          NodeAssert.equal(options.model, harness.model);
+          NodeAssert.equal(options.environment?.WORKJET_WORKER_SOURCE_KEY, harness.apiKey);
+          NodeAssert.deepStrictEqual(
+            Object.keys(options.environment ?? {}).sort(),
+            ["HOME", "LANG", "PATH", "TMPDIR", "WORKJET_WORKER_SOURCE_KEY"].sort(),
+          );
+          NodeAssert.equal(options.environment?.OPENAI_API_KEY, undefined);
+          NodeAssert.equal(options.launchArgs, "");
+          NodeAssert.ok(
+            options.appServerArgs?.includes(
+              `model_providers.workjet_worker_source.base_url=${harness.baseUrl}`,
+            ),
+          );
+          NodeAssert.ok(
+            options.appServerArgs?.includes(
+              "model_providers.workjet_worker_source.requires_openai_auth=false",
+            ),
+          );
+          NodeAssert.equal(targetEnvironmentResolver.mock.calls.length, 0);
+          yield* adapter.stopSession(asThreadId("foreign-installed-route"));
+        }),
+      ),
+    ),
+  );
 });
 
 const sessionRuntimeFactory = makeRuntimeFactory();

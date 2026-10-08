@@ -451,15 +451,20 @@ const RemoteWorkerBrokerLayerLive = RemoteWorkerBroker.layer.pipe(
   Layer.provide(RemoteWorkerStore.layer),
 );
 const RemoteWorkerComputerEnrollmentLayerLive = RemoteWorkerComputerEnrollmentLive.layer.pipe(
-  Layer.provide(DecisionHubConnectionRegistryLive), Layer.provide(ServerSecretStore.layer),
+  Layer.provide(DecisionHubConnectionRegistryLive),
+  Layer.provide(ServerSecretStore.layer),
 );
 const RemoteWorkerConnectionBootstrapLive = RemoteWorkerConnectionBootstrap.layer.pipe(
-  Layer.provide(RemoteWorkerSourceOperationsLive.layer.pipe(
-    Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
-    Layer.provide(CtoxThreadBindingSourceLive.pipe(Layer.provide(ProviderSessionDirectoryLayerLive))),
-    Layer.provide(RemoteWorkerAuthorityStore.layer),
-    Layer.provide(DecisionHubConnectionRegistryLive),
-  )),
+  Layer.provide(
+    RemoteWorkerSourceOperationsLive.layer.pipe(
+      Layer.provide(RemoteWorkerComputerEnrollmentLayerLive),
+      Layer.provide(
+        CtoxThreadBindingSourceLive.pipe(Layer.provide(ProviderSessionDirectoryLayerLive)),
+      ),
+      Layer.provide(RemoteWorkerAuthorityStore.layer),
+      Layer.provide(DecisionHubConnectionRegistryLive),
+    ),
+  ),
   Layer.provide(RemoteWorkerTargetHarnessSetupLive.layer),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(ServerSecretStore.layer),

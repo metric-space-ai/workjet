@@ -406,16 +406,22 @@ export function ProjectWorkspace({
                 ))}
               </section>
             ) : null}
-            {meeting ? (
+            {meeting || openJourFixe ? (
               <section className="rounded-lg border border-border p-4">
                 <h2 className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
                   <CalendarDaysIcon className="size-4" />
                   Jour fixe
                 </h2>
-                <p>
-                  {weekdays[meeting.weekday]} · {meeting.time}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">{meeting.timezone}</p>
+                {meeting ? (
+                  <>
+                    <p>
+                      {weekdays[meeting.weekday]} · {meeting.time}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">{meeting.timezone}</p>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No recurring time is set yet.</p>
+                )}
                 {openJourFixe && (
                   <Button
                     className="mt-3"
@@ -424,7 +430,7 @@ export function ProjectWorkspace({
                     onClick={openJourFixe}
                     data-workjet-action="project.jour-fixe.open"
                   >
-                    Open meeting
+                    Join Jour fixe
                   </Button>
                 )}
               </section>

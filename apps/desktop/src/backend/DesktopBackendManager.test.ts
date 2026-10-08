@@ -214,6 +214,32 @@ describe("DesktopBackendManager", () => {
       })),
     );
   }
+  it.effect("restarts a backend after its bootstrap pipe fails, without overlapping cleanup", () =>
+    Effect.scoped(Effect.gen(function* () {
+      const starts = yield* Queue.unbounded<number>();
+      const failures = yield* Queue.unbounded<string>();
+      let count = 0;
+      const pipeError = PlatformError.systemError({ _tag: "Unknown", module: "ChildProcess", method: "write",
+        cause: Object.assign(new Error("closed"), { code: "EPIPE" }) });
+      const instance = yield* makeTestInstance({
+        spawnerLayer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(() => Effect.gen(function* () {
+          count++; yield* Queue.offer(starts, count);
+          return makeProcess({ exitCode: Effect.never, getInputFd: () => count === 1 ? Sink.fail(pipeError) : Sink.drain });
+        }))),
+        httpClientLayer: httpClientLayer(() => Effect.never),
+        backendOutputLog: { persistFailure: ({ details }) => Queue.offer(failures, details).pipe(Effect.asVoid) },
+      });
+      yield* instance.start;
+      assert.equal(yield* Queue.take(starts), 1);
+      assert.include(yield* Queue.take(failures), "EPIPE");
+      yield* TestClock.adjust(Duration.millis(499));
+      assert.equal(yield* Queue.size(starts), 0);
+      yield* TestClock.adjust(Duration.millis(1));
+      assert.equal(yield* Queue.take(starts), 2);
+      yield* instance.stop;
+      assert.equal((yield* instance.snapshot).restartScheduled, false);
+    }).pipe(Effect.provide(TestClock.layer()))),
+  );
   it.effect(
     "stops a ready service attachment even when closing its scope does not signal disconnection",
     () =>

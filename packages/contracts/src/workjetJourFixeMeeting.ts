@@ -41,6 +41,8 @@ export const WorkjetJourFixeAudioRef = Schema.Struct({
   model: text(128),
   format: text(32),
   synthesis_duration_ms: unsigned,
+  provenance: Schema.optionalKey(Schema.NullOr(Schema.Literals(["native_gateway", "authenticated_owner_local_audio"]))),
+  generation_id: Schema.optionalKey(Schema.NullOr(text(128))),
 });
 
 export const WorkjetJourFixeSlide = Schema.Struct({
@@ -95,6 +97,7 @@ export const WorkjetJourFixeTodo = Schema.Struct({
   priority: WorkjetJourFixePriority,
   evidence_ids: Schema.Array(text(128)).check(Schema.isMaxLength(128)),
   due_at_ms: Schema.optionalKey(Schema.NullOr(unsigned)),
+  owner: Schema.optionalKey(Schema.NullOr(text(256))),
 });
 
 export const WorkjetJourFixeTodoList = Schema.Struct({

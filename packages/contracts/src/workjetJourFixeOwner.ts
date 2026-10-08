@@ -43,6 +43,7 @@ const todo = Schema.Struct({
   priority: Schema.Literals(["P0", "P1", "P2"]),
   evidence_ids: Schema.Array(id).check(Schema.isMaxLength(128)),
   due_at_ms: Schema.optionalKey(unsigned),
+  owner: Schema.optionalKey(text(256)),
 });
 
 export const WorkjetJourFixeOwnerRequests = [

@@ -68,6 +68,7 @@ export function mapJourFixeMeeting(meeting: WorkjetJourFixeMeeting): JourFixeRoo
               priority: todo.priority,
               evidenceIds: todo.evidence_ids,
               ...(todo.due_at_ms == null ? {} : { dueAt: todo.due_at_ms }),
+              ...(todo.owner == null ? {} : { owner: todo.owner }),
             })),
           },
         }
@@ -248,6 +249,7 @@ export class JourFixeNativeSession {
         priority: todo.priority,
         evidence_ids: [...todo.evidenceIds],
         ...(todo.dueAt === undefined ? {} : { due_at_ms: todo.dueAt }),
+        ...(todo.owner === undefined ? {} : { owner: todo.owner }),
       })),
     }));
   }

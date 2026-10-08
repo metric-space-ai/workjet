@@ -17,6 +17,20 @@ describe("Jour fixe room states", () => {
     expect(html).toContain("Transcript 1");
     expect(html).not.toContain("Confirmed to-dos");
   });
+  it("requires explicit task owners and rejects an empty Core goal proposal", () => {
+    const render = (items: readonly NonNullable<JourFixeRoomSnapshot["todos"]>["items"][number][]) => renderToStaticMarkup(
+      <JourFixeRoom {...props} meeting={{ ...meeting, previousGoalRevision: 0, todos: { ...meeting.todos!, items } }} onReviseTodos={async () => {}} onConfirmTodos={async () => {}} />,
+    );
+    const unowned = render(meeting.todos!.items.map((todo) => ({ ...todo, owner: "" })));
+    expect(unowned).toContain('aria-label="Todo 1 owner"');
+    expect(unowned).toContain("Assign an owner to each to-do before confirming.");
+    const empty = render([]);
+    expect(empty).toContain("Add at least one to-do before confirming.");
+    expect(empty).not.toContain("Confirm no to-dos for this meeting");
+    const owned = render(meeting.todos!.items.map((todo) => ({ ...todo, owner: "Project supervisor" })));
+    expect(owned).toContain('value="Project supervisor"');
+    expect(owned).not.toContain("Assign an owner to each to-do before confirming.");
+  });
   it("renders planned/preparing without live editing controls or narration", () => {
     for (const state of ["planned", "preparing"] as const) {
       const html = renderToStaticMarkup(

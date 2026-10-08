@@ -53,6 +53,7 @@ export interface JourFixeTodo {
   readonly priority: "P0" | "P1" | "P2";
   readonly evidenceIds: readonly string[];
   readonly dueAt?: number;
+  readonly owner?: string;
 }
 
 export interface JourFixeCommentDraft {

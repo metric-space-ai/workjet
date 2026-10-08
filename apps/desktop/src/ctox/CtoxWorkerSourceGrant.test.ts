@@ -14,6 +14,8 @@ import {
   WORKJET_WORKER_SOURCE_TOOLS,
 } from "./CtoxWorkerSourceGrant.ts";
 
+const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
 const tenant = "11111111-2222-3333-4444-555555555555";
 const tokenId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const token = "synthetic-one-time-worker-token";
@@ -31,7 +33,7 @@ describe("additional Workjet worker source client", () => {
     const [url, init] = fetch.mock.calls[0]!;
     expect(url).toBe(`https://ctox.dev/api/instances/${tenant}/managed-mcp`);
     expect(init!.credentials).toBe("include");
-    expect(JSON.parse(init!.body as string)).toEqual({
+    expect(decodeJson(init!.body as string)).toEqual({
       action: "rotate_token",
       label: "Workjet worker source",
       expiresInDays: 1,
@@ -69,7 +71,7 @@ describe("additional Workjet worker source client", () => {
         "grant_unavailable",
       );
       expect(fetch).toHaveBeenCalledTimes(2);
-      expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
+      expect(decodeJson(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
     },
   );
 
@@ -101,7 +103,7 @@ describe("additional Workjet worker source client", () => {
       reply({ ok: true, revoked: true }),
     );
     await revokeWorkjetWorkerSourceGrant(fetch, workerSourceGrantIdentity(id)!);
-    expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual({
+    expect(decodeJson(fetch.mock.calls[0]![1]!.body as string)).toEqual({
       action: "revoke_token",
       tokenId,
     });
@@ -135,7 +137,7 @@ describe("worker source credential custody", () => {
       ).pipe(Effect.exit);
       expect(exit._tag).toBe("Failure");
       expect(rolledBack).toHaveBeenCalledOnce();
-      expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
+      expect(decodeJson(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
     }),
   );
 
@@ -175,7 +177,7 @@ describe("worker source credential custody", () => {
         }),
       );
       expect(fetch).toHaveBeenCalledTimes(2);
-      expect(JSON.parse(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
+      expect(decodeJson(fetch.mock.calls[1]![1].body)).toEqual({ action: "revoke_token", tokenId });
     }),
   );
 });

@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import {
-  AuthAccessReadScope,
-  AuthAccessWriteScope,
-  WorkjetSpeechRouteHttpApi,
-} from "@workjet/contracts";
+import { AuthAccessReadScope, AuthAccessWriteScope, EnvironmentHttpApi } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as HttpEffect from "effect/unstable/http/HttpEffect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -27,13 +23,13 @@ const appendSpeechRouteResponseHeaders = HttpEffect.appendPreResponseHandler((_r
 );
 
 export const speechRouteHttpApiLayer = HttpApiBuilder.group(
-  WorkjetSpeechRouteHttpApi,
+  EnvironmentHttpApi,
   "speechRoutes",
   Effect.fnUntraced(function* (handlers) {
     const store = yield* WorkjetSpeechRouteStore;
     return handlers
       .handle(
-        "list",
+        "listSpeechRoutes",
         Effect.fn("environment.speechRoutes.list")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
           yield* requireEnvironmentScope(AuthAccessReadScope);
@@ -44,7 +40,7 @@ export const speechRouteHttpApiLayer = HttpApiBuilder.group(
         }),
       )
       .handle(
-        "set",
+        "setSpeechRoute",
         Effect.fn("environment.speechRoutes.set")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);
           yield* requireEnvironmentScope(AuthAccessWriteScope);

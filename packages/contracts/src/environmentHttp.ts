@@ -45,6 +45,11 @@ import {
 import { AuthSessionId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
+  WorkjetSpeechRouteListResult,
+  WorkjetSpeechRoute,
+  WorkjetSpeechRouteSetInput,
+} from "./workjetSpeechRoutes.ts";
+import {
   ClientOrchestrationCommand,
   DispatchResult,
   OrchestrationReadModel,
@@ -729,10 +734,28 @@ export class EnvironmentConnectHttpApi extends HttpApiGroup.make("connect")
     }),
   ) {}
 
+export class EnvironmentSpeechRoutesHttpApi extends HttpApiGroup.make("speechRoutes")
+  .add(
+    HttpApiEndpoint.post("listSpeechRoutes", "/api/workjet/speech/routes/list", {
+      headers: OptionalBearerHeaders,
+      success: WorkjetSpeechRouteListResult,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("setSpeechRoute", "/api/workjet/speech/routes/set", {
+      headers: OptionalBearerHeaders,
+      payload: WorkjetSpeechRouteSetInput,
+      success: WorkjetSpeechRoute,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentBusinessOsHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
-  .add(EnvironmentConnectHttpApi) {}
+  .add(EnvironmentConnectHttpApi)
+  .add(EnvironmentSpeechRoutesHttpApi) {}

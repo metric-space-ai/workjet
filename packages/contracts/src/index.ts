@@ -27,7 +27,6 @@ export * from "./nativeSupervisorWorker.ts";
 export * from "./workerSourceConnection.ts";
 export * from "./workjetBusinessOsComputers.ts";
 export * from "./workjetSpeechRoutes.ts";
-export * from "./workjetSpeechRouteHttp.ts";
 export * from "./workjetBusinessOsComputerMembershipHttp.ts";
 export * from "./workjetManagedBackendControl.ts";
 export * from "./workjetGatewayRouting.ts";

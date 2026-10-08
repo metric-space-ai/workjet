@@ -5,7 +5,7 @@ import {
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentId,
-  WorkjetSpeechRouteHttpApi,
+  EnvironmentHttpApi,
   type AuthEnvironmentScope,
   type WorkjetSpeechRoute,
 } from "@workjet/contracts";
@@ -53,7 +53,7 @@ const storeLayer = Layer.succeed(
 );
 
 function clientFor(auth: typeof EnvironmentAuthenticatedAuth.Service) {
-  return HttpApiTest.groups(WorkjetSpeechRouteHttpApi, ["speechRoutes"]).pipe(
+  return HttpApiTest.groups(EnvironmentHttpApi, ["speechRoutes"]).pipe(
     Effect.provide([
       NodeHttpServer.layerHttpServices,
       speechRouteHttpApiLayer.pipe(Layer.provide(storeLayer)),
@@ -67,13 +67,13 @@ describe("Workjet speech route HTTP", () => {
   it.effect("lists null defaults, then stores and reads back a per-kind selection", () =>
     Effect.gen(function* () {
       const client = yield* clientFor(authenticatedAuth(new Set(["access:read", "access:write"])));
-      expect(yield* client.speechRoutes.list({ headers: {} })).toMatchObject({
+      expect(yield* client.speechRoutes.listSpeechRoutes({ headers: {} })).toMatchObject({
         routes: [
           { sessionKind: "regeltermin", sttEnvironmentId: null, ttsEnvironmentId: null },
           { sessionKind: "spontan", sttEnvironmentId: null, ttsEnvironmentId: null },
         ],
       });
-      yield* client.speechRoutes.set({
+      yield* client.speechRoutes.setSpeechRoute({
         headers: {},
         payload: {
           sessionKind: "regeltermin",
@@ -81,7 +81,7 @@ describe("Workjet speech route HTTP", () => {
           ttsEnvironmentId: EnvironmentId.make("gpu-4"),
         },
       });
-      const listed = yield* client.speechRoutes.list({ headers: {} });
+      const listed = yield* client.speechRoutes.listSpeechRoutes({ headers: {} });
       expect(listed.routes[0]).toEqual({
         sessionKind: "regeltermin",
         sttEnvironmentId: EnvironmentId.make("gpu-3"),
@@ -94,7 +94,7 @@ describe("Workjet speech route HTTP", () => {
     Effect.gen(function* () {
       const client = yield* clientFor(authenticatedAuth(new Set(["access:read"])));
       const failure = yield* client.speechRoutes
-        .set({
+        .setSpeechRoute({
           headers: {},
           payload: { sessionKind: "spontan", sttEnvironmentId: null, ttsEnvironmentId: null },
         })

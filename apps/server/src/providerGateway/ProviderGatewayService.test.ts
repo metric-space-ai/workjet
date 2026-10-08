@@ -1136,8 +1136,13 @@ describe("ProviderGatewayService · API-key accounts", () => {
       const model = "claude-opus-5-5";
       const legacy = model.replace(/-(\d+)$/, ".$1");
       const account = {
-        id: "claude-existing", provider: "claude", label: "Existing account",
-        enabled: mode !== "disabled", priority: 7, weight: 1, models: [legacy],
+        id: "claude-existing",
+        provider: "claude",
+        label: "Existing account",
+        enabled: mode !== "disabled",
+        priority: 7,
+        weight: 1,
+        models: [legacy],
         accessTokenSecret: { scope: "workjet-provider-gateway", name: "existing-access" },
         refreshTokenSecret: { scope: "workjet-provider-gateway", name: "existing-refresh" },
       };
@@ -1160,10 +1165,14 @@ describe("ProviderGatewayService · API-key accounts", () => {
           if (path.endsWith("/provider-gateway.json")) document = value;
         },
       };
-      await runWithSecrets(harness, (gateway) => gateway.checkModels({
-        force: true,
-        ...(mode === "other-account" ? { accountId: WorkjetGatewayAccountId.make("codex-primary") } : {}),
-      }));
+      await runWithSecrets(harness, (gateway) =>
+        gateway.checkModels({
+          force: true,
+          ...(mode === "other-account"
+            ? { accountId: WorkjetGatewayAccountId.make("codex-primary") }
+            : {}),
+        }),
+      );
       expect(JSON.parse(document).accounts).toEqual([
         { ...account, models: [mode === "observed" ? model : legacy] },
       ]);

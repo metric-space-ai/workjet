@@ -1783,9 +1783,11 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
           !("accessTokenSecret" in account) ||
           (accountId !== undefined && account.id !== accountId) ||
           !account.models.some((id) => id.startsWith("claude-") && /\.(?=\d)/.test(id))
-        ) continue;
-        const secret = await runPromise(secrets.get(secretStoreName(account.accessTokenSecret)))
-          .catch(() => Option.none<Uint8Array>());
+        )
+          continue;
+        const secret = await runPromise(
+          secrets.get(secretStoreName(account.accessTokenSecret)),
+        ).catch(() => Option.none<Uint8Array>());
         if (Option.isNone(secret)) continue;
         const token = new TextDecoder().decode(secret.value);
         if (!isAcceptableApiKey(token)) continue;

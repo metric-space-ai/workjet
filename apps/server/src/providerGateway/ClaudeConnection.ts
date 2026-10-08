@@ -29,10 +29,16 @@ export async function discoverClaudeModels(
       signal: deadline,
     });
     const length = response.headers.get("content-length");
-    if (!response.ok || !response.body || (length !== null && (!/^\d+$/.test(length) || Number(length) > 128 * 1024)))
+    if (
+      !response.ok ||
+      !response.body ||
+      (length !== null && (!/^\d+$/.test(length) || Number(length) > 128 * 1024))
+    )
       return undefined;
     const reader = response.body.getReader();
-    const cancel = () => { void reader.cancel().catch(() => undefined); };
+    const cancel = () => {
+      void reader.cancel().catch(() => undefined);
+    };
     deadline.addEventListener("abort", cancel, { once: true });
     const chunks: Uint8Array[] = [];
     let size = 0;
@@ -53,12 +59,17 @@ export async function discoverClaudeModels(
     }
     const bytes = new Uint8Array(size);
     let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-    const models = decodeModels(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)));
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const models = decodeModels(
+      JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+    );
     if (models.has_more === true || models.data.length === 0 || models.data.length > 1024)
       return undefined;
-    const ids = models.data.map(model => model.id);
-    if (ids.some(id => !id || id.length > 160 || id.trim() !== id || /[\x00-\x1f\x7f]/.test(id)))
+    const ids = models.data.map((model) => model.id);
+    if (ids.some((id) => !id || id.length > 160 || id.trim() !== id || /[\x00-\x1f\x7f]/.test(id)))
       return undefined;
     return [...new Set(ids)];
   } catch {
@@ -75,9 +86,13 @@ export function repairClaudeModelIds(
   available: ReadonlyArray<string>,
 ): ReadonlyArray<string> {
   const known = new Set(available);
-  return [...new Set(configured.map(id => {
-    if (known.has(id) || !id.startsWith("claude-")) return id;
-    const candidate = id.replace(/\.(?=\d)/g, "-");
-    return known.has(candidate) ? candidate : id;
-  }))];
+  return [
+    ...new Set(
+      configured.map((id) => {
+        if (known.has(id) || !id.startsWith("claude-")) return id;
+        const candidate = id.replace(/\.(?=\d)/g, "-");
+        return known.has(candidate) ? candidate : id;
+      }),
+    ),
+  ];
 }

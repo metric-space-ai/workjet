@@ -31,11 +31,13 @@ export function workjetEnvironmentTargetOptions(
             : presentationKind === "ssh"
               ? (environment.displayUrl ?? "SSH environment")
               : (environment.displayUrl ?? "Remote environment");
+      const hostId = environment.serverConfig?.environment.hostId;
       return {
         environmentId: environment.environmentId,
         label: environment.label,
         presentationKind,
         detail,
+        ...(hostId === undefined ? {} : { hostId }),
       };
     })
     .sort((left, right) => {

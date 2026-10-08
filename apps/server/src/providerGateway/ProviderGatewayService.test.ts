@@ -1020,7 +1020,12 @@ describe("ProviderGatewayService · API-key accounts", () => {
   it("stores the verified Kimi origin and live IDs on account creation", async () => {
     const harness = apiKeyHarness();
     await runWithSecrets(harness, (gateway) =>
-      gateway.addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY, models: [] }),
+      gateway.addApiKeyAccount({
+        provider: "kimi",
+        label: "Coding plan",
+        apiKey: API_KEY,
+        models: [],
+      }),
     );
     const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
     expect(
@@ -1041,33 +1046,38 @@ describe("ProviderGatewayService · API-key accounts", () => {
       enabled: false,
       priority: 7,
       weight: 1,
-      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const,
       models: ["kimi-for-coding"],
       apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
       credentialSuffix: "old1",
     };
     harness.platform = {
       ...harness.platform,
-      readText: async () => JSON.stringify({
-        ...JSON.parse(configuration),
-        accounts: [...JSON.parse(configuration).accounts, account],
-      }),
+      readText: async () =>
+        JSON.stringify({
+          ...JSON.parse(configuration),
+          accounts: [...JSON.parse(configuration).accounts, account],
+        }),
       discoverKimiConnection: async () => ({
         upstreamBaseUrl: account.upstreamBaseUrl,
         models: ["k3", "kimi-for-coding"],
       }),
     };
-    const result = await runWithSecrets(harness, (gateway) => gateway.addApiKeyAccount({
-      accountId: WorkjetGatewayAccountId.make(account.id),
-      provider: "kimi",
-      label: account.label,
-      apiKey: API_KEY,
-      models: [],
-    }));
+    const result = await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({
+        accountId: WorkjetGatewayAccountId.make(account.id),
+        provider: "kimi",
+        label: account.label,
+        apiKey: API_KEY,
+        models: [],
+      }),
+    );
     expect(result.accountId).toBe(account.id);
     const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
-    expect(stored.accounts.find((entry: { id: string }) => entry.id === account.id))
-      .toEqual({ ...account, credentialSuffix: "abcd" });
+    expect(stored.accounts.find((entry: { id: string }) => entry.id === account.id)).toEqual({
+      ...account,
+      credentialSuffix: "abcd",
+    });
     expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
     expect(harness.writes.join("\n")).not.toContain(API_KEY);
   });

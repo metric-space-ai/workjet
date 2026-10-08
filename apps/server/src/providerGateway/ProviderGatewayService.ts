@@ -1378,10 +1378,10 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         models:
           input.models !== undefined && (input.provider !== "kimi" || input.models.length > 0)
             ? input.models
-            : discoveredKimiModels ??
+            : (discoveredKimiModels ??
               replacement?.models ??
               accounts.find((account) => account.provider === input.provider)?.models ??
-              [],
+              []),
         apiKeySecret,
         ...(kimiConnection !== undefined
           ? { upstreamBaseUrl: kimiConnection.upstreamBaseUrl }

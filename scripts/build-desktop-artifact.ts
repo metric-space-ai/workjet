@@ -1601,7 +1601,9 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     input.diagnosticProviderGatewayHost ?? Option.none(),
   );
   const gpuBuildOwner = Option.getOrUndefined(input.gpuBuildOwner ?? Option.none());
-  const prebuiltLinuxSshServer = Option.getOrUndefined(input.prebuiltLinuxSshServer ?? Option.none());
+  const prebuiltLinuxSshServer = Option.getOrUndefined(
+    input.prebuiltLinuxSshServer ?? Option.none(),
+  );
 
   return {
     platform,
@@ -2729,19 +2731,20 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   }
   if (options.platform === "mac") {
     yield* Effect.tryPromise({
-      try: () => options.prebuiltLinuxSshServer === undefined
-        ? buildLinuxSshServer({
-          repoRoot,
-          serverDist: distDirs.serverDist,
-          archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
-          owner: options.gpuBuildOwner,
-        })
-        : stagePrebuiltLinuxSshServer({
-          repoRoot,
-          directory: options.prebuiltLinuxSshServer,
-          archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
-          owner: options.gpuBuildOwner,
-        }),
+      try: () =>
+        options.prebuiltLinuxSshServer === undefined
+          ? buildLinuxSshServer({
+              repoRoot,
+              serverDist: distDirs.serverDist,
+              archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+              owner: options.gpuBuildOwner,
+            })
+          : stagePrebuiltLinuxSshServer({
+              repoRoot,
+              directory: options.prebuiltLinuxSshServer,
+              archiveDirectory: path.join(stageResourcesDir, "ssh-servers"),
+              owner: options.gpuBuildOwner,
+            }),
       catch: (cause) => new BundledServerSourceVerificationError({ cause }),
     });
   }
@@ -3156,7 +3159,9 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
     Flag.optional,
   ),
   prebuiltLinuxSshServer: Flag.string("prebuilt-linux-ssh-server").pipe(
-    Flag.withDescription("Directory of an admitted Linux SSH server build and receipt, verified against this source and fresh server output."),
+    Flag.withDescription(
+      "Directory of an admitted Linux SSH server build and receipt, verified against this source and fresh server output.",
+    ),
     Flag.optional,
   ),
   wslPrebuild: Flag.string("wsl-prebuild").pipe(

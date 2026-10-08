@@ -25,7 +25,9 @@ function transport(answer: unknown) {
   const httpClient = HttpClient.make((request) =>
     Effect.gen(function* () {
       if (request.body._tag !== "Uint8Array") throw new Error("Expected JSON.");
-      const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ params: Schema.Unknown })))(new TextDecoder().decode(request.body.body)).pipe(Effect.orDie);
+      const body = yield* Schema.decodeUnknownEffect(
+        Schema.fromJsonString(Schema.Struct({ params: Schema.Unknown })),
+      )(new TextDecoder().decode(request.body.body)).pipe(Effect.orDie);
       requests.push(body.params);
       return HttpClientResponse.fromWeb(
         request,

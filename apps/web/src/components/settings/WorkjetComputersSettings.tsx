@@ -349,9 +349,9 @@ export function WorkjetComputersSettingsView({
         >
           <colgroup>
             <col className="w-7" />
-            <col className="w-[24%]" />
-            <col className="w-[21%]" />
             <col className="w-[22%]" />
+            <col className="w-[16%]" />
+            <col className="w-[32%]" />
             <col />
             <col className="w-24" />
           </colgroup>
@@ -446,7 +446,7 @@ export function WorkjetComputersSettingsView({
                           —
                         </span>
                       ) : (
-                        <div className="flex items-center gap-1 overflow-hidden">
+                        <div className="flex flex-wrap items-center gap-1 py-1">
                           {computer.harnesses.map((declared) => {
                             const live = snapshot.harnesses.find(
                               (entry) => entry.harness === declared.harness,

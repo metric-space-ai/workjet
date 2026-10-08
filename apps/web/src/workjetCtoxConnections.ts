@@ -10,5 +10,13 @@ export function ctoxConnectionMatchesSelectedInstance(
   if (connection.instanceId === selectedInstanceId) return true;
   if (connection.source !== "ctox_dev" || !selectedInstanceId.startsWith("managed:")) return false;
   const tenantId = selectedInstanceId.slice("managed:".length);
-  return tenantId.length > 0 && connection.connectionId === `ctox-dev:${tenantId}`;
+  if (tenantId.length === 0) return false;
+  const workerPrefix = `ctox-dev-worker-source:${tenantId}:`;
+  return (
+    connection.connectionId === `ctox-dev:${tenantId}` ||
+    (connection.connectionId.startsWith(workerPrefix) &&
+      /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(
+        connection.connectionId.slice(workerPrefix.length),
+      ))
+  );
 }

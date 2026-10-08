@@ -238,6 +238,9 @@ export interface WorkjetCapabilityMenuProps {
   readonly ctoxBusinessOsConnections?: ReadonlyArray<WorkjetConnectionSummary> | undefined;
   readonly ctoxBusinessOsConnectionId?: string | null | undefined;
   readonly ctoxBusinessOsConnectionLocked?: boolean | undefined;
+  readonly onCtoxBusinessOsConnect?: (() => void) | undefined;
+  readonly ctoxBusinessOsConnecting?: boolean | undefined;
+  readonly ctoxBusinessOsConnectError?: string | null | undefined;
   readonly onCtoxBusinessOsConnectionChange?: ((connectionId: string) => void) | undefined;
   /** Thread role belongs in this settings menu, never in the main composer bar. */
   readonly workjetRole?: WorkjetThreadRole | null | undefined;
@@ -490,6 +493,22 @@ export function WorkjetCapabilityDetail(
             {props.ctoxBusinessOsConnectionLocked ? (
               <p className="text-xs text-muted-foreground">
                 This thread keeps its original instance.
+              </p>
+            ) : null}
+            {props.onCtoxBusinessOsConnect && !props.ctoxBusinessOsConnectionLocked ? (
+              <button
+                type="button"
+                aria-label="Connect selected Business OS for workers"
+                className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+                disabled={props.disabled === true || props.busy || props.ctoxBusinessOsConnecting}
+                onClick={props.onCtoxBusinessOsConnect}
+              >
+                {props.ctoxBusinessOsConnecting ? "Connecting…" : "Connect selected Business OS"}
+              </button>
+            ) : null}
+            {props.ctoxBusinessOsConnectError ? (
+              <p role="alert" className="text-xs text-amber-500">
+                {props.ctoxBusinessOsConnectError}
               </p>
             ) : null}
             {(props.ctoxBusinessOsConnections ?? []).length === 0 ? (

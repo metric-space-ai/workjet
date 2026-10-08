@@ -155,6 +155,9 @@ export interface ComposerFooterControlsProps {
   readonly ctoxBusinessOsConnections?: ReadonlyArray<WorkjetConnectionSummary> | undefined;
   readonly ctoxBusinessOsConnectionId?: string | null | undefined;
   readonly ctoxBusinessOsConnectionLocked?: boolean | undefined;
+  readonly onCtoxBusinessOsConnect?: (() => void) | undefined;
+  readonly ctoxBusinessOsConnecting?: boolean | undefined;
+  readonly ctoxBusinessOsConnectError?: string | null | undefined;
   readonly onCtoxBusinessOsConnectionChange?: ((connectionId: string) => void) | undefined;
   readonly onOpenWorkjetSettings: () => void;
   /** Full manual-mode row contract: 1, 2, or 3 ordered rows. */
@@ -232,6 +235,9 @@ export const ComposerFooterControls = memo(function ComposerFooterControls(
           ctoxBusinessOsConnections={props.ctoxBusinessOsConnections}
           ctoxBusinessOsConnectionId={props.ctoxBusinessOsConnectionId}
           ctoxBusinessOsConnectionLocked={props.ctoxBusinessOsConnectionLocked}
+          onCtoxBusinessOsConnect={props.onCtoxBusinessOsConnect}
+          ctoxBusinessOsConnecting={props.ctoxBusinessOsConnecting}
+          ctoxBusinessOsConnectError={props.ctoxBusinessOsConnectError}
           onCtoxBusinessOsConnectionChange={props.onCtoxBusinessOsConnectionChange}
           workjetRole={props.workjetRole}
           onWorkjetRoleChange={props.onWorkjetRoleChange}

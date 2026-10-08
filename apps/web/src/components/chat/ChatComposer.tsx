@@ -1443,12 +1443,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ),
   );
   const ctoxBusinessOsConnectionLocked = composerTargetIsThread && ctoxBinding !== undefined;
-  const handleCtoxBusinessOsConnectionChange = (connectionId: string) => {
+  const applyCtoxBusinessOsConnection = (connection: (typeof decisionHubConnections)[number]) => {
     if (ctoxBusinessOsConnectionLocked) return;
-    const connection = ctoxBusinessOsConnections.find(
-      (candidate) => candidate.connectionId === connectionId && candidate.status === "ready",
-    );
-    if (!connection) return;
     const capabilityBindings: WorkjetCapabilityBinding[] = [
       ...effectiveCapabilityBindings.filter(
         (binding) => binding.capabilityId !== "ctox-business-os",
@@ -1469,6 +1465,66 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         schemaVersion: 2,
         capabilityBindings,
       });
+  };
+  const handleCtoxBusinessOsConnectionChange = (connectionId: string) => {
+    const connection = ctoxBusinessOsConnections.find(
+      (candidate) => candidate.connectionId === connectionId && candidate.status === "ready",
+    );
+    if (connection) applyCtoxBusinessOsConnection(connection);
+  };
+  const [ctoxBusinessOsConnecting, setCtoxBusinessOsConnecting] = useState(false);
+  const [ctoxBusinessOsConnectError, setCtoxBusinessOsConnectError] = useState<string | null>(null);
+  const ctoxProvisioningRef = useRef(false);
+  const ctoxBindingContextKey = `${environmentId}:${JSON.stringify(composerDraftTarget)}:${activeWorkjetScope.selectionRevision}`;
+  const ctoxBindingContextRef = useRef({
+    key: ctoxBindingContextKey,
+    apply: applyCtoxBusinessOsConnection,
+  });
+  ctoxBindingContextRef.current = {
+    key: ctoxBindingContextKey,
+    apply: applyCtoxBusinessOsConnection,
+  };
+  const managedSourceTenant = activeWorkjetScope.selectedInstanceId?.startsWith("managed:")
+    ? activeWorkjetScope.selectedInstanceId.slice("managed:".length)
+    : null;
+  const canConnectCtoxBusinessOs =
+    managedSourceTenant !== null && window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
+  const handleCtoxBusinessOsConnect = async () => {
+    const provision = window.desktopBridge?.ctox?.provisionDecisionHub;
+    if (
+      !provision ||
+      !managedSourceTenant ||
+      ctoxProvisioningRef.current ||
+      ctoxBusinessOsConnectionLocked
+    )
+      return;
+    ctoxProvisioningRef.current = true;
+    setCtoxBusinessOsConnecting(true);
+    setCtoxBusinessOsConnectError(null);
+    const contextKey = ctoxBindingContextKey;
+    try {
+      const result = await provision({
+        environmentId,
+        purpose: "worker_source",
+        target: { _tag: "ctox_dev", tenantId: managedSourceTenant },
+      });
+      if (result._tag === "failed") {
+        setCtoxBusinessOsConnectError(
+          result.code === "signed_out"
+            ? "Sign in to CTOX to connect this Business OS."
+            : "Could not connect this Business OS. Check account permissions and MCP availability.",
+        );
+        return;
+      }
+      decisionHubConnectionsQuery.refresh();
+      if (ctoxBindingContextRef.current.key === contextKey)
+        ctoxBindingContextRef.current.apply(result.connection);
+    } catch {
+      setCtoxBusinessOsConnectError("Could not connect this Business OS. Try again.");
+    } finally {
+      ctoxProvisioningRef.current = false;
+      setCtoxBusinessOsConnecting(false);
+    }
   };
   const selectedCtoxConnection = decisionHubConnections.find(
     (connection) =>
@@ -4103,6 +4159,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ctoxBusinessOsConnections={ctoxBusinessOsConnections}
                             ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
                             ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
+                            onCtoxBusinessOsConnect={
+                              canConnectCtoxBusinessOs
+                                ? () => {
+                                    void handleCtoxBusinessOsConnect();
+                                  }
+                                : undefined
+                            }
+                            ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
+                            ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                             onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                             workjetRole={workerModeActive ? null : effectiveWorkjetRole}
                             onWorkjetRoleChange={effectiveWorkjetRoleChange}
@@ -4173,6 +4238,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ctoxBusinessOsConnections={ctoxBusinessOsConnections}
                             ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
                             ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
+                            onCtoxBusinessOsConnect={
+                              canConnectCtoxBusinessOs
+                                ? () => {
+                                    void handleCtoxBusinessOsConnect();
+                                  }
+                                : undefined
+                            }
+                            ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
+                            ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                             onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                             workjetRole={workerModeActive ? null : effectiveWorkjetRole}
                             onWorkjetRoleChange={effectiveWorkjetRoleChange}
@@ -4285,6 +4359,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ctoxBusinessOsConnections={ctoxBusinessOsConnections}
                     ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
                     ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
+                    onCtoxBusinessOsConnect={
+                      canConnectCtoxBusinessOs
+                        ? () => {
+                            void handleCtoxBusinessOsConnect();
+                          }
+                        : undefined
+                    }
+                    ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
+                    ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                     onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                     onOpenWorkjetSettings={onOpenWorkjetSettings}
                   />

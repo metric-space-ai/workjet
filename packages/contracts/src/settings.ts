@@ -209,6 +209,7 @@ export const ClientSettingsSchema = Schema.Struct({
   workjetProductMode: WorkjetProductMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_WORKJET_PRODUCT_MODE)),
   ),
+  workjetModesIntroSeen: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -935,5 +936,6 @@ export const ClientSettingsPatch = Schema.Struct({
   timestampFormat: Schema.optionalKey(TimestampFormat),
   wordWrap: Schema.optionalKey(Schema.Boolean),
   workjetProductMode: Schema.optionalKey(WorkjetProductMode),
+  workjetModesIntroSeen: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;

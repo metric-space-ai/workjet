@@ -1,0 +1,74 @@
+/*
+ * One-shot entrance for the Dev / Ops pictograms. Everything runs once and
+ * settles on its final frame; nothing repeats, so the dialog never repaints
+ * while it sits open. Only transform, opacity and stroke-dashoffset animate.
+ */
+.wmi-grow {
+  transform-origin: left center;
+  animation: wmi-grow 620ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--wmi-delay, 0ms);
+}
+
+.wmi-rise {
+  animation: wmi-rise 480ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--wmi-delay, 0ms);
+}
+
+.wmi-draw {
+  stroke-dasharray: var(--wmi-length, 300);
+  animation: wmi-draw 900ms ease-out both;
+  animation-delay: var(--wmi-delay, 0ms);
+}
+
+.wmi-link {
+  stroke-dasharray: 4 4;
+  animation: wmi-link 700ms ease-out both;
+  animation-delay: var(--wmi-delay, 0ms);
+}
+
+@keyframes wmi-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes wmi-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes wmi-draw {
+  from {
+    stroke-dashoffset: var(--wmi-length, 300);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes wmi-link {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wmi-grow,
+  .wmi-rise,
+  .wmi-draw,
+  .wmi-link {
+    animation: none;
+  }
+}

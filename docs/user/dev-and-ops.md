@@ -1,5 +1,12 @@
 # Dev and Ops
 
+The first time you open the desktop app, a short introduction explains both
+modes. Dev is for building applications with AI. Ops is for running the
+businesses you build, with automations, processes and specialized apps. Both
+run on CTOX, the engine underneath. Choose **Skip** or **Continue** to close
+it. To see it again, open **Settings → General → Dev and Ops introduction** and
+choose **Show again**.
+
 The Workjet desktop header keeps your selected Business OS instance visible
 while you switch between Dev and Ops.
 

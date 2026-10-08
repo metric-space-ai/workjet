@@ -5,7 +5,9 @@ import { RemoteWorkerResult } from "./remoteWorker.ts";
 
 export const NATIVE_SUPERVISOR_WORKER_CONTRACT = "ctox.workjet.worker-dispatch.v1";
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
-const IntentId = ThreadId.check(Schema.isPattern(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/));
+const IntentId = ThreadId.check(
+  Schema.isPattern(/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/),
+);
 export const NativeSupervisorSource = Schema.Struct({
   sourceEnvironmentId: EnvironmentId,
   sourceSupervisorThreadId: ThreadId,
@@ -35,14 +37,27 @@ export const NativeSupervisorWorkerIntent = Schema.Struct({
 });
 export type NativeSupervisorWorkerIntent = typeof NativeSupervisorWorkerIntent.Type;
 export const NativeSupervisorWorkerFailureReason = Schema.Literals([
-  "role-not-authorized", "parent-unavailable", "parent-not-orchestrator",
-  "duplicate-capabilities", "capability-escalation", "computer-unavailable",
-  "worker-profile-unavailable", "remote-dispatch-unavailable", "remote-dispatch-failed",
-  "worktree-failed", "create-failed", "turn-start-failed", "rollback-failed",
+  "role-not-authorized",
+  "parent-unavailable",
+  "parent-not-orchestrator",
+  "duplicate-capabilities",
+  "capability-escalation",
+  "computer-unavailable",
+  "worker-profile-unavailable",
+  "remote-dispatch-unavailable",
+  "remote-dispatch-failed",
+  "worktree-failed",
+  "create-failed",
+  "turn-start-failed",
+  "rollback-failed",
 ]);
 /** A pending source request is never a terminal failure or a second worker. */
 export const NativeSupervisorWorkerCompletion = Schema.Union([
   RemoteWorkerResult,
-  Schema.Struct({ schemaVersion: Schema.Literal(1), status: Schema.Literal("failed"), reason: NativeSupervisorWorkerFailureReason }),
+  Schema.Struct({
+    schemaVersion: Schema.Literal(1),
+    status: Schema.Literal("failed"),
+    reason: NativeSupervisorWorkerFailureReason,
+  }),
 ]);
 export type NativeSupervisorWorkerCompletion = typeof NativeSupervisorWorkerCompletion.Type;

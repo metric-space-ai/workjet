@@ -127,7 +127,7 @@ export const make = Effect.gen(function* () {
 });
 export class NativeSupervisorWorkerDispatch extends Context.Service<
   NativeSupervisorWorkerDispatch, Effect.Success<typeof make>
->()("workjet/workjet/NativeSupervisorWorkerDispatch") {}
+>()("workjet/workjet/NativeSupervisorWorkerDispatchLive/NativeSupervisorWorkerDispatch") {}
 export const layer = Layer.effect(NativeSupervisorWorkerDispatch, Effect.gen(function* () {
   const service = yield* make;
   yield* forkParked(service.runCycle.pipe(

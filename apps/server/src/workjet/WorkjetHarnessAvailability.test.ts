@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { DEFAULT_SERVER_SETTINGS, type WorkjetHarness, type WorkjetHarnessAvailabilitySnapshot } from "@workjet/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@workjet/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as PlatformError from "effect/PlatformError";
@@ -45,6 +46,28 @@ it("resolves all server-configurable harness paths", () => {
     assert.equal(configuredHarnessExecutable(configured, harness), expected);
   }
   assert.isUndefined(configuredHarnessExecutable(configured, "pi-code"));
+});
+
+it("prefers the canonical provider instance path and rejects a mismatched driver", () => {
+  const codex = ProviderInstanceId.make("codex");
+  const settings = {
+    ...DEFAULT_SERVER_SETTINGS,
+    providerInstances: {
+      [codex]: {
+        driver: ProviderDriverKind.make("codex"),
+        config: { binaryPath: "/configured/instance/codex" },
+      },
+    },
+  };
+  assert.equal(configuredHarnessExecutable(settings, CODEX), "/configured/instance/codex");
+  const mismatched = {
+    ...settings,
+    providerInstances: { [codex]: {
+      driver: ProviderDriverKind.make("grok"),
+      config: { binaryPath: "/foreign/driver" },
+    } },
+  };
+  assert.equal(configuredHarnessExecutable(mismatched, CODEX), settings.providers.codex.binaryPath);
 });
 
 it.layer(NodeServices.layer)("configured harness executables", (it) => {

@@ -24,6 +24,7 @@
  * it anyway. "executable-not-found" and "not-executable" are separate because
  * they need different fixes — install it, versus fix its permissions.
  */
+import { ProviderInstanceId } from "@workjet/contracts";
 import type {
   ServerSettings,
   WorkjetHarness,
@@ -32,6 +33,8 @@ import type {
 } from "@workjet/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -181,20 +184,29 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
 };
 
 /** Probe the executable configured on this server, never a client's local override. */
+const configuredBinaryPath = Schema.decodeUnknownOption(
+  Schema.Struct({ binaryPath: Schema.Trim }),
+);
+
 export function configuredHarnessExecutable(
-  settings: Pick<ServerSettings, "providers">,
+  settings: Pick<ServerSettings, "providers"> & Partial<Pick<ServerSettings, "providerInstances">>,
   harness: WorkjetHarness,
 ): string | undefined {
-  switch (harness) {
-    case "codex-cli": return settings.providers.codex.binaryPath;
-    case "claude-code": return settings.providers.claudeAgent.binaryPath;
-    case "cursor-agent": return settings.providers.cursor.binaryPath;
-    case "grok-cli": return settings.providers.grok.binaryPath;
-    case "opencode": return settings.providers.opencode.binaryPath;
-    case "greppy": return settings.providers.greppy.binaryPath;
-    case "minimax-code": return settings.providers.minimax.binaryPath;
-    default: return undefined;
+  const driver = harness === "codex-cli" ? "codex"
+    : harness === "claude-code" ? "claudeAgent"
+    : harness === "cursor-agent" ? "cursor"
+    : harness === "grok-cli" ? "grok"
+    : harness === "minimax-code" ? "minimax"
+    : harness === "opencode" || harness === "greppy" ? harness : undefined;
+  if (driver === undefined) return undefined;
+  const instance = settings.providerInstances?.[ProviderInstanceId.make(driver)];
+  if (instance?.driver === driver) {
+    const decoded = configuredBinaryPath(instance.config);
+    if (Option.isSome(decoded) && decoded.value.binaryPath.length > 0) {
+      return decoded.value.binaryPath;
+    }
   }
+  return settings.providers[driver].binaryPath;
 }
 
 /**

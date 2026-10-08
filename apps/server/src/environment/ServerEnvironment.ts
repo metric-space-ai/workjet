@@ -146,22 +146,24 @@ export const make = Effect.gen(function* () {
       Effect.map((result) => (result.code === 0 ? pattern.exec(result.stdout)?.[1] : undefined)),
       Effect.catch(() => Effect.succeed(undefined)),
     );
-  const hostId = yield* (
-    hostPlatform === "linux"
-      ? fileSystem.readFileString("/etc/machine-id").pipe(
-          Effect.map((value) => value.trim() || undefined),
-          Effect.catch(() => Effect.succeed(undefined)),
+  const hostId = yield* hostPlatform === "linux"
+    ? fileSystem.readFileString("/etc/machine-id").pipe(
+        Effect.map((value) => value.trim() || undefined),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+    : hostPlatform === "darwin"
+      ? commandHostId(
+          "ioreg",
+          ["-rd1", "-c", "IOPlatformExpertDevice"],
+          /"IOPlatformUUID" = "([^"]+)"/,
         )
-      : hostPlatform === "darwin"
-        ? commandHostId("ioreg", ["-rd1", "-c", "IOPlatformExpertDevice"], /"IOPlatformUUID" = "([^"]+)"/)
-        : hostPlatform === "win32"
-          ? commandHostId(
-              "reg",
-              ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"],
-              /MachineGuid\s+REG_SZ\s+(\S+)/,
-            )
-          : Effect.succeed(undefined)
-  );
+      : hostPlatform === "win32"
+        ? commandHostId(
+            "reg",
+            ["query", "HKLM\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"],
+            /MachineGuid\s+REG_SZ\s+(\S+)/,
+          )
+        : Effect.succeed(undefined);
 
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId,

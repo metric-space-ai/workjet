@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
 import * as Schema from "effect/Schema";
+import { WorkjetJourFixeNarrationReadRequest, WorkjetJourFixeNarrationReadResponse } from "./workjetJourFixeNarration.ts";
+export * from "./workjetJourFixeNarration.ts";
 import {
   WorkjetJourFixeSpeechRequests,
   WorkjetJourFixeSpeechResponse,
@@ -588,6 +590,7 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
+  WorkjetJourFixeNarrationReadRequest,
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
   ...WorkjetJourFixeSpeechRequests,
@@ -703,6 +706,7 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 );
 
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
+  WorkjetJourFixeNarrationReadResponse,
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
   WorkjetJourFixeSpeechResponse,

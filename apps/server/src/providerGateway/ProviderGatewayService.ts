@@ -60,8 +60,6 @@ import {
   type ProviderGatewayConfiguration,
 } from "./ProviderGatewayConfig.ts";
 import {
-  GATEWAY_MODEL_CHANNELS,
-  decodeModelDefinitions,
   decodeRuntimeConfigSummary,
   decodeRuntimeStatus,
   decodeAccountHealth,
@@ -72,6 +70,7 @@ import {
   USAGE_JOURNAL_MAX_BYTES,
 } from "./ProviderGatewayUsage.ts";
 import { nodeProviderGatewayPlatform } from "./ProviderGatewayNodeAdapter.ts";
+import { decodeLiveProviderModels } from "./LiveProviderCatalog.ts";
 import {
   decodeGatewayGrants,
   emptyGatewayGrants,
@@ -82,6 +81,7 @@ import {
 
 import { makeModelChecks } from "./ProviderGatewayModelChecks.ts";
 import type { KimiConnection } from "./KimiConnection.ts";
+import { repairClaudeModelIds } from "./ClaudeConnection.ts";
 
 const CONFIG_MAX_BYTES = 256 * 1024;
 const READINESS_MAX_BYTES = 4 * 1024;
@@ -112,6 +112,11 @@ export interface GatewayHostProcess {
 }
 
 export interface ProviderGatewayPlatform {
+  readonly publicModelCatalog?: () => Promise<unknown>;
+  readonly discoverClaudeModels?: (
+    accessToken: string,
+    signal?: AbortSignal,
+  ) => Promise<ReadonlyArray<string> | undefined>;
   readonly discoverKimiConnection?: (
     apiKey: string,
     preferredBaseUrl?: string,
@@ -238,9 +243,8 @@ export interface ProviderGatewayServiceShape {
     input: WorkjetGatewayUsageInput,
   ) => Effect.Effect<WorkjetGatewayUsage, WorkjetGatewayOperationError>;
   /**
-   * Models the host's own catalog serves per provider, merged with the models
-   * recorded on the accounts. The host performs no upstream capability query,
-   * so every entry is labelled with where it came from.
+   * Live llm.ctox.dev suggestions plus separately labelled account configuration.
+   * Neither source proves this account's inference health.
    */
   readonly discoverModels: () => Effect.Effect<
     WorkjetGatewayModelDiscovery,
@@ -1587,54 +1591,27 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       };
     };
 
-    /**
-     * Asks the host which models it serves per provider.
-     *
-     * The host answers from `GET /v0/management/model-definitions/<channel>`,
-     * which is its own pinned catalog compiled into the binary. It makes NO
-     * upstream capability call for this — not at request time and not on the
-     * management surface — so every model is labelled `gateway-catalog` and the
-     * models recorded on the accounts are merged in as `account-configuration`.
-     * Neither label may be presented as a live provider answer. A provider the
-     * host has no channel for (zai, minimax) reports `catalogAvailable: false`
-     * and lists only its configured models.
-     */
+    /** Fresh llm.ctox.dev suggestions; account configuration is separate from live observations. */
     const runDiscoverModels = async (): Promise<WorkjetGatewayModelDiscovery> => {
-      const { endpoint, key } = requireManagement();
+      requireManagement();
       const configuration = await loadConfiguration();
       const observedAtMs = Math.max(0, Math.trunc(platform.now()));
+      let liveCatalog: unknown;
+      try {
+        liveCatalog = await platform.publicModelCatalog?.();
+      } catch {
+        liveCatalog = undefined;
+      }
       const providers: Array<WorkjetGatewayProviderModels> = [];
       for (const provider of GATEWAY_PROVIDERS) {
         const accounts = configuration.accounts.filter(
           (account) => account.provider === provider && account.enabled,
         );
         if (accounts.length === 0) continue;
-        // A coding-plan key has different IDs from the compiled Moonshot catalog.
-        const channel = provider === "kimi" ? null : GATEWAY_MODEL_CHANNELS[provider];
-        let catalog: ReadonlyArray<{ readonly id: string; readonly displayName: string }> = [];
-        let catalogAvailable = false;
-        if (channel !== null) {
-          try {
-            const response = await platform.managementGet(
-              endpoint,
-              `/v0/management/model-definitions/${encodeURIComponent(channel)}`,
-              key,
-              MANAGEMENT_MAX_BYTES,
-            );
-            const decoded = decodeModelDefinitions(response, channel);
-            if (decoded !== undefined) {
-              catalog = decoded;
-              catalogAvailable = true;
-            }
-          } catch {
-            // A channel the host refuses is reported as unavailable for this
-            // provider; it must not fail the whole discovery.
-            catalogAvailable = false;
-          }
-        }
-        const models: Array<WorkjetGatewayDiscoveredModel> = catalog.map((model) => ({
-          id: model.id,
-          displayName: model.displayName,
+        const liveModels = decodeLiveProviderModels(liveCatalog, provider, platform.now());
+        const models: Array<WorkjetGatewayDiscoveredModel> = (liveModels ?? []).map((id) => ({
+          id,
+          displayName: id,
           source: "gateway-catalog" as const,
         }));
         const known = new Set(models.map((model) => model.id));
@@ -1647,8 +1624,8 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         }
         providers.push({
           provider,
-          channel,
-          catalogAvailable,
+          channel: null,
+          catalogAvailable: liveModels !== undefined,
           models: models.slice(0, 256),
         });
       }
@@ -1791,6 +1768,46 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
       await startSingleFlight();
     };
 
+    /** A spelling repair is permitted only by this account's real provider list. */
+    const runRepairClaudeModels = async (accountId?: string): Promise<void> => {
+      if (platform.discoverClaudeModels === undefined) return;
+      const configuration = await loadConfiguration();
+      const accounts = [...configuration.accounts];
+      const deadline = AbortSignal.timeout(8_000);
+      let changed = false;
+      for (const [index, account] of accounts.entries()) {
+        if (
+          deadline.aborted ||
+          account.provider !== "claude" ||
+          !account.enabled ||
+          !("accessTokenSecret" in account) ||
+          (accountId !== undefined && account.id !== accountId) ||
+          !account.models.some((id) => id.startsWith("claude-") && /\.(?=\d)/.test(id))
+        )
+          continue;
+        const secret = await runPromise(
+          secrets.get(secretStoreName(account.accessTokenSecret)),
+        ).catch(() => Option.none<Uint8Array>());
+        if (Option.isNone(secret)) continue;
+        const token = new TextDecoder().decode(secret.value);
+        if (!isAcceptableApiKey(token)) continue;
+        const available = await platform.discoverClaudeModels(token.trim(), deadline);
+        if (available === undefined || deadline.aborted) continue;
+        const models = repairClaudeModelIds(account.models, available);
+        if (JSON.stringify(models) === JSON.stringify(account.models)) continue;
+        accounts[index] = { ...account, models };
+        changed = true;
+      }
+      if (!changed) return;
+      await modelChecks.cancel();
+      await platform.writePrivateText(
+        configurationPath,
+        `${JSON.stringify({ ...configuration, accounts }, null, 2)}\n`,
+      );
+      await stopSingleFlight();
+      await startSingleFlight();
+    };
+
     const runOauthCancel = async (input: WorkjetGatewayOauthPollInput): Promise<void> => {
       oauthTargets.delete(input.state);
       const { endpoint, key } = requireManagement();
@@ -1828,6 +1845,7 @@ export const make = (options: ProviderGatewayServiceOptions = {}) =>
         grantsMutex.withPermits(1)(
           Effect.tryPromise({
             try: async () => {
+              await runRepairClaudeModels(input.accountId);
               await runRepairKimiConnections(input.accountId);
               return modelChecks.schedule(input);
             },

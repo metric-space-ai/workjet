@@ -51,6 +51,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workjetCalendarAccounts]: AuthOrchestrationReadScope,
   [WS_METHODS.workjetCalendarEvents]: AuthOrchestrationReadScope,
   [WS_METHODS.serverUpdateSettings]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workjetLumaRead]: AuthOrchestrationReadScope,
+  [WS_METHODS.workjetLumaUpdate]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthOrchestrationReadScope,

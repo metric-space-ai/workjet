@@ -8,6 +8,13 @@ import {
   WorkjetCalendarEvents,
   WorkjetCalendarError,
 } from "./workjetCalendar.ts";
+import {
+  WorkjetLumaTarget,
+  WorkjetLumaSnapshot,
+  WorkjetLumaUpdateInput,
+  WorkjetLumaUpdateResult,
+  WorkjetLumaConfigurationError,
+} from "./workjetLumaConfiguration.ts";
 
 import {
   RemoteWorkerComputerEnrollmentInput,
@@ -398,6 +405,8 @@ export const WS_METHODS = {
   workjetCalendarAccounts: "workjet.calendar.accounts",
   workjetCalendarEvents: "workjet.calendar.events",
   serverUpdateSettings: "server.updateSettings",
+  workjetLumaRead: "workjet.luma.read",
+  workjetLumaUpdate: "workjet.luma.update",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -609,6 +618,17 @@ export const WsServerGetSettingsRpc = Rpc.make(WS_METHODS.serverGetSettings, {
   payload: Schema.Struct({}),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+export const WsWorkjetLumaReadRpc = Rpc.make(WS_METHODS.workjetLumaRead, {
+  payload: WorkjetLumaTarget,
+  success: WorkjetLumaSnapshot,
+  error: Schema.Union([WorkjetLumaConfigurationError, EnvironmentAuthorizationError]),
+});
+export const WsWorkjetLumaUpdateRpc = Rpc.make(WS_METHODS.workjetLumaUpdate, {
+  payload: WorkjetLumaUpdateInput,
+  success: WorkjetLumaUpdateResult,
+  error: Schema.Union([WorkjetLumaConfigurationError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
@@ -1785,6 +1805,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkjetCalendarAccountsRpc,
   WsWorkjetCalendarEventsRpc,
   WsServerUpdateSettingsRpc,
+  WsWorkjetLumaReadRpc,
+  WsWorkjetLumaUpdateRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

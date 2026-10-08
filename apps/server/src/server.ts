@@ -486,6 +486,7 @@ const RemoteWorkerReceiverLayerLive = RemoteWorkerReceiver.layer.pipe(
 // A single service instance owns the stable native intent IDs and the normal
 // MCP dispatch path. Both entries share its durable broker and first-use lock.
 const WorkerDispatchLayerLive = WorkerDispatch.layer.pipe(
+  Layer.provide(DecisionHubConnectionRegistryLive),
   Layer.provide(RemoteWorkerBrokerLayerLive),
   Layer.provide(WorkerDispatchRollbackLayerLive),
   Layer.provide(OrchestrationCommandReceiptRepositoryLive),

@@ -22,18 +22,21 @@ it.effect(
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "workjet-project-overview-" });
       const environment = yield* HostProcessEnvironment;
       const platform = yield* HostProcessPlatform;
+      // The temporary-root policy applies where a run sets TMPDIR (the Mac build gate points it at
+      // /Volumes/tmp). Hosted CI runners leave TMPDIR unset and use the platform temp directory.
       const temporaryRoot = environment.TMPDIR ?? "";
-      assert.notEqual(temporaryRoot, "");
-      if (platform === "darwin") {
-        assert.ok(path.resolve(temporaryRoot).startsWith("/Volumes/tmp/"));
+      if (temporaryRoot !== "") {
+        if (platform === "darwin") {
+          assert.ok(path.resolve(temporaryRoot).startsWith("/Volumes/tmp/"));
+        }
+        const relative = path.relative(path.resolve(temporaryRoot), directory);
+        assert.ok(
+          relative !== "" &&
+            relative !== ".." &&
+            !relative.startsWith("../") &&
+            !path.isAbsolute(relative),
+        );
       }
-      const relative = path.relative(path.resolve(temporaryRoot), directory);
-      assert.ok(
-        relative !== "" &&
-          relative !== ".." &&
-          !relative.startsWith("../") &&
-          !path.isAbsolute(relative),
-      );
       const filename = path.join(directory, "state.sqlite");
       const runtime = () =>
         ProjectionProjectRepositoryLive.pipe(

@@ -9,6 +9,7 @@ import {
 } from "./workjetExitModel.ts";
 
 const decode = Schema.decodeUnknownSync(WorkjetExitModelAssessment, { onExcessProperty: "error" });
+const encode = Schema.encodeSync(WorkjetExitModelAssessment);
 const result = {
   expected_exit_equity_eur: 800_000,
   sale_probability: 0.8,
@@ -73,7 +74,7 @@ describe("native five-year exit assessment contracts", () => {
 
   it("retains source-backed, explicitly provisional inputs and exact computed amounts", () => {
     expect(decode(assessment)).toEqual(assessment);
-    expect(Schema.encodeSync(WorkjetExitModelAssessment)(decode(assessment))).toEqual(assessment);
+    expect(encode(decode(assessment))).toEqual(assessment);
   });
 
   it.each([

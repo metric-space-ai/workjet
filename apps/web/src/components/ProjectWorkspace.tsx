@@ -213,7 +213,7 @@ export function ProjectWorkspace({
           key={project.key}
           projectId={project.id}
           instanceId={project.native ? (ctoxInstanceId ?? null) : null}
-          assessment={project.configuration?.exitModel}
+          assessment={project.configuration?.exitModel ?? null}
         />
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-6">

@@ -8,10 +8,11 @@ import { ProjectOverviewCard } from "./ProjectOverviewCard";
 import { exitModelFixture } from "../test/exitModelFixture";
 
 const projectId = "project-one";
+const decodeAssessment = Schema.decodeUnknownSync(WorkjetExitModelAssessment);
 
 describe("project exit assessment display", () => {
   it("renders the actual synthetic CTOX producer receipt without translating its financial fields", () => {
-    const assessment = Schema.decodeUnknownSync(WorkjetExitModelAssessment)(ctoxAssessment);
+    const assessment = decodeAssessment(ctoxAssessment);
     const markup = renderToStaticMarkup(
       <ProjectExitModelReport projectId="project" assessment={assessment} />,
     );
@@ -36,7 +37,6 @@ describe("project exit assessment display", () => {
           configuration: {
             id: exitModelFixture.project_id,
             title: "Synthetic project",
-            workingCopies: [],
             exitModel: exitModelFixture,
           },
         }}

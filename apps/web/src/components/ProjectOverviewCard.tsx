@@ -227,7 +227,7 @@ export function ProjectOverviewCard({
         </Button>
         <ProjectExitModelSummary
           projectId={project.id}
-          assessment={project.configuration?.exitModel}
+          assessment={project.configuration?.exitModel ?? null}
           onOpen={() => setAssessing(true)}
         />
       </div>
@@ -331,7 +331,7 @@ export function ProjectOverviewCard({
                 key={project.key}
                 projectId={project.id}
                 instanceId={project.native ? ctoxInstanceId : null}
-                assessment={project.configuration?.exitModel}
+                assessment={project.configuration?.exitModel ?? null}
               />
             )}
           </DialogPanel>

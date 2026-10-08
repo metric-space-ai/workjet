@@ -64,8 +64,7 @@ export function ProjectExitModelPanel({
       assessment={state.assessment}
       pending={state.pending}
       error={state.error}
-      onRefresh={state.connected ? state.refresh : undefined}
-      onCheck={state.connected ? state.check : undefined}
+      {...(state.connected ? { onRefresh: state.refresh, onCheck: state.check } : {})}
     />
   );
 }

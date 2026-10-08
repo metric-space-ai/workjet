@@ -36,6 +36,18 @@ describe("connected account calendar", () => {
     ], "2026-10-08", "2026-10-08", "UTC", () => {}, projects);
     expect(rows.map((row) => row.projectKey)).toEqual(["instance:native-project", ""]);
   });
+  it("keeps all-day calendar dates while timed events follow the viewer zone", () => {
+    const allDay = { ...event, all_day: true, start_ms: Date.parse("2026-10-09T00:00:00Z"),
+      end_ms: Date.parse("2026-10-10T00:00:00Z") };
+    expect(buildAccountEvents([allDay], "2026-10-08", "2026-10-10", "America/Los_Angeles", () => {})
+      .map((row) => row.date)).toEqual(["2026-10-09"]);
+    expect(buildAccountEvents([{ ...allDay, timezone: "Europe/Berlin",
+      start_ms: Date.parse("2026-10-08T22:00:00Z"), end_ms: Date.parse("2026-10-09T22:00:00Z") }],
+      "2026-10-08", "2026-10-10", "America/Los_Angeles", () => {}).map((row) => row.date))
+      .toEqual(["2026-10-09"]);
+    expect(buildAccountEvents([{ ...allDay, all_day: false }], "2026-10-08", "2026-10-10",
+      "America/Los_Angeles", () => {}).map((row) => row.date)).toEqual(["2026-10-08", "2026-10-09"]);
+  });
   it("keeps all-day occurrences in the all-day lane", () => {
     const html = renderToStaticMarkup(<ProjectCalendar projects={[]} initialDate="2026-10-09"
       initialView="day" accountEvents={[{ ...event, all_day: true }]} />);

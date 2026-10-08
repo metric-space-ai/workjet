@@ -186,15 +186,18 @@ export function buildAccountEvents(
 ): readonly CalendarEvent[] {
   const projectKeys = new Map(projects.map((project) => [project.id, project.key]));
   return events.flatMap((event) => {
-    const first = zonedReading(event.start_ms, displayZone).date;
-    const last = zonedReading(event.end_ms - 1, displayZone).date;
+    // All-day dates belong to the account calendar, rather than moving to the
+    // previous/next day when the viewer changes time zone.
+    const eventZone = event.all_day ? event.timezone : displayZone;
+    const first = zonedReading(event.start_ms, eventZone).date;
+    const last = zonedReading(event.end_ms - 1, eventZone).date;
     const rows: CalendarEvent[] = [];
     for (let date = first < from ? from : first; date <= last && date <= to; date = addDays(date, 1)) {
-      const startMs = Math.max(event.start_ms, instantOf(date, 0, displayZone));
-      const endMs = Math.min(event.end_ms, instantOf(addDays(date, 1), 0, displayZone));
+      const startMs = Math.max(event.start_ms, instantOf(date, 0, eventZone));
+      const endMs = Math.min(event.end_ms, instantOf(addDays(date, 1), 0, eventZone));
       rows.push({ id: `${event.id}:${date}`, calendarId: event.calendar_id, title: event.title,
-        startMs, endMs, date, minutes: zonedReading(startMs, displayZone).minutes,
-        allDay: event.all_day, timeZone: displayZone, projectKey: projectKeys.get(event.project_id ?? "") ?? "",
+        startMs, endMs, date, minutes: zonedReading(startMs, eventZone).minutes,
+        allDay: event.all_day, timeZone: eventZone, projectKey: projectKeys.get(event.project_id ?? "") ?? "",
         onOpen: () => onOpen(event) });
     }
     return rows;

@@ -1,45 +1,50 @@
 # Calendar
 
-The All projects calendar draws three kinds of time: project regular meetings
-(Jour fixe), events the user creates, and events synced from connected accounts.
-This page records what exists today and the plan for the rest.
+Workjet's calendar provides Day, Week, Month and Year views, a mini month,
+calendar visibility controls and an All projects/per-project selector.
 
-## Stage 1: the view
+Project regular meetings are expanded from each project's jourFixe rule in
+its configured timezone. The rule currently has no duration, so their one-hour
+height is a display convention. Native sessions are read through the existing
+authenticated session-control bridge. Only recorded createdAtMs is a session
+start; missing starts are reported and never inferred from an update time.
+Sessions with unknown project IDs are omitted.
 
-- `apps/web/src/calendar/calendarDates.ts` holds the date model. Calendar dates are
-  `YYYY-MM-DD` keys and day arithmetic runs in UTC. Instants are converted only
-  when a zone is involved (`instantOf`, `zonedReading`).
-- `apps/web/src/components/ProjectCalendar.tsx` renders Day, Week, Month and Year
-  views, a mini month, a calendar list and the unscheduled-project list.
-- Project meetings are derived, not stored. `weeklyOccurrences` expands a
-  project's `jourFixe` rule (weekday, time, timezone) into instants for the
-  visible range and places each occurrence on the viewer's timezone. Each meeting
-  is drawn as one hour, because the rule has no duration.
-- Nothing is persisted in this stage. The view keeps only its own state: the
-  anchor date, the view and the hidden calendars.
+## Connected account calendars
 
-## Where data lives: ctox
+The Workjet server calls business_os.calendar_accounts and
+business_os.calendar_events through the authenticated CTOX MCP connection for
+the selected instance. It resolves the connection on every call and never takes
+an endpoint, token or actor from renderer input.
 
-Jour fixe already travels through CTOX: the wire contract is
-`ctox.workjet.jour_fixe.v1` (`packages/contracts/src/workjetJourFixeOwner.ts`,
-`src/core/business_os/workjet_jour_fixe_contract.generated.rs`). Calendar data
-follows the same route, server-side in CTOX and projected into RxDB, so that
-the browser never becomes the store for events or account credentials.
+CTOX reads the registered mailbox configuration and enforces native module,
+collection and record policy. Only the authenticated user's own or explicitly
+shared accounts are returned. Verified managed identity aliases use the same
+canonical owner. Ownerless and foreign mailboxes remain inaccessible, including
+to administrators. Revocation is checked again before returning provider data.
 
-Planned collections, to be added to the contract fixtures before code:
+The current provider read path uses EWS CalendarView or Microsoft Graph
+calendarView, including recurring occurrences. Account credentials remain in
+CTOX's secret store. Queries cover at most 400 days and return at most 100
+occurrences per account. Incomplete provider pages and bounded response
+truncation are shown as Partial sync rather than a complete calendar.
 
-- `calendar_accounts`: provider (`google`, `icloud`, `caldav`), display name,
-  sync state. Credentials stay in the CTOX secret store and never reach RxDB.
-- `calendar_sources`: one row per remote calendar, with a visibility flag.
-- `calendar_events`: local and synced events, with instants, all-day flag,
-  recurrence rule, the source and the remote identity used for sync.
+The calendar reads one account at a time, refreshes while visible every five
+minutes and provides a manual Sync accounts action. Switching instance or
+leaving the view fences late responses. Failed reads are shown explicitly.
+All-day events have their own lane; overnight events retain exclusive end dates
+and open the original occurrence's read-only detail. Provider project IDs are
+mapped only to projects in the selected instance.
 
-## Later stages
+## Contracts and remaining work
 
-1. Creating, editing and deleting events. Each change is a command with a
-   receipt, and the reverse action (delete, restore) is part of the same change.
-2. Account connections. Google uses OAuth; iCloud and other servers use CalDAV
-   with an app-specific password. The user enters credentials in the app. The
-   flow is designed so credentials never pass through a chat or a log.
-3. Two-way sync. Remote changes and local edits are reconciled through the
-   stored remote identity and an etag or sync token per calendar.
+The event fixture is ctox.workjet.calendar.v1 in CTOX's RxDB fixtures. CTOX
+generates native/browser validators, and Workjet keeps the matching fixture and
+validates server receipts with Effect Schema. The existing local event
+create/update/delete shapes are a wire contract, not implemented calendar
+editing tools.
+
+This delivery does not add new account sign-in flows, Google/iCloud/CalDAV
+connectors, local event editing or two-way provider writes. Unsupported account
+providers are labelled. Those capabilities require separate provider and
+persistence work; there is no fallback to another mailbox or instance.

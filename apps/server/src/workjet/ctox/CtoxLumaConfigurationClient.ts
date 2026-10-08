@@ -47,8 +47,7 @@ const SaveResult = Schema.Union([
  * `expectedRevision` is stale comes back as `conflict` and changes nothing.
  */
 export function makeCtoxLumaConfigurationClient(httpClient: HttpClient.HttpClient) {
-  // Native documents allow 1 MiB; reserve bounded JSON-RPC envelope overhead.
-  const transport = makeCtoxMcpTransport(httpClient, { maxResponseBytes: 1_280 * 1_024 });
+  const transport = makeCtoxMcpTransport(httpClient);
 
   const structured = (
     target: CtoxMcpTarget,

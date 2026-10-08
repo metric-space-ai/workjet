@@ -586,6 +586,14 @@ function isAllowedControlRequest(path: string, method: string): boolean {
   );
 }
 
+function isOfficeStaticAssetPath(path: string): boolean {
+  const assetPath = stripBusinessOsPathPrefix(path);
+  return (
+    /^\/vendor\/ctox-office\/upstream\/fonts\/\d{3}$/u.test(assetPath) ||
+    assetPath === "/vendor/ctox-office/upstream/sdkjs/common/images/fonts_thumbnail@2x.png.bin"
+  );
+}
+
 export function isSafeCtoxExternalUrl(rawUrl: string): boolean {
   try {
     return SAFE_EXTERNAL_PROTOCOLS.has(new URL(rawUrl).protocol);
@@ -629,6 +637,23 @@ export function isForbiddenCtoxDataRequest(
     )
       return true;
     if (shellPath === "/commands" || shellPath.startsWith("/commands/")) return true;
+    if (isOfficeStaticAssetPath(path)) {
+      // Office's packaged fonts have numeric names; its thumbnail is a binary PNG.
+      // Do not turn their extension exception into a general data or traversal path.
+      const requestPath = /^https?:\/\/[^/?#\\]+([^?#]*)/iu.exec(rawUrl)?.[1];
+      const normalizedMethod = method.trim().toUpperCase();
+      try {
+        return !(
+          url.origin === new URL(launchOrigin).origin &&
+          requestPath === url.pathname &&
+          !url.pathname.includes("//") &&
+          !url.pathname.endsWith("/") &&
+          (normalizedMethod === "GET" || normalizedMethod === "HEAD")
+        );
+      } catch {
+        return true;
+      }
+    }
   }
   if (!DATA_RESOURCE_TYPES.has(resourceType)) return false;
   if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) return false;

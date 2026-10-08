@@ -9,29 +9,6 @@
   background: var(--background);
   color: var(--foreground);
 }
-.network-home-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  min-height: 58px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--border);
-}
-.network-home-bar [data-active-ctox-instance-selector] {
-  width: 250px;
-  border: 0;
-  padding: 0;
-}
-.network-home-bar [data-active-ctox-instance-selector] select {
-  font-size: 13px;
-  font-weight: 500;
-  background: transparent;
-}
-.network-home-bar h1 {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
 .network-home-main {
   flex: 1;
   min-height: 0;
@@ -380,16 +357,6 @@
   }
 }
 @media (max-width: 600px) {
-  .network-home-bar {
-    gap: 10px;
-    padding: 0 12px;
-  }
-  .network-home-bar h1 {
-    display: none;
-  }
-  .network-home-bar [data-active-ctox-instance-selector] {
-    width: 220px;
-  }
   .network-overview {
     padding: 18px 12px;
   }

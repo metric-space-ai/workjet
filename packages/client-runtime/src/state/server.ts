@@ -779,11 +779,18 @@ export function createServerEnvironmentAtoms<R, E>(
     staleTimeMs: GREPPY_RUNTIME_INSPECT_STALE_TIME_MS,
   });
   const calendarAccounts = createEnvironmentRpcQueryAtomFamily(runtime, {
-    label: "environment-data:workjet:calendar:accounts", tag: WS_METHODS.workjetCalendarAccounts, staleTimeMs: 300_000,
+    label: "environment-data:workjet:calendar:accounts",
+    tag: WS_METHODS.workjetCalendarAccounts,
+    staleTimeMs: 300_000,
   });
   const calendarEvents = createEnvironmentRpcCommand(runtime, {
-    label: "environment-data:workjet:calendar:events", tag: WS_METHODS.workjetCalendarEvents,
-    concurrency: { mode: "singleFlight", key: ({ environmentId, input }) => `${environmentId}:${input.target.instanceId}:${input.accountId}` },
+    label: "environment-data:workjet:calendar:events",
+    tag: WS_METHODS.workjetCalendarEvents,
+    concurrency: {
+      mode: "singleFlight",
+      key: ({ environmentId, input }) =>
+        `${environmentId}:${input.target.instanceId}:${input.accountId}`,
+    },
   });
   const installGreppyRuntime = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:greppy:install",

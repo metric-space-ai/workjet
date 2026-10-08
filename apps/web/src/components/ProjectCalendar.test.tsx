@@ -56,10 +56,17 @@ describe("project calendar", () => {
 
 describe("native project session calendar", () => {
   const session = {
-    id: "session-1", projectId: "ctox.dev", workingCopyId: "copy-1",
-    computerId: "computer-1", threadId: null, codingSessionId: null,
-    runStatus: "running" as const, fenceEpoch: 0, activeTransferId: null,
-    createdAtMs: Date.parse("2026-10-07T08:00:00Z"), updatedAtMs: Date.parse("2026-10-08T09:00:00Z"),
+    id: "session-1",
+    projectId: "ctox.dev",
+    workingCopyId: "copy-1",
+    computerId: "computer-1",
+    threadId: null,
+    codingSessionId: null,
+    runStatus: "running" as const,
+    fenceEpoch: 0,
+    activeTransferId: null,
+    createdAtMs: Date.parse("2026-10-07T08:00:00Z"),
+    updatedAtMs: Date.parse("2026-10-08T09:00:00Z"),
   };
   it("uses the persisted start and exact project identity, without inventing a duration", () => {
     const events = buildSessionEvents([project("ctox.dev")], [session], "Europe/Berlin");
@@ -68,22 +75,36 @@ describe("native project session calendar", () => {
     expect(events[0]?.endMs).toBe(session.createdAtMs);
     expect(events[0]?.minutes).toBe(600);
     expect(events[0]?.title).toContain("ctox.dev");
-    expect(buildSessionEvents([project("foreign-project")], [session], "Europe/Berlin")).toEqual([]);
+    expect(buildSessionEvents([project("foreign-project")], [session], "Europe/Berlin")).toEqual(
+      [],
+    );
     const { createdAtMs: _start, ...legacy } = session;
     expect(buildSessionEvents([project("ctox.dev")], [legacy], "Europe/Berlin")).toEqual([]);
   });
   for (const initialView of ["day", "week", "month"] as const) {
     it(`renders actual sessions in ${initialView} with all-project/per-project selection`, () => {
-      const html = renderToStaticMarkup(<ProjectCalendar initialView={initialView}
-        initialDate="2026-10-07" projects={[project("ctox.dev")]} sessions={[session]} />);
+      const html = renderToStaticMarkup(
+        <ProjectCalendar
+          initialView={initialView}
+          initialDate="2026-10-07"
+          projects={[project("ctox.dev")]}
+          sessions={[session]}
+        />,
+      );
       expect(html).toContain("Session (running)");
       expect(html).toContain('aria-label="Calendar project"');
       expect(html).toContain("All projects");
     });
   }
   it("marks retained data stale when the native read fails", () => {
-    const html = renderToStaticMarkup(<ProjectCalendar projects={[project("ctox.dev")]}
-      initialDate="2026-10-07" sessions={[session]} sessionsStatus="unavailable" />);
+    const html = renderToStaticMarkup(
+      <ProjectCalendar
+        projects={[project("ctox.dev")]}
+        initialDate="2026-10-07"
+        sessions={[session]}
+        sessionsStatus="unavailable"
+      />,
+    );
     expect(html).toContain("Previously loaded sessions may be out of date");
   });
 });

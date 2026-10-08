@@ -18,7 +18,10 @@ export function createSessionCalendarReader(
   let sessions: readonly CtoxWorkjetSessionProjection[] = [];
   const refresh = async (): Promise<void> => {
     if (disposed) return;
-    if (pending) { queued = true; return; }
+    if (pending) {
+      queued = true;
+      return;
+    }
     pending = true;
     publish({ status: "loading", sessions });
     try {
@@ -34,8 +37,17 @@ export function createSessionCalendarReader(
       if (!disposed) publish({ status: "unavailable", sessions });
     } finally {
       pending = false;
-      if (queued && !disposed) { queued = false; void refresh(); }
+      if (queued && !disposed) {
+        queued = false;
+        void refresh();
+      }
     }
   };
-  return { refresh, dispose: () => { disposed = true; queued = false; } };
+  return {
+    refresh,
+    dispose: () => {
+      disposed = true;
+      queued = false;
+    },
+  };
 }

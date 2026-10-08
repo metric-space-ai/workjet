@@ -1,8 +1,13 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import { WorkjetCalendarTarget, WorkjetCalendarAccounts, WorkjetCalendarEventsInput,
-  WorkjetCalendarEvents, WorkjetCalendarError } from "./workjetCalendar.ts";
+import {
+  WorkjetCalendarTarget,
+  WorkjetCalendarAccounts,
+  WorkjetCalendarEventsInput,
+  WorkjetCalendarEvents,
+  WorkjetCalendarError,
+} from "./workjetCalendar.ts";
 
 import {
   RemoteWorkerComputerEnrollmentInput,
@@ -613,11 +618,13 @@ export const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSetting
 });
 
 export const WsWorkjetCalendarAccountsRpc = Rpc.make(WS_METHODS.workjetCalendarAccounts, {
-  payload: WorkjetCalendarTarget, success: WorkjetCalendarAccounts,
+  payload: WorkjetCalendarTarget,
+  success: WorkjetCalendarAccounts,
   error: Schema.Union([WorkjetCalendarError, EnvironmentAuthorizationError]),
 });
 export const WsWorkjetCalendarEventsRpc = Rpc.make(WS_METHODS.workjetCalendarEvents, {
-  payload: WorkjetCalendarEventsInput, success: WorkjetCalendarEvents,
+  payload: WorkjetCalendarEventsInput,
+  success: WorkjetCalendarEvents,
   error: Schema.Union([WorkjetCalendarError, EnvironmentAuthorizationError]),
 });
 export const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {

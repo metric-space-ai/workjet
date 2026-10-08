@@ -29,7 +29,7 @@ describe("connected account calendar", () => {
     }
   });
   it("binds provider project IDs to local project keys without admitting foreign projects", () => {
-    const projects = [{ id: "native-project", key: "instance:native-project", title: "Project", onOpen: () => {} }];
+    const projects = [{ id: "native-project", key: "instance:native-project", title: "Project", local: null, native: true, onOpen: () => {} }];
     const rows = buildAccountEvents([
       { ...event, project_id: "native-project" },
       { ...event, id: "foreign-event", project_id: "foreign-project" },

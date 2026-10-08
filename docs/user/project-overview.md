@@ -23,12 +23,16 @@ Each Parent row shows its latest assistant message, falling back to its current
 plan step when no message is available. Equal conversation titles retain their
 names and show the harness beside them in both the overview and sidebar.
 
-On **All projects**, choose **Calendar** to see the weekly regular meetings.
-The calendar reads each project's saved Jour fixe: weekday, time and timezone.
-Times use the timezone written next to the project; they are not silently
-converted to your computer's timezone. Choose **Projects** to return to the cards.
+On **All projects**, choose **Calendar** to open a calendar with **Day**, **Week**,
+**Month** and **Year** views. Use the arrows and **Today** to move through time,
+and select a date in the mini calendar to jump to it.
 
-Projects without a regular meeting appear below the week. Select a project
+Each project's saved Jour fixe appears as a repeating meeting in the **Project
+meetings** calendar. A meeting is shown at its time on your computer's timezone;
+hover or focus it to see the timezone the project uses. Clear the checkbox next to
+**Project meetings** to hide these meetings from the calendar.
+
+Projects without a regular meeting are listed beside the calendar. Select a project
 from either section to open its overview. To add or change its meeting, open
 that project's configuration and save its Jour fixe. Viewing the calendar does
 not create appointments or change a project's schedule.

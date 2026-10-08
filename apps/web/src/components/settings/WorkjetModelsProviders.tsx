@@ -532,7 +532,17 @@ function AccountRow({
             </span>
           </label>
         </div>
-        <div role="cell">
+        <div role="cell" className="flex items-center gap-1">
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`Permanently remove account ${account.label}`}
+            data-workjet-action={`models.account.${account.id}.remove-start`}
+            disabled={state.mutationBusy}
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2Icon className="size-3.5 text-muted-foreground" />
+          </Button>
           <Popover open={menuOpen} onOpenChange={setMenuOpen}>
             <PopoverTrigger
               render={
@@ -558,20 +568,6 @@ function AccountRow({
               >
                 <RefreshCwIcon className="size-3.5" />
                 Re-check models
-              </button>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs text-destructive hover:bg-accent disabled:opacity-50"
-                aria-label={`Permanently remove account ${account.label}`}
-                data-workjet-action={`models.account.${account.id}.remove-start`}
-                disabled={state.mutationBusy}
-                onClick={() => {
-                  setMenuOpen(false);
-                  setConfirmDelete(true);
-                }}
-              >
-                <Trash2Icon className="size-3.5" />
-                Remove account
               </button>
             </PopoverPopup>
           </Popover>

@@ -48,6 +48,14 @@ pub fn balance_is_exhausted(balance: &AccountBalance, now: i64) -> bool {
         && now >= balance.observed_at_ms
         && now.saturating_sub(balance.observed_at_ms) < 300_000
 }
+/// An unavailable model does not establish an account or credential outage.
+pub fn is_model_not_found_cooldown(record: &CooldownStateRecord) -> bool {
+    record.reason == "not_found"
+        || record
+            .last_error
+            .as_ref()
+            .is_some_and(|error| error.http_status == Some(404))
+}
 /// Only an explicitly applicable LLM bucket can affect inference selection.
 pub fn quota_applies(window: &QuotaWindow, model: &str) -> bool {
     !window.tool_only
@@ -308,6 +316,7 @@ impl AccountPolicy for AccountState {
                     && !cooldowns.iter().any(|r| {
                         r.provider.eq_ignore_ascii_case(provider)
                             && r.auth_id == c.auth_id
+                            && !(r.model.is_none() && is_model_not_found_cooldown(r))
                             && (r.model.is_none()
                                 || r.model
                                     .as_deref()
@@ -337,7 +346,8 @@ impl AccountPolicy for AccountState {
             return cooldowns
                 .iter()
                 .filter(|r| {
-                    r.provider.eq_ignore_ascii_case(provider)
+                    !is_model_not_found_cooldown(r)
+                        && r.provider.eq_ignore_ascii_case(provider)
                         && candidates.iter().any(|c| c.auth_id == r.auth_id)
                 })
                 .filter_map(|r| r.blocking_until_ms())

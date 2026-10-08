@@ -1,3 +1,124 @@
+#[cfg(test)]
+mod account_failure_scope_tests {
+    use super::*;
+    use workjet_provider_gateway::sdk::cliproxy::auth::{
+        conductor_execution::AccountPolicy, AccountExecutionResult, AccountSelectionError,
+    };
+
+    fn source(root: &std::path::Path) -> AccountHealthSource {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let store = Arc::new(WorkjetSecretStore::new(root.to_owned()).unwrap());
+        let state = AccountState::open(store.clone()).unwrap();
+        AccountHealthSource {
+            state,
+            store,
+            accounts: vec![AccountCandidate {
+                provider: "xai".into(),
+                auth_id: "account".into(),
+                supported_models: vec!["grok-4.7".into(), "grok-4.6-exact".into()],
+                ..Default::default()
+            }],
+            probes: vec![],
+            refresh: Mutex::new(RefreshState::default()),
+            probe_status: Arc::new(Mutex::new(BTreeMap::new())),
+        }
+    }
+
+    fn record(source: &AccountHealthSource, model: Option<&str>, status: u16, at: i64) {
+        let result = AccountExecutionResult {
+            provider: "xai".into(),
+            auth_id: "account".into(),
+            model: model.map(str::to_owned),
+            status,
+            retry_delay_ms: None,
+            observed_at_ms: at,
+        };
+        source.state.conductor().record(result.clone()).unwrap();
+        source.state.observe_outcome(&result).unwrap();
+    }
+
+    #[test]
+    fn model_404_preserves_account_health_and_other_model_routing_after_reopen() {
+        let root = tempfile::tempdir().unwrap();
+        let first = source(root.path());
+        let now = now_ms();
+        record(&first, Some("grok-4.7"), 404, now);
+        drop(first);
+        let reopened = source(root.path());
+        let health = reopened.snapshot();
+        assert_eq!(health["accounts"][0]["usable"], true);
+        assert!(health["accounts"][0]["cooldownUntilMs"].is_null());
+        assert_eq!(health["accounts"][0]["generationHttpStatus"], 404);
+        let records = reopened.state.load().unwrap();
+        assert_eq!(
+            reopened
+                .state
+                .select(
+                    "xai",
+                    Some("grok-4.6-exact"),
+                    now,
+                    &reopened.accounts,
+                    &records,
+                    b"{}"
+                )
+                .unwrap()
+                .auth_id,
+            "account"
+        );
+        assert!(matches!(
+            reopened.state.select(
+                "xai",
+                Some("grok-4.7"),
+                now,
+                &reopened.accounts,
+                &records,
+                b"{}"
+            ),
+            Err(AccountSelectionError::Unavailable)
+        ));
+    }
+
+    #[test]
+    fn legacy_account_404_is_neutral_but_real_quota_and_auth_failures_remain_blocking() {
+        for status in [401, 429] {
+            let root = tempfile::tempdir().unwrap();
+            let source = source(root.path());
+            let now = now_ms();
+            record(&source, None, 404, now);
+            assert!(source.snapshot()["accounts"][0]["cooldownUntilMs"].is_null());
+            assert!(source
+                .state
+                .select(
+                    "xai",
+                    Some("grok-4.6-exact"),
+                    now,
+                    &source.accounts,
+                    &source.state.load().unwrap(),
+                    b"{}"
+                )
+                .is_ok());
+            record(&source, None, status, now + 1);
+            let health = source.snapshot();
+            assert_eq!(health["accounts"][0]["usable"], false);
+            assert!(health["accounts"][0]["cooldownUntilMs"].as_i64().unwrap() > now);
+            assert!(matches!(
+                source.state.select(
+                    "xai",
+                    Some("grok-4.6-exact"),
+                    now,
+                    &source.accounts,
+                    &source.state.load().unwrap(),
+                    b"{}"
+                ),
+                Err(AccountSelectionError::Cooldown { .. })
+            ));
+        }
+    }
+}
 /// A successful quota HTTP response is useful only after its reading is durable.
 /// Zero is the existing unavailable probe sentinel, never a generation status.
 pub fn observe_usage(
@@ -251,7 +372,8 @@ mod provenance_tests {
 // Bounded on-demand subscription usage reads. No periodic worker or CLI scraping.
 use crate::{
     account_policy::{
-        balance_is_exhausted, quota_is_exhausted, AccountBalance, AccountState, QuotaWindow,
+        balance_is_exhausted, is_model_not_found_cooldown, quota_is_exhausted, AccountBalance,
+        AccountState, QuotaWindow,
     },
     secret_store::WorkjetSecretStore,
 };
@@ -420,6 +542,7 @@ impl AccountHealthSource {
                 let latest = applicable.iter().max_by_key(|r| r.updated_at_ms);
                 let cooldown = applicable
                     .iter()
+                    .filter(|r| !is_model_not_found_cooldown(r))
                     .filter_map(|r| r.blocking_until_ms())
                     .filter(|t| *t > now)
                     .max();

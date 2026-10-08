@@ -12,7 +12,7 @@ import {
   type WorkjetGatewayScopedCatalog,
 } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it } from "@effect/vitest";
 import { makeManagedSourceGatewayInference } from "./ManagedSourceGatewayInference.ts";
 
 const environmentId = EnvironmentId.make("source");
@@ -114,30 +114,30 @@ const fixture = () => {
     },
   };
 };
-const reason = async (effect: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =>
-  Effect.runPromise(Effect.match(effect, {
+const reason = (effect: Effect.Effect<unknown, WorkjetGatewayInferenceError>) =>
+  Effect.match(effect, {
     onFailure: (error) => error.reason,
     onSuccess: () => { throw new Error("Expected gateway binding to fail"); },
-  }));
+  });
 
 describe("managed source gateway binding", () => {
-  it("binds an enabled native source to the explicit worker route/model without source CLI routing", async () => {
+  it.effect("binds an enabled native source to the explicit worker route/model without source CLI routing", () => Effect.gen(function* () {
     const f = fixture();
-    expect(await Effect.runPromise(f.consumer.bindModel(bindInput))).toEqual({
+    expect(yield* (f.consumer.bindModel(bindInput))).toEqual({
       target,
       ...references,
     });
-  });
-  it.each(["disable", "remove"] as const)(
+  }));
+  it.effect.each(["disable", "remove"] as const)(
     "refuses a currently %s source instance",
-    async (action) => {
+    (action) => Effect.gen(function* () {
       const f = fixture();
-      await Effect.runPromise(f.consumer.bindModel(bindInput));
+      yield* (f.consumer.bindModel(bindInput));
       f[action]();
-      expect(await reason(f.consumer.bindModel(bindInput))).toBe("binding-mismatch");
-    },
+      expect(yield* reason(f.consumer.bindModel(bindInput))).toBe("binding-mismatch");
+    }),
   );
-  it.each([
+  it.effect.each([
     {
       input: {
         ...bindInput,
@@ -153,12 +153,12 @@ describe("managed source gateway binding", () => {
       input: { ...bindInput, routeId: WorkjetLlmRouteId.make("missing-route") },
       reason: "binding-mismatch",
     },
-  ])("refuses a mismatched explicit worker model or route", async (test) => {
-    expect(await reason(fixture().consumer.bindModel(test.input))).toBe(test.reason);
-  });
-  it("requires the current exact target grant even when the profile route remains configured", async () => {
+  ])("refuses a mismatched explicit worker model or route", (test) => Effect.gen(function* () {
+    expect(yield* reason(fixture().consumer.bindModel(test.input))).toBe(test.reason);
+  }));
+  it.effect("requires the current exact target grant even when the profile route remains configured", () => Effect.gen(function* () {
     const f = fixture();
     f.revokeGrant();
-    expect(await reason(f.consumer.bindModel(bindInput))).toBe("grant-unavailable");
-  });
+    expect(yield* reason(f.consumer.bindModel(bindInput))).toBe("grant-unavailable");
+  }));
 });

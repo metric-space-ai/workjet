@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off -- Real loopback transport fixture.
-import * as Http from "node:http";
+import * as NodeHttp from "node:http";
 import {
   EnvironmentId,
   WorkjetGatewayAccountId,
@@ -23,10 +23,10 @@ const selected = {
 const requestJson = JSON.stringify({ model: "exact-model", input: "Task", stream: false });
 
 async function withGateway(
-  handler: Http.RequestListener,
+  handler: NodeHttp.RequestListener,
   run: (endpoint: string) => Promise<void>,
 ) {
-  const server = Http.createServer(handler);
+  const server = NodeHttp.createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("missing address");

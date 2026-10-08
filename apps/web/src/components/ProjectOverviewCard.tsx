@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ProjectOverview } from "@workjet/contracts";
 import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
@@ -29,10 +29,12 @@ export function ProjectOverviewCard({
   onSaveConfiguration,
   kpis,
   onSaveKpis,
+  reorderHandle,
 }: {
   readonly project: GalleryProject;
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
+  readonly reorderHandle?: ReactNode;
   readonly onOpen: () => void;
   readonly onSaveConfiguration?:
     | ((next: ProjectConfigurationValues) => Promise<boolean>)
@@ -131,6 +133,7 @@ export function ProjectOverviewCard({
             </a>
           )}
         </div>
+        {reorderHandle}
         {(repository || onSave) && (
           <Menu>
             <MenuTrigger

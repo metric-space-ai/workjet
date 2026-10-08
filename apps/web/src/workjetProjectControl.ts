@@ -1,4 +1,6 @@
 import type {
+  CommandId,
+  ProjectId,
   CtoxWorkjetProjectControlRequest,
   CtoxWorkjetProjectControlResult,
   DesktopCtoxBridge,
@@ -70,4 +72,46 @@ export function configureWorkjetProject(
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
   return requestWorkjetProjectControl(instanceId, request, port);
+}
+
+export function readWorkjetProjectKpis(
+  instanceId: string,
+  projectId: ProjectId,
+  commandId: CommandId,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return requestWorkjetProjectControl(
+    instanceId,
+    { action: "project.kpis.read", commandId, projectId },
+    port,
+  );
+}
+
+export function readWorkjetGalleryOrder(
+  instanceId: string,
+  commandId: CommandId,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return requestWorkjetProjectControl(
+    instanceId,
+    { action: "project.gallery.order.read", commandId },
+    port,
+  );
+}
+
+export function saveWorkjetGalleryOrder(
+  instanceId: string,
+  request: {
+    readonly commandId: CommandId;
+    readonly operationId: string;
+    readonly expectedRevision: number;
+    readonly projectIds: readonly ProjectId[];
+  },
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return requestWorkjetProjectControl(
+    instanceId,
+    { action: "project.gallery.order.set", ...request },
+    port,
+  );
 }

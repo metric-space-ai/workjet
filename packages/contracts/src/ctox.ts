@@ -592,11 +592,76 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * Project control travels only through the selected CTOX guest's existing
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
+// Presentation subset of the native project KPI contract (ctox.workjet.project_kpis.v1).
+// The native shell validates the full wire value before it reaches the browser.
+const CtoxWorkjetKpiRecordPresentation = Schema.Struct({
+  prompt: Schema.Struct({
+    kpi_id: CtoxProjectText(128),
+    prompt: CtoxProjectText(1_024),
+    revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  }),
+  result: Schema.Struct({
+    status: Schema.Literals(["resolving", "ready", "stale", "missing_source", "failed"]),
+    reason_code: Schema.optionalKey(CtoxProjectText(128)),
+    message: Schema.optionalKey(CtoxProjectText(1_024)),
+    snapshot: Schema.optionalKey(
+      Schema.Struct({
+        project_id: ProjectId,
+        kpi_id: CtoxProjectText(128),
+        prompt_revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+        label: CtoxProjectText(24),
+        display_value: CtoxProjectText(256),
+        unit: CtoxProjectText(64),
+        sources: Schema.Array(
+          Schema.Struct({
+            kind: Schema.Literals(["native_metric", "github_metric", "connected_metric"]),
+            project_id: ProjectId,
+            connection_id: CtoxProjectText(256),
+            metric_key: CtoxProjectText(256),
+          }),
+        ),
+        freshness: Schema.Struct({
+          calculated_at_ms: Schema.Number,
+          refresh_at_ms: Schema.Number,
+          fresh_until_ms: Schema.Number,
+        }),
+      }),
+    ),
+  }),
+});
+const CtoxWorkjetProjectKpis = Schema.Struct({
+  project_id: ProjectId,
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  items: Schema.Array(CtoxWorkjetKpiRecordPresentation).check(Schema.isMaxLength(3)),
+});
+export type CtoxWorkjetProjectKpis = typeof CtoxWorkjetProjectKpis.Type;
+const CtoxWorkjetGalleryOrder = Schema.Struct({
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(500)),
+});
+export type CtoxWorkjetGalleryOrder = typeof CtoxWorkjetGalleryOrder.Type;
+
 export const CtoxWorkjetProjectControlRequest = Schema.Union([
   WorkjetJourFixeNarrationReadRequest,
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
   ...WorkjetJourFixeSpeechRequests,
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.read"),
+    commandId: CommandId,
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.gallery.order.read"),
+    commandId: CommandId,
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.gallery.order.set"),
+    commandId: CommandId,
+    operationId: CtoxProjectText(128),
+    expectedRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(500)),
+  }),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,
@@ -782,6 +847,25 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
         : "Supervisor turn belongs to another binding.",
     ),
   ),
+  Schema.Struct({
+    action: Schema.Literal("project.kpis.read"),
+    commandId: CommandId,
+    projectId: ProjectId,
+    contract: Schema.Literal("ctox.workjet.project_kpis.v1"),
+    kpis: CtoxWorkjetProjectKpis,
+  }).check(
+    Schema.makeFilter((response) =>
+      response.kpis.project_id === response.projectId
+        ? true
+        : "KPI result belongs to another project.",
+    ),
+  ),
+  Schema.Struct({
+    action: Schema.Literals(["project.gallery.order.read", "project.gallery.order.set"]),
+    commandId: CommandId,
+    contract: Schema.Literal("ctox.workjet.project_gallery_order.v1"),
+    order: CtoxWorkjetGalleryOrder,
+  }),
   Schema.Struct({
     action: Schema.Literal("project.list"),
     projects: CtoxWorkjetProjectList,

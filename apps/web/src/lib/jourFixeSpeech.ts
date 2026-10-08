@@ -10,6 +10,8 @@ export interface JourFixeSpeechScope {
 /** Implementations own capture/IPC, authorization and final native receipt binding. */
 export interface JourFixeSpeechProvider {
   readonly kind: "local-helper" | "ctox-gateway";
+  /** Narration can be installed before the authorized microphone transport. */
+  readonly microphoneAvailable?: boolean;
   startListening(options: {
     readonly scope: JourFixeSpeechScope;
     readonly signal: AbortSignal;

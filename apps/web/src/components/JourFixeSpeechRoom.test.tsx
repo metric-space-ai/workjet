@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
+import { nativeJourFixeNarrationProvider } from "../lib/nativeJourFixeNarrationProvider";
 import type { JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import fixture from "../fixtures/jour-fixe.contract.json";
 
@@ -28,6 +29,17 @@ describe("Jour fixe speech room hook", () => {
       <JourFixeSpeechRoom {...props} meeting={{ ...meeting, state: "live" }} />,
     );
     expect(html).not.toContain("Start microphone");
+  });
+  it("keeps live microphone capture unavailable when only native narration is installed", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeSpeechRoom
+        {...props}
+        speechProvider={nativeJourFixeNarrationProvider}
+        meeting={{ ...meeting, state: "live" }}
+      />,
+    );
+    expect(html).not.toContain("Start microphone");
+    expect(html).toContain("Next slide");
   });
   it("keeps the same room controls for the local helper and gateway", () => {
     const render = (kind: JourFixeSpeechProvider["kind"]) =>

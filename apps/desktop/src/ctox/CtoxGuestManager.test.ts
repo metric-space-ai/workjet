@@ -3111,21 +3111,25 @@ describe("CtoxGuestManager", () => {
           for (const method of ["GET", "HEAD"]) {
             expect(
               CtoxGuestManager.isForbiddenCtoxDataRequest(
-                url, resource, "https://welsch.ctox.dev", method,
+                url,
+                resource,
+                "https://welsch.ctox.dev",
+                method,
               ),
             ).toBe(false);
           }
           for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
             expect(
               CtoxGuestManager.isForbiddenCtoxDataRequest(
-                url, resource, "https://welsch.ctox.dev", method,
+                url,
+                resource,
+                "https://welsch.ctox.dev",
+                method,
               ),
             ).toBe(true);
           }
           for (const origin of ["https://foreign.example", "http://welsch.ctox.dev"]) {
-            expect(
-              CtoxGuestManager.isForbiddenCtoxDataRequest(url, resource, origin),
-            ).toBe(true);
+            expect(CtoxGuestManager.isForbiddenCtoxDataRequest(url, resource, origin)).toBe(true);
           }
         }
       }
@@ -3149,7 +3153,9 @@ describe("CtoxGuestManager", () => {
       ]) {
         expect(
           CtoxGuestManager.isForbiddenCtoxDataRequest(
-            `https://welsch.ctox.dev${prefix}${asset}`, "xhr", "https://welsch.ctox.dev",
+            `https://welsch.ctox.dev${prefix}${asset}`,
+            "xhr",
+            "https://welsch.ctox.dev",
           ),
         ).toBe(true);
       }

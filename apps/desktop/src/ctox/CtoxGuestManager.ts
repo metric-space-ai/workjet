@@ -590,8 +590,7 @@ function isOfficeStaticAssetPath(path: string): boolean {
   const assetPath = stripBusinessOsPathPrefix(path);
   return (
     /^\/vendor\/ctox-office\/upstream\/fonts\/\d{3}$/u.test(assetPath) ||
-    assetPath ===
-      "/vendor/ctox-office/upstream/sdkjs/common/images/fonts_thumbnail@2x.png.bin"
+    assetPath === "/vendor/ctox-office/upstream/sdkjs/common/images/fonts_thumbnail@2x.png.bin"
   );
 }
 

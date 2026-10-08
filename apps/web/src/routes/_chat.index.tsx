@@ -11,6 +11,7 @@ import { RegistryContext } from "@effect/atom-react";
 import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_WORKJET_THREAD_CONFIG,
+  ProjectId,
   type CommandId,
   type ProjectOverview,
 } from "@workjet/contracts";
@@ -27,7 +28,34 @@ import { ProjectCalendar } from "../components/ProjectCalendar";
 import { ProjectWorkspace } from "../components/ProjectWorkspace";
 import { selectProjectOverviewRef, useProjectOverviewRef } from "../projectOverviewSelection";
 import type { ProjectConfigurationValues } from "../components/ProjectOverviewEditor";
-import { configureWorkjetProject } from "../workjetProjectControl";
+import {
+  configureWorkjetProject,
+  readWorkjetGalleryOrder,
+  readWorkjetProjectKpis,
+  saveWorkjetGalleryOrder,
+} from "../workjetProjectControl";
+import {
+  createGalleryOrderWriter,
+  galleryProjectIdsForSave,
+  moveGalleryItem,
+  orderGalleryProjects,
+} from "../projectGalleryOrder";
+import type { PromptedProjectKpis } from "../projectKpis";
+import { SortableProjectTile } from "../components/SortableProjectTile";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  rectSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { findProjectSupervisor } from "../lib/projectSupervisor";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
@@ -415,6 +443,8 @@ function IndexDraftLanding() {
   if (galleryProjects.length > 0)
     return (
       <ProjectGallery
+        key={activeCtoxInstanceId ?? "local"}
+        instanceId={activeCtoxInstanceId}
         onRefresh={
           activeCtoxInstanceId === null
             ? undefined
@@ -542,9 +572,11 @@ function IndexDraftLanding() {
 
 function ProjectGallery({
   projects,
+  instanceId,
   onRefresh,
   projectsUnavailable,
 }: {
+  readonly instanceId: string | null;
   readonly onRefresh: (() => void) | undefined;
   readonly projectsUnavailable: boolean;
   readonly projects: readonly (GalleryProject & {
@@ -561,7 +593,125 @@ function ProjectGallery({
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<"gallery" | "calendar">("gallery");
-  const visibleProjects = visibleGalleryProjects(projects, showArchived);
+  const [galleryOrder, setGalleryOrder] = useState<{
+    readonly revision: number;
+    readonly projectIds: readonly string[];
+  }>({ revision: 0, projectIds: [] });
+  const galleryOrderRef = useRef(galleryOrder);
+  const orderWriter = useRef<ReturnType<typeof createGalleryOrderWriter> | null>(null);
+  const [orderLoaded, setOrderLoaded] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [kpisByProject, setKpisByProject] = useState<Readonly<Record<string, PromptedProjectKpis>>>(
+    {},
+  );
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const visibleProjects = useMemo(
+    () =>
+      orderGalleryProjects(visibleGalleryProjects(projects, showArchived), galleryOrder.projectIds),
+    [projects, showArchived, galleryOrder.projectIds],
+  );
+  const nativeProjectIds = useMemo(
+    () =>
+      visibleProjects
+        .filter((project) => project.native)
+        .map((project) => project.id)
+        .sort()
+        .join("\n"),
+    [visibleProjects],
+  );
+
+  useEffect(() => {
+    if (instanceId === null) return;
+    const writer = createGalleryOrderWriter({
+      current: () => galleryOrderRef.current,
+      persist: async (previous, projectIds) => {
+        const result = await saveWorkjetGalleryOrder(instanceId, {
+          commandId: newCommandId(),
+          operationId: newCommandId(),
+          expectedRevision: previous.revision,
+          projectIds: projectIds.map((id) => ProjectId.make(id)),
+        });
+        return result._tag === "completed" && "order" in result.response
+          ? result.response.order
+          : null;
+      },
+      apply: (next) => {
+        galleryOrderRef.current = next;
+        setGalleryOrder(next);
+      },
+      pending: setSavingOrder,
+    });
+    orderWriter.current = writer;
+    return () => {
+      writer.dispose();
+      if (orderWriter.current === writer) orderWriter.current = null;
+    };
+  }, [instanceId]);
+
+  useEffect(() => {
+    if (instanceId === null) return;
+    let cancelled = false;
+    void readWorkjetGalleryOrder(instanceId, newCommandId()).then((result) => {
+      if (cancelled || result._tag !== "completed" || !("order" in result.response)) return;
+      const next = {
+        revision: result.response.order.revision,
+        projectIds: result.response.order.projectIds,
+      };
+      galleryOrderRef.current = next;
+      setGalleryOrder(next);
+      setOrderLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId]);
+
+  useEffect(() => {
+    if (instanceId === null) return;
+    let cancelled = false;
+    const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
+    void Promise.all(
+      projectIds.map(async (projectId) => {
+        const result = await readWorkjetProjectKpis(
+          instanceId,
+          ProjectId.make(projectId),
+          newCommandId(),
+        );
+        return result._tag === "completed" && "kpis" in result.response
+          ? ([projectId, result.response.kpis] as const)
+          : null;
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setKpisByProject(Object.fromEntries(entries.filter((entry) => entry !== null)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId, nativeProjectIds]);
+
+  const reorderProjects = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (
+        instanceId === null ||
+        !orderLoaded ||
+        showArchived ||
+        over === null ||
+        active.id === over.id
+      )
+        return;
+      const from = visibleProjects.findIndex((project) => project.key === active.id);
+      const to = visibleProjects.findIndex((project) => project.key === over.id);
+      if (from < 0 || to < 0) return;
+      const projectIds = galleryProjectIdsForSave(moveGalleryItem(visibleProjects, from, to));
+      void orderWriter.current?.save(projectIds);
+    },
+    [instanceId, orderLoaded, showArchived, visibleProjects],
+  );
   const archivedCount = visibleGalleryProjects(projects, true).length;
 
   return (
@@ -631,19 +781,40 @@ function ProjectGallery({
           {view === "calendar" ? (
             <ProjectCalendar projects={visibleProjects} />
           ) : (
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
-              {visibleProjects.map((project) => (
-                <ProjectOverviewCard
-                  key={project.key}
-                  project={project}
-                  onOpen={project.onOpen}
-                  onSave={project.onSave}
-                  onSaveConfiguration={project.onSaveConfiguration}
-                  canArchive={project.canArchive}
-                  statistics={project.statistics}
-                />
-              ))}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={reorderProjects}
+            >
+              <SortableContext
+                items={visibleProjects.map((project) => project.key)}
+                strategy={rectSortingStrategy}
+              >
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,17rem),1fr))] gap-4">
+                  {visibleProjects.map((project) => (
+                    <SortableProjectTile
+                      key={project.key}
+                      id={project.key}
+                      label={project.title}
+                      disabled={!project.native || !orderLoaded || savingOrder || showArchived}
+                    >
+                      {(reorderHandle) => (
+                        <ProjectOverviewCard
+                          project={project}
+                          onOpen={project.onOpen}
+                          onSave={project.onSave}
+                          onSaveConfiguration={project.onSaveConfiguration}
+                          canArchive={project.canArchive}
+                          statistics={project.statistics}
+                          kpis={kpisByProject[project.id]}
+                          reorderHandle={reorderHandle}
+                        />
+                      )}
+                    </SortableProjectTile>
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
           )}
         </div>
       </main>

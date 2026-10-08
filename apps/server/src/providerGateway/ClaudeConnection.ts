@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 
 const Models = Schema.Struct({
   data: Schema.Array(Schema.Struct({ id: Schema.String })),
-  has_more: Schema.optional(Schema.Boolean),
+  has_more: Schema.Boolean,
 });
 const decodeModels = Schema.decodeUnknownSync(Models);
 

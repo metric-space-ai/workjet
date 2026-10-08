@@ -1,14 +1,18 @@
 import * as Schema from "effect/Schema";
 import { WorkjetConnectionId } from "./workjet.ts";
-const text = (max: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
+const boundedText = (max: number, min = 0) => Schema.String.check(Schema.makeFilter((value) => {
+  const length = Array.from(value).length;
+  return length >= min && length <= max || "Calendar text violates its character bound";
+}));
+const text = (max: number) => boundedText(max, 1);
 const integer = Schema.Int.check(Schema.isBetween({ minimum: -Number.MAX_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER }));
 const unsigned = integer.check(Schema.isGreaterThanOrEqualTo(0));
 /** Mirrors ctox.workjet.calendar.v1; fixtures are shared with the native validators. */
 export const WorkjetCalendarEvent = Schema.Struct({
   id: text(128), calendar_id: text(128), kind: Schema.Literals(["local", "project_meeting", "synced", "project_session"]),
   title: text(256), start_ms: integer, end_ms: integer, all_day: Schema.Boolean, timezone: text(128), revision: unsigned,
-  location: Schema.optionalKey(Schema.NullOr(Schema.String.check(Schema.isMaxLength(512)))),
-  notes: Schema.optionalKey(Schema.NullOr(Schema.String.check(Schema.isMaxLength(4096)))),
+  location: Schema.optionalKey(Schema.NullOr(boundedText(512))),
+  notes: Schema.optionalKey(Schema.NullOr(boundedText(4096))),
   project_id: Schema.optionalKey(Schema.NullOr(text(256))), session_id: Schema.optionalKey(Schema.NullOr(text(256))),
   account_id: Schema.optionalKey(Schema.NullOr(text(256))), external_id: Schema.optionalKey(Schema.NullOr(text(256))),
 }).check(Schema.makeFilter((event) => event.start_ms < event.end_ms || "Calendar end must follow its start"));

@@ -1,0 +1,177 @@
+import { describe, expect, it } from "vitest";
+import type {
+  CtoxWorkjetProjectControlRequest,
+  CtoxWorkjetProjectControlResult,
+  ProjectId,
+  WorkjetPresentationManifest,
+} from "@workjet/contracts";
+import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
+import { readJourFixePresentation, saveJourFixePresentationCanvas } from "./jourFixePresentation";
+
+const projectId = "project" as ProjectId;
+const bytes = new TextEncoder().encode(JSON.stringify(jourFixeDeck));
+
+async function sha256Hex(value: Uint8Array) {
+  const digest = await crypto.subtle.digest("SHA-256", value);
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+function base64(value: Uint8Array) {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+async function manifest(): Promise<WorkjetPresentationManifest> {
+  return {
+    presentation_id: "workjet_presentation_1",
+    project_id: "project",
+    meeting_id: "meeting-1",
+    owner_user_id: "owner",
+    title: jourFixeDeck.title,
+    revision: 2,
+    document_schema: "learnordie.slide.v1",
+    document_file_id: "workjet_presentation_file",
+    document_generation_id: "presentation_generation",
+    document_sha256: await sha256Hex(bytes),
+    document_bytes: bytes.length,
+    slide_ids: jourFixeDeck.slides.map((slide) => slide.id),
+    source: "agent",
+    updated_by: "supervisor:test",
+    updated_at_ms: 1,
+  };
+}
+
+function control(stored: WorkjetPresentationManifest, served: Uint8Array = bytes) {
+  const calls: CtoxWorkjetProjectControlRequest[] = [];
+  const port = async (
+    _instance: string,
+    request: CtoxWorkjetProjectControlRequest,
+  ): Promise<CtoxWorkjetProjectControlResult> => {
+    calls.push(request);
+    if (request.action === "project.presentation.read") {
+      return {
+        _tag: "completed",
+        response: {
+          action: request.action,
+          commandId: request.commandId,
+          projectId: request.projectId,
+          meetingId: request.meetingId,
+          contract: "ctox.workjet.presentation.v1",
+          presentation: stored,
+        },
+      };
+    }
+    if (request.action === "project.presentation.content.read") {
+      const part = served.subarray(request.offset, request.offset + request.length);
+      return {
+        _tag: "completed",
+        response: {
+          action: request.action,
+          commandId: request.commandId,
+          projectId: request.projectId,
+          meetingId: request.meetingId,
+          range: {
+            presentation_id: stored.presentation_id,
+            revision: stored.revision,
+            offset: request.offset,
+            length: part.length,
+            total_bytes: stored.document_bytes,
+            document_sha256: stored.document_sha256,
+            data_base64: base64(part),
+          },
+          rangeSha256: await sha256Hex(part),
+        },
+      };
+    }
+    if (request.action === "project.presentation.canvas.save") {
+      const next = { ...stored, revision: stored.revision + 1, source: "owner" as const };
+      return {
+        _tag: "completed",
+        response: {
+          action: request.action,
+          commandId: request.commandId,
+          projectId: request.projectId,
+          meetingId: request.meetingId,
+          contract: "ctox.workjet.presentation.v1",
+          mutation: {
+            operation_id: request.operationId,
+            presentation_id: request.presentationId,
+            project_id: request.projectId,
+            meeting_id: request.meetingId,
+            revision: request.expectedRevision + 1,
+            document_sha256: next.document_sha256,
+            document_bytes: next.document_bytes,
+            slide_ids: next.slide_ids,
+          },
+          presentation: next,
+        },
+      };
+    }
+    return { _tag: "failed", code: "unsupported" };
+  };
+  return { port: port as typeof import("../workjetProjectControl").requestWorkjetProjectControl, calls };
+}
+
+describe("Jour fixe presentation transport", () => {
+  it("assembles the stored revision from bounded ranges and validates it", async () => {
+    const stored = await manifest();
+    const { port, calls } = control(stored);
+    const result = await readJourFixePresentation("instance", projectId, "meeting-1", port);
+    expect(result?.manifest.revision).toBe(2);
+    expect(result?.document.slides.map((slide) => slide.id)).toEqual(stored.slide_ids);
+    expect(calls[0]?.action).toBe("project.presentation.read");
+    expect(calls.slice(1).every((call) => call.action === "project.presentation.content.read")).toBe(
+      true,
+    );
+  });
+
+  it("rejects bytes that do not match the manifest hash", async () => {
+    const stored = await manifest();
+    const tampered = new Uint8Array(bytes);
+    tampered[10] = tampered[10] === 32 ? 33 : 32;
+    const { port } = control(stored, tampered);
+    await expect(readJourFixePresentation("instance", projectId, "meeting-1", port)).rejects.toThrow(
+      /hash/,
+    );
+  });
+
+  it("returns null when the meeting has no presentation", async () => {
+    const stored = await manifest();
+    const { port } = control(stored);
+    const empty = (async (instance: string, request: CtoxWorkjetProjectControlRequest) => {
+      const answer = await port(instance, request);
+      if (answer._tag === "completed" && answer.response.action === "project.presentation.read")
+        return { ...answer, response: { ...answer.response, presentation: null } };
+      return answer;
+    }) as typeof port;
+    await expect(readJourFixePresentation("instance", projectId, "meeting-1", empty)).resolves.toBe(
+      null,
+    );
+  });
+
+  it("saves one slide canvas against the revision it was edited from", async () => {
+    const stored = await manifest();
+    const { port, calls } = control(stored);
+    const scene = {
+      version: "learnordie.excalidraw.v1" as const,
+      width: 1600,
+      height: 900,
+      backgroundColor: "#fffef8",
+      elements: [],
+      files: {},
+    };
+    const saved = await saveJourFixePresentationCanvas(
+      "instance",
+      projectId,
+      stored,
+      stored.slide_ids[0] ?? "titel",
+      scene,
+      port,
+      "operation-1",
+    );
+    expect(saved.mutation.revision).toBe(3);
+    expect(saved.manifest.revision).toBe(3);
+    const request = calls.at(-1);
+    expect(request?.action === "project.presentation.canvas.save" && request.expectedRevision).toBe(2);
+  });
+});

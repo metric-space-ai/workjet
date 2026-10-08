@@ -431,18 +431,13 @@ const makeWsRpcLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
-      // The probe asks the same binary each provider runs, so a Codex or Claude
-      // installed at a configured path is reported as available.
+      // Read this server's current provider paths on each inspection.
       const harnessProbePort = WorkjetHarnessAvailability.makeChildProcessHarnessProbePort(
         yield* ChildProcessSpawner.ChildProcessSpawner,
         (harness) =>
           serverSettings.getSettings.pipe(
             Effect.map((settings) =>
-              harness === "codex-cli"
-                ? settings.providers.codex.binaryPath
-                : harness === "claude-code"
-                  ? settings.providers.claudeAgent.binaryPath
-                  : undefined,
+              WorkjetHarnessAvailability.configuredHarnessExecutable(settings, harness),
             ),
             Effect.catch(() => Effect.succeed(undefined)),
           ),

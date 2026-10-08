@@ -25,6 +25,7 @@
  * they need different fixes — install it, versus fix its permissions.
  */
 import type {
+  ServerSettings,
   WorkjetHarness,
   WorkjetHarnessAvailability,
   WorkjetHarnessAvailabilitySnapshot,
@@ -178,6 +179,23 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
   "minimax-code": "mcode",
   "pi-code": "pi",
 };
+
+/** Probe the executable configured on this server, never a client's local override. */
+export function configuredHarnessExecutable(
+  settings: Pick<ServerSettings, "providers">,
+  harness: WorkjetHarness,
+): string | undefined {
+  switch (harness) {
+    case "codex-cli": return settings.providers.codex.binaryPath;
+    case "claude-code": return settings.providers.claudeAgent.binaryPath;
+    case "cursor-agent": return settings.providers.cursor.binaryPath;
+    case "grok-cli": return settings.providers.grok.binaryPath;
+    case "opencode": return settings.providers.opencode.binaryPath;
+    case "greppy": return settings.providers.greppy.binaryPath;
+    case "minimax-code": return settings.providers.minimax.binaryPath;
+    default: return undefined;
+  }
+}
 
 /**
  * A probe port backed by a real child process.

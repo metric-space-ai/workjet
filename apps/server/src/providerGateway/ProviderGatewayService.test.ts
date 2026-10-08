@@ -947,7 +947,12 @@ describe("ProviderGatewayService · API-key accounts", () => {
       getOrCreateRandom: () => Effect.succeed(new Uint8Array(32).fill(7)),
       remove: () => Effect.void,
     });
-    return { ...base, storedSecrets, secrets };
+    return {
+      ...base,
+      platform: { ...base.platform, discoverKimiConnection: async () => ({ upstreamBaseUrl: "https://api.kimi.com/coding/v1" as const, models: ["k3"] }) },
+      storedSecrets,
+      secrets,
+    };
   };
 
   const runWithSecrets = <A, E>(
@@ -1008,6 +1013,68 @@ describe("ProviderGatewayService · API-key accounts", () => {
       expect(result.accountId).toBe(`${provider}-key`);
       expect(harness.writes.join("\n")).not.toContain(API_KEY);
     }
+  });
+
+  it("stores the verified Kimi origin and live IDs on account creation", async () => {
+    const harness = apiKeyHarness();
+    await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY }),
+    );
+    const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(stored.accounts.find((account: { provider: string }) => account.provider === "kimi")).toMatchObject({
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      models: ["k3"],
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it("repairs a legacy Kimi origin on Check all without replacing its secret or identity", async () => {
+    const harness = apiKeyHarness();
+    const account = {
+      id: "kimi-existing",
+      provider: "kimi",
+      label: "Existing coding plan",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      models: ["kimi-for-coding"],
+      apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+      credentialSuffix: "old1",
+    };
+    let document = JSON.stringify({
+      ...JSON.parse(configuration),
+      accounts: [...JSON.parse(configuration).accounts, account],
+    });
+    const writer = harness.platform.writePrivateText;
+    harness.platform = {
+      ...harness.platform,
+      readText: async (path) => {
+        if (path.endsWith("model-checks.json"))
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        return document;
+      },
+      writePrivateText: async (path, value) => {
+        await writer(path, value);
+        if (path.endsWith("/provider-gateway.json")) document = value;
+      },
+    };
+    await runWithSecrets(harness, (gateway) => gateway.checkModels({ force: true }));
+    expect(JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id)).toEqual({
+      ...account, upstreamBaseUrl: "https://api.kimi.com/coding/v1", models: ["k3"],
+    });
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(document).not.toContain("provider-secret");
+  });
+
+  it("does not persist a Kimi key when neither endpoint returns a live list", async () => {
+    const harness = apiKeyHarness();
+    harness.platform = { ...harness.platform, discoverKimiConnection: async () => undefined };
+    const error = await runWithSecrets(harness, (gateway) =>
+      gateway.addApiKeyAccount({ provider: "kimi", label: "Coding plan", apiKey: API_KEY }).pipe(Effect.flip),
+    );
+    expect(error.reason).toBe("management-unavailable");
+    expect(harness.storedSecrets.size).toBe(0);
+    expect(harness.writes).toEqual([]);
   });
 
   it("replaces a key in place without losing disabled state, models or stable identity", async () => {

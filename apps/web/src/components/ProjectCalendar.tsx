@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 type CalendarProject = GalleryProject & {
   readonly onOpen: () => void;
-  readonly onOpenJourFixe?: () => void;
+  readonly onOpenJourFixe?: (() => void) | undefined;
 };
 
 /** Weekly wall-clock meetings retain the native timezone; no inferred appointments. */

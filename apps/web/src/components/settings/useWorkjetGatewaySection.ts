@@ -87,6 +87,7 @@ export function useWorkjetGatewaySection(
   const checksPollingDeadline = useRef(0);
   const checksPolls = useRef(0);
   const checksPass = useRef<ModelCheckPass | null>(null);
+  const [recoveryAccounts, setRecoveryAccounts] = useState<ReadonlyArray<string>>([]);
   const runChecks = useCallback(
     async (accountId?: string, force = false, continuation = false) => {
       if (environmentId === null || checksFlight.current !== null || checksQuery.data === null)
@@ -129,9 +130,33 @@ export function useWorkjetGatewaySection(
   );
   const checksBusy = checksSubmitting || (checksQuery.data?.pending.length ?? 0) > 0;
   useEffect(() => {
+    if (
+      environmentId === null ||
+      statusQuery.data?.phase !== "ready" ||
+      checksSubmitting ||
+      checksFlight.current !== null ||
+      checksQuery.data === null
+    )
+      return;
+    const next = recoveryAccounts.find(
+      (id) =>
+        (catalogQuery.data?.accounts ?? []).some((account) => account.id === id && account.enabled) &&
+        !checksQuery.data?.pending.some((pending) => pending.accountId === id),
+    );
+    if (!next) return;
+    setRecoveryAccounts((previous) => previous.filter((id) => id !== next));
+    // Re-authentication keeps the stable account ID and model list. Bypass
+    // results from the old credential after its pending checks have ended.
+    void runChecks(next, true);
+  }, [
+    environmentId, statusQuery.data?.phase, checksSubmitting, checksQuery.data,
+    catalogQuery.data, recoveryAccounts, runChecks,
+  ]);
+  useEffect(() => {
     checksPollingDeadline.current = 0;
     checksPolls.current = 0;
     checksPass.current = null;
+    setRecoveryAccounts([]);
     setChecksSubmitting(false);
     setChecksError(null);
     return () => {
@@ -503,6 +528,10 @@ export function useWorkjetGatewaySection(
               provider,
               accountIds: polled.value.completedAccountIds,
             });
+            setChecksError(null);
+            setRecoveryAccounts((previous) => [
+              ...new Set([...previous, ...(accountId ? [accountId] : []), ...polled.value.completedAccountIds]),
+            ]);
             // The server persisted the account and reloaded the gateway, so the
             // new account only appears after a fresh catalog read.
             refresh();
@@ -556,6 +585,10 @@ export function useWorkjetGatewaySection(
           return false;
         }
         setApiKey({ status: "completed", provider });
+        if (accountId) {
+          setChecksError(null);
+          setRecoveryAccounts((previous) => [...new Set([...previous, accountId])]);
+        }
         // The server persisted the account and reloaded the gateway, so the new
         // account only appears after a fresh catalog read.
         refresh();

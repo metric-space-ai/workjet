@@ -12,19 +12,19 @@ import { parseModels } from "./WorkjetModelsFields";
 
 const first: WorkjetGatewayAccountSummary = {
   id: WorkjetGatewayAccountId.make("account-a"),
-  provider: "claude",
+  provider: "xai",
   label: "work@example.test",
   enabled: true,
   priority: 0,
   weight: 1,
-  modelIds: ["claude-opus-5.5"],
+  modelIds: ["grok-4.7"],
   credentialSuffix: null,
 };
 const second: WorkjetGatewayAccountSummary = {
   ...first,
   id: WorkjetGatewayAccountId.make("account-b"),
   label: "backup@example.test",
-  modelIds: ["claude-sonnet-5"],
+  modelIds: ["grok-4.6-exact"],
 };
 const check: ModelsModelCheck = {
   accountId: first.id,
@@ -93,8 +93,8 @@ describe("Provider account table", () => {
     expect(rendered).toContain("Provider / account");
     expect(rendered).toContain('value="work@example.test"');
     expect(rendered).toContain('value="backup@example.test"');
-    expect(rendered).toContain('value="claude-opus-5.5"');
-    expect(rendered).toContain('value="claude-sonnet-5"');
+    expect(rendered).toContain('value="grok-4.7"');
+    expect(rendered).toContain('value="grok-4.6-exact"');
     expect(rendered.match(/data-model-check="ok"/g)).toHaveLength(1);
     expect(rendered.match(/data-model-check="unchecked"/g)).toHaveLength(1);
     expect(rendered).not.toContain("Gateway pools");
@@ -104,6 +104,8 @@ describe("Provider account table", () => {
     expect(rendered).toContain("Add provider");
     expect(rendered).toContain("Check all");
     expect(rendered).toContain("Actions for work@example.test");
+    expect(rendered).toContain('aria-label="Permanently remove account work@example.test"');
+    expect(rendered).toContain('data-workjet-action="models.account.account-a.remove-start"');
   });
   it("keeps the API key recognizer with its editable account identity", () => {
     const apiAccount: WorkjetGatewayAccountSummary = {

@@ -21,13 +21,34 @@ describe("native Jour fixe meeting read", () => {
   });
   it("reads current native task owners and explicit local narration custody metadata", () => {
     const native = decode(meeting);
-    const current = { ...native,
-      todos: { ...native.todos!, items: native.todos!.items.map((todo) => ({ ...todo, owner: "Project supervisor" })) },
-      slides: native.slides.map((slide) => ({ ...slide, audio: { ...slide.audio!, provenance: "authenticated_owner_local_audio", generation_id: "native-frozen-generation" } })),
+    const current = {
+      ...native,
+      todos: {
+        ...native.todos!,
+        items: native.todos!.items.map((todo) => ({ ...todo, owner: "Project supervisor" })),
+      },
+      slides: native.slides.map((slide) => ({
+        ...slide,
+        audio: {
+          ...slide.audio!,
+          provenance: "authenticated_owner_local_audio",
+          generation_id: "native-frozen-generation",
+        },
+      })),
     };
     expect(decode(current).todos!.items[0]!.owner).toBe("Project supervisor");
-    expect(isWorkjetJourFixeReadReceiptForRequest(request, { ...response, meeting: current })).toBe(true);
-    expect(() => decode({ ...current, slides: current.slides.map((slide) => ({ ...slide, audio: { ...slide.audio, provenance: "forged_provider" } })) })).toThrow();
+    expect(isWorkjetJourFixeReadReceiptForRequest(request, { ...response, meeting: current })).toBe(
+      true,
+    );
+    expect(() =>
+      decode({
+        ...current,
+        slides: current.slides.map((slide) => ({
+          ...slide,
+          audio: { ...slide.audio, provenance: "forged_provider" },
+        })),
+      }),
+    ).toThrow();
   });
   it("accepts explicit null only on optional wire metadata", () => {
     const native = decode(meeting);

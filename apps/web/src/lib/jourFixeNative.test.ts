@@ -172,9 +172,17 @@ describe("native meeting room session", () => {
     });
   });
   it("preserves each native task owner through display and revision", async () => {
-    const mapped = mapJourFixeMeeting({ ...native, todos: { ...native.todos!, items: native.todos!.items.map((todo) => ({ ...todo, owner: "Project supervisor" })) } });
+    const mapped = mapJourFixeMeeting({
+      ...native,
+      todos: {
+        ...native.todos!,
+        items: native.todos!.items.map((todo) => ({ ...todo, owner: "Project supervisor" })),
+      },
+    });
     expect(mapped.todos!.items[0]!.owner).toBe("Project supervisor");
-    const control = vi.fn<typeof requestWorkjetProjectControl>().mockImplementation(async (_, request) => reply(request));
+    const control = vi
+      .fn<typeof requestWorkjetProjectControl>()
+      .mockImplementation(async (_, request) => reply(request));
     const session = new JourFixeNativeSession("instance-1", project, () => true, control);
     await session.revise(native.id, 3, native.todos!.revision, mapped.todos!.items);
     expect(control.mock.calls[0]![1]).toMatchObject({ items: [{ owner: "Project supervisor" }] });

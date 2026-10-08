@@ -41,7 +41,9 @@ export const WorkjetJourFixeAudioRef = Schema.Struct({
   model: text(128),
   format: text(32),
   synthesis_duration_ms: unsigned,
-  provenance: Schema.optionalKey(Schema.NullOr(Schema.Literals(["native_gateway", "authenticated_owner_local_audio"]))),
+  provenance: Schema.optionalKey(
+    Schema.NullOr(Schema.Literals(["native_gateway", "authenticated_owner_local_audio"])),
+  ),
   generation_id: Schema.optionalKey(Schema.NullOr(text(128))),
 });
 

@@ -1,4 +1,8 @@
-import { spawn } from "node:child_process";
+import * as Effect from "effect/Effect";
+import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "vite-plus/test";
 
 // Missing-provider cleanup must never signal the runner's own process group.
@@ -30,33 +34,30 @@ describe("missing provider process cleanup", () => {
       assert.deepEqual(signals, [], 'a never-spawned child has no process to signal');
       process.stdout.write('MISSING_PROVIDER_HOST_ALIVE');
     `;
-    const child = spawn(process.execPath, ["--input-type=module", "-e", program], {
-      cwd: new URL("../../", import.meta.url),
-      detached: process.platform !== "win32",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let output = "";
-    let error = "";
-    child.stdout.on("data", (chunk) => {
-      output += String(chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      error += String(chunk);
-    });
-    const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
-    try {
-      const result = await new Promise<{ code: number | null; signal: string | null }>(
-        (resolve, reject) => {
-          child.once("error", reject);
-          child.once("close", (code, signal) => resolve({ code, signal }));
-        },
-      );
-      expect(error).toBe("");
-      expect(result).toEqual({ code: 0, signal: null });
-      expect(output).toBe("MISSING_PROVIDER_HOST_ALIVE");
-    } finally {
-      clearTimeout(timer);
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    }
+    const [output, error, code] = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const paths = yield* Path.Path;
+          const cwd = yield* paths.fromFileUrl(new URL("../../", import.meta.url));
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const child = yield* spawner.spawn(
+            ChildProcess.make(process.execPath, ["--input-type=module", "-e", program], {
+              cwd,
+              detached: process.platform !== "win32",
+              stdin: "ignore",
+            }),
+          );
+          yield* Effect.addFinalizer(() => child.kill({ killSignal: "SIGKILL" }).pipe(Effect.ignore));
+          return yield* Effect.all([
+            Stream.runCollect(Stream.decodeText(child.stdout)).pipe(Effect.map((chunks) => chunks.join(""))),
+            Stream.runCollect(Stream.decodeText(child.stderr)).pipe(Effect.map((chunks) => chunks.join(""))),
+            child.exitCode,
+          ], { concurrency: 3 });
+        }).pipe(Effect.timeout("20 seconds")),
+      ).pipe(Effect.provide(NodeServices.layer)),
+    );
+    expect(error).toBe("");
+    expect(code).toBe(0);
+    expect(output).toBe("MISSING_PROVIDER_HOST_ALIVE");
   }, 25_000);
 });

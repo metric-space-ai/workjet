@@ -46,3 +46,31 @@ it.effect("refuses a disconnected or mismatched instance before reading or writi
   assert.equal((yield* Effect.flip(rpc.update({ target: scope, expectedRevision: 0, configuration }))).reason, "connection-unavailable");
   assert.equal(calls, 0);
 }));
+
+it.effect("dispatch uses the selected instance definitions and keeps computer enrollment local", () =>
+  Effect.gen(function* () {
+    const local = Schema.decodeSync(WorkjetConfiguration)({});
+    const rpc = makeCtoxLumaConfigurationRpc({
+      connections: {
+        resolveReadyTarget: (_connection, instanceId) => Effect.succeed({
+          ...credentials, token: instanceId ?? "",
+        }),
+      },
+      client: {
+        read: (target) => Effect.succeed({
+          revision: 1,
+          configuration: { ...configuration, managedSystemPrompt: target.token },
+          updatedAtMs: 1,
+        }),
+        save: () => Effect.succeed({ status: "saved" as const, revision: 2 }),
+      },
+    });
+    const first = yield* rpc.resolveDispatch(scope, local);
+    const second = yield* rpc.resolveDispatch({ ...scope, instanceId: "instance-b" }, local);
+    assert.equal(first.managedSystemPrompt, "instance-a");
+    assert.equal(second.managedSystemPrompt, "instance-b");
+    assert.strictEqual(first.computers, local.computers);
+    assert.equal(first.selectedComputerId, local.selectedComputerId);
+    assert.deepEqual(local, Schema.decodeSync(WorkjetConfiguration)({}));
+  }),
+);

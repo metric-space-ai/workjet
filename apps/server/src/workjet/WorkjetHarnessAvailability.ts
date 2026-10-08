@@ -189,10 +189,18 @@ const HARNESS_EXECUTABLES: Readonly<Record<string, string>> = {
  */
 export const makeChildProcessHarnessProbePort = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+  /**
+   * The binary the server's own provider settings point at, when it differs
+   * from the CLI name. The probe must ask the same binary the provider runs;
+   * otherwise a Codex installed at a configured path reads as missing.
+   */
+  configuredExecutable: (harness: WorkjetHarness) => Effect.Effect<string | undefined> = () =>
+    Effect.succeed(undefined),
 ): HarnessProbePort => ({
   probe: (harness) =>
     Effect.gen(function* () {
-      const executable = HARNESS_EXECUTABLES[harness];
+      const executable =
+        (yield* configuredExecutable(harness)) ?? HARNESS_EXECUTABLES[harness];
       if (executable === undefined) {
         // An unknown harness is not a probe failure — this server simply does
         // not know how to ask it, which is a different thing from asking and

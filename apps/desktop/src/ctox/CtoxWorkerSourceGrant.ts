@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR AGPL-3.0-only
-import { WorkjetConnectionId } from "@workjet/contracts";
+import { CtoxManagedInstanceId, WorkjetConnectionId } from "@workjet/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -20,6 +20,11 @@ const Issued = Schema.Struct({
   }),
   managedMcp: Schema.Struct({ mcpUrl: Schema.String.check(Schema.isMaxLength(2_048)) }),
 });
+const decodeUuid = Schema.decodeUnknownSync(Uuid);
+const decodeIssuedIdentity = Schema.decodeUnknownSync(IssuedIdentity);
+const decodeIssued = Schema.decodeUnknownSync(Issued);
+const decodeNativeInstanceId = Schema.decodeUnknownSync(CtoxManagedInstanceId);
+
 export interface WorkjetWorkerSourceGrant {
   readonly connectionId: WorkjetConnectionId;
   readonly tenantId: string;
@@ -42,8 +47,8 @@ export function workerSourceGrantIdentity(connectionId: string) {
   if (!match) return undefined;
   try {
     return {
-      tenantId: Schema.decodeUnknownSync(Uuid)(match[1]),
-      tokenId: Schema.decodeUnknownSync(Uuid)(match[2]),
+      tenantId: decodeUuid(match[1]),
+      tokenId: decodeUuid(match[2]),
     };
   } catch {
     return undefined;
@@ -79,7 +84,7 @@ export async function issueWorkjetWorkerSourceGrant(
 ): Promise<WorkjetWorkerSourceGrant> {
   let issuedIdentity: { tenantId: string; tokenId: string } | undefined;
   try {
-    Schema.decodeUnknownSync(Uuid)(tenantId);
+    decodeUuid(tenantId);
     const response = await fetchAccount(
       `https://ctox.dev/api/instances/${encodeURIComponent(tenantId)}/managed-mcp`,
       {
@@ -108,9 +113,9 @@ export async function issueWorkjetWorkerSourceGrant(
     if (response.status === 401) throw new WorkerSourceGrantError("signed_out");
     if (!response.ok) throw new WorkerSourceGrantError("grant_unavailable");
     const payload: unknown = await response.json();
-    const identity = Schema.decodeUnknownSync(IssuedIdentity)(payload);
+    const identity = decodeIssuedIdentity(payload);
     issuedIdentity = { tenantId, tokenId: identity.token.tokenId };
-    const result = Schema.decodeUnknownSync(Issued)(payload);
+    const result = decodeIssued(payload);
     const endpoint = new URL(result.managedMcp.mcpUrl);
     const route = /^\/mcp\/([^/]+)$/.exec(endpoint.pathname);
     if (
@@ -122,11 +127,10 @@ export async function issueWorkjetWorkerSourceGrant(
       !route
     )
       throw new Error();
-    const instanceId = decodeURIComponent(route[1]!);
+    const instanceId = decodeNativeInstanceId(decodeURIComponent(route[1]!));
     if (
-      !instanceId ||
-      instanceId.length > 512 ||
-      /[\/\u0000-\u0020\u007f]/.test(instanceId) ||
+      instanceId.includes("/") ||
+      /\s/.test(instanceId) ||
       instanceId.startsWith("tenant:") ||
       instanceId.startsWith("managed:")
     )

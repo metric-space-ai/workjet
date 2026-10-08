@@ -50,6 +50,7 @@ const GrantResponse = Schema.Struct({
     displayName: Schema.String,
   }),
 });
+const decodeGrantResponse = Schema.decodeUnknownEffect(GrantResponse);
 const LocalSecretResponse = Schema.Struct({
   ok: Schema.Literal(true),
   value: Schema.String.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(16_384)),
@@ -70,12 +71,6 @@ const collectBounded = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<
           : current + chunk,
     ),
   );
-
-type EnvironmentTarget = {
-  readonly httpBaseUrl: string;
-  readonly wsBaseUrl: string;
-  readonly bearerToken: string;
-};
 
 export class CtoxDecisionHubProvisioner extends Context.Service<
   CtoxDecisionHubProvisioner,
@@ -241,7 +236,7 @@ const make = Effect.gen(function* () {
                 );
                 if (response.status === 401) return yield* Effect.fail("signed_out" as const);
                 if (!response.ok) return yield* Effect.fail("grant_unavailable" as const);
-                const decoded = yield* Schema.decodeUnknownEffect(GrantResponse)(
+                const decoded = yield* decodeGrantResponse(
                   yield* Effect.promise(() => response.json()),
                 );
                 if (decoded.grant.tokenId !== null) {

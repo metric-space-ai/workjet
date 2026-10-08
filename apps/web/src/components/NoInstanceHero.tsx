@@ -19,9 +19,7 @@ export function NoInstanceHero() {
                 No CTOX instance is connected
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
-                Projects, supervisors and the calendar live on a CTOX instance. This computer is not
-                connected to one yet, so there is nothing to show. Connect an instance to load your
-                projects.
+                Connect a CTOX instance to see your projects, supervisors and calendar.
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
                 <Button

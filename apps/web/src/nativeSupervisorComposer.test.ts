@@ -10,6 +10,7 @@ import {
 } from "@workjet/contracts";
 import {
   isNativeSupervisorThread,
+  nativeSupervisorBlockReason,
   resolveNativeSupervisorScope,
   supervisorJournalMatchesScope,
   persistSupervisorJournal,
@@ -122,5 +123,34 @@ describe("native supervisor composer authority", () => {
     expect(nativeSupervisorResultText(null)).toBe("");
     expect(nativeSupervisorResultText("Actual native result")).toBe("Actual native result");
     expect(nativeSupervisorResultText({ outcome: "done" })).toBe('{\n  "outcome": "done"\n}');
+  });
+});
+
+describe("nativeSupervisorBlockReason", () => {
+  const ready = {
+    presentationInstanceId: "managed:acceptance",
+    phase: "ready",
+    projects: [],
+    selectedProjectId: null,
+  } as const;
+  it("names a failed project list before anything else", () => {
+    expect(
+      nativeSupervisorBlockReason({ project: null, registry: { ...ready, refreshFailed: true } }),
+    ).toContain("konnte nicht gelesen");
+  });
+  it("names a project still waiting for CTOX confirmation", () => {
+    const project = {
+      id: ProjectId.make("p1"),
+      environmentId: "env" as never,
+      ctoxRegistration: { instanceId: "managed:acceptance", commandId: "c", status: "pending" },
+    } as never;
+    expect(nativeSupervisorBlockReason({ project, registry: ready })).toContain(
+      "wartet noch auf die Bestätigung",
+    );
+  });
+  it("names the missing mapping when the project is confirmed but not bound", () => {
+    expect(nativeSupervisorBlockReason({ project: null, registry: ready })).toContain(
+      "keinem CTOX-Projekt zugeordnet",
+    );
   });
 });

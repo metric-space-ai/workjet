@@ -57,6 +57,7 @@ describe("native supervisor receipt display", () => {
         scope={scope}
         config={config}
         instanceId={scope.instanceId}
+        blockReason={null}
         unavailable={false}
         saveConfig={saveConfig}
       />,
@@ -73,6 +74,7 @@ describe("native supervisor receipt display", () => {
         scope={{ ...scope, instanceId: "managed:foreign" }}
         config={config}
         instanceId="managed:foreign"
+        blockReason="Dieses Projekt ist auf diesem Rechner keinem CTOX-Projekt zugeordnet."
         unavailable={false}
         saveConfig={saveConfig}
       />,
@@ -98,6 +100,7 @@ describe("native supervisor receipt display", () => {
         scope={scope}
         config={rejectedConfig}
         instanceId={scope.instanceId}
+        blockReason={null}
         unavailable={false}
         saveConfig={saveConfig}
       />,
@@ -112,6 +115,7 @@ describe("native supervisor receipt display", () => {
         scope={null}
         config={DEFAULT_WORKJET_THREAD_CONFIG}
         instanceId={null}
+        blockReason={null}
         unavailable={false}
         saveConfig={saveConfig}
       />,
@@ -126,11 +130,13 @@ describe("native supervisor receipt display", () => {
         scope={null}
         config={DEFAULT_WORKJET_THREAD_CONFIG}
         instanceId="managed:acceptance"
+        blockReason="Die Projektliste von CTOX konnte nicht gelesen werden."
         unavailable={false}
         saveConfig={saveConfig}
       />,
     );
     expect(html).toContain("Projekt und CTOX-Verbindung müssen bestätigt sein.");
+    expect(html).toContain("Die Projektliste von CTOX konnte nicht gelesen werden.");
     expect(html).toContain("Erneut verbinden");
   });
 });

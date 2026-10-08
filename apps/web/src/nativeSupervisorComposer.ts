@@ -66,6 +66,19 @@ export function resolveNativeSupervisorScope(input: {
   }
 }
 
+/** Names the first unmet condition behind a null scope, for the composer's notice. */
+export function nativeSupervisorBlockReason(input: {
+  readonly project: ProjectHistoryIdentity | null;
+  readonly registry: WorkjetProjectRegistrySnapshot;
+}): string {
+  if (input.registry.refreshFailed) return "Die Projektliste von CTOX konnte nicht gelesen werden.";
+  if (input.registry.phase !== "ready") return "Die Projektliste von CTOX wird noch geladen.";
+  const registration = input.project?.ctoxRegistration;
+  if (registration != null && registration.status !== "confirmed")
+    return "Das Projekt wartet noch auf die Bestätigung durch CTOX.";
+  return "Dieses Projekt ist auf diesem Rechner keinem CTOX-Projekt zugeordnet.";
+}
+
 export function supervisorJournalMatchesScope(
   journal: WorkjetSupervisorJournal,
   scope: NativeSupervisorScope,

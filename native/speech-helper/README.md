@@ -53,8 +53,26 @@ Crew's local-candidate receipt proves authenticated Owner persistence in that
 exact live room/deck/request, with provider_verified:false. Main separately
 validates the signed helper. The existing gateway-only VerifiedTranscriptFinal
 cannot be minted from helper JSON; text append is also insufficient because it
-lacks the local request/deck binding. Wait for Crew's actual local-candidate
-command/DTO; never invent a gateway execution attestation.
+lacks the local request/deck binding. Main uses the native
+ctox.workjet.jour_fixe.transcript.local_candidate command through the paired
+Shell's project.jour_fixe.transcript.local_candidate action. The native biz_
+instance comes from trusted Shell.syncConfig; operationId/requestId bind one
+final emission, with expectedRevision/deckRevision and exact text SHA in the
+completed localCandidate receipt. Source contract availability is not installed
+readiness; never invent a gateway execution attestation.
+
+For slide narration, synthesize the exact stored slide.body_markdown unchanged.
+Main assembles actual PCM into WAV, uploads through existing desktop_files/chunks
+with explicit canonical owner_id and exact generation_id, then invokes
+ctox.workjet.jour_fixe.narration.local_publish. This publication is stricter than
+the helper transport: WAV <=8MiB and <=300s; mono/stereo PCM16/24/32 or float32 at
+16/22.05/24/44.1/48kHz. Native verifies audio/narration-text SHA, owner, current
+room/deck/slide and file generation before freezing AudioRef+meeting+receipt.
+Its authenticated_owner_local_audio provenance has provider_verified:false;
+synthesis_duration_ms=0 is not a timing measurement. Keep actual helper/UI
+latency separately. Every slide needs real authorized audio before ready/live.
+See CTOX docs/workjet-jour-fixe-local-transcript.md and
+ docs/workjet-jour-fixe-local-narration.md for the native DTOs.
 
 | Event | Payload |
 | --- | --- |

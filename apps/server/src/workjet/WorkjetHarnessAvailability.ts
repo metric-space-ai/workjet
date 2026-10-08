@@ -199,8 +199,7 @@ export const makeChildProcessHarnessProbePort = (
 ): HarnessProbePort => ({
   probe: (harness) =>
     Effect.gen(function* () {
-      const executable =
-        (yield* configuredExecutable(harness)) ?? HARNESS_EXECUTABLES[harness];
+      const executable = (yield* configuredExecutable(harness)) ?? HARNESS_EXECUTABLES[harness];
       if (executable === undefined) {
         // An unknown harness is not a probe failure — this server simply does
         // not know how to ask it, which is a different thing from asking and

@@ -7283,6 +7283,7 @@ function ChatViewContent(props: ChatViewProps) {
                               key={`${activeThreadKey}:${presentationInstanceId}`}
                               scope={nativeSupervisorScope}
                               config={visibleWorkjetConfig}
+                              instanceId={presentationInstanceId}
                               unavailable={
                                 activeEnvironmentUnavailable ||
                                 threadDetailLoading ||

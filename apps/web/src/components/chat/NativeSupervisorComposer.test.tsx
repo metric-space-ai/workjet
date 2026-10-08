@@ -56,6 +56,7 @@ describe("native supervisor receipt display", () => {
       <NativeSupervisorComposer
         scope={scope}
         config={config}
+        instanceId={scope.instanceId}
         unavailable={false}
         saveConfig={saveConfig}
       />,
@@ -71,6 +72,7 @@ describe("native supervisor receipt display", () => {
       <NativeSupervisorComposer
         scope={{ ...scope, instanceId: "managed:foreign" }}
         config={config}
+        instanceId="managed:foreign"
         unavailable={false}
         saveConfig={saveConfig}
       />,
@@ -78,6 +80,7 @@ describe("native supervisor receipt display", () => {
     expect(html).not.toContain("Actual native result");
     expect(html).not.toContain("Real requested change");
     expect(html).toContain("Verbindung müssen bestätigt sein");
+    expect(html).toContain("Erneut verbinden");
   });
   it("shows a definitive pre-submit refusal and lets the user edit a new prompt", () => {
     const rejectedConfig: WorkjetThreadConfig = {
@@ -94,6 +97,7 @@ describe("native supervisor receipt display", () => {
       <NativeSupervisorComposer
         scope={scope}
         config={rejectedConfig}
+        instanceId={scope.instanceId}
         unavailable={false}
         saveConfig={saveConfig}
       />,
@@ -107,11 +111,26 @@ describe("native supervisor receipt display", () => {
       <NativeSupervisorComposer
         scope={null}
         config={DEFAULT_WORKJET_THREAD_CONFIG}
+        instanceId={null}
         unavailable={false}
         saveConfig={saveConfig}
       />,
     );
     expect(html).toContain('aria-label="Nachricht an Supervisor"');
     expect(html).toContain('aria-label="An Supervisor senden" disabled=""');
+    expect(html).not.toContain("Erneut verbinden");
+  });
+  it("offers a direct way to re-check the connection when scope is missing", () => {
+    const html = renderToStaticMarkup(
+      <NativeSupervisorComposer
+        scope={null}
+        config={DEFAULT_WORKJET_THREAD_CONFIG}
+        instanceId="managed:acceptance"
+        unavailable={false}
+        saveConfig={saveConfig}
+      />,
+    );
+    expect(html).toContain("Projekt und CTOX-Verbindung müssen bestätigt sein.");
+    expect(html).toContain("Erneut verbinden");
   });
 });

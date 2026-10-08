@@ -1,4 +1,44 @@
-import type { WorkjetConfiguration } from "./workjet.ts";
+import * as Schema from "effect/Schema";
+import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { WorkjetConfigurationValue, WorkjetConnectionId, type WorkjetConfiguration } from "./workjet.ts";
+
+export const WorkjetLumaTarget = Schema.Struct({
+  connectionId: WorkjetConnectionId,
+  instanceId: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+});
+export type WorkjetLumaTarget = typeof WorkjetLumaTarget.Type;
+
+export const WorkjetLumaInstanceConfiguration = Schema.Struct({
+  workerProfiles: WorkjetConfigurationValue.fields.workerProfiles,
+  llmRoutes: WorkjetConfigurationValue.fields.llmRoutes,
+  modelPrompts: WorkjetConfigurationValue.fields.modelPrompts,
+  managedSystemPrompt: WorkjetConfigurationValue.fields.managedSystemPrompt,
+  managerThreadReference: WorkjetConfigurationValue.fields.managerThreadReference,
+  workerGraph: WorkjetConfigurationValue.fields.workerGraph,
+  execution: WorkjetConfigurationValue.fields.execution,
+  telemetry: WorkjetConfigurationValue.fields.telemetry,
+});
+const Revision = NonNegativeInt.check(Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER));
+export const WorkjetLumaSnapshot = Schema.Struct({
+  revision: Revision,
+  configuration: Schema.NullOr(WorkjetLumaInstanceConfiguration),
+  updatedAtMs: Schema.NullOr(Schema.Number),
+});
+export type WorkjetLumaSnapshot = typeof WorkjetLumaSnapshot.Type;
+export const WorkjetLumaUpdateInput = Schema.Struct({
+  target: WorkjetLumaTarget,
+  expectedRevision: Revision,
+  configuration: WorkjetLumaInstanceConfiguration,
+});
+export const WorkjetLumaUpdateResult = Schema.Struct({
+  status: Schema.Literals(["saved", "conflict"]),
+  revision: Revision,
+});
+export class WorkjetLumaConfigurationError extends Schema.TaggedErrorClass<WorkjetLumaConfigurationError>()(
+  "WorkjetLumaConfigurationError", {
+    reason: Schema.Literals(["connection-unavailable", "remote-response-invalid"]),
+  },
+) {}
 
 /**
  * Keys of the Workjet configuration that belong to the CTOX instance. They

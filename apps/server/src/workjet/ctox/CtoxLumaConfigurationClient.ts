@@ -24,19 +24,20 @@ export type CtoxLumaConfigurationSaveResult =
   | { readonly status: "saved"; readonly revision: number }
   | { readonly status: "conflict"; readonly revision: number };
 
+const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER));
 const ReadResult = Schema.Struct({
   ok: Schema.Literal(true),
-  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  revision: Revision,
   configuration: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
   updated_at_ms: Schema.NullOr(Schema.Number),
 });
 
 const SaveResult = Schema.Union([
-  Schema.Struct({ ok: Schema.Literal(true), revision: Schema.Int }),
+  Schema.Struct({ ok: Schema.Literal(true), revision: Revision }),
   Schema.Struct({
     ok: Schema.Literal(false),
     conflict: Schema.Literal(true),
-    revision: Schema.Int,
+    revision: Revision,
   }),
 ]);
 

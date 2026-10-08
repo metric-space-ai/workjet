@@ -102,6 +102,10 @@ import * as WorkjetCrossModeRpc from "./workjet/crossmode/WorkjetCrossModeRpc.ts
 import * as WorkjetCrossModeThreads from "./workjet/crossmode/WorkjetCrossModeThreads.ts";
 import * as DecisionHubConnectionRegistry from "./workjet/decisionHub/DecisionHubConnectionRegistry.ts";
 import { requireCtoxConnectionInstance } from "./workjet/ctox/CtoxConnectionBinding.ts";
+import { makeCtoxLumaConfigurationClient } from "./workjet/ctox/CtoxLumaConfigurationClient.ts";
+import { makeCtoxLumaConfigurationRpc } from "./workjet/ctox/CtoxLumaConfigurationRpc.ts";
+import { WorkjetLumaConfigurationError } from "@workjet/contracts";
+import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import * as LegacyWorkjetImport from "./workjet/legacy/LegacyWorkjetImport.ts";
 import * as LegacyWorkjetImportRpc from "./workjet/legacy/LegacyWorkjetImportRpc.ts";
 import * as WorkjetSessionImport from "./workjet/sessionImport/WorkjetSessionImport.ts";
@@ -531,6 +535,11 @@ const makeWsRpcLayer = (
             connections: decisionHubConnections.value,
             httpClient: calendarHttpClient,
           })
+        : null;
+      const lumaHttpClient = yield* HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer));
+      const lumaConfiguration = Option.isSome(decisionHubConnections)
+        ? makeCtoxLumaConfigurationRpc({ connections: decisionHubConnections.value,
+            client: makeCtoxLumaConfigurationClient(lumaHttpClient) })
         : null;
       const withDecisionHubConnections = <A>(
         use: (
@@ -1901,6 +1910,10 @@ const makeWsRpcLayer = (
               Effect.fail(new WorkjetCalendarError({ reason: "connection-unavailable" })),
             { "rpc.aggregate": "calendar" },
           ),
+        [WS_METHODS.workjetLumaRead]: (input) =>
+          lumaConfiguration?.read(input) ?? Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
+        [WS_METHODS.workjetLumaUpdate]: (input) =>
+          lumaConfiguration?.update(input) ?? Effect.fail(new WorkjetLumaConfigurationError({ reason: "connection-unavailable" })),
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,

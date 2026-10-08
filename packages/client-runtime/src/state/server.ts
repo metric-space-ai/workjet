@@ -792,6 +792,19 @@ export function createServerEnvironmentAtoms<R, E>(
         `${environmentId}:${input.target.instanceId}:${input.accountId}`,
     },
   });
+  const lumaConfiguration = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:workjet:luma:configuration",
+    tag: WS_METHODS.workjetLumaRead,
+    staleTimeMs: 10_000,
+  });
+  const updateLumaConfiguration = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:workjet:luma:update",
+    tag: WS_METHODS.workjetLumaUpdate,
+    concurrency: { mode: "singleFlight", key: ({ environmentId, input }) => `${environmentId}:${input.target.instanceId}` },
+    onSuccess: ({ environmentId, input }, registry) => Effect.sync(() => {
+      registry.refresh(lumaConfiguration({ environmentId, input: input.target }));
+    }),
+  });
   const installGreppyRuntime = createEnvironmentRpcCommand(runtime, {
     label: "environment-data:workjet:greppy:install",
     tag: WS_METHODS.workjetGreppyInstall,
@@ -1216,6 +1229,8 @@ export function createServerEnvironmentAtoms<R, E>(
     checkWorkjetGatewayModels,
     workjetGatewayModels,
     workjetHarnessInspect,
+    lumaConfiguration,
+    updateLumaConfiguration,
     workjetDecisionHubConnections,
     calendarAccounts,
     calendarEvents,

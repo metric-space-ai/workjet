@@ -3,6 +3,7 @@ name: Desktop install artifact
 on:
   workflow_dispatch:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - .github/workflows/desktop-install-artifact.yml
       - packages/ssh/**
@@ -34,9 +35,11 @@ concurrency:
 
 jobs:
   ssh-server:
+    if: ${{ !github.event.pull_request.draft }}
     uses: ./.github/workflows/ssh-server-artifacts.yml
 
   macos-arm64:
+    if: ${{ !github.event.pull_request.draft }}
     name: Standalone macOS ARM64 app
     needs: ssh-server
     runs-on: macos-latest

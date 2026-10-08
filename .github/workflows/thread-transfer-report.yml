@@ -10,6 +10,11 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  # The report only matters for the newest CI result of a branch.
+  group: thread-transfer-report-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
 jobs:
   publish:
     name: Publish PR comment

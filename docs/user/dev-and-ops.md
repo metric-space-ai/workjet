@@ -1,7 +1,8 @@
 # Dev and Ops
 
-The first time you open the desktop app, a short introduction explains both
-modes. Dev is for building applications with AI. Ops is for running the
+A new desktop profile shows a short introduction after its workspace loads.
+Profiles with existing projects or chats keep their normal view after an update.
+The introduction explains both modes. Dev is for building applications with AI. Ops is for running the
 businesses you build, with automations, processes and specialized apps. Both
 run on CTOX, the engine underneath. Choose **Skip** or **Continue** to close
 it. To see it again, open **Settings → General → Dev and Ops introduction** and

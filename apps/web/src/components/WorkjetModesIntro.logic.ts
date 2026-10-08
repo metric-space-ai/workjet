@@ -7,6 +7,9 @@ export function resolveWorkjetModesIntroOpen(input: {
   readonly isElectron: boolean;
   readonly settingsHydrated: boolean;
   readonly seen: boolean;
+  readonly workspaceHydrated?: boolean;
+  readonly hasExistingWork?: boolean;
 }): boolean {
-  return input.isElectron && input.settingsHydrated && !input.seen;
+  return input.isElectron && input.settingsHydrated && input.workspaceHydrated !== false &&
+    !input.hasExistingWork && !input.seen;
 }

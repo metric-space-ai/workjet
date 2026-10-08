@@ -15,10 +15,7 @@ import {
   type CanvasElement,
   type CanvasScene,
 } from "@workjet/slide-engine/excalidraw/canvas-schema";
-import {
-  canvasSceneForSlide,
-  updateSlideCanvas,
-} from "@workjet/slide-engine/excalidraw/scene";
+import { canvasSceneForSlide, updateSlideCanvas } from "@workjet/slide-engine/excalidraw/scene";
 import type { SlideDocument, SlideNode } from "@workjet/slide-engine/schema";
 import "@workjet/slide-engine/styles/core.css";
 import { Button } from "../components/ui/button";

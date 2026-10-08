@@ -109,7 +109,10 @@ function control(stored: WorkjetPresentationManifest, served: Uint8Array<ArrayBu
     }
     return { _tag: "failed", code: "unsupported" };
   };
-  return { port: port as typeof import("../workjetProjectControl").requestWorkjetProjectControl, calls };
+  return {
+    port: port as typeof import("../workjetProjectControl").requestWorkjetProjectControl,
+    calls,
+  };
 }
 
 describe("Jour fixe presentation transport", () => {
@@ -120,9 +123,9 @@ describe("Jour fixe presentation transport", () => {
     expect(result?.manifest.revision).toBe(2);
     expect(result?.document.slides.map((slide) => slide.id)).toEqual(stored.slide_ids);
     expect(calls[0]?.action).toBe("project.presentation.read");
-    expect(calls.slice(1).every((call) => call.action === "project.presentation.content.read")).toBe(
-      true,
-    );
+    expect(
+      calls.slice(1).every((call) => call.action === "project.presentation.content.read"),
+    ).toBe(true);
   });
 
   it("rejects bytes that do not match the manifest hash", async () => {
@@ -130,9 +133,9 @@ describe("Jour fixe presentation transport", () => {
     const tampered = new Uint8Array(bytes);
     tampered[10] = tampered[10] === 32 ? 33 : 32;
     const { port } = control(stored, tampered);
-    await expect(readJourFixePresentation("instance", projectId, "meeting-1", port)).rejects.toThrow(
-      /hash/,
-    );
+    await expect(
+      readJourFixePresentation("instance", projectId, "meeting-1", port),
+    ).rejects.toThrow(/hash/);
   });
 
   it("returns null when the meeting has no presentation", async () => {
@@ -172,6 +175,8 @@ describe("Jour fixe presentation transport", () => {
     expect(saved.mutation.revision).toBe(3);
     expect(saved.manifest.revision).toBe(3);
     const request = calls.at(-1);
-    expect(request?.action === "project.presentation.canvas.save" && request.expectedRevision).toBe(2);
+    expect(request?.action === "project.presentation.canvas.save" && request.expectedRevision).toBe(
+      2,
+    );
   });
 });

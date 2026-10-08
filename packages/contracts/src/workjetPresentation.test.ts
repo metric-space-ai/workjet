@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import {
-  CtoxWorkjetProjectControlRequest,
-  CtoxWorkjetProjectControlResponse,
-} from "./ctox.ts";
+import { CtoxWorkjetProjectControlRequest, CtoxWorkjetProjectControlResponse } from "./ctox.ts";
 import { isWorkjetPresentationReceiptForRequest } from "./workjetPresentation.ts";
 
 const sha = "a".repeat(64);

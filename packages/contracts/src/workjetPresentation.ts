@@ -24,10 +24,7 @@ const Hash = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
 const DocumentBytes = Schema.Int.check(
   Schema.isBetween({ minimum: 2, maximum: WORKJET_PRESENTATION_MAX_BYTES }),
 );
-const SlideIds = Schema.Array(text(1, 128)).check(
-  Schema.isMinLength(1),
-  Schema.isMaxLength(160),
-);
+const SlideIds = Schema.Array(text(1, 128)).check(Schema.isMinLength(1), Schema.isMaxLength(160));
 
 export const WorkjetPresentationManifest = Schema.Struct({
   presentation_id: Id,
@@ -152,7 +149,10 @@ const decodeResponse = Schema.decodeUnknownSync(Schema.Union(WorkjetPresentation
 
 /** True for every non-presentation action; for presentation actions the
  * response must answer exactly this request (scope, revision, range, operation). */
-export function isWorkjetPresentationReceiptForRequest(request: unknown, response: unknown): boolean {
+export function isWorkjetPresentationReceiptForRequest(
+  request: unknown,
+  response: unknown,
+): boolean {
   if (
     typeof request !== "object" ||
     request === null ||

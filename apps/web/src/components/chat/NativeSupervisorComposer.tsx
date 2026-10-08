@@ -30,6 +30,7 @@ export function NativeSupervisorComposer(props: {
   readonly scope: NativeSupervisorScope | null;
   readonly config: WorkjetThreadConfig;
   readonly instanceId: string | null;
+  readonly blockReason: string | null;
   readonly unavailable: boolean;
   readonly saveConfig: (config: WorkjetThreadConfig) => Promise<{ readonly _tag: string }>;
 }) {
@@ -292,6 +293,7 @@ export function NativeSupervisorComposer(props: {
           className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
         >
           <span>Projekt und CTOX-Verbindung müssen bestätigt sein.</span>
+          {props.blockReason !== null && <span>{props.blockReason}</span>}
           {props.instanceId !== null && (
             <button
               type="button"

@@ -1436,7 +1436,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const ctoxBusinessOsConnections = decisionHubConnections.filter(
     (connection) =>
       connection.connectionId === ctoxBinding?.target.connectionId ||
-      ctoxConnectionMatchesSelectedInstance(connection, activeWorkjetScope.selectedInstanceId, true),
+      ctoxConnectionMatchesSelectedInstance(
+        connection,
+        activeWorkjetScope.selectedInstanceId,
+        true,
+      ),
   );
   const ctoxBusinessOsConnectionLocked = composerTargetIsThread && ctoxBinding !== undefined;
   const handleCtoxBusinessOsConnectionChange = (connectionId: string) => {

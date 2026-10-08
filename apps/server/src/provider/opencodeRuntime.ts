@@ -488,8 +488,11 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         hostPlatform === "win32"
           ? child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.asVoid)
           : Effect.sync(() => {
+              // Without a pid, `-Number(undefined)` is NaN, which Node turns into
+              // kill(0): a signal to our own process group, i.e. the whole server.
+              if (typeof child.pid !== "number" || child.pid <= 0) return;
               try {
-                process.kill(-Number(child.pid), signal);
+                process.kill(-child.pid, signal);
               } catch {
                 // The direct child may already have exited after starting the
                 // server; the process group kill is best-effort cleanup for

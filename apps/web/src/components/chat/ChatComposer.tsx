@@ -1477,29 +1477,43 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const ctoxProvisioningRef = useRef(false);
   const ctoxBindingContextKey = `${environmentId}:${JSON.stringify(composerDraftTarget)}:${activeWorkjetScope.selectionRevision}`;
   const ctoxBindingContextRef = useRef({
-    key: ctoxBindingContextKey, apply: applyCtoxBusinessOsConnection,
+    key: ctoxBindingContextKey,
+    apply: applyCtoxBusinessOsConnection,
   });
-  ctoxBindingContextRef.current = { key: ctoxBindingContextKey, apply: applyCtoxBusinessOsConnection };
+  ctoxBindingContextRef.current = {
+    key: ctoxBindingContextKey,
+    apply: applyCtoxBusinessOsConnection,
+  };
   const managedSourceTenant = activeWorkjetScope.selectedInstanceId?.startsWith("managed:")
-    ? activeWorkjetScope.selectedInstanceId.slice("managed:".length) : null;
-  const canConnectCtoxBusinessOs = managedSourceTenant !== null &&
-    window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
+    ? activeWorkjetScope.selectedInstanceId.slice("managed:".length)
+    : null;
+  const canConnectCtoxBusinessOs =
+    managedSourceTenant !== null && window.desktopBridge?.ctox?.provisionDecisionHub !== undefined;
   const handleCtoxBusinessOsConnect = async () => {
     const provision = window.desktopBridge?.ctox?.provisionDecisionHub;
-    if (!provision || !managedSourceTenant || ctoxProvisioningRef.current || ctoxBusinessOsConnectionLocked) return;
+    if (
+      !provision ||
+      !managedSourceTenant ||
+      ctoxProvisioningRef.current ||
+      ctoxBusinessOsConnectionLocked
+    )
+      return;
     ctoxProvisioningRef.current = true;
     setCtoxBusinessOsConnecting(true);
     setCtoxBusinessOsConnectError(null);
     const contextKey = ctoxBindingContextKey;
     try {
       const result = await provision({
-        environmentId, purpose: "worker_source",
+        environmentId,
+        purpose: "worker_source",
         target: { _tag: "ctox_dev", tenantId: managedSourceTenant },
       });
       if (result._tag === "failed") {
-        setCtoxBusinessOsConnectError(result.code === "signed_out"
-          ? "Sign in to CTOX to connect this Business OS."
-          : "Could not connect this Business OS. Check account permissions and MCP availability.");
+        setCtoxBusinessOsConnectError(
+          result.code === "signed_out"
+            ? "Sign in to CTOX to connect this Business OS."
+            : "Could not connect this Business OS. Check account permissions and MCP availability.",
+        );
         return;
       }
       decisionHubConnectionsQuery.refresh();
@@ -4145,7 +4159,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ctoxBusinessOsConnections={ctoxBusinessOsConnections}
                             ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
                             ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
-                            onCtoxBusinessOsConnect={canConnectCtoxBusinessOs ? () => { void handleCtoxBusinessOsConnect(); } : undefined}
+                            onCtoxBusinessOsConnect={
+                              canConnectCtoxBusinessOs
+                                ? () => {
+                                    void handleCtoxBusinessOsConnect();
+                                  }
+                                : undefined
+                            }
                             ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
                             ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                             onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
@@ -4218,7 +4238,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ctoxBusinessOsConnections={ctoxBusinessOsConnections}
                             ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
                             ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
-                            onCtoxBusinessOsConnect={canConnectCtoxBusinessOs ? () => { void handleCtoxBusinessOsConnect(); } : undefined}
+                            onCtoxBusinessOsConnect={
+                              canConnectCtoxBusinessOs
+                                ? () => {
+                                    void handleCtoxBusinessOsConnect();
+                                  }
+                                : undefined
+                            }
                             ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
                             ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                             onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
@@ -4333,9 +4359,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ctoxBusinessOsConnections={ctoxBusinessOsConnections}
                     ctoxBusinessOsConnectionId={ctoxBinding?.target.connectionId}
                     ctoxBusinessOsConnectionLocked={ctoxBusinessOsConnectionLocked}
-                            onCtoxBusinessOsConnect={canConnectCtoxBusinessOs ? () => { void handleCtoxBusinessOsConnect(); } : undefined}
-                            ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
-                            ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
+                    onCtoxBusinessOsConnect={
+                      canConnectCtoxBusinessOs
+                        ? () => {
+                            void handleCtoxBusinessOsConnect();
+                          }
+                        : undefined
+                    }
+                    ctoxBusinessOsConnecting={ctoxBusinessOsConnecting}
+                    ctoxBusinessOsConnectError={ctoxBusinessOsConnectError}
                     onCtoxBusinessOsConnectionChange={handleCtoxBusinessOsConnectionChange}
                     onOpenWorkjetSettings={onOpenWorkjetSettings}
                   />

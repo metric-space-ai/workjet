@@ -99,7 +99,12 @@ const make = Effect.gen(function* () {
   const instanceRegistry = yield* CtoxInstanceRegistry.CtoxInstanceRegistry;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const issuedGrants = yield* Ref.make<
-    ReadonlyArray<{ connectionId: WorkjetConnectionId; tenantId: string; tokenId: string; purpose?: "worker_source" }>
+    ReadonlyArray<{
+      connectionId: WorkjetConnectionId;
+      tenantId: string;
+      tokenId: string;
+      purpose?: "worker_source";
+    }>
   >([]);
 
   const resolveEnvironment = (environmentId: string) =>
@@ -153,7 +158,11 @@ const make = Effect.gen(function* () {
       return yield* Effect.fail("environment_unavailable" as const);
     }).pipe(Effect.provideService(HttpClient.HttpClient, httpClient));
 
-  const revokeGrant = (grant: { readonly tenantId: string; readonly tokenId: string; readonly purpose?: "worker_source" }) =>
+  const revokeGrant = (grant: {
+    readonly tenantId: string;
+    readonly tokenId: string;
+    readonly purpose?: "worker_source";
+  }) =>
     Effect.gen(function* () {
       const account = yield* sessions.account;
       if (grant.purpose === "worker_source") {
@@ -193,17 +202,27 @@ const make = Effect.gen(function* () {
                 const account = yield* sessions.account;
                 if (input.purpose === "worker_source") {
                   const grant = yield* acquireWorkjetWorkerSourceGrant(
-                    account.fetch.bind(account), managedTenantId,
-                    (rolledBack) => Ref.update(issuedGrants, (current) =>
-                      current.filter((candidate) => candidate.tokenId !== rolledBack.tokenId)),
+                    account.fetch.bind(account),
+                    managedTenantId,
+                    (rolledBack) =>
+                      Ref.update(issuedGrants, (current) =>
+                        current.filter((candidate) => candidate.tokenId !== rolledBack.tokenId),
+                      ),
                   ).pipe(Effect.mapError((error) => error.code));
-                  const issued = { connectionId: grant.connectionId, tenantId: grant.tenantId,
-                    tokenId: grant.tokenId, purpose: "worker_source" as const };
+                  const issued = {
+                    connectionId: grant.connectionId,
+                    tenantId: grant.tenantId,
+                    tokenId: grant.tokenId,
+                    purpose: "worker_source" as const,
+                  };
                   yield* Ref.update(issuedGrants, (current) => [...current, issued]);
                   return {
-                    connectionId: grant.connectionId, instanceId: grant.instanceId,
-                    displayName: grant.displayName, source: grant.source,
-                    endpoint: grant.endpoint, token: grant.token,
+                    connectionId: grant.connectionId,
+                    instanceId: grant.instanceId,
+                    displayName: grant.displayName,
+                    source: grant.source,
+                    endpoint: grant.endpoint,
+                    token: grant.token,
                     commit: grant.commit,
                   };
                 }
@@ -299,9 +318,12 @@ const make = Effect.gen(function* () {
         const rpc = yield* rpcFactory.connect(connection);
         yield* rpc.ready;
         const result = yield* rpc.client[WS_METHODS.workjetDecisionHubProvisionConnection]({
-          connectionId: provisionTarget.connectionId, instanceId: provisionTarget.instanceId,
-          displayName: provisionTarget.displayName, source: provisionTarget.source,
-          endpoint: provisionTarget.endpoint, token: provisionTarget.token,
+          connectionId: provisionTarget.connectionId,
+          instanceId: provisionTarget.instanceId,
+          displayName: provisionTarget.displayName,
+          source: provisionTarget.source,
+          endpoint: provisionTarget.endpoint,
+          token: provisionTarget.token,
         });
         if ("commit" in provisionTarget) provisionTarget.commit();
         return { _tag: "completed", connection: result.connection } as const;

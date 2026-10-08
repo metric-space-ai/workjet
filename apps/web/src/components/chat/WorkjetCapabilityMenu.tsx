@@ -507,7 +507,9 @@ export function WorkjetCapabilityDetail(
               </button>
             ) : null}
             {props.ctoxBusinessOsConnectError ? (
-              <p role="alert" className="text-xs text-amber-500">{props.ctoxBusinessOsConnectError}</p>
+              <p role="alert" className="text-xs text-amber-500">
+                {props.ctoxBusinessOsConnectError}
+              </p>
             ) : null}
             {(props.ctoxBusinessOsConnections ?? []).length === 0 ? (
               <p role="alert" className="text-xs text-amber-500">

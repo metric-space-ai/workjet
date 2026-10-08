@@ -8,7 +8,9 @@ export const WORKJET_WORKER_SOURCE_TOOLS = [
   "business_os.workjet_worker_dispatch",
 ] as const;
 type AccountFetch = (url: string, init?: RequestInit) => Promise<Response>;
-const Uuid = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i));
+const Uuid = Schema.String.check(
+  Schema.isPattern(/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i),
+);
 const IssuedIdentity = Schema.Struct({ token: Schema.Struct({ tokenId: Uuid }) });
 const Issued = Schema.Struct({
   ok: Schema.Literal(true),
@@ -39,9 +41,13 @@ export function workerSourceGrantIdentity(connectionId: string) {
   const match = /^ctox-dev-worker-source:([^:]+):([^:]+)$/.exec(connectionId);
   if (!match) return undefined;
   try {
-    return { tenantId: Schema.decodeUnknownSync(Uuid)(match[1]),
-      tokenId: Schema.decodeUnknownSync(Uuid)(match[2]) };
-  } catch { return undefined; }
+    return {
+      tenantId: Schema.decodeUnknownSync(Uuid)(match[1]),
+      tokenId: Schema.decodeUnknownSync(Uuid)(match[2]),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function revokeWorkjetWorkerSourceGrant(
@@ -52,13 +58,17 @@ export async function revokeWorkjetWorkerSourceGrant(
     const response = await fetchAccount(
       `https://ctox.dev/api/instances/${encodeURIComponent(grant.tenantId)}/managed-mcp`,
       {
-        method: "POST", cache: "no-store", credentials: "include",
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "revoke_token", tokenId: grant.tokenId }),
       },
     );
     if (!response.ok) throw new Error();
-  } catch { throw new WorkerSourceGrantError("grant_revoke_unavailable"); }
+  } catch {
+    throw new WorkerSourceGrantError("grant_revoke_unavailable");
+  }
 }
 
 /** The existing owner API's historical rotate_token action is INSERT-only:
@@ -73,15 +83,24 @@ export async function issueWorkjetWorkerSourceGrant(
     const response = await fetchAccount(
       `https://ctox.dev/api/instances/${encodeURIComponent(tenantId)}/managed-mcp`,
       {
-        method: "POST", cache: "no-store", credentials: "include",
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          action: "rotate_token", label: "Workjet worker source", expiresInDays: 1,
+          action: "rotate_token",
+          label: "Workjet worker source",
+          expiresInDays: 1,
           scopes: {
-            allowReads: false, allowWrites: true, allowApprovals: false,
-            allowExternalEffects: false, rateLimitPerMinute: 30,
-            allowedModules: ["ctox"], allowedCollections: ["__ctox_no_access__"],
-            allowedTools: [...WORKJET_WORKER_SOURCE_TOOLS], deniedTools: [],
+            allowReads: false,
+            allowWrites: true,
+            allowApprovals: false,
+            allowExternalEffects: false,
+            rateLimitPerMinute: 30,
+            allowedModules: ["ctox"],
+            allowedCollections: ["__ctox_no_access__"],
+            allowedTools: [...WORKJET_WORKER_SOURCE_TOOLS],
+            deniedTools: [],
           },
         }),
       },
@@ -94,20 +113,42 @@ export async function issueWorkjetWorkerSourceGrant(
     const result = Schema.decodeUnknownSync(Issued)(payload);
     const endpoint = new URL(result.managedMcp.mcpUrl);
     const route = /^\/mcp\/([^/]+)$/.exec(endpoint.pathname);
-    if (endpoint.origin !== "https://mcp.ctox.dev" || endpoint.username || endpoint.password ||
-        endpoint.search || endpoint.hash || !route) throw new Error();
+    if (
+      endpoint.origin !== "https://mcp.ctox.dev" ||
+      endpoint.username ||
+      endpoint.password ||
+      endpoint.search ||
+      endpoint.hash ||
+      !route
+    )
+      throw new Error();
     const instanceId = decodeURIComponent(route[1]!);
-    if (!instanceId || instanceId.length > 512 || /[\/\u0000-\u0020\u007f]/.test(instanceId) ||
-        instanceId.startsWith("tenant:") || instanceId.startsWith("managed:")) throw new Error();
+    if (
+      !instanceId ||
+      instanceId.length > 512 ||
+      /[\/\u0000-\u0020\u007f]/.test(instanceId) ||
+      instanceId.startsWith("tenant:") ||
+      instanceId.startsWith("managed:")
+    )
+      throw new Error();
     return {
-      connectionId: WorkjetConnectionId.make(`ctox-dev-worker-source:${tenantId}:${result.token.tokenId}`),
-      tenantId, tokenId: result.token.tokenId, instanceId, endpoint: endpoint.toString(),
-      token: result.token.token, displayName: "Workjet worker source", source: "ctox_dev",
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenantId}:${result.token.tokenId}`,
+      ),
+      tenantId,
+      tokenId: result.token.tokenId,
+      instanceId,
+      endpoint: endpoint.toString(),
+      token: result.token.token,
+      displayName: "Workjet worker source",
+      source: "ctox_dev",
     };
   } catch (error) {
     if (issuedIdentity) await revokeWorkjetWorkerSourceGrant(fetchAccount, issuedIdentity);
     // Error messages and causes never contain the one-time response or token.
-    throw error instanceof WorkerSourceGrantError ? error : new WorkerSourceGrantError("grant_unavailable");
+    throw error instanceof WorkerSourceGrantError
+      ? error
+      : new WorkerSourceGrantError("grant_unavailable");
   }
 }
 
@@ -123,17 +164,29 @@ export function acquireWorkjetWorkerSourceGrant(
       try: async () => {
         const grant = await issueWorkjetWorkerSourceGrant(fetchAccount, tenantId);
         let committed = false;
-        return { ...grant, commit: () => { committed = true; }, isCommitted: () => committed };
+        return {
+          ...grant,
+          commit: () => {
+            committed = true;
+          },
+          isCommitted: () => committed,
+        };
       },
-      catch: (error) => error instanceof WorkerSourceGrantError ? error : new WorkerSourceGrantError("grant_unavailable"),
+      catch: (error) =>
+        error instanceof WorkerSourceGrantError
+          ? error
+          : new WorkerSourceGrantError("grant_unavailable"),
     }),
-    (grant) => grant.isCommitted() ? Effect.void : Effect.tryPromise({
-      try: () => revokeWorkjetWorkerSourceGrant(fetchAccount, grant),
-      catch: () => new WorkerSourceGrantError("grant_revoke_unavailable"),
-    }).pipe(
-      Effect.andThen(onRolledBack(grant)),
-      // Retain the tracked client when revocation is unavailable for revokeAll.
-      Effect.catchCause(() => Effect.void),
-    ),
+    (grant) =>
+      grant.isCommitted()
+        ? Effect.void
+        : Effect.tryPromise({
+            try: () => revokeWorkjetWorkerSourceGrant(fetchAccount, grant),
+            catch: () => new WorkerSourceGrantError("grant_revoke_unavailable"),
+          }).pipe(
+            Effect.andThen(onRolledBack(grant)),
+            // Retain the tracked client when revocation is unavailable for revokeAll.
+            Effect.catchCause(() => Effect.void),
+          ),
   );
 }

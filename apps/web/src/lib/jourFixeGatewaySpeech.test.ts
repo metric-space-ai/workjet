@@ -146,7 +146,9 @@ describe("Jour fixe gateway consumer", () => {
       signal: new AbortController().signal,
       port: f.port,
       onPartial: () => {},
-      onError: () => { throw new Error("UI notification failed"); },
+      onError: () => {
+        throw new Error("UI notification failed");
+      },
     });
     await expect(stream.write(new Uint8Array(3202))).rejects.toThrow("100 ms");
     expect(f.calls.filter((c) => c.op === "cancel")).toHaveLength(1);

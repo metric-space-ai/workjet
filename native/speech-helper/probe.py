@@ -16,6 +16,7 @@ import subprocess
 import threading
 import time
 import uuid
+import wave
 
 SENTENCE = "Das Projekt ist bereit. Der nächste Schritt ist unser gemeinsamer Test."
 MAX_LINE = 16384
@@ -119,7 +120,7 @@ def normalized(text):
     return re.findall(r"\w+", text.lower())
 
 
-def run(binary, report, install_assets):
+def run(binary, report, install_assets, audio_fixture):
     started = time.monotonic()
     child = Child(binary)
     report["ownedPid"] = child.child.pid
@@ -129,34 +130,45 @@ def run(binary, report, install_assets):
         if status.get("event") != "status":
             raise ProbeError("status_missing")
         report["capabilities"] = status.get("capabilities")
-        synthesis_start = time.monotonic()
-        child.send("synthesize", "narration", text=SENTENCE, slideId="fixture-slide")
-        audio = bytearray()
-        sequence = 0
-        deadline = synthesis_start + 65
-        while True:
-            event = child.next(deadline)
-            if event["requestId"] != "narration":
-                raise ProbeError("wrong_request")
-            if event["event"] == "audio":
-                if event.get("sequence") != sequence or event.get("channels") != 1 or event.get("format") != "s16le":
-                    raise ProbeError("audio_order_or_format")
-                chunk = base64.b64decode(event["audioBase64"], validate=True)
-                if len(chunk) > 4096 or len(chunk) % 2 or len(audio) + len(chunk) > MAX_AUDIO:
-                    raise ProbeError("audio_bound")
-                if not audio:
-                    report["firstTtsPcmAtHostMs"] = (time.monotonic() - synthesis_start) * 1000
-                sequence += 1
-                audio.extend(chunk)
-            elif event["event"] == "audio_end":
-                if event.get("bytes") != len(audio) or not audio:
-                    raise ProbeError("audio_total")
-                report["tts"] = {name: event.get(name) for name in ("voice", "sampleRate", "bytes", "firstAudioMs")}
-                report["tts"]["completeAudioAtHostMs"] = (time.monotonic() - synthesis_start) * 1000
-                pcm = resample(audio, event["sampleRate"])
-                break
-            else:
-                raise ProbeError("unexpected_synthesis_event")
+        if audio_fixture is not None:
+            with wave.open(str(audio_fixture), "rb") as fixture:
+                if (fixture.getnchannels(), fixture.getsampwidth(), fixture.getframerate(),
+                    fixture.getcomptype()) != (1, 2, 16000, "NONE"):
+                    raise ProbeError("fixture_audio_format")
+                if not 0 < fixture.getnframes() <= 14 * 16000:
+                    raise ProbeError("fixture_audio_bound")
+                pcm = resample(fixture.readframes(fixture.getnframes()), 16000)
+            report["measurement"] = "Helper-only provided German PCM fixture->paced STT; no TTS, microphone/room/signing/native receipt claim"
+            report["audioFixture"] = str(audio_fixture.resolve())
+        else:
+            synthesis_start = time.monotonic()
+            child.send("synthesize", "narration", text=SENTENCE, slideId="fixture-slide")
+            audio = bytearray()
+            sequence = 0
+            deadline = synthesis_start + 65
+            while True:
+                event = child.next(deadline)
+                if event["requestId"] != "narration":
+                    raise ProbeError("wrong_request")
+                if event["event"] == "audio":
+                    if event.get("sequence") != sequence or event.get("channels") != 1 or event.get("format") != "s16le":
+                        raise ProbeError("audio_order_or_format")
+                    chunk = base64.b64decode(event["audioBase64"], validate=True)
+                    if len(chunk) > 4096 or len(chunk) % 2 or len(audio) + len(chunk) > MAX_AUDIO:
+                        raise ProbeError("audio_bound")
+                    if not audio:
+                        report["firstTtsPcmAtHostMs"] = (time.monotonic() - synthesis_start) * 1000
+                    sequence += 1
+                    audio.extend(chunk)
+                elif event["event"] == "audio_end":
+                    if event.get("bytes") != len(audio) or not audio:
+                        raise ProbeError("audio_total")
+                    report["tts"] = {name: event.get(name) for name in ("voice", "sampleRate", "bytes", "firstAudioMs")}
+                    report["tts"]["completeAudioAtHostMs"] = (time.monotonic() - synthesis_start) * 1000
+                    pcm = resample(audio, event["sampleRate"])
+                    break
+                else:
+                    raise ProbeError("unexpected_synthesis_event")
         if len(pcm) / 32000 + .6 > 14:
             raise ProbeError("fixture_exceeds_utterance_bound")
         child.send("begin", "capture", installAssets=install_assets)
@@ -217,6 +229,7 @@ def main():
     parser.add_argument("--binary", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--install-assets", action="store_true")
+    parser.add_argument("--stt-audio", type=pathlib.Path, help="Bounded mono16k PCM16 WAV of the expected German sentence; skips TTS")
     args = parser.parse_args()
     report = dict(schema="workjet.speech.helper-probe.v1",
                   at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -224,7 +237,7 @@ def main():
                   passInstalledRoom=False, helperProbePassed=False,
                   measurement="Helper-only synthetic on-device German TTS->pacedPCM STT; no microphone/room/signing/native receipt claim")
     try:
-        run(args.binary.resolve(), report, args.install_assets)
+        run(args.binary.resolve(), report, args.install_assets, args.stt_audio)
     except Exception as error:
         report["failure"] = str(error) if isinstance(error, ProbeError) else type(error).__name__
     args.output.parent.mkdir(parents=True, exist_ok=True)

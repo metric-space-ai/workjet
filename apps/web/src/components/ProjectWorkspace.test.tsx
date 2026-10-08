@@ -87,14 +87,15 @@ describe("project worker activity", () => {
     expect(html).not.toContain('data-workjet-overview-section="activity"');
   });
   it("counts actual worker turns without including supervisor work", () => {
-    const completed = (thread: EnvironmentThreadShell) => ({
-      ...thread,
-      latestTurn: {
-        requestedAt: new Date(Date.now() - 3600000).toISOString(),
-        startedAt: new Date(Date.now() - 3600000).toISOString(),
-        completedAt: new Date().toISOString(),
-      },
-    }) as unknown as EnvironmentThreadShell;
+    const completed = (thread: EnvironmentThreadShell) =>
+      ({
+        ...thread,
+        latestTurn: {
+          requestedAt: new Date(Date.now() - 3600000).toISOString(),
+          startedAt: new Date(Date.now() - 3600000).toISOString(),
+          completedAt: new Date().toISOString(),
+        },
+      }) as unknown as EnvironmentThreadShell;
     const html = markup([
       completed(shell(source, "supervisor")),
       completed(shell(target, "worker")),

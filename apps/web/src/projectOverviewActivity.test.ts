@@ -33,9 +33,7 @@ describe("project overview worker activity", () => {
       ],
       now,
     );
-    expect(intervals).toEqual([
-      { workerKey: "a", start: at(8, 9, 5), end: at(8, 10) },
-    ]);
+    expect(intervals).toEqual([{ workerKey: "a", start: at(8, 9, 5), end: at(8, 10) }]);
   });
 
   it("splits activity into local hours and clips it to the hour boundaries", () => {

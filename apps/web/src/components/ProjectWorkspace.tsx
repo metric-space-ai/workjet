@@ -210,74 +210,74 @@ export function ProjectWorkspace({
         </dl>
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-6">
-            {intervals.length > 0 && <details
-              aria-label="Worker activity"
-              data-workjet-overview-section="activity"
-              className="rounded-lg border border-border p-3"
-            >
-              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                Worker activity · {summary.workers} · {formatMinutes(summary.totalMinutes)}
-              </summary>
-              <p className="mb-4 text-xs text-muted-foreground">
-                Latest worker turns only.
-              </p>
-              <dl className="mb-4 flex flex-wrap gap-x-8 gap-y-2">
-                {[
-                  ["Workers", String(summary.workers)],
-                  ["Active days", String(summary.activeDays)],
-                  ["Active time", formatMinutes(summary.totalMinutes)],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <dd className="text-[22px] font-semibold tracking-tight tabular-nums">
-                      {value}
-                    </dd>
-                    <dt className="text-xs text-muted-foreground">{label}</dt>
-                  </div>
-                ))}
-              </dl>
-              <div className="mb-1 text-xs text-muted-foreground">Today, by hour</div>
-              <div className="flex h-24 items-end gap-px" data-workjet-activity-hours="">
-                {hours.map((minutes, hour) => (
-                  <div
-                    key={hour}
-                    className="flex-1 rounded-sm bg-primary/70"
-                    style={{
-                      height: `${Math.max(minutes > 0 ? 4 : 0, (minutes / hourMax) * 100)}%`,
-                    }}
-                    title={`${String(hour).padStart(2, "0")}:00 · ${formatMinutes(minutes)}`}
-                  />
-                ))}
-              </div>
-              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
-                <span>00:00</span>
-                <span>12:00</span>
-                <span>23:00</span>
-              </div>
-              <div className="mt-5 mb-1 text-xs text-muted-foreground">
-                Last {ACTIVITY_WEEKS} weeks
-              </div>
-              <div
-                className="grid grid-flow-col gap-1 overflow-x-auto"
-                style={{ gridTemplateRows: "repeat(7, 12px)", gridAutoColumns: "12px" }}
-                data-workjet-activity-heatmap=""
+            {intervals.length > 0 && (
+              <details
+                aria-label="Worker activity"
+                data-workjet-overview-section="activity"
+                className="rounded-lg border border-border p-3"
               >
-                {heatmap.flatMap((row, weekday) =>
-                  row.map((cell, week) => (
-                    <span
-                      key={`${weekday}-${week}`}
-                      className="size-3 rounded-[3px] bg-muted"
+                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                  Worker activity · {summary.workers} · {formatMinutes(summary.totalMinutes)}
+                </summary>
+                <p className="mb-4 text-xs text-muted-foreground">Latest worker turns only.</p>
+                <dl className="mb-4 flex flex-wrap gap-x-8 gap-y-2">
+                  {[
+                    ["Workers", String(summary.workers)],
+                    ["Active days", String(summary.activeDays)],
+                    ["Active time", formatMinutes(summary.totalMinutes)],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dd className="text-[22px] font-semibold tracking-tight tabular-nums">
+                        {value}
+                      </dd>
+                      <dt className="text-xs text-muted-foreground">{label}</dt>
+                    </div>
+                  ))}
+                </dl>
+                <div className="mb-1 text-xs text-muted-foreground">Today, by hour</div>
+                <div className="flex h-24 items-end gap-px" data-workjet-activity-hours="">
+                  {hours.map((minutes, hour) => (
+                    <div
+                      key={hour}
+                      className="flex-1 rounded-sm bg-primary/70"
                       style={{
-                        gridRow: weekday + 1,
-                        gridColumn: week + 1,
-                        opacity: cell ? 0.25 + cell.level * 0.19 : 0.1,
+                        height: `${Math.max(minutes > 0 ? 4 : 0, (minutes / hourMax) * 100)}%`,
                       }}
-                      title={cell ? `${cell.key} · ${formatMinutes(cell.minutes)}` : undefined}
-                      aria-hidden="true"
+                      title={`${String(hour).padStart(2, "0")}:00 · ${formatMinutes(minutes)}`}
                     />
-                  )),
-                )}
-              </div>
-            </details>}
+                  ))}
+                </div>
+                <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                  <span>00:00</span>
+                  <span>12:00</span>
+                  <span>23:00</span>
+                </div>
+                <div className="mt-5 mb-1 text-xs text-muted-foreground">
+                  Last {ACTIVITY_WEEKS} weeks
+                </div>
+                <div
+                  className="grid grid-flow-col gap-1 overflow-x-auto"
+                  style={{ gridTemplateRows: "repeat(7, 12px)", gridAutoColumns: "12px" }}
+                  data-workjet-activity-heatmap=""
+                >
+                  {heatmap.flatMap((row, weekday) =>
+                    row.map((cell, week) => (
+                      <span
+                        key={`${weekday}-${week}`}
+                        className="size-3 rounded-[3px] bg-muted"
+                        style={{
+                          gridRow: weekday + 1,
+                          gridColumn: week + 1,
+                          opacity: cell ? 0.25 + cell.level * 0.19 : 0.1,
+                        }}
+                        title={cell ? `${cell.key} · ${formatMinutes(cell.minutes)}` : undefined}
+                        aria-hidden="true"
+                      />
+                    )),
+                  )}
+                </div>
+              </details>
+            )}
             {PROJECT_TEAM_SECTIONS.map(({ section, label }) => {
               const group = groups[section];
               if (group.length === 0) return null;

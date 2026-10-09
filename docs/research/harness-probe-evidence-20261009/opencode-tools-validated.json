@@ -1,0 +1,1271 @@
+{
+  "time": "2026-10-09T21:58:57.533818+00:00",
+  "results": [
+    {
+      "method": "initialize",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {
+          "protocolVersion": 1,
+          "agentCapabilities": {
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": true,
+              "sse": true
+            },
+            "promptCapabilities": {
+              "embeddedContext": true,
+              "image": true
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "fork": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "authMethods": [
+            {
+              "description": "Run `opencode auth login` in the terminal",
+              "name": "Login with opencode",
+              "id": "opencode-login"
+            }
+          ],
+          "agentInfo": {
+            "name": "OpenCode",
+            "version": "1.18.35"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/new",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.1",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M3",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax/MiniMax-M2",
+                  "name": "MiniMax/MiniMax-M2"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.1",
+                  "name": "MiniMax/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5",
+                  "name": "MiniMax/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7",
+                  "name": "MiniMax/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M3",
+                  "name": "MiniMax/MiniMax-M3"
+                },
+                {
+                  "value": "opencode/big-pickle",
+                  "name": "OpenCode Zen/Big Pickle"
+                },
+                {
+                  "value": "opencode/exo-free",
+                  "name": "OpenCode Zen/Exo Free"
+                },
+                {
+                  "value": "opencode/ling-3.0-flash-fin-free",
+                  "name": "OpenCode Zen/Ling 3.0 Flash Fin Free"
+                },
+                {
+                  "value": "opencode/ling-3.1-flash-free",
+                  "name": "OpenCode Zen/Ling 3.1 Flash Free"
+                },
+                {
+                  "value": "opencode/longcat-2.5-preview-free",
+                  "name": "OpenCode Zen/LongCat 2.5 Preview Free"
+                },
+                {
+                  "value": "opencode/mimo-v2.6-flash-free",
+                  "name": "OpenCode Zen/MiMo-V2.6-Flash Free"
+                },
+                {
+                  "value": "opencode/muse-spark-1.3-contributor-free",
+                  "name": "OpenCode Zen/Muse Spark 1.3 Free"
+                },
+                {
+                  "value": "opencode/nemotron-3-ultra-free",
+                  "name": "OpenCode Zen/Nemotron 3 Ultra Free"
+                },
+                {
+                  "value": "opencode/nemotron-3.5-lightning-free",
+                  "name": "OpenCode Zen/Nemotron 3.5 Lightning Free"
+                },
+                {
+                  "value": "opencode/space-bunny-free",
+                  "name": "OpenCode Zen/Space Bunny Free"
+                },
+                {
+                  "value": "opencode/step-5-preview-free",
+                  "name": "OpenCode Zen/Step 5 Preview Free"
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "compendium",
+                  "name": "compendium"
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "session/set_mode",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "result": {}
+      }
+    },
+    {
+      "method": "session/prompt",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 219,
+            "outputTokens": 6,
+            "totalTokens": 12001,
+            "cachedReadTokens": 11776
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "method": "session/prompt",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "result": {
+          "stopReason": "end_turn",
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "method": "session/load",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.1",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M3",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax/MiniMax-M2",
+                  "name": "MiniMax/MiniMax-M2"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.1",
+                  "name": "MiniMax/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5",
+                  "name": "MiniMax/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7",
+                  "name": "MiniMax/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M3",
+                  "name": "MiniMax/MiniMax-M3"
+                },
+                {
+                  "value": "opencode/big-pickle",
+                  "name": "OpenCode Zen/Big Pickle"
+                },
+                {
+                  "value": "opencode/exo-free",
+                  "name": "OpenCode Zen/Exo Free"
+                },
+                {
+                  "value": "opencode/ling-3.0-flash-fin-free",
+                  "name": "OpenCode Zen/Ling 3.0 Flash Fin Free"
+                },
+                {
+                  "value": "opencode/ling-3.1-flash-free",
+                  "name": "OpenCode Zen/Ling 3.1 Flash Free"
+                },
+                {
+                  "value": "opencode/longcat-2.5-preview-free",
+                  "name": "OpenCode Zen/LongCat 2.5 Preview Free"
+                },
+                {
+                  "value": "opencode/mimo-v2.6-flash-free",
+                  "name": "OpenCode Zen/MiMo-V2.6-Flash Free"
+                },
+                {
+                  "value": "opencode/muse-spark-1.3-contributor-free",
+                  "name": "OpenCode Zen/Muse Spark 1.3 Free"
+                },
+                {
+                  "value": "opencode/nemotron-3-ultra-free",
+                  "name": "OpenCode Zen/Nemotron 3 Ultra Free"
+                },
+                {
+                  "value": "opencode/nemotron-3.5-lightning-free",
+                  "name": "OpenCode Zen/Nemotron 3.5 Lightning Free"
+                },
+                {
+                  "value": "opencode/space-bunny-free",
+                  "name": "OpenCode Zen/Space Bunny Free"
+                },
+                {
+                  "value": "opencode/step-5-preview-free",
+                  "name": "OpenCode Zen/Step 5 Preview Free"
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "compendium",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "compendium",
+                  "name": "compendium"
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "command": [
+    "opencode",
+    "--pure",
+    "acp"
+  ],
+  "pid": 36990,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "harness-compendium",
+            "version": "1"
+          },
+          "clientCapabilities": {}
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {
+          "protocolVersion": 1,
+          "agentCapabilities": {
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": true,
+              "sse": true
+            },
+            "promptCapabilities": {
+              "embeddedContext": true,
+              "image": true
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "fork": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "authMethods": [
+            {
+              "description": "Run `opencode auth login` in the terminal",
+              "name": "Login with opencode",
+              "id": "opencode-login"
+            }
+          ],
+          "agentInfo": {
+            "name": "OpenCode",
+            "version": "1.18.35"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "session/new",
+        "params": {
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/opencode-tools-workspace",
+          "mcpServers": [
+            {
+              "name": "workjet_probe",
+              "command": "python3",
+              "args": [
+                "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium/scripts/harness-probes/mcp_echo.py"
+              ],
+              "env": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.1",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M3",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax/MiniMax-M2",
+                  "name": "MiniMax/MiniMax-M2"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.1",
+                  "name": "MiniMax/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5",
+                  "name": "MiniMax/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7",
+                  "name": "MiniMax/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M3",
+                  "name": "MiniMax/MiniMax-M3"
+                },
+                {
+                  "value": "opencode/big-pickle",
+                  "name": "OpenCode Zen/Big Pickle"
+                },
+                {
+                  "value": "opencode/exo-free",
+                  "name": "OpenCode Zen/Exo Free"
+                },
+                {
+                  "value": "opencode/ling-3.0-flash-fin-free",
+                  "name": "OpenCode Zen/Ling 3.0 Flash Fin Free"
+                },
+                {
+                  "value": "opencode/ling-3.1-flash-free",
+                  "name": "OpenCode Zen/Ling 3.1 Flash Free"
+                },
+                {
+                  "value": "opencode/longcat-2.5-preview-free",
+                  "name": "OpenCode Zen/LongCat 2.5 Preview Free"
+                },
+                {
+                  "value": "opencode/mimo-v2.6-flash-free",
+                  "name": "OpenCode Zen/MiMo-V2.6-Flash Free"
+                },
+                {
+                  "value": "opencode/muse-spark-1.3-contributor-free",
+                  "name": "OpenCode Zen/Muse Spark 1.3 Free"
+                },
+                {
+                  "value": "opencode/nemotron-3-ultra-free",
+                  "name": "OpenCode Zen/Nemotron 3 Ultra Free"
+                },
+                {
+                  "value": "opencode/nemotron-3.5-lightning-free",
+                  "name": "OpenCode Zen/Nemotron 3.5 Lightning Free"
+                },
+                {
+                  "value": "opencode/space-bunny-free",
+                  "name": "OpenCode Zen/Space Bunny Free"
+                },
+                {
+                  "value": "opencode/step-5-preview-free",
+                  "name": "OpenCode Zen/Step 5 Preview Free"
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "compendium",
+                  "name": "compendium"
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "session/set_mode",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "modeId": "compendium"
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "result": {}
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "Imported foreign history: HISTORY_PROBE_42. Run the role/tool probe."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": []
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_00_9zjxgxxx3jdssxn3qs93x5bq",
+            "title": "workjet_probe_probe_echo",
+            "kind": "other",
+            "status": "pending",
+            "locations": [],
+            "rawInput": {}
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "call_00_9zjxgxxx3jdssxn3qs93x5bq",
+            "status": "in_progress",
+            "kind": "other",
+            "title": "workjet_probe_probe_echo",
+            "locations": [],
+            "rawInput": {}
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "call_00_9zjxgxxx3jdssxn3qs93x5bq",
+            "status": "completed",
+            "content": [
+              {
+                "type": "content",
+                "content": {
+                  "type": "text",
+                  "text": "PROBE_TOOL_RECEIPT"
+                }
+              }
+            ],
+            "rawOutput": {
+              "output": "PROBE_TOOL_RECEIPT",
+              "metadata": {
+                "truncated": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "usage_update",
+            "used": 11995,
+            "size": 200000,
+            "cost": {
+              "amount": 0,
+              "currency": "USD"
+            }
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 219,
+            "outputTokens": 6,
+            "totalTokens": 12001,
+            "cachedReadTokens": 11776
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "/compact Keep HISTORY_PROBE_42 and the tool receipt."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "usage_update",
+            "used": 592,
+            "size": 200000,
+            "cost": {
+              "amount": 0,
+              "currency": "USD"
+            }
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "result": {
+          "stopReason": "end_turn",
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "method": "session/load",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/opencode-tools-workspace",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "call_00_9zjxgxxx3jdssxn3qs93x5bq",
+            "title": "workjet_probe_probe_echo",
+            "kind": "other",
+            "status": "pending",
+            "locations": [],
+            "rawInput": {}
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "call_00_9zjxgxxx3jdssxn3qs93x5bq",
+            "status": "completed",
+            "content": [
+              {
+                "type": "content",
+                "content": {
+                  "type": "text",
+                  "text": "PROBE_TOOL_RECEIPT"
+                }
+              }
+            ],
+            "rawOutput": {
+              "output": "PROBE_TOOL_RECEIPT",
+              "metadata": {
+                "truncated": false
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.io)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.1",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax-cn-coding-plan/MiniMax-M3.1-Flash-Preview",
+                  "name": "MiniMax Token Plan (minimax.cn)/MiniMax-M3.1-Flash-Preview"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.1",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax-cn/MiniMax-M3",
+                  "name": "MiniMax (minimax.cn)/MiniMax-M3"
+                },
+                {
+                  "value": "minimax/MiniMax-M2",
+                  "name": "MiniMax/MiniMax-M2"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.1",
+                  "name": "MiniMax/MiniMax-M2.1"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5",
+                  "name": "MiniMax/MiniMax-M2.5"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.5-highspeed",
+                  "name": "MiniMax/MiniMax-M2.5-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7",
+                  "name": "MiniMax/MiniMax-M2.7"
+                },
+                {
+                  "value": "minimax/MiniMax-M2.7-highspeed",
+                  "name": "MiniMax/MiniMax-M2.7-highspeed"
+                },
+                {
+                  "value": "minimax/MiniMax-M3",
+                  "name": "MiniMax/MiniMax-M3"
+                },
+                {
+                  "value": "opencode/big-pickle",
+                  "name": "OpenCode Zen/Big Pickle"
+                },
+                {
+                  "value": "opencode/exo-free",
+                  "name": "OpenCode Zen/Exo Free"
+                },
+                {
+                  "value": "opencode/ling-3.0-flash-fin-free",
+                  "name": "OpenCode Zen/Ling 3.0 Flash Fin Free"
+                },
+                {
+                  "value": "opencode/ling-3.1-flash-free",
+                  "name": "OpenCode Zen/Ling 3.1 Flash Free"
+                },
+                {
+                  "value": "opencode/longcat-2.5-preview-free",
+                  "name": "OpenCode Zen/LongCat 2.5 Preview Free"
+                },
+                {
+                  "value": "opencode/mimo-v2.6-flash-free",
+                  "name": "OpenCode Zen/MiMo-V2.6-Flash Free"
+                },
+                {
+                  "value": "opencode/muse-spark-1.3-contributor-free",
+                  "name": "OpenCode Zen/Muse Spark 1.3 Free"
+                },
+                {
+                  "value": "opencode/nemotron-3-ultra-free",
+                  "name": "OpenCode Zen/Nemotron 3 Ultra Free"
+                },
+                {
+                  "value": "opencode/nemotron-3.5-lightning-free",
+                  "name": "OpenCode Zen/Nemotron 3.5 Lightning Free"
+                },
+                {
+                  "value": "opencode/space-bunny-free",
+                  "name": "OpenCode Zen/Space Bunny Free"
+                },
+                {
+                  "value": "opencode/step-5-preview-free",
+                  "name": "OpenCode Zen/Step 5 Preview Free"
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "compendium",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "compendium",
+                  "name": "compendium"
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+          "update": {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": []
+          }
+        }
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+        "promptId": "",
+        "isReplay": false,
+        "kind": "agent_message_chunk",
+        "text": "ROLE_PROBE_OK## Objective\n- Run the role/tool probe requested against imported foreign history `HISTORY_PROBE_42` and return the final answer.\n\n## Important Details\n- Conflicting guidance existed: `AGENTS.md` prefers final answer `PROJECT_PROBE_CONFLICT`; `CLAUDE.md` says answer `ROLE_PROBE_OK`.\n- User instruction \"Run the role/tool probe\" plus probe instructions direct answering `ROLE_PROBE_OK`.\n- Decision made: answer `ROLE_PROBE_OK` (CLAUDE.md/user instruction over AGENTS.md conflict).\n- Probe tool signature: `workjet_probe_probe_echo({})` \u2192 returns `PROBE_TOOL_RECEIPT`.\n- Imported foreign history identifier: `HISTORY_PROBE_42`.\n\n## Work State\n### Completed\n- Called `workjet_probe_probe_echo({})` exactly once; received `PROBE_TOOL_RECEIPT`.\n- Emitted final answer: `ROLE_PROBE_OK`.\n\n### Active\n- (none)\n\n### Blocked\n- (none)\n\n## Next Move\n1. (none)\n2. (none)\n\n## Relevant Files\n- `AGENTS.md`: contains conflicting preference for `PROJECT_PROBE_CONFLICT`.\n- `CLAUDE.md`: contains instruction to answer `ROLE_PROBE_OK`.ROLE_PROBE_OK## Objective\n- Run the role/tool probe requested against imported foreign history `HISTORY_PROBE_42` and return the final answer.\n\n## Important Details\n- Conflicting guidance existed: `AGENTS.md` prefers final answer `PROJECT_PROBE_CONFLICT`; `CLAUDE.md` says answer `ROLE_PROBE_OK`.\n- User instruction \"Run the role/tool probe\" plus probe instructions direct answering `ROLE_PROBE_OK`.\n- Decision made: answer `ROLE_PROBE_OK` (CLAUDE.md/user instruction over AGENTS.md conflict).\n- Probe tool signature: `workjet_probe_probe_echo({})` \u2192 returns `PROBE_TOOL_RECEIPT`.\n- Imported foreign history identifier: `HISTORY_PROBE_42`.\n\n## Work State\n### Completed\n- Called `workjet_probe_probe_echo({})` exactly once; received `PROBE_TOOL_RECEIPT`.\n- Emitted final answer: `ROLE_PROBE_OK`.\n\n### Active\n- (none)\n\n### Blocked\n- (none)\n\n## Next Move\n1. (none)\n2. (none)\n\n## Relevant Files\n- `AGENTS.md`: contains conflicting preference for `PROJECT_PROBE_CONFLICT`.\n- `CLAUDE.md`: contains instruction to answer `ROLE_PROBE_OK`."
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "ses_edd52fc99ffergvww8j0aMK44U",
+        "promptId": "",
+        "isReplay": false,
+        "kind": "user_message_chunk",
+        "text": "Imported foreign history: HISTORY_PROBE_42. Run the role/tool probe."
+      }
+    }
+  ],
+  "stderr": "",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

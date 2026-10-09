@@ -1,0 +1,16 @@
+{
+  "name": "opencode-version",
+  "time": "2026-10-09T21:43:32.551440+00:00",
+  "command": [
+    "opencode",
+    "--version"
+  ],
+  "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
+  "timeout_seconds": 30,
+  "pid": 2509,
+  "exit_code": 0,
+  "stdout": "1.18.35\n",
+  "stderr": "",
+  "elapsed_seconds": 0.22,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

@@ -1,0 +1,37 @@
+{
+  "time": "2026-10-09T21:58:20.141342+00:00",
+  "results": [
+    {
+      "error": "RuntimeError(\"child ended before response: {'process_eof': 1}\")"
+    }
+  ],
+  "command": [
+    "opencode",
+    "--pure",
+    "--agent",
+    "compendium",
+    "acp"
+  ],
+  "pid": 36086,
+  "exit_code": 1,
+  "events": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "harness-compendium",
+            "version": "1"
+          },
+          "clientCapabilities": {}
+        }
+      }
+    }
+  ],
+  "stderr": "opencode acp\n\nstart ACP (Agent Client Protocol) server\n\nOptions:\n  -h, --help         show help                                                             [boolean]\n  -v, --version      show version number                                                   [boolean]\n      --print-logs   print logs to stderr                                                  [boolean]\n      --log-level    log level                  [string] [choices: \"DEBUG\", \"INFO\", \"WARN\", \"ERROR\"]\n      --pure         run without external plugins                                          [boolean]\n      --port         port to listen on                                         [number] [default: 0]\n      --hostname     hostname to listen on                           [string] [default: \"127.0.0.1\"]\n      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)\n                                                                          [boolean] [default: false]\n      --mdns-domain  custom domain name for mDNS service (default: opencode.local)\n                                                                [string] [default: \"opencode.local\"]\n      --cors         additional domains to allow for CORS                      [array] [default: []]\n      --cwd          working directory                                            [string] [default:\n                   \"/Volumes/tmp/dev-artifacts/workjet/harness-compendium/opencode-tools-workspace\"]",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

@@ -1151,7 +1151,7 @@ export type WorkjetGatewayKimiConnection = typeof WorkjetGatewayKimiConnection.T
 export const WorkjetGatewayProviderModelSelection = Schema.Struct({
   provider: WorkjetGatewayProvider,
   modelIds: Schema.Array(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(128)))).pipe(
-    Schema.check(Schema.isMaxLength(128)),
+    Schema.check(Schema.isMaxLength(256)),
   ),
 });
 export type WorkjetGatewayProviderModelSelection = typeof WorkjetGatewayProviderModelSelection.Type;
@@ -1272,7 +1272,7 @@ export const WorkjetGatewayCatalog = Schema.Struct({
   pools: Schema.Array(WorkjetGatewayPoolSummary),
   routes: Schema.Array(WorkjetGatewayRouteSummary),
   models: Schema.Array(WorkjetGatewayModelSummary),
-  providerModels: Schema.optionalKey(Schema.Array(WorkjetGatewayProviderModelSelection)) ,
+  providerModels: Schema.optionalKey(Schema.Array(WorkjetGatewayProviderModelSelection)),
   /**
    * Additive. The single host-wide selection strategy; the host's
    * `CliproxyRuntimeConfig.routing_strategy` is one value for the whole
@@ -1554,9 +1554,9 @@ export type WorkjetGatewayModelDiscovery = typeof WorkjetGatewayModelDiscovery.T
 
 /** One account's pool membership edit. Every field is replaced, never merged. */
 export const WorkjetGatewayAccountRoutingUpdate = Schema.Struct({
-  excludedModels: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString).pipe(
-    Schema.check(Schema.isMaxLength(256)),
-  )) ,
+  excludedModels: Schema.optionalKey(
+    Schema.Array(TrimmedNonEmptyString).pipe(Schema.check(Schema.isMaxLength(256))),
+  ),
   accountId: WorkjetGatewayAccountId,
   /** A display label; changing it never changes the credential/account identity. */
   label: Schema.optionalKey(TrimmedNonEmptyString.pipe(Schema.check(Schema.isMaxLength(160)))),
@@ -1593,9 +1593,9 @@ export type WorkjetGatewayAccountRoutingUpdate = typeof WorkjetGatewayAccountRou
  * silently ignored.
  */
 export const WorkjetGatewayUpdateRoutingInput = Schema.Struct({
-  providers: Schema.optionalKey(Schema.Array(WorkjetGatewayProviderModelSelection).pipe(
-    Schema.check(Schema.isMaxLength(7)),
-  )) ,
+  providers: Schema.optionalKey(
+    Schema.Array(WorkjetGatewayProviderModelSelection).pipe(Schema.check(Schema.isMaxLength(7))),
+  ),
   strategy: WorkjetGatewayRoutingStrategy,
   accounts: Schema.Array(WorkjetGatewayAccountRoutingUpdate).pipe(
     Schema.check(Schema.isMaxLength(64)),

@@ -1348,6 +1348,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
     expect(stored.accounts.find((entry: { id: string }) => entry.id === account.id)).toEqual({
       ...account,
       kimiPlan: "coding",
+      availableModelIds: ["k3", "kimi-for-coding"],
       credentialSuffix: "abcd",
     });
     expect(harness.storedSecrets.get("workjet-provider-gateway.existing-key")).toBe(API_KEY);
@@ -1395,6 +1396,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
         upstreamBaseUrl: "https://api.kimi.com/coding/v1",
         kimiPlan: "coding",
         models: ["k3"],
+        availableModelIds: ["k3"],
       });
       expect(harness.storedSecrets.size).toBe(0);
       expect(document).not.toContain("provider-secret");
@@ -1604,7 +1606,7 @@ describe("ProviderGatewayService · API-key accounts", () => {
         return yield* gateway.catalog();
       }),
     );
-    expect(JSON.parse(document).accounts).toEqual([{ ...account, kimiPlan: "coding" }]);
+    expect(JSON.parse(document).accounts).toEqual([{ ...account, kimiPlan: "coding", availableModelIds: ["k3", "kimi-for-coding"] }]);
     expect(catalog.accounts[0]?.kimiConnection).toEqual({
       plan: "coding",
       upstreamBaseUrl: account.upstreamBaseUrl,
@@ -2332,57 +2334,95 @@ describe("ProviderGatewayService environment scoping", () => {
   });
 });
 
-
 describe("shared provider model commands", () => {
   const account = {
-    id: "kimi-primary", label: "Primary", provider: "kimi", enabled: true,
-    models: ["k3"], availableModelIds: ["k3", "kimi-for-coding"],
+    id: "kimi-primary",
+    label: "Primary",
+    provider: "kimi",
+    enabled: true,
+    models: ["k3"],
+    availableModelIds: ["k3", "kimi-for-coding"],
     apiKeySecret: { scope: "workjet-provider-gateway", name: "kimi-primary" },
-    upstreamBaseUrl: "https://api.kimi.com/coding/v1", kimiPlan: "coding",
+    upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+    kimiPlan: "coding",
   };
   const harnessForSharedModels = () => {
     const harness = readyHarness();
-    let stored = JSON.stringify({ schemaVersion: 1, defaultProvider: "kimi", accounts: [account, {
-      ...account, id: "kimi-backup", label: "Backup", enabled: false,
-    }], pools: [], routes: [] });
-    return { harness, stored: () => stored, platform: {
-      ...harness.platform, discoverKimiConnection: undefined,
-      readText: async () => stored,
-      writePrivateText: async (path: string, text: string) => {
-        if (path.endsWith("provider-gateway.json")) stored = text;
-        harness.writes.push(text);
+    let stored = JSON.stringify({
+      schemaVersion: 1,
+      defaultProvider: "kimi",
+      accounts: [
+        account,
+        {
+          ...account,
+          id: "kimi-backup",
+          label: "Backup",
+          enabled: false,
+        },
+      ],
+      pools: [],
+      routes: [],
+    });
+    return {
+      harness,
+      stored: () => stored,
+      platform: {
+        ...harness.platform,
+        discoverKimiConnection: undefined,
+        readText: async () => stored,
+        writePrivateText: async (path: string, text: string) => {
+          if (path.endsWith("provider-gateway.json")) stored = text;
+          harness.writes.push(text);
+        },
       },
-    } };
+    };
   };
   it("persists provider edits, account exclusions and unchanged credentials across reads", async () => {
     const fixture = harnessForSharedModels();
-    await runGateway(fixture.platform, gateway => Effect.gen(function* () {
-      const selected = yield* gateway.updateRouting({
-        strategy: "fill-first", accounts: [],
-        providers: [{ provider: "kimi", modelIds: ["k3", "kimi-for-coding"] }],
-      });
-      expect(selected.catalog.accounts.map(entry => entry.modelIds)).toEqual([["k3", "kimi-for-coding"], ["k3", "kimi-for-coding"]]);
-      const excluded = yield* gateway.updateRouting({
-        strategy: "fill-first", accounts: [{
-          accountId: WorkjetGatewayAccountId.make("kimi-primary"), enabled: true,
-          priority: 0, weight: 1, excludedModels: ["k3"],
-        }],
-      });
-      expect(excluded.catalog.accounts[0]?.modelIds).toEqual(["kimi-for-coding"]);
-      expect(excluded.catalog.accounts[1]?.enabled).toBe(false);
-      expect(JSON.parse(fixture.stored()).accounts[0].apiKeySecret).toEqual(account.apiKeySecret);
-      expect(JSON.stringify(excluded.catalog)).not.toContain("apiKeySecret");
-      expect((yield* gateway.catalog()).accounts[0]?.excludedModelIds).toEqual(["k3"]);
-    }));
+    await runGateway(fixture.platform, (gateway) =>
+      Effect.gen(function* () {
+        const selected = yield* gateway.updateRouting({
+          strategy: "fill-first",
+          accounts: [],
+          providers: [{ provider: "kimi", modelIds: ["k3", "kimi-for-coding"] }],
+        });
+        expect(selected.catalog.accounts.map((entry) => entry.modelIds)).toEqual([
+          ["k3", "kimi-for-coding"],
+          ["k3", "kimi-for-coding"],
+        ]);
+        const excluded = yield* gateway.updateRouting({
+          strategy: "fill-first",
+          accounts: [
+            {
+              accountId: WorkjetGatewayAccountId.make("kimi-primary"),
+              enabled: true,
+              priority: 0,
+              weight: 1,
+              excludedModels: ["k3"],
+            },
+          ],
+        });
+        expect(excluded.catalog.accounts[0]?.modelIds).toEqual(["kimi-for-coding"]);
+        expect(excluded.catalog.accounts[1]?.enabled).toBe(false);
+        expect(JSON.parse(fixture.stored()).accounts[0].apiKeySecret).toEqual(account.apiKeySecret);
+        expect(JSON.stringify(excluded.catalog)).not.toContain("apiKeySecret");
+        expect((yield* gateway.catalog()).accounts[0]?.excludedModelIds).toEqual(["k3"]);
+      }),
+    );
   });
   it("refuses newly selected IDs not evidenced for this provider without writing configuration", async () => {
     const fixture = harnessForSharedModels();
     const before = fixture.stored();
-    const result = await runGateway(fixture.platform, gateway => gateway.updateRouting({
-      strategy: "fill-first", accounts: [],
-      // Real Anthropic GET/models ID, deliberately submitted under the wrong provider.
-      providers: [{ provider: "kimi", modelIds: ["claude-opus-5-5"] }],
-    }).pipe(Effect.flip));
+    const result = await runGateway(fixture.platform, (gateway) =>
+      gateway
+        .updateRouting({
+          strategy: "fill-first",
+          accounts: [],
+          // Real Anthropic GET/models ID, deliberately submitted under the wrong provider.
+          providers: [{ provider: "kimi", modelIds: ["claude-opus-5-5"] }],
+        })
+        .pipe(Effect.flip),
+    );
     expect(result.reason).toBe("invalid-configuration");
     expect(fixture.stored()).toBe(before);
   });

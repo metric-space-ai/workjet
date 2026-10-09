@@ -280,9 +280,12 @@ const parseCommonAccountFields = (
   const id = text(value.id);
   const label = text(value.label);
   const models = modelIds(value.models);
-  const excludedModels = value.excludedModels === undefined ? undefined : modelIds(value.excludedModels);
-  const availableModelIds = value.availableModelIds === undefined ? undefined : modelIds(value.availableModelIds);
-  const legacyModelIds = value.legacyModelIds === undefined ? undefined : modelIds(value.legacyModelIds);
+  const excludedModels =
+    value.excludedModels === undefined ? undefined : modelIds(value.excludedModels);
+  const availableModelIds =
+    value.availableModelIds === undefined ? undefined : modelIds(value.availableModelIds);
+  const legacyModelIds =
+    value.legacyModelIds === undefined ? undefined : modelIds(value.legacyModelIds);
   const priority = value.priority === undefined ? 0 : value.priority;
   const weight = value.weight === undefined ? 1 : value.weight;
   const proxyUrlSecret =
@@ -640,7 +643,7 @@ export const decodeProviderGatewayConfiguration = (
       if (name === undefined || ids === undefined) return undefined;
       entries.push({ provider: name, modelIds: ids });
     }
-    if (!unique(entries.map(entry => entry.provider))) return undefined;
+    if (!unique(entries.map((entry) => entry.provider))) return undefined;
     providerModels = entries;
   }
   const routingStrategy =
@@ -770,9 +773,7 @@ export const providerPools = (
   });
 };
 
-export const gatewayCatalog = (
-  input: ProviderGatewayConfiguration,
-): WorkjetGatewayCatalog => {
+export const gatewayCatalog = (input: ProviderGatewayConfiguration): WorkjetGatewayCatalog => {
   const configuration = adoptProviderModelSelection(input);
   const accounts: Array<WorkjetGatewayAccountSummary> = configuration.accounts.map((account) => {
     const kimiConnection =
@@ -792,7 +793,9 @@ export const gatewayCatalog = (
       weight: account.weight,
       modelIds: account.models,
       ...(account.excludedModels === undefined ? {} : { excludedModelIds: account.excludedModels }),
-      ...(account.availableModelIds === undefined ? {} : { availableModelIds: account.availableModelIds }),
+      ...(account.availableModelIds === undefined
+        ? {}
+        : { availableModelIds: account.availableModelIds }),
       // The only credential-derived value any read route carries.
       credentialSuffix: isApiKeyAccount(account) ? (account.credentialSuffix ?? null) : null,
       credentialKind: isApiKeyAccount(account) ? "api-key" : "oauth",
@@ -826,7 +829,9 @@ export const gatewayCatalog = (
     pools: configuration.pools,
     routes: configuration.routes,
     models,
-    ...(configuration.providerModels === undefined ? {} : { providerModels: configuration.providerModels }),
+    ...(configuration.providerModels === undefined
+      ? {}
+      : { providerModels: configuration.providerModels }),
     routingStrategy: WORKJET_GATEWAY_DEFAULT_ROUTING_STRATEGY,
     providerPools: providerPools(configuration),
   };

@@ -79,9 +79,18 @@ export interface ModelsManagementState {
     accounts: ReadonlyArray<WorkjetGatewayAccountSummary>,
     models: ReadonlyArray<string>,
   ) => Promise<boolean>;
-  readonly onEditProviderModels?: (provider: WorkjetGatewayProvider, models: ReadonlyArray<string>) => Promise<boolean>;
-  readonly modelSuggestions?: Readonly<Partial<Record<WorkjetGatewayProvider, ReadonlyArray<string>>>>;
-  readonly onExcludeModel?: (account: WorkjetGatewayAccountSummary, model: string, excluded: boolean) => Promise<boolean>;
+  readonly onEditProviderModels?: (
+    provider: WorkjetGatewayProvider,
+    models: ReadonlyArray<string>,
+  ) => Promise<boolean>;
+  readonly modelSuggestions?: Readonly<
+    Partial<Record<WorkjetGatewayProvider, ReadonlyArray<string>>>
+  >;
+  readonly onExcludeModel?: (
+    account: WorkjetGatewayAccountSummary,
+    model: string,
+    excluded: boolean,
+  ) => Promise<boolean>;
   readonly onDeleteAccount: (accountId: string) => Promise<boolean>;
   readonly onRelogin: (provider: WorkjetGatewayOauthProvider, accountId: string) => void;
   readonly onSaveApiKey: (
@@ -526,8 +535,14 @@ function AccountRow({
           )}
         </div>
         <div role="cell" className="min-w-0">
-          <WorkjetModelsCell account={account} state={state}
-            models={state.catalog?.providerModels?.find(entry => entry.provider === account.provider)?.modelIds} />
+          <WorkjetModelsCell
+            account={account}
+            state={state}
+            models={
+              state.catalog?.providerModels?.find((entry) => entry.provider === account.provider)
+                ?.modelIds
+            }
+          />
         </div>
         <div role="cell" className="min-w-0">
           <AccountLimits health={health} />
@@ -750,32 +765,64 @@ function LoginMessage({
   );
 }
 
-function ProviderModelsField({ provider, models, state }: {
+function ProviderModelsField({
+  provider,
+  models,
+  state,
+}: {
   readonly provider: WorkjetGatewayProvider;
   readonly models: ReadonlyArray<string>;
   readonly state: ModelsManagementState;
 }) {
   const suggestions = state.modelSuggestions?.[provider] ?? [];
-  return <div className="flex min-w-0 items-start gap-1">
-    <div className="min-w-0 flex-1">
-      <InlineField value={models.join(", ")} multiline label={"Models for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
-        action={"models.provider." + provider + ".models"} disabled={state.mutationBusy} className="font-mono text-[11px]"
-        onSave={async value => {
-          const parsed = parseModels(value);
-          return parsed !== null && !!(await state.onEditProviderModels?.(provider, parsed));
-        }} />
+  return (
+    <div className="flex min-w-0 items-start gap-1">
+      <div className="min-w-0 flex-1">
+        <InlineField
+          value={models.join(", ")}
+          multiline
+          label={"Models for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+          action={"models.provider." + provider + ".models"}
+          disabled={state.mutationBusy}
+          className="font-mono text-[11px]"
+          onSave={async (value) => {
+            const parsed = parseModels(value);
+            return parsed !== null && !!(await state.onEditProviderModels?.(provider, parsed));
+          }}
+        />
+      </div>
+      {suggestions.length > 0 && (
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                aria-label={"Model suggestions for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]}
+                disabled={state.mutationBusy}
+              />
+            }
+          >
+            <PlusIcon className="size-3" />
+          </PopoverTrigger>
+          <PopoverPopup align="start" viewportClassName="max-h-64 overflow-y-auto p-1">
+            {suggestions
+              .filter((id) => !models.includes(id))
+              .map((id) => (
+                <button
+                  type="button"
+                  key={id}
+                  className="block w-full px-2 py-1 text-left font-mono text-xs hover:bg-accent"
+                  onClick={() => void state.onEditProviderModels?.(provider, [...models, id])}
+                >
+                  {id}
+                </button>
+              ))}
+          </PopoverPopup>
+        </Popover>
+      )}
     </div>
-    {suggestions.length > 0 && <Popover>
-      <PopoverTrigger render={<Button size="icon-xs" variant="ghost" aria-label={"Model suggestions for " + WORKJET_GATEWAY_PROVIDER_LABELS[provider]} disabled={state.mutationBusy} />}>
-        <PlusIcon className="size-3" />
-      </PopoverTrigger>
-      <PopoverPopup align="start" viewportClassName="max-h-64 overflow-y-auto p-1">
-        {suggestions.filter(id => !models.includes(id)).map(id => <button type="button" key={id}
-          className="block w-full px-2 py-1 text-left font-mono text-xs hover:bg-accent"
-          onClick={() => void state.onEditProviderModels?.(provider, [...models, id])}>{id}</button>)}
-      </PopoverPopup>
-    </Popover>}
-  </div>;
+  );
 }
 
 export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & ModelsManagementState) {
@@ -928,8 +975,9 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           </div>
           {providers.map((provider) => {
             const providerAccounts = accounts.filter((account) => account.provider === provider);
-            const models = state.catalog?.providerModels?.find(entry => entry.provider === provider)?.modelIds
-              ?? [...new Set(providerAccounts.flatMap(account => account.modelIds))];
+            const models = state.catalog?.providerModels?.find(
+              (entry) => entry.provider === provider,
+            )?.modelIds ?? [...new Set(providerAccounts.flatMap((account) => account.modelIds))];
             const Icon = WORKJET_GATEWAY_PROVIDER_ICONS[provider];
             const title = WORKJET_GATEWAY_PROVIDER_LABELS[provider];
             const loginHere =
@@ -943,20 +991,22 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                 {(grouped || providerAccounts.length === 0) && (
                   <div className={cn(MODELS_TABLE_COLUMNS, "border-b border-border/50 py-2")}>
                     <div className="flex items-center gap-1.5">
-                    <Icon className="size-4" />
-                    <h3 className="text-xs font-medium">{title}</h3>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label={`Add account to ${title}`}
-                      data-workjet-action={`models.provider.${provider}.add-account`}
-                      disabled={state.mutationBusy}
-                      onClick={() => startAdd(provider)}
-                    >
-                      <PlusIcon className="size-3" />
-                    </Button>
+                      <Icon className="size-4" />
+                      <h3 className="text-xs font-medium">{title}</h3>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`Add account to ${title}`}
+                        data-workjet-action={`models.provider.${provider}.add-account`}
+                        disabled={state.mutationBusy}
+                        onClick={() => startAdd(provider)}
+                      >
+                        <PlusIcon className="size-3" />
+                      </Button>
                     </div>
-                    {state.onEditProviderModels && <ProviderModelsField provider={provider} models={models} state={state} />}
+                    {state.onEditProviderModels && (
+                      <ProviderModelsField provider={provider} models={models} state={state} />
+                    )}
                   </div>
                 )}
                 {providerAccounts.map((account) => (

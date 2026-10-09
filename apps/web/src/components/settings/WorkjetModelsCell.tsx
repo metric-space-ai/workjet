@@ -226,30 +226,80 @@ export function WorkjetModelsCell({
   readonly models?: ReadonlyArray<string>;
 }) {
   const [adding, setAdding] = useState(false);
-  if (models !== undefined && state.onExcludeModel) return <div className="flex min-w-0 flex-wrap gap-1" aria-label={"Models for " + account.label}>
-    {models.map(model => {
-      const excluded = account.excludedModelIds?.includes(model) ?? false;
-      const unavailable = account.availableModelIds !== undefined && !account.availableModelIds.includes(model);
-      const check = state.modelChecks?.find(item => item.accountId === account.id && item.modelId === model);
-      const pending = state.pendingModelChecks?.find(item => item.accountId === account.id && item.modelId === model);
-      const active = account.modelIds.includes(model);
-      const status = active ? modelCheckState(check) : "unchecked";
-      const Icon = pending || (!excluded && !active) ? CircleDashedIcon
-        : status === "ok" ? CheckIcon : status === "error" ? XIcon : CircleDashedIcon;
-      const description = excluded ? "Excluded for this account" : unavailable ? "Not offered by this account's live model list"
-        : !active ? "Account model access has not been observed · check this account" : modelCheckDescription(check, pending?.status === "running");
-      return <label key={model} title={description}
-        className={cn("inline-flex max-w-full items-center gap-1 rounded border border-border/60 bg-muted/20 px-1.5 py-1 font-mono text-[11px]", (excluded || unavailable) && "text-muted-foreground opacity-60")}>
-        <input type="checkbox" className="size-3 shrink-0" checked={!excluded} disabled={state.mutationBusy || unavailable}
-          aria-label={"Use " + model + " for " + account.label}
-          data-workjet-action={"models.account." + account.id + ".model." + model + ".enabled"}
-          onChange={event => void state.onExcludeModel?.(account, model, !event.target.checked)} />
-        <span className="min-w-0 break-all">{model}</span>
-        {!excluded && !unavailable && <span data-model-check={pending?.status ?? status} aria-label={model + ": " + description}
-          className={cn("shrink-0", !pending && status === "ok" ? "text-emerald-500" : !pending && status === "error" ? "text-destructive" : "text-muted-foreground")}><Icon className="size-3.5" /></span>}
-      </label>;
-    })}
-  </div>;
+  if (models !== undefined && state.onExcludeModel)
+    return (
+      <div className="flex min-w-0 flex-wrap gap-1" aria-label={"Models for " + account.label}>
+        {models.map((model) => {
+          const excluded = account.excludedModelIds?.includes(model) ?? false;
+          const unavailable =
+            account.availableModelIds !== undefined && !account.availableModelIds.includes(model);
+          const check = state.modelChecks?.find(
+            (item) => item.accountId === account.id && item.modelId === model,
+          );
+          const pending = state.pendingModelChecks?.find(
+            (item) => item.accountId === account.id && item.modelId === model,
+          );
+          const active = account.modelIds.includes(model);
+          const status = active ? modelCheckState(check) : "unchecked";
+          const Icon =
+            pending || (!excluded && !active)
+              ? CircleDashedIcon
+              : status === "ok"
+                ? CheckIcon
+                : status === "error"
+                  ? XIcon
+                  : CircleDashedIcon;
+          const description = excluded
+            ? "Excluded for this account"
+            : unavailable
+              ? "Not offered by this account's live model list"
+              : !active
+                ? "Account model access has not been observed · check this account"
+                : modelCheckDescription(check, pending?.status === "running");
+          return (
+            <label
+              key={model}
+              title={description}
+              className={cn(
+                "inline-flex max-w-full items-center gap-1 rounded border border-border/60 bg-muted/20 px-1.5 py-1 font-mono text-[11px]",
+                (excluded || unavailable) && "text-muted-foreground opacity-60",
+              )}
+            >
+              <input
+                type="checkbox"
+                className="size-3 shrink-0"
+                checked={!excluded}
+                disabled={state.mutationBusy || unavailable}
+                aria-label={"Use " + model + " for " + account.label}
+                data-workjet-action={
+                  "models.account." + account.id + ".model." + model + ".enabled"
+                }
+                onChange={(event) =>
+                  void state.onExcludeModel?.(account, model, !event.target.checked)
+                }
+              />
+              <span className="min-w-0 break-all">{model}</span>
+              {!excluded && !unavailable && (
+                <span
+                  data-model-check={pending?.status ?? status}
+                  aria-label={model + ": " + description}
+                  className={cn(
+                    "shrink-0",
+                    !pending && status === "ok"
+                      ? "text-emerald-500"
+                      : !pending && status === "error"
+                        ? "text-destructive"
+                        : "text-muted-foreground",
+                  )}
+                >
+                  <Icon className="size-3.5" />
+                </span>
+              )}
+            </label>
+          );
+        })}
+      </div>
+    );
   return (
     <div className="flex min-w-0 items-start gap-1">
       <div

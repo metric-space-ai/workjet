@@ -192,7 +192,6 @@ import {
 import {
   groupThreadsByProjectTeam,
   PROJECT_TEAM_SECTIONS,
-  projectTeamSectionOf,
   projectTeamStatus,
   projectTeamHarnessLabel,
   projectTeamParentTitle,
@@ -2333,7 +2332,7 @@ export default function Sidebar() {
         // arise from stale or raced writes.)
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);
-      } else if (scopedProjectKeys !== null && projectTeamSectionOf(thread) !== "other") {
+      } else if (scopedProjectKeys !== null) {
         active.push(thread);
       } else if (
         supportsSettlement &&
@@ -3987,11 +3986,7 @@ export default function Sidebar() {
               <ul ref={attachListAutoAnimateRef} role="list" className="flex flex-col gap-px">
                 {(() => {
                   const groupByTeam =
-                    selectedWorkjetProject !== null ||
-                    (scopedProjectGroup !== null &&
-                      [...pinnedThreads, ...activeThreads].some(
-                        (thread) => projectTeamSectionOf(thread) !== "other",
-                      ));
+                    selectedWorkjetProject !== null || scopedProjectGroup !== null;
                   const duplicateTitles = duplicateProjectTeamTitles([
                     ...pinnedThreads,
                     ...activeThreads,

@@ -39,19 +39,26 @@ Focused Rust regressions cover event-prefixed frames, data-only frames, LF/CRLF 
 
 ## Live acceptance matrix
 
-**Not yet accepted.** Counts below are successful tool executions in a real Workjet installed/RC harness, not mocked requests. Zero means unrun, not a tested product failure.
+**2 of 12 minimum cells accepted.** Counts below are successful tool executions in a real Workjet installed/RC harness, not mocked requests. Zero means unrun, not a tested product failure.
 
-| Harness | claude-opus-5-5 | gpt-6.1-sol | grok-4.7 |
-| --- | --- | --- | --- |
-| Claude Code | Pending, 0/20 | Pending, 0/20 | Pending, 0/20 |
-| Codex CLI | Pending, 0/20 | Pending, 0/20 | Pending, 0/20 |
-| Grok CLI / Grok Build | Pending, 0/20 | Pending, 0/20 | Pending, 0/20 |
-| OpenCode | Pending, 0/20 | Pending, 0/20 | Pending, 0/20 |
+| Harness               | claude-opus-5-5 | gpt-6.1-sol   | grok-4.7      |
+| --------------------- | --------------- | ------------- | ------------- |
+| Claude Code           | Pass, 20/20     | Pending, 0/20 | Pending, 0/20 |
+| Codex CLI             | Pass, 20/20     | Pending, 0/20 | Pending, 0/20 |
+| Grok CLI / Grok Build | Pending, 0/20   | Pending, 0/20 | Pending, 0/20 |
+| OpenCode              | Pending, 0/20   | Pending, 0/20 | Pending, 0/20 |
+
+The RC is an isolated Workjet 0.0.69 server running the locally compiled Rust host with the streaming repair and catalog-routing repair. It uses private copies of existing gateway credentials, separate native harness homes and an isolated database. The installed Workjet profile is not modified.
+
+- Claude Code / Opus: Workjet thread `6de973a2-d74a-4615-9f92-a8887879abcc`; native session `b89c8298-142d-4344-aa04-cae5a118946d`. [Native proof](harness-proxy-evidence/claude-opus-20261009-native-tool-results.json) records all twenty ordered Bash results with `is_error:false`. Workjet's activity stream omitted the first completion receipt; native history supplies that result. Initial HTTP retries occurred before the first tool call.
+- Codex / Opus: Workjet thread `24474850-7b7d-4cb8-97ce-480ac46a0756`; native session `01a122a3-a692-7ea0-aac2-d9ed99c6a534`. [Native proof](harness-proxy-evidence/codex-opus-20261009-native-tool-results.json) records twenty matching `exec_command` calls/results, ordered output markers and exit code zero for every command. Workjet emitted twenty completion receipts and returned to ready.
 
 Additional required harnesses: MiniMax Code, Greppy and Pi remain open. The installed supervisor's measured failures are retained above; no matrix cell is inferred green from the bridge regressions.
 
 ## Verification and delivery record
 
 - Installed gateway reproduction: exact leaked Bash alias, HTTP 200.
-- Linux regression lane: `workjet-harness-proxy-fix-20261009`, two jobs, managed by `gpu-build-run.sh`; red/green results to be recorded after completion.
+- Linux regression lane `workjet-harness-proxy-fix-20261009`: new complete-frame and buffered-SSE tests fail on the old implementation; the repaired implementation passes all 88 Claude executor tests. Catalog-routing tests pass 4/4. Managed two-job lane receipts are saved under `/Volumes/tmp/dev-artifacts/build-lane/`; key run IDs: `20261009T210127Z` (red), `20261009T212037Z` (88 green), `20261009T212343Z` (routing green).
+- Mac RC host: full TLS build passes through `dev-heavy-run.py`, task `harness-proxy-rc-20261009`. Live matrix cells likewise run through the shared Mac gate.
+- Streaming repair: [PR #287](https://github.com/metric-space-ai/workjet/pull/287). Headerless catalog routing: [PR #288](https://github.com/metric-space-ai/workjet/pull/288). Informational effort notice: [PR #289](https://github.com/metric-space-ai/workjet/pull/289), 79 ClaudeAdapter tests plus targeted lint/format pass. MiniMax's isolated native gateway profile is in [draft PR #296](https://github.com/metric-space-ai/workjet/pull/296), with native validation still open.
 - Source preserved on the pushed branch. No merge or live install is performed by this thread.

@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Host tar archive regression for the release transport, outside the application runtime.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";

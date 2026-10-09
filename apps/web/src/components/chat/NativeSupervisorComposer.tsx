@@ -17,6 +17,7 @@ import {
   type NativeSupervisorScope,
 } from "../../nativeSupervisorComposer";
 import {
+  bindWorkjetSupervisor,
   resumeWorkjetSupervisorTurn,
   submitWorkjetSupervisorTurn,
 } from "../../workjetSupervisorControl";
@@ -42,10 +43,24 @@ export function NativeSupervisorComposer(props: {
     props.config.schemaVersion === 2 ? (props.config.ctoxSupervisorTurn ?? null) : null,
   );
   const [prompt, setPrompt] = useState("");
+  const [bindingRetry, setBindingRetry] = useState(0);
+  const [binding, setBinding] = useState<{
+    readonly scope: NativeSupervisorScope;
+    readonly pending: boolean;
+    readonly error: string | null;
+    readonly authenticationRequired: boolean;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [failureCode, setFailureCode] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const bindingMatches =
+    binding !== null &&
+    props.scope !== null &&
+    binding.scope.instanceId === props.scope.instanceId &&
+    binding.scope.projectId === props.scope.projectId &&
+    binding.scope.threadId === props.scope.threadId;
+  const bindingPending = bindingMatches && binding.pending;
   const [execution, setExecution] = useState<{
     commandId: string;
     request: WorkjetSupervisorExecutionPageRequest;
@@ -215,6 +230,50 @@ export function NativeSupervisorComposer(props: {
     }
   }, [persistedJournal]);
 
+  const bindingInstanceId = props.scope?.instanceId;
+  const bindingProjectId = props.scope?.projectId;
+  const bindingThreadId = props.scope?.threadId;
+  useEffect(() => {
+    if (disabled || !bindingInstanceId || !bindingProjectId || !bindingThreadId) return;
+    const scope = {
+      instanceId: bindingInstanceId,
+      projectId: bindingProjectId,
+      threadId: bindingThreadId,
+    };
+    let stale = false;
+    setBinding({ scope, pending: true, error: null, authenticationRequired: false });
+    // Stable identity makes remounts and a lost setup reply the same native operation.
+    void bindWorkjetSupervisor(
+      scope,
+      CommandId.make(`supervisor-setup:${bindingProjectId}:${bindingThreadId}`),
+    )
+      .then((result) => {
+        if (stale) return;
+        setBinding({
+          scope,
+          pending: false,
+          error:
+            result._tag === "failed"
+              ? describeWorkjetProjectControlFailure(result, scope.instanceId)
+              : null,
+          authenticationRequired:
+            result._tag === "failed" && result.code === "authentication_required",
+        });
+      })
+      .catch(() => {
+        if (!stale)
+          setBinding({
+            scope,
+            pending: false,
+            error: "Could not connect the Supervisor. Retry connection.",
+            authenticationRequired: false,
+          });
+      });
+    return () => {
+      stale = true;
+    };
+  }, [bindingInstanceId, bindingProjectId, bindingThreadId, disabled, bindingRetry]);
+
   useEffect(() => {
     // Restore pending and terminal turns alike; events are backfilled from the saved identity.
     if (!restored.current && !disabled && journal !== null) {
@@ -308,6 +367,23 @@ export function NativeSupervisorComposer(props: {
           )}
         </div>
       )}
+      {bindingMatches && binding.error && (
+        <div role="alert" className="mb-2 flex items-center gap-2 text-xs text-destructive">
+          <span>{binding.error}</span>
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            disabled={busy || bindingPending}
+            onClick={() => {
+              refreshWorkjetProjectRegistry(props.instanceId);
+              requestLocalProjectRegistrationRetry();
+              setBindingRetry((value) => value + 1);
+            }}
+          >
+            Retry connection
+          </button>
+        </div>
+      )}
       {notice && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
           {notice}
@@ -319,7 +395,8 @@ export function NativeSupervisorComposer(props: {
         </p>
       )}
       {props.instanceId?.startsWith("managed:") &&
-        (failureCode === "authentication_required" ||
+        ((bindingMatches && binding.authenticationRequired) ||
+          failureCode === "authentication_required" ||
           journal?.submissionError === "authentication_required" ||
           props.blockReason?.startsWith("Sign in to ctox.dev")) && (
           <button
@@ -338,6 +415,7 @@ export function NativeSupervisorComposer(props: {
                   requestLocalProjectRegistrationRetry();
                   setError(null);
                   setFailureCode(null);
+                  setBindingRetry((value) => value + 1);
                 }
               } catch {
                 setError("Could not open CTOX sign-in. Retry connection.");
@@ -353,7 +431,7 @@ export function NativeSupervisorComposer(props: {
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void run("send");
+          if (!bindingPending) void run("send");
         }}
         className="flex items-end gap-2"
       >
@@ -371,7 +449,7 @@ export function NativeSupervisorComposer(props: {
               !event.nativeEvent.isComposing
             ) {
               event.preventDefault();
-              void run("send");
+              if (!bindingPending) void run("send");
             }
           }}
           className="min-w-0 flex-1 resize-none bg-transparent text-sm outline-none"
@@ -385,7 +463,7 @@ export function NativeSupervisorComposer(props: {
         <button
           type="submit"
           aria-label="Send to Supervisor"
-          disabled={disabled || busy || pending || prompt.trim() === ""}
+          disabled={disabled || busy || bindingPending || pending || prompt.trim() === ""}
           className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
         >
           Send

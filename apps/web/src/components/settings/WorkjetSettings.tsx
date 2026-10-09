@@ -738,6 +738,7 @@ export function WorkjetSettingsView({
         routes={availableRoutes}
         nativeAccounts={nativeProviders.registry?.accounts ?? []}
         nativeModelsBusy={nativeProviders.busy}
+        nativeModelsError={nativeProviders.error}
         onRefreshNativeModels={(account) => {
           void nativeProviders.run({
             action: "instance.providers.observe",

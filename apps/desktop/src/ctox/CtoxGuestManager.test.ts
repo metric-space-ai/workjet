@@ -42,6 +42,7 @@ import * as CtoxManagedLaunch from "./CtoxManagedLaunch.ts";
 import * as CtoxSshManagedLaunch from "./CtoxSshManagedLaunch.ts";
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const decodeJourFixeMeetingFixture = Schema.decodeUnknownEffect(WorkjetJourFixeMeeting);
 
 const descriptor: CtoxManagedInstance = {
   id: "managed:tenant_skf",
@@ -1104,7 +1105,7 @@ describe("CtoxGuestManager", () => {
   it.effect("opens a Jour fixe from a cold hidden guest and recreates a destroyed guest", () => {
     const harness = makeGuestHarness();
     return Effect.gen(function* () {
-      const fixture = yield* Schema.decodeUnknownEffect(WorkjetJourFixeMeeting)(
+      const fixture = yield* decodeJourFixeMeetingFixture(
         jourFixeFixture.valid_cases.find((item) => item.type === "Meeting")!.value,
       );
       const request = {
@@ -3004,7 +3005,7 @@ describe("CtoxGuestManager", () => {
         projectId: ProjectId.make("project-1"),
         meetingId: "meeting-1",
       };
-      const fixture = yield* Schema.decodeUnknownEffect(WorkjetJourFixeMeeting)(
+      const fixture = yield* decodeJourFixeMeetingFixture(
         jourFixeFixture.valid_cases.find((item) => item.type === "Meeting")!.value,
       );
       const receipt = {

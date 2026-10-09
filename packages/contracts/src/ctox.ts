@@ -1016,16 +1016,20 @@ export function isWorkjetSupervisorReceiptForRequest(
     return false;
   if (request.action === "project.supervisor.bind") return response.action === request.action;
   if (request.action === "project.supervisor.turn.capabilities")
-    return response.action === request.action &&
-      (request.includeInput === true) === (response.inputContract !== undefined);
+    return (
+      response.action === request.action &&
+      (request.includeInput === true) === (response.inputContract !== undefined)
+    );
   if (!("turn" in response) || response.turn.threadId !== request.threadId) return false;
   if (request.action === "project.supervisor.turn.input")
-    return response.action === request.action &&
+    return (
+      response.action === request.action &&
       response.turn.commandId === request.targetCommandId &&
       response.turn.taskId !== null &&
       response.input.body === request.body &&
       response.delivery === "next_slice" &&
-      response.workerInterrupted === false;
+      response.workerInterrupted === false
+    );
   if (
     request.action === "project.supervisor.turn.watch" ||
     request.action === "project.supervisor.turn.cancel"

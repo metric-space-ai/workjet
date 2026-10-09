@@ -38,12 +38,14 @@ export async function submitWorkjetSupervisorInput(
 ): Promise<CtoxWorkjetProjectControlResult> {
   decodeJournal(saved);
   decodeIntent(intent);
-  if (saved.submission !== "confirmed" || !saved.turn?.taskId || saved.turn.terminal ||
+  const previous = saved.inputs ?? [];
+  const known = previous.find((entry) => entry.intent.commandId === intent.commandId);
+  if (saved.submission !== "confirmed" || !saved.turn?.taskId ||
       intent.instanceId !== saved.intent.instanceId || intent.projectId !== saved.intent.projectId ||
       intent.threadId !== saved.intent.threadId || intent.targetCommandId !== saved.turn.commandId)
     throw new Error("Select an active confirmed Supervisor task before adding context.");
-  const previous = saved.inputs ?? [];
-  const known = previous.find((entry) => entry.intent.commandId === intent.commandId);
+  if (saved.turn.terminal && !known?.receipt && known?.submission !== "awaiting-receipt")
+    throw new Error("This task has finished; new context was not sent.");
   if (known && JSON.stringify(known.intent) !== JSON.stringify(intent))
     throw new Error("The saved input identity belongs to different context.");
   if (known?.receipt) return { _tag: "completed", response: known.receipt };
@@ -73,6 +75,8 @@ export async function submitWorkjetSupervisorInput(
   let receipt: WorkjetSupervisorInputReceipt;
   try { receipt = decodeReceipt(result.response); }
   catch { return { _tag: "failed", code: "guest_failed" }; }
-  await save({ intent, receipt, submission: "confirmed" }, receipt.turn);
+  const latestTurn = saved.turn.terminal || saved.turn.attempt > receipt.turn.attempt
+    ? saved.turn : receipt.turn;
+  await save({ intent, receipt, submission: "confirmed" }, latestTurn);
   return { _tag: "completed", response: receipt };
 }

@@ -78,7 +78,8 @@ export const WorkjetSupervisorTurnCapabilitiesResponse = Schema.Struct({
     (response.inputContract !== undefined &&
       response.inputDelivery !== undefined &&
       response.maxInputChars !== undefined)
-      ? true : "Supervisor input support needs the complete native capability.",
+      ? true
+      : "Supervisor input support needs the complete native capability.",
   ),
   Schema.makeFilter(
     (response) =>
@@ -128,32 +129,42 @@ export const WorkjetSupervisorInputReceipt = Schema.Struct({
   }),
   delivery: Schema.Literal("next_slice"),
   workerInterrupted: Schema.Literal(false),
-}).check(Schema.makeFilter((response) =>
-  response.projectId === response.binding.projectId &&
-  response.binding.threadId === response.turn.threadId && response.turn.taskId !== null
-    ? true : "Supervisor input belongs to another native binding or has no task.",
-));
+}).check(
+  Schema.makeFilter((response) =>
+    response.projectId === response.binding.projectId &&
+    response.binding.threadId === response.turn.threadId &&
+    response.turn.taskId !== null
+      ? true
+      : "Supervisor input belongs to another native binding or has no task.",
+  ),
+);
 export type WorkjetSupervisorInputReceipt = typeof WorkjetSupervisorInputReceipt.Type;
 
 export const WorkjetSupervisorInputJournal = Schema.Struct({
   intent: WorkjetSupervisorInputIntent,
   receipt: Schema.NullOr(WorkjetSupervisorInputReceipt),
   submission: Schema.Literals(["prepared", "awaiting-receipt", "confirmed"]),
-}).check(Schema.makeFilter((entry) =>
-  (entry.submission === "confirmed") === (entry.receipt !== null) &&
-  (!entry.receipt || (entry.receipt.commandId === entry.intent.commandId &&
-    entry.receipt.projectId === entry.intent.projectId &&
-    entry.receipt.binding.threadId === entry.intent.threadId &&
-    entry.receipt.turn.commandId === entry.intent.targetCommandId &&
-    entry.receipt.input.body === entry.intent.body))
-    ? true : "Supervisor input receipt does not match its saved intent.",
-));
+}).check(
+  Schema.makeFilter((entry) =>
+    (entry.submission === "confirmed") === (entry.receipt !== null) &&
+    (!entry.receipt ||
+      (entry.receipt.commandId === entry.intent.commandId &&
+        entry.receipt.projectId === entry.intent.projectId &&
+        entry.receipt.binding.threadId === entry.intent.threadId &&
+        entry.receipt.turn.commandId === entry.intent.targetCommandId &&
+        entry.receipt.input.body === entry.intent.body))
+      ? true
+      : "Supervisor input receipt does not match its saved intent.",
+  ),
+);
 export type WorkjetSupervisorInputJournal = typeof WorkjetSupervisorInputJournal.Type;
 
 export const WorkjetSupervisorJournal = Schema.Struct({
   intent: WorkjetSupervisorTurnIntent,
   turn: Schema.NullOr(WorkjetSupervisorTurn),
-  inputs: Schema.optionalKey(Schema.Array(WorkjetSupervisorInputJournal).check(Schema.isMaxLength(128))),
+  inputs: Schema.optionalKey(
+    Schema.Array(WorkjetSupervisorInputJournal).check(Schema.isMaxLength(128)),
+  ),
   submission: Schema.Literals(["prepared", "awaiting-receipt", "confirmed", "not-submitted"]),
   submissionError: Schema.optionalKey(
     Schema.Literals([
@@ -172,12 +183,14 @@ export const WorkjetSupervisorJournal = Schema.Struct({
     (journal.turn === null || journal.turn.threadId === journal.intent.threadId) &&
     new Set((journal.inputs ?? []).map((entry) => entry.intent.commandId)).size ===
       (journal.inputs ?? []).length &&
-    (journal.inputs ?? []).every((entry) =>
-      entry.intent.instanceId === journal.intent.instanceId &&
-      entry.intent.projectId === journal.intent.projectId &&
-      entry.intent.threadId === journal.intent.threadId &&
-      entry.intent.targetCommandId === journal.turn?.commandId &&
-      (!entry.receipt || entry.receipt.turn.taskId === journal.turn?.taskId)) &&
+    (journal.inputs ?? []).every(
+      (entry) =>
+        entry.intent.instanceId === journal.intent.instanceId &&
+        entry.intent.projectId === journal.intent.projectId &&
+        entry.intent.threadId === journal.intent.threadId &&
+        entry.intent.targetCommandId === journal.turn?.commandId &&
+        (!entry.receipt || entry.receipt.turn.taskId === journal.turn?.taskId),
+    ) &&
     (journal.submission === "confirmed") === (journal.turn !== null) &&
     (journal.submission !== "not-submitted" || journal.submissionError !== undefined)
       ? true

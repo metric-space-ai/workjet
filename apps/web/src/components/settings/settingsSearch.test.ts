@@ -74,6 +74,23 @@ describe("searchSettings", () => {
     expect(searchSettings("   ", ITEMS)).toEqual([]);
   });
 
+  it("finds session import and links to its section on the Harnesses page", () => {
+    for (const query of ["import", "import sessions", "histories"]) {
+      expect(searchSettings(query)).toEqual([
+        {
+          id: "import-sessions",
+          title: "Import sessions",
+          to: "/settings/harnesses",
+          searchAliases: ["import", "history", "histories"],
+        },
+      ]);
+    }
+    expect(searchableSetting("import-sessions")).toEqual({
+      id: "import-sessions",
+      title: "Import sessions",
+    });
+  });
+
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);

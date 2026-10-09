@@ -39,6 +39,8 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("default every 30 minutes");
     expect(prompt).toContain("confirmed to-do list of the last regular meeting");
     expect(prompt).not.toContain("Your durable parent thread");
+    expect(prompt).toContain("action project");
+    expect(prompt).toContain("do not maintain their own mini-kanban");
     expect(prompt).not.toContain("Stop after submission");
   });
 
@@ -46,6 +48,8 @@ describe("project team role prompts", () => {
     const prompt = compile(teams[1]!);
     expect(prompt).toContain("Your durable parent thread is supervisor.");
     expect(prompt).toContain("Perform substantive work yourself");
+    expect(prompt).toContain("before any other work");
+    expect(prompt).toContain("workjet_worker_kanban with action update");
     expect(prompt).toContain(
       "A completed turn, a partial result, a queued build or a pull request does not by itself complete the goal",
     );
@@ -61,5 +65,6 @@ describe("project team role prompts", () => {
     expect(prompt).toContain("Open exactly one pull request");
     expect(prompt).toContain("Stop after submission");
     expect(prompt).toContain("Workjet owns automatic archival");
+    expect(prompt).not.toContain("workjet_worker_kanban");
   });
 });

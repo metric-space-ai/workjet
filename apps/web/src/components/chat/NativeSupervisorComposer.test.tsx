@@ -51,6 +51,37 @@ const config: WorkjetThreadConfig = {
 const saveConfig = async () => ({ _tag: "Success" });
 
 describe("native supervisor receipt display", () => {
+  it.each(["not_active", "timeout"] as const)(
+    "keeps a restored legacy %s request pending before effects run",
+    (code) => {
+      const legacyConfig: WorkjetThreadConfig = {
+        ...config,
+        schemaVersion: 2,
+        ctoxSupervisorTurn: {
+          ...config.ctoxSupervisorTurn!,
+          submission: "not-submitted",
+          submissionError: code,
+          turn: null,
+        },
+      };
+      const html = renderToStaticMarkup(
+        <NativeSupervisorComposer
+          scope={scope}
+          config={legacyConfig}
+          instanceId={scope.instanceId}
+          blockReason={null}
+          unavailable={false}
+          saveConfig={saveConfig}
+        />,
+      );
+      expect(html).toContain("Real requested change");
+      expect(html).toContain("Waiting for CTOX receipt");
+      expect(html).not.toContain("Not sent");
+      expect(html).not.toContain("You can send a new request");
+      expect(html.match(/<textarea[^>]*>/)?.[0]).toContain("disabled");
+      expect(html).toContain('aria-label="Send to Supervisor" disabled=""');
+    },
+  );
   it("shows a pending receipt without asking for Owner confirmation", () => {
     const pendingConfig: WorkjetThreadConfig = {
       ...config,

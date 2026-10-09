@@ -59,8 +59,7 @@ export function NativeSupervisorComposer(props: {
   const scopeMatches =
     scope !== null && (journal === null || supervisorJournalMatchesScope(journal, scope));
   const disabled = props.unavailable || !scopeMatches;
-  const pending =
-    journal !== null && journal.submission !== "not-submitted" && journal.turn?.terminal !== true;
+  const pending = canResumeSupervisorJournal(journal, null);
   const latestProps = useRef(props);
   latestProps.current = props;
 
@@ -78,11 +77,7 @@ export function NativeSupervisorComposer(props: {
       (saved !== null && !supervisorJournalMatchesScope(saved, target))
     )
       return;
-    if (
-      operation === "send" &&
-      (prompt.trim() === "" ||
-        (saved !== null && saved.submission !== "not-submitted" && saved.turn?.terminal !== true))
-    )
+    if (operation === "send" && (prompt.trim() === "" || canResumeSupervisorJournal(saved, null)))
       return;
     if (operation !== "send" && saved === null) return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
@@ -221,7 +216,8 @@ export function NativeSupervisorComposer(props: {
     // Restore pending and terminal turns alike; events are backfilled from the saved identity.
     if (!restored.current && !disabled && journal !== null) {
       restored.current = true;
-      if (journal.submission !== "not-submitted") void runRef.current("resume");
+      if (journal.turn !== null || canResumeSupervisorJournal(journal, null))
+        void runRef.current("resume");
     }
   }, [disabled, journal]);
   useEffect(() => {
@@ -240,7 +236,7 @@ export function NativeSupervisorComposer(props: {
           <p className="mt-1 text-xs text-muted-foreground">
             {journal.turn
               ? `${journal.turn.status} · Attempt ${journal.turn.attempt}`
-              : journal.submission === "not-submitted"
+              : journal.submission === "not-submitted" && !pending
                 ? "Not sent"
                 : "Waiting for CTOX receipt"}
           </p>
@@ -277,7 +273,7 @@ export function NativeSupervisorComposer(props: {
           {journal.turn?.resultTruncated && (
             <p className="text-xs text-muted-foreground">Result truncated</p>
           )}
-          {journal.submission === "not-submitted" && (
+          {journal.submission === "not-submitted" && !pending && (
             <p role="alert" className="text-destructive">
               CTOX: {journal.submissionError}. You can send a new request.
             </p>

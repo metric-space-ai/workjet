@@ -164,6 +164,16 @@ export function nativeSupervisorResultText(
   }
   if (expected && envelope && typeof envelope === "object" && !Array.isArray(envelope)) {
     const value = envelope as Record<string, unknown>;
+    // Legacy watch projections return the chat tool result directly. The caller
+    // supplies the already correlated native turn; do not unwrap another chat.
+    if (
+      !("command_id" in value) &&
+      !("execution_task_id" in value) &&
+      !("attempt" in value) &&
+      value.chat_id === `chat_${expected.commandId}` &&
+      typeof value.outbound_text === "string"
+    )
+      return value.outbound_text;
     if (
       typeof value.command_id === "string" &&
       typeof value.execution_task_id === "string" &&

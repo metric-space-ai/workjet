@@ -153,11 +153,13 @@ function PlayerContent({
             setSpeed(rate);
           }}
         >
-          {[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])].sort((a, b) => a - b).map((rate) => (
-            <option key={rate} value={rate}>
-              {rate}×
-            </option>
-          ))}
+          {[...new Set([0.8, 1, 1.15, 1.25, 1.5, rate])]
+            .sort((a, b) => a - b)
+            .map((rate) => (
+              <option key={rate} value={rate}>
+                {rate}×
+              </option>
+            ))}
         </select>
         {onAutoAdvanceChange && (
           <Button

@@ -17,6 +17,7 @@ import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsWorkjetRouteImport } from './routes/settings.workjet'
+import { Route as SettingsSpeechRouteImport } from './routes/settings.speech'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsModelsRouteImport } from './routes/settings.models'
 import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybindings'
@@ -71,6 +72,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
 const SettingsWorkjetRoute = SettingsWorkjetRouteImport.update({
   id: '/workjet',
   path: '/workjet',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSpeechRoute = SettingsSpeechRouteImport.update({
+  id: '/speech',
+  path: '/speech',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/speech': typeof SettingsSpeechRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -200,6 +207,7 @@ export interface FileRoutesByTo {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/speech': typeof SettingsSpeechRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -227,6 +235,7 @@ export interface FileRoutesById {
   '/settings/keybindings': typeof SettingsKeybindingsRoute
   '/settings/models': typeof SettingsModelsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
+  '/settings/speech': typeof SettingsSpeechRoute
   '/settings/workjet': typeof SettingsWorkjetRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -255,6 +264,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/models'
     | '/settings/source-control'
+    | '/settings/speech'
     | '/settings/workjet'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -279,6 +289,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/models'
     | '/settings/source-control'
+    | '/settings/speech'
     | '/settings/workjet'
     | '/'
     | '/$environmentId/$threadId'
@@ -305,6 +316,7 @@ export interface FileRouteTypes {
     | '/settings/keybindings'
     | '/settings/models'
     | '/settings/source-control'
+    | '/settings/speech'
     | '/settings/workjet'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
@@ -378,6 +390,13 @@ declare module '@tanstack/react-router' {
       path: '/workjet'
       fullPath: '/settings/workjet'
       preLoaderRoute: typeof SettingsWorkjetRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/speech': {
+      id: '/settings/speech'
+      path: '/speech'
+      fullPath: '/settings/speech'
+      preLoaderRoute: typeof SettingsSpeechRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/source-control': {
@@ -523,6 +542,7 @@ interface SettingsRouteChildren {
   SettingsKeybindingsRoute: typeof SettingsKeybindingsRoute
   SettingsModelsRoute: typeof SettingsModelsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
+  SettingsSpeechRoute: typeof SettingsSpeechRoute
   SettingsWorkjetRoute: typeof SettingsWorkjetRoute
 }
 
@@ -538,6 +558,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsKeybindingsRoute: SettingsKeybindingsRoute,
   SettingsModelsRoute: SettingsModelsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
+  SettingsSpeechRoute: SettingsSpeechRoute,
   SettingsWorkjetRoute: SettingsWorkjetRoute,
 }
 

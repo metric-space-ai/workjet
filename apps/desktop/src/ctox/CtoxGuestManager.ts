@@ -1959,6 +1959,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "response_invalid" };
         }
         const confirmed = decoded.value;
+        if (
+          request.action === "computer.ssh_key.ensure" &&
+          (confirmed.action !== "computer.ssh_key.ensure" ||
+            confirmed.computerId !== request.computerId)
+        ) {
+          return { _tag: "failed", code: "response_invalid" };
+        }
         if (request.action === "computer.assign" || request.action === "computer.unassign") {
           if (
             (confirmed.action !== "computer.assign" && confirmed.action !== "computer.unassign") ||

@@ -72,6 +72,21 @@ const response = {
 } as const;
 
 describe("bounded installed supervisor observer", () => {
+  it("keeps the actual history failure instead of replacing it with a legacy retry", async () => {
+    let reads = 0;
+    const failure = {
+      _tag: "failed", code: "guest_failed",
+      diagnostic: { stage: "execute", reason: "owner_session_not_ready" },
+    } as const;
+    const result = await readWorkjetSupervisorPublicExecutionPage(
+      saved, response.commandId,
+      { save: async () => { throw new Error("Failed reads must not change the journal."); } },
+      { include_public_text: true },
+      async () => { reads += 1; return failure; },
+    );
+    expect(result).toEqual(failure);
+    expect(reads).toBe(1);
+  });
   it("backfills pages with native event IDs under a fixed attempt without dispatching a turn", async () => {
     const requests: string[] = [];
     const journals: WorkjetSupervisorJournal[] = [];

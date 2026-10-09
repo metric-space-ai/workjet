@@ -9,6 +9,18 @@ import {
 } from "./workjetProjectControl";
 
 describe("project instance failure display", () => {
+  it("renders distinct history failure causes instead of a bare guest_failed", () => {
+    for (const [reason, expected] of [
+      ["owner_session_not_ready", "owner session"],
+      ["supervisor_control_not_ready", "Supervisor controls"],
+      ["schema_invalid", "Workjet version"],
+      ["receipt_mismatch", "different request or run"],
+    ] as const) {
+      expect(describeWorkjetProjectControlFailure({
+        _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason },
+      })).toContain(expected);
+    }
+  });
   it("distinguishes hosted sign-in from accountless paired authentication", () => {
     const failure = { _tag: "failed", code: "authentication_required" } as const;
     expect(describeWorkjetProjectControlFailure(failure, "managed:tenant")).toContain(

@@ -83,6 +83,7 @@ export async function readWorkjetSupervisorPublicExecutionPage(
   if (
     pageRequest.include_public_text !== true ||
     result._tag !== "failed" ||
+    (result.code === "guest_failed" && result.diagnostic !== undefined) ||
     !["unsupported", "guest_failed", "invalid_input"].includes(result.code)
   )
     return result;

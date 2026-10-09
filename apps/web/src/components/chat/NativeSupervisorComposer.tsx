@@ -254,7 +254,7 @@ export function NativeSupervisorComposer(props: {
             setExecutionError(
               observed.code === "unsupported"
                 ? "This CTOX version does not provide execution history."
-                : `Execution history unavailable: ${observed.code}. Refresh or load from the start.`,
+                : `Execution history unavailable. ${describeWorkjetProjectControlFailure(observed, target.instanceId)}`,
             );
           }
         } catch {

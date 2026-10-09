@@ -967,6 +967,16 @@ export function isWorkjetSupervisorReceiptForRequest(
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
+    diagnostic: Schema.optionalKey(
+      Schema.Struct({
+        stage: Schema.Literals(["execute", "response", "decode", "correlation"]),
+        reason: Schema.Literals([
+          "exception", "unsupported_action", "owner_session_not_ready",
+          "project_control_not_ready", "supervisor_control_not_ready",
+          "response_invalid", "schema_invalid", "receipt_mismatch",
+        ]),
+      }),
+    ),
     discovery: Schema.optionalKey(
       Schema.Struct({
         code: CtoxManagedDiscoveryFailureCode,

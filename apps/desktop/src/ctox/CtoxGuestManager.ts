@@ -817,7 +817,7 @@ function isSuccessfulCtoxNavigationCommit(
 export function describeCtoxGuestFailure(error: unknown): {
   readonly name: string;
   readonly code: string | number | null;
-  readonly reason: string;
+  readonly reason: "unsupported_action" | "owner_session_not_ready" | "project_control_not_ready" | "supervisor_control_not_ready" | "exception";
 } {
   const value = typeof error === "object" && error !== null ? error : undefined;
   const rawCode = value === undefined ? undefined : (value as { code?: unknown }).code;
@@ -2019,6 +2019,15 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         }
         // Sync may never settle. Keep the pool unlocked so switching and
         // closing still work, and return a bounded failure to the caller.
+        const guestFailure = (
+          stage: "execute" | "response" | "decode" | "correlation",
+          reason: NonNullable<Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>["diagnostic"]>["reason"],
+        ): CtoxWorkjetProjectControlResult => ({
+          _tag: "failed",
+          code: "guest_failed",
+          ...(request.action === "project.supervisor.turn.watch" ? { diagnostic: { stage, reason } } : {}),
+        });
+        const executionFailure: { value?: ReturnType<typeof describeCtoxGuestFailure> } = {};
         const pending = yield* Effect.tryPromise({
           try: () =>
             guest.view.webContents.executeJavaScript(
@@ -2035,13 +2044,14 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               ...failure,
             }),
           ),
-          Effect.catch((failure) =>
-            Effect.succeed(
+          Effect.catch((failure) => {
+            executionFailure.value = failure;
+            return Effect.succeed(
               failure.reason === "unsupported_action"
                 ? { status: "unsupported" as const }
                 : undefined,
-            ),
-          ),
+            );
+          }),
           Effect.timeoutOption("30 seconds"),
         );
         if (Option.isNone(pending)) {
@@ -2062,6 +2072,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "not_active" };
         }
         const raw = pending.value;
+        if (executionFailure.value !== undefined && executionFailure.value.reason !== "unsupported_action") {
+          return guestFailure("execute", executionFailure.value.reason);
+        }
         const status =
           typeof raw === "object" && raw !== null
             ? (raw as { readonly status?: unknown }).status
@@ -2083,7 +2096,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             status: status === "failed" ? "failed" : "invalid",
             ...describeCtoxGuestFailure(raw),
           });
-          return { _tag: "failed", code: "guest_failed" };
+          return guestFailure("response", "response_invalid");
         }
         const response = (raw as { readonly result?: unknown }).result;
         // Native Meeting snapshots have a 1 MiB metadata ceiling. Other
@@ -2102,9 +2115,9 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
         const decoded = yield* decodeWorkjetProjectControlResponse(response, {
           onExcessProperty: "error",
         }).pipe(Effect.option);
-        if (Option.isNone(decoded)) return { _tag: "failed", code: "guest_failed" };
+        if (Option.isNone(decoded)) return guestFailure("decode", "schema_invalid");
         if (decoded.value.action !== request.action) {
-          return { _tag: "failed", code: "guest_failed" };
+          return guestFailure("correlation", "receipt_mismatch");
         }
         if (
           request.action === "project.supervisor.turn.watch" &&
@@ -2115,7 +2128,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           return { _tag: "failed", code: "unsupported" };
         }
         if (!isWorkjetSupervisorReceiptForRequest(request, decoded.value)) {
-          return { _tag: "failed", code: "guest_failed" };
+          return guestFailure("correlation", "receipt_mismatch");
         }
         if (!isWorkjetJourFixeReceiptForRequest(request, decoded.value)) {
           return { _tag: "failed", code: "guest_failed" };

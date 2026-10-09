@@ -1198,6 +1198,39 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("returns fixed history failure causes without private shell exception text", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const request = {
+        action: "project.supervisor.turn.watch" as const,
+        commandId: CommandId.make("history-observation"),
+        projectId: ProjectId.make("project-one"),
+        threadId: "e28290b0-7b0a-4d19-a242-f27041fadb84",
+        targetCommandId: "supervisor-command",
+      };
+      for (const [message, reason] of [
+        ["Invalid Workjet project owner_user_id.", "owner_session_not_ready"],
+        ["Workjet supervisor control is not ready.", "supervisor_control_not_ready"],
+        ["Private token=secret at https://private.invalid", "exception"],
+      ] as const) {
+        harness.views[0]!.executeJavaScript.mockRejectedValueOnce(new Error(message));
+        const result = yield* manager.requestProjectControl(descriptor.id, request);
+        assert.deepEqual(result, {
+          _tag: "failed", code: "guest_failed", diagnostic: { stage: "execute", reason },
+        });
+        expect(JSON.stringify(result)).not.toContain("secret");
+        expect(JSON.stringify(result)).not.toContain("private.invalid");
+      }
+      harness.views[0]!.executeJavaScript.mockResolvedValueOnce({ status: "completed", result: {} });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "failed", code: "guest_failed",
+        diagnostic: { stage: "decode", reason: "schema_invalid" },
+      });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it("retains safe exception facts without disclosing launch URLs or request data", () => {
     const error = Object.assign(
       new Error("Unknown Workjet action at https://private.invalid/?token=secret"),

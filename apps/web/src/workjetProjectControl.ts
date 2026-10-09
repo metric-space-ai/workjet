@@ -31,6 +31,19 @@ export function describeWorkjetProjectControlFailure(
       : "Sign in to this CTOX instance to reconnect.";
   if (failure.discovery !== undefined)
     return `Instance discovery failed: ${failure.discovery.code}${failure.discovery.httpStatus === undefined ? "" : ` (HTTP ${failure.discovery.httpStatus})`}. Retry connection.`;
+  if (failure.diagnostic !== undefined) {
+    const messages = {
+      owner_session_not_ready: "The instance's owner session is not ready. Reconnect the instance.",
+      project_control_not_ready: "Project controls are not ready on this instance. Retry connection.",
+      supervisor_control_not_ready: "Supervisor controls are not ready on this instance. Retry connection.",
+      unsupported_action: "The connected instance does not support this action. Update its shell.",
+      response_invalid: "The instance returned an invalid history response. Reload the history.",
+      schema_invalid: "The history response does not match this Workjet version. Check the instance version.",
+      receipt_mismatch: "The history receipt belongs to a different request or run. Reload the history.",
+      exception: "The connected instance failed while reading history. Retry connection.",
+    };
+    return messages[failure.diagnostic.reason];
+  }
   if (failure.code === "not_active")
     return "This project's bound instance is unavailable. Check the CTOX connection.";
   if (failure.code === "unsupported")

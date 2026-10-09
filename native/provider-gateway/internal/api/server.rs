@@ -22,6 +22,9 @@ use crate::internal::api::server_routes::{
 use crate::sdk::api::handlers::claude::code_handlers::{
     ClaudeMessagesHttpResponse, ClaudeMessagesRouteHandler, ClaudeMessagesRouteResponse,
 };
+use crate::sdk::api::handlers::openai::chat_completions_bridge::{
+    route_chat_completions, ChatCompletionsRouteResponse,
+};
 use crate::sdk::api::handlers::openai::openai_responses_handlers::{
     OpenAiResponsesHttpResponse, OpenAiResponsesRouteHandler, OpenAiResponsesRouteResponse,
 };
@@ -218,7 +221,7 @@ where
             // retain their authority and never go through this inference.
             if request.provider.is_none()
                 && request.method == "POST"
-                && matches!(route, ServerRoute::Messages | ServerRoute::Responses)
+                && matches!(route, ServerRoute::Messages | ServerRoute::Responses | ServerRoute::ChatCompletions)
             {
                 match catalog_provider_for_request(&request.body, models_response.body()) {
                     Ok(provider) => request.provider = provider,
@@ -246,6 +249,32 @@ where
                 };
                 prepare_messages_response_writer(response_writer.as_mut(), &response);
                 write_messages_route_response(stream, &mut response, response_writer.as_mut()).await
+            } else if route == ServerRoute::ChatCompletions {
+                let mut response = if request.method == "POST" {
+                    route_chat_completions(responses_handler, request.provider.as_deref(), &request.body).await
+                } else {
+                    ChatCompletionsRouteResponse::Buffered(OpenAiResponsesHttpResponse::error(405, "method not allowed"))
+                };
+                match &mut response {
+                    ChatCompletionsRouteResponse::Buffered(buffered) => {
+                        if let Some(writer) = response_writer.as_mut() {
+                            writer.write_header(buffered.status(), BTreeMap::from([("Content-Type".into(), vec![buffered.content_type().into()])]));
+                        }
+                        write_response_with_capture(stream, buffered, response_writer.as_mut()).await
+                    }
+                    ChatCompletionsRouteResponse::Stream(translated) => {
+                        if let Some(writer) = response_writer.as_mut() {
+                            writer.write_header(200, BTreeMap::from([("Content-Type".into(), vec!["text/event-stream".into()])]));
+                        }
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n{}\r\n", super::account_selection::acknowledgement()).as_bytes()).await?;
+                        while let Some(chunk) = translated.next_chunk().await {
+                            let result = stream.write_all(&chunk).await;
+                            if let Some(writer) = response_writer.as_mut() { writer.write(&chunk); }
+                            result?;
+                        }
+                        stream.shutdown().await
+                    }
+                }
             } else if matches!(
                 route,
                 ServerRoute::CountTokens
@@ -600,7 +629,7 @@ where
     if account.is_some()
         && !matches!(
             resolve_server_route(&target),
-            ServerRoute::Responses | ServerRoute::Messages
+            ServerRoute::Responses | ServerRoute::Messages | ServerRoute::ChatCompletions
         )
     {
         return Err(RequestReadError {

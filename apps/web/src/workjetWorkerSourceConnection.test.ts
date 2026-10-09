@@ -47,11 +47,26 @@ describe("native supervisor worker source connection", () => {
     expect(connection.instanceId).not.toBe(tenant);
   });
   it("does not treat the decision-hub-only grant as a worker source", () => {
-    expect(workerSourceConnectionForInstance([{ ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) }], selected)).toBeUndefined();
+    expect(
+      workerSourceConnectionForInstance(
+        [{ ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) }],
+        selected,
+      ),
+    ).toBeUndefined();
   });
   it("does not expose a different tenant or an invalid source connection identity", () => {
     expect(workerSourceConnectionForInstance([connection], "managed:foreign")).toBeUndefined();
-    expect(workerSourceConnectionForInstance([{ ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev-worker-source:${tenant}:invalid`) }], selected)).toBeUndefined();
+    expect(
+      workerSourceConnectionForInstance(
+        [
+          {
+            ...connection,
+            connectionId: WorkjetConnectionId.make(`ctox-dev-worker-source:${tenant}:invalid`),
+          },
+        ],
+        selected,
+      ),
+    ).toBeUndefined();
   });
   it("prefers a ready source over an offline older connection", () => {
     const offline: WorkjetConnectionSummary = { ...connection, status: "offline" };
@@ -86,26 +101,39 @@ describe("persisted supervisor worker authority", () => {
     expect(next.managedInstructions).toBe(config.managedInstructions);
     expect(next.enabledCapabilityIds).toEqual(["greppy", "ctox-business-os"]);
     expect(next.schemaVersion === 2 && next.ctoxSupervisorTurn).toBe(config.ctoxSupervisorTurn);
-    expect(next.schemaVersion === 2 && next.capabilityBindings).toEqual([{
-      capabilityId: "ctox-business-os",
-      target: { kind: "ctox-connection", connectionId: connection.connectionId, instanceId: nativeInstance },
-    }]);
+    expect(next.schemaVersion === 2 && next.capabilityBindings).toEqual([
+      {
+        capabilityId: "ctox-business-os",
+        target: {
+          kind: "ctox-connection",
+          connectionId: connection.connectionId,
+          instanceId: nativeInstance,
+        },
+      },
+    ]);
     expect(config.enabledCapabilityIds).toEqual(["greppy"]);
   });
   it("does not treat an unbound, disabled or incorrectly pinned source as connected", () => {
     expect(workerSourceIsBound(config, connection)).toBe(false);
     const next = withWorkerSourceConnection(config, selected, connection)!;
     expect(workerSourceIsBound({ ...next, enabledCapabilityIds: [] }, connection)).toBe(false);
-    expect(workerSourceIsBound(next, { ...connection, instanceId: "foreign-native-pin" })).toBe(false);
+    expect(workerSourceIsBound(next, { ...connection, instanceId: "foreign-native-pin" })).toBe(
+      false,
+    );
   });
   it("rejects offline and foreign sources before changing the supervisor", () => {
-    expect(withWorkerSourceConnection(config, selected, { ...connection, status: "offline" })).toBeNull();
+    expect(
+      withWorkerSourceConnection(config, selected, { ...connection, status: "offline" }),
+    ).toBeNull();
     expect(withWorkerSourceConnection(config, "managed:foreign", connection)).toBeNull();
   });
   it("normalizes legacy settings and binds repeated saves only once", () => {
     const legacy: WorkjetThreadConfig = {
-      schemaVersion: 1, role: "orchestrator", parent: null,
-      managedInstructions: "Legacy instructions", enabledCapabilityIds: ["greppy"],
+      schemaVersion: 1,
+      role: "orchestrator",
+      parent: null,
+      managedInstructions: "Legacy instructions",
+      enabledCapabilityIds: ["greppy"],
     };
     const first = withWorkerSourceConnection(legacy, selected, connection)!;
     const second = withWorkerSourceConnection(first, selected, connection)!;

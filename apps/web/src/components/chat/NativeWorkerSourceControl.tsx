@@ -1,4 +1,8 @@
-import type { EnvironmentId, WorkjetConnectionSummary, WorkjetThreadConfig } from "@workjet/contracts";
+import type {
+  EnvironmentId,
+  WorkjetConnectionSummary,
+  WorkjetThreadConfig,
+} from "@workjet/contracts";
 import { useRef, useState } from "react";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -30,7 +34,9 @@ export function NativeWorkerSourceControl(props: {
     readonly queryData: typeof query.data;
   } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ readonly scope: string; readonly message: string } | null>(null);
+  const [error, setError] = useState<{ readonly scope: string; readonly message: string } | null>(
+    null,
+  );
   const inFlight = useRef(false);
   const request = workerSourceProvisionRequest(props.environmentId, props.instanceId);
   // The refreshed catalog replaces the provisioning receipt, including revocation.
@@ -84,7 +90,8 @@ export function NativeWorkerSourceControl(props: {
       if (!saved) {
         setError({
           scope: requestedScope,
-          message: "Could not save the worker connection for this supervisor. Retry Connect workers.",
+          message:
+            "Could not save the worker connection for this supervisor. Retry Connect workers.",
         });
       }
     } catch {
@@ -107,15 +114,25 @@ export function NativeWorkerSourceControl(props: {
       data-workjet-worker-source-instance-id={bound ? source?.instanceId : undefined}
     >
       {bound ? (
-        <span role="status" className="text-emerald-500">Workers connected</span>
+        <span role="status" className="text-emerald-500">
+          Workers connected
+        </span>
       ) : (
         <>
           <button
             type="button"
             aria-label="Connect workers for this project"
             className="rounded-md border px-2.5 py-1.5 disabled:opacity-50"
-            disabled={props.unavailable || busy || request === null || (!ready && provision === undefined) || query.isPending}
-            onClick={() => { void connect(); }}
+            disabled={
+              props.unavailable ||
+              busy ||
+              request === null ||
+              (!ready && provision === undefined) ||
+              query.isPending
+            }
+            onClick={() => {
+              void connect();
+            }}
           >
             {busy ? "Connecting workers…" : "Connect workers"}
           </button>
@@ -130,7 +147,11 @@ export function NativeWorkerSourceControl(props: {
           ) : null}
         </>
       )}
-      {error?.scope === scope ? <span role="alert" className="text-amber-500">{error.message}</span> : null}
+      {error?.scope === scope ? (
+        <span role="alert" className="text-amber-500">
+          {error.message}
+        </span>
+      ) : null}
     </div>
   );
 }

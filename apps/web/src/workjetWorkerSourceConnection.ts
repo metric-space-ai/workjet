@@ -57,7 +57,8 @@ export function withWorkerSourceConnection(
   if (
     connection.status !== "ready" ||
     !workerSourceConnectionForInstance([connection], selectedInstanceId)
-  ) return null;
+  )
+    return null;
   const normalized = normalizeWorkjetThreadConfig(config);
   return {
     ...normalized,
@@ -66,7 +67,9 @@ export function withWorkerSourceConnection(
       ? normalized.enabledCapabilityIds
       : [...normalized.enabledCapabilityIds, "ctox-business-os"],
     capabilityBindings: [
-      ...normalized.capabilityBindings.filter((binding) => binding.capabilityId !== "ctox-business-os"),
+      ...normalized.capabilityBindings.filter(
+        (binding) => binding.capabilityId !== "ctox-business-os",
+      ),
       {
         capabilityId: "ctox-business-os",
         target: {

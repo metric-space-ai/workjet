@@ -68,11 +68,19 @@ describe("worker connection in the native project supervisor", () => {
     expect(html).not.toContain(`data-workjet-worker-source-instance-id="${tenant}"`);
   });
   it("does not report decision-hub grants or another tenant as connected workers", () => {
-    state.data = { connections: [{ ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) }] };
+    state.data = {
+      connections: [
+        { ...connection, connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`) },
+      ],
+    };
     expect(render({ config: boundConfig })).not.toContain("Workers connected");
     state.data = { connections: [connection] };
-    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain("Workers connected");
-    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain(nativeInstance);
+    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain(
+      "Workers connected",
+    );
+    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain(
+      nativeInstance,
+    );
   });
   it("lets an offline source be connected again instead of keeping a revoked grant ready", () => {
     state.data = { connections: [{ ...connection, status: "offline" }] };

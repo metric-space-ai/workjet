@@ -151,7 +151,7 @@ fn append_message(
                     "type":"function_call",
                     "call_id":shorten_call_id(part.get("id").and_then(Value::as_str).unwrap_or_default()),
                     "name":tool_names.get(&raw_name).cloned().unwrap_or_else(|| shorten_name(&raw_name)),
-                    "arguments":part.get("input").cloned().unwrap_or_else(|| json!({})),
+                    "arguments":part.get("input").cloned().unwrap_or_else(|| json!({})).to_string(),
                 }));
             }
             "tool_result" => {

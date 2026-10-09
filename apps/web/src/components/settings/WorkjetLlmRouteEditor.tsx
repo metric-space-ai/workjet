@@ -26,7 +26,9 @@ export function createWorkjetLlmRouteDraft(input: {
   return {
     id: input.route?.id ?? input.id ?? randomUUID(),
     label: input.route?.label ?? "",
-    gatewayAccountId: input.route ? (input.route.gatewayAccountId ?? "") : (input.accounts[0]?.id ?? ""),
+    gatewayAccountId: input.route
+      ? (input.route.gatewayAccountId ?? "")
+      : (input.accounts[0]?.id ?? ""),
   };
 }
 

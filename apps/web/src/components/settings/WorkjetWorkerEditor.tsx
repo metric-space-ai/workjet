@@ -313,7 +313,10 @@ export function WorkjetWorkerEditor({
   readonly nativeAccounts?: readonly WorkjetNativeProviderAccount[];
   readonly nativeModelsBusy?: boolean;
   readonly onRefreshNativeModels?: (account: WorkjetNativeProviderAccount) => void;
-  readonly onValidateNativeModel?: (account: WorkjetNativeProviderAccount, model: string) => Promise<void>;
+  readonly onValidateNativeModel?: (
+    account: WorkjetNativeProviderAccount,
+    model: string,
+  ) => Promise<void>;
   readonly onSave: (worker: WorkjetWorkerProfile) => void | Promise<void>;
   readonly onCancel: () => void;
   readonly initialDraft?: WorkjetWorkerDraft | undefined;
@@ -566,14 +569,20 @@ export function WorkjetWorkerEditor({
           <Label htmlFor="workjet-worker-model">Model</Label>
           {chosenRoute?.nativeAccountReference ? (
             <>
-              <Select value={draft.modelId || null} onValueChange={(model) => {
-                if (model !== null) patchDraft({ modelId: model });
-              }}>
+              <Select
+                value={draft.modelId || null}
+                onValueChange={(model) => {
+                  if (model !== null) patchDraft({ modelId: model });
+                }}
+              >
                 <SelectTrigger id="workjet-worker-model" className="w-full">
                   <SelectValue placeholder="Choose a live instance account model" />
                 </SelectTrigger>
                 <SelectPopup>
-                  {(chosenNativeAccount?.modelCatalog.fresh ? chosenNativeAccount.effectiveModels : []).map(model => (
+                  {(chosenNativeAccount?.modelCatalog.fresh
+                    ? chosenNativeAccount.effectiveModels
+                    : []
+                  ).map((model) => (
                     <SelectItem key={model} value={model}>
                       <span className="break-all whitespace-normal">{model}</span>
                     </SelectItem>
@@ -581,12 +590,19 @@ export function WorkjetWorkerEditor({
                 </SelectPopup>
               </Select>
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span role="status">{chosenNativeAccount?.modelCatalog.fresh
-                  ? "Live instance account models. Execution availability is checked by CTOX."
-                  : "Refresh this instance account in Settings → Models before choosing a model."}</span>
+                <span role="status">
+                  {chosenNativeAccount?.modelCatalog.fresh
+                    ? "Live instance account models. Execution availability is checked by CTOX."
+                    : "Refresh this instance account in Settings → Models before choosing a model."}
+                </span>
                 {onRefreshNativeModels && chosenNativeAccount && (
-                  <Button type="button" size="sm" variant="ghost" disabled={nativeModelsBusy}
-                    onClick={() => onRefreshNativeModels(chosenNativeAccount)}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={nativeModelsBusy}
+                    onClick={() => onRefreshNativeModels(chosenNativeAccount)}
+                  >
                     Refresh models
                   </Button>
                 )}

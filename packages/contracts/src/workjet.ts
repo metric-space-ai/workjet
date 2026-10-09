@@ -142,13 +142,20 @@ export type WorkjetNativeAccountReference = typeof WorkjetNativeAccountReference
  * Owner, holder, account revision, live model and the actual Supervisor lease.
  * Legacy gateway ids must never be promoted by matching provider/email labels.
  */
-export const WorkjetLlmRoute = Schema.Struct({
-  id: WorkjetLlmRouteId,
-  label: TrimmedNonEmptyString,
-  gatewayAccountId: Schema.optionalKey(WorkjetGatewayAccountId),
-  nativeAccountReference: Schema.optionalKey(WorkjetNativeAccountReference),
-}).check(Schema.makeFilter(route => route.gatewayAccountId !== undefined || route.nativeAccountReference !== undefined
-  ? true : "Choose a gateway account or an authoritative native account."));
+export const WorkjetLlmRoute = Schema.Union([
+  Schema.Struct({
+    id: WorkjetLlmRouteId,
+    label: TrimmedNonEmptyString,
+    gatewayAccountId: WorkjetGatewayAccountId,
+    nativeAccountReference: Schema.optionalKey(WorkjetNativeAccountReference),
+  }),
+  Schema.Struct({
+    id: WorkjetLlmRouteId,
+    label: TrimmedNonEmptyString,
+    gatewayAccountId: Schema.optionalKey(WorkjetGatewayAccountId),
+    nativeAccountReference: WorkjetNativeAccountReference,
+  }),
+]);
 export type WorkjetLlmRoute = typeof WorkjetLlmRoute.Type;
 
 /**

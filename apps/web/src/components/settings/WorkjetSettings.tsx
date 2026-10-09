@@ -690,7 +690,11 @@ export function WorkjetSettingsView({
   readonly onChange: (configuration: WorkjetConfiguration) => void;
 }) {
   const nativeProviders = useInstanceProviders(nativeInstanceId);
-  const availableRoutes = nativeLumaRoutes(configuration.llmRoutes, nativeProviders.registry, nativeInstanceLabel);
+  const availableRoutes = nativeLumaRoutes(
+    configuration.llmRoutes,
+    nativeProviders.registry,
+    nativeInstanceLabel,
+  );
   const locationHash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<WorkjetSettingsSectionId>(
@@ -734,11 +738,28 @@ export function WorkjetSettingsView({
         routes={availableRoutes}
         nativeAccounts={nativeProviders.registry?.accounts ?? []}
         nativeModelsBusy={nativeProviders.busy}
-        onRefreshNativeModels={account => { void nativeProviders.run({ action: "instance.providers.observe", accountId: account.id, expectedAccountRevision: account.revision }); }}
+        onRefreshNativeModels={(account) => {
+          void nativeProviders.run({
+            action: "instance.providers.observe",
+            accountId: account.id,
+            expectedAccountRevision: account.revision,
+          });
+        }}
         onValidateNativeModel={async (account, model) => {
-          const registry = await nativeProviders.run({ action: "instance.providers.observe", accountId: account.id, expectedAccountRevision: account.revision });
-          requireNativeLumaModel(registry?.accounts.find(current => current.id === account.id &&
-            current.holder.id === account.holder.id && current.revision === account.revision), model);
+          const registry = await nativeProviders.run({
+            action: "instance.providers.observe",
+            accountId: account.id,
+            expectedAccountRevision: account.revision,
+          });
+          requireNativeLumaModel(
+            registry?.accounts.find(
+              (current) =>
+                current.id === account.id &&
+                current.holder.id === account.holder.id &&
+                current.revision === account.revision,
+            ),
+            model,
+          );
         }}
         gatewayAccounts={gateway.catalog?.accounts ?? []}
         gatewayEnvironmentId={gatewayEnvironmentId}
@@ -779,9 +800,10 @@ export function WorkjetSettingsView({
             workerProfiles,
             workerGraph,
             llmRoutes: (() => {
-              const selected = availableRoutes.find(route => route.id === worker.llmRouteId);
+              const selected = availableRoutes.find((route) => route.id === worker.llmRouteId);
               return selected?.nativeAccountReference
-                ? replaceCatalogItem(configuration.llmRoutes, selected) : configuration.llmRoutes;
+                ? replaceCatalogItem(configuration.llmRoutes, selected)
+                : configuration.llmRoutes;
             })(),
           };
           if (onSaveWorkerConfiguration) await onSaveWorkerConfiguration(nextConfiguration);
@@ -1404,11 +1426,12 @@ function ScopedWorkjetSettings({
           configuration: extractLumaInstanceDocument(next),
         },
       });
-      const failure = result._tag === "Failure"
-        ? "The instance Luma configuration could not be saved."
-        : result.value.status === "conflict"
-          ? "Another session changed the Lumas. Refresh and apply the change again."
-          : null;
+      const failure =
+        result._tag === "Failure"
+          ? "The instance Luma configuration could not be saved."
+          : result.value.status === "conflict"
+            ? "Another session changed the Lumas. Refresh and apply the change again."
+            : null;
       if (failure !== null) {
         setSaveError(failure);
         throw new Error(failure);

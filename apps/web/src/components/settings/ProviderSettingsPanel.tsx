@@ -436,8 +436,13 @@ function InstanceGatewayModels({
       : undefined;
   const label = instance?.displayName ?? "CTOX instance";
   const instanceGrok = useInstanceGrokAccount(instanceId, label);
-  return <WorkjetModelsProviders {...gateway} instanceGrok={instanceGrok}
-    nativeProviderRows={<NativeProviderRows instanceId={instanceId} label={label} />} />;
+  return (
+    <WorkjetModelsProviders
+      {...gateway}
+      instanceGrok={instanceGrok}
+      nativeProviderRows={<NativeProviderRows instanceId={instanceId} label={label} />}
+    />
+  );
 }
 
 function SelectedEnvironmentProviderSettings({

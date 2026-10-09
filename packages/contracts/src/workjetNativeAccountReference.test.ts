@@ -26,8 +26,12 @@ describe("native Luma account reference persistence", () => {
     const nativeRoute = { id: route.id, label: route.label, nativeAccountReference };
     const decoded = decodeConfiguration({ llmRoutes: [nativeRoute] });
     expect(decodeConfiguration(encodeConfiguration(decoded)).llmRoutes).toEqual([nativeRoute]);
-    expect(decodeInstanceConfiguration(encodeInstanceConfiguration(decoded)).llmRoutes).toEqual([nativeRoute]);
-    expect(() => decodeConfiguration({ llmRoutes: [{ id: route.id, label: route.label }] })).toThrow();
+    expect(decodeInstanceConfiguration(encodeInstanceConfiguration(decoded)).llmRoutes).toEqual([
+      nativeRoute,
+    ]);
+    expect(() =>
+      decodeConfiguration({ llmRoutes: [{ id: route.id, label: route.label }] }),
+    ).toThrow();
   });
   it("retains the exact native reference through settings encode and reload", () => {
     const decode = decodeConfiguration;

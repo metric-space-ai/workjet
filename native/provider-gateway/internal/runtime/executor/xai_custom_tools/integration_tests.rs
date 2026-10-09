@@ -1,4 +1,4 @@
-use super::super::XaiCustomToolAdapter;
+use super::XaiCustomToolAdapter;
 use crate::internal::runtime::executor::{
     xai_executor::{
         XaiHttpRequest, XaiHttpResponse, XaiHttpTransport, XaiStreamResponse,

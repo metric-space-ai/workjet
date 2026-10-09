@@ -69,7 +69,13 @@ describe("meetingSlides", () => {
     expect(byId["offene-punkte"]!.narration).toBe(
       "Release 0.4 ist fertig getestet; es fehlt nur das Go für die Pilotkunden.\n\nFür die API-Umstellung plane ich zwei Tage im November ein.",
     );
-    expect(byId.exitwert!.narration).toBe(
+    expect(byId.exitwert!.narration).toMatch(/^Der Exitwert ist seit Kalenderwoche 31/);
+    // Without talking points the slide's own text is narrated.
+    const silent: SlideDocument = structuredClone(jourFixeDeck);
+    silent.slides = silent.slides.map((slide) =>
+      slide.id === "exitwert" ? { ...slide, speakerNotes: [] } : slide,
+    );
+    expect(meetingSlides(silent).find((slide) => slide.id === "exitwert")!.narration).toBe(
       "KPI: Exitwert E5 11,6 Mio € (Δ +5,5 %)\n\nZiel: 12 Mio € bis Jahresende\nTreiber: wiederkehrender Umsatz und Marge",
     );
   });

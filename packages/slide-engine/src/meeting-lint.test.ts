@@ -2,13 +2,20 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { canvasSceneForSlide } from "./excalidraw/scene";
 import { jourFixeDeck } from "./fixtures/jour-fixe-deck";
-import { lintMeetingDeck } from "./meeting-lint";
+import { lintMeetingDeck, NARRATION_MAX_CHARS } from "./meeting-lint";
 import type { SlideBlock, SlideDocument, SlideNode } from "./schema";
 import { handleValidatorRequest } from "./validator/protocol";
 
 const source = [{ id: "src-1", sourceType: "manual" as const, label: "Meeting-Daten" }];
 
-function slide(id: string, title: string, blocks: SlideBlock[], notes: string[] = []): SlideNode {
+const SPOKEN = "Das ist der wichtigste Punkt für die Entscheidung heute.";
+
+function slide(
+  id: string,
+  title: string,
+  blocks: SlideBlock[],
+  notes: string[] = [SPOKEN],
+): SlideNode {
   return {
     id,
     title,
@@ -215,5 +222,91 @@ describe("lintMeetingDeck", () => {
         warnings: [],
       },
     });
+  });
+
+  it("requires a talking point and keeps it within the time budget", () => {
+    const long = `${"Der Umsatz wächst, weil der Vertrieb neue Kunden gewinnt. ".repeat(9)}`;
+    const found = lintMeetingDeck(
+      deck([
+        slide(
+          "s-title",
+          "Regeltermin",
+          [{ id: "p", type: "paragraph", text: "Erster Termin." }],
+          [
+            "Willkommen zum Regeltermin. Heute klären wir das Ziel bis zum nächsten Termin und wer es misst, damit wir danach ohne Umwege weiterarbeiten können, auch wenn die Woche voll ist.",
+          ],
+        ),
+        slide("s-a", "Umsatz", [{ id: "q", type: "paragraph", text: "Umsatz wächst." }], []),
+        slide("s-b", "Vertrieb", [{ id: "r", type: "paragraph", text: "Neue Kunden." }], [long]),
+      ]),
+    ).map((issue) => [issue.code, issue.slideId]);
+    expect(found).toEqual([
+      ["narration.too_long", "s-title"],
+      ["narration.missing", "s-a"],
+      ["narration.too_long", "s-b"],
+    ]);
+    expect(long.length).toBeGreaterThan(NARRATION_MAX_CHARS);
+  });
+
+  it("allows only numbers the slide or its sources show", () => {
+    const kpi = (notes: string[]) =>
+      deck([
+        jourFixeDeck.slides[0]!,
+        {
+          ...jourFixeDeck.slides[1]!,
+          speakerNotes: notes.map((text, index) => ({
+            id: `n${index}`,
+            kind: "talkingPoint" as const,
+            text,
+          })),
+        },
+      ]);
+    // 18.400 and 16.900 come from the scene data, 8,9 from the change the scene shows.
+    expect(
+      lintMeetingDeck(kpi(["Der Umsatz stieg von 16.900 auf 18.400 Euro, also um 8,9 Prozent."])),
+    ).toEqual([]);
+    expect(lintMeetingDeck(kpi(["Der Umsatz stieg auf 19.500 Euro."]))).toEqual([
+      expect.objectContaining({ code: "narration.unsupported_number", slideId: "kennzahlen" }),
+    ]);
+  });
+
+  it("flags narration that reads a bullet aloud or talks about the slide", () => {
+    const bullets = [
+      {
+        id: "b",
+        type: "bulletList" as const,
+        items: ["Die Preisstufe Team startet im November mit 49 Euro je Platz"],
+      },
+    ];
+    expect(
+      lintMeetingDeck(
+        deck([
+          slide("s-title", "Regeltermin", [{ id: "p", type: "paragraph", text: "Erster Termin." }]),
+          slide("s-price", "Preisstufe", bullets, [
+            "Die Preisstufe Team startet im November mit 49 Euro je Platz.",
+          ]),
+          slide(
+            "s-next",
+            "Ausblick",
+            [{ id: "q", type: "paragraph", text: "Pilot läuft." }],
+            ["Im Folgenden geht es um den Pilot."],
+          ),
+        ]),
+      ).map((issue) => [issue.code, issue.slideId]),
+    ).toEqual([
+      ["content.meta_phrase", "s-next"],
+      ["narration.reads_slide", "s-price"],
+    ]);
+  });
+
+  it("does not lint source notes, which are not spoken", () => {
+    const noted = slide("s-title", "Regeltermin", [
+      { id: "p", type: "paragraph", text: "Erster Termin." },
+    ]);
+    noted.speakerNotes = [
+      ...(noted.speakerNotes ?? []),
+      { id: "src", kind: "source", text: "project_kpi read, missing_source" },
+    ];
+    expect(lintMeetingDeck(deck([noted]))).toEqual([]);
   });
 });

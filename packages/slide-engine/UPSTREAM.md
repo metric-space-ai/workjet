@@ -130,6 +130,9 @@ and `LICENSES/reveal.js-MIT.txt`.
     `lintMeeting`) checks Jour fixe decks written by an agent: headings that repeat the slide
     title, slides or tables that only say evidence is missing, wording about the slide, display,
     data plumbing or author instead of the project, internal ids and system terms (errors), and the
-    same sentence on two slides (warning). Lecture decks and `validate` are unchanged.
+    same sentence on two slides (warning). The spoken talking points must exist, stay within
+    `NARRATION_MAX_CHARS` (450; 150 on the title slide), cite only numbers the slide or its sources
+    show, and not read a bullet aloud. Source notes are not linted. Lecture decks and `validate`
+    are unchanged.
 22. **Example deck.** `fixtures/jour-fixe-deck.json` no longer repeats slide titles as heading
-    blocks, so the example passes `lintMeeting`.
+    blocks and gives the exit value slide a talking point, so the example passes `lintMeeting`.

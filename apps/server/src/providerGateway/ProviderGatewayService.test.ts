@@ -1505,7 +1505,11 @@ describe("ProviderGatewayService · API-key accounts", () => {
       apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
       credentialSuffix: "old1",
     };
-    let document = JSON.stringify({ ...JSON.parse(configuration), providerPort: 41000, accounts: [account] });
+    let document = JSON.stringify({
+      ...JSON.parse(configuration),
+      providerPort: 41000,
+      accounts: [account],
+    });
     const writer = harness.platform.writePrivateText;
     harness.platform = {
       ...harness.platform,
@@ -1571,22 +1575,33 @@ describe("ProviderGatewayService · API-key accounts", () => {
   it("preserves the existing account and secret when a replacement Kimi key is not accepted", async () => {
     const harness = apiKeyHarness();
     const account = {
-      id: "kimi-existing", provider: "kimi", label: "Coding work",
-      enabled: false, priority: 7, weight: 1, models: ["kimi-for-coding"],
-      kimiPlan: "coding", upstreamBaseUrl: "https://api.kimi.com/coding/v1",
+      id: "kimi-existing",
+      provider: "kimi",
+      label: "Coding work",
+      enabled: false,
+      priority: 7,
+      weight: 1,
+      models: ["kimi-for-coding"],
+      kimiPlan: "coding",
+      upstreamBaseUrl: "https://api.kimi.com/coding/v1",
       apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
       credentialSuffix: "old1",
     };
     const document = JSON.stringify({ ...JSON.parse(configuration), accounts: [account] });
     harness.platform = {
-      ...harness.platform, readText: async () => document,
+      ...harness.platform,
+      readText: async () => document,
       discoverKimiConnection: async () => undefined,
     };
     const error = await runWithSecrets(harness, (gateway) =>
-      gateway.addApiKeyAccount({
-        provider: "kimi", accountId: WorkjetGatewayAccountId.make(account.id),
-        label: account.label, apiKey: API_KEY,
-      }).pipe(Effect.flip),
+      gateway
+        .addApiKeyAccount({
+          provider: "kimi",
+          accountId: WorkjetGatewayAccountId.make(account.id),
+          label: account.label,
+          apiKey: API_KEY,
+        })
+        .pipe(Effect.flip),
     );
     expect(error.reason).toBe("kimi-key-not-accepted");
     expect(error.message).not.toContain(API_KEY);

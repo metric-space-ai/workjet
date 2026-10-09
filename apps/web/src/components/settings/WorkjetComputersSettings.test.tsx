@@ -6,13 +6,14 @@ import {
   type WorkjetHarnessAvailabilitySnapshot,
 } from "@workjet/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   applyAutomaticCurrentComputer,
   findComputerForTarget,
   includeSavedComputers,
   removeComputer,
+  removeComputerConnection,
   toggleCurrentComputer,
   WorkjetComputersSettingsView,
 } from "./WorkjetComputersSettings";
@@ -34,6 +35,126 @@ const remoteComputer = computer("computer-remote", remoteEnvironmentId);
 const configurationWith = (...computers: ReadonlyArray<WorkjetComputer>) => ({
   ...DEFAULT_WORKJET_CONFIGURATION,
   computers,
+});
+
+describe("removing local computer connections", () => {
+  const membership = (phase: "ready" | "loading" | "failed", assigned = false) => ({
+    instanceId: "selected-instance",
+    phase,
+    pendingComputerId: null,
+    error: phase === "failed" ? "Business OS unavailable" : null,
+    computers: assigned
+      ? [
+          {
+            id: remoteComputer.id,
+            displayName: remoteComputer.label,
+            hostingMode: "workstation" as const,
+            status: "assigned" as const,
+            capabilities: [],
+            selfHostedColocation: false,
+          },
+        ]
+      : [],
+  });
+  const remove = (overrides: Partial<Parameters<typeof removeComputerConnection>[0]> = {}) =>
+    removeComputerConnection({
+      configuration: configurationWith(localComputer, remoteComputer),
+      computer: remoteComputer,
+      selectedInstanceId: "selected-instance",
+      membership: membership("ready"),
+      savedEnvironmentIds: [remoteEnvironmentId],
+      removeConnection: async () => true,
+      ...overrides,
+    });
+
+  it("removes an unreachable raw connection while retaining the other transport and current computer", async () => {
+    const tailscaleComputer = computer(
+      "computer-tailscale",
+      EnvironmentId.make("environment-tailscale"),
+    );
+    const configuration = {
+      ...configurationWith(localComputer, remoteComputer, tailscaleComputer),
+      selectedComputerId: tailscaleComputer.id,
+    };
+    let finishRemoval!: (removed: boolean) => void;
+    const removeConnection = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishRemoval = resolve;
+        }),
+    );
+    let settled = false;
+    const pending = remove({
+      configuration,
+      membership: membership("failed"),
+      removeConnection,
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+    expect(removeConnection).toHaveBeenCalledExactlyOnceWith(remoteEnvironmentId);
+    expect(settled).toBe(false);
+    expect(configuration.computers).toContain(remoteComputer);
+    finishRemoval(true);
+    expect(await pending).toEqual({
+      status: "removed",
+      configuration: {
+        ...configuration,
+        computers: [localComputer, tailscaleComputer],
+        selectedComputerId: tailscaleComputer.id,
+      },
+    });
+  });
+
+  it.each(["ready", "loading", "failed"] as const)(
+    "protects a known native assignment during %s inventory without removing its connection",
+    async (phase) => {
+      const removeConnection = vi.fn(async () => true);
+      expect(await remove({ membership: membership(phase, true), removeConnection })).toEqual({
+        status: "assigned",
+      });
+      expect(removeConnection).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the computer and selection when removing its saved connection fails", async () => {
+    const configuration = {
+      ...configurationWith(localComputer, remoteComputer),
+      selectedComputerId: remoteComputer.id,
+    };
+    const removeConnection = vi.fn(async () => false);
+    expect(await remove({ configuration, removeConnection })).toEqual({
+      status: "connection_failed",
+    });
+    expect(removeConnection).toHaveBeenCalledExactlyOnceWith(remoteEnvironmentId);
+    expect(configuration.computers).toEqual([localComputer, remoteComputer]);
+    expect(configuration.selectedComputerId).toBe(remoteComputer.id);
+  });
+
+  it("removes one configured row without deleting a connection still used by another row", async () => {
+    const sharedComputer = computer("computer-shared", remoteEnvironmentId);
+    const configuration = {
+      ...configurationWith(localComputer, remoteComputer, sharedComputer),
+      selectedComputerId: remoteComputer.id,
+    };
+    const removeConnection = vi.fn(async () => true);
+    expect(await remove({ configuration, removeConnection })).toEqual({
+      status: "removed",
+      configuration: {
+        ...configuration,
+        computers: [localComputer, sharedComputer],
+        selectedComputerId: null,
+      },
+    });
+    expect(removeConnection).not.toHaveBeenCalled();
+  });
+
+  it("removes an unsaved connection without attempting transport deletion", async () => {
+    const removeConnection = vi.fn(async () => true);
+    const result = await remove({ savedEnvironmentIds: [], membership: null, removeConnection });
+    expect(result.status).toBe("removed");
+    expect(removeConnection).not.toHaveBeenCalled();
+  });
 });
 
 describe("native computer capabilities", () => {

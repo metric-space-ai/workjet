@@ -110,6 +110,45 @@ export function removeComputer(
   };
 }
 
+export async function removeComputerConnection(input: {
+  readonly configuration: WorkjetConfiguration;
+  readonly computer: WorkjetComputer;
+  readonly selectedInstanceId: string | null;
+  readonly membership: ComputerMembershipSnapshot | null;
+  readonly savedEnvironmentIds: ReadonlyArray<EnvironmentId>;
+  readonly removeConnection: (environmentId: EnvironmentId) => Promise<boolean>;
+}): Promise<
+  | { readonly status: "assigned" | "connection_failed" }
+  | { readonly status: "removed"; readonly configuration: WorkjetConfiguration }
+> {
+  // Removing a local connection never unassigns or revokes a native computer.
+  // Keep a known assignment protected, including while its inventory refreshes.
+  if (
+    input.selectedInstanceId &&
+    input.membership?.instanceId === input.selectedInstanceId &&
+    input.membership.computers.some(
+      (entry) => entry.id === input.computer.id && entry.status === "assigned",
+    )
+  ) {
+    return { status: "assigned" };
+  }
+  const shared = input.configuration.computers.some(
+    (entry) =>
+      entry.id !== input.computer.id && entry.environmentId === input.computer.environmentId,
+  );
+  if (
+    !shared &&
+    input.savedEnvironmentIds.includes(input.computer.environmentId) &&
+    !(await input.removeConnection(input.computer.environmentId))
+  ) {
+    return { status: "connection_failed" };
+  }
+  return {
+    status: "removed",
+    configuration: removeComputer(input.configuration, input.computer.id),
+  };
+}
+
 /** Host identity is presentation metadata; it never authorizes a connection or worker. */
 export function findComputerForTarget(
   configuration: WorkjetConfiguration,
@@ -1203,11 +1242,17 @@ export function WorkjetComputersSettings({
         pendingConnectionEnvironmentId={pendingComputerId}
         onRemove={(computer) => {
           void (async () => {
-            if (
-              selectedInstanceId &&
-              (activeMembership?.phase !== "ready" ||
-                activeMembership.computers.some((entry) => entry.id === computer.id))
-            ) {
+            const result = await removeComputerConnection({
+              configuration,
+              computer,
+              selectedInstanceId,
+              membership: activeMembership ?? null,
+              savedEnvironmentIds: connections.savedEnvironments.map(
+                (entry) => entry.environmentId,
+              ),
+              removeConnection: (environmentId) => connections.removeConnection(environmentId),
+            });
+            if (result.status === "assigned") {
               toastManager.add({
                 type: "error",
                 title: "Computer still assigned",
@@ -1216,15 +1261,7 @@ export function WorkjetComputersSettings({
               });
               return;
             }
-            const shared = configuration.computers.some(
-              (entry) => entry.id !== computer.id && entry.environmentId === computer.environmentId,
-            );
-            const saved = connections.savedEnvironments.some(
-              (entry) => entry.environmentId === computer.environmentId,
-            );
-            if (!shared && saved && !(await connections.removeConnection(computer.environmentId)))
-              return;
-            updateSettings({ workjet: removeComputer(configuration, computer.id) });
+            if (result.status === "removed") updateSettings({ workjet: result.configuration });
           })();
         }}
         membership={activeMembership}

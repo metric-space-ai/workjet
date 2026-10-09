@@ -68,7 +68,9 @@ export function NativeSupervisorComposer(props: {
   const [capability, setCapability] = useState<ScopedSupervisorTurnCapabilities | null>(null);
   const [newMessageFor, setNewMessageFor] = useState<string | null>(null);
   const [inputFor, setInputFor] = useState<string | null>(null);
-  const [inputCapability, setInputCapability] = useState<ScopedSupervisorTurnCapabilities | null>(null);
+  const [inputCapability, setInputCapability] = useState<ScopedSupervisorTurnCapabilities | null>(
+    null,
+  );
   const [bindingRetry, setBindingRetry] = useState(0);
   const [binding, setBinding] = useState<{
     readonly scope: NativeSupervisorScope;
@@ -127,10 +129,13 @@ export function NativeSupervisorComposer(props: {
   const unresolvedInput = journal?.inputs?.find((entry) => entry.receipt === null);
   const inputting = journal !== null && inputFor === journal.intent.commandId;
   const drafting = continuing || inputting;
-  const inputSupported = scope !== null && inputCapability !== null &&
+  const inputSupported =
+    scope !== null &&
+    inputCapability !== null &&
     inputCapability.scope.instanceId === scope.instanceId &&
     inputCapability.scope.projectId === scope.projectId &&
-    inputCapability.scope.threadId === scope.threadId && !inputCapability.error &&
+    inputCapability.scope.threadId === scope.threadId &&
+    !inputCapability.error &&
     inputCapability.response?.inputContract === "ctox.workjet.supervisor_input.v1" &&
     inputCapability.response.inputDelivery === "next_slice" &&
     inputCapability.response.maxInputChars === 4096;
@@ -173,8 +178,14 @@ export function NativeSupervisorComposer(props: {
     )
       return;
     if (operation !== "send" && saved === null) return;
-    if (operation === "input" && (saved?.submission !== "confirmed" || !saved.turn?.taskId ||
-      !inputSupported || (!unresolvedInput && (saved.turn.terminal || prompt.trim() === "")))) return;
+    if (
+      operation === "input" &&
+      (saved?.submission !== "confirmed" ||
+        !saved.turn?.taskId ||
+        !inputSupported ||
+        (!unresolvedInput && (saved.turn.terminal || prompt.trim() === "")))
+    )
+      return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
     if (operation === "events" && saved?.turn == null) return;
     inFlight.current = true;
@@ -217,7 +228,7 @@ export function NativeSupervisorComposer(props: {
         result = await submitWorkjetSupervisorInput(saved, intent, port);
         if (result._tag === "completed") {
           setNotice("Context saved for the task’s next step.");
-          setPrompt((draft) => draft === prompt ? "" : draft);
+          setPrompt((draft) => (draft === prompt ? "" : draft));
           setInputFor(null);
         }
       } else if (operation === "resume" && saved !== null) {
@@ -446,18 +457,32 @@ export function NativeSupervisorComposer(props: {
         if (!stale)
           setCapability({ scope: target, response: null, error: "Could not check chat support." });
       });
-    void readWorkjetSupervisorInputCapabilities(target, CommandId.make(`input-kind-${newCommandId()}`))
+    void readWorkjetSupervisorInputCapabilities(
+      target,
+      CommandId.make(`input-kind-${newCommandId()}`),
+    )
       .then((result) => {
         if (stale) return;
-        setInputCapability({ scope: target,
-          response: result._tag === "completed" && result.response.action === "project.supervisor.turn.capabilities"
-            ? result.response : null,
-          error: result._tag === "failed"
-            ? describeWorkjetProjectControlFailure(result, target.instanceId) : null });
+        setInputCapability({
+          scope: target,
+          response:
+            result._tag === "completed" &&
+            result.response.action === "project.supervisor.turn.capabilities"
+              ? result.response
+              : null,
+          error:
+            result._tag === "failed"
+              ? describeWorkjetProjectControlFailure(result, target.instanceId)
+              : null,
+        });
       })
       .catch(() => {
-        if (!stale) setInputCapability({ scope: target, response: null,
-          error: "Could not check task context support." });
+        if (!stale)
+          setInputCapability({
+            scope: target,
+            response: null,
+            error: "Could not check task context support.",
+          });
       });
     return () => {
       stale = true;
@@ -734,8 +759,12 @@ export function NativeSupervisorComposer(props: {
       {unresolvedInput && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
           Context receipt pending. Recover the saved message before adding another.
-          <button type="button" disabled={disabled || busy || !inputSupported}
-            className="ml-2 underline" onClick={() => void run("input")}>
+          <button
+            type="button"
+            disabled={disabled || busy || !inputSupported}
+            className="ml-2 underline"
+            onClick={() => void run("input")}
+          >
             Recover context receipt
           </button>
         </p>
@@ -743,8 +772,14 @@ export function NativeSupervisorComposer(props: {
       {inputting && journal?.turn?.terminal && !unresolvedInput && (
         <p role="status" className="mb-2 text-xs text-muted-foreground">
           This task has finished. Your context was not sent.
-          <button type="button" className="ml-2 underline" disabled={disabled || busy}
-            onClick={() => setInputFor(null)}>Start a new request</button>
+          <button
+            type="button"
+            className="ml-2 underline"
+            disabled={disabled || busy}
+            onClick={() => setInputFor(null)}
+          >
+            Start a new request
+          </button>
         </p>
       )}
       {confirmedPending && (
@@ -760,25 +795,49 @@ export function NativeSupervisorComposer(props: {
             type="button"
             disabled={disabled || !inputSupported || unresolvedInput !== undefined}
             className="underline underline-offset-2 disabled:opacity-40"
-            title={inputSupported ? "Add context to this task’s next step" : "Task context is not supported on this connection"}
-            onClick={() => { setNewMessageFor(null); setInputFor(journal.intent.commandId); }}
+            title={
+              inputSupported
+                ? "Add context to this task’s next step"
+                : "Task context is not supported on this connection"
+            }
+            onClick={() => {
+              setNewMessageFor(null);
+              setInputFor(journal.intent.commandId);
+            }}
           >
             Add context to task
           </button>
-          {!inputSupported && <span>Same-task context is unavailable on this connection.{' '}
-            <button type="button" className="underline" disabled={disabled || busy}
-              onClick={() => setCapabilityRetry(value => value + 1)}>
-              Check context support
+          {!inputSupported && (
+            <span>
+              Same-task context is unavailable on this connection.{" "}
+              <button
+                type="button"
+                className="underline"
+                disabled={disabled || busy}
+                onClick={() => setCapabilityRetry((value) => value + 1)}
+              >
+                Check context support
+              </button>
+            </span>
+          )}
+          {inputting && (
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={() => setInputFor(null)}
+            >
+              Keep waiting
             </button>
-          </span>}
-          {inputting && <button type="button" className="underline underline-offset-2"
-            onClick={() => setInputFor(null)}>Keep waiting</button>}
+          )}
           {!continuing ? (
             <button
               type="button"
               disabled={disabled}
               className="underline underline-offset-2"
-              onClick={() => { setInputFor(null); setNewMessageFor(journal.intent.commandId); }}
+              onClick={() => {
+                setInputFor(null);
+                setNewMessageFor(journal.intent.commandId);
+              }}
             >
               Continue anyway
             </button>
@@ -810,7 +869,9 @@ export function NativeSupervisorComposer(props: {
         />
         <textarea
           aria-label="Message to Supervisor"
-          placeholder={inputting ? "Add context for this task’s next step …" : "Ask the Supervisor …"}
+          placeholder={
+            inputting ? "Add context for this task’s next step …" : "Ask the Supervisor …"
+          }
           rows={2}
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}

@@ -157,30 +157,66 @@ describe("durable same-task Supervisor context", () => {
   });
 
   it("does not replace an observed task hold with an older idempotent input receipt", async () => {
-    const held: WorkjetSupervisorJournal = { ...saved,
+    const held: WorkjetSupervisorJournal = {
+      ...saved,
       turn: { ...turn, executionPhase: "blocked", queueStatus: "blocked" },
-      inputs: [{ intent, receipt: null, submission: "awaiting-receipt" }] };
+      inputs: [{ intent, receipt: null, submission: "awaiting-receipt" }],
+    };
     let state = held;
-    await submitWorkjetSupervisorInput(held, intent, { save: async next => { state = next; } },
-      async (_id, request) => request.action === "project.supervisor.turn.capabilities"
-        ? capability(request) : { _tag: "completed", response: receipt });
+    await submitWorkjetSupervisorInput(
+      held,
+      intent,
+      {
+        save: async (next) => {
+          state = next;
+        },
+      },
+      async (_id, request) =>
+        request.action === "project.supervisor.turn.capabilities"
+          ? capability(request)
+          : { _tag: "completed", response: receipt },
+    );
     expect(state.turn).toEqual(held.turn);
     expect(state.inputs?.[0]?.receipt).toEqual(receipt);
   });
 
   it("recovers an admitted input after the task finishes without reverting its current state", async () => {
-    const finished: WorkjetSupervisorJournal = { ...saved,
-      turn: { ...turn, executionPhase: "terminal", queueStatus: "completed", terminal: true, status: "completed", attempt: 5, result: "Completed" },
-      inputs: [{ intent, receipt: null, submission: "awaiting-receipt" }] };
+    const finished: WorkjetSupervisorJournal = {
+      ...saved,
+      turn: {
+        ...turn,
+        executionPhase: "terminal",
+        queueStatus: "completed",
+        terminal: true,
+        status: "completed",
+        attempt: 5,
+        result: "Completed",
+      },
+      inputs: [{ intent, receipt: null, submission: "awaiting-receipt" }],
+    };
     let state = finished;
-    await submitWorkjetSupervisorInput(finished, intent, { save: async next => { state = next; } },
-      async (_id, request) => request.action === "project.supervisor.turn.capabilities"
-        ? capability(request) : { _tag: "completed", response: receipt });
+    await submitWorkjetSupervisorInput(
+      finished,
+      intent,
+      {
+        save: async (next) => {
+          state = next;
+        },
+      },
+      async (_id, request) =>
+        request.action === "project.supervisor.turn.capabilities"
+          ? capability(request)
+          : { _tag: "completed", response: receipt },
+    );
     expect(state.turn).toEqual(finished.turn);
     expect(state.inputs?.[0]?.receipt).toEqual(receipt);
-    await expect(submitWorkjetSupervisorInput(finished,
-      { ...intent, commandId: CommandId.make("new-context") }, { save: async () => {} }))
-      .rejects.toThrow("This task has finished");
+    await expect(
+      submitWorkjetSupervisorInput(
+        finished,
+        { ...intent, commandId: CommandId.make("new-context") },
+        { save: async () => {} },
+      ),
+    ).rejects.toThrow("This task has finished");
   });
 
   it("never sends input without opt-in support", async () => {

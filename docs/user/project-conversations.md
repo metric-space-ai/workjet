@@ -13,3 +13,5 @@ New thread opens in the selected Workjet project. If that project has no active 
 Search remains an explicit way to find conversations across projects. Opening a result updates the project selection when its working-copy binding identifies exactly one Workjet project.
 
 If the account connection for a project has expired, choose **Sign in to ctox.dev** in its Supervisor. This opens the desktop sign-in window and refreshes the project connection after you finish. Your project binding and saved conversations remain intact. A discovery failure shows its error class and HTTP status, when available; use **Retry connection** after resolving it.
+
+If the connected instance does not support a project action, Workjet asks you to update that instance's Business OS shell. Reconnecting your account does not add a missing action. Saved projects and conversations remain available while the instance is updated.

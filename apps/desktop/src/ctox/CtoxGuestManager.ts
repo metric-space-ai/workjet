@@ -2034,7 +2034,13 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
               ...failure,
             }),
           ),
-          Effect.orElseSucceed(() => undefined),
+          Effect.catch((failure) =>
+            Effect.succeed(
+              failure.reason === "unsupported_action"
+                ? { status: "unsupported" as const }
+                : undefined,
+            ),
+          ),
           Effect.timeoutOption("30 seconds"),
         );
         if (Option.isNone(pending)) {

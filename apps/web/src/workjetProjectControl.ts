@@ -32,6 +32,8 @@ export function describeWorkjetProjectControlFailure(
     return `Instance discovery failed: ${failure.discovery.code}${failure.discovery.httpStatus === undefined ? "" : ` (HTTP ${failure.discovery.httpStatus})`}. Retry connection.`;
   if (failure.code === "not_active")
     return "This project's bound instance is unavailable. Check the CTOX connection.";
+  if (failure.code === "unsupported")
+    return "The connected CTOX instance does not support this action. Update its Business OS shell.";
   return `CTOX: ${failure.code}. Check the task and reconnect.`;
 }
 

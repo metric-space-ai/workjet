@@ -1176,6 +1176,28 @@ describe("CtoxGuestManager", () => {
     }).pipe(Effect.provide(harness.layer));
   });
 
+  it.effect("distinguishes a missing shell action from an unrelated execution failure", () => {
+    const harness = makeGuestHarness();
+    return Effect.gen(function* () {
+      const manager = yield* CtoxGuestManager.CtoxGuestManager;
+      yield* manager.ensurePooled(descriptor.id);
+      const execute = harness.views[0]!.executeJavaScript;
+      execute.mockRejectedValueOnce(
+        new Error("Unsupported Workjet project control action: project.list"),
+      );
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        { _tag: "failed", code: "unsupported" },
+      );
+      execute.mockRejectedValueOnce(new Error("Private runtime failure"));
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        { _tag: "failed", code: "guest_failed" },
+      );
+      expect(harness.createView).toHaveBeenCalledOnce();
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it("retains safe exception facts without disclosing launch URLs or request data", () => {
     const error = Object.assign(
       new Error("Unknown Workjet action at https://private.invalid/?token=secret"),

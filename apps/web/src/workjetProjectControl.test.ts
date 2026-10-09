@@ -27,6 +27,13 @@ describe("project instance failure display", () => {
       }),
     ).toContain("http_error (HTTP 503)");
   });
+  it("asks for the connected shell update when its action is unsupported", () => {
+    expect(
+      describeWorkjetProjectControlFailure({ _tag: "failed", code: "unsupported" }),
+    ).toBe(
+      "The connected CTOX instance does not support this action. Update its Business OS shell.",
+    );
+  });
 });
 
 describe("listWorkjetProjects", () => {

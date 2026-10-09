@@ -44,6 +44,8 @@ import {
 } from "./auth.ts";
 import { AuthSessionId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { WorkjetComputer, WorkjetWorkerProfile } from "./workjet.ts";
+
 import {
   ClientOrchestrationCommand,
   DispatchResult,
@@ -66,6 +68,30 @@ import {
   RelayEnvironmentMintResponse,
   RelayLinkProofRequest,
 } from "./relay.ts";
+
+export const WorkjetComputerInventory = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  computers: Schema.Array(
+    Schema.Struct({
+      ...WorkjetComputer.fields,
+      harnesses: Schema.Array(
+        Schema.Struct({
+          harness: WorkjetWorkerProfile.fields.harness,
+          available: Schema.Boolean,
+        }),
+      ),
+      profiles: Schema.Array(
+        Schema.Struct({
+          id: WorkjetWorkerProfile.fields.id,
+          name: WorkjetWorkerProfile.fields.name,
+          harness: WorkjetWorkerProfile.fields.harness,
+          role: WorkjetWorkerProfile.fields.role,
+          capabilityIds: WorkjetWorkerProfile.fields.capabilityIds,
+        }),
+      ),
+    }),
+  ),
+});
 
 const OptionalBearerHeaders = Schema.Struct({
   authorization: Schema.optionalKey(Schema.String),
@@ -555,6 +581,13 @@ const EnvironmentOrchestrationThreadSnapshotQuery = {
 };
 
 export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
+  .add(
+    HttpApiEndpoint.get("computers", "/api/workjet/computers", {
+      headers: OptionalBearerHeaders,
+      success: WorkjetComputerInventory,
+      error: EnvironmentOrchestrationSnapshotErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
   .add(
     HttpApiEndpoint.get("snapshot", "/api/orchestration/snapshot", {
       headers: OptionalBearerHeaders,

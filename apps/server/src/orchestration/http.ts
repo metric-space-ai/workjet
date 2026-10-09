@@ -18,6 +18,8 @@ import {
 } from "../auth/http.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import { computerInventory } from "../workjet/computerInventory.ts";
 
 export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
@@ -25,8 +27,20 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
     const orchestrationEngine = yield* OrchestrationEngineService;
+    const settings = yield* ServerSettingsService;
 
     return handlers
+      .handle(
+        "computers",
+        Effect.fn("environment.computers.list")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          const current = yield* settings.getSettings.pipe(
+            Effect.catch((cause) => failEnvironmentInternal("internal_error", cause)),
+          );
+          return computerInventory(current.workjet);
+        }),
+      )
       .handle(
         "snapshot",
         Effect.fn("environment.orchestration.snapshot")(function* (args) {

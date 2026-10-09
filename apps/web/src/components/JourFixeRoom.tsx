@@ -38,6 +38,7 @@ import {
 import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
 import type { SlideDocument } from "@workjet/slide-engine/schema";
 import { PresentationSlideChangedError } from "../lib/jourFixePresentation";
+import { jourFixeShortcut } from "../lib/jourFixeShortcuts";
 
 // The canvas, its 3D scenes and the Excalidraw runtime load only when a meeting has a presentation.
 const JourFixeCanvasStage = lazy(() => import("./JourFixeCanvasStage"));
@@ -155,6 +156,12 @@ function JourFixeRoomContent({
   const [visibleTurns, setVisibleTurns] = useState(100);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
+  // Presenter mode: Auto plays every slide's narration in turn; keys and full screen as in
+  // learnordie's live presenter.
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  const playerControl = useRef<(() => void) | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const shortcutHandler = useRef<(event: KeyboardEvent) => void>(() => {});
   const [error, setError] = useState<string | null>(null);
   const [todoDraft, setTodoDraft] = useState<{
     revision: number;
@@ -215,6 +222,27 @@ function JourFixeRoomContent({
     setPlacingComment(false);
     onSlideChange?.(id);
   }
+  function toggleFullscreen() {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void stage.requestFullscreen?.().catch(() => {});
+  }
+  shortcutHandler.current = (event) => {
+    const action = jourFixeShortcut(event, canvasEditing);
+    if (!action || !slide) return;
+    if (action === "next" && index < slides.length - 1) selectSlide(slides[index + 1]!.id);
+    else if (action === "previous" && index > 0) selectSlide(slides[index - 1]!.id);
+    else if (action === "togglePlayback") playerControl.current?.();
+    else if (action === "toggleFullscreen") toggleFullscreen();
+    else return;
+    event.preventDefault();
+  };
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => shortcutHandler.current(event);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
   function editTodos(items: readonly JourFixeTodo[]) {
     if (!canRevise || meeting.todos === undefined) return;
     setTodoDraft({ revision: meeting.todos.revision, items });
@@ -569,7 +597,8 @@ function JourFixeRoomContent({
                 </div>
               )}
               <div
-                className="relative aspect-video overflow-hidden rounded-lg border border-border bg-[#f5f3ee] text-[#18181b]"
+                ref={stageRef}
+                className="relative aspect-video overflow-hidden rounded-lg border border-border bg-[#f5f3ee] text-[#18181b] [&:fullscreen]:rounded-none [&:fullscreen]:border-0"
                 data-workjet-meeting-stage=""
               >
                 {canvasSlide && presentation ? (
@@ -726,6 +755,10 @@ function JourFixeRoomContent({
                 hasNext={index < slides.length - 1}
                 onPrevious={() => selectSlide(slides[index - 1]!.id)}
                 onNext={() => selectSlide(slides[index + 1]!.id)}
+                autoAdvance={autoAdvance}
+                onAutoAdvanceChange={setAutoAdvance}
+                controlRef={playerControl}
+                onFullscreen={toggleFullscreen}
               />
               <nav aria-label="Slides" className="flex gap-2 overflow-x-auto pb-1">
                 {slides.map((item, number) => (

@@ -45,20 +45,29 @@ export function Scene3DBlockRenderer({ block }: { block: Scene3DRendererBlock })
 }
 
 /** Follows `data-theme` on <html>, else the system colour scheme. */
-function useSceneDarkTheme() {
+function useSceneDarkTheme(rootRef: RefObject<HTMLElement | null>) {
   const [dark, setDark] = useState(false);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
+    // Workjet fork delta: inside a slide canvas the scene follows the slide's paper, not the
+    // app theme; a light slide in a dark app keeps light scene colours.
+    const slide = rootRef.current?.parentElement?.closest<HTMLElement>(".workjet-slide-canvas[data-theme]") ?? null;
     const sync = () => {
+      const slideTheme = slide?.dataset.theme;
+      if (slideTheme) {
+        setDark(slideTheme === "dark");
+        return;
+      }
       const explicit = document.documentElement.dataset.theme;
       setDark(explicit ? explicit === "dark" : media.matches);
     };
     const observer = new MutationObserver(sync);
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    if (slide) observer.observe(slide, { attributes: true, attributeFilter: ["data-theme"] });
     media.addEventListener("change", sync);
     sync();
     return () => { observer.disconnect(); media.removeEventListener("change", sync); };
-  }, []);
+  }, [rootRef]);
   return dark;
 }
 
@@ -114,10 +123,10 @@ function releasePointerFocus(event: PointerEvent<HTMLDivElement>) {
 
 function ModellScene3DBlock({ block }: { block: Scene3DBlock }) {
   const sceneKey = scene3dSceneKey(block.sceneId as ModellSceneId);
-  const dark = useSceneDarkTheme();
+  const rootRef = useRef<HTMLElement | null>(null);
+  const dark = useSceneDarkTheme(rootRef);
   const palette = modellTheme(dark);
   const accent = palette.accent;
-  const rootRef = useRef<HTMLElement | null>(null);
   const portRef = useRef<HTMLDivElement | null>(null);
   const labelsRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<ModellSceneHost | null>(null);
@@ -273,8 +282,8 @@ const BUSINESS_RESET_ICON = "M4 10a8 8 0 1 1 1 8M4 4v6h6";
 
 /** Workjet fork delta: data-driven Jour fixe scenes (`business.*`), rendered on demand. */
 function BusinessScene3DBlock({ block, sceneId }: { block: Scene3DRendererBlock; sceneId: BusinessSceneId }) {
-  const dark = useSceneDarkTheme();
   const rootRef = useRef<HTMLElement | null>(null);
+  const dark = useSceneDarkTheme(rootRef);
   const portRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<BusinessSceneHost | null>(null);
   const { inView, wide } = useSceneViewport(rootRef);

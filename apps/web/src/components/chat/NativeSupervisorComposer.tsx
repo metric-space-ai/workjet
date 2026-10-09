@@ -829,6 +829,7 @@ export function NativeSupervisorComposer(props: {
             busy ||
             bindingPending ||
             (!inputting && conversationUnavailable) ||
+            (inputting && !inputSupported) ||
             (pending && !drafting) ||
             prompt.trim() === ""
           }

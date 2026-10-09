@@ -75,8 +75,8 @@ export async function submitWorkjetSupervisorInput(
   let receipt: WorkjetSupervisorInputReceipt;
   try { receipt = decodeReceipt(result.response); }
   catch { return { _tag: "failed", code: "guest_failed" }; }
-  const latestTurn = saved.turn.terminal || saved.turn.attempt > receipt.turn.attempt
-    ? saved.turn : receipt.turn;
-  await save({ intent, receipt, submission: "confirmed" }, latestTurn);
+  // An idempotent input receipt can predate the current task observation.
+  // Only the task watch advances its state; adding context never reopens a hold.
+  await save({ intent, receipt, submission: "confirmed" });
   return { _tag: "completed", response: receipt };
 }

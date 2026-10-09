@@ -8,8 +8,16 @@ const scoped = { ...base, streamId: stream };
 /** Draft dictation never requires or changes a Jour fixe meeting. */
 export const WorkjetDictationRequests = [
   Schema.Struct({ ...base, op: Schema.Literal("open") }),
-  Schema.Struct({ ...scoped, op: Schema.Literal("write"), sequence: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
-    pcmBase64: Schema.String.check(Schema.isMinLength(4), Schema.isMaxLength(4268), Schema.isPattern(/^[A-Za-z0-9+/]+={0,2}$/)) }),
+  Schema.Struct({
+    ...scoped,
+    op: Schema.Literal("write"),
+    sequence: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })),
+    pcmBase64: Schema.String.check(
+      Schema.isMinLength(4),
+      Schema.isMaxLength(4268),
+      Schema.isPattern(/^[A-Za-z0-9+/]+={0,2}$/),
+    ),
+  }),
   Schema.Struct({ ...scoped, op: Schema.Literal("read"), afterSequence: cursor }),
   Schema.Struct({ ...scoped, op: Schema.Literal("finish") }),
   Schema.Struct({ ...scoped, op: Schema.Literal("cancel") }),
@@ -20,7 +28,9 @@ export const WorkjetDictationResponse = Schema.Struct({
   ...scoped,
   op: Schema.Literals(["open", "write", "read", "finish", "cancel"]),
   state: Schema.Literals(["open", "finishing", "finished", "canceled", "failed"]),
-  events: Schema.Array(Schema.Struct({ sequence: cursor, text: Schema.String.check(Schema.isMaxLength(8192)) })).check(Schema.isMaxLength(32)),
+  events: Schema.Array(
+    Schema.Struct({ sequence: cursor, text: Schema.String.check(Schema.isMaxLength(8192)) }),
+  ).check(Schema.isMaxLength(32)),
   text: Schema.NullOr(Schema.String.check(Schema.isMaxLength(32768))),
   error: Schema.NullOr(Schema.String.check(Schema.isMaxLength(256))),
 });

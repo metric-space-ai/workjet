@@ -114,14 +114,22 @@ export function NativeWorkerSourceControl(props: {
   const connectRef = useRef(connect);
   connectRef.current = connect;
   useEffect(() => {
-    if (props.unavailable || query.isPending || bound || autoAttempted.current === scope) return;
+    if (
+      props.unavailable ||
+      query.isPending ||
+      busy ||
+      inFlight.current ||
+      bound ||
+      autoAttempted.current === scope
+    )
+      return;
     autoAttempted.current = scope;
     if (request === null) {
       setError({ scope, message: "Select a managed instance to connect workers." });
       return;
     }
     void connectRef.current();
-  }, [scope, props.unavailable, query.isPending, bound, request === null]);
+  }, [scope, props.unavailable, query.isPending, busy, bound, request === null]);
 
   const currentError = error?.scope === scope ? error.message : null;
   return (
@@ -130,14 +138,18 @@ export function NativeWorkerSourceControl(props: {
       data-workjet-worker-source-connection-id={bound ? source?.connectionId : undefined}
       data-workjet-worker-source-instance-id={bound ? source?.instanceId : undefined}
     >
-      {currentError ? <button
-        type="button"
-        aria-label="Reconnect project workers"
-        title={currentError}
-        className="rounded border px-2 py-1 text-amber-500 disabled:opacity-50"
-        disabled={props.unavailable || busy || query.isPending || request === null}
-        onClick={() => void connectRef.current()}
-      >Erneut verbinden</button> : null}
+      {currentError ? (
+        <button
+          type="button"
+          aria-label="Reconnect project workers"
+          title={currentError}
+          className="rounded border px-2 py-1 text-amber-500 disabled:opacity-50"
+          disabled={props.unavailable || busy || query.isPending || request === null}
+          onClick={() => void connectRef.current()}
+        >
+          Erneut verbinden
+        </button>
+      ) : null}
     </span>
   );
 }

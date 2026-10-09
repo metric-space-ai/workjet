@@ -3,7 +3,10 @@ import { MicIcon, SquareIcon } from "lucide-react";
 import { ComposerControl } from "./ComposerControl";
 import { ComposerDictationStream } from "../../lib/composerDictation";
 import { requestSpeechSettings } from "../../lib/workjetSpeechSettings";
-import { captureJourFixeMicrophone, type JourFixeMicrophoneCapture } from "../../lib/jourFixeBrowserMicrophone";
+import {
+  captureJourFixeMicrophone,
+  type JourFixeMicrophoneCapture,
+} from "../../lib/jourFixeBrowserMicrophone";
 
 type DictationSession = {
   controller: AbortController;
@@ -23,7 +26,9 @@ export function ComposerDictationButton(props: {
   const session = useRef<DictationSession | null>(null);
   const currentProps = useRef(props);
   currentProps.current = props;
-  const settings = () => { window.location.hash = "#/settings/speech"; };
+  const settings = () => {
+    window.location.hash = "#/settings/speech";
+  };
   const dispose = () => {
     const current = session.current;
     session.current = null;
@@ -33,7 +38,11 @@ export function ComposerDictationButton(props: {
     current.capture?.cancel();
     current.stream.cancel();
   };
-  useEffect(() => () => dispose(), [props.instanceId]);
+  useEffect(() => {
+    setPhase("idle");
+    setError(null);
+    return () => dispose();
+  }, [props.instanceId]);
   const fail = (reason: unknown) => {
     dispose();
     setPhase("idle");
@@ -64,41 +73,97 @@ export function ComposerDictationButton(props: {
     setError(null);
     setPhase("starting");
     const controller = new AbortController();
-    const current: DictationSession = { controller, stream: new ComposerDictationStream(props.instanceId, controller.signal) };
+    const current: DictationSession = {
+      controller,
+      stream: new ComposerDictationStream(props.instanceId, controller.signal),
+    };
     session.current = current;
     try {
-      const response = await requestSpeechSettings(props.instanceId, { action: "speech.settings.read" }, controller.signal);
+      const response = await requestSpeechSettings(
+        props.instanceId,
+        { action: "speech.settings.read" },
+        controller.signal,
+      );
       if (session.current !== current) return;
-      if (response.status.stt !== "available" ||
-        (response.status.config.transcription === "mistral" && !response.status.mistral_credential_present)) {
-        dispose(); setPhase("idle"); settings(); return;
+      if (
+        response.status.stt !== "available" ||
+        (response.status.config.transcription === "mistral" &&
+          !response.status.mistral_credential_present)
+      ) {
+        dispose();
+        setPhase("idle");
+        settings();
+        return;
       }
       await current.stream.open();
       if (session.current !== current) return;
       current.capture = await captureJourFixeMicrophone({
         signal: controller.signal,
-        onFrame: ({ pcm }) => { try { current.stream.write(pcm); } catch (reason) { if (session.current === current) fail(reason); } },
-        onError: (reason) => { if (session.current === current) fail(reason); },
+        onFrame: ({ pcm }) => {
+          try {
+            current.stream.write(pcm);
+          } catch (reason) {
+            if (session.current === current) fail(reason);
+          }
+        },
+        onError: (reason) => {
+          if (session.current === current) fail(reason);
+        },
       });
-      if (session.current !== current) { current.capture.cancel(); return; }
+      if (session.current !== current) {
+        current.capture.cancel();
+        return;
+      }
       setPhase("recording");
-      current.timer = setTimeout(() => { void finishRef.current(); }, 60_000);
+      current.timer = setTimeout(() => {
+        void finishRef.current();
+      }, 60_000);
     } catch (reason) {
       if (session.current === current) fail(reason);
     }
   };
   return (
     <span className="relative inline-flex shrink-0 items-center">
-      <ComposerControl type="button" className="size-7 justify-center px-0"
+      <ComposerControl
+        type="button"
+        className="size-7 justify-center px-0"
         aria-label={phase === "recording" ? "Stop dictation" : "Dictate message"}
         aria-pressed={phase === "recording"}
-        disabled={props.disabled || phase === "starting" || phase === "finishing"}
+        disabled={
+          (props.disabled && phase !== "recording") || phase === "starting" || phase === "finishing"
+        }
         title={phase === "recording" ? "Stop dictation" : "Dictate message"}
-        onClick={() => { if (phase === "recording") void finish(); else void start(); }}>
-        {phase === "recording" ? <SquareIcon className="size-4 text-red-500" /> : <MicIcon className="size-4" />}
+        onClick={() => (phase === "recording" ? finish() : start())}
+      >
+        {phase === "recording" ? (
+          <SquareIcon className="size-4 text-red-500" />
+        ) : (
+          <MicIcon className="size-4" />
+        )}
       </ComposerControl>
-      {phase !== "idle" ? <span role="status" className="absolute bottom-full right-0 mb-1 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs">{phase === "recording" ? "Listening…" : phase === "starting" ? "Connecting microphone…" : "Transcribing…"}</span> : null}
-      {error ? <span role="alert" className="absolute bottom-full right-0 mb-1 w-64 rounded border bg-popover p-2 text-xs">{error} <button type="button" className="underline" onClick={settings}>Speech settings</button></span> : null}
+      {phase !== "idle" ? (
+        <span
+          role="status"
+          className="absolute bottom-full right-0 mb-1 whitespace-nowrap rounded bg-popover px-2 py-1 text-xs"
+        >
+          {phase === "recording"
+            ? "Listening…"
+            : phase === "starting"
+              ? "Connecting microphone…"
+              : "Transcribing…"}
+        </span>
+      ) : null}
+      {error ? (
+        <span
+          role="alert"
+          className="absolute bottom-full right-0 mb-1 w-64 rounded border bg-popover p-2 text-xs"
+        >
+          {error}{" "}
+          <button type="button" className="underline" onClick={settings}>
+            Speech settings
+          </button>
+        </span>
+      ) : null}
     </span>
   );
 }

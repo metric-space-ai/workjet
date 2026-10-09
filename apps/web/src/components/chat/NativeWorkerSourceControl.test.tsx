@@ -1,33 +1,59 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ComponentProps } from "react";
-import { DEFAULT_WORKJET_THREAD_CONFIG, EnvironmentId, WorkjetConnectionId, type WorkjetConnectionSummary } from "@workjet/contracts";
+import {
+  DEFAULT_WORKJET_THREAD_CONFIG,
+  EnvironmentId,
+  WorkjetConnectionId,
+  type WorkjetConnectionSummary,
+} from "@workjet/contracts";
 import { withWorkerSourceConnection } from "../../workjetWorkerSourceConnection";
 import { NativeWorkerSourceControl } from "./NativeWorkerSourceControl";
 
 const state = vi.hoisted(() => ({
   data: { connections: [] as WorkjetConnectionSummary[] },
-  isPending: false, refresh: vi.fn(), effects: [] as Array<() => void>,
+  isPending: false,
+  refresh: vi.fn(),
+  effects: [] as Array<() => void>,
 }));
-vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(), useEffect: (effect: () => void) => { state.effects.push(effect); } }));
+vi.mock("react", async (original) => ({
+  ...(await original<typeof import("react")>()),
+  useEffect: (effect: () => void) => {
+    state.effects.push(effect);
+  },
+}));
 vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => state }));
-vi.mock("../../state/server", () => ({ serverEnvironment: { workjetDecisionHubConnections: vi.fn(() => null) } }));
+vi.mock("../../state/server", () => ({
+  serverEnvironment: { workjetDecisionHubConnections: vi.fn(() => null) },
+}));
 const tenant = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const nativeInstance = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const connection: WorkjetConnectionSummary = {
   connectionId: WorkjetConnectionId.make(`ctox-dev-worker-source:${tenant}:${nativeInstance}`),
-  instanceId: nativeInstance, displayName: "Project workers", source: "ctox_dev", status: "ready", reason: null,
+  instanceId: nativeInstance,
+  displayName: "Project workers",
+  source: "ctox_dev",
+  status: "ready",
+  reason: null,
 };
 const props: ComponentProps<typeof NativeWorkerSourceControl> = {
-  environmentId: EnvironmentId.make("source-environment"), instanceId: `managed:${tenant}`,
-  config: DEFAULT_WORKJET_THREAD_CONFIG, bindConnection: vi.fn(async () => true), unavailable: false,
+  environmentId: EnvironmentId.make("source-environment"),
+  instanceId: `managed:${tenant}`,
+  config: DEFAULT_WORKJET_THREAD_CONFIG,
+  bindConnection: vi.fn(async () => true),
+  unavailable: false,
 };
-const render = (overrides: Partial<typeof props> = {}) => renderToStaticMarkup(<NativeWorkerSourceControl {...props} {...overrides} />);
+const render = (overrides: Partial<typeof props> = {}) =>
+  renderToStaticMarkup(<NativeWorkerSourceControl {...props} {...overrides} />);
 const boundConfig = withWorkerSourceConnection(props.config, props.instanceId, connection)!;
 const provision = vi.fn(async () => ({ _tag: "completed", connection }));
 beforeEach(() => {
-  state.data = { connections: [] }; state.isPending = false; state.effects = [];
-  state.refresh.mockClear(); provision.mockClear(); vi.mocked(props.bindConnection).mockClear();
+  state.data = { connections: [] };
+  state.isPending = false;
+  state.effects = [];
+  state.refresh.mockClear();
+  provision.mockClear();
+  vi.mocked(props.bindConnection).mockClear();
   vi.stubGlobal("window", { desktopBridge: { ctox: { provisionDecisionHub: provision } } });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -35,7 +61,10 @@ afterEach(() => vi.unstubAllGlobals());
 describe("automatic supervisor worker connection", () => {
   it("removes the lone Connect workers button and attempts setup once on opening", async () => {
     expect(render()).not.toContain("Connect workers");
-    for (const effect of state.effects) { effect(); effect(); }
+    for (const effect of state.effects) {
+      effect();
+      effect();
+    }
     expect(provision).toHaveBeenCalledTimes(1);
     await provision.mock.results[0]!.value;
     await Promise.resolve();
@@ -52,17 +81,23 @@ describe("automatic supervisor worker connection", () => {
   });
   it("does not display another tenant's saved connection", () => {
     state.data = { connections: [connection] };
-    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain(nativeInstance);
+    expect(render({ config: boundConfig, instanceId: "managed:foreign" })).not.toContain(
+      nativeInstance,
+    );
   });
   it("waits for available environment and query before auto-provisioning", () => {
-    render({ unavailable: true }); state.effects.forEach((effect) => effect());
+    render({ unavailable: true });
+    state.effects.forEach((effect) => effect());
     expect(provision).not.toHaveBeenCalled();
-    state.effects = []; state.isPending = true;
-    render(); state.effects.forEach((effect) => effect());
+    state.effects = [];
+    state.isPending = true;
+    render();
+    state.effects.forEach((effect) => effect());
     expect(provision).not.toHaveBeenCalled();
   });
   it("uses an existing ready connection without issuing another grant", async () => {
-    state.data = { connections: [connection] }; render();
+    state.data = { connections: [connection] };
+    render();
     state.effects.forEach((effect) => effect());
     expect(props.bindConnection).toHaveBeenCalledWith(connection);
     expect(provision).not.toHaveBeenCalled();

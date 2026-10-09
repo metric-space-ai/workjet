@@ -7296,42 +7296,44 @@ function ChatViewContent(props: ChatViewProps) {
                           {nativeSupervisorThread && visibleWorkjetConfig && activeServerThread ? (
                             <>
                               <NativeSupervisorComposer
-                                workerSourceControl={<NativeWorkerSourceControl
-                                key={`worker-source:${activeThreadKey}:${presentationInstanceId}`}
-                                environmentId={activeServerThread.environmentId}
-                                instanceId={presentationInstanceId}
-                                config={visibleWorkjetConfig}
-                                bindConnection={async (connection) => {
-                                  const nextConfig = withWorkerSourceConnection(
-                                    visibleWorkjetConfig,
-                                    presentationInstanceId,
-                                    connection,
-                                  );
-                                  if (!nextConfig) return false;
-                                  const result = await setThreadWorkjetConfig({
-                                    environmentId: activeServerThread.environmentId,
-                                    input: {
-                                      threadId: activeServerThread.id,
-                                      workjetConfig: nextConfig,
-                                    },
-                                  });
-                                  if (result._tag === "Success" && activeThreadKey) {
-                                    setWorkjetConfigOverridesByThreadKey((current) => ({
-                                      ...current,
-                                      [activeThreadKey]: {
-                                        config: nextConfig,
-                                        busy: false,
-                                      },
-                                    }));
-                                  }
-                                  return result._tag === "Success";
-                                }}
-                                unavailable={
-                                  activeEnvironmentUnavailable ||
-                                  threadDetailLoading ||
-                                  workjetCapabilityBusy
+                                workerSourceControl={
+                                  <NativeWorkerSourceControl
+                                    key={`worker-source:${activeThreadKey}:${presentationInstanceId}`}
+                                    environmentId={activeServerThread.environmentId}
+                                    instanceId={presentationInstanceId}
+                                    config={visibleWorkjetConfig}
+                                    bindConnection={async (connection) => {
+                                      const nextConfig = withWorkerSourceConnection(
+                                        visibleWorkjetConfig,
+                                        presentationInstanceId,
+                                        connection,
+                                      );
+                                      if (!nextConfig) return false;
+                                      const result = await setThreadWorkjetConfig({
+                                        environmentId: activeServerThread.environmentId,
+                                        input: {
+                                          threadId: activeServerThread.id,
+                                          workjetConfig: nextConfig,
+                                        },
+                                      });
+                                      if (result._tag === "Success" && activeThreadKey) {
+                                        setWorkjetConfigOverridesByThreadKey((current) => ({
+                                          ...current,
+                                          [activeThreadKey]: {
+                                            config: nextConfig,
+                                            busy: false,
+                                          },
+                                        }));
+                                      }
+                                      return result._tag === "Success";
+                                    }}
+                                    unavailable={
+                                      activeEnvironmentUnavailable ||
+                                      threadDetailLoading ||
+                                      workjetCapabilityBusy
+                                    }
+                                  />
                                 }
-                              />}
                                 key={`${activeThreadKey}:${presentationInstanceId}`}
                                 conversationTarget={nativeSupervisorConversationTarget}
                                 scope={nativeSupervisorScope}

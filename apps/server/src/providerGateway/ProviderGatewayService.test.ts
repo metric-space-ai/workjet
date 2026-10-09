@@ -1175,6 +1175,79 @@ describe("ProviderGatewayService · API-key accounts", () => {
     }
   });
 
+  it("stores the accepted Z.ai plan with only its selected live model", async () => {
+    const harness = apiKeyHarness();
+    const model = "glm-5.3-flash"; // Real account GET /models, 2026-10-09.
+    harness.platform = {
+      ...harness.platform,
+      publicModelCatalog: async () => ({
+        schemaVersion: 1, checkedAt: new Date(harness.platform.now()).toISOString(),
+        expiresAt: new Date(harness.platform.now() + 60_000).toISOString(),
+        providers: [{ provider: "zai", status: "observed", models: [model] }],
+      }),
+      discoverZaiConnection: async (_key, preferredModels) => {
+        expect(preferredModels).toEqual([model]);
+        return { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4", models: [model], probeModel: model };
+      },
+    };
+    await runWithSecrets(harness, (gateway) => gateway.addApiKeyAccount({
+      provider: "zai", label: "Coding plan", apiKey: API_KEY, models: [],
+    }));
+    const stored = JSON.parse(harness.writes.find((entry) => entry.includes("apiKeySecret"))!);
+    expect(stored.accounts.find((entry: { provider: string }) => entry.provider === "zai")).toMatchObject({
+      upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4", models: [model],
+    });
+    expect(harness.writes.join("\n")).not.toContain(API_KEY);
+  });
+
+  it.each(["accepted", "unavailable", "disabled", "other-account", "custom", "coding"] as const)(
+    "repairs only a verified legacy Z.ai binding (%s)", async (mode) => {
+      const harness = apiKeyHarness();
+      const model = "glm-5.3-flash"; // Real account GET /models, 2026-10-09.
+      const account = {
+        id: "zai-existing", provider: "zai", label: "Existing plan",
+        enabled: mode !== "disabled", priority: 7, weight: 1, models: [model],
+        apiKeySecret: { scope: "workjet-provider-gateway", name: "existing-key" },
+        ...(mode === "custom" ? { upstreamBaseUrl: "https://other.example/v1" } :
+          mode === "coding" ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" } : {}),
+      };
+      let document = JSON.stringify({ ...JSON.parse(configuration), accounts: [...JSON.parse(configuration).accounts, account] });
+      let discoveries = 0;
+      const writer = harness.platform.writePrivateText;
+      harness.platform = {
+        ...harness.platform,
+        discoverZaiConnection: async (key, models, origin) => {
+          discoveries += 1;
+          expect(key).toBe("provider-secret");
+          expect(models).toEqual([model]);
+          expect(origin).toBe("https://api.z.ai/api/paas/v4");
+          return mode === "unavailable" ? undefined : {
+            upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4", models: [model], probeModel: model,
+          };
+        },
+        readText: async (path) => {
+          if (path.endsWith("model-checks.json"))
+            throw Object.assign(new Error("missing"), { code: "ENOENT" });
+          return document;
+        },
+        writePrivateText: async (path, value) => {
+          await writer(path, value);
+          if (path.endsWith("/provider-gateway.json")) document = value;
+        },
+      };
+      await runWithSecrets(harness, (gateway) => gateway.checkModels({
+        force: true,
+        ...(mode === "other-account" ? { accountId: WorkjetGatewayAccountId.make("codex-primary") } : {}),
+      }));
+      expect(JSON.parse(document).accounts.find((item: { id: string }) => item.id === account.id)).toEqual({
+        ...account, ...(mode === "accepted" ? { upstreamBaseUrl: "https://api.z.ai/api/coding/paas/v4" } : {}),
+      });
+      expect(discoveries).toBe(mode === "accepted" || mode === "unavailable" ? 1 : 0);
+      expect(harness.storedSecrets.size).toBe(0);
+      expect(document).not.toContain("provider-secret");
+    },
+  );
+
   it("stores the verified Kimi origin and live IDs on account creation", async () => {
     const harness = apiKeyHarness();
     await runWithSecrets(harness, (gateway) =>

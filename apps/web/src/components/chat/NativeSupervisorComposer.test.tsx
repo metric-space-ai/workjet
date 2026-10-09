@@ -145,6 +145,8 @@ describe("native supervisor receipt display", () => {
       />,
     );
     expect(html).toContain("Continue anyway");
+    expect(html).toContain("Add context to task");
+    expect(html).toContain("Same-task context is unavailable on this connection.");
     expect(html).toContain("starts a separate request");
     expect(html.match(/<textarea[^>]*>/)?.[0]).not.toContain("disabled");
     expect(html).toContain("Refresh task");

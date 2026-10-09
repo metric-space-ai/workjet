@@ -61,6 +61,7 @@ import {
   WorkjetSupervisorTurn,
   WorkjetSupervisorTurnKind,
   WorkjetSupervisorTurnCapabilitiesResponse,
+  WorkjetSupervisorInputReceipt,
 } from "./workjetSupervisor.ts";
 import {
   WorkjetSupervisorExecutionPageRequest,
@@ -758,6 +759,15 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
     commandId: CommandId,
     projectId: ProjectId,
     threadId: WorkjetSupervisorThreadId,
+    includeInput: Schema.optionalKey(Schema.Boolean),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("project.supervisor.turn.input"),
+    commandId: CommandId.check(Schema.isMaxLength(120)),
+    projectId: ProjectId,
+    threadId: WorkjetSupervisorThreadId,
+    targetCommandId: CtoxProjectText(256),
+    body: WorkjetSupervisorGoal,
   }),
   Schema.Struct({
     action: Schema.Literal("project.supervisor.turn.watch"),
@@ -860,6 +870,7 @@ const CtoxWorkjetProjectList = Schema.Array(CtoxWorkjetProjectProjection).check(
 export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetInstanceGrokResponse,
   WorkjetSupervisorTurnCapabilitiesResponse,
+  WorkjetSupervisorInputReceipt,
   WorkjetJourFixeNarrationReadResponse,
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
@@ -1005,8 +1016,20 @@ export function isWorkjetSupervisorReceiptForRequest(
     return false;
   if (request.action === "project.supervisor.bind") return response.action === request.action;
   if (request.action === "project.supervisor.turn.capabilities")
-    return response.action === request.action;
+    return (
+      response.action === request.action &&
+      (request.includeInput === true) === (response.inputContract !== undefined)
+    );
   if (!("turn" in response) || response.turn.threadId !== request.threadId) return false;
+  if (request.action === "project.supervisor.turn.input")
+    return (
+      response.action === request.action &&
+      response.turn.commandId === request.targetCommandId &&
+      response.turn.taskId !== null &&
+      response.input.body === request.body &&
+      response.delivery === "next_slice" &&
+      response.workerInterrupted === false
+    );
   if (
     request.action === "project.supervisor.turn.watch" ||
     request.action === "project.supervisor.turn.cancel"

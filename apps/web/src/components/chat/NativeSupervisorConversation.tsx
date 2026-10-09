@@ -34,6 +34,18 @@ export function NativeSupervisorConversation(props: {
       <p className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted/50 px-4 py-3">
         {journal.intent.goal}
       </p>
+      {journal.inputs?.map((entry) => (
+        <article
+          key={entry.intent.commandId}
+          aria-label="Owner task context"
+          className="ml-auto max-w-[85%] rounded-xl bg-muted/50 px-4 py-3"
+        >
+          <p className="whitespace-pre-wrap break-words">{entry.intent.body}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {entry.receipt ? "Saved for the task’s next step" : "Context receipt pending"}
+          </p>
+        </article>
+      ))}
       {props.replies
         .filter((reply) => reply.text !== "" || reply.incomplete || reply.truncated)
         .map((reply) => (

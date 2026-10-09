@@ -6,11 +6,12 @@ import {
   GreppySettings,
   OpenCodeSettings,
   MiniMaxSettings,
+  PiSettings,
   ProviderDriverKind,
 } from "@workjet/contracts";
 import type * as Schema from "effect/Schema";
 import { TerminalIcon } from "lucide-react";
-import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon } from "../Icons";
+import { ClaudeAI, CursorIcon, GrokIcon, type Icon, OpenAI, OpenCodeIcon, PiCodeIcon } from "../Icons";
 
 type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
@@ -38,6 +39,12 @@ export interface ProviderClientDefinition {
 }
 
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
+  {
+    value: ProviderDriverKind.make("pi"),
+    label: "Pi Code",
+    icon: PiCodeIcon,
+    settingsSchema: PiSettings,
+  },
   {
     value: ProviderDriverKind.make("minimax"),
     label: "MiniMax Code",

@@ -148,9 +148,7 @@ describe("a worker's harness decides which runtime the turn uses", () => {
     expect(providerInstanceIdForHarness("opencode")).toBe("opencode");
     expect(providerInstanceIdForHarness("grok-cli")).toBe("grok");
     expect(providerInstanceIdForHarness("cursor-agent")).toBe("cursor");
+    expect(providerInstanceIdForHarness("pi-code")).toBe("pi");
   });
 
-  it("refuses to guess for a harness with no runtime here", () => {
-    expect(providerInstanceIdForHarness("pi-code")).toBeNull();
-  });
 });

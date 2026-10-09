@@ -937,7 +937,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
       });
       assert.equal(routing.codex.startSession.mock.calls.length, 1);
       assert.equal(routing.codex.nativeGoalGet.mock.calls.length, 1);
-      yield* provider.stopSession(threadId);
+      yield* provider.stopSession({ threadId });
     }),
   );
 

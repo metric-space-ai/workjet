@@ -66,9 +66,8 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "CtoxBusinessOsTool.ts", enforcer: "requireWorkjetMember" },
   { file: "CtoxCrewTool.ts", enforcer: "requireWorkjetMember" },
   { file: "DecisionHubTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
-  { file: "GreppyTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "GoalTool.ts", enforcer: "requireWorkjetMember" },
-  { file: "WorkerKanbanTool.ts", enforcer: "requireWorkjetMember" },
+  { file: "GreppyTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
   { file: "MailboxTool.ts", enforcer: "requireWorkjetOrchestrator" },
@@ -82,6 +81,7 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "WebStackTool.ts", enforcer: "requireActiveWorkjetMcpCapability" },
   { file: "WorkBlockTool.ts", enforcer: "requireWorkjetMember" },
+  { file: "WorkerKanbanTool.ts", enforcer: "requireWorkjetMember" },
   { file: "WorkerTool.ts", enforcer: "requireWorkjetOrchestrator" },
 ];
 

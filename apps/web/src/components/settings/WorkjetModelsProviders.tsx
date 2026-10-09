@@ -321,7 +321,9 @@ export function WorkjetModelsKeyForm({
       className="grid min-w-0 gap-2 border-t border-border/50 py-3 sm:grid-cols-[minmax(10rem,1fr)_minmax(12rem,2fr)_auto]"
       onSubmit={(event) => {
         event.preventDefault();
-        const parsed = sharedModels ? (account?.modelIds ?? models) : parseModels(modelText);
+        // Discover this key's own plan before intersecting shared provider models.
+        const selectedModels = provider === "kimi" ? [] : (account?.modelIds ?? models);
+        const parsed = sharedModels ? selectedModels : parseModels(modelText);
         if (
           !key.trim() ||
           !label.trim() ||
@@ -795,7 +797,11 @@ function ProviderModelsField({
           }}
         />
       </div>
-      {suggestionError && <span role="alert" className="text-xs text-destructive">Not saved. Refresh the live catalog and try again.</span>}
+      {suggestionError && (
+        <span role="alert" className="text-xs text-destructive">
+          Not saved. Refresh the live catalog and try again.
+        </span>
+      )}
       {suggestions.length > 0 && (
         <Popover>
           <PopoverTrigger
@@ -821,7 +827,9 @@ function ProviderModelsField({
                   disabled={state.mutationBusy}
                   onClick={() => {
                     setSuggestionError(false);
-                    void state.onEditProviderModels?.(provider, [...models, id]).then(saved => setSuggestionError(!saved));
+                    void state
+                      .onEditProviderModels?.(provider, [...models, id])
+                      .then((saved) => setSuggestionError(!saved));
                   }}
                 >
                   {id}

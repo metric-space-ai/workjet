@@ -1,7 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectId, WorkjetJourFixeReadResponse } from "@workjet/contracts";
 import { readActiveWorkjetScope } from "../activeWorkjetScope";
 import { JourFixeNativeSession, mapJourFixeMeeting } from "../lib/jourFixeNative";
+import {
+  readJourFixePresentation,
+  saveJourFixePresentationSlide,
+  type JourFixePresentation,
+} from "../lib/jourFixePresentation";
+import type { CanvasScene } from "@workjet/slide-engine/excalidraw/canvas-schema";
 import { JourFixeSpeechRoom } from "./JourFixeSpeechRoom";
 import type { JourFixeSpeechProvider } from "../lib/jourFixeSpeech";
 import { nativeJourFixeNarrationProvider } from "../lib/nativeJourFixeNarrationProvider";
@@ -38,7 +44,50 @@ function NativeJourFixeRoomContent({
   );
   const [result, setResult] = useState<WorkjetJourFixeReadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [presentation, setPresentation] = useState<JourFixePresentation | null>(null);
+  const [presentationReload, setPresentationReload] = useState(0);
+  const meetingId = result?.meeting?.id;
+  const deckRevision = result?.meeting?.deck_revision;
+  const meetingState = result?.meeting?.state;
+  useEffect(() => {
+    if (!meetingId) return;
+    let cancelled = false;
+    void readJourFixePresentation(instanceId, projectId, meetingId).then(
+      (value) => {
+        if (!cancelled) setPresentation(value);
+      },
+      (reason: unknown) => {
+        if (!cancelled)
+          setError(
+            reason instanceof Error
+              ? `The meeting presentation could not be loaded: ${reason.message}`
+              : "The meeting presentation could not be loaded.",
+          );
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceId, projectId, meetingId, deckRevision, meetingState, presentationReload]);
+  const savePresentationSlide = useCallback(
+    async (slideId: string, scene: CanvasScene) => {
+      if (!presentation) throw new Error("This meeting has no presentation.");
+      const saved = await saveJourFixePresentationSlide(
+        instanceId,
+        projectId,
+        presentation.manifest,
+        slideId,
+        scene,
+      );
+      if (active.current) {
+        if (saved.presentation) setPresentation(saved.presentation);
+        if (saved.reloadError) setError(saved.reloadError);
+      }
+    },
+    [instanceId, projectId, presentation],
+  );
   const refresh = async () => {
+    setPresentationReload((count) => count + 1);
     const value = await session.read(result?.meeting?.id);
     setResult(value);
     setError(null);
@@ -147,6 +196,15 @@ function NativeJourFixeRoomContent({
         projectTitle={projectTitle}
         meeting={meeting}
         commentDelivery="saved"
+        {...(presentation
+          ? {
+              presentation: {
+                document: presentation.document,
+                editable: ["preparing", "ready", "live", "review"].includes(meeting.state),
+                onSave: savePresentationSlide,
+              },
+            }
+          : {})}
         onBack={onBack}
         onRefresh={refresh}
         onStartMeeting={(id, revision) => accepted(() => session.start(id, revision))}

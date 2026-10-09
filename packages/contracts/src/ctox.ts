@@ -15,6 +15,11 @@ import {
 } from "./workjetJourFixeOwner.ts";
 export { isWorkjetJourFixeReceiptForRequest } from "./workjetJourFixeOwner.ts";
 import {
+  WorkjetPresentationRequests,
+  WorkjetPresentationResponses,
+} from "./workjetPresentation.ts";
+export * from "./workjetPresentation.ts";
+import {
   WorkjetJourFixeReadRequest,
   WorkjetJourFixeReadResponse,
 } from "./workjetJourFixeMeeting.ts";
@@ -646,6 +651,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   WorkjetJourFixeReadRequest,
   ...WorkjetJourFixeOwnerRequests,
   ...WorkjetJourFixeSpeechRequests,
+  ...WorkjetPresentationRequests,
   Schema.Struct({
     action: Schema.Literal("project.kpis.read"),
     commandId: CommandId,
@@ -778,6 +784,7 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetJourFixeReadResponse,
   WorkjetJourFixeOwnerResponse,
   WorkjetJourFixeSpeechResponse,
+  ...WorkjetPresentationResponses,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,

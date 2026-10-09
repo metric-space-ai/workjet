@@ -2,6 +2,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The gate reads raw tracked bytes and asks Git for the file list before entering an Effect runtime.
 
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
@@ -115,6 +116,33 @@ export const TRACKED_SECRET_ALLOWLIST: ReadonlyArray<{
 ];
 
 /**
+ * Public Excalidraw artifact bytes reviewed against PROVENANCE.json.
+ * These are not fixture or directory exemptions: both path and the entire UTF-8
+ * file digest must match. Changed bytes and copied files receive the normal scan.
+ */
+export const PUBLIC_VENDOR_MATCH_CLASSIFICATIONS: ReadonlyArray<{
+  readonly path: string;
+  readonly sha256: string;
+  readonly prefixes: ReadonlyArray<string>;
+  readonly reason: string;
+}> = [
+  {
+    path: "apps/web/public/vendor/excalidraw/chunk-EIO257PC.js",
+    sha256: "6ca0a6b4a49be83ed6beb32f845648ca4927c592cc0f4ba43a909624f5659493",
+    prefixes: ["MIIA"],
+    reason:
+      "Published Excalidraw binary/font data contains two base64 substrings that resemble DER credentials. The complete artifact is pinned by the retained Learnordie fork provenance.",
+  },
+  {
+    path: "apps/web/public/vendor/excalidraw/excalidraw.mjs",
+    sha256: "8ac682c44ab2cbfdcfb2f182c5c4dd0557a5573cd2ee346a051869f65a6166ee",
+    prefixes: ["MIIA", "AIza"],
+    reason:
+      "Published Excalidraw binary/font data and its public Firebase browser configuration produce three credential-shaped matches. Only these provenance-pinned artifact bytes are classified as public.",
+  },
+];
+
+/**
  * Files whose NAME says they hold credentials. These get the WHOLE table,
  * including the residue heuristics that are too noisy for source code: the
  * false-positive argument does not apply to a file that is supposed to contain
@@ -209,13 +237,26 @@ export function scanTrackedFileText(
   path: string,
   text: string,
 ): ReadonlyArray<TrackedSecretFinding> {
-  return findSecretShapeMatches(text, shapesForPath(path)).map((match) => ({
-    path,
-    shape: match.shape,
-    line: lineOf(text, match.index),
-    length: match.match.length,
-    prefix: match.match.slice(0, 4),
-  }));
+  const artifact = PUBLIC_VENDOR_MATCH_CLASSIFICATIONS.find((entry) => entry.path === path);
+  const publicArtifact =
+    artifact !== undefined &&
+    NodeCrypto.createHash("sha256").update(text, "utf8").digest("hex") === artifact.sha256;
+  return findSecretShapeMatches(text, shapesForPath(path))
+    .filter(
+      (match) =>
+        !(
+          publicArtifact &&
+          match.shape === "known-credential" &&
+          artifact.prefixes.includes(match.match.slice(0, 4))
+        ),
+    )
+    .map((match) => ({
+      path,
+      shape: match.shape,
+      line: lineOf(text, match.index),
+      length: match.match.length,
+      prefix: match.match.slice(0, 4),
+    }));
 }
 
 /**

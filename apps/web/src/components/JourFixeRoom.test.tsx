@@ -1,8 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { JourFixeRoom } from "./JourFixeRoom";
 import type { JourFixeRoomSnapshot } from "../lib/jourFixeRoom";
 import fixture from "../fixtures/jour-fixe.contract.json";
+import { jourFixeDeck } from "@workjet/slide-engine/fixtures/jour-fixe-deck";
+
+// The canvas stage loads Excalidraw and three.js in the browser; the room tests only need its slot.
+vi.mock("./JourFixeCanvasStage", () => ({ default: () => null }));
 
 const meeting = fixture.meeting as JourFixeRoomSnapshot;
 const props = { projectTitle: "Fixture", meeting, onBack: () => {} };
@@ -110,5 +114,36 @@ describe("Jour fixe room states", () => {
       expect(html).not.toContain("Message to supervisor");
       expect(html).not.toContain("Confirm 1 to-dos");
     }
+  });
+  it("shows presentation slides on the canvas stage and keeps comments behind an explicit mode", () => {
+    const first = [...meeting.slides].sort((a, b) => a.position - b.position)[0]!;
+    const document = {
+      ...jourFixeDeck,
+      slides: [{ ...jourFixeDeck.slides[1]!, id: first.id }],
+    };
+    const html = renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={{ ...meeting, state: "live" }}
+        onComment={async () => {}}
+        presentation={{ document, editable: true, onSave: async () => {} }}
+      />,
+    );
+    expect(html).toContain("Loading the slide…");
+    expect(html).toContain("Comment on slide");
+    expect(html).not.toContain("Place a comment on the slide");
+    expect(html).not.toContain(first.markdown.split("\n")[0]!.slice(0, 24));
+  });
+  it("keeps the markdown stage for slides that are not in the presentation", () => {
+    const html = renderToStaticMarkup(
+      <JourFixeRoom
+        {...props}
+        meeting={{ ...meeting, state: "live" }}
+        onComment={async () => {}}
+        presentation={{ document: jourFixeDeck, editable: true, onSave: async () => {} }}
+      />,
+    );
+    expect(html).toContain("Place a comment on the slide");
+    expect(html).not.toContain("Comment on slide");
   });
 });

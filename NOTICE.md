@@ -82,12 +82,12 @@ policy is [`LICENSE_POLICY.md`](LICENSE_POLICY.md); the per-component provenance
 - License: See the CTOX release; AGPL-3.0-only unless the dual option applies
 - The verified shell archive is fetched at build time by scripts/prepare-ctox-business-os-shell.ts and IS copied into the packaged artifact as the 'ctox-business-os-shell' extra resource. Its licensing follows the CTOX release it was built from; see docs/workjet-electron-guest-shell-license-review.md.
 
-## 4. Third-party npm packages (485)
+## 4. Third-party npm packages (486)
 
 Production dependency closure of the release importers
 (`apps/desktop`, `apps/server`, `apps/web`), following workspace
 links transitively. Development dependencies are excluded. Workspace importers reached:
-`apps/desktop`, `apps/server`, `apps/web`, `packages/client-runtime`, `packages/contracts`, `packages/shared`, `packages/ssh`, `packages/tailscale`, `packages/workjet-capabilities`.
+`apps/desktop`, `apps/server`, `apps/web`, `packages/client-runtime`, `packages/contracts`, `packages/shared`, `packages/slide-engine`, `packages/ssh`, `packages/tailscale`, `packages/workjet-capabilities`.
 
 ### (MIT AND Zlib) (1)
 
@@ -127,7 +127,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 ### BSD-3-Clause (3)
 
 - `diff@9.0.0` — https://github.com/kpdecker/jsdiff
-- `fast-uri@3.1.6` — https://github.com/fastify/fast-uri
+- `fast-uri@3.1.7` — https://github.com/fastify/fast-uri
 - `qs@6.15.3` — https://github.com/ljharb/qs
 
 ### BlueOak-1.0.0 (1)
@@ -154,7 +154,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `yaml@2.9.0` — github:eemeli/yaml
 - `zod-to-json-schema@3.25.2` — https://github.com/StefanTerdell/zod-to-json-schema
 
-### MIT (440)
+### MIT (441)
 
 - `@anthropic-ai/sdk@0.93.0` — github:anthropics/anthropic-sdk-typescript
 - `@babel/runtime@7.29.7` — https://github.com/babel/babel
@@ -220,7 +220,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `@lexical/text@0.41.0` — https://github.com/facebook/lexical
 - `@lexical/utils@0.41.0` — https://github.com/facebook/lexical
 - `@lexical/yjs@0.41.0` — https://github.com/facebook/lexical
-- `@modelcontextprotocol/sdk@1.29.0` — https://github.com/modelcontextprotocol/typescript-sdk
+- `@modelcontextprotocol/sdk@1.31.0` — https://github.com/modelcontextprotocol/typescript-sdk
 - `@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
 - `@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
 - `@msgpackr-extract/msgpackr-extract-linux-arm@3.0.4` — ssh://git@github.com/kriszyp/msgpackr-extract
@@ -509,7 +509,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `progress@2.0.3` — https://github.com/visionmedia/node-progress
 - `prompts@2.4.2` — terkelg/prompts
 - `property-information@7.2.0` — wooorm/property-information
-- `proxy-addr@2.0.7` — jshttp/proxy-addr
+- `proxy-addr@2.0.8` — jshttp/proxy-addr
 - `pure-rand@8.4.0` — https://github.com/dubzzz/pure-rand
 - `range-parser@1.2.1` — jshttp/range-parser
 - `raw-body@3.0.2` — stream-utils/raw-body
@@ -539,7 +539,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `safer-buffer@2.1.2` — https://github.com/ChALkeR/safer-buffer
 - `scheduler@0.27.0` — https://github.com/facebook/react
 - `send@1.2.1` — pillarjs/send
-- `seroval@1.5.4` — https://github.com/lxsmnsyc/seroval
+- `seroval@1.6.3` — https://github.com/lxsmnsyc/seroval
 - `seroval-plugins@1.5.4` — https://github.com/lxsmnsyc/seroval
 - `serve-static@2.2.1` — expressjs/serve-static
 - `setimmediate@1.0.5` — YuzuJS/setImmediate
@@ -563,6 +563,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `style-to-object@1.0.14` — https://github.com/remarkablemark/style-to-object
 - `tabbable@6.4.0` — https://github.com/focus-trap/tabbable
 - `tailwind-merge@3.6.0` — https://github.com/dcastil/tailwind-merge
+- `three@0.140.0` — https://github.com/mrdoob/three.js
 - `tiny-typed-emitter@2.1.0` — https://github.com/binier/tiny-typed-emitter
 - `tinyexec@1.2.4` — https://github.com/tinylibs/tinyexec
 - `toidentifier@1.0.1` — component/toidentifier
@@ -571,7 +572,7 @@ links transitively. Development dependencies are excluded. Workspace importers r
 - `trough@2.2.0` — wooorm/trough
 - `ts-algebra@2.0.0` — https://github.com/ThomasAribart/ts-algebra
 - `type-is@2.1.0` — jshttp/type-is
-- `undici@6.28.0` — https://github.com/nodejs/undici
+- `undici@6.28.1` — https://github.com/nodejs/undici
 - `undici-types@7.16.0` — https://github.com/nodejs/undici
 - `unified@11.0.5` — unifiedjs/unified
 - `unist-util-is@6.0.1` — syntax-tree/unist-util-is

@@ -20,6 +20,12 @@ import {
 } from "./workjetPresentation.ts";
 export * from "./workjetPresentation.ts";
 import {
+  WorkjetCalendarNativeRequests,
+  WorkjetCalendarNativeResponses,
+} from "./workjetCalendarNative.ts";
+export * from "./workjetCalendarNative.ts";
+
+import {
   WorkjetJourFixeReadRequest,
   WorkjetJourFixeReadResponse,
 } from "./workjetJourFixeMeeting.ts";
@@ -652,6 +658,7 @@ export const CtoxWorkjetProjectControlRequest = Schema.Union([
   ...WorkjetJourFixeOwnerRequests,
   ...WorkjetJourFixeSpeechRequests,
   ...WorkjetPresentationRequests,
+  ...WorkjetCalendarNativeRequests,
   Schema.Struct({
     action: Schema.Literal("project.kpis.read"),
     commandId: CommandId,
@@ -785,6 +792,7 @@ export const CtoxWorkjetProjectControlResponse = Schema.Union([
   WorkjetJourFixeOwnerResponse,
   WorkjetJourFixeSpeechResponse,
   ...WorkjetPresentationResponses,
+  ...WorkjetCalendarNativeResponses,
   Schema.Struct({
     action: Schema.Literal("project.supervisor.bind"),
     commandId: CommandId,

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ProjectOverview } from "@workjet/contracts";
 import { ArrowUpRightIcon, EllipsisIcon } from "lucide-react";
 import { resolveCachedProjectPreview } from "../cachedProjectPreview";
@@ -29,11 +29,13 @@ export function ProjectOverviewCard({
   onSaveConfiguration,
   kpis,
   onSaveKpis,
+  onReadKpis,
   reorderHandle,
 }: {
   readonly project: GalleryProject;
   readonly kpis?: PromptedProjectKpis | undefined;
   readonly onSaveKpis?: SaveProjectKpiPrompts | undefined;
+  readonly onReadKpis?: ((projectId: string) => Promise<PromptedProjectKpis | null>) | undefined;
   readonly reorderHandle?: ReactNode;
   readonly onOpen: () => void;
   readonly onSaveConfiguration?:
@@ -44,6 +46,23 @@ export function ProjectOverviewCard({
   readonly statistics?: GalleryProjectStatistics | undefined;
 }) {
   const [editing, setEditing] = useState(false);
+  const [kpiReadAttempt, setKpiReadAttempt] = useState(0);
+  const [kpiReadStatus, setKpiReadStatus] = useState<"idle" | "pending" | "ready" | "failed">("idle");
+  useEffect(() => {
+    if (!editing || !onReadKpis) return;
+    let active = true;
+    setKpiReadStatus("pending");
+    void onReadKpis(project.id)
+      .then((result) => {
+        if (active) setKpiReadStatus(result === null ? "failed" : "ready");
+      })
+      .catch(() => {
+        if (active) setKpiReadStatus("failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, [editing, onReadKpis, project.id, kpiReadAttempt]);
   const [failedCachedWebsite, setFailedCachedWebsite] = useState<string | null>(null);
   const [archivePending, setArchivePending] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
@@ -298,6 +317,17 @@ export function ProjectOverviewCard({
             <DialogTitle>Manage {project.title}</DialogTitle>
           </DialogHeader>
           <DialogPanel>
+            {kpiReadStatus === "pending" && (
+              <p role="status" className="mb-3 text-xs text-muted-foreground">Loading KPI prompts…</p>
+            )}
+            {kpiReadStatus === "failed" && (
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p role="alert" className="text-xs text-destructive">Couldn’t load KPI prompts.</p>
+                <Button size="sm" variant="outline" onClick={() => setKpiReadAttempt((attempt) => attempt + 1)}>
+                  Retry
+                </Button>
+              </div>
+            )}
             {editing && onSave && (
               <ProjectOverviewEditor
                 overview={overview}

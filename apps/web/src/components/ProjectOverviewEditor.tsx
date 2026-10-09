@@ -64,10 +64,14 @@ export function ProjectOverviewEditor({
     timezone: configuration?.jourFixe?.timezone ?? "Europe/Berlin",
   }));
   const scopedKpis = configuration?.id === kpis?.project_id ? kpis : undefined;
-  const [initialKpis] = useState(scopedKpis);
+  const [initialKpis, setInitialKpis] = useState(scopedKpis);
   const initialPrompts = () =>
     [0, 1, 2].map((index) => initialKpis?.items[index]?.prompt.prompt ?? "");
   const [prompts, setPrompts] = useState(initialPrompts);
+  if (initialKpis === undefined && scopedKpis !== undefined) {
+    setInitialKpis(scopedKpis);
+    setPrompts([0, 1, 2].map((index) => scopedKpis.items[index]?.prompt.prompt ?? ""));
+  }
   const canConfigureKpis = !!(configuration && initialKpis && scopedKpis && onSaveKpis);
   const promptsChanged = prompts.some((prompt, index) => prompt !== initialPrompts()[index]);
   const cancel = () => {

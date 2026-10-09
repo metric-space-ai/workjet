@@ -48,8 +48,8 @@ describe("native instance Grok consumer", () => {
   });
 
   it("cancels the exact native device login when a retired start replies late", async () => {
-    let finish = (_value: Awaited<ReturnType<WorkjetProjectControlPort>>) => { throw new Error("Start not dispatched"); };
-    let operationId = newCommandId();
+    let finish: (value: Awaited<ReturnType<WorkjetProjectControlPort>>) => void = () => { throw new Error("Start not dispatched"); };
+    let operationId: string = newCommandId();
     const loginId = newCommandId();
     const port = vi.fn<WorkjetProjectControlPort>(async (_instance, input) => {
       if (input.action === "instance.grok.start") {

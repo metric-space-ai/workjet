@@ -47,7 +47,9 @@ export function ProjectOverviewCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [kpiReadAttempt, setKpiReadAttempt] = useState(0);
-  const [kpiReadStatus, setKpiReadStatus] = useState<"idle" | "pending" | "ready" | "failed">("idle");
+  const [kpiReadStatus, setKpiReadStatus] = useState<"idle" | "pending" | "ready" | "failed">(
+    "idle",
+  );
   useEffect(() => {
     if (!editing || !onReadKpis) return;
     let active = true;
@@ -318,12 +320,20 @@ export function ProjectOverviewCard({
           </DialogHeader>
           <DialogPanel>
             {kpiReadStatus === "pending" && (
-              <p role="status" className="mb-3 text-xs text-muted-foreground">Loading KPI prompts…</p>
+              <p role="status" className="mb-3 text-xs text-muted-foreground">
+                Loading KPI prompts…
+              </p>
             )}
             {kpiReadStatus === "failed" && (
               <div className="mb-3 flex items-center justify-between gap-3">
-                <p role="alert" className="text-xs text-destructive">Couldn’t load KPI prompts.</p>
-                <Button size="sm" variant="outline" onClick={() => setKpiReadAttempt((attempt) => attempt + 1)}>
+                <p role="alert" className="text-xs text-destructive">
+                  Couldn’t load KPI prompts.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setKpiReadAttempt((attempt) => attempt + 1)}
+                >
                   Retry
                 </Button>
               </div>

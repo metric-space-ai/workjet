@@ -682,14 +682,24 @@ function ProjectGallery({
     async (projectId: string) => {
       const scope = kpiScope.current;
       if (
-        instanceId === null || !scope.active || scope.instanceId !== instanceId ||
+        instanceId === null ||
+        !scope.active ||
+        scope.instanceId !== instanceId ||
         !nativeProjectIds.split("\n").includes(projectId)
-      ) return null;
-      const result = await readWorkjetProjectKpis(instanceId, ProjectId.make(projectId), newCommandId());
+      )
+        return null;
+      const result = await readWorkjetProjectKpis(
+        instanceId,
+        ProjectId.make(projectId),
+        newCommandId(),
+      );
       if (
-        !scope.active || kpiScope.current !== scope || result._tag !== "completed" ||
+        !scope.active ||
+        kpiScope.current !== scope ||
+        result._tag !== "completed" ||
         !("kpis" in result.response)
-      ) return null;
+      )
+        return null;
       const kpis = result.response.kpis;
       setKpiProjection((previous) => mergeProjectKpiRead(previous, instanceId, projectId, kpis));
       return kpis;

@@ -47,7 +47,12 @@ export function bindWorkjetSupervisor(
 ): Promise<CtoxWorkjetProjectControlResult> {
   return confirmedControl(
     scope,
-    { action: "project.supervisor.bind", commandId, projectId: scope.projectId, threadId: scope.threadId },
+    {
+      action: "project.supervisor.bind",
+      commandId,
+      projectId: scope.projectId,
+      threadId: scope.threadId,
+    },
     port,
   );
 }

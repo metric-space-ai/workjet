@@ -54,7 +54,9 @@ export function NativeSupervisorComposer(props: {
   const [error, setError] = useState<string | null>(null);
   const [failureCode, setFailureCode] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const bindingMatches = binding !== null && props.scope !== null &&
+  const bindingMatches =
+    binding !== null &&
+    props.scope !== null &&
     binding.scope.instanceId === props.scope.instanceId &&
     binding.scope.projectId === props.scope.projectId &&
     binding.scope.threadId === props.scope.threadId;
@@ -233,25 +235,43 @@ export function NativeSupervisorComposer(props: {
   const bindingThreadId = props.scope?.threadId;
   useEffect(() => {
     if (disabled || !bindingInstanceId || !bindingProjectId || !bindingThreadId) return;
-    const scope = { instanceId: bindingInstanceId, projectId: bindingProjectId, threadId: bindingThreadId };
+    const scope = {
+      instanceId: bindingInstanceId,
+      projectId: bindingProjectId,
+      threadId: bindingThreadId,
+    };
     let stale = false;
     setBinding({ scope, pending: true, error: null, authenticationRequired: false });
     // Stable identity makes remounts and a lost setup reply the same native operation.
     void bindWorkjetSupervisor(
       scope,
       CommandId.make(`supervisor-setup:${bindingProjectId}:${bindingThreadId}`),
-    ).then((result) => {
-      if (stale) return;
-      setBinding({
-        scope,
-        pending: false,
-        error: result._tag === "failed" ? describeWorkjetProjectControlFailure(result, scope.instanceId) : null,
-        authenticationRequired: result._tag === "failed" && result.code === "authentication_required",
+    )
+      .then((result) => {
+        if (stale) return;
+        setBinding({
+          scope,
+          pending: false,
+          error:
+            result._tag === "failed"
+              ? describeWorkjetProjectControlFailure(result, scope.instanceId)
+              : null,
+          authenticationRequired:
+            result._tag === "failed" && result.code === "authentication_required",
+        });
+      })
+      .catch(() => {
+        if (!stale)
+          setBinding({
+            scope,
+            pending: false,
+            error: "Could not connect the Supervisor. Retry connection.",
+            authenticationRequired: false,
+          });
       });
-    }).catch(() => {
-      if (!stale) setBinding({ scope, pending: false, error: "Could not connect the Supervisor. Retry connection.", authenticationRequired: false });
-    });
-    return () => { stale = true; };
+    return () => {
+      stale = true;
+    };
   }, [bindingInstanceId, bindingProjectId, bindingThreadId, disabled, bindingRetry]);
 
   useEffect(() => {
@@ -350,12 +370,16 @@ export function NativeSupervisorComposer(props: {
       {bindingMatches && binding.error && (
         <div role="alert" className="mb-2 flex items-center gap-2 text-xs text-destructive">
           <span>{binding.error}</span>
-          <button type="button" className="underline underline-offset-2" disabled={busy || bindingPending}
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            disabled={busy || bindingPending}
             onClick={() => {
               refreshWorkjetProjectRegistry(props.instanceId);
               requestLocalProjectRegistrationRetry();
               setBindingRetry((value) => value + 1);
-            }}>
+            }}
+          >
             Retry connection
           </button>
         </div>

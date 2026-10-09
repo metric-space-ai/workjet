@@ -61,7 +61,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
     controller.current = active;
     setBusy(input.action);
     setError(undefined);
-    if (input.action === "speech.settings.check.transcription") setTranscript(undefined);
+    if (input.action !== "speech.settings.voices") setTranscript(undefined);
     if (input.action !== "speech.settings.voices" && input.action !== "speech.settings.read")
       releaseAudio();
     try {
@@ -382,7 +382,11 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
               <Button
                 size="sm"
                 variant="outline"
-                disabled={disabled || config?.transcription !== "mistral" || config?.synthesis !== "mistral"}
+                disabled={
+                  disabled ||
+                  config?.transcription !== "mistral" ||
+                  config?.synthesis !== "mistral"
+                }
                 onClick={() => void run({ action: "speech.settings.check.transcription" })}
               >
                 Check transcription

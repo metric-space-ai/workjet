@@ -75,28 +75,47 @@ describe("native speech settings consumer", () => {
     controller.abort();
     await aborted;
   });
-  it("accepts only a correlated real transcription check and its measured boundary", async () => {
+  it("accepts a correlated transcription check with an explicit measurement boundary", async () => {
     const port: WorkjetProjectControlPort = async (_, input) => {
-      if (input.action !== "speech.settings.check.transcription") throw new Error("unexpected action");
-      return { _tag: "completed", response: {
-        ...input, status, ttsCheck: null,
-        sttCheck: {
-          state: "ok", checkedAt: "2026-10-09T12:00:00Z", latencyMs: 320,
-          errorClass: null, model: "voxtral-mini-transcribe-realtime-2602",
-          audioDurationMs: 1600, partialBeforeAudioEnd: true,
-          measurementBoundary: "gateway_audio_end_to_final",
-        }, transcript: "Der Sprachtest für Workjet ist bereit.",
-      }};
+      if (input.action !== "speech.settings.check.transcription")
+        throw new Error("unexpected action");
+      return {
+        _tag: "completed",
+        response: {
+          ...input,
+          status,
+          ttsCheck: null,
+          sttCheck: {
+            state: "ok",
+            checkedAt: "2026-10-09T12:00:00Z",
+            latencyMs: 320,
+            errorClass: null,
+            model: "voxtral-mini-transcribe-realtime-2602",
+            audioDurationMs: 1600,
+            partialBeforeAudioEnd: true,
+            measurementBoundary: "gateway_audio_end_to_final",
+          },
+          transcript: "Der Sprachtest für Workjet ist bereit.",
+        },
+      };
     };
-    const result = await requestSpeechSettings("instance-a",
-      {action:"speech.settings.check.transcription"},new AbortController().signal,port);
+    const result = await requestSpeechSettings(
+      "instance-a",
+      { action: "speech.settings.check.transcription" },
+      new AbortController().signal,
+      port,
+    );
     expect(result.sttCheck?.latencyMs).toBe(320);
     expect(result.sttCheck?.measurementBoundary).toBe("gateway_audio_end_to_final");
     expect(result.transcript).toContain("Workjet");
     const silent: WorkjetProjectControlPort = () => new Promise(() => {});
     vi.useFakeTimers();
-    const pending = requestSpeechSettings("instance-a",
-      {action:"speech.settings.check.transcription"},new AbortController().signal,silent);
+    const pending = requestSpeechSettings(
+      "instance-a",
+      { action: "speech.settings.check.transcription" },
+      new AbortController().signal,
+      silent,
+    );
     const rejected = expect(pending).rejects.toThrow("timed out");
     await vi.advanceTimersByTimeAsync(30_000);
     await rejected;

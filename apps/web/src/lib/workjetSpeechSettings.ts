@@ -12,7 +12,13 @@ import {
 } from "../workjetProjectControl";
 
 type Input =
-  | { readonly action: "speech.settings.read" | "speech.settings.voices" | "speech.settings.check" | "speech.settings.check.transcription" }
+  | {
+      readonly action:
+        | "speech.settings.read"
+        | "speech.settings.voices"
+        | "speech.settings.check"
+        | "speech.settings.check.transcription";
+    }
   | { readonly action: "speech.settings.configure"; readonly config: WorkjetSpeechConfig }
   | { readonly action: "speech.settings.key"; readonly secret: string }
   | { readonly action: "speech.settings.playback" };

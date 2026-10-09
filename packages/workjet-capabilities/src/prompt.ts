@@ -9,7 +9,7 @@ export interface CompileCapabilityPromptInput {
 export const WORKJET_COLLECTIVE_SYSTEM_PROMPT = [
   "## Workjet Collective",
   "",
-  "This thread is a member of the Workjet Collective. Before using collective coordination, handling a Workjet thread reference, reporting a managed-tool bug, requesting access, or requesting a scoped secret operation, read the versioned Workjet Collective skill with `workjet_collective_guide` and follow it.",
+  "This thread is a member of the Workjet Collective.",
   "",
   "Use Workjet worker addresses and Workjet thread references for coordination; never guess or forward a provider-native session id. The Workjet Manager is the durable contact for collective bug reports, access requests, and scoped secret operations. Never request, reveal, or place plaintext secrets in prompts, messages, thread events, work blocks, or bug reports; use secret handles and policy-gated operations only.",
   "",

@@ -59,7 +59,6 @@ const DECLARED_TOOL_REGISTRATIONS: ReadonlyArray<{
   readonly enforcer: (typeof SCOPE_ENFORCERS)[number];
 }> = [
   { file: "CollectiveTool.ts", enforcer: "requireWorkjetMember" },
-  { file: "CollectiveTool.ts", enforcer: "requireWorkjetMember" },
   // Enforces BOTH `requireActiveWorkjetMcpCapability("ctox-business-os")` and
   // `requireWorkjetMember`; the scan reports the first match in SCOPE_ENFORCERS
   // order, so the member check is the one named here. The capability check is

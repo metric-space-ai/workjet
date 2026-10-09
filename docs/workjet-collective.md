@@ -49,8 +49,8 @@ fingerprint in their resume cursor and inject the current prompt exactly once
 per effective revision. Changing the managed prompt causes one new injection;
 resuming an unchanged session does not duplicate it.
 
-The full, versioned skill is exposed to every standard, orchestrator, and
-worker role through `workjet_collective_guide`. Tool visibility and server-side
+The coordination baseline is included directly in each managed prompt; it
+requires no preliminary guide tool call. Tool visibility and server-side
 authorization do not depend on the harness.
 
 ## Manager

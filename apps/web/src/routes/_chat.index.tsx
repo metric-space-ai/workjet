@@ -42,7 +42,7 @@ import {
   orderGalleryProjects,
 } from "../projectGalleryOrder";
 import type { PromptedProjectKpis, ProjectKpiPromptInput } from "../projectKpis";
-import { mergeProjectKpiRead } from "../projectKpiProjection";
+import { mergeProjectKpiRead, readGalleryProjectKpis } from "../projectKpiProjection";
 import { SortableProjectTile } from "../components/SortableProjectTile";
 import {
   closestCenter,
@@ -627,7 +627,6 @@ function ProjectGallery({
       visibleProjects
         .filter((project) => project.native)
         .map((project) => project.id)
-        .sort()
         .join("\n"),
     [visibleProjects],
   );
@@ -712,12 +711,7 @@ function ProjectGallery({
     const scope = { instanceId, active: true };
     kpiScope.current = scope;
     const projectIds = nativeProjectIds === "" ? [] : nativeProjectIds.split("\n");
-    void (async () => {
-      for (const projectId of projectIds) {
-        if (!scope.active) return;
-        await readKpis(projectId);
-      }
-    })();
+    void readGalleryProjectKpis(projectIds, readKpis, () => scope.active);
     return () => {
       scope.active = false;
     };

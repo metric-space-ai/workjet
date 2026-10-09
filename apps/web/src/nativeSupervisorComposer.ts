@@ -74,7 +74,10 @@ export function nativeSupervisorBlockReason(input: {
 }): string {
   if (input.registry.refreshFailed)
     return input.registry.refreshError
-      ? describeWorkjetProjectControlFailure(input.registry.refreshError, input.registry.presentationInstanceId)
+      ? describeWorkjetProjectControlFailure(
+          input.registry.refreshError,
+          input.registry.presentationInstanceId,
+        )
       : "Could not read the CTOX project list.";
   if (input.registry.phase !== "ready") return "The CTOX project list is still loading.";
   const registration = input.project?.ctoxRegistration;

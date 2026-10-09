@@ -949,10 +949,12 @@ export function isWorkjetSupervisorReceiptForRequest(
 export const CtoxWorkjetProjectControlResult = Schema.Union([
   Schema.TaggedStruct("completed", { response: CtoxWorkjetProjectControlResponse }),
   Schema.TaggedStruct("failed", {
-    discovery: Schema.optionalKey(Schema.Struct({
-      code: CtoxManagedDiscoveryFailureCode,
-      httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
-    })),
+    discovery: Schema.optionalKey(
+      Schema.Struct({
+        code: CtoxManagedDiscoveryFailureCode,
+        httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+      }),
+    ),
     code: Schema.Literals([
       "invalid_input",
       "not_active",
@@ -1758,11 +1760,19 @@ export const CtoxManagedGuestResult = Schema.Union([
   Schema.TaggedStruct("ready", { instanceId: CtoxManagedInstanceId }),
   Schema.TaggedStruct("revoked", {}),
   Schema.TaggedStruct("failed", {
-    code: Schema.Literals(["invalid_input", "launch_failed", "guest_failed", "not_active", "authentication_required"]),
-    discovery: Schema.optionalKey(Schema.Struct({
-      code: CtoxManagedDiscoveryFailureCode,
-      httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
-    })),
+    code: Schema.Literals([
+      "invalid_input",
+      "launch_failed",
+      "guest_failed",
+      "not_active",
+      "authentication_required",
+    ]),
+    discovery: Schema.optionalKey(
+      Schema.Struct({
+        code: CtoxManagedDiscoveryFailureCode,
+        httpStatus: Schema.optionalKey(CtoxManagedDiscoveryHttpStatus),
+      }),
+    ),
   }),
 ]);
 export type CtoxManagedGuestResult = typeof CtoxManagedGuestResult.Type;

@@ -20,7 +20,10 @@ import {
   resumeWorkjetSupervisorTurn,
   submitWorkjetSupervisorTurn,
 } from "../../workjetSupervisorControl";
-import { requestWorkjetProjectControl, describeWorkjetProjectControlFailure } from "../../workjetProjectControl";
+import {
+  requestWorkjetProjectControl,
+  describeWorkjetProjectControlFailure,
+} from "../../workjetProjectControl";
 import { readWorkjetSupervisorExecutionPage } from "../../workjetSupervisorExecution";
 import { requestLocalProjectRegistrationRetry } from "../../localProjectRegistration";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
@@ -315,37 +318,38 @@ export function NativeSupervisorComposer(props: {
           {error}
         </p>
       )}
-      {props.instanceId?.startsWith("managed:") && (failureCode === "authentication_required" ||
-        journal?.submissionError === "authentication_required" ||
-        props.blockReason?.startsWith("Sign in to ctox.dev")) && (
-        <button
-          type="button"
-          className="mb-2 text-xs underline underline-offset-2"
-          disabled={busy}
-          onClick={async () => {
-            const bridge = window.desktopBridge?.ctox;
-            if (!bridge || inFlight.current) return;
-            inFlight.current = true;
-            setBusy(true);
-            try {
-              const result = await bridge.login();
-              if (result._tag === "completed") {
-                refreshWorkjetProjectRegistry(latestProps.current.instanceId);
-                requestLocalProjectRegistrationRetry();
-                setError(null);
-                setFailureCode(null);
+      {props.instanceId?.startsWith("managed:") &&
+        (failureCode === "authentication_required" ||
+          journal?.submissionError === "authentication_required" ||
+          props.blockReason?.startsWith("Sign in to ctox.dev")) && (
+          <button
+            type="button"
+            className="mb-2 text-xs underline underline-offset-2"
+            disabled={busy}
+            onClick={async () => {
+              const bridge = window.desktopBridge?.ctox;
+              if (!bridge || inFlight.current) return;
+              inFlight.current = true;
+              setBusy(true);
+              try {
+                const result = await bridge.login();
+                if (result._tag === "completed") {
+                  refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+                  requestLocalProjectRegistrationRetry();
+                  setError(null);
+                  setFailureCode(null);
+                }
+              } catch {
+                setError("Could not open CTOX sign-in. Retry connection.");
+              } finally {
+                inFlight.current = false;
+                setBusy(false);
               }
-            } catch {
-              setError("Could not open CTOX sign-in. Retry connection.");
-            } finally {
-              inFlight.current = false;
-              setBusy(false);
-            }
-          }}
-        >
-          Sign in to ctox.dev
-        </button>
-      )}
+            }}
+          >
+            Sign in to ctox.dev
+          </button>
+        )}
       <form
         onSubmit={(event) => {
           event.preventDefault();

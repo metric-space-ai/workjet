@@ -1024,30 +1024,45 @@ describe("CtoxGuestManager", () => {
     harness.setPairedInstances([{ ...pairedDescriptor, displayName: descriptor.displayName }]);
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
-      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }), {
-        _tag: "failed", code: "authentication_required",
-      });
+      assert.deepEqual(
+        yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+        {
+          _tag: "failed",
+          code: "authentication_required",
+        },
+      );
       expect(harness.views).toHaveLength(0);
       expect(harness.resolvePairedLaunch).not.toHaveBeenCalled();
       harness.setDiscovery({ _tag: "ready", instances: [descriptor] });
-      assert.deepEqual(yield* manager.ensurePooled(descriptor.id), { _tag: "ready", instanceId: descriptor.id });
+      assert.deepEqual(yield* manager.ensurePooled(descriptor.id), {
+        _tag: "ready",
+        instanceId: descriptor.id,
+      });
       expect(harness.launch).toHaveBeenCalledExactlyOnceWith(descriptor);
     }).pipe(Effect.provide(harness.layer));
   });
 
-  it.effect("preserves the managed discovery failure even when paired entries make discovery ready", () => {
-    const harness = makeGuestHarness();
-    harness.setPairedInstances([pairedDescriptor]);
-    harness.setDiscovery({ _tag: "failed", code: "http_error", httpStatus: 503 });
-    return Effect.gen(function* () {
-      const manager = yield* CtoxGuestManager.CtoxGuestManager;
-      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }), {
-        _tag: "failed", code: "guest_failed", discovery: { code: "http_error", httpStatus: 503 },
-      });
-      expect(harness.views).toHaveLength(0);
-      expect(harness.resolvePairedLaunch).not.toHaveBeenCalled();
-    }).pipe(Effect.provide(harness.layer));
-  });
+  it.effect(
+    "preserves the managed discovery failure even when paired entries make discovery ready",
+    () => {
+      const harness = makeGuestHarness();
+      harness.setPairedInstances([pairedDescriptor]);
+      harness.setDiscovery({ _tag: "failed", code: "http_error", httpStatus: 503 });
+      return Effect.gen(function* () {
+        const manager = yield* CtoxGuestManager.CtoxGuestManager;
+        assert.deepEqual(
+          yield* manager.requestProjectControl(descriptor.id, { action: "project.list" }),
+          {
+            _tag: "failed",
+            code: "guest_failed",
+            discovery: { code: "http_error", httpStatus: 503 },
+          },
+        );
+        expect(harness.views).toHaveLength(0);
+        expect(harness.resolvePairedLaunch).not.toHaveBeenCalled();
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
 
   it.effect("creates a hidden guest for project control before Ops has ever opened", () => {
     const harness = makeGuestHarness();

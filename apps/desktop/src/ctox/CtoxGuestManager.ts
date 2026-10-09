@@ -4,6 +4,7 @@ import type {
   CtoxGuestLifecycleState,
   CtoxHostThemeInput,
   CtoxManagedActionResult,
+  CtoxManagedDiscoveryResult,
   CtoxManagedGuestResult,
   CtoxManagedInstance,
   CtoxWorkjetDeviceControlResult,
@@ -1150,7 +1151,7 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
 
         // Local and explicitly paired instances resolve their own authority below.
         // Their activation must not wait for the unrelated hosted account service.
-        const managed = instanceId.startsWith("managed:")
+        const managed: CtoxManagedDiscoveryResult = instanceId.startsWith("managed:")
           ? yield* auth.refresh.pipe(
               Effect.orElseSucceed(() => ({ _tag: "failed", code: "network_error" }) as const),
             )
@@ -1170,11 +1171,22 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             return [{ _tag: "failed", code: "authentication_required" }, undefined] as const;
           }
           if (managedState === "failed") {
-            const failure = managed._tag === "failed"
-              ? { code: managed.code, ...(managed.httpStatus === undefined ? {} : { httpStatus: managed.httpStatus }) }
-              : undefined;
+            const failure =
+              managed._tag === "failed"
+                ? {
+                    code: managed.code,
+                    ...(managed.httpStatus === undefined ? {} : { httpStatus: managed.httpStatus }),
+                  }
+                : undefined;
             yield* diagnose("discovery", failure ?? {});
-            return [{ _tag: "failed", code: "guest_failed", ...(failure === undefined ? {} : { discovery: failure }) }, undefined] as const;
+            return [
+              {
+                _tag: "failed",
+                code: "guest_failed",
+                ...(failure === undefined ? {} : { discovery: failure }),
+              },
+              undefined,
+            ] as const;
           }
           return [{ _tag: "revoked" }, undefined] as const;
         }
@@ -1458,7 +1470,11 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
       bounds: CtoxGuestBounds,
     ): Effect.Effect<CtoxManagedGuestResult> =>
       SynchronizedRef.modifyEffect(stateRef, (state) =>
-        Effect.gen(function* () {
+        Effect.gen(function* (): Generator<
+          Effect.Effect<unknown>,
+          readonly [CtoxManagedGuestResult, GuestState],
+          never
+        > {
           if (!state.businessOsModeActive) {
             return [{ _tag: "failed", code: "not_active" } as const, state] as const;
           }
@@ -1712,7 +1728,12 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
           if (activation._tag !== "ready") {
             return {
               _tag: "failed",
-              code: activation._tag === "failed" ? activation.code : "guest_failed",
+              code:
+                activation._tag === "failed"
+                  ? activation.code === "authentication_required"
+                    ? "authentication_failed"
+                    : activation.code
+                  : "guest_failed",
             } as const;
           }
         }
@@ -1986,7 +2007,8 @@ export const make = (options: CtoxGuestManagerOptions = {}) =>
             _tag: "failed",
             code: prepared._tag === "failed" ? prepared.code : "not_active",
             ...(prepared._tag === "failed" && prepared.discovery !== undefined
-              ? { discovery: prepared.discovery } : {}),
+              ? { discovery: prepared.discovery }
+              : {}),
           };
         }
         const state = yield* SynchronizedRef.get(stateRef);

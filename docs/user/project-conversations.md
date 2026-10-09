@@ -11,3 +11,5 @@ Without a valid project selection, the sidebar asks you to choose a project. A m
 New thread opens in the selected Workjet project. If that project has no active working copy on the chosen computer, Workjet asks you to choose an appropriate computer rather than starting the conversation in another project. Project settings and Add project remain beside the selector.
 
 Search remains an explicit way to find conversations across projects. Opening a result updates the project selection when its working-copy binding identifies exactly one Workjet project.
+
+If the account connection for a project has expired, choose **Sign in to ctox.dev** in its Supervisor. This opens the desktop sign-in window and refreshes the project connection after you finish. Your project binding and saved conversations remain intact. A discovery failure shows its error class and HTTP status, when available; use **Retry connection** after resolving it.

@@ -19,10 +19,11 @@ describe("Pi Workjet MCP extension", () => {
     const schema = {type:"object",properties:{command:{type:"string"}},required:["command"],additionalProperties:false};
     vi.stubGlobal("fetch", async (_url: string, input: RequestInit) => {
       expect(new Headers(input.headers).get("Authorization")).toBe("Bearer fixture-token");
-      if (input.method === "DELETE") return new Response(null, {status:204});
+      if (input.method === "DELETE") { expect(new Headers(input.headers).get("MCP-Protocol-Version")).toBe("2025-03-26"); return new Response(null, {status:204}); }
       const message = JSON.parse(String(input.body));
+      if (message.method !== "initialize") expect(new Headers(input.headers).get("MCP-Protocol-Version")).toBe("2025-03-26");
       if (message.method === "notifications/initialized") return new Response(null,{status:202});
-      if (message.method === "initialize") return Response.json({jsonrpc:"2.0",id:message.id,result:{protocolVersion:"2025-06-18",capabilities:{},serverInfo:{name:"fixture",version:"1"}}},{headers:{"Mcp-Session-Id":"fixture-session"}});
+      if (message.method === "initialize") return Response.json({jsonrpc:"2.0",id:message.id,result:{protocolVersion:"2025-03-26",capabilities:{},serverInfo:{name:"fixture",version:"1"}}},{headers:{"Mcp-Session-Id":"fixture-session"}});
       expect(new Headers(input.headers).get("Mcp-Session-Id")).toBe("fixture-session");
       if (message.method === "tools/list") return Response.json({jsonrpc:"2.0",id:message.id,result:{tools:[{name:"workjet_fixture_echo",description:"Echo the command",inputSchema:schema}]}});
       expect(message.method).toBe("tools/call");

@@ -33,6 +33,8 @@ const workspaceFiles = [
   // The Workjet fork added this workspace package and apps/server depends on
   // it, so a lockfile-only install fails without it.
   "packages/workjet-capabilities/package.json",
+  // apps/web depends on the vendored Learnordie slide engine (#227).
+  "packages/slide-engine/package.json",
   "scripts/package.json",
 ] as const;
 

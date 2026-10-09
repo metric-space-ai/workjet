@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- The secret scan fixtures write and hash raw bytes before any Effect runtime exists.
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 

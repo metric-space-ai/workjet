@@ -1,3 +1,6 @@
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
+
 import { assert, describe, it } from "@effect/vitest";
 import {
   BROWSER_STORAGE_SECRET_SHAPES,
@@ -8,6 +11,7 @@ import {
 
 import {
   applyAllowlist,
+  PUBLIC_VENDOR_MATCH_CLASSIFICATIONS,
   scanTrackedFileText,
   shapesForPath,
   TRACKED_SECRET_ALLOWLIST,
@@ -188,6 +192,62 @@ describe("the allow-list", () => {
       assert.isFalse(
         entry.path.includes("*"),
         "entries are enumerated files, never globs: a glob excuses the next real key too",
+      );
+    }
+  });
+});
+
+describe("published vendor artifact classification", () => {
+  const artifactText = (path: string): string =>
+    NodeFS.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+
+  it("pins the reviewed bytes to the retained fork provenance", () => {
+    const provenance = JSON.parse(
+      NodeFS.readFileSync(
+        new URL("../apps/web/public/vendor/excalidraw/PROVENANCE.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { readonly forkPayload: Readonly<Record<string, string>> };
+    for (const artifact of PUBLIC_VENDOR_MATCH_CLASSIFICATIONS) {
+      const name = artifact.path.split("/").at(-1);
+      assert.isDefined(name);
+      assert.strictEqual(provenance.forkPayload[name!], artifact.sha256);
+      const text = artifactText(artifact.path);
+      assert.strictEqual(
+        NodeCrypto.createHash("sha256").update(text).digest("hex"),
+        artifact.sha256,
+      );
+      assert.deepStrictEqual(scanTrackedFileText(artifact.path, text), []);
+    }
+  });
+
+  it("does not excuse a credential inserted into a pinned vendor file", () => {
+    for (const artifact of PUBLIC_VENDOR_MATCH_CLASSIFICATIONS) {
+      const text = `${artifactText(artifact.path)}\nconst addedCredential = "${FAKE_PROVIDER_KEY}";\n`;
+      const findings = scanTrackedFileText(artifact.path, text);
+      assert.isTrue(
+        findings.some((finding) => finding.prefix === FAKE_PROVIDER_KEY.slice(0, 4)),
+        "a changed digest must expose a newly inserted credential",
+      );
+    }
+  });
+
+  it("does not generalize the classification to copied bytes at another path", () => {
+    for (const artifact of PUBLIC_VENDOR_MATCH_CLASSIFICATIONS) {
+      assert.isTrue(
+        scanTrackedFileText("apps/web/src/copied-vendor.js", artifactText(artifact.path)).length >
+          0,
+        "a path match is mandatory even for identical public artifact bytes",
+      );
+    }
+  });
+
+  it("does not excuse an updated artifact without a new reviewed digest", () => {
+    for (const artifact of PUBLIC_VENDOR_MATCH_CLASSIFICATIONS) {
+      assert.isTrue(
+        scanTrackedFileText(artifact.path, `${artifactText(artifact.path)}\n// changed\n`).length >
+          0,
+        "an upstream refresh must fail closed until its bytes are classified",
       );
     }
   });

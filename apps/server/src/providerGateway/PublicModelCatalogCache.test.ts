@@ -7,8 +7,8 @@ import { makePublicModelCatalogCache } from "./PublicModelCatalogCache.ts";
 const iso = (milliseconds: number) => DateTime.formatIso(DateTime.makeUnsafe(milliseconds));
 const catalog = (now: number) => ({
   schemaVersion: 1,
-  checkedAt: new Date(now).toISOString(),
-  expiresAt: new Date(now + 60_000).toISOString(),
+  checkedAt: iso(now),
+  expiresAt: iso(now + 60_000),
   providers: [{ provider: "kimi", status: "observed", models: ["k3", "kimi-for-coding"] }],
 });
 const DAY = 24 * 60 * 60 * 1_000;
@@ -58,7 +58,7 @@ describe("PublicModelCatalogCache", () => {
     h.advance(1);
     await Promise.all([cache.read(), cache.read()]);
     expect(h.calls()).toBe(2);
-    expect(JSON.parse(h.saved()).catalog.checkedAt).toBe(new Date(h.now()).toISOString());
+    expect(JSON.parse(h.saved()).catalog.checkedAt).toBe(iso(h.now()));
   });
   it("keeps last observed suggestions after restart/offline without making them live proof", async () => {
     const h = harness();
@@ -67,7 +67,7 @@ describe("PublicModelCatalogCache", () => {
     h.offline();
     const restarted = h.cache();
     const value = await restarted.read();
-    expect(value?.checkedAt).toBe(new Date(DAY).toISOString());
+    expect(value?.checkedAt).toBe(iso(DAY));
     expect(decodeLiveProviderModels(value, "kimi", h.now(), true)).toEqual([
       "k3",
       "kimi-for-coding",

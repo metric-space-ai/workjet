@@ -14,7 +14,10 @@ export type LumaFieldProps = {
 };
 
 /** The local server is only transport; profiles belong to the selected native instance. */
-export function ProjectSupervisorLumaField(props: LumaFieldProps) {
+function useProjectSupervisorLumas(): {
+  readonly phase: "loading" | "ready" | "unavailable";
+  readonly profiles: readonly WorkjetWorkerProfile[];
+} {
   const scope = useBusinessOsCodeScope();
   const environment = usePrimaryEnvironment();
   const connections = useEnvironmentQuery(
@@ -55,13 +58,30 @@ export function ProjectSupervisorLumaField(props: LumaFieldProps) {
       : scope.phase === "ready" && connection !== undefined && snapshot.data !== null
         ? "ready"
         : "unavailable";
-  return (
-    <ProjectSupervisorLumaSelect
-      {...props}
-      phase={phase}
-      profiles={phase === "ready" ? (snapshot.data?.configuration?.workerProfiles ?? []) : []}
-    />
-  );
+  return {
+    phase,
+    profiles: phase === "ready" ? (snapshot.data?.configuration?.workerProfiles ?? []) : [],
+  };
+}
+
+export function ProjectSupervisorLumaField(props: LumaFieldProps) {
+  return <ProjectSupervisorLumaSelect {...props} {...useProjectSupervisorLumas()} />;
+}
+
+export function ProjectSupervisorLumaSummary({ lumaId }: { readonly lumaId: string }) {
+  return <ProjectSupervisorLumaSummaryView lumaId={lumaId} {...useProjectSupervisorLumas()} />;
+}
+
+export function ProjectSupervisorLumaSummaryView({ lumaId, phase, profiles }: {
+  readonly lumaId: string;
+  readonly phase: "loading" | "ready" | "unavailable";
+  readonly profiles: readonly WorkjetWorkerProfile[];
+}) {
+  const selected = phase === "ready" ? profiles.find((profile) => profile.id === lumaId) : undefined;
+  return <span title={selected?.computerId}>
+    {selected ? `Configured · ${workjetHarnessDisplayLabel(selected.harness)} · ${selected.modelId}`
+      : phase === "loading" ? "Loading configured Luma…" : "Configured Luma unavailable"}
+  </span>;
 }
 
 export function ProjectSupervisorLumaSelect({

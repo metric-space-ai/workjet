@@ -272,6 +272,35 @@ describe("EnvironmentSupervisor", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("does not restart in-flight SSH setup when the app becomes active", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        prepare: () =>
+          Effect.sleep("1 second").pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ConnectionTransientError({
+                  reason: "remote-unavailable",
+                  detail: "SSH connection refused",
+                }),
+              ),
+            ),
+          ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(SSH_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.stage === "preparing",
+      );
+      yield* harness.wake("application-active-reconnect");
+      yield* TestClock.adjust("1 second");
+      yield* awaitState(supervisor.state, (state) => state.phase === "backoff");
+      expect(yield* Ref.get(harness.prepareCount)).toBe(1);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("retries stopped SSH setup when the network actually comes back online", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

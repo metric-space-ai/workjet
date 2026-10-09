@@ -100,12 +100,15 @@ export function NativeSupervisorComposer(props: {
   const pending = canResumeSupervisorJournal(journal, null);
   const confirmedPending = pending && journal?.submission === "confirmed" && journal.turn !== null;
   const continuing = confirmedPending && newMessageFor === journal.intent.commandId;
-  const previousTurns = props.config.schemaVersion === 2
-    ? (props.config.ctoxSupervisorPreviousTurns ?? []).filter(
-        (entry) => scope !== null && supervisorJournalMatchesScope(entry, scope) &&
-          entry.intent.commandId !== journal?.intent.commandId,
-      )
-    : [];
+  const previousTurns =
+    props.config.schemaVersion === 2
+      ? (props.config.ctoxSupervisorPreviousTurns ?? []).filter(
+          (entry) =>
+            scope !== null &&
+            supervisorJournalMatchesScope(entry, scope) &&
+            entry.intent.commandId !== journal?.intent.commandId,
+        )
+      : [];
   const latestProps = useRef(props);
   latestProps.current = props;
 
@@ -123,12 +126,17 @@ export function NativeSupervisorComposer(props: {
       (saved !== null && !supervisorJournalMatchesScope(saved, target))
     )
       return;
-    if (operation === "send" && (
-      prompt.trim() === "" ||
-      (canResumeSupervisorJournal(saved, null) &&
-        !(saved?.submission === "confirmed" && saved.turn !== null &&
-          newMessageFor === saved.intent.commandId))
-    )) return;
+    if (
+      operation === "send" &&
+      (prompt.trim() === "" ||
+        (canResumeSupervisorJournal(saved, null) &&
+          !(
+            saved?.submission === "confirmed" &&
+            saved.turn !== null &&
+            newMessageFor === saved.intent.commandId
+          )))
+    )
+      return;
     if (operation !== "send" && saved === null) return;
     if (operation === "cancel" && (saved?.turn == null || saved.turn.terminal)) return;
     if (operation === "events" && saved?.turn == null) return;
@@ -199,7 +207,7 @@ export function NativeSupervisorComposer(props: {
         result?._tag === "completed" &&
         (operation === "send" || prompt.trim() === saved?.intent.goal)
       )
-        setPrompt((draft) => operation === "send" && draft === prompt ? "" : draft);
+        setPrompt((draft) => (operation === "send" && draft === prompt ? "" : draft));
       const confirmed = journalRef.current;
       if (
         (operation === "events" || result?._tag === "completed") &&
@@ -413,7 +421,6 @@ export function NativeSupervisorComposer(props: {
   };
 
   const conversation =
-
     journal && scopeMatches ? (
       <NativeSupervisorConversation
         journal={journal}
@@ -596,10 +603,13 @@ export function NativeSupervisorComposer(props: {
         </label>
       )}
       {confirmedPending && (
-        <div role="status" className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <div
+          role="status"
+          className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+        >
           <span>
-            Previous request: {journal.turn.status}. A new message starts a separate request;
-            this task stays in Task history.
+            Previous request: {journal.turn.status}. A new message starts a separate request; this
+            task stays in Task history.
           </span>
           {!continuing ? (
             <button
@@ -611,7 +621,11 @@ export function NativeSupervisorComposer(props: {
               Continue anyway
             </button>
           ) : (
-            <button type="button" className="underline underline-offset-2" onClick={() => setNewMessageFor(null)}>
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={() => setNewMessageFor(null)}
+            >
               Keep waiting
             </button>
           )}
@@ -652,7 +666,9 @@ export function NativeSupervisorComposer(props: {
         <button
           type="submit"
           aria-label="Send to Supervisor"
-          disabled={disabled || busy || bindingPending || (pending && !continuing) || prompt.trim() === ""}
+          disabled={
+            disabled || busy || bindingPending || (pending && !continuing) || prompt.trim() === ""
+          }
           className="rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-40"
         >
           Send

@@ -111,8 +111,9 @@ export async function persistSupervisorJournal(input: {
   )
     throw new Error("Supervisor identity changed; message not sent.");
   const previous = config.ctoxSupervisorTurn;
-  const previousTurns = [...(config.ctoxSupervisorPreviousTurns ?? [])]
-    .filter((entry) => entry.intent.commandId !== journal.intent.commandId);
+  const previousTurns = [...(config.ctoxSupervisorPreviousTurns ?? [])].filter(
+    (entry) => entry.intent.commandId !== journal.intent.commandId,
+  );
   if (previous && previous.intent.commandId !== journal.intent.commandId) {
     if (canResumeSupervisorJournal(previous, null) && previous.submission !== "confirmed")
       throw new Error("Wait for the previous CTOX receipt before sending another message.");
@@ -124,7 +125,9 @@ export async function persistSupervisorJournal(input: {
   }
   const active = previousTurns.filter((entry) => canResumeSupervisorJournal(entry, null));
   if (active.length > 64)
-    throw new Error("Too many active requests. Finish or cancel a task before sending another message.");
+    throw new Error(
+      "Too many active requests. Finish or cancel a task before sending another message.",
+    );
   const settled = previousTurns.filter((entry) => !canResumeSupervisorJournal(entry, null));
   const available = 64 - active.length;
   const retained = [...(available > 0 ? settled.slice(-available) : []), ...active];

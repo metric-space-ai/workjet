@@ -130,10 +130,18 @@ describe("native supervisor receipt display", () => {
           ...config,
           ctoxSupervisorTurn: {
             ...config.ctoxSupervisorTurn!,
-            turn: { ...config.ctoxSupervisorTurn!.turn!, executionPhase: "running", status: "accepted", terminal: false },
+            turn: {
+              ...config.ctoxSupervisorTurn!.turn!,
+              executionPhase: "running",
+              status: "accepted",
+              terminal: false,
+            },
           },
         }}
-        instanceId={scope.instanceId} blockReason={null} unavailable={false} saveConfig={saveConfig}
+        instanceId={scope.instanceId}
+        blockReason={null}
+        unavailable={false}
+        saveConfig={saveConfig}
       />,
     );
     expect(html).toContain("Continue anyway");

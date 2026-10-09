@@ -1,0 +1,16 @@
+{
+  "name": "pi-version",
+  "time": "2026-10-09T21:43:33.449163+00:00",
+  "command": [
+    "pi",
+    "--version"
+  ],
+  "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
+  "timeout_seconds": 30,
+  "pid": 2519,
+  "exit_code": 0,
+  "stdout": "0.80.2\n",
+  "stderr": "",
+  "elapsed_seconds": 0.727,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

@@ -1,7 +1,7 @@
 # Harness compendium — 9 October 2026
 
 Owner: Michael. Commission: Workjet supervisor. Research checkout: `harness-compendium`, base `e15cb09d9`.
-Initial matrix recorded at 21:51 UTC. This is an evidence ledger and adapter proposal, not installed-product acceptance.
+The first matrix is preserved in WIP commit baf5301fc; probe receipts contain measured timestamps. This is an evidence ledger and adapter proposal, not installed-product acceptance.
 
 The organisational principle, thread-move concept and three role drafts were read before probing. Workjet owns the transcript, goal, loop, identity and workspace. A native harness session is replaceable execution state. A normal turn ending is **not** goal completion.
 

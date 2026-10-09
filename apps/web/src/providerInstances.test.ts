@@ -45,110 +45,84 @@ const model = (slug: string, isCustom = false, isDefault = false) => ({
   ...(isDefault ? { isDefault: true } : {}),
   capabilities: {},
 });
-
 describe("resolveProjectTeamModelSelection", () => {
-  it("uses the configured gateway wildcard for the standard model without rewriting the account", () => {
-    const openAi = provider({
+  it("does not manufacture a model from gateway wildcard declarations", () => {
+    const account = provider({
       provider: ProviderDriverKind.make("codex"),
       instanceId: "codex_personal",
       models: [model("gpt-*", true), model("codex-*", true)],
     });
-    expect(resolveProjectTeamModelSelection([openAi])).toEqual({
-      instanceId: openAi.instanceId,
-      model: "gpt-6.1-sol",
-    });
-    expect(openAi.models.map((entry) => entry.slug)).toEqual(["gpt-*", "codex-*"]);
+    expect(resolveProjectTeamModelSelection([account])).toBeNull();
+    expect(account.models.map((entry) => entry.slug)).toEqual(["gpt-*", "codex-*"]);
   });
 
-  it("keeps model-pattern and provider-availability boundaries for wildcard accounts", () => {
-    const codex = {
+  it("uses the available catalog default without requiring a fixed provider or model", () => {
+    const account = provider({
+      provider: ProviderDriverKind.make("claudeAgent"),
+      instanceId: "claude_personal",
+      models: [model("claude-opus-5-5", false, true)],
+    });
+    expect(resolveProjectTeamModelSelection([account])).toEqual({
+      instanceId: account.instanceId,
+      model: account.models[0]?.slug,
+    });
+  });
+
+  it("preserves an explicit project selection only on its exact available account", () => {
+    const account = provider({
+      provider: ProviderDriverKind.make("claudeAgent"),
+      instanceId: "claude_personal",
+      models: [model("claude-opus-5-5")],
+    });
+    const preferred = { instanceId: account.instanceId, model: account.models[0]!.slug };
+    expect(resolveProjectTeamModelSelection([account], preferred)).toEqual(preferred);
+    expect(resolveProjectTeamModelSelection([account], {
+      ...preferred, instanceId: ProviderInstanceId.make("deleted_account"),
+    })).toBeNull();
+    expect(resolveProjectTeamModelSelection([{
+      ...account, models: [model("claude-*", true)],
+    }], preferred)).toBeNull();
+  });
+
+  it("does not substitute another account when the explicit route becomes unavailable", () => {
+    const account = provider({
       provider: ProviderDriverKind.make("codex"),
       instanceId: "codex_personal",
-      models: [model("gpt-*", true)],
-    };
+      enabled: false,
+      models: [model("gpt-6.1-sol")],
+    });
+    const fallback = { ...account, instanceId: ProviderInstanceId.make("codex_team"), enabled: true };
+    expect(resolveProjectTeamModelSelection([account, fallback], {
+      instanceId: account.instanceId, model: account.models[0]!.slug,
+    })).toBeNull();
+  });
+
+  it("rejects disabled, unavailable, errored and legacy catalog models", () => {
+    const account = provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex_personal",
+      models: [model("gpt-6.1-sol")],
+    });
     for (const unavailable of [
-      provider({ ...codex, enabled: false }),
-      provider({ ...codex, availability: "unavailable" }),
-      provider({ ...codex, status: "error" }),
-      provider({ ...codex, models: [model("gpt-5.*", true), model("claude-*", true)] }),
+      { ...account, enabled: false },
+      { ...account, availability: "unavailable" as const },
+      { ...account, status: "error" as const },
+      { ...account, models: [{ ...account.models[0]!, isLegacy: true }] },
+      { ...account, models: [] },
     ]) {
       expect(resolveProjectTeamModelSelection([unavailable])).toBeNull();
     }
   });
 
-  it("selects the advertised standard model without inheriting a historic Claude route", () => {
-    const providers = [
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claudeAgent",
-        models: [model("claude-sonnet-5", false, true)],
-      }),
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex",
-        models: [model("gpt-5.6-sol", false, true), model("gpt-6.1-sol")],
-      }),
-    ];
-    expect(resolveProjectTeamModelSelection(providers)).toEqual({
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-6.1-sol",
+  it("prefers a ready account over an account with a warning", () => {
+    const account = provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex_personal",
+      status: "warning",
+      models: [model("gpt-6.1-sol")],
     });
-    expect(providers[0]?.models[0]?.slug).toBe("claude-sonnet-5");
-  });
-
-  it("does not invent the standard route when only a different model is advertised", () => {
-    expect(
-      resolveProjectTeamModelSelection([
-        provider({
-          provider: ProviderDriverKind.make("codex"),
-          instanceId: "codex",
-          models: [model("gpt-5.6-sol")],
-        }),
-      ]),
-    ).toBeNull();
-  });
-
-  it("rejects disabled, unavailable and errored advertised routes", () => {
-    const standard = [model("gpt-6.1-sol")];
-    expect(
-      resolveProjectTeamModelSelection([
-        provider({
-          provider: ProviderDriverKind.make("codex"),
-          instanceId: "disabled",
-          enabled: false,
-          models: standard,
-        }),
-        provider({
-          provider: ProviderDriverKind.make("codex"),
-          instanceId: "unavailable",
-          availability: "unavailable",
-          models: standard,
-        }),
-        provider({
-          provider: ProviderDriverKind.make("codex"),
-          instanceId: "errored",
-          status: "error",
-          models: standard,
-        }),
-      ]),
-    ).toBeNull();
-  });
-
-  it("prefers a ready configured instance over an unready instance", () => {
-    const providers = [
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex",
-        status: "warning",
-        models: [model("gpt-6.1-sol")],
-      }),
-      provider({
-        provider: ProviderDriverKind.make("codex"),
-        instanceId: "codex_team",
-        models: [model("gpt-6.1-sol")],
-      }),
-    ];
-    expect(resolveProjectTeamModelSelection(providers)?.instanceId).toBe("codex_team");
+    const ready = { ...account, instanceId: ProviderInstanceId.make("codex_team"), status: "ready" as const };
+    expect(resolveProjectTeamModelSelection([account, ready])?.instanceId).toBe(ready.instanceId);
   });
 });
 

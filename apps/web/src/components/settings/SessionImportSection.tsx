@@ -314,7 +314,7 @@ export function SessionImportSection({
             );
             if (modelSelection === null)
               throw new Error(
-                "Configure an available gpt-6.1-sol model in Models to create this project’s Lumas.",
+                "Configure an available account with a concrete model in Models to create this project’s Lumas.",
               );
             const commandId = projectCommandId(project);
             const created = await createProject({

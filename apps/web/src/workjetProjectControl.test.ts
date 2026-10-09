@@ -46,11 +46,12 @@ describe("listWorkjetProjects", () => {
     expect(request).toHaveBeenCalledExactlyOnceWith("managed:selected", {
       action: "project.list",
       includeConfiguration: true,
+      includeSupervisorLuma: true,
     });
   });
 
   it.each(["unsupported", "guest_failed"] as const)(
-    "falls back to the same guest's legacy projection for %s",
+    "falls back to the same guest's configured projection for %s",
     async (code) => {
       const request = vi
         .fn<WorkjetProjectControlPort>()
@@ -58,9 +59,21 @@ describe("listWorkjetProjects", () => {
         .mockResolvedValueOnce(result);
       await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
       expect(request).toHaveBeenCalledTimes(2);
-      expect(request).toHaveBeenNthCalledWith(2, "managed:selected", { action: "project.list" });
+      expect(request).toHaveBeenNthCalledWith(2, "managed:selected", {
+        action: "project.list", includeConfiguration: true,
+      });
     },
   );
+
+  it("keeps a bounded legacy fallback for shells without either additive flag", async () => {
+    const request = vi.fn<WorkjetProjectControlPort>()
+      .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
+      .mockResolvedValueOnce({ _tag: "failed", code: "unsupported" })
+      .mockResolvedValueOnce(result);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(request).toHaveBeenNthCalledWith(3, "managed:selected", { action: "project.list" });
+  });
 
   it("does not repeat a failed account discovery as a legacy project query", async () => {
     const result = {

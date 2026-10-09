@@ -61,13 +61,23 @@ export async function listWorkjetProjects(
   instanceId: string,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
-  const configured = await requestWorkjetProjectControl(
+  let configured = await requestWorkjetProjectControl(
     instanceId,
-    { action: "project.list", includeConfiguration: true },
+    { action: "project.list", includeConfiguration: true, includeSupervisorLuma: true },
     port,
   );
-  // Older shells reject the additive flag. Retry the same authorized guest's
-  // legacy projection; count/completeness and instance guards remain unchanged.
+  // Negotiate the Luma projection separately so older configured shells keep
+  // their metadata. Neither fallback changes guest or authority.
+  if (
+    configured._tag === "failed" &&
+    configured.discovery === undefined &&
+    (configured.code === "unsupported" || configured.code === "guest_failed")
+  ) {
+    configured = await requestWorkjetProjectControl(
+      instanceId, { action: "project.list", includeConfiguration: true }, port,
+    );
+  }
+  // Pre-configuration shells retain their legacy projection.
   if (
     configured._tag === "failed" &&
     configured.discovery === undefined &&

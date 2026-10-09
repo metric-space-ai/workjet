@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
@@ -46,6 +47,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
     const processEnv = mergeProviderInstanceEnvironment(environment);
     const continuationIdentity = defaultProviderContinuationIdentity({ driverKind: DRIVER, instanceId });
     const fail = (detail: string) => new ProviderAdapterRequestError({ provider: DRIVER, method: "gateway", detail });
+    const profileLock = yield* Semaphore.make(1);
     const resolveModel = Effect.fn("Pi.gatewayModel")(function* (model: string) {
       if (!routeViaGateway) return yield* fail("Enable Workjet gateway routing for this Pi Code instance.");
       const status = yield* gateway.status();
@@ -55,8 +57,12 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       const selected = yield* Effect.try({ try: () => piGatewayModel(catalog, model), catch: cause => fail(String(cause)) });
       const encoded = yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(piGatewayConfiguration(endpoint, catalog)).pipe(Effect.mapError(cause => fail(cause.message)));
       yield* fs.makeDirectory(sessionDirectory, { recursive: true }).pipe(Effect.mapError(cause => fail(cause.message)));
-      yield* fs.writeFileString(path.join(agentDirectory, "models.json"), encoded).pipe(Effect.mapError(cause => fail(cause.message)));
-      yield* fs.writeFileString(path.join(agentDirectory, "workjet-extension.mjs"), PI_WORKJET_EXTENSION).pipe(Effect.mapError(cause => fail(cause.message)));
+      yield* profileLock.withPermit(Effect.gen(function* () {
+        for (const [filename, content] of [["models.json", encoded], ["workjet-extension.mjs", PI_WORKJET_EXTENSION]] as const) {
+          const staged = path.join(agentDirectory, `${filename}.workjet-stage`);
+          yield* fs.writeFileString(staged, content).pipe(Effect.andThen(fs.rename(staged, path.join(agentDirectory, filename))), Effect.mapError(cause => fail(cause.message)));
+        }
+      }));
       return { ...selected, environment: { ...processEnv, PI_CODING_AGENT_DIR: agentDirectory } };
     });
     const adapter = yield* makePiAdapter({ instanceId, binaryPath: config.binaryPath, enabled, sessionDirectory, extensionPath: path.join(agentDirectory, "workjet-extension.mjs"), resolveModel });

@@ -25,7 +25,7 @@ const decodeJournal = Schema.decodeUnknownSync(WorkjetSupervisorJournal, {
 });
 
 async function confirmedControl(
-  intent: WorkjetSupervisorTurnIntent,
+  intent: Pick<WorkjetSupervisorTurnIntent, "instanceId">,
   request: CtoxWorkjetProjectControlRequest,
   port?: WorkjetProjectControlPort,
 ): Promise<CtoxWorkjetProjectControlResult> {
@@ -37,6 +37,19 @@ async function confirmedControl(
     return { _tag: "failed", code: "guest_failed" };
   }
   return result;
+}
+
+/** Set up the native supervisor without creating a message or an execution task. */
+export function bindWorkjetSupervisor(
+  scope: Pick<WorkjetSupervisorTurnIntent, "instanceId" | "projectId" | "threadId">,
+  commandId: CommandId,
+  port?: WorkjetProjectControlPort,
+): Promise<CtoxWorkjetProjectControlResult> {
+  return confirmedControl(
+    scope,
+    { action: "project.supervisor.bind", commandId, projectId: scope.projectId, threadId: scope.threadId },
+    port,
+  );
 }
 
 /** Save before dispatch. A lost response is resumed with the exact saved intent. */

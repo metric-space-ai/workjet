@@ -7,6 +7,7 @@ import {
   type WorkjetSupervisorTurnIntent,
 } from "@workjet/contracts";
 import {
+  bindWorkjetSupervisor,
   resumeWorkjetSupervisorTurn,
   submitWorkjetSupervisorTurn,
 } from "./workjetSupervisorControl";
@@ -42,6 +43,44 @@ const turn = {
   errorCode: null,
   errorMessage: null,
 } as const;
+
+describe("native supervisor setup", () => {
+  it("binds an empty chat without a fabricated prompt, journal or execution", async () => {
+    const requests: CtoxWorkjetProjectControlRequest[] = [];
+    const scope = { instanceId: intent.instanceId, projectId: intent.projectId, threadId: intent.threadId };
+    const result = await bindWorkjetSupervisor(scope, CommandId.make("setup-only"), async (instanceId, request) => {
+      expect(instanceId).toBe(scope.instanceId);
+      requests.push(request);
+      if (request.action !== "project.supervisor.bind") throw new Error("Setup must never start a turn");
+      return { _tag: "completed", response: { action: request.action, commandId: request.commandId, projectId: request.projectId, binding } };
+    });
+    expect(result._tag).toBe("completed");
+    expect(requests).toEqual([{ action: "project.supervisor.bind", commandId: "setup-only", projectId: scope.projectId, threadId: scope.threadId }]);
+  });
+
+  it.each(["command", "project", "thread"] as const)("rejects a setup receipt with a foreign %s", async (field) => {
+    const result = await bindWorkjetSupervisor(intent, CommandId.make("setup-correlated"), async () => ({
+      _tag: "completed",
+      response: {
+        action: "project.supervisor.bind",
+        commandId: CommandId.make(field === "command" ? "foreign-command" : "setup-correlated"),
+        projectId: field === "project" ? ProjectId.make("94754cae-084a-4ec6-8330-bf5d2e9d6068") : intent.projectId,
+        binding: { ...binding, threadId: field === "thread" ? "6f688cca-f01b-4e08-ac6e-d91c9c512d5b" : binding.threadId },
+      },
+    }));
+    expect(result).toEqual({ _tag: "failed", code: "guest_failed" });
+  });
+
+  it.each(["authentication_required", "timeout", "not_active"] as const)("preserves %s setup failure without submitting work", async (code) => {
+    let calls = 0;
+    expect(await bindWorkjetSupervisor(intent, CommandId.make("setup-refused"), async (_instance, request) => {
+      calls += 1;
+      expect(request.action).toBe("project.supervisor.bind");
+      return { _tag: "failed", code };
+    })).toEqual({ _tag: "failed", code });
+    expect(calls).toBe(1);
+  });
+});
 
 describe("durable native supervisor submission", () => {
   it.each([

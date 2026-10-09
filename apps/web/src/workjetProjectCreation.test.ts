@@ -223,7 +223,8 @@ describe("runWorkjetProjectCreation", () => {
       includeSupervisorLuma: true,
     });
     expect(port).toHaveBeenNthCalledWith(2, instanceId, {
-      action: "project.list", includeConfiguration: true,
+      action: "project.list",
+      includeConfiguration: true,
     });
     expect(port).toHaveBeenNthCalledWith(3, instanceId, request);
     expect(phases).toEqual(["checking", "creating", "visible"]);

@@ -2819,19 +2819,41 @@ describe("CtoxGuestManager", () => {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;
       yield* manager.enterBusinessOsMode;
       yield* manager.activate(descriptor.id, { x: 280, y: 44, width: 1000, height: 700 });
-      const request = { action: "project.calendar.events.read" as const, commandId: CommandId.make("calendar-read"), accountId: "mine@example.test", startMs: 1, endMs: 2 };
-      const response = { ...request, calendar: { ok: true as const, events: [], truncated: false, synced_at_ms: 3 } };
-      for (const result of [{ ...response, commandId: "other" }, { ...response, accountId: "foreign" }, { ...response, endMs: 3 }, { ...response, token: "forged-field" }]) {
+      const request = {
+        action: "project.calendar.events.read" as const,
+        commandId: CommandId.make("calendar-read"),
+        accountId: "mine@example.test",
+        startMs: 1,
+        endMs: 2,
+      };
+      const response = {
+        ...request,
+        calendar: { ok: true as const, events: [], truncated: false, synced_at_ms: 3 },
+      };
+      for (const result of [
+        { ...response, commandId: "other" },
+        { ...response, accountId: "foreign" },
+        { ...response, endMs: 3 },
+        { ...response, token: "forged-field" },
+      ]) {
         harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result });
-        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), { _tag: "failed", code: "guest_failed" });
+        assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+          _tag: "failed",
+          code: "guest_failed",
+        });
       }
-      harness.views[0]?.executeJavaScript.mockResolvedValue({ status: "completed", result: response });
-      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), { _tag: "completed", response });
+      harness.views[0]?.executeJavaScript.mockResolvedValue({
+        status: "completed",
+        result: response,
+      });
+      assert.deepEqual(yield* manager.requestProjectControl(descriptor.id, request), {
+        _tag: "completed",
+        response,
+      });
     }).pipe(Effect.provide(harness.layer));
   });
 
   it.effect("rejects configuration receipts from another command or project", () => {
-
     const harness = makeGuestHarness();
     return Effect.gen(function* () {
       const manager = yield* CtoxGuestManager.CtoxGuestManager;

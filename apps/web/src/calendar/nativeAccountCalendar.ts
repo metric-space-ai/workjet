@@ -2,7 +2,6 @@ import * as Schema from "effect/Schema";
 import { newCommandId } from "../lib/utils";
 
 import {
-
   CtoxWorkjetProjectControlResponse,
   isWorkjetCalendarReceiptForRequest,
   type WorkjetCalendarAccounts,

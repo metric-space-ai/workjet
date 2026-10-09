@@ -687,6 +687,14 @@ describe("ProviderGatewayService", () => {
       expect(configWrite?.content).toContain(
         targeted ? '"codex-primary"' : '"codex-user-example.test"',
       );
+      if (!targeted) {
+        const persisted = JSON.parse(configWrite!.content);
+        const added = persisted.accounts.find(
+          (account: { readonly id: string }) => account.id === "codex-user-example.test",
+        );
+        expect(added.models).toEqual([]);
+        expect(configWrite?.content).not.toContain("*");
+      }
       if (targeted) {
         const persisted = JSON.parse(configWrite!.content);
         expect(persisted.accounts).toHaveLength(1);

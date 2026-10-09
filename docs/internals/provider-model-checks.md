@@ -1,6 +1,6 @@
 # Provider login and model checks
 
-After a successful OAuth claim, Workjet cancels the old model-check transport before replacing the secrets, reloads the gateway with those secrets and forces a fresh check of the completed accounts. This discards their previous persisted results even if the provider issued the same token. Other accounts retain their observations. Login completion does not depend on renderer timers.
+After a successful OAuth claim, Workjet cancels the old model-check transport before replacing the secrets, reloads the gateway with those secrets and forces a fresh check of the completed accounts. This discards their previous persisted results even if the provider issued the same token. Other accounts retain their observations. Login completion does not depend on renderer timers. A new account retains only the model IDs actually reported in its credential claim; an absent list stays empty and can be edited in the account row. OAuth completion never invents wildcard model IDs, and re-login preserves the existing model selection.
 
 The native host also persists account cooldowns. A verified, one-time OAuth claim clears only previous HTTP 401/403 outcomes whose stored provider and token fingerprint match the claimed token. Simply starting the gateway cannot heal a rejected credential. Quotas, balances, model failures and session affinity remain intact; recovery never stores or reports plaintext tokens. A failed durable reset keeps the claim available for retry.
 

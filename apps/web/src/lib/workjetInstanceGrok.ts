@@ -21,12 +21,27 @@ export async function requestInstanceGrok(
   const operationId = newCommandId();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
+  let timedOut = false;
   try {
     const pending = requestWorkjetProjectControl(instanceId, { ...input, version: 1, operationId }, port);
+    // A retired start can still receive a public device receipt. Cancel that
+    // exact native login instead of leaving an unseen authorization pending.
+    void pending.then((late) => {
+      if (input.action !== "instance.grok.start" || (!signal.aborted && !timedOut) || late._tag !== "completed") return;
+      try {
+        const response = Schema.decodeUnknownSync(WorkjetInstanceGrokResponse)(late.response);
+        if (response.action !== input.action || response.operationId !== operationId || response.login?.phase !== "pending") return;
+        const cleanup = new AbortController();
+        void requestInstanceGrok(instanceId, { action: "instance.grok.cancel", loginId: response.login.loginId }, cleanup.signal, port).catch(() => {});
+      } catch { /* A malformed or foreign receipt cannot authorize cancellation. */ }
+    }).catch(() => {});
     const result = await Promise.race([
       pending,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new GrokControlFailure("The instance did not respond in time. Retry the action.")), 30_000);
+        timer = setTimeout(() => {
+          timedOut = true;
+          reject(new GrokControlFailure("The instance did not respond in time. Retry the action."));
+        }, 30_000);
         onAbort = () => reject(new DOMException("Cancelled", "AbortError"));
         signal.addEventListener("abort", onAbort, { once: true });
         if (signal.aborted) onAbort();

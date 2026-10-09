@@ -141,7 +141,7 @@ export function useInstanceGrokAccount(instanceId: string, label: string): Insta
             const Status = running || !check ? CircleDashedIcon : check.status === "ok" ? CheckIcon : XIcon;
             return <button key={modelId} type="button" className="inline-flex min-w-0 items-center gap-1 rounded border border-border px-1.5 py-1 font-mono text-[11px]" disabled={!!busy || phase === "pending"} onClick={() => { void run({ action: "instance.grok.check", modelId }); }} data-workjet-action={`models.instance.xai.check.${modelId}`} title={running ? "Checking…" : check?.status === "ok" ? `Hi check passed · ${check.latencyMs} ms · ${new Date(check.checkedAt).toLocaleString()}` : check?.errorCode ? remedies[check.errorCode] : "Not checked. Click to check."}>
               <span className="min-w-0 whitespace-normal break-all">{modelId}</span>
-              <Status className={"size-3 shrink-0 " + (check?.status === "ok" ? "text-emerald-500" : check?.status === "error" ? "text-destructive" : "text-muted-foreground")} aria-label={running ? "Checking" : check?.status === "ok" ? "Check passed" : check?.status === "error" ? check.errorCode ?? "Check failed" : "Not checked"} />
+              <Status className={"size-3 shrink-0 " + (running || !check ? "text-muted-foreground" : check.status === "ok" ? "text-emerald-500" : "text-destructive")} aria-label={running ? "Checking" : check?.status === "ok" ? "Check passed" : check?.status === "error" ? check.errorCode ?? "Check failed" : "Not checked"} />
             </button>;
           })}
           {state?.installed && state.models.length === 0 && <span className="text-xs text-muted-foreground">Live models unavailable. Refresh to retry.</span>}

@@ -1,0 +1,512 @@
+{
+  "time": "2026-10-09T21:47:32.383145+00:00",
+  "results": [
+    {
+      "method": "initialize",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {
+          "protocolVersion": 1,
+          "agentCapabilities": {
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": true,
+              "sse": true
+            },
+            "promptCapabilities": {
+              "embeddedContext": true,
+              "image": true
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "fork": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "authMethods": [
+            {
+              "description": "Run `opencode auth login` in the terminal",
+              "name": "Login with opencode",
+              "id": "opencode-login"
+            }
+          ],
+          "agentInfo": {
+            "name": "OpenCode",
+            "version": "1.18.35"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/new",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "session/goal/get",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "error": {
+          "code": -32601,
+          "message": "\"Method not found\": session/goal/get",
+          "data": {
+            "method": "session/goal/get"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/set_system_prompt",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "<unvalidated-model:4b227777>",
+        "error": {
+          "code": -32601,
+          "message": "\"Method not found\": session/set_system_prompt",
+          "data": {
+            "method": "session/set_system_prompt"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/compact",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "error": {
+          "code": -32601,
+          "message": "\"Method not found\": session/compact",
+          "data": {
+            "method": "session/compact"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/prompt",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 11683,
+            "outputTokens": 6,
+            "totalTokens": 13481,
+            "cachedReadTokens": 1792
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "method": "session/load",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "command": [
+    "opencode",
+    "--pure",
+    "acp"
+  ],
+  "pid": 15265,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "harness-compendium",
+            "version": "1"
+          },
+          "clientCapabilities": {}
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {
+          "protocolVersion": 1,
+          "agentCapabilities": {
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": true,
+              "sse": true
+            },
+            "promptCapabilities": {
+              "embeddedContext": true,
+              "image": true
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "fork": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "authMethods": [
+            {
+              "description": "Run `opencode auth login` in the terminal",
+              "name": "Login with opencode",
+              "id": "opencode-login"
+            }
+          ],
+          "agentInfo": {
+            "name": "OpenCode",
+            "version": "1.18.35"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "session/new",
+        "params": {
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/opencode-workspace",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "session/goal/get",
+        "params": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb"
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "error": {
+          "code": -32601,
+          "message": "\"Method not found\": session/goal/get",
+          "data": {
+            "method": "session/goal/get"
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+          "update": {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": []
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "<unvalidated-model:4b227777>",
+        "method": "session/set_system_prompt",
+        "params": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+          "systemPrompt": "ROLE_PROBE_OK"
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "<unvalidated-model:4b227777>",
+        "error": {
+          "code": -32601,
+          "message": "\"Method not found\": session/set_system_prompt",
+          "data": {
+            "method": "session/set_system_prompt"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "method": "session/compact",
+        "params": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb"
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "error": {
+          "code": -32601,
+          "message": "\"Method not found\": session/compact",
+          "data": {
+            "method": "session/compact"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "Reply exactly ROLE_PROBE_OK. Do not use tools."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+          "update": {
+            "sessionUpdate": "usage_update",
+            "used": 13475,
+            "size": 200000,
+            "cost": {
+              "amount": 0,
+              "currency": "USD"
+            }
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 11683,
+            "outputTokens": 6,
+            "totalTokens": 13481,
+            "cachedReadTokens": 1792
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "method": "session/load",
+        "params": {
+          "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/opencode-workspace",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "opencode/big-pickle",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+        "promptId": "",
+        "isReplay": false,
+        "kind": "agent_message_chunk",
+        "text": "ROLE_PROBE_OKROLE_PROBE_OK"
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "ses_edd5d7128ffeC5SnbUwxKM70Lb",
+        "promptId": "",
+        "isReplay": false,
+        "kind": "user_message_chunk",
+        "text": "Reply exactly ROLE_PROBE_OK. Do not use tools."
+      }
+    }
+  ],
+  "stderr": "Error handling request {\n  jsonrpc: \"2.0\",\n  id: \"3\",\n  method: \"session/goal/get\",\n  params: {\n    sessionId: \"ses_edd5d7128ffeC5SnbUwxKM70Lb\",\n  },\n} {\n  code: -32601,\n  message: \"\\\"Method not found\\\": session/goal/get\",\n  data: {\n    method: \"session/goal/get\",\n  },\n}\nError handling request {\n  jsonrpc: \"2.0\",\n  id: \"<unvalidated-model:4b227777>\",\n  method: \"session/set_system_prompt\",\n  params: {\n    sessionId: \"ses_edd5d7128ffeC5SnbUwxKM70Lb\",\n    systemPrompt: \"ROLE_PROBE_OK\",\n  },\n} {\n  code: -32601,\n  message: \"\\\"Method not found\\\": session/set_system_prompt\",\n  data: {\n    method: \"session/set_system_prompt\",\n  },\n}\nError handling request {\n  jsonrpc: \"2.0\",\n  id: \"5\",\n  method: \"session/compact\",\n  params: {\n    sessionId: \"ses_edd5d7128ffeC5SnbUwxKM70Lb\",\n  },\n} {\n  code: -32601,\n  message: \"\\\"Method not found\\\": session/compact\",\n  data: {\n    method: \"session/compact\",\n  },\n}\n2 | // @bun\n3 | import{WD as f}from\"/$bunfs/root/chunk-2pcsatpr.js\";import{BV as pk}from\"/$bunfs/root/chunk-88rpnazy.js\";var G={authenticate:\"authenticate\",document_did_change:\"document/didChange\",document_did_close:\"document/didClose\",document_did_focus:\"document/didFocus\",document_did_open:\"document/didOpen\",document_did_save:\"document/didSave\",initialize:\"initialize\",logout:\"logout\",nes_accept:\"nes/accept\",nes_close:\"nes/close\",nes_reject:\"nes/reject\",nes_start:\"nes/start\",nes_suggest:\"nes/suggest\",providers_disable:\"providers/disable\",providers_list:\"providers/list\",providers_set:\"providers/set\",session_cancel:\"session/cancel\",session_close:\"session/close\",session_fork:\"session/fork\",session_list:\"session/list\",session_load:\"session/load\",session_new:\"session/new\",session_prompt:\"session/prompt\",session_resume:\"session/resume\",session_set_config_option:\"session/set_config_option\",session_set_mode:\"session/set_mode\",session_set_model:\"session/set_model\"},Q={elicitation_complete:\"elicitation/complete\",elicitation_create:\"e\n<unvalidated-model:4b227777> | `,K=$.getWriter();try{await K.write(b.encode(y))}finally{K.releaseLock()}}});return{readable:J,writable:F}}class ik{connection;constructor($,k){let b=$(this),B=async(F,O)=>{switch(F){case G.initialize:{let y=q.parse(O);return b.initialize(y)}case G.session_new:{let y=c.parse(O);return b.newSession(y)}case G.session_load:{if(!b.loadSession)throw _.methodNotFound(F);let y=o.parse(O);return b.loadSession(y)}case G.session_list:{if(!b.listSessions)throw _.methodNotFound(F);let y=z.parse(O);return b.listSessions(y)}case G.session_fork:{if(!b.unstable_forkSession)throw _.methodNotFound(F);let y=d.parse(O);return b.unstable_forkSession(y)}case G.session_resume:{if(!b.resumeSession)throw _.methodNotFound(F);let y=t.parse(O);return b.resumeSession(y)}case G.session_close:{if(!b.closeSession)throw _.methodNotFound(F);let y=g.parse(O);return await b.closeSession(y)??{}}case G.session_set_mode:{if(!b.setSessionMode)throw _.methodNotFound(F);let y=e.parse(O);return await b.setSessionMode(y)??{}}case G.authenticate:{let y=\n\nerror: ACP connection closed\n      at close (/$bunfs/root/chunk-3q2ns9vd.js:<unvalidated-model:4b227777>:5978)\n      at receive (/$bunfs/root/chunk-3q2ns9vd.js:<unvalidated-model:4b227777>:5904)\n",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

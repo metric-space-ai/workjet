@@ -1,0 +1,586 @@
+{
+  "time": "2026-10-09T22:14:11.388448+00:00",
+  "results": [
+    {
+      "session_new": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "probe/glm-5.3-flash",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "input": "Imported foreign user/assistant context: the other harness recorded HISTORY_PROBE_42. Reply with that marker only; no tools.",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 12609,
+            "outputTokens": 8,
+            "totalTokens": 12652,
+            "thoughtTokens": 35
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "model_change": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "probe/glm-5.3",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "input": "/compact Keep HISTORY_PROBE_42.",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "result": {
+          "stopReason": "end_turn",
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "input": "After model switch and compaction, reply with the exact imported marker only; no tools.",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 12857,
+            "outputTokens": 8,
+            "totalTokens": 13031,
+            "thoughtTokens": 38,
+            "cachedReadTokens": 128
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "session_load": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "probe/glm-5.3",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "export_exit_code": 0,
+      "export_stderr": "Exporting session: ses_edd450ea0ffeAY1uMR0IGGaHcF\n"
+    },
+    {
+      "export_keys": [
+        "info",
+        "messages"
+      ],
+      "export_message_count": 6,
+      "import_exit_code": 0,
+      "import_stdout": "Imported session: ses_edd450ea0ffeAY1uMR0IGGaHcF\n",
+      "import_stderr": ""
+    }
+  ],
+  "command": [
+    "opencode",
+    "--pure",
+    "acp"
+  ],
+  "pid": 82468,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "harness-compendium",
+            "version": "1"
+          },
+          "clientCapabilities": {}
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {
+          "protocolVersion": 1,
+          "agentCapabilities": {
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": true,
+              "sse": true
+            },
+            "promptCapabilities": {
+              "embeddedContext": true,
+              "image": true
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "fork": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "authMethods": [
+            {
+              "description": "Run `opencode auth login` in the terminal",
+              "name": "Login with opencode",
+              "id": "opencode-login"
+            }
+          ],
+          "agentInfo": {
+            "name": "OpenCode",
+            "version": "1.18.35"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "session/new",
+        "params": {
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/opencode-history",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "result": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "probe/glm-5.3-flash",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "Imported foreign user/assistant context: the other harness recorded HISTORY_PROBE_42. Reply with that marker only; no tools."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "update": {
+            "sessionUpdate": "available_commands_update",
+            "availableCommands": []
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 12609,
+            "outputTokens": 8,
+            "totalTokens": 12652,
+            "thoughtTokens": 35
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "method": "session/set_config_option",
+        "params": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "configId": "model",
+          "value": "probe/glm-5.3"
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "update": {
+            "sessionUpdate": "config_option_update",
+            "configOptions": [
+              {
+                "id": "model",
+                "name": "Model",
+                "category": "model",
+                "type": "select",
+                "currentValue": "probe/glm-5.3",
+                "options": [
+                  {
+                    "catalog_omitted": true,
+                    "advertised_count": 1
+                  }
+                ]
+              },
+              {
+                "id": "mode",
+                "name": "Session Mode",
+                "category": "mode",
+                "type": "select",
+                "currentValue": "build",
+                "options": [
+                  {
+                    "value": "build",
+                    "name": "build",
+                    "description": "The default agent. Executes tools based on configured permissions."
+                  },
+                  {
+                    "value": "plan",
+                    "name": "plan",
+                    "description": "Plan mode. Disallows all edit tools."
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "probe/glm-5.3",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "/compact Keep HISTORY_PROBE_42."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "result": {
+          "stopReason": "end_turn",
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "After model switch and compaction, reply with the exact imported marker only; no tools."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "inputTokens": 12857,
+            "outputTokens": 8,
+            "totalTokens": 13031,
+            "thoughtTokens": 38,
+            "cachedReadTokens": 128
+          },
+          "_meta": {}
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "method": "session/load",
+        "params": {
+          "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/opencode-history",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "result": {
+          "configOptions": [
+            {
+              "id": "model",
+              "name": "Model",
+              "category": "model",
+              "type": "select",
+              "currentValue": "probe/glm-5.3",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            },
+            {
+              "id": "mode",
+              "name": "Session Mode",
+              "category": "mode",
+              "type": "select",
+              "currentValue": "build",
+              "options": [
+                {
+                  "value": "build",
+                  "name": "build",
+                  "description": "The default agent. Executes tools based on configured permissions."
+                },
+                {
+                  "value": "plan",
+                  "name": "plan",
+                  "description": "Plan mode. Disallows all edit tools."
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+        "promptId": "",
+        "isReplay": false,
+        "kind": "agent_message_chunk",
+        "text": "HISTORY_PROBE_42## Objective\n- The user imported foreign user/assistant context from another harness containing the marker `HISTORY_PROBE_42` and requested a reply containing that marker only, with no tool usage.\n\n## Important Details\n- Marker string (exact): `HISTORY_PROBE_42`\n- Constraint: reply with the marker only; no tools, no elaboration.\n- No underlying coding task, files, or repository context was provided beyond the marker exchange.\n\n## Work State\n### Completed\n- Replied with exactly `HISTORY_PROBE_42`, satisfying the user's instruction.\n\n### Active\n- (none)\n\n### Blocked\n- (none)\n\n## Next Move\n1. (none)\n2. (none)\n\n## Relevant Files\n- (none)HISTORY_PROBE_42HISTORY_PROBE_42## Objective\n- The user imported foreign user/assistant context from another harness containing the marker `HISTORY_PROBE_42` and requested a reply containing that marker only, with no tool usage.\n\n## Important Details\n- Marker string (exact): `HISTORY_PROBE_42`\n- Constraint: reply with the marker only; no tools, no elaboration.\n- No underlying coding task, files, or repository context was provided beyond the marker exchange.\n\n## Work State\n### Completed\n- Replied with exactly `HISTORY_PROBE_42`, satisfying the user's instruction.\n\n### Active\n- (none)\n\n### Blocked\n- (none)\n\n## Next Move\n1. (none)\n2. (none)\n\n## Relevant Files\n- (none)HISTORY_PROBE_42"
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "ses_edd450ea0ffeAY1uMR0IGGaHcF",
+        "promptId": "",
+        "isReplay": false,
+        "kind": "user_message_chunk",
+        "text": "Imported foreign user/assistant context: the other harness recorded HISTORY_PROBE_42. Reply with that marker only; no tools.After model switch and compaction, reply with the exact imported marker only; no tools."
+      }
+    }
+  ],
+  "stderr": "2 | // @bun\n3 | import{WD as f}from\"/$bunfs/root/chunk-2pcsatpr.js\";import{BV as pk}from\"/$bunfs/root/chunk-88rpnazy.js\";var G={authenticate:\"authenticate\",document_did_change:\"document/didChange\",document_did_close:\"document/didClose\",document_did_focus:\"document/didFocus\",document_did_open:\"document/didOpen\",document_did_save:\"document/didSave\",initialize:\"initialize\",logout:\"logout\",nes_accept:\"nes/accept\",nes_close:\"nes/close\",nes_reject:\"nes/reject\",nes_start:\"nes/start\",nes_suggest:\"nes/suggest\",providers_disable:\"providers/disable\",providers_list:\"providers/list\",providers_set:\"providers/set\",session_cancel:\"session/cancel\",session_close:\"session/close\",session_fork:\"session/fork\",session_list:\"session/list\",session_load:\"session/load\",session_new:\"session/new\",session_prompt:\"session/prompt\",session_resume:\"session/resume\",session_set_config_option:\"session/set_config_option\",session_set_mode:\"session/set_mode\",session_set_model:\"session/set_model\"},Q={elicitation_complete:\"elicitation/complete\",elicitation_create:\"e\n4 | `,K=$.getWriter();try{await K.write(b.encode(y))}finally{K.releaseLock()}}});return{readable:J,writable:F}}class ik{connection;constructor($,k){let b=$(this),B=async(F,O)=>{switch(F){case G.initialize:{let y=q.parse(O);return b.initialize(y)}case G.session_new:{let y=c.parse(O);return b.newSession(y)}case G.session_load:{if(!b.loadSession)throw _.methodNotFound(F);let y=o.parse(O);return b.loadSession(y)}case G.session_list:{if(!b.listSessions)throw _.methodNotFound(F);let y=z.parse(O);return b.listSessions(y)}case G.session_fork:{if(!b.unstable_forkSession)throw _.methodNotFound(F);let y=d.parse(O);return b.unstable_forkSession(y)}case G.session_resume:{if(!b.resumeSession)throw _.methodNotFound(F);let y=t.parse(O);return b.resumeSession(y)}case G.session_close:{if(!b.closeSession)throw _.methodNotFound(F);let y=g.parse(O);return await b.closeSession(y)??{}}case G.session_set_mode:{if(!b.setSessionMode)throw _.methodNotFound(F);let y=e.parse(O);return await b.setSessionMode(y)??{}}case G.authenticate:{let y=\n\nerror: ACP connection closed\n      at close (/$bunfs/root/chunk-3q2ns9vd.js:4:5978)\n      at receive (/$bunfs/root/chunk-3q2ns9vd.js:4:5904)\n",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

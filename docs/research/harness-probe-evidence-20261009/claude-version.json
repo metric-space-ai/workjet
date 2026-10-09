@@ -1,0 +1,16 @@
+{
+  "name": "claude-version",
+  "time": "2026-10-09T21:43:31.829026+00:00",
+  "command": [
+    "claude",
+    "--version"
+  ],
+  "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
+  "timeout_seconds": 30,
+  "pid": 2470,
+  "exit_code": 0,
+  "stdout": "2.1.296 (Claude Code)\n",
+  "stderr": "",
+  "elapsed_seconds": 0.008,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

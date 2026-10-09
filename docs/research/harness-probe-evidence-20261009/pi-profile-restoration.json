@@ -1,0 +1,10 @@
+{
+  "recorded_at": "2026-10-09T22:26:18.702483+00:00",
+  "initial_model": "glm-5.1",
+  "current_default_model": "glm-5.1",
+  "provider": "zai",
+  "restored": true,
+  "final_probe": "pi-history-isolated.json",
+  "profile_isolation": "PI_CODING_AGENT_DIR points to owned scratch directory",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

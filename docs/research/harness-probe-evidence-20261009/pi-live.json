@@ -1,0 +1,1124 @@
+{
+  "time": "2026-10-09T21:48:20.065909+00:00",
+  "results": [
+    {
+      "method": "get_state",
+      "response": {
+        "id": "1",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-sessions/2026-10-09T21-48-07-171Z_01a122a3-4283-7acc-997c-4308b547a126.jsonl",
+          "sessionId": "01a122a3-4283-7acc-997c-4308b547a126",
+          "autoCompactionEnabled": true,
+          "messageCount": 0,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "method": "get_commands",
+      "response": {
+        "id": "2",
+        "type": "response",
+        "command": "get_commands",
+        "success": true,
+        "data": {
+          "commands": []
+        }
+      }
+    },
+    {
+      "method": "get_goal",
+      "response": {
+        "id": "3",
+        "type": "response",
+        "command": "get_goal",
+        "success": false,
+        "error": "Unknown command: get_goal"
+      }
+    },
+    {
+      "method": "set_model",
+      "response": {
+        "id": "<unvalidated-model:4b227777>",
+        "type": "response",
+        "command": "set_model",
+        "success": true,
+        "data": {
+          "id": "glm-5.1",
+          "name": "GLM-5.1",
+          "api": "openai-completions",
+          "provider": "zai",
+          "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "zai",
+            "zaiToolStream": true
+          },
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 200000,
+          "maxTokens": 131072
+        }
+      }
+    },
+    {
+      "method": "prompt",
+      "response": {
+        "id": "5",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      }
+    },
+    {
+      "agent_end": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Imported foreign history: HISTORY_PROBE_42. Now perform the role/tool probe."
+              }
+            ],
+            "timestamp": 1791582487203
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "toolCall",
+                "id": "call_2bba59a7387242549b6938ce",
+                "name": "probe_echo",
+                "arguments": {}
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-5.1",
+            "usage": {
+              "input": 614,
+              "output": 173,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 787,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1791582487235,
+            "responseId": "20261010054807a34905ad60604bbe",
+            "responseModel": "glm-5.3"
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_2bba59a7387242549b6938ce",
+            "toolName": "probe_echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "PROBE_TOOL_RECEIPT"
+              }
+            ],
+            "details": {},
+            "isError": false,
+            "timestamp": 1791582493349
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "text",
+                "text": "Probe receipt: PROBE_TOOL_RECEIPT\n\nROLE_PROBE_OK"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-5.1",
+            "usage": {
+              "input": 221,
+              "output": 79,
+              "cacheRead": 576,
+              "cacheWrite": 0,
+              "totalTokens": 876,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791582493350,
+            "responseId": "20261010054814d0a0f5aa4334423f",
+            "responseModel": "glm-5.3"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    {
+      "method": "compact",
+      "response": {
+        "id": "6",
+        "type": "response",
+        "command": "compact",
+        "success": false,
+        "error": "Nothing to compact (session too small)"
+      }
+    },
+    {
+      "method": "get_messages",
+      "response": {
+        "id": "7",
+        "type": "response",
+        "command": "get_messages",
+        "success": true,
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Imported foreign history: HISTORY_PROBE_42. Now perform the role/tool probe."
+                }
+              ],
+              "timestamp": 1791582487203
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "toolCall",
+                  "id": "call_2bba59a7387242549b6938ce",
+                  "name": "probe_echo",
+                  "arguments": {}
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-5.1",
+              "usage": {
+                "input": 614,
+                "output": 173,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 787,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "toolUse",
+              "timestamp": 1791582487235,
+              "responseId": "20261010054807a34905ad60604bbe",
+              "responseModel": "glm-5.3"
+            },
+            {
+              "role": "toolResult",
+              "toolCallId": "call_2bba59a7387242549b6938ce",
+              "toolName": "probe_echo",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "PROBE_TOOL_RECEIPT"
+                }
+              ],
+              "details": {},
+              "isError": false,
+              "timestamp": 1791582493349
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "text",
+                  "text": "Probe receipt: PROBE_TOOL_RECEIPT\n\nROLE_PROBE_OK"
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-5.1",
+              "usage": {
+                "input": 221,
+                "output": 79,
+                "cacheRead": 576,
+                "cacheWrite": 0,
+                "totalTokens": 876,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1791582493350,
+              "responseId": "20261010054814d0a0f5aa4334423f",
+              "responseModel": "glm-5.3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "get_state",
+      "response": {
+        "id": "8",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-sessions/2026-10-09T21-48-07-171Z_01a122a3-4283-7acc-997c-4308b547a126.jsonl",
+          "sessionId": "01a122a3-4283-7acc-997c-4308b547a126",
+          "autoCompactionEnabled": true,
+          "messageCount": 4,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "method": "export_html",
+      "response": {
+        "id": "9",
+        "type": "response",
+        "command": "export_html",
+        "success": true,
+        "data": {
+          "path": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-workspace/export.html"
+        }
+      }
+    }
+  ],
+  "command": [
+    "pi",
+    "--offline",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--extension",
+    "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium/scripts/harness-probes/pi-extension.ts",
+    "--no-builtin-tools",
+    "--session-dir",
+    "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-sessions",
+    "--mode",
+    "rpc"
+  ],
+  "pid": 16442,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "id": "1",
+        "type": "get_state"
+      }
+    },
+    {
+      "receive": {
+        "id": "1",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-sessions/2026-10-09T21-48-07-171Z_01a122a3-4283-7acc-997c-4308b547a126.jsonl",
+          "sessionId": "01a122a3-4283-7acc-997c-4308b547a126",
+          "autoCompactionEnabled": true,
+          "messageCount": 0,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "2",
+        "type": "get_commands"
+      }
+    },
+    {
+      "receive": {
+        "id": "2",
+        "type": "response",
+        "command": "get_commands",
+        "success": true,
+        "data": {
+          "commands": []
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "3",
+        "type": "get_goal"
+      }
+    },
+    {
+      "receive": {
+        "id": "3",
+        "type": "response",
+        "command": "get_goal",
+        "success": false,
+        "error": "Unknown command: get_goal"
+      }
+    },
+    {
+      "send": {
+        "id": "<unvalidated-model:4b227777>",
+        "type": "set_model",
+        "provider": "zai",
+        "modelId": "glm-5.1"
+      }
+    },
+    {
+      "receive": {
+        "id": "<unvalidated-model:4b227777>",
+        "type": "response",
+        "command": "set_model",
+        "success": true,
+        "data": {
+          "id": "glm-5.1",
+          "name": "GLM-5.1",
+          "api": "openai-completions",
+          "provider": "zai",
+          "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "zai",
+            "zaiToolStream": true
+          },
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 200000,
+          "maxTokens": 131072
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "5",
+        "type": "prompt",
+        "message": "Imported foreign history: HISTORY_PROBE_42. Now perform the role/tool probe."
+      }
+    },
+    {
+      "receive": {
+        "id": "5",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      }
+    },
+    {
+      "receive": {
+        "type": "agent_start"
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_start"
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Imported foreign history: HISTORY_PROBE_42. Now perform the role/tool probe."
+            }
+          ],
+          "timestamp": 1791582487203
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "toolCall",
+              "id": "call_2bba59a7387242549b6938ce",
+              "name": "probe_echo",
+              "arguments": {}
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.1",
+          "usage": {
+            "input": 614,
+            "output": 173,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 787,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1791582487235,
+          "responseId": "20261010054807a34905ad60604bbe",
+          "responseModel": "glm-5.3"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "tool_execution_start",
+        "toolCallId": "call_2bba59a7387242549b6938ce",
+        "toolName": "probe_echo",
+        "args": {}
+      }
+    },
+    {
+      "receive": {
+        "type": "tool_execution_end",
+        "toolCallId": "call_2bba59a7387242549b6938ce",
+        "toolName": "probe_echo",
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "PROBE_TOOL_RECEIPT"
+            }
+          ],
+          "details": {}
+        },
+        "isError": false
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "toolResult",
+          "toolCallId": "call_2bba59a7387242549b6938ce",
+          "toolName": "probe_echo",
+          "content": [
+            {
+              "type": "text",
+              "text": "PROBE_TOOL_RECEIPT"
+            }
+          ],
+          "details": {},
+          "isError": false,
+          "timestamp": 1791582493349
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "toolCall",
+              "id": "call_2bba59a7387242549b6938ce",
+              "name": "probe_echo",
+              "arguments": {}
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.1",
+          "usage": {
+            "input": 614,
+            "output": 173,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 787,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1791582487235,
+          "responseId": "20261010054807a34905ad60604bbe",
+          "responseModel": "glm-5.3"
+        },
+        "toolResults": [
+          {
+            "role": "toolResult",
+            "toolCallId": "call_2bba59a7387242549b6938ce",
+            "toolName": "probe_echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "PROBE_TOOL_RECEIPT"
+              }
+            ],
+            "details": {},
+            "isError": false,
+            "timestamp": 1791582493349
+          }
+        ]
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_start"
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "text",
+              "text": "Probe receipt: PROBE_TOOL_RECEIPT\n\nROLE_PROBE_OK"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.1",
+          "usage": {
+            "input": 221,
+            "output": 79,
+            "cacheRead": 576,
+            "cacheWrite": 0,
+            "totalTokens": 876,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1791582493350,
+          "responseId": "20261010054814d0a0f5aa4334423f",
+          "responseModel": "glm-5.3"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "text",
+              "text": "Probe receipt: PROBE_TOOL_RECEIPT\n\nROLE_PROBE_OK"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-5.1",
+          "usage": {
+            "input": 221,
+            "output": 79,
+            "cacheRead": 576,
+            "cacheWrite": 0,
+            "totalTokens": 876,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1791582493350,
+          "responseId": "20261010054814d0a0f5aa4334423f",
+          "responseModel": "glm-5.3"
+        },
+        "toolResults": []
+      }
+    },
+    {
+      "receive": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Imported foreign history: HISTORY_PROBE_42. Now perform the role/tool probe."
+              }
+            ],
+            "timestamp": 1791582487203
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "toolCall",
+                "id": "call_2bba59a7387242549b6938ce",
+                "name": "probe_echo",
+                "arguments": {}
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-5.1",
+            "usage": {
+              "input": 614,
+              "output": 173,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 787,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "toolUse",
+            "timestamp": 1791582487235,
+            "responseId": "20261010054807a34905ad60604bbe",
+            "responseModel": "glm-5.3"
+          },
+          {
+            "role": "toolResult",
+            "toolCallId": "call_2bba59a7387242549b6938ce",
+            "toolName": "probe_echo",
+            "content": [
+              {
+                "type": "text",
+                "text": "PROBE_TOOL_RECEIPT"
+              }
+            ],
+            "details": {},
+            "isError": false,
+            "timestamp": 1791582493349
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "text",
+                "text": "Probe receipt: PROBE_TOOL_RECEIPT\n\nROLE_PROBE_OK"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-5.1",
+            "usage": {
+              "input": 221,
+              "output": 79,
+              "cacheRead": 576,
+              "cacheWrite": 0,
+              "totalTokens": 876,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791582493350,
+            "responseId": "20261010054814d0a0f5aa4334423f",
+            "responseModel": "glm-5.3"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    {
+      "send": {
+        "id": "6",
+        "type": "compact",
+        "customInstructions": "Keep HISTORY_PROBE_42 and the probe receipt."
+      }
+    },
+    {
+      "receive": {
+        "type": "compaction_start",
+        "reason": "manual"
+      }
+    },
+    {
+      "receive": {
+        "type": "compaction_end",
+        "reason": "manual",
+        "aborted": false,
+        "willRetry": false,
+        "errorMessage": "Compaction failed: Nothing to compact (session too small)"
+      }
+    },
+    {
+      "receive": {
+        "id": "6",
+        "type": "response",
+        "command": "compact",
+        "success": false,
+        "error": "Nothing to compact (session too small)"
+      }
+    },
+    {
+      "send": {
+        "id": "7",
+        "type": "get_messages"
+      }
+    },
+    {
+      "receive": {
+        "id": "7",
+        "type": "response",
+        "command": "get_messages",
+        "success": true,
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Imported foreign history: HISTORY_PROBE_42. Now perform the role/tool probe."
+                }
+              ],
+              "timestamp": 1791582487203
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "toolCall",
+                  "id": "call_2bba59a7387242549b6938ce",
+                  "name": "probe_echo",
+                  "arguments": {}
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-5.1",
+              "usage": {
+                "input": 614,
+                "output": 173,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 787,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "toolUse",
+              "timestamp": 1791582487235,
+              "responseId": "20261010054807a34905ad60604bbe",
+              "responseModel": "glm-5.3"
+            },
+            {
+              "role": "toolResult",
+              "toolCallId": "call_2bba59a7387242549b6938ce",
+              "toolName": "probe_echo",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "PROBE_TOOL_RECEIPT"
+                }
+              ],
+              "details": {},
+              "isError": false,
+              "timestamp": 1791582493349
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "text",
+                  "text": "Probe receipt: PROBE_TOOL_RECEIPT\n\nROLE_PROBE_OK"
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-5.1",
+              "usage": {
+                "input": 221,
+                "output": 79,
+                "cacheRead": 576,
+                "cacheWrite": 0,
+                "totalTokens": 876,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1791582493350,
+              "responseId": "20261010054814d0a0f5aa4334423f",
+              "responseModel": "glm-5.3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "8",
+        "type": "get_state"
+      }
+    },
+    {
+      "receive": {
+        "id": "8",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-sessions/2026-10-09T21-48-07-171Z_01a122a3-4283-7acc-997c-4308b547a126.jsonl",
+          "sessionId": "01a122a3-4283-7acc-997c-4308b547a126",
+          "autoCompactionEnabled": true,
+          "messageCount": 4,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "9",
+        "type": "export_html",
+        "outputPath": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-workspace/export.html"
+      }
+    },
+    {
+      "receive": {
+        "id": "9",
+        "type": "response",
+        "command": "export_html",
+        "success": true,
+        "data": {
+          "path": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-workspace/export.html"
+        }
+      }
+    }
+  ],
+  "stderr": "",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

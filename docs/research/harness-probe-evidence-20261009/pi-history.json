@@ -1,0 +1,1430 @@
+{
+  "time": "2026-10-09T22:10:31.721988+00:00",
+  "results": [
+    {
+      "method": "get_state",
+      "response": {
+        "id": "1",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/imported.jsonl",
+          "sessionId": "46c9cb15-6fda-4965-883e-e0c1686172cf",
+          "autoCompactionEnabled": true,
+          "messageCount": 5,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "imported_entry_count": 5,
+      "source": "readable foreign user-context records",
+      "live_model_check": true
+    },
+    {
+      "method": "compact",
+      "response": {
+        "id": "2",
+        "type": "response",
+        "command": "compact",
+        "success": false,
+        "error": "Summarization failed: Request timed out."
+      }
+    },
+    {
+      "method": "get_available_models",
+      "response": {
+        "id": "3",
+        "type": "response",
+        "command": "get_available_models",
+        "success": true,
+        "data": {
+          "models": [
+            {
+              "id": "MiniMax-M2.7",
+              "name": "MiniMax-M2.7",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.3,
+                "output": 1.2,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M2.7-highspeed",
+              "name": "MiniMax-M2.7-highspeed",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax-M3",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.12,
+                "cacheWrite": 0
+              },
+              "contextWindow": 512000,
+              "maxTokens": 128000
+            },
+            {
+              "id": "glm-4.5-air",
+              "name": "GLM-4.5-Air",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai"
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 131072,
+              "maxTokens": 98304
+            },
+            {
+              "id": "glm-4.7",
+              "name": "GLM-4.7",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5-turbo",
+              "name": "GLM-5-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.1",
+              "name": "GLM-5.1",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.2",
+              "name": "GLM-5.2",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": true,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "thinkingLevelMap": {
+                "minimal": null,
+                "low": "high",
+                "medium": "high",
+                "high": "high",
+                "xhigh": "max"
+              },
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 1000000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:d2cac3f4>",
+              "name": "GLM-5V-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:44968622>",
+              "name": "Grok 4.6 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "<unvalidated-model:80a8bf70>",
+              "name": "Kimi K3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "glm-5.3",
+              "name": "GLM 5.3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax M3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 524288,
+              "maxTokens": 131072,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "set_model",
+      "response": {
+        "id": "4",
+        "type": "response",
+        "command": "set_model",
+        "success": true,
+        "data": {
+          "id": "glm-4.5-air",
+          "name": "GLM-4.5-Air",
+          "api": "openai-completions",
+          "provider": "zai",
+          "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "zai"
+          },
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 131072,
+          "maxTokens": 98304
+        }
+      }
+    },
+    {
+      "method": "prompt",
+      "response": {
+        "id": "5",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      }
+    },
+    {
+      "agent_end": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Reply with the exact imported marker only."
+              }
+            ],
+            "timestamp": 1791583836558
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "text",
+                "text": "HISTORY_PROBE_42"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-4.5-air",
+            "usage": {
+              "input": 7691,
+              "output": 46,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 7737,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791583836724,
+            "responseId": "20261010061038385c9705e5b84766",
+            "responseModel": "glm-5.3-flash"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    {
+      "method": "get_state",
+      "response": {
+        "id": "6",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-4.5-air",
+            "name": "GLM-4.5-Air",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai"
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 98304
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/imported.jsonl",
+          "sessionId": "46c9cb15-6fda-4965-883e-e0c1686172cf",
+          "autoCompactionEnabled": true,
+          "messageCount": 7,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "method": "get_messages",
+      "response": {
+        "id": "7",
+        "type": "response",
+        "command": "get_messages",
+        "success": true,
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "Imported foreign record 0: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 1: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 2: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 3: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 4: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reply with the exact imported marker only."
+                }
+              ],
+              "timestamp": 1791583836558
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "text",
+                  "text": "HISTORY_PROBE_42"
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-4.5-air",
+              "usage": {
+                "input": 7691,
+                "output": 46,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 7737,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1791583836724,
+              "responseId": "20261010061038385c9705e5b84766",
+              "responseModel": "glm-5.3-flash"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "export_html",
+      "response": {
+        "id": "8",
+        "type": "response",
+        "command": "export_html",
+        "success": true,
+        "data": {
+          "path": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/export.html"
+        }
+      }
+    }
+  ],
+  "command": [
+    "pi",
+    "--approve",
+    "--offline",
+    "--no-extensions",
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-builtin-tools",
+    "--session",
+    "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/imported.jsonl",
+    "--mode",
+    "rpc"
+  ],
+  "pid": 74907,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "id": "1",
+        "type": "get_state"
+      }
+    },
+    {
+      "receive": {
+        "id": "1",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai",
+              "zaiToolStream": true
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 200000,
+            "maxTokens": 131072
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/imported.jsonl",
+          "sessionId": "46c9cb15-6fda-4965-883e-e0c1686172cf",
+          "autoCompactionEnabled": true,
+          "messageCount": 5,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "2",
+        "type": "compact",
+        "customInstructions": "Preserve the marker HISTORY_PROBE_42."
+      }
+    },
+    {
+      "receive": {
+        "type": "compaction_start",
+        "reason": "manual"
+      }
+    },
+    {
+      "receive": {
+        "type": "compaction_end",
+        "reason": "manual",
+        "aborted": false,
+        "willRetry": false,
+        "errorMessage": "Compaction failed: Summarization failed: Request timed out."
+      }
+    },
+    {
+      "receive": {
+        "id": "2",
+        "type": "response",
+        "command": "compact",
+        "success": false,
+        "error": "Summarization failed: Request timed out."
+      }
+    },
+    {
+      "send": {
+        "id": "3",
+        "type": "get_available_models"
+      }
+    },
+    {
+      "receive": {
+        "id": "3",
+        "type": "response",
+        "command": "get_available_models",
+        "success": true,
+        "data": {
+          "models": [
+            {
+              "id": "MiniMax-M2.7",
+              "name": "MiniMax-M2.7",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.3,
+                "output": 1.2,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M2.7-highspeed",
+              "name": "MiniMax-M2.7-highspeed",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.06,
+                "cacheWrite": 0.375
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax-M3",
+              "api": "anthropic-messages",
+              "provider": "minimax",
+              "baseUrl": "https://api.minimax.io/anthropic",
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0.6,
+                "output": 2.4,
+                "cacheRead": 0.12,
+                "cacheWrite": 0
+              },
+              "contextWindow": 512000,
+              "maxTokens": 128000
+            },
+            {
+              "id": "glm-4.5-air",
+              "name": "GLM-4.5-Air",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai"
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 131072,
+              "maxTokens": 98304
+            },
+            {
+              "id": "glm-4.7",
+              "name": "GLM-4.7",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 204800,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5-turbo",
+              "name": "GLM-5-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.1",
+              "name": "GLM-5.1",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "glm-5.2",
+              "name": "GLM-5.2",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": true,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "thinkingLevelMap": {
+                "minimal": null,
+                "low": "high",
+                "medium": "high",
+                "high": "high",
+                "xhigh": "max"
+              },
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 1000000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:d2cac3f4>",
+              "name": "GLM-5V-Turbo",
+              "api": "openai-completions",
+              "provider": "zai",
+              "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+              "compat": {
+                "supportsStore": false,
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false,
+                "thinkingFormat": "zai",
+                "zaiToolStream": true
+              },
+              "reasoning": true,
+              "input": [
+                "text",
+                "image"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 200000,
+              "maxTokens": 131072
+            },
+            {
+              "id": "<unvalidated-model:44968622>",
+              "name": "Grok 4.6 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "<unvalidated-model:80a8bf70>",
+              "name": "Kimi K3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "glm-5.3",
+              "name": "GLM 5.3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 262144,
+              "maxTokens": 65536,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            },
+            {
+              "id": "MiniMax-M3",
+              "name": "MiniMax M3 via local Greppy gateway",
+              "api": "openai-completions",
+              "provider": "greppy-gateway",
+              "baseUrl": "http://127.0.0.1:8317/v1",
+              "reasoning": true,
+              "input": [
+                "text"
+              ],
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+              },
+              "contextWindow": 524288,
+              "maxTokens": 131072,
+              "compat": {
+                "supportsDeveloperRole": false,
+                "supportsReasoningEffort": false
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "4",
+        "type": "set_model",
+        "provider": "zai",
+        "modelId": "glm-4.5-air"
+      }
+    },
+    {
+      "receive": {
+        "id": "4",
+        "type": "response",
+        "command": "set_model",
+        "success": true,
+        "data": {
+          "id": "glm-4.5-air",
+          "name": "GLM-4.5-Air",
+          "api": "openai-completions",
+          "provider": "zai",
+          "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+          "compat": {
+            "supportsStore": false,
+            "supportsDeveloperRole": false,
+            "supportsReasoningEffort": false,
+            "thinkingFormat": "zai"
+          },
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 131072,
+          "maxTokens": 98304
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "5",
+        "type": "prompt",
+        "message": "Reply with the exact imported marker only."
+      }
+    },
+    {
+      "receive": {
+        "id": "5",
+        "type": "response",
+        "command": "prompt",
+        "success": true
+      }
+    },
+    {
+      "receive": {
+        "type": "agent_start"
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_start"
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reply with the exact imported marker only."
+            }
+          ],
+          "timestamp": 1791583836558
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "message_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "text",
+              "text": "HISTORY_PROBE_42"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-4.5-air",
+          "usage": {
+            "input": 7691,
+            "output": 46,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 7737,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1791583836724,
+          "responseId": "20261010061038385c9705e5b84766",
+          "responseModel": "glm-5.3-flash"
+        }
+      }
+    },
+    {
+      "receive": {
+        "type": "turn_end",
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "content": "<omitted reasoning>"
+            },
+            {
+              "type": "text",
+              "text": "HISTORY_PROBE_42"
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "zai",
+          "model": "glm-4.5-air",
+          "usage": {
+            "input": 7691,
+            "output": 46,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 7737,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1791583836724,
+          "responseId": "20261010061038385c9705e5b84766",
+          "responseModel": "glm-5.3-flash"
+        },
+        "toolResults": []
+      }
+    },
+    {
+      "receive": {
+        "type": "agent_end",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Reply with the exact imported marker only."
+              }
+            ],
+            "timestamp": 1791583836558
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "content": "<omitted reasoning>"
+              },
+              {
+                "type": "text",
+                "text": "HISTORY_PROBE_42"
+              }
+            ],
+            "api": "openai-completions",
+            "provider": "zai",
+            "model": "glm-4.5-air",
+            "usage": {
+              "input": 7691,
+              "output": 46,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "totalTokens": 7737,
+              "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "total": 0
+              }
+            },
+            "stopReason": "stop",
+            "timestamp": 1791583836724,
+            "responseId": "20261010061038385c9705e5b84766",
+            "responseModel": "glm-5.3-flash"
+          }
+        ],
+        "willRetry": false
+      }
+    },
+    {
+      "send": {
+        "id": "6",
+        "type": "get_state"
+      }
+    },
+    {
+      "receive": {
+        "id": "6",
+        "type": "response",
+        "command": "get_state",
+        "success": true,
+        "data": {
+          "model": {
+            "id": "glm-4.5-air",
+            "name": "GLM-4.5-Air",
+            "api": "openai-completions",
+            "provider": "zai",
+            "baseUrl": "https://api.z.ai/api/coding/paas/v4",
+            "compat": {
+              "supportsStore": false,
+              "supportsDeveloperRole": false,
+              "supportsReasoningEffort": false,
+              "thinkingFormat": "zai"
+            },
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
+            "maxTokens": 98304
+          },
+          "thinkingLevel": "medium",
+          "isStreaming": false,
+          "isCompacting": false,
+          "steeringMode": "one-at-a-time",
+          "followUpMode": "one-at-a-time",
+          "sessionFile": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/imported.jsonl",
+          "sessionId": "46c9cb15-6fda-4965-883e-e0c1686172cf",
+          "autoCompactionEnabled": true,
+          "messageCount": 7,
+          "pendingMessageCount": 0
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "7",
+        "type": "get_messages"
+      }
+    },
+    {
+      "receive": {
+        "id": "7",
+        "type": "response",
+        "command": "get_messages",
+        "success": true,
+        "data": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "Imported foreign record 0: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 1: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 2: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 3: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": "Imported foreign record 4: HISTORY_PROBE_42 is the durable marker. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. Bounded probe context; no file work or external effects. ",
+              "timestamp": 1791583831722
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Reply with the exact imported marker only."
+                }
+              ],
+              "timestamp": 1791583836558
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "content": "<omitted reasoning>"
+                },
+                {
+                  "type": "text",
+                  "text": "HISTORY_PROBE_42"
+                }
+              ],
+              "api": "openai-completions",
+              "provider": "zai",
+              "model": "glm-4.5-air",
+              "usage": {
+                "input": 7691,
+                "output": 46,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 7737,
+                "cost": {
+                  "input": 0,
+                  "output": 0,
+                  "cacheRead": 0,
+                  "cacheWrite": 0,
+                  "total": 0
+                }
+              },
+              "stopReason": "stop",
+              "timestamp": 1791583836724,
+              "responseId": "20261010061038385c9705e5b84766",
+              "responseModel": "glm-5.3-flash"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "id": "8",
+        "type": "export_html",
+        "outputPath": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/export.html"
+      }
+    },
+    {
+      "receive": {
+        "id": "8",
+        "type": "response",
+        "command": "export_html",
+        "success": true,
+        "data": {
+          "path": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/pi-history/export.html"
+        }
+      }
+    }
+  ],
+  "stderr": "",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

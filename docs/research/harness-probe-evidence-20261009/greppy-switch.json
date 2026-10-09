@@ -1,0 +1,3703 @@
+{
+  "time": "2026-10-09T22:16:36.326298+00:00",
+  "results": [
+    {
+      "method": "initialize",
+      "response": {
+        "id": "1",
+        "jsonrpc": "2.0",
+        "result": {
+          "agentCapabilities": {
+            "_meta": {
+              "workjetImportHistory": {
+                "version": 1
+              }
+            },
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": false,
+              "sse": false
+            },
+            "promptCapabilities": {
+              "audio": false,
+              "embeddedContext": false,
+              "image": false
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "agentInfo": {
+            "name": "greppy",
+            "title": "Greppy",
+            "version": "0.4.1"
+          },
+          "authMethods": [
+            {
+              "description": "Uses GREPPY_ENDPOINT, GREPPY_MODEL, and GREPPY_API_KEY from the agent process. ACP does not accept a secret.",
+              "id": "greppy.env",
+              "name": "Local gateway environment"
+            }
+          ],
+          "protocolVersion": 1
+        }
+      }
+    },
+    {
+      "method": "session/new",
+      "response": {
+        "id": "2",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "glm-5.3-flash",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "type": "select",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            }
+          ],
+          "models": {
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
+            "currentModelId": "glm-5.3-flash"
+          },
+          "sessionId": "sess-1791584178899-87250-0"
+        }
+      }
+    },
+    {
+      "method": "session/set_model",
+      "response": {
+        "id": "3",
+        "jsonrpc": "2.0",
+        "result": {}
+      }
+    },
+    {
+      "method": "_workjet/import_history",
+      "response": {
+        "id": "4",
+        "jsonrpc": "2.0",
+        "result": {
+          "acceptedMessageIds": [
+            "history-probe-user",
+            "history-probe-assistant"
+          ]
+        }
+      }
+    },
+    {
+      "method": "session/prompt",
+      "response": {
+        "id": "5",
+        "jsonrpc": "2.0",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "cachedReadTokens": 0,
+            "cachedWriteTokens": 0,
+            "inputTokens": 3105,
+            "outputTokens": 49,
+            "totalTokens": 3154
+          }
+        }
+      }
+    },
+    {
+      "method": "session/prompt",
+      "response": {
+        "id": "6",
+        "jsonrpc": "2.0",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "cachedReadTokens": 3072,
+            "cachedWriteTokens": 0,
+            "inputTokens": 45,
+            "outputTokens": 211,
+            "totalTokens": 256
+          }
+        }
+      }
+    },
+    {
+      "method": "session/load",
+      "response": {
+        "id": "7",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "glm-5.3-flash",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "type": "select",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            }
+          ],
+          "models": {
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
+            "currentModelId": "glm-5.3-flash"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/set_model",
+      "response": {
+        "id": "8",
+        "jsonrpc": "2.0",
+        "result": {}
+      }
+    },
+    {
+      "method": "session/prompt",
+      "response": {
+        "id": "9",
+        "jsonrpc": "2.0",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "cachedReadTokens": 0,
+            "cachedWriteTokens": 0,
+            "inputTokens": 3223,
+            "outputTokens": 33,
+            "totalTokens": 3256
+          }
+        }
+      }
+    },
+    {
+      "method": "session/load",
+      "response": {
+        "id": "10",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "glm-5.3",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "type": "select",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            }
+          ],
+          "models": {
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
+            "currentModelId": "glm-5.3"
+          }
+        }
+      }
+    },
+    {
+      "method": "session/new",
+      "response": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32602,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32602,
+                "message": "MCP servers are not supported; send an empty mcpServers array"
+              }
+            }
+          ],
+          "message": "MCP servers are not supported; send an empty mcpServers array"
+        },
+        "id": "11",
+        "jsonrpc": "2.0"
+      }
+    }
+  ],
+  "command": [
+    "greppy",
+    "agent",
+    "stdio",
+    "--max-turns",
+    "4"
+  ],
+  "pid": 87250,
+  "exit_code": 0,
+  "events": [
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "harness-compendium",
+            "version": "1"
+          },
+          "clientCapabilities": {}
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "1",
+        "jsonrpc": "2.0",
+        "result": {
+          "agentCapabilities": {
+            "_meta": {
+              "workjetImportHistory": {
+                "version": 1
+              }
+            },
+            "loadSession": true,
+            "mcpCapabilities": {
+              "http": false,
+              "sse": false
+            },
+            "promptCapabilities": {
+              "audio": false,
+              "embeddedContext": false,
+              "image": false
+            },
+            "sessionCapabilities": {
+              "close": {},
+              "list": {},
+              "resume": {}
+            }
+          },
+          "agentInfo": {
+            "name": "greppy",
+            "title": "Greppy",
+            "version": "0.4.1"
+          },
+          "authMethods": [
+            {
+              "description": "Uses GREPPY_ENDPOINT, GREPPY_MODEL, and GREPPY_API_KEY from the agent process. ACP does not accept a secret.",
+              "id": "greppy.env",
+              "name": "Local gateway environment"
+            }
+          ],
+          "protocolVersion": 1
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "session/new",
+        "params": {
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/greppy-switch",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "2",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "glm-5.3-flash",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "type": "select",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            }
+          ],
+          "models": {
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
+            "currentModelId": "glm-5.3-flash"
+          },
+          "sessionId": "sess-1791584178899-87250-0"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "3",
+        "method": "session/set_model",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "modelId": "glm-5.3-flash"
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "3",
+        "jsonrpc": "2.0",
+        "result": {}
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "4",
+        "method": "_workjet/import_history",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "messages": [
+            {
+              "id": "history-probe-user",
+              "role": "user",
+              "text": "Remember foreign marker HISTORY_PROBE_42."
+            },
+            {
+              "id": "history-probe-assistant",
+              "role": "assistant",
+              "text": "Acknowledged HISTORY_PROBE_42."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "4",
+        "jsonrpc": "2.0",
+        "result": {
+          "acceptedMessageIds": [
+            "history-probe-user",
+            "history-probe-assistant"
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "5",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "Reply with the exact imported marker. Do not use tools."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "5",
+        "jsonrpc": "2.0",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "cachedReadTokens": 0,
+            "cachedWriteTokens": 0,
+            "inputTokens": 3105,
+            "outputTokens": 49,
+            "totalTokens": 3154
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "6",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "/compact"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "6",
+        "jsonrpc": "2.0",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "cachedReadTokens": 3072,
+            "cachedWriteTokens": 0,
+            "inputTokens": 45,
+            "outputTokens": 211,
+            "totalTokens": 256
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "7",
+        "method": "session/load",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/greppy-switch",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "7",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "glm-5.3-flash",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "type": "select",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            }
+          ],
+          "models": {
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
+            "currentModelId": "glm-5.3-flash"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "8",
+        "method": "session/set_model",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "modelId": "glm-5.3"
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "8",
+        "jsonrpc": "2.0",
+        "result": {}
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "9",
+        "method": "session/prompt",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "prompt": [
+            {
+              "type": "text",
+              "text": "After the model switch, reply with the exact imported marker only; no tools."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "9",
+        "jsonrpc": "2.0",
+        "result": {
+          "stopReason": "end_turn",
+          "usage": {
+            "cachedReadTokens": 0,
+            "cachedWriteTokens": 0,
+            "inputTokens": 3223,
+            "outputTokens": 33,
+            "totalTokens": 3256
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "10",
+        "method": "session/load",
+        "params": {
+          "sessionId": "sess-1791584178899-87250-0",
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/greppy-switch",
+          "mcpServers": []
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "",
+        "error": {
+          "code": -32601,
+          "message": "Probe does not implement this client method"
+        }
+      }
+    },
+    {
+      "receive": {
+        "id": "10",
+        "jsonrpc": "2.0",
+        "result": {
+          "configOptions": [
+            {
+              "category": "model",
+              "currentValue": "glm-5.3",
+              "description": "Model id passed through to the local gateway",
+              "id": "model",
+              "name": "Model",
+              "type": "select",
+              "options": [
+                {
+                  "catalog_omitted": true,
+                  "advertised_count": 1
+                }
+              ]
+            }
+          ],
+          "models": {
+            "availableModels": [
+              {
+                "catalog_omitted": true,
+                "advertised_count": 1
+              }
+            ],
+            "currentModelId": "glm-5.3"
+          }
+        }
+      }
+    },
+    {
+      "send": {
+        "jsonrpc": "2.0",
+        "id": "11",
+        "method": "session/new",
+        "params": {
+          "cwd": "/Volumes/tmp/dev-artifacts/workjet/harness-compendium/greppy-switch",
+          "mcpServers": [
+            {
+              "name": "workjet_probe",
+              "command": "python3",
+              "args": [
+                "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium/scripts/harness-probes/mcp_echo.py"
+              ],
+              "env": []
+            }
+          ]
+        }
+      }
+    },
+    {
+      "receive": {
+        "error": {
+          "_tag": "Cause",
+          "code": -32602,
+          "data": [
+            {
+              "_tag": "Fail",
+              "error": {
+                "code": -32602,
+                "message": "MCP servers are not supported; send an empty mcpServers array"
+              }
+            }
+          ],
+          "message": "MCP servers are not supported; send an empty mcpServers array"
+        },
+        "id": "11",
+        "jsonrpc": "2.0"
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "sess-1791584178899-87250-0",
+        "promptId": "",
+        "isReplay": false,
+        "kind": "agent_message_chunk",
+        "text": "HISTORY_PROBE_42Conversation summary (compacted context):\n\n- Foreign marker: **HISTORY_PROBE_42** \u2014 explicitly requested to remember.\n- User asked to reply with the exact imported marker without tools; I replied `HISTORY_PROBE_42`.\n- No tools have been used yet; no repository state, edits, or verification results exist in this session.\n- Pending: nothing beyond keeping the marker available. Awaiting the actual task.HISTORY_PROBE_42"
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "sess-1791584178899-87250-0",
+        "promptId": "",
+        "isReplay": true,
+        "kind": "user_message_chunk",
+        "text": "Remember foreign marker HISTORY_PROBE_42.Reply with the exact imported marker. Do not use tools./compactRemember foreign marker HISTORY_PROBE_42.Reply with the exact imported marker. Do not use tools./compactAfter the model switch, reply with the exact imported marker only; no tools."
+      }
+    },
+    {
+      "assembled_session_text": {
+        "sessionId": "sess-1791584178899-87250-0",
+        "promptId": "",
+        "isReplay": true,
+        "kind": "agent_message_chunk",
+        "text": "Acknowledged HISTORY_PROBE_42.HISTORY_PROBE_42Conversation summary (compacted context):\n\n- Foreign marker: **HISTORY_PROBE_42** \u2014 explicitly requested to remember.\n- User asked to reply with the exact imported marker without tools; I replied `HISTORY_PROBE_42`.\n- No tools have been used yet; no repository state, edits, or verification results exist in this session.\n- Pending: nothing beyond keeping the marker available. Awaiting the actual task.Acknowledged HISTORY_PROBE_42.HISTORY_PROBE_42Conversation summary (compacted context):\n\n- Foreign marker: **HISTORY_PROBE_42** \u2014 explicitly requested to remember.\n- User asked to reply with the exact imported marker without tools; I replied `HISTORY_PROBE_42`.\n- No tools have been used yet; no repository state, edits, or verification results exist in this session.\n- Pending: nothing beyond keeping the marker available. Awaiting the actual task.HISTORY_PROBE_42"
+      }
+    }
+  ],
+  "stderr": "",
+  "cleanup": "owned child exited",
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

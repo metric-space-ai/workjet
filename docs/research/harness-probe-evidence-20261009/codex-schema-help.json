@@ -1,0 +1,18 @@
+{
+  "name": "codex-schema-help",
+  "time": "2026-10-09T21:43:26.892487+00:00",
+  "command": [
+    "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+    "app-server",
+    "generate-json-schema",
+    "--help"
+  ],
+  "cwd": ".",
+  "timeout_seconds": 30,
+  "pid": 2332,
+  "exit_code": 0,
+  "stdout": "[experimental] Generate JSON Schema for the app server protocol\n\nUsage: codex app-server generate-json-schema [OPTIONS] --out <DIR>\n\nOptions:\n  -c, --config <key=value>\n          Override a configuration value that would otherwise be loaded from `~/.codex/config.toml`.\n          Use a dotted path (`foo.bar.baz`) to override nested values. The `value` portion is parsed\n          as TOML. If it fails to parse as TOML, the raw string is used as a literal.\n          \n          shell_environment_policy.<unvalidated-model:035300f3>=all`\n\n  -o, --out <DIR>\n          Output directory where the schema bundle will be written\n\n      --enable <FEATURE>\n          Enable a feature (repeatable). Equivalent to `-c features.<name>=true`\n\n      --experimental\n          Include experimental methods and fields in the generated output\n\n      --disable <FEATURE>\n          Disable a feature (repeatable). Equivalent to `-c features.<name>=false`\n\n  -h, --help\n          Print help (see a summary with '-h')\n",
+  "stderr": "",
+  "elapsed_seconds": 0.012,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

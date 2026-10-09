@@ -1,0 +1,16 @@
+{
+  "name": "greppy-version",
+  "time": "2026-10-09T21:43:32.840342+00:00",
+  "command": [
+    "greppy",
+    "--version"
+  ],
+  "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
+  "timeout_seconds": 30,
+  "pid": 2513,
+  "exit_code": 0,
+  "stdout": "greppy 0.<unvalidated-model:4b227777>.1\n",
+  "stderr": "",
+  "elapsed_seconds": 0.005,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

@@ -1,0 +1,14 @@
+{
+  "name": "minimax-version",
+  "time": "2026-10-09T21:43:34.242805+00:00",
+  "command": [
+    "mcode",
+    "--version"
+  ],
+  "cwd": "/Users/michaelwelsch/.local/state/workjet-launchpads/harness-compendium",
+  "timeout_seconds": 30,
+  "exit_code": null,
+  "error": "[Errno 2] No such file or directory: 'mcode'",
+  "elapsed_seconds": 0.002,
+  "publication_note": "Secret redaction; unvalidated model IDs/catalogs and unrelated commands omitted. Runtime scripts rediscover selections."
+}

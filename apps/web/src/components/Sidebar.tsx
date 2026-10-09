@@ -4019,7 +4019,7 @@ export default function Sidebar() {
                         projectTeam={groupByTeam}
                         teamParentTitle={
                           groupByTeam
-                            ? projectTeamParentTitle(thread, [...pinnedThreads, ...activeThreads])
+                            ? projectTeamParentTitle(thread, threads)
                             : undefined
                         }
                         teamHarnessLabel={

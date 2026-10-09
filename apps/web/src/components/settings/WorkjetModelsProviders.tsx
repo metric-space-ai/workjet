@@ -6,7 +6,14 @@ import type {
   WorkjetGatewayModelCheck,
 } from "@workjet/contracts";
 import { CheckIcon, EllipsisIcon, PlusIcon, RefreshCwIcon, Trash2Icon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -903,12 +910,17 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             size="sm"
             variant="ghost"
             disabled={
-              state.checksBusy || state.instanceGrok?.checking ||
+              state.checksBusy ||
+              state.instanceGrok?.checking ||
               (!state.onCheckModels && !state.instanceGrok?.hasModels) ||
-              (accounts.every((account) => !account.enabled || account.modelIds.length === 0) && !state.instanceGrok?.hasModels)
+              (accounts.every((account) => !account.enabled || account.modelIds.length === 0) &&
+                !state.instanceGrok?.hasModels)
             }
             data-workjet-action="models.check-all"
-            onClick={() => { state.onCheckModels?.(); state.instanceGrok?.checkAll(); }}
+            onClick={() => {
+              state.onCheckModels?.();
+              state.instanceGrok?.checkAll();
+            }}
           >
             <CheckIcon className="size-3.5" />
             {state.checksBusy || state.instanceGrok?.checking ? "Checking…" : "Check all"}
@@ -918,7 +930,10 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
             variant="ghost"
             aria-label="Refresh provider status"
             disabled={state.isRefreshing}
-            onClick={() => { state.onRefresh(); state.instanceGrok?.refresh(); }}
+            onClick={() => {
+              state.onRefresh();
+              state.instanceGrok?.refresh();
+            }}
           >
             <RefreshCwIcon className="size-3.5" />
           </Button>
@@ -977,11 +992,14 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
           {!state.checksBusy && " Use Check all to continue."}
         </p>
       )}
-      {accounts.length === 0 && !state.instanceGrok?.installed && adding === null && !state.isInitialLoading && (
-        <p className="py-4 text-sm text-muted-foreground">
-          Add a provider and connect through subscription sign-in or an API key.
-        </p>
-      )}
+      {accounts.length === 0 &&
+        !state.instanceGrok?.installed &&
+        adding === null &&
+        !state.isInitialLoading && (
+          <p className="py-4 text-sm text-muted-foreground">
+            Add a provider and connect through subscription sign-in or an API key.
+          </p>
+        )}
       <div className="overflow-x-auto">
         <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
           <div
@@ -1052,11 +1070,19 @@ export function WorkjetModelsProviders(state: WorkjetGatewaySectionState & Model
                   keyProvider === null &&
                   !loginHere && (
                     <div className="flex gap-2 py-2">
-                      <Button size="xs" variant="outline" onClick={() => {
-                        if (state.instanceGrok) { state.instanceGrok.start(); setAdding(null); }
-                        else state.onAddAccount("xai");
-                      }}>
-                        {state.instanceGrok ? `Grok Build OAuth on ${state.instanceGrok.label}` : "Sign in with subscription"}
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => {
+                          if (state.instanceGrok) {
+                            state.instanceGrok.start();
+                            setAdding(null);
+                          } else state.onAddAccount("xai");
+                        }}
+                      >
+                        {state.instanceGrok
+                          ? `Grok Build OAuth on ${state.instanceGrok.label}`
+                          : "Sign in with subscription"}
                       </Button>
                       <Button size="xs" variant="outline" onClick={() => setKeyProvider("xai")}>
                         Add API key

@@ -348,7 +348,8 @@ export function WorkjetGatewayAccountsSection({
   readonly environmentId: EnvironmentId | null;
 }) {
   const { selectedId } = useCtoxMode();
-  if (environmentId === null && selectedId) return <InstanceOnlyModels key={selectedId} instanceId={selectedId} />;
+  if (environmentId === null && selectedId)
+    return <InstanceOnlyModels key={selectedId} instanceId={selectedId} />;
   if (environmentId === null) {
     return (
       <SettingsSection title="Model access">
@@ -371,7 +372,11 @@ function ScopedWorkjetGatewayAccountsSection({
   const { selectedId } = useCtoxMode();
   return (
     <>
-      {selectedId ? <InstanceGatewayModels key={selectedId} instanceId={selectedId} gateway={gateway} /> : <WorkjetModelsProviders {...gateway} />}
+      {selectedId ? (
+        <InstanceGatewayModels key={selectedId} instanceId={selectedId} gateway={gateway} />
+      ) : (
+        <WorkjetModelsProviders {...gateway} />
+      )}
       <WorkjetModelsUsage environmentId={environmentId} />
     </>
   );
@@ -379,7 +384,10 @@ function ScopedWorkjetGatewayAccountsSection({
 
 function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
   const { discovery } = useCtoxMode();
-  const instance = discovery !== "loading" && discovery._tag === "ready" ? discovery.instances.find((item) => item.id === instanceId) : undefined;
+  const instance =
+    discovery !== "loading" && discovery._tag === "ready"
+      ? discovery.instances.find((item) => item.id === instanceId)
+      : undefined;
   const label = instance?.displayName ?? "CTOX instance";
   const grok = useInstanceGrokAccount(instanceId, label);
   return (
@@ -387,13 +395,23 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">LLM providers</h2>
         <Button size="sm" disabled={grok.checking || grok.installed} onClick={grok.start}>
-          <PlusIcon className="size-3.5" />Add Grok Build account on {label}
+          <PlusIcon className="size-3.5" />
+          Add Grok Build account on {label}
         </Button>
       </div>
       <div className="overflow-x-auto">
         <div role="table" aria-label="LLM provider accounts" className="min-w-[34rem]">
-          <div role="row" className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground">
-            <span role="columnheader">Provider / account</span><span role="columnheader">Models</span><span role="columnheader">Limits</span><span role="columnheader">Active</span><span role="columnheader" className="sr-only">Actions</span>
+          <div
+            role="row"
+            className="grid grid-cols-[minmax(9rem,1.15fr)_minmax(0,2fr)_minmax(6rem,.7fr)_2rem_1.75rem] items-center gap-x-3 border-b border-border py-2 text-[11px] text-muted-foreground"
+          >
+            <span role="columnheader">Provider / account</span>
+            <span role="columnheader">Models</span>
+            <span role="columnheader">Limits</span>
+            <span role="columnheader">Active</span>
+            <span role="columnheader" className="sr-only">
+              Actions
+            </span>
           </div>
           {grok.row}
         </div>
@@ -402,12 +420,18 @@ function InstanceOnlyModels({ instanceId }: { readonly instanceId: string }) {
   );
 }
 
-function InstanceGatewayModels({ instanceId, gateway }: {
+function InstanceGatewayModels({
+  instanceId,
+  gateway,
+}: {
   readonly instanceId: string;
   readonly gateway: ReturnType<typeof useWorkjetGatewaySection>;
 }) {
   const { discovery } = useCtoxMode();
-  const instance = discovery !== "loading" && discovery._tag === "ready" ? discovery.instances.find((item) => item.id === instanceId) : undefined;
+  const instance =
+    discovery !== "loading" && discovery._tag === "ready"
+      ? discovery.instances.find((item) => item.id === instanceId)
+      : undefined;
   const label = instance?.displayName ?? "CTOX instance";
   const instanceGrok = useInstanceGrokAccount(instanceId, label);
   return <WorkjetModelsProviders {...gateway} instanceGrok={instanceGrok} />;

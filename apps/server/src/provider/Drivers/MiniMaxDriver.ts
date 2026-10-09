@@ -1,4 +1,5 @@
 import {
+  resolveWorkjetGatewayModelRoute,
   MiniMaxSettings,
   ProviderDriverKind,
   TextGenerationError,
@@ -123,14 +124,14 @@ export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = 
       } satisfies MiniMaxSettings;
       const gateway = routeViaGateway ? yield* Effect.serviceOption(ProviderGatewayService) : Option.none();
       const profileLock = yield* Semaphore.make(1);
-      const resolveSessionEnvironment = (model?: string) => routeViaGateway
+      const resolveSessionEnvironment = (model?: string): Effect.Effect<NodeJS.ProcessEnv, ProviderAdapterRequestError> => routeViaGateway
         ? profileLock.withPermit(Effect.gen(function* () {
             const fail = (detail: string) => new ProviderAdapterRequestError({ provider: DRIVER, method: "startSession", detail });
             if (Option.isNone(gateway)) return yield* fail("The Workjet provider gateway service is unavailable.");
-            const status = yield* gateway.value.status().pipe(Effect.mapError(cause => fail(`The Workjet gateway status could not be read (${cause.reason}).`)));
+            const status = yield* gateway.value.status();
             if (status.phase !== "ready" || !status.providerEndpoint) return yield* fail(`Start the Workjet provider gateway before using MiniMax Code (${status.phase}).`);
             const catalog = yield* gateway.value.catalog().pipe(Effect.mapError(cause => fail(`The Workjet gateway catalog could not be read (${cause.reason}).`)));
-            const selected = model ?? catalog.models[0]?.id;
+            const selected = model ?? catalog.models.find(entry => resolveWorkjetGatewayModelRoute({ catalog, model: entry.id }).outcome === "resolved")?.id;
             if (!selected) return yield* fail("Connect a real model account to the Workjet gateway.");
             const profile = yield* Effect.try({
               try: () => miniMaxGatewayProfileConfiguration(status.providerEndpoint!, catalog, selected),
@@ -140,7 +141,8 @@ export const MiniMaxDriver: ProviderDriver<MiniMaxSettings, MiniMaxDriverEnv> = 
             // their saved sessions never receive placeholder credentials or new defaults.
             yield* fs.makeDirectory(effective.dataDirectory, { recursive: true }).pipe(Effect.mapError(() => fail("The MiniMax gateway profile could not be created.")));
             const staged = path.join(effective.dataDirectory, ".workjet-config.json");
-            yield* fs.writeFileString(staged, JSON.stringify(profile)).pipe(Effect.andThen(fs.rename(staged, path.join(effective.dataDirectory, "config.yaml"))), Effect.mapError(() => fail("The MiniMax gateway profile could not be written.")));
+            const encoded = yield* Schema.encodeEffect(Schema.UnknownFromJsonString)(profile).pipe(Effect.mapError(() => fail("The MiniMax gateway profile could not be encoded.")));
+            yield* fs.writeFileString(staged, encoded).pipe(Effect.andThen(fs.rename(staged, path.join(effective.dataDirectory, "config.yaml"))), Effect.mapError(() => fail("The MiniMax gateway profile could not be written.")));
             return { ...processEnv, MINIMAX_DATA_DIR: effective.dataDirectory };
           }))
         : Effect.succeed(processEnv);

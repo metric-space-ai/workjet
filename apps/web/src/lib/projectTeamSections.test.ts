@@ -89,6 +89,24 @@ it("resolves dispatched parent titles without crossing environments or projects"
   const child = { ...worker, title: "Worker", environmentId: "local" };
   const owner = { ...supervisor, title: "Supervisor title", environmentId: "local" };
   expect(projectTeamParentTitle(child, [child, owner])).toBe("Supervisor title");
+  expect(projectTeamParentTitle(child, [])).toBeUndefined();
+  const specialist = { ...parent, title: "Persistent owner", environmentId: "local" };
+  const specialistChild = {
+    ...child,
+    workjetConfig: {
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      team: {
+        role: "worker" as const,
+        projectId: PROJECT_ID,
+        threadId: ThreadId.make("worker"),
+        parentThreadId: ThreadId.make("parent"),
+        packageId: "pr-1",
+        goal: "Land one PR",
+        createdAt: CREATED_AT,
+      },
+    },
+  };
+  expect(projectTeamParentTitle(specialistChild, [specialist])).toBe("Persistent owner");
   expect(projectTeamParentTitle(child, [{ ...owner, environmentId: "remote" }])).toBeUndefined();
   const foreign = {
     ...owner,

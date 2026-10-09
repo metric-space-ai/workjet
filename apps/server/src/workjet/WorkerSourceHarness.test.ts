@@ -154,6 +154,12 @@ it("runs Claude Messages tool round trips through the same pinned source route",
     expect(body.requestId).toBe("claude-http-worker");
     expect(body.requestDigest).toBe("claude-digest");
     res.setHeader("content-type", "application/json");
+    if (body.operation === "computers") return res.end(JSON.stringify({
+      schemaVersion: 1, computers: [{
+        id: "registered-gpu3", label: "gpu3", environmentId: "target",
+        presentationKind: "ssh", harnesses: [{ harness: "claude-code", available: true }], profiles: [],
+      }],
+    }));
     if (body.operation !== "infer") return res.end("{}");
     const request = JSON.parse(body.payload.requestJson);
     received.push(request);
@@ -195,6 +201,14 @@ it("runs Claude Messages tool round trips through the same pinned source route",
   expect((await fetch(`${harness.baseUrl}/responses`, {
     method: "POST", headers: { authorization: `Bearer ${harness.apiKey}` },
   })).status).toBe(404);
+  const inventory = await fetch(`${harness.baseUrl}/workjet/computers`, {
+    headers: { authorization: `Bearer ${harness.apiKey}` },
+  });
+  expect(inventory.status).toBe(200);
+  expect((await inventory.json()).computers[0]).toEqual({
+    id: "registered-gpu3", label: "gpu3", environmentId: "target", presentationKind: "ssh",
+    harnesses: [{ harness: "claude-code", available: true }], profiles: [],
+  });
   const response = await invoke([{ role: "user", content: "Check hostname" }]);
   expect(response.status).toBe(200);
   const events = (await response.text()).split("\n\n").filter(Boolean)

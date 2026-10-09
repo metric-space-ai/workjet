@@ -605,49 +605,91 @@ export type CtoxWorkjetProjectConfiguration = typeof CtoxWorkjetProjectConfigura
  * Project control travels only through the selected CTOX guest's existing
  * RxDB/WebRTC peer. The request deliberately has no Environment/HTTP target.
  */
-// Presentation subset of the native project KPI contract (ctox.workjet.project_kpis.v1).
-// The native shell validates the full wire value before it reaches the browser.
+// Full native wire value: strict IPC decoding must retain evidence and computation fields.
+// Source calculations remain server-authoritative (ctox.workjet.project_kpis.v1).
+const CtoxKpiRevision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
+const CtoxKpiTime = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const CtoxKpiValue = Schema.Number.check(Schema.makeFilter(Number.isFinite));
 const CtoxWorkjetKpiRecordPresentation = Schema.Struct({
   prompt: Schema.Struct({
     kpi_id: CtoxProjectText(128),
     prompt: CtoxProjectText(1_024),
-    revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+    revision: CtoxKpiRevision,
   }),
   result: Schema.Struct({
     status: Schema.Literals(["resolving", "ready", "stale", "missing_source", "failed"]),
-    reason_code: Schema.optionalKey(CtoxProjectText(128)),
-    message: Schema.optionalKey(CtoxProjectText(1_024)),
+    reason_code: Schema.optionalKey(CtoxProjectText(64)),
+    message: Schema.optionalKey(CtoxProjectText(256)),
     snapshot: Schema.optionalKey(
       Schema.Struct({
         project_id: ProjectId,
         kpi_id: CtoxProjectText(128),
-        prompt_revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-        label: CtoxProjectText(24),
-        display_value: CtoxProjectText(256),
-        unit: CtoxProjectText(64),
+        prompt_revision: CtoxKpiRevision,
+        label: CtoxProjectText(14),
+        value: CtoxKpiValue,
+        display_value: CtoxProjectText(32),
+        unit: CtoxProjectText(16),
         sources: Schema.Array(
           Schema.Struct({
+            source_key: CtoxProjectText(128),
             kind: Schema.Literals(["native_metric", "github_metric", "connected_metric"]),
             project_id: ProjectId,
-            connection_id: CtoxProjectText(256),
-            metric_key: CtoxProjectText(256),
+            connection_id: CtoxProjectText(128),
+            metric_key: CtoxProjectText(128),
+            snapshot_revision: CtoxProjectText(256),
+            evidence_ref: CtoxProjectText(256),
+            observed_at_ms: CtoxKpiTime,
+            value: CtoxKpiValue,
           }),
-        ),
+        ).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+        computation: Schema.Struct({
+          recipe_id: CtoxProjectText(128),
+          revision: CtoxKpiRevision,
+          operation: Schema.Literals(["identity", "sum", "average", "percentage"]),
+          input_keys: Schema.Array(CtoxProjectText(128)).check(
+            Schema.isMinLength(1),
+            Schema.isMaxLength(8),
+          ),
+          window_start_ms: CtoxKpiTime,
+          window_end_ms: CtoxKpiTime,
+        }),
         freshness: Schema.Struct({
-          calculated_at_ms: Schema.Number,
-          refresh_at_ms: Schema.Number,
-          fresh_until_ms: Schema.Number,
+          calculated_at_ms: CtoxKpiTime,
+          refresh_at_ms: CtoxKpiTime,
+          fresh_until_ms: CtoxKpiTime,
         }),
       }),
     ),
   }),
-});
+}).check(
+  Schema.makeFilter(({ prompt, result }) => {
+    const snapshot = result.snapshot;
+    if (result.status === "ready" || result.status === "stale") {
+      return snapshot !== undefined &&
+        snapshot.kpi_id === prompt.kpi_id &&
+        snapshot.prompt_revision === prompt.revision &&
+        snapshot.sources.every((source) => source.project_id === snapshot.project_id)
+        ? true
+        : "KPI snapshot must match its prompt and project evidence.";
+    }
+    return snapshot === undefined ? true : "Unresolved KPI cannot carry a snapshot.";
+  }),
+);
 const CtoxWorkjetProjectKpis = Schema.Struct({
   project_id: ProjectId,
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   items: Schema.Array(CtoxWorkjetKpiRecordPresentation).check(Schema.isMaxLength(3)),
-});
+}).check(
+  Schema.makeFilter((kpis) =>
+    kpis.items.every(
+      (item) => !item.result.snapshot || item.result.snapshot.project_id === kpis.project_id,
+    )
+      ? true
+      : "KPI snapshot belongs to another project.",
+  ),
+);
 export type CtoxWorkjetProjectKpis = typeof CtoxWorkjetProjectKpis.Type;
+
 const CtoxWorkjetGalleryOrder = Schema.Struct({
   revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   projectIds: Schema.Array(ProjectId).check(Schema.isMaxLength(500)),

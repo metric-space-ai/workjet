@@ -2,7 +2,7 @@ import { PROVIDER_DISPLAY_NAMES, type WorkjetThreadConfig } from "@workjet/contr
 
 type TeamThread = { readonly workjetConfig: WorkjetThreadConfig };
 
-export type ProjectTeamSection = "supervisor" | "parents" | "workers" | "other";
+export type ProjectTeamSection = "supervisor" | "parents" | "workers";
 
 /** Sidebar order for an opened project: its supervisor, the long-lived parents, then one-time PR workers. */
 export const PROJECT_TEAM_SECTIONS = [
@@ -14,7 +14,7 @@ export const PROJECT_TEAM_SECTIONS = [
   { section: "parents", label: "Persistent Worker", empty: "No persistent workers yet." },
   { section: "workers", label: "One-Shot Worker", empty: "No one-shot workers yet." },
 ] as const satisfies ReadonlyArray<{
-  readonly section: Exclude<ProjectTeamSection, "other">;
+  readonly section: ProjectTeamSection;
   readonly label: string;
   readonly empty: string;
 }>;
@@ -25,7 +25,7 @@ export function projectTeamSectionOf(thread: TeamThread): ProjectTeamSection {
   if (role === "supervisor") return "supervisor";
   if (role === "specialist") return "parents";
   if (role === "worker") return "workers";
-  return "other";
+  return "workers";
 }
 
 /** Keeps the incoming order inside each section. */
@@ -36,11 +36,9 @@ export function groupThreadsByProjectTeam<T extends TeamThread>(
     supervisor: [],
     parents: [],
     workers: [],
-    other: [],
   };
   for (const thread of threads) {
-    const section = projectTeamSectionOf(thread);
-    groups[section === "other" ? "workers" : section].push(thread);
+    groups[projectTeamSectionOf(thread)].push(thread);
   }
   return groups;
 }
@@ -56,14 +54,17 @@ export function projectTeamParentTitle(
   thread: ProjectTeamTitleThread,
   threads: readonly ProjectTeamTitleThread[],
 ): string | undefined {
-  const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
+  const config = thread.workjetConfig;
+  const team = config.schemaVersion === 2 ? config.team : undefined;
   if (team?.role !== "worker") return undefined;
+  if (config.role === "worker" && config.parent.threadId !== team.parentThreadId) return undefined;
+  const parentEnvironmentId = config.role === "worker" ? config.parent.environmentId : thread.environmentId;
   return threads.find((candidate) => {
     const parent =
       candidate.workjetConfig.schemaVersion === 2 ? candidate.workjetConfig.team : undefined;
     return (
       candidate.id === team.parentThreadId &&
-      candidate.environmentId === thread.environmentId &&
+      candidate.environmentId === parentEnvironmentId &&
       parent?.projectId === team.projectId
     );
   })?.title;

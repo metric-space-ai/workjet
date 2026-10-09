@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { DEFAULT_WORKJET_THREAD_CONFIG, ProjectId, ThreadId } from "@workjet/contracts";
+import { DEFAULT_WORKJET_THREAD_CONFIG, EnvironmentId, ProjectId, ThreadId } from "@workjet/contracts";
 import type { WorkjetThreadConfig } from "@workjet/contracts";
 import {
   groupThreadsByProjectTeam,
@@ -61,7 +61,7 @@ describe("projectTeamSections", () => {
     expect(projectTeamSectionOf(supervisor)).toBe("supervisor");
     expect(projectTeamSectionOf(parent)).toBe("parents");
     expect(projectTeamSectionOf(worker)).toBe("workers");
-    expect(projectTeamSectionOf(plain)).toBe("other");
+    expect(projectTeamSectionOf(plain)).toBe("workers");
   });
 
   it("groups threads and keeps their order inside a section", () => {
@@ -70,19 +70,19 @@ describe("projectTeamSections", () => {
     expect(groups.supervisor.map((t) => t.id)).toEqual(["supervisor"]);
     expect(groups.parents.map((t) => t.id)).toEqual(["parent", "parent-2"]);
     expect(groups.workers.map((t) => t.id)).toEqual(["worker", "plain"]);
-    expect(groups.other).toEqual([]);
+    expect(Object.keys(groups)).toEqual(["supervisor", "parents", "workers"]);
   });
 });
 
 const idle = { session: null, hasPendingApprovals: false, hasPendingUserInput: false };
 
-it("uses the exact project labels and preserves non-project roleless classification", () => {
+it("uses the exact project labels and includes roleless project chats", () => {
   expect(PROJECT_TEAM_SECTIONS.map((section) => section.label)).toEqual([
     "Supervisor",
     "Persistent Worker",
     "One-Shot Worker",
   ]);
-  expect(projectTeamSectionOf(plain)).toBe("other");
+  expect(projectTeamSectionOf(plain)).toBe("workers");
 });
 
 it("resolves dispatched parent titles without crossing environments or projects", () => {
@@ -126,6 +126,55 @@ it("resolves dispatched parent titles without crossing environments or projects"
   expect(
     projectTeamParentTitle({ ...plain, title: "Manual", environmentId: "local" }, [owner]),
   ).toBeUndefined();
+});
+
+it("uses a dispatched worker’s authoritative source environment and rejects inconsistent identities", () => {
+  const source = { ...parent, title: "Mac persistent worker", environmentId: "mac" };
+  const dispatched = {
+    ...worker,
+    title: "GPU task",
+    environmentId: "gpu3",
+    workjetConfig: {
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      schemaVersion: 2 as const,
+      role: "worker" as const,
+      parent: { environmentId: EnvironmentId.make("mac"), threadId: ThreadId.make("parent") },
+      team: {
+        role: "worker" as const,
+        projectId: PROJECT_ID,
+        threadId: ThreadId.make("worker"),
+        parentThreadId: ThreadId.make("parent"),
+        packageId: "remote-pr",
+        goal: "Land one PR remotely",
+        createdAt: CREATED_AT,
+      },
+    },
+  };
+  expect(projectTeamParentTitle(dispatched, [source])).toBe("Mac persistent worker");
+  expect(projectTeamParentTitle(dispatched, [{ ...source, environmentId: "gpu3" }])).toBeUndefined();
+  const foreign = {
+    ...source,
+    workjetConfig: {
+      ...DEFAULT_WORKJET_THREAD_CONFIG,
+      team: {
+        role: "specialist" as const,
+        projectId: ProjectId.make("foreign"),
+        threadId: ThreadId.make("parent"),
+        parentThreadId: SUPERVISOR_ID,
+        domain: "desktop",
+        goal: "Other project",
+        createdAt: CREATED_AT,
+      },
+    },
+  };
+  expect(projectTeamParentTitle(dispatched, [foreign])).toBeUndefined();
+  expect(projectTeamParentTitle({
+    ...dispatched,
+    workjetConfig: {
+      ...dispatched.workjetConfig,
+      parent: { ...dispatched.workjetConfig.parent, threadId: ThreadId.make("wrong-parent") },
+    },
+  }, [source])).toBeUndefined();
 });
 
 describe("project team row state", () => {

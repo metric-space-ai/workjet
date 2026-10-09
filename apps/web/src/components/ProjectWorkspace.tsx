@@ -490,7 +490,7 @@ export function ProjectWorkspace({
       >
         <DialogPopup className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Persistent Worker</DialogTitle>
+            <DialogTitle>Add persistent worker</DialogTitle>
           </DialogHeader>
           <DialogPanel>
             <form
@@ -540,7 +540,7 @@ export function ProjectWorkspace({
                 </p>
               ) : null}
               <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Add Persistent Worker"}
+                {saving ? "Saving…" : "Add persistent worker"}
               </Button>
             </form>
           </DialogPanel>

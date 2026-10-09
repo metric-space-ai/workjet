@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
   ActivityIcon,
+  AudioLinesIcon,
   ArchiveIcon,
   BriefcaseBusinessIcon,
   GitBranchIcon,
@@ -23,6 +24,7 @@ export const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/keybindings": KeyboardIcon,
   "/settings/harnesses": TerminalIcon,
   "/settings/models": SparklesIcon,
+  "/settings/speech": AudioLinesIcon,
   "/settings/computers": MonitorIcon,
   "/settings/workjet": WrenchIcon,
   "/settings/source-control": GitBranchIcon,

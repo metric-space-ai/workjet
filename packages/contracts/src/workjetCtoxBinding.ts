@@ -23,6 +23,13 @@ function supervisorObservationError(
     (previous.submission === "confirmed" && next.submission !== "confirmed")
   )
     return "A native supervisor submission cannot erase its dispatch or receipt.";
+  for (const input of previous.inputs ?? []) {
+    const retained = next.inputs?.find((entry) => entry.intent.commandId === input.intent.commandId);
+    if (!retained || JSON.stringify(retained.intent) !== JSON.stringify(input.intent) ||
+        (input.submission === "awaiting-receipt" && retained.submission === "prepared") ||
+        (input.receipt !== null && JSON.stringify(retained.receipt) !== JSON.stringify(input.receipt)))
+      return "A Supervisor context retry must keep its saved identity and receipt.";
+  }
   if (
     previous.turn &&
     next.turn &&

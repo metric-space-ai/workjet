@@ -11,8 +11,8 @@ export const PROJECT_TEAM_SECTIONS = [
     label: "Supervisor",
     empty: "Opening the project creates its supervisor.",
   },
-  { section: "parents", label: "Parents", empty: "No parent workers yet." },
-  { section: "workers", label: "Workers", empty: "No running workers." },
+  { section: "parents", label: "Persistent Worker", empty: "No persistent workers yet." },
+  { section: "workers", label: "One-Shot Worker", empty: "No one-shot workers yet." },
 ] as const satisfies ReadonlyArray<{
   readonly section: Exclude<ProjectTeamSection, "other">;
   readonly label: string;
@@ -38,8 +38,27 @@ export function groupThreadsByProjectTeam<T extends TeamThread>(
     workers: [],
     other: [],
   };
-  for (const thread of threads) groups[projectTeamSectionOf(thread)].push(thread);
+  for (const thread of threads) {
+    const section = projectTeamSectionOf(thread);
+    groups[section === "other" ? "workers" : section].push(thread);
+  }
   return groups;
+}
+
+/** Resolve a dispatched worker’s parent only inside its project and environment. */
+export function projectTeamParentTitle<T extends TeamThread & {
+  readonly id: string;
+  readonly title: string;
+  readonly environmentId: string;
+}>(thread: T, threads: readonly T[]): string | undefined {
+  const team = thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.team : undefined;
+  if (team?.role !== "worker") return undefined;
+  return threads.find((candidate) => {
+    const parent = candidate.workjetConfig.schemaVersion === 2 ? candidate.workjetConfig.team : undefined;
+    return candidate.id === team.parentThreadId &&
+      candidate.environmentId === thread.environmentId &&
+      parent?.projectId === team.projectId;
+  })?.title;
 }
 
 /** One native-state status mapping shared by the project overview and sidebar. */

@@ -12,6 +12,7 @@ import {
   projectTeamStatus,
   projectTeamProgressPreview,
   projectTeamHarnessLabel,
+  projectTeamParentTitle,
   duplicateProjectTeamTitles,
 } from "../lib/projectTeamSections";
 import {
@@ -83,8 +84,7 @@ export function ProjectWorkspace({
       thread.archivedAt === null &&
       thread.deletedAt == null &&
       !effectiveSnoozed(thread, { now: new Date().toISOString() }) &&
-      team?.projectId === thread.projectId &&
-      team.threadId === thread.id
+      (team === undefined || (team.projectId === thread.projectId && team.threadId === thread.id))
     );
   });
   const groups = groupThreadsByProjectTeam([
@@ -174,7 +174,7 @@ export function ProjectWorkspace({
           </div>
           <Button variant="ghost" size="sm" onClick={() => setEditingParent(true)}>
             <PlusIcon className="size-3" />
-            Parent
+            Persistent Worker
           </Button>
         </header>
         <dl className="mb-6 flex flex-wrap gap-x-8 gap-y-3" data-workjet-overview-kpis="">
@@ -222,7 +222,7 @@ export function ProjectWorkspace({
                 <p className="mb-4 text-xs text-muted-foreground">Latest worker turns only.</p>
                 <dl className="mb-4 flex flex-wrap gap-x-8 gap-y-2">
                   {[
-                    ["Workers", String(summary.workers)],
+                    ["One-Shot Worker", String(summary.workers)],
                     ["Active days", String(summary.activeDays)],
                     ["Active time", formatMinutes(summary.totalMinutes)],
                   ].map(([label, value]) => (
@@ -292,6 +292,7 @@ export function ProjectWorkspace({
                       const status = projectTeamStatus(thread);
                       const harness = projectTeamHarnessLabel(thread);
                       const progress = projectTeamProgressPreview(thread);
+                      const parentTitle = projectTeamParentTitle(thread, threads);
                       const team =
                         thread.workjetConfig.schemaVersion === 2
                           ? thread.workjetConfig.team
@@ -352,6 +353,11 @@ export function ProjectWorkspace({
                                   title={thread.title}
                                 >
                                   <span className="min-w-0 truncate">{thread.title}</span>
+                                  {parentTitle ? (
+                                    <span className="max-w-28 truncate rounded border border-border px-1 text-[10px] font-normal text-muted-foreground" title="Dispatched by">
+                                      {parentTitle}
+                                    </span>
+                                  ) : null}
                                   {duplicateTitles.has(thread.title) ? (
                                     <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
                                       {harness}
@@ -481,7 +487,7 @@ export function ProjectWorkspace({
       >
         <DialogPopup className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add parent</DialogTitle>
+            <DialogTitle>Add Persistent Worker</DialogTitle>
           </DialogHeader>
           <DialogPanel>
             <form
@@ -493,12 +499,12 @@ export function ProjectWorkspace({
                 setError(null);
                 try {
                   if (!(await onAddParent(domain.trim(), goal.trim())))
-                    throw new Error("Could not save this parent.");
+                    throw new Error("Could not save this persistent worker.");
                   setEditingParent(false);
                   setDomain("");
                   setGoal("");
                 } catch {
-                  setError("Could not save this parent. Check the connection and model settings.");
+                  setError("Could not save this persistent worker. Check the connection and model settings.");
                 } finally {
                   setSaving(false);
                 }
@@ -529,7 +535,7 @@ export function ProjectWorkspace({
                 </p>
               ) : null}
               <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Add parent"}
+                {saving ? "Saving…" : "Add Persistent Worker"}
               </Button>
             </form>
           </DialogPanel>

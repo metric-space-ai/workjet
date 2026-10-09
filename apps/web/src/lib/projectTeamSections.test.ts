@@ -8,6 +8,8 @@ import {
   projectTeamProgressPreview,
   projectTeamHarnessLabel,
   duplicateProjectTeamTitles,
+  projectTeamParentTitle,
+  PROJECT_TEAM_SECTIONS,
 } from "./projectTeamSections";
 
 const PROJECT_ID = ProjectId.make("project-1");
@@ -67,12 +69,29 @@ describe("projectTeamSections", () => {
     const groups = groupThreadsByProjectTeam([worker, parent, plain, supervisor, second]);
     expect(groups.supervisor.map((t) => t.id)).toEqual(["supervisor"]);
     expect(groups.parents.map((t) => t.id)).toEqual(["parent", "parent-2"]);
-    expect(groups.workers.map((t) => t.id)).toEqual(["worker"]);
-    expect(groups.other.map((t) => t.id)).toEqual(["plain"]);
+    expect(groups.workers.map((t) => t.id)).toEqual(["worker", "plain"]);
+    expect(groups.other).toEqual([]);
   });
 });
 
 const idle = { session: null, hasPendingApprovals: false, hasPendingUserInput: false };
+
+  it("uses the exact project labels and preserves non-project roleless classification", () => {
+    expect(PROJECT_TEAM_SECTIONS.map((section) => section.label)).toEqual([
+      "Supervisor", "Persistent Worker", "One-Shot Worker",
+    ]);
+    expect(projectTeamSectionOf(plain)).toBe("other");
+  });
+
+  it("resolves dispatched parent titles without crossing environments or projects", () => {
+    const child = { ...worker, title: "Worker", environmentId: "local" };
+    const owner = { ...supervisor, title: "Supervisor title", environmentId: "local" };
+    expect(projectTeamParentTitle(child, [child, owner])).toBe("Supervisor title");
+    expect(projectTeamParentTitle(child, [{ ...owner, environmentId: "remote" }])).toBeUndefined();
+    const foreign = { ...owner, workjetConfig: { ...DEFAULT_WORKJET_THREAD_CONFIG, team: { role: "supervisor" as const, projectId: ProjectId.make("foreign"), threadId: SUPERVISOR_ID, parentThreadId: null, goal: "Foreign", createdAt: CREATED_AT } } };
+    expect(projectTeamParentTitle(child, [foreign as typeof owner])).toBeUndefined();
+    expect(projectTeamParentTitle({ ...plain, title: "Manual", environmentId: "local" }, [owner])).toBeUndefined();
+  });
 
 describe("project team row state", () => {
   it("shows actual running sessions and background work in yellow", () => {

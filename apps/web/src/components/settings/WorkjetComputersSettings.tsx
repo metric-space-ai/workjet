@@ -20,6 +20,7 @@ import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSet
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
+import { workerSourceConnectionForEnrollment } from "../../workjetWorkerSourceConnection";
 import { applyAutomaticCurrentComputer } from "../../state/workjetSettings";
 import { Button } from "../ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "../ui/menu";
@@ -955,6 +956,11 @@ export function WorkjetComputersSettings({
   const enrollRemoteComputer = useAtomCommand(serverEnvironment.enrollWorkjetRemoteComputer, {
     reportFailure: false,
   });
+  const workerConnections = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : serverEnvironment.workjetDecisionHubConnections({ environmentId, input: {} }),
+  );
   const saveCapabilities = async (enrollment: OperationalComputerEnrollment) => {
     if (!selectedInstanceId) throw new Error("Select a Business OS before adding this computer.");
     const computer = setupOnly ? setupComputer : capabilityComputer;
@@ -963,11 +969,20 @@ export function WorkjetComputersSettings({
     if (build && computer?.environmentId !== environmentId) {
       if (!computer || !environmentId)
         throw new Error("Connect this build computer over SSH before saving its capabilities.");
+      const source = workerSourceConnectionForEnrollment(
+        workerConnections.data?.connections ?? [],
+        selectedInstanceId,
+      );
+      if (!source)
+        throw new Error(
+          "Connect workers for this Business OS in its project supervisor before saving a remote build computer.",
+        );
       const result = await enrollRemoteComputer({
         environmentId,
         targetEnvironmentId: computer.environmentId,
         input: {
-          selectedInstanceId,
+          selectedInstanceId: source.instanceId,
+          sourceConnectionId: source.connectionId,
           computerId: computer.id,
           displayName: enrollment.displayName,
           hostingMode: enrollment.hostingMode,

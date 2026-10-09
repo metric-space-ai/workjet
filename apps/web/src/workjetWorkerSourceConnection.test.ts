@@ -12,6 +12,7 @@ import {
 import {
   withWorkerSourceConnection,
   workerSourceConnectionForInstance,
+  workerSourceConnectionForEnrollment,
   workerSourceIsBound,
   workerSourceProvisionRequest,
 } from "./workjetWorkerSourceConnection";
@@ -72,6 +73,40 @@ describe("native supervisor worker source connection", () => {
     const offline: WorkjetConnectionSummary = { ...connection, status: "offline" };
     expect(workerSourceConnectionForInstance([offline, connection], selected)).toBe(connection);
     expect(workerSourceConnectionForInstance([offline], selected)).toBe(offline);
+  });
+});
+
+describe("remote computer enrollment source", () => {
+  it("uses the ready source's native pin and exact grant, excluding a decision-hub-only grant", () => {
+    const source = { ...connection, instanceId: "native-source.example" };
+    const decisionHub = {
+      ...source,
+      connectionId: WorkjetConnectionId.make(`ctox-dev:${tenant}`),
+    };
+    expect(workerSourceConnectionForEnrollment([decisionHub, source], selected)).toBe(source);
+    expect(source.instanceId).not.toBe(selected);
+  });
+
+  it("rejects missing, offline, foreign and multiple ready worker grants", () => {
+    const second = {
+      ...connection,
+      connectionId: WorkjetConnectionId.make(
+        `ctox-dev-worker-source:${tenant}:cccccccc-cccc-4ccc-8ccc-cccccccccccc`,
+      ),
+    };
+    for (const entries of [[], [{ ...connection, status: "offline" as const }], [connection, second]]) {
+      expect(workerSourceConnectionForEnrollment(entries, selected)).toBeUndefined();
+    }
+    expect(workerSourceConnectionForEnrollment([connection], "managed:foreign")).toBeUndefined();
+    expect(workerSourceConnectionForEnrollment([connection], null)).toBeUndefined();
+  });
+
+  it("ignores an offline prior source and preserves an explicitly selected native instance", () => {
+    expect(
+      workerSourceConnectionForEnrollment([{ ...connection, status: "offline" }, connection], selected),
+    ).toBe(connection);
+    expect(workerSourceConnectionForEnrollment([connection], nativeInstance)).toBe(connection);
+    expect(workerSourceConnectionForEnrollment([connection], "other-native")).toBeUndefined();
   });
 });
 

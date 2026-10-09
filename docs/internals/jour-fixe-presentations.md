@@ -38,6 +38,9 @@ Decks the Supervisor writes must also pass the validator's `lintMeeting` op
 (`src/meeting-lint.ts`): no heading that repeats the slide title, no slide or
 table that only says evidence is missing, no wording about the slide, the
 display, the data plumbing or the author, and no internal ids or system terms.
+Every slide needs a spoken talking point of at most 450 characters (150 on the
+title slide, about 30 and 10 seconds of the meeting voice) that cites only
+numbers the slide or its sources show and does not read a bullet aloud.
 The Owner's own canvas saves are not linted.
 
 Every revision is an immutable file. Canvas edits change the presentation

@@ -2,6 +2,7 @@
 // deck speaks to the Owner about the project, so wording about the slide itself, internal ids
 // and slides that only say "no data" are repairable errors. Lecture decks are not linted.
 import type { SlideBlock, SlideDocument, SlideDocumentValidationIssue, SlideNode } from "./schema";
+import { businessSceneSummary, formatNumber } from "./scene-data";
 
 export type MeetingLintCode =
   | "content.title_repeated"
@@ -9,7 +10,15 @@ export type MeetingLintCode =
   | "content.system_jargon"
   | "content.empty_slide"
   | "content.placeholder_table"
-  | "content.duplicate_text";
+  | "content.duplicate_text"
+  | "narration.missing"
+  | "narration.too_long"
+  | "narration.unsupported_number"
+  | "narration.reads_slide";
+
+/** Narration budget: the meeting voice speaks about 15.6 characters per second. */
+export const NARRATION_MAX_CHARS = 450;
+export const TITLE_NARRATION_MAX_CHARS = 150;
 
 type Segment = {
   slideId: string;
@@ -44,6 +53,8 @@ const META_PATTERNS: ReadonlyArray<readonly [RegExp, string]> = [
     /\b(?:Vorschläge|Vorschlag|Details|Konkretes) folg(?:en|t) (?:am Ende|später|im Anschluss)\b/iu,
     "the meeting process",
   ],
+  [/\bIm Folgenden\b/u, "the presentation itself"],
+  [/\bwie Sie (?:hier |oben |unten )?sehen\b/iu, "the display"],
   [/\b(?:this|the next|the previous) slide\b/iu, "the slide"],
   [/\b(?:shown|displayed|appears?) here\b/iu, "the display"],
   [/\bstays? empty\b/iu, "an empty display"],
@@ -98,6 +109,7 @@ export function lintMeetingDeck(document: SlideDocument): SlideDocumentValidatio
     });
     for (const segment of slideSegments(slide, base)) lintWording(segment, issues);
   });
+  document.slides.forEach((slide, slideIndex) => lintNarration(slide, slideIndex, issues));
   lintDuplicates(document, issues);
   return issues;
 }
@@ -156,6 +168,131 @@ function lintWording(segment: Segment, issues: SlideDocumentValidationIssue[]) {
     );
   }
 }
+
+/**
+ * The spoken text of a slide (its talking points) fits that slide: it exists, stays within the
+ * time budget, cites only numbers the slide or its sources show, and does not read bullets aloud.
+ */
+function lintNarration(
+  slide: SlideNode,
+  slideIndex: number,
+  issues: SlideDocumentValidationIssue[],
+) {
+  const base: Array<string | number> = ["slides", slideIndex];
+  const notes = (slide.speakerNotes ?? [])
+    .map((note, index) => ({ note, index }))
+    .filter(({ note }) => note.kind === undefined || note.kind === "talkingPoint")
+    .filter(({ note }) => note.text.trim());
+  if (notes.length === 0) {
+    issues.push(
+      issue("narration.missing", [...base, "speakerNotes"], slide.id, {
+        message: `Slide "${slide.title}" has no talking point, so its text would be read aloud.`,
+        repairHint:
+          "Add one talkingPoint note: what this slide means for the project, in spoken German.",
+      }),
+    );
+    return;
+  }
+  const spoken = notes.map(({ note }) => note.text.trim()).join("\n\n");
+  const budget = slideIndex === 0 ? TITLE_NARRATION_MAX_CHARS : NARRATION_MAX_CHARS;
+  const length = [...spoken].length;
+  if (length > budget) {
+    issues.push(
+      issue("narration.too_long", [...base, "speakerNotes"], slide.id, {
+        message: `The narration has ${length} characters; this slide allows ${budget} (about ${Math.round(budget / 15.6)} seconds).`,
+        repairHint:
+          "Shorten the talking point: say what changed and what the Owner decides, nothing else.",
+      }),
+    );
+  }
+  const shown = slideNumberRuns(slide);
+  const shownSegments = slideSegments(slide, base, false).flatMap((segment) =>
+    sentences(segment.text).map((text) => tokens(text)),
+  );
+  for (const { note, index } of notes) {
+    const path = [...base, "speakerNotes", index, "text"];
+    const unsupported = numberRuns(note.text).filter(
+      (run) => run.length >= 2 && !shown.has(canonicalRun(run)),
+    );
+    if (unsupported.length) {
+      issues.push(
+        issue("narration.unsupported_number", path, slide.id, {
+          message: `The narration says ${[...new Set(unsupported)].join(", ")}, which neither the slide nor its sources show.`,
+          received: excerpt(note.text, note.text.indexOf(unsupported[0]!)),
+          repairHint:
+            "Speak only numbers the slide shows or its sources state; put a missing number on the slide with its source, or leave it out.",
+        }),
+      );
+    }
+    for (const sentence of sentences(note.text)) {
+      const spokenTokens = tokens(sentence);
+      if (spokenTokens.size < 5) continue;
+      const copied = shownSegments.find((shownTokens) => {
+        if (shownTokens.size < 5) return false;
+        let common = 0;
+        for (const token of shownTokens) if (spokenTokens.has(token)) common += 1;
+        const union = shownTokens.size + spokenTokens.size - common;
+        return (
+          common / union >= 0.75 || (shownTokens.size >= 6 && common / shownTokens.size >= 0.9)
+        );
+      });
+      if (!copied) continue;
+      issues.push(
+        issue("narration.reads_slide", path, slide.id, {
+          message: `"${sentence.trim()}" reads the slide text aloud.`,
+          repairHint:
+            "Say what the slide means instead of reading it: the change, its cause or the decision it asks for.",
+        }),
+      );
+      break;
+    }
+  }
+}
+
+/** Digit runs a slide shows: its text, scene data (raw and as the scene displays it) and sources. */
+function slideNumberRuns(slide: SlideNode): Set<string> {
+  const texts: string[] = [slide.title];
+  for (const segment of slideSegments(slide, [], false)) texts.push(segment.text);
+  const scenes: Array<{ sceneId: string; data: unknown }> = [];
+  for (const block of slide.blocks) {
+    if (block.type === "scene3d") scenes.push({ sceneId: block.sceneId, data: block.data });
+    if (block.type === "chart") texts.push(JSON.stringify(block.data ?? {}));
+    if (block.type === "table") texts.push(block.columns.join(" "));
+  }
+  for (const element of slide.canvas?.elements ?? []) {
+    const embed = element.customData?.learnordie;
+    if (embed?.type === "scene3d") scenes.push({ sceneId: embed.sceneId, data: embed.data });
+  }
+  for (const { sceneId, data } of scenes) {
+    const summary = businessSceneSummary(sceneId, data);
+    if (summary) texts.push(summary);
+    for (const value of jsonNumbers(data)) texts.push(String(value), formatNumber(value));
+    texts.push(JSON.stringify(data ?? {}));
+  }
+  for (const source of slide.sourceRefs ?? []) {
+    texts.push(source.label, source.locator ?? "", source.url ?? "");
+  }
+  for (const note of slide.speakerNotes ?? []) {
+    if (note.kind === "source") texts.push(note.text);
+  }
+  return new Set(texts.flatMap(numberRuns).map(canonicalRun));
+}
+
+function jsonNumbers(value: unknown): number[] {
+  if (typeof value === "number" && Number.isFinite(value)) return [value];
+  if (Array.isArray(value)) return value.flatMap(jsonNumbers);
+  if (value && typeof value === "object") return Object.values(value).flatMap(jsonNumbers);
+  return [];
+}
+
+const numberRuns = (text: string) => text.match(/\d+/gu) ?? [];
+const canonicalRun = (run: string) => run.replace(/^0+(?=\d)/u, "");
+const tokens = (text: string) =>
+  new Set(
+    normalized(text)
+      .split(" ")
+      .filter((token) => token.length > 1),
+  );
 
 function lintDuplicates(document: SlideDocument, issues: SlideDocumentValidationIssue[]) {
   const seen = new Map<string, Segment>();
@@ -216,10 +353,13 @@ function slideSegments(
     });
   }
   if (withNotes) {
-    (slide.speakerNotes ?? []).forEach((note, index) =>
-      push(note.text, ["speakerNotes", index, "text"]),
-    );
+    // Only spoken notes; source, timing and warning notes are not read aloud.
+    (slide.speakerNotes ?? []).forEach((note, index) => {
+      if (note.kind === undefined || note.kind === "talkingPoint")
+        push(note.text, ["speakerNotes", index, "text"]);
+    });
   }
+
   return segments;
 }
 

@@ -10,7 +10,7 @@ import {
 } from "@workjet/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { reconstructSupervisorPublicReplies } from "../../supervisorPublicReplies";
+import { appendSupervisorExecutionEvents, reconstructSupervisorPublicReplies } from "../../supervisorPublicReplies";
 import { NativeSupervisorConversation } from "./NativeSupervisorConversation";
 import { newCommandId } from "~/lib/utils";
 import {
@@ -210,26 +210,19 @@ export function NativeSupervisorComposer(props: {
             const prior = pageRequest?.cursor === undefined && operation === "events" ? null : previous;
             const sameAttempt = prior !== null && prior.commandId === confirmed.turn.commandId &&
               prior.page.attempt?.attempt_id === page.attempt?.attempt_id;
-            const events = sameAttempt ? [...prior.events] : [];
-            const ids = new Set(events.map(event => event.id));
-            let historyLimited = sameAttempt && prior.historyLimited;
-            for (const event of page.events) {
-              if (ids.has(event.id)) continue;
-              if (events.length === 4096) { historyLimited = true; break; }
-              events.push(event);
-              ids.add(event.id);
-            }
+            const appended = appendSupervisorExecutionEvents(sameAttempt ? prior.events : [], page.events);
+            const historyLimited = (sameAttempt && prior.historyLimited) || appended.limited;
             const next = {
               commandId: confirmed.turn.commandId,
               request,
               page,
               taskAttempt: observed.response.turn.attempt,
-              events,
+              events: appended.events,
               historyLimited,
             };
             executionRef.current = next;
             setExecution(next);
-            setExecutionError(null);
+            setExecutionError(appended.conflicted ? "Execution history contains conflicting retained events. Reload from the start." : null);
           } else if (observed._tag === "failed") {
             setExecutionError(
               observed.code === "unsupported"

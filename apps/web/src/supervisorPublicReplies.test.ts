@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkjetSupervisorExecutionEvent, WorkjetSupervisorPublicAssistantText } from "@workjet/contracts";
-import { reconstructSupervisorPublicReplies } from "./supervisorPublicReplies";
+import { appendSupervisorExecutionEvents, reconstructSupervisorPublicReplies } from "./supervisorPublicReplies";
 
 function event(id: string, chunk: Partial<WorkjetSupervisorPublicAssistantText> = {}): WorkjetSupervisorExecutionEvent {
   return { id, sequence: 1, kind: "worker.assistant_text", title: "Assistant response", created_at_ms: 0,
@@ -9,6 +9,18 @@ function event(id: string, chunk: Partial<WorkjetSupervisorPublicAssistantText> 
 }
 
 describe("actual Supervisor public reply reconstruction", () => {
+  it("keeps page duplicates idempotent while surfacing conflicting event identities", () => {
+    const one = event("one");
+    expect(appendSupervisorExecutionEvents([one], [structuredClone(one)])).toEqual({ events: [one], limited: false, conflicted: false });
+    const conflict = appendSupervisorExecutionEvents([one], [event("one", { text: "Other" })]);
+    expect(conflict.conflicted).toBe(true);
+    expect(reconstructSupervisorPublicReplies("attempt", conflict.events)[0]).toMatchObject({ text: "Hello", incomplete: true });
+  });
+  it("bounds retained UI history without losing the last known native prefix", () => {
+    const prefix = Array.from({ length: 4096 }, (_, index) => ({ ...event(`event-${index}`), kind: "worker.tool", public_text: undefined }));
+    expect(appendSupervisorExecutionEvents(prefix, [event("overflow")])).toEqual({ events: prefix, limited: true, conflicted: false });
+    expect(appendSupervisorExecutionEvents(prefix, [prefix[0]!])).toEqual({ events: prefix, limited: false, conflicted: false });
+  });
   it("keeps partial text across pages and counts Unicode offsets", () => {
     const events = [event("one", { text: "Hi 🦊" }), event("two", { offset: 4, text: "!" })];
     expect(reconstructSupervisorPublicReplies("attempt", events)).toMatchObject([

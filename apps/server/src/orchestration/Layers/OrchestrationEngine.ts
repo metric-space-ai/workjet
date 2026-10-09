@@ -128,12 +128,14 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         if (goalRevision !== undefined) {
           const goal =
             thread.workjetConfig.schemaVersion === 2 ? thread.workjetConfig.goal : undefined;
+          const revision = typeof goalRevision === "number" ? goalRevision : goalRevision.revision;
+          const status = typeof goalRevision === "number" ? "active" : goalRevision.status;
           if (
             thread.archivedAt !== null ||
             thread.workjetConfig.schemaVersion !== 2 ||
             thread.workjetConfig.team?.role !== "specialist" ||
-            goal?.status !== "active" ||
-            goal.revision !== goalRevision
+            goal?.status !== status ||
+            goal.revision !== revision
           )
             return false;
         }

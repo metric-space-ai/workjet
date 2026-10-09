@@ -520,6 +520,46 @@ describe("OrchestrationEngine", () => {
         (thread) => thread.id === threadId,
       )!.workjetConfig;
       expect(stopped.schemaVersion === 2 && stopped.goal?.status).toBe("paused");
+      if (stopped.schemaVersion !== 2 || !stopped.goal) throw new Error("missing paused goal");
+      const pausedGuard = { revision: stopped.goal.revision, status: "paused" as const };
+      await system.run(Effect.scoped(Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const nativePause = yield* Effect.forkScoped(system.engine.runTurnStartIfActive(
+          threadId,
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined);
+            yield* Deferred.await(release);
+          }),
+          pausedGuard,
+        ));
+        yield* Deferred.await(entered);
+        const beforeResume = yield* system.engine.latestSequence;
+        const resume = yield* Effect.forkScoped(system.engine.dispatch({
+          type: "thread.goal.set",
+          commandId: CommandId.make("goal-owner-resume"),
+          threadId,
+          status: "active",
+          expectedRevision: pausedGuard.revision,
+          createdAt: now(),
+        }));
+        yield* Effect.yieldNow;
+        expect(yield* system.engine.latestSequence).toBe(beforeResume);
+        yield* Deferred.succeed(release, undefined);
+        expect(yield* Fiber.join(nativePause)).toBe(true);
+        yield* Fiber.join(resume);
+        let stalePauseApplied = false;
+        expect(yield* system.engine.runTurnStartIfActive(
+          threadId,
+          Effect.sync(() => { stalePauseApplied = true; }),
+          pausedGuard,
+        )).toBe(false);
+        expect(stalePauseApplied).toBe(false);
+      })));
+      const resumed = (await system.readModel()).threads.find(
+        (thread) => thread.id === threadId,
+      )!.workjetConfig;
+      expect(resumed.schemaVersion === 2 && resumed.goal?.status).toBe("active");
     } finally {
       await system.dispose();
     }

@@ -104,14 +104,16 @@ const harness = Effect.fn("test.goalHarness")(function* (
     streamDomainEvents: Stream.fromPubSub(events),
     readEvents: () => Stream.empty,
     latestSequence: Effect.sync(() => sequence),
-    runTurnStartIfActive: (threadId: ThreadId, action: Effect.Effect<void>, revision?: number) =>
+    runTurnStartIfActive: <A, E, R>(threadId: ThreadId, action: Effect.Effect<A, E, R>,
+      revision?: number | { readonly revision: number; readonly status: "active" | "paused" | "blocked" | "complete" }) =>
       Effect.gen(function* () {
         const config = current.workjetConfig;
         if (
           threadId !== current.id ||
           config.schemaVersion !== 2 ||
-          config.goal?.status !== "active" ||
-          (revision !== undefined && config.goal.revision !== revision)
+          config.goal?.status !== (typeof revision === "object" ? revision.status : "active") ||
+          (revision !== undefined && config.goal.revision !==
+            (typeof revision === "object" ? revision.revision : revision))
         )
           return false;
         yield* action;
@@ -317,7 +319,11 @@ describe("persistent goal reactor", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const h = yield* harness({
-            get: () => Effect.fail({ _tag: "UnsupportedNativeGoal", message: "unsupported native goal protocol" } as const),
+            get: () =>
+              Effect.fail({
+                _tag: "UnsupportedNativeGoal",
+                message: "unsupported native goal protocol",
+              } as const),
             set: () => Effect.void,
           } as unknown as ProviderService["Service"]["nativeGoal"]);
           yield* h.reactor.start();

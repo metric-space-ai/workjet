@@ -51,7 +51,10 @@ export interface OrchestrationEngineShape {
   readonly runTurnStartIfActive: <A, E, R>(
     threadId: ThreadId,
     start: Effect.Effect<A, E, R>,
-    goalRevision?: number,
+    goalRevision?: number | {
+      readonly revision: number;
+      readonly status: "active" | "paused" | "blocked" | "complete";
+    },
   ) => Effect.Effect<boolean, E, R>;
 
   /**

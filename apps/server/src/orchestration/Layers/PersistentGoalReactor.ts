@@ -48,14 +48,20 @@ export const makePersistentGoalReactor = Effect.gen(function* () {
         providers.nativeGoal &&
         (yield* providers.listSessions()).some((session) => session.threadId === thread.id)
       ) {
-        const native = yield* providers.nativeGoal
-          .get(thread.id, { allowRecovery: false })
-          .pipe(Effect.timeout("10 seconds"));
-        if (native !== undefined && native?.status !== goal.status) {
-          yield* providers.nativeGoal
-            .set(thread.id, goal.objective, goal.status)
-            .pipe(Effect.timeout("10 seconds"));
-        }
+        yield* engine.runTurnStartIfActive(
+          thread.id,
+          Effect.gen(function* () {
+            const native = yield* providers.nativeGoal!
+              .get(thread.id, { allowRecovery: false })
+              .pipe(Effect.timeout("10 seconds"));
+            if (native !== undefined && native?.status !== goal.status) {
+              yield* providers.nativeGoal!
+                .set(thread.id, goal.objective, goal.status)
+                .pipe(Effect.timeout("10 seconds"));
+            }
+          }),
+          { revision: goal.revision, status: goal.status },
+        );
       }
       return;
     }

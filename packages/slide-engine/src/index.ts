@@ -5,6 +5,8 @@ export * from "./agent";
 export * from "./scene-data";
 export { meetingSlides, slideDocumentOutline, MEETING_SLIDE_TEXT_MAX_BYTES, MEETING_SLIDE_TITLE_MAX_CHARS } from "./meeting";
 export type { MeetingSlide, SlideDocumentOutline } from "./meeting";
+export { lintMeetingDeck } from "./meeting-lint";
+export type { MeetingLintCode } from "./meeting-lint";
 export { BlockRenderer } from "./components/BlockRenderer";
 export type { BlockRendererProps } from "./components/BlockRenderer";
 export { DeckRenderer } from "./components/DeckRenderer";

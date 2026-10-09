@@ -155,7 +155,7 @@ describe("slideDocumentOutline", () => {
       layout: "technical_figure_right",
       intent: "summary",
       hasCanvas: false,
-      blockTypes: ["heading", "paragraph", "scene3d"],
+      blockTypes: ["paragraph", "scene3d"],
       scenes: [{ sceneId: "business.kpi-bars", hasData: true }],
       speakerNotes: 1,
       sourceRefs: 1,

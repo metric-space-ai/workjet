@@ -8,6 +8,7 @@ import {
 } from "../editing";
 import { canvasSceneForSlide, updateSlideCanvas } from "../excalidraw/scene";
 import { meetingSlides, slideDocumentOutline } from "../meeting";
+import { lintMeetingDeck } from "../meeting-lint";
 import {
   repairIssuesFromZodIssues,
   SlideDocumentValidationError,
@@ -27,6 +28,7 @@ export const validatorOps = [
   "canvasForSlide",
   "outline",
   "meetingSlides",
+  "lintMeeting",
 ] as const;
 export type ValidatorOp = (typeof validatorOps)[number];
 
@@ -88,6 +90,7 @@ const requiredFields: Record<
   canvasForSlide: [["slideId", isString, "a string"]],
   outline: [],
   meetingSlides: [],
+  lintMeeting: [],
 };
 
 function runOp(op: ValidatorOp, fields: Fields): Record<string, unknown> {
@@ -117,6 +120,14 @@ function runOp(op: ValidatorOp, fields: Fields): Record<string, unknown> {
       return { ok: true, ...slideDocumentOutline(document) };
     case "meetingSlides":
       return { ok: true, slides: meetingSlides(document) };
+    case "lintMeeting": {
+      const lint = lintMeetingDeck(document);
+      return {
+        ok: !lint.some((issue) => issue.severity === "error"),
+        issues: lint.filter((issue) => issue.severity === "error"),
+        warnings: lint.filter((issue) => issue.severity === "warning"),
+      };
+    }
   }
 }
 

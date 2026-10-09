@@ -126,3 +126,10 @@ and `LICENSES/reveal.js-MIT.txt`.
     readable on a meeting screen. Image figures keep learnordie's 660-wide column.
 20. **Scene theme in slides.** `Scene3DBlockRenderer` follows the `data-theme` of the enclosing
     `SlideCanvas` (light paper stays light in a dark app) and falls back to the page theme.
+21. **Meeting deck content rules.** `src/meeting-lint.ts` (`lintMeetingDeck`, validator op
+    `lintMeeting`) checks Jour fixe decks written by an agent: headings that repeat the slide
+    title, slides or tables that only say evidence is missing, wording about the slide, display,
+    data plumbing or author instead of the project, internal ids and system terms (errors), and the
+    same sentence on two slides (warning). Lecture decks and `validate` are unchanged.
+22. **Example deck.** `fixtures/jour-fixe-deck.json` no longer repeats slide titles as heading
+    blocks, so the example passes `lintMeeting`.

@@ -66,13 +66,13 @@ describe("slide-engine-validator bundle", () => {
       warnings: [],
     });
     const broken = structuredClone(deck) as any;
-    delete broken.slides[1].blocks[2].data;
+    delete broken.slides[1].blocks[1].data;
     const result = request({ op: "validate", document: broken });
     expect(result.ok).toBe(false);
     expect(result.issues).toEqual([
       expect.objectContaining({
         code: "scene3d.missing_data",
-        path: "$.slides[1].blocks[2].data",
+        path: "$.slides[1].blocks[1].data",
         slideId: "kennzahlen",
         blockId: "kennzahlen-szene",
       }),
@@ -102,7 +102,7 @@ describe("slide-engine-validator bundle", () => {
     });
     expect(accepted.ok).toBe(true);
     expect(accepted.appliedOperations).toEqual(["kpi", "upsertSpeakerNote"]);
-    expect(accepted.document.slides[1].blocks[2].data.items[0].value).toBe(19000);
+    expect(accepted.document.slides[1].blocks[1].data.items[0].value).toBe(19000);
 
     const rejected = request({
       op: "applyEdits",

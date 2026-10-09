@@ -123,7 +123,9 @@ function Fixture() {
         <span className="mr-auto text-xs text-muted-foreground">
           Isolated fixture · {fixture.source.contract}
         </span>
-        {withPresentation && <output aria-label="Fixture canvas save count">{canvasSaveCount}</output>}
+        {withPresentation && (
+          <output aria-label="Fixture canvas save count">{canvasSaveCount}</output>
+        )}
         <Button size="sm" variant="outline" onClick={() => setView("overview")}>
           Project overview
         </Button>

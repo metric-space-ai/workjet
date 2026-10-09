@@ -591,7 +591,11 @@ function JourFixeRoomContent({
                     )}
                     <JourFixeCanvasStage
                       key={`${slide.id}:${canvasEpoch}`}
-                      document={canvasEditing ? (editDocument ?? presentation.document) : presentation.document}
+                      document={
+                        canvasEditing
+                          ? (editDocument ?? presentation.document)
+                          : presentation.document
+                      }
                       slideId={slide.id}
                       mode={canvasEditing && editingSlideId === slide.id ? "edit" : "present"}
                       onSceneChange={(scene) => {

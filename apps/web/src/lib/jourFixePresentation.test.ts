@@ -216,11 +216,14 @@ describe("the room's confirmed presentation-save workflow", () => {
     const server = control(base);
     const reads = control(next);
     let writes = 0;
-    let retained: Extract<CtoxWorkjetProjectControlRequest, { action: "project.presentation.canvas.save" }> | undefined;
+    let retained:
+      | Extract<CtoxWorkjetProjectControlRequest, { action: "project.presentation.canvas.save" }>
+      | undefined;
     const requests: CtoxWorkjetProjectControlRequest[] = [];
     const port: typeof server.port = async (instance, request) => {
       requests.push(request);
-      if (request.action !== "project.presentation.canvas.save") return reads.port(instance, request);
+      if (request.action !== "project.presentation.canvas.save")
+        return reads.port(instance, request);
       if (!retained) {
         retained = request;
         writes += 1;
@@ -232,14 +235,24 @@ describe("the room's confirmed presentation-save workflow", () => {
       expect(request.sceneJson).toBe(retained.sceneJson);
       return server.port(instance, request);
     };
-    await expect(saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port))
-      .rejects.toThrow("timeout");
+    await expect(
+      saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port),
+    ).rejects.toThrow("timeout");
     expect(requests.map((request) => request.action)).toEqual(["project.presentation.canvas.save"]);
-    const retried = await saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port);
+    const retried = await saveJourFixePresentationSlide(
+      "instance",
+      projectId,
+      base,
+      "titel",
+      scene,
+      port,
+    );
     expect(retried.presentation?.manifest.revision).toBe(3);
     expect(retried.reloadError).toBeNull();
     expect(writes).toBe(1);
-    expect(requests.filter((request) => request.action === "project.presentation.canvas.save")).toHaveLength(2);
+    expect(
+      requests.filter((request) => request.action === "project.presentation.canvas.save"),
+    ).toHaveLength(2);
   });
 
   it("never turns a concurrent-revision rejection into a mutation on the refreshed slide", async () => {
@@ -249,10 +262,13 @@ describe("the room's confirmed presentation-save workflow", () => {
       requests.push(request);
       return { _tag: "failed", code: "guest_failed" };
     };
-    await expect(saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port))
-      .rejects.toThrow("guest_failed");
+    await expect(
+      saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port),
+    ).rejects.toThrow("guest_failed");
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.action === "project.presentation.canvas.save" && requests[0].expectedRevision).toBe(base.revision);
+    expect(
+      requests[0]?.action === "project.presentation.canvas.save" && requests[0].expectedRevision,
+    ).toBe(base.revision);
   });
 
   it("keeps a confirmed receipt when the subsequent read is unavailable", async () => {
@@ -262,7 +278,14 @@ describe("the room's confirmed presentation-save workflow", () => {
       request.action === "project.presentation.canvas.save"
         ? server.port(instance, request)
         : { _tag: "failed", code: "not_active" };
-    const saved = await saveJourFixePresentationSlide("instance", projectId, base, "titel", scene, port);
+    const saved = await saveJourFixePresentationSlide(
+      "instance",
+      projectId,
+      base,
+      "titel",
+      scene,
+      port,
+    );
     expect(saved.presentation).toBeNull();
     expect(saved.reloadError).toContain("The slide is saved");
     expect(saved.reloadError).toContain("not_active");

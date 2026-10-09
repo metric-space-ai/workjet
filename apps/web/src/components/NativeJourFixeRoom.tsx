@@ -73,7 +73,11 @@ function NativeJourFixeRoomContent({
     async (slideId: string, scene: CanvasScene) => {
       if (!presentation) throw new Error("This meeting has no presentation.");
       const saved = await saveJourFixePresentationSlide(
-        instanceId, projectId, presentation.manifest, slideId, scene,
+        instanceId,
+        projectId,
+        presentation.manifest,
+        slideId,
+        scene,
       );
       if (active.current) {
         if (saved.presentation) setPresentation(saved.presentation);

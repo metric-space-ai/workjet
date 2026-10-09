@@ -173,21 +173,35 @@ export async function saveJourFixePresentationSlide(
   slideId: string,
   scene: CanvasScene,
   control: Control = requestWorkjetProjectControl,
-): Promise<{ readonly presentation: JourFixePresentation | null; readonly reloadError: string | null }> {
+): Promise<{
+  readonly presentation: JourFixePresentation | null;
+  readonly reloadError: string | null;
+}> {
   const saved = await saveJourFixePresentationCanvas(
-    instanceId, projectId, manifest, slideId, scene, control,
+    instanceId,
+    projectId,
+    manifest,
+    slideId,
+    scene,
+    control,
   );
   try {
-    const presentation = await readJourFixePresentation(instanceId, projectId, manifest.meeting_id, control);
+    const presentation = await readJourFixePresentation(
+      instanceId,
+      projectId,
+      manifest.meeting_id,
+      control,
+    );
     if (!presentation || presentation.manifest.revision < saved.manifest.revision)
       throw new Error("The confirmed presentation revision is not available yet.");
     return { presentation, reloadError: null };
   } catch (reason) {
     return {
       presentation: null,
-      reloadError: reason instanceof Error
-        ? `The slide is saved, but the presentation could not be reloaded: ${reason.message}`
-        : "The slide is saved, but the presentation could not be reloaded.",
+      reloadError:
+        reason instanceof Error
+          ? `The slide is saved, but the presentation could not be reloaded: ${reason.message}`
+          : "The slide is saved, but the presentation could not be reloaded.",
     };
   }
 }

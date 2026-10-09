@@ -71,6 +71,7 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
         url.current = URL.createObjectURL(speechCheckAudio(result.audioBase64));
         setRecording(url.current);
       }
+      return result;
     } catch {
       if (!active.signal.aborted)
         setError(
@@ -82,7 +83,9 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
   }
 
   useEffect(() => {
-    void run({ action: "speech.settings.read" });
+    void run({ action: "speech.settings.read" }).then((result) => {
+      if (result?.status.mistral_credential_present) void run({ action: "speech.settings.voices" });
+    });
     return () => {
       controller.current?.abort();
       audio.current?.pause();
@@ -169,7 +172,9 @@ function InstanceSpeechSettings({ instanceId }: { readonly instanceId: string })
                 event.preventDefault();
                 const secret = key;
                 setKey("");
-                void run({ action: "speech.settings.key", secret });
+                void run({ action: "speech.settings.key", secret }).then((result) => {
+                  if (result?.status.mistral_credential_present) void run({ action: "speech.settings.voices" });
+                });
               }}
             >
               <input

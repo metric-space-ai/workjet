@@ -14,6 +14,26 @@ export interface SupervisorPublicReply {
   incomplete: boolean;
 }
 
+/** Preserve conflicting retained events so reconstruction can report a gap honestly. */
+export function appendSupervisorExecutionEvents(
+  previous: readonly WorkjetSupervisorExecutionEvent[],
+  incoming: readonly WorkjetSupervisorExecutionEvent[],
+): { events: readonly WorkjetSupervisorExecutionEvent[]; limited: boolean; conflicted: boolean } {
+  const events = [...previous];
+  const fingerprints = new Map(previous.map(event => [event.id, JSON.stringify(event)]));
+  let conflicted = false;
+  for (const event of incoming) {
+    const fingerprint = JSON.stringify(event);
+    const known = fingerprints.get(event.id);
+    if (known === fingerprint) continue;
+    if (events.length >= 4096) return { events, limited: true, conflicted };
+    if (known !== undefined) conflicted = true;
+    events.push(event);
+    fingerprints.set(event.id, fingerprint);
+  }
+  return { events, limited: false, conflicted };
+}
+
 /** Rebuild only contiguous, persisted public chunks from the selected native attempt. */
 export function reconstructSupervisorPublicReplies(
   attemptId: string,

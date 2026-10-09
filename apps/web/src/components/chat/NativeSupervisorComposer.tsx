@@ -20,7 +20,10 @@ import {
   resumeWorkjetSupervisorTurn,
   submitWorkjetSupervisorTurn,
 } from "../../workjetSupervisorControl";
-import { requestWorkjetProjectControl } from "../../workjetProjectControl";
+import {
+  requestWorkjetProjectControl,
+  describeWorkjetProjectControlFailure,
+} from "../../workjetProjectControl";
 import { readWorkjetSupervisorExecutionPage } from "../../workjetSupervisorExecution";
 import { requestLocalProjectRegistrationRetry } from "../../localProjectRegistration";
 import { refreshWorkjetProjectRegistry } from "../../workjetProjectRegistry";
@@ -143,7 +146,7 @@ export function NativeSupervisorComposer(props: {
       if (journalRef.current?.turn?.terminal) setNotice(null);
       if (result?._tag === "failed") {
         setFailureCode(result.code);
-        setError(`CTOX: ${result.code}. Check the task and reconnect.`);
+        setError(describeWorkjetProjectControlFailure(result, target.instanceId));
       }
       if (
         result?._tag === "completed" &&
@@ -315,6 +318,38 @@ export function NativeSupervisorComposer(props: {
           {error}
         </p>
       )}
+      {props.instanceId?.startsWith("managed:") &&
+        (failureCode === "authentication_required" ||
+          journal?.submissionError === "authentication_required" ||
+          props.blockReason?.startsWith("Sign in to ctox.dev")) && (
+          <button
+            type="button"
+            className="mb-2 text-xs underline underline-offset-2"
+            disabled={busy}
+            onClick={async () => {
+              const bridge = window.desktopBridge?.ctox;
+              if (!bridge || inFlight.current) return;
+              inFlight.current = true;
+              setBusy(true);
+              try {
+                const result = await bridge.login();
+                if (result._tag === "completed") {
+                  refreshWorkjetProjectRegistry(latestProps.current.instanceId);
+                  requestLocalProjectRegistrationRetry();
+                  setError(null);
+                  setFailureCode(null);
+                }
+              } catch {
+                setError("Could not open CTOX sign-in. Retry connection.");
+              } finally {
+                inFlight.current = false;
+                setBusy(false);
+              }
+            }}
+          >
+            Sign in to ctox.dev
+          </button>
+        )}
       <form
         onSubmit={(event) => {
           event.preventDefault();

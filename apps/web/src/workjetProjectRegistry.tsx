@@ -23,6 +23,7 @@ export interface WorkjetProjectRegistrySnapshot {
   readonly projects: readonly CtoxWorkjetProjectProjection[];
   readonly selectedProjectId: string | null;
   readonly refreshFailed?: boolean;
+  readonly refreshError?: Extract<CtoxWorkjetProjectControlResult, { _tag: "failed" }>;
 }
 
 const EMPTY_PROJECTS: readonly CtoxWorkjetProjectProjection[] = Object.freeze([]);
@@ -301,6 +302,7 @@ export function applyWorkjetProjectRegistryResult(
       ...current,
       phase: current.projects.length === 0 ? "blocked" : "ready",
       refreshFailed: true,
+      ...(result._tag === "failed" ? { refreshError: result } : {}),
     });
     return;
   }

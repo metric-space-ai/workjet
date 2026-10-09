@@ -2,10 +2,32 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   listWorkjetProjects,
+  describeWorkjetProjectControlFailure,
   requestWorkjetProjectControl,
   type WorkjetProjectControlPort,
   type WorkjetProjectPoolPort,
 } from "./workjetProjectControl";
+
+describe("project instance failure display", () => {
+  it("distinguishes hosted sign-in from accountless paired authentication", () => {
+    const failure = { _tag: "failed", code: "authentication_required" } as const;
+    expect(describeWorkjetProjectControlFailure(failure, "managed:tenant")).toContain(
+      "Sign in to ctox.dev",
+    );
+    expect(describeWorkjetProjectControlFailure(failure, "paired:tenant")).not.toContain(
+      "ctox.dev",
+    );
+  });
+  it("shows fixed discovery error and HTTP status", () => {
+    expect(
+      describeWorkjetProjectControlFailure({
+        _tag: "failed",
+        code: "guest_failed",
+        discovery: { code: "http_error", httpStatus: 503 },
+      }),
+    ).toContain("http_error (HTTP 503)");
+  });
+});
 
 describe("listWorkjetProjects", () => {
   const result = {
@@ -34,6 +56,17 @@ describe("listWorkjetProjects", () => {
       expect(request).toHaveBeenNthCalledWith(2, "managed:selected", { action: "project.list" });
     },
   );
+
+  it("does not repeat a failed account discovery as a legacy project query", async () => {
+    const result = {
+      _tag: "failed",
+      code: "guest_failed",
+      discovery: { code: "network_error" },
+    } as const;
+    const request = vi.fn<WorkjetProjectControlPort>().mockResolvedValue(result);
+    await expect(listWorkjetProjects("managed:selected", request)).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledOnce();
+  });
 
   it("preserves authentication failure without retrying a denied request", async () => {
     const result = { _tag: "failed", code: "authentication_required" } as const;
